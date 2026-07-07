@@ -246,6 +246,16 @@ test.describe("mobile foundations", () => {
         (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
         surface,
       );
+      if (surface === "journal") {
+        // "journal" is a redirect-only mode: instead of rendering a workspace
+        // surface it hard-navigates to Settings → Familiars → Journal. The
+        // sweep asserts the redirect landed (no crash), then returns to the
+        // workspace shell before continuing.
+        await page.waitForURL(/\/settings#familiars/, { timeout: 15_000 });
+        await page.goto("/");
+        await page.waitForSelector(".shell-frame");
+        continue;
+      }
       await page.waitForTimeout(250);
       // The shell frame must survive every navigation (a render crash unmounts
       // the app to the top-level error boundary, removing it).
