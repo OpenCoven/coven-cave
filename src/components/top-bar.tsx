@@ -5,6 +5,7 @@ import { NotificationBell } from "@/components/notification-bell";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { PopoverItem } from "@/components/ui/popover";
+import { useKeySymbols } from "@/lib/platform-keys";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -64,6 +65,7 @@ const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 
 export function TopBar(props: Props) {
+  const keys = useKeySymbols();
   const {
     onOpenPalette,
     searchQuery,
@@ -163,7 +165,7 @@ export function TopBar(props: Props) {
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd>⌘K</kbd>
+        <kbd>{keys.mod}K</kbd>
       </form>
 
       <div className="top-bar__actions">

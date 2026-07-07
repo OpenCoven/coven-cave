@@ -2,6 +2,7 @@
 
 import { Icon } from "@/lib/icon";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
+import { useKeySymbols } from "@/lib/platform-keys";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -70,6 +71,7 @@ export function FamiliarMenuBar({
   onViewSchedules,
   onOpenQuickChat,
 }: Props) {
+  const keys = useKeySymbols();
   const enrichLabel = enrichingTasks
     ? enrichProgress
       ? `${enrichProgress.done}/${enrichProgress.total}`
@@ -119,7 +121,7 @@ export function FamiliarMenuBar({
           autoComplete="off"
           spellCheck={false}
         />
-        <kbd>⌘K</kbd>
+        <kbd>{keys.mod}K</kbd>
       </form>
 
       <div className="menu-bar__group menu-bar__group--tasks">
