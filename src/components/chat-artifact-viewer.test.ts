@@ -15,7 +15,8 @@ assert.match(src, /sandbox-error/, "listens for sandbox runtime errors");
 assert.match(src, /generateArtifactCode/, "refine calls the generator");
 assert.match(src, /buildRefinePrompt/, "refine wraps with the refine prompt");
 assert.match(src, /\/api\/canvas/, "save posts to the canvas store");
-assert.match(src, /cave:navigate-mode/, "open-in-canvas navigates to the canvas page");
+assert.doesNotMatch(src, /cave:navigate-mode/, "artifact viewer no longer deep-links the retired Canvas page");
+assert.match(src, /Saved to Canvas/, "after save, confirms inline instead of navigating");
 
 // Expand-to-fullscreen: a toggle action enters a fullscreen overlay, Escape
 // exits, and — critically — the overlay is PORTALED to document.body so it

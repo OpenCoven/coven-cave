@@ -112,4 +112,15 @@ assert.match(pageDrag, /NON_SPLITTABLE = new Set\(\["terminal", "journal"\]\)/, 
 assert.match(slash, /name: "\/journal"[^}]*Settings/, "/journal description points at Settings");
 assert.doesNotMatch(slash, /Journal's Canvas tab/, "/canvas no longer advertises the Canvas page");
 
+const artifactViewer = read("./chat-artifact-viewer.tsx");
+
+// ── No surviving navigation into the retired Canvas page ─────────────────────
+assert.doesNotMatch(artifactViewer, /cave:journal/, "artifact viewer no longer deep-links the Canvas page");
+assert.match(artifactViewer, /Saved to Canvas/, "save-to-canvas confirms inline instead of navigating");
+assert.match(
+  ws,
+  /last === "journal"/,
+  "a stale persisted last-surface of journal is not restored on familiar select",
+);
+
 console.log("familiar-studio-journal-tab.test.ts: ok");

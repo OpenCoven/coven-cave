@@ -160,17 +160,6 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
     }
   }, [saveState, sourcePrompt, title, code, kind]);
 
-  const openInCanvas = useCallback(() => {
-    try {
-      localStorage.setItem("cave:journal:tab", "canvas");
-    } catch {
-      /* storage may be unavailable */
-    }
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } }));
-    window.dispatchEvent(new CustomEvent("cave:journal-set-tab", { detail: { tab: "canvas" } }));
-    window.dispatchEvent(new Event("cave:board:reload"));
-  }, []);
-
   const shell = (
     <div
       ref={shellRef}
@@ -219,9 +208,9 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
             <Icon name="ph:arrow-square-out" width={14} />
           </button>
           {saveState === "saved" ? (
-            <button type="button" className="chat-artifact__btn chat-artifact__btn--text" onClick={openInCanvas}>
-              <Icon name="ph:arrow-square-out" width={13} /> Open in Canvas
-            </button>
+            <span className="chat-artifact__btn chat-artifact__btn--text" aria-live="polite">
+              <Icon name="ph:check" width={13} /> Saved to Canvas
+            </span>
           ) : (
             <button type="button" className="chat-artifact__btn chat-artifact__btn--text" disabled={saveState === "saving"} onClick={saveToCanvas}>
               <Icon name="ph:plus" width={13} /> {saveState === "saving" ? "Saving…" : "Save to Canvas"}

@@ -9,7 +9,6 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
-
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import {
@@ -650,6 +649,9 @@ export function Workspace() {
     // still a valid WorkspaceMode; otherwise fall back to the default.
     const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
     if (last === "flow") setMode("inbox");
+    // "journal" persists from before the page retired; restoring it would
+    // hard-navigate to Settings on a mere familiar select. Stay put instead.
+    else if (last === "journal") { /* no-op */ }
     else if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
   }, []);
 
@@ -1691,8 +1693,8 @@ export function Workspace() {
         return true;
       case "/canvas":
         // The Canvas page moved to feature/journal-canvas-surface. /canvas is
-        // chat-inline now: hand off to a chat where the composer's /canvas
-        // handler generates (with a prompt) or shows the usage hint (without).
+        // chat-inline now: hand off to a fresh chat and let its composer's
+        // /canvas handler take over (args typed here aren't forwarded).
         startFamiliarChat(activeId);
         return true;
       case "/chats":
