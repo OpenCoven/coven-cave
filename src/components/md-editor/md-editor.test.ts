@@ -57,7 +57,23 @@ assert.match(
   "a 409 forwards the disk text to the editor's conflict panel",
 );
 assert.match(memory, /<MdEditor\s/, "memory editor renders the shared MdEditor");
-assert.match(memory, /key=\{path\}/, "editor remounts per document path");
+assert.match(memory, /key=\{`\$\{path\}:\$\{refreshToken\}`\}/, "editor remounts per document path and disk reload");
+
+// ── Live-follow: agents write open memory docs (cave-e3b) ────────────────────
+
+assert.match(memory, /export const LIVE_FOLLOW_INTERVAL_MS = 5000/, "poll cadence is a named constant");
+assert.match(memory, /stat=1/, "the poll uses the cheap stat-only route mode");
+assert.match(memory, /document\.hidden/, "polling pauses while the tab is hidden");
+assert.match(memory, /dirty[\s\S]*?setDiskChanged\(true\)[\s\S]*?reloadFromDisk\(\)/, "dirty docs banner; clean docs follow the disk automatically");
+assert.match(memory, /role="status"/, "the disk-change banner is announced politely");
+assert.match(memory, /Reload from disk/, "the banner offers an explicit reload");
+assert.match(memory, /Keep editing/, "the banner never forces a reload — drafts are preserved");
+assert.match(memory, /draftRef\.current = raw/, "onChange mirrors the draft for dirty detection");
+
+const fileRoute = await readFile(new URL("../../app/api/memory/file/route.ts", import.meta.url), "utf8");
+assert.match(fileRoute, /searchParams\.get\("stat"\) === "1"/, "GET supports a stat-only mode");
+assert.match(fileRoute, /if \(url\.searchParams\.get\("stat"\) === "1"\) \{[\s\S]*?await stat\(/, "stat mode stats without reading the file");
+assert.match(fileRoute, /resolveAllowedMemoryFilePath\(target\)[\s\S]*?stat/, "stat mode sits behind the same path allowlist");
 
 // ── Autosave: idempotent surfaces only (cave-b2v) ────────────────────────────
 
