@@ -42,7 +42,7 @@ assert.match(
   /familiarTab\?: FamiliarStudioTab/,
   "index entries can target a Familiars studio tab",
 );
-for (const tab of ["identity", "look", "brain", "lifecycle", "memory", "projects", "vault"]) {
+for (const tab of ["identity", "look", "brain", "lifecycle", "memory", "projects", "vault", "journal"]) {
   assert.match(
     sections,
     new RegExp(`familiarTab: "${tab}"`),

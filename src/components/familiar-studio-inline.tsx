@@ -12,6 +12,7 @@ import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
 import { FamiliarStudioLifecycleTab } from "./familiar-studio-lifecycle-tab";
 import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
 import { FamiliarStudioProjectsTab } from "./familiar-studio-projects-tab";
+import { FamiliarStudioJournalTab } from "./familiar-studio-journal-tab";
 import { FamiliarAvatar } from "./familiar-avatar";
 import { VaultPanel } from "./vault-panel";
 import type { Familiar } from "@/lib/types";
@@ -29,6 +30,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "lifecycle", label: "Lifecycle", icon: "ph:arrows-clockwise" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
+  { id: "journal", label: "Journal", icon: "ph:book-open" },
   { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "vault", label: "Vault", icon: "ph:vault" },
 ];
@@ -168,6 +170,7 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
               ) : null}
               {activeTab === "projects" ? <FamiliarStudioProjectsTab familiar={familiar} /> : null}
+              {activeTab === "journal" ? <FamiliarStudioJournalTab familiar={familiar} allFamiliars={resolved} /> : null}
               {activeTab === "vault" ? <VaultPanel /> : null}
             </div>
 

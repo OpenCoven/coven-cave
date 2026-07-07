@@ -9,7 +9,8 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
-import { JournalView } from "@/components/journal/journal-view";
+// Journal retired as an in-shell surface (redirects to Settings → Familiars),
+// so JournalView is gone; Grimoire is a new in-shell surface from main.
 import { GrimoireView } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
@@ -27,7 +28,7 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { RailInspector } from "@/components/inspector-pane";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { FamiliarsView } from "@/components/familiars-view";
@@ -279,6 +280,14 @@ export function Workspace() {
       markCovenTabPending();
       setModeRaw("chat");
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT)), 0);
+      return;
+    }
+    if (next === "journal") {
+      // The Journal page retired — it lives in Settings → Familiars → Journal.
+      // Every entry point (sidebar row, ⌘K palette, ?mode= deep link,
+      // cave:navigate-mode, dashboard links) funnels through setMode, so this
+      // one redirect covers them all.
+      openFamiliarStudioSettingsTab("journal");
       return;
     }
     setModeRaw(next);
@@ -657,6 +666,9 @@ export function Workspace() {
     // still a valid WorkspaceMode; otherwise fall back to the default.
     const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
     if (last === "flow") setMode("inbox");
+    // "journal" persists from before the page retired; restoring it would
+    // hard-navigate to Settings on a mere familiar select. Stay put instead.
+    else if (last === "journal") { /* no-op */ }
     else if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
   }, []);
 
@@ -1694,14 +1706,13 @@ export function Workspace() {
         setMode("board");
         return true;
       case "/journal":
-        try { localStorage.setItem("cave:journal:tab", "journal"); } catch { /* ignore */ }
-        setMode("journal");
-        window.dispatchEvent(new CustomEvent("cave:journal-set-tab", { detail: { tab: "journal" } }));
+        setMode("journal"); // redirects to Settings → Familiars → Journal
         return true;
       case "/canvas":
-        try { localStorage.setItem("cave:journal:tab", "canvas"); } catch { /* ignore */ }
-        setMode("journal");
-        window.dispatchEvent(new CustomEvent("cave:journal-set-tab", { detail: { tab: "canvas" } }));
+        // The Canvas page moved to feature/journal-canvas-surface. /canvas is
+        // chat-inline now: hand off to a fresh chat and let its composer's
+        // /canvas handler take over (args typed here aren't forwarded).
+        startFamiliarChat(activeId);
         return true;
       case "/chats":
       case "/agents":
@@ -2042,8 +2053,6 @@ export function Workspace() {
           openFamiliarSession(sessionId, familiarId);
         }}
       />
-    ) : mode === "journal" ? (
-      <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
     ) : mode === "grimoire" ? (
       <GrimoireView />
     ) : mode === "inbox" || mode === "calendar" ? (

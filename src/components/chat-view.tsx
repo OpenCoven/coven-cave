@@ -3467,8 +3467,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (command === "/canvas") {
       if (!args.trim()) {
-        // No prompt → open the full Canvas page via the workspace.
-        if (onSlashCommand?.("/canvas", "")) { setInput(""); return true; }
+        // The Canvas page retired — /canvas is inline-only now.
+        appendSystem("Describe what to sketch — e.g. /canvas a pricing page with three tiers.");
+        setInput("");
         return true;
       }
       setInput("");

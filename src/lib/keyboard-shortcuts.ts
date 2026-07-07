@@ -17,7 +17,7 @@
  *     capabilities-view, chat-list); "⌘F" sessions search: chat-list.tsx
  *   - terminal & panes: src/components/comux-view.tsx keydown handlers
  *   - browser pane: src/components/browser-pane.tsx (⌘L / ⌘K / [)
- *   - ⌘S save: familiar-daily-notes.tsx + journal/canvas-list.tsx;
+ *   - ⌘S save: familiar-daily-notes.tsx;
  *     artifact refine ⌘↵: chat-artifact-viewer.tsx
  */
 
@@ -100,7 +100,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     entries: [
       { keys: "⌘J", description: "Toggle quick chat" },
       { keys: "⌘,", description: "Open Settings" },
-      { keys: "⌘S", description: "Save (daily notes, journal)" },
+      { keys: "⌘S", description: "Save (daily notes)" },
       { keys: "⌘Z", description: "Undo the last delete (while the undo toast is showing)" },
       { keys: "⌘↵", description: "Run the refine (artifact viewer)" },
       { keys: "↑ / ↓", description: "GitHub: move through activity rows" },

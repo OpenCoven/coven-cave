@@ -101,6 +101,6 @@ const actions = readFileSync(new URL("../components/gh-review-actions.tsx", impo
 assert.match(actions, /generateArtifactCode/, "familiar review streams via generateArtifactCode");
 assert.match(actions, /saveCanvasArtifact/, "saves the result as a Canvas artifact");
 assert.match(actions, /buildReviewArtifact/, "builds the artifact from the review HTML");
-assert.match(actions, /cave:navigate-mode/, "jumps to Canvas to view the artifact");
+assert.match(actions, /openArtifactHtml/, "opens the artifact in a browser tab instead of navigating to Canvas");
 
 console.log("gh-review-html.test.ts: ok");

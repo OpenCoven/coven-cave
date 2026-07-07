@@ -104,7 +104,7 @@ const FOLDER_MODES: Array<{
   // Group Chat ("coven") is no longer a standalone destination — it lives as the
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
+  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — opens in Settings" },
   { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the

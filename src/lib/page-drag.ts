@@ -22,8 +22,9 @@ export type PageDragDetail = {
   label: string;
 };
 
-/** Pages that should never be openable in a split (heavy/stateful surfaces). */
-const NON_SPLITTABLE = new Set(["terminal"]);
+/** Pages that should never be openable in a split (heavy/stateful surfaces,
+ *  or modes that redirect out of the workspace — journal → Settings). */
+const NON_SPLITTABLE = new Set(["terminal", "journal"]);
 
 export function isSplittablePage(mode: string): boolean {
   return !NON_SPLITTABLE.has(mode);

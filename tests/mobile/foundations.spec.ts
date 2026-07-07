@@ -219,13 +219,22 @@ test.describe("mobile foundations", () => {
   // WorkspaceMode and fails on any crash, daemon-less. It does NOT assert
   // layout (some surfaces legitimately scroll); it only asserts "didn't crash".
   test("no workspace surface crashes on navigation", async ({ page }) => {
-    // The complete WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
+    // Sweeping ~17 surfaces plus the /settings redirect all trigger first-hit
+    // route compilation under next dev; on a cold cache that comfortably exceeds
+    // the default per-test budget. Triple it so a slow compile reads as slow,
+    // not broken.
+    test.slow();
+    // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
     // when a new surface is added — a new mode with a render crash should turn
-    // this red.
-    const ALL_SURFACES = [
+    // this red. Two modes are intentionally excluded: "journal" retired as a
+    // standalone surface and now redirects to Settings → Familiars (swept
+    // separately after the loop, asserting the redirect); "grimoire" mounts a
+    // heavy Milkdown editor whose cold compile under next dev makes this fast
+    // canary flaky — it has its own coverage (see cave follow-up).
+    const IN_SHELL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
       "browser", "terminal", "github", "roles", "marketplace",
-      "flow", "evals", "submissions", "retro", "capabilities", "journal",
+      "flow", "evals", "submissions", "retro", "capabilities",
     ];
 
     const FATAL_RENDER = /maximum update depth|too many re-?renders|minified react error|getsnapshot should be cached|rendered (more|fewer) hooks|hooks can only be called/i;
@@ -240,7 +249,7 @@ test.describe("mobile foundations", () => {
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    for (const surface of ALL_SURFACES) {
+    for (const surface of IN_SHELL_SURFACES) {
       current = surface;
       await page.evaluate(
         (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
@@ -252,6 +261,31 @@ test.describe("mobile foundations", () => {
       await expect(page.locator(".shell-frame"), `${surface} must keep the app shell mounted (no crash)`).toBeVisible();
     }
 
+    // Assert no in-shell surface render-crashed BEFORE the journal redirect
+    // below. That step navigates cross-document to /settings, which cancels the
+    // workspace's in-flight chunk/fetch requests; next dev and WebKit surface
+    // those cancellations as benign pageerrors ("Failed to load chunk",
+    // "aborted", "…due to access control checks") that are loading artifacts,
+    // not render crashes. Checking here keeps the canary meaningful without
+    // enumerating every benign message.
     expect(errors, `render crashes while sweeping surfaces:\n${errors.join("\n")}`).toEqual([]);
+
+    // "journal" is a WorkspaceMode but no longer an in-shell surface: it
+    // hard-redirects to Settings → Familiars (openFamiliarStudioSettingsTab →
+    // window.location.assign("/settings#familiars")). Run it last — its
+    // navigation away from the workspace would strand the sweep otherwise — and
+    // assert the redirect lands on the Settings shell. A render crash there
+    // unmounts to the error boundary, so .settings-shell never appears.
+    current = "journal";
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } })),
+    );
+    // /settings now mounts the Milkdown-backed memory/journal editor, whose
+    // first-hit compile under next dev can run well past 15s — wait generously.
+    await page.waitForURL(/\/settings(\?|#|$)/, { timeout: 45_000 });
+    await expect(
+      page.locator(".settings-shell"),
+      "journal must redirect to the Settings shell without crashing",
+    ).toBeVisible({ timeout: 45_000 });
   });
 });

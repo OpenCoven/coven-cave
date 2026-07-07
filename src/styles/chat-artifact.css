@@ -1,5 +1,5 @@
 /* In-chat artifact viewer — Canvas/Code tabs embedded in an assistant bubble.
-   Sibling to the Canvas page's sketch node (same dots + segmented pill). */
+   Same dots + segmented pill styling as the retired Canvas page's sketch node (see feature/journal-canvas-surface). */
 .chat-artifact {
   margin: 8px 0;
   background: var(--bg-panel);

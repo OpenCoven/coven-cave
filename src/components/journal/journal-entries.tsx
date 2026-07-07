@@ -52,11 +52,17 @@ function NextPaths({
   familiarId,
   onNotice,
   onError,
+  standalone,
 }: {
   suggestions: string[];
   familiarId: string | null;
   onNotice: NoticeFn;
   onError: (text: string) => void;
+  /** When true (Settings host), filter out actions that require the workspace
+   *  event bus. "Run now" dispatches cave:agents-new-chat which has no listener
+   *  on /settings, so it is hidden; "Add task" and "Remind me" are plain fetches
+   *  and remain available. */
+  standalone?: boolean;
 }) {
   // The recommended (first) step is expanded by default so the automate
   // affordances are discoverable without a hunt.
@@ -134,6 +140,7 @@ function NextPaths({
     [familiarId, flashDone, onNotice, onError],
   );
 
+  const actions = standalone ? AUTOMATIONS.filter((a) => a.action !== "run") : AUTOMATIONS;
   if (suggestions.length === 0) return null;
   return (
     <div className="journal-entry__next">
@@ -159,7 +166,7 @@ function NextPaths({
               </button>
               {isOpen ? (
                 <div className="journal-next__tray" role="group" aria-label={`Automate: ${s}`}>
-                  {AUTOMATIONS.map((a) => {
+                  {actions.map((a) => {
                     const key = `${i}:${a.action}`;
                     const isPending = pending === key;
                     const isDone = done === key;
@@ -196,11 +203,13 @@ function JournalReflection({
   familiarId,
   onNotice,
   onError,
+  standalone,
 }: {
   text: string;
   familiarId: string | null;
   onNotice: NoticeFn;
   onError: (text: string) => void;
+  standalone?: boolean;
 }) {
   // Memoize so `suggestions` keeps a stable identity across parent re-renders
   // (e.g. the notice toast updating) — otherwise NextPaths' open-step effect
@@ -209,7 +218,7 @@ function JournalReflection({
   return (
     <>
       <MarkdownBlock text={visible} className="journal-entry__reflection" />
-      <NextPaths suggestions={suggestions} familiarId={familiarId} onNotice={onNotice} onError={onError} />
+      <NextPaths suggestions={suggestions} familiarId={familiarId} onNotice={onNotice} onError={onError} standalone={standalone} />
     </>
   );
 }
@@ -218,12 +227,18 @@ export function JournalEntries({
   familiars,
   activeFamiliarId,
   scopeFamiliarIds,
+  standalone,
 }: {
   familiars: Familiar[];
   activeFamiliarId: string | null;
   /** Multiselect scope (empty = All) — the reflections list filters to days
    *  whose `reflectedBy` is in this set. */
   scopeFamiliarIds?: ReadonlySet<string>;
+  /** True when rendered outside the Workspace (Settings → Familiars studio tab).
+   *  The workspace event bus has no listeners there: "Run now" is hidden (its
+   *  chat handoff can't happen) and toast actions become real navigations via
+   *  the `?mode=` deep link. */
+  standalone?: boolean;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   // One clock read per render — reused for `today`, list labels, and the detail
@@ -345,6 +360,21 @@ export function JournalEntries({
     setSelected(today);
   }, [selectedFamiliarId, today]);
 
+  // Derive scope / overwrite-safety values early so they can appear in the
+  // `generate` useCallback's dependency array (avoids temporal dead zone).
+  // The detail pane honors the same multiselect scope as the day rail: an
+  // out-of-scope reflection reads as "no entry" here, so a scoped surface
+  // (e.g. the Familiar Studio's journal tab) never exposes another
+  // familiar's entry to edit/delete.
+  const dayInScope = !day?.entry.reflectedBy || familiarInScope(scopeFamiliarIds ?? EMPTY_SCOPE, day.entry.reflectedBy);
+  const hasEntry = Boolean(day?.exists && day.entry.reflection.trim()) && day?.date !== deletePending?.item && dayInScope;
+  // A day that EXISTS but is out of scope must not read as generate-able: the
+  // store is one entry per date, so generating here would silently overwrite
+  // the other familiar's reflection.
+  const outOfScopeBy = day?.exists && day.entry.reflection.trim() && !dayInScope
+    ? familiarName(day.entry.reflectedBy) ?? "another familiar"
+    : null;
+
   const generate = useCallback(async () => {
     const familiarId = selectedFamiliarId;
     if (!familiarId) {
@@ -352,6 +382,7 @@ export function JournalEntries({
       return;
     }
     if (!day) return;
+    if (outOfScopeBy) return; // never overwrite another familiar's entry from a scoped surface
     setError(null);
     setGenerating(true);
     const result = await generateReflection({ familiarId, context: day.context });
@@ -370,7 +401,7 @@ export function JournalEntries({
     setGenerating(false);
     await loadDay(day.date);
     await loadDays();
-  }, [selectedFamiliarId, day, loadDay, loadDays]);
+  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy]);
 
   function startEdit() {
     if (!day) return;
@@ -444,9 +475,6 @@ export function JournalEntries({
   }
 
   const canGenerate = Boolean(selectedFamiliarId);
-  // A pending delete makes the day read as empty (EmptyState) during the undo
-  // window without touching the loaded `day` — Undo just clears the pending flag.
-  const hasEntry = Boolean(day?.exists && day.entry.reflection.trim()) && day?.date !== deletePending?.item;
 
   // Chronological navigation across the *visible* (scoped + filtered) days.
   // The list is newest-first, so "newer" = lower index, "older" = higher.
@@ -480,9 +508,9 @@ export function JournalEntries({
         <button
           type="button"
           className={`journal-entry-gen${generating ? " is-generating" : ""}`}
-          disabled={!canGenerate || generating || selected !== today}
+          disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
           onClick={generate}
-          title={selected !== today ? "Select today to generate" : undefined}
+          title={Boolean(outOfScopeBy) ? `Today's entry was written by ${outOfScopeBy}` : selected !== today ? "Select today to generate" : undefined}
         >
           <Icon name="ph:sparkle" aria-hidden />
           {generating ? "Reflecting…" : "Generate today's entry"}
@@ -641,6 +669,7 @@ export function JournalEntries({
                     familiarId={selectedFamiliarId}
                     onNotice={showNotice}
                     onError={setError}
+                    standalone={standalone}
                   />
                 )}
                 <div className="journal-entry__by">
@@ -652,14 +681,16 @@ export function JournalEntries({
             ) : (
               <EmptyState
                 icon="ph:book-open"
-                headline="No reflection yet for this day"
+                headline={outOfScopeBy ? `This day's entry was written by ${outOfScopeBy}` : "No reflection yet for this day"}
                 subtitle={
-                  day.date === today
-                    ? "Generate today's entry to capture what happened."
-                    : "No familiar wrote a reflection for this day."
+                  outOfScopeBy
+                    ? "The journal keeps one entry per day. Switch to that familiar to read or edit it."
+                    : day.date === today
+                      ? "Generate today's entry to capture what happened."
+                      : "No familiar wrote a reflection for this day."
                 }
                 actions={
-                  day.date === today ? (
+                  !outOfScopeBy && day.date === today ? (
                     <Button
                       leadingIcon="ph:sparkle"
                       onClick={generate}
@@ -685,9 +716,14 @@ export function JournalEntries({
               type="button"
               className="journal-notice__act"
               onClick={() => {
-                window.dispatchEvent(
-                  new CustomEvent("cave:navigate-mode", { detail: { mode: notice.action!.mode } }),
-                );
+                if (standalone) {
+                  // No workspace on /settings — deep-link back into it.
+                  window.location.assign(`/?mode=${encodeURIComponent(notice.action!.mode)}`);
+                } else {
+                  window.dispatchEvent(
+                    new CustomEvent("cave:navigate-mode", { detail: { mode: notice.action!.mode } }),
+                  );
+                }
                 setNotice(null);
               }}
             >

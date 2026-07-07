@@ -62,6 +62,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "familiars", group: "Brain", familiarTab: "brain", keywords: "brain runtime harness model voice system prompt note capabilities" },
   { section: "familiars", group: "Lifecycle", familiarTab: "lifecycle", keywords: "lifecycle archive unarchive reorder roster order reset overrides" },
   { section: "familiars", group: "Memory", familiarTab: "memory", keywords: "memory memories daily notes recall" },
+  { section: "familiars", group: "Journal", familiarTab: "journal", keywords: "journal daily reflection reflections diary entries generate" },
   { section: "familiars", group: "Projects", familiarTab: "projects", keywords: "projects access grants allow deny tool policy guard security audit requests permissions" },
   { section: "familiars", group: "Vault", familiarTab: "vault", keywords: "vault secrets env environment keys tokens credentials 1password" },
   { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
