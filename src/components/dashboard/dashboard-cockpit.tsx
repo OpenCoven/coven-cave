@@ -17,7 +17,10 @@ import { TrendChart } from "@/components/ui/charts/trend-chart";
 import { Heatmap } from "@/components/ui/charts/heatmap";
 import {
   familiarMiniProfiles, familiarLoadSeries, dashboardSignals, type DashboardSignal, type FamiliarMiniProfile,
+  defaultInsightOrder, sortInsightRows, filterInsightRows, type InsightSortKey, type SortDir,
+  spaceUsageRows, sortSpaceRows, formatBytes, type SpaceSortKey, type SpaceUsageRow,
 } from "@/lib/dashboard-analytics";
+import type { SpaceUsageArea } from "@/lib/server/space-usage";
 import {
   deriveCovenVitals, deriveCovenInsight, covenSessionsSeries,
   type FamiliarInsightRow, type CovenVitals,
@@ -52,9 +55,10 @@ type CockpitData = {
   upcoming: InboxItem[];
   sessions: SessionRow[];
   memory: CovenMemoryEntry[];
+  space: SpaceUsageArea[];
 };
 
-const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [], memory: [] };
+const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [], memory: [], space: [] };
 
 const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
 
@@ -69,7 +73,7 @@ const LAYOUT_KEY = "cave:cockpit:layout:v2";
 type Layout = { main: string[]; rail: string[] };
 const DEFAULT_LAYOUT: Layout = {
   main: ["usage", "signals", "needs", "board", "today"],
-  rail: ["confidence", "agents", "load", "github", "agenda"],
+  rail: ["confidence", "agents", "load", "space", "github", "agenda"],
 };
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
@@ -176,6 +180,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     void getJson<{ items: InboxItem[] }>("/api/inbox?status=pending").then((r) => put("upcoming", r?.items ?? []));
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
     void getJson<{ entries: CovenMemoryEntry[] }>("/api/coven-memory").then((r) => put("memory", r?.entries ?? []));
+    void getJson<{ areas: SpaceUsageArea[] }>("/api/space-usage").then((r) => put("space", r?.areas ?? []));
     void Promise.all([
       getJson<{ items: GitHubItem[] }>("/api/github/activity"),
       getJson<{ items: GitHubItem[] }>("/api/github/assigned"),
@@ -431,6 +436,13 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
             )}
           </Panel>);
       }
+      case "space": {
+        const rows = spaceUsageRows(data.space);
+        return (
+          <Panel title="Space usage" icon="ph:database-bold" hint={rows.length ? formatBytes(rows.reduce((s, r) => s + r.bytes, 0)) : undefined}>
+            <SpaceUsagePanel rows={rows} loaded={ready.has("space")} />
+          </Panel>);
+      }
       case "github": return (
         <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined} href="/?mode=github">
           <GithubPanel items={data.github} loaded={ready.has("github")} />
@@ -662,29 +674,69 @@ function coverageSub(base: string, fetched: number, total: number, verb: "scored
 
 // ─── Familiar insights table (centerpiece) ────────────────────────────────────────
 
+/** Sortable column headers: click cycles default → desc → asc (numeric) or
+ *  default → asc → desc (name). The "default" order keeps the curated ranking
+ *  (confidence, then activity). */
+type InsightSort = { key: InsightSortKey; dir: SortDir } | null;
+
 function FamiliarInsightsTable({ rows, loaded }: { rows: FamiliarInsightRow[]; loaded: boolean }) {
-  const sorted = useMemo(
-    () => [...rows].sort((a, b) => {
-      // Scored familiars first (highest confidence), then by recent activity.
-      const ca = a.confidenceScore ?? -1, cb = b.confidenceScore ?? -1;
-      if (cb !== ca) return cb - ca;
-      return b.sessions7d - a.sessions7d;
-    }),
-    [rows],
+  const [sort, setSort] = useState<InsightSort>(null);
+  const [query, setQuery] = useState("");
+  const visible = useMemo(() => {
+    const filtered = filterInsightRows(rows, query);
+    return sort ? sortInsightRows(filtered, sort.key, sort.dir) : defaultInsightOrder(filtered);
+  }, [rows, sort, query]);
+
+  const cycleSort = (key: InsightSortKey, firstDir: SortDir) => {
+    setSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: firstDir };
+      const second: SortDir = firstDir === "desc" ? "asc" : "desc";
+      return prev.dir === firstDir ? { key, dir: second } : null; // third click restores curated order
+    });
+  };
+  const ariaSort = (key: InsightSortKey): "ascending" | "descending" | "none" =>
+    sort?.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
+  const sortHeader = (key: InsightSortKey, label: string, firstDir: SortDir) => (
+    <button type="button" className={`cockpit-sorthead${sort?.key === key ? " is-sorted" : ""}`} onClick={() => cycleSort(key, firstDir)}>
+      {label}
+      <Icon name={sort?.key === key ? (sort.dir === "asc" ? "ph:caret-up" : "ph:caret-down") : "ph:caret-up-down"} aria-hidden />
+    </button>
   );
+
   if (!loaded) return <PanelSkeleton rows={4} />;
   if (rows.length === 0) return <EmptyState icon="ph:users-three-bold">No familiars in your coven yet.</EmptyState>;
   return (
-    <div className="cockpit-fam" role="table" aria-label="Familiar insights">
-      <div className="cockpit-fam__head" role="row">
-        <span role="columnheader">Familiar</span>
-        <span role="columnheader">Confidence</span>
-        <span role="columnheader">Activity</span>
-        <span role="columnheader" className="cockpit-fam__trendcol">7-day sessions</span>
-        <span role="columnheader" className="cockpit-fam__contractcol">Contract</span>
-        <span role="columnheader" className="cockpit-fam__lastcol">Last active</span>
-      </div>
-      {sorted.map((r) => (
+    <>
+      {rows.length > 3 ? (
+        <div className="cockpit-fam__tools">
+          <label className="cockpit-fam__filter">
+            <Icon name="ph:magnifying-glass" aria-hidden />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter familiars…"
+              aria-label="Filter familiars by name, role, or health"
+            />
+          </label>
+          {query && visible.length !== rows.length ? (
+            <span className="cockpit-fam__matchcount" role="status">{visible.length}/{rows.length}</span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="cockpit-fam" role="table" aria-label="Familiar insights">
+        <div className="cockpit-fam__head" role="row">
+          <span role="columnheader" aria-sort={ariaSort("name")}>{sortHeader("name", "Familiar", "asc")}</span>
+          <span role="columnheader" aria-sort={ariaSort("confidence")}>{sortHeader("confidence", "Confidence", "desc")}</span>
+          <span role="columnheader" aria-sort={ariaSort("sessions")}>{sortHeader("sessions", "Activity", "desc")}</span>
+          <span role="columnheader" className="cockpit-fam__trendcol">7-day sessions</span>
+          <span role="columnheader" className="cockpit-fam__contractcol" aria-sort={ariaSort("contract")}>{sortHeader("contract", "Contract", "desc")}</span>
+          <span role="columnheader" className="cockpit-fam__lastcol" aria-sort={ariaSort("lastActive")}>{sortHeader("lastActive", "Last active", "desc")}</span>
+        </div>
+        {visible.length === 0 ? (
+          <p className="cockpit-muted cockpit-fam__nomatch">No familiars match “{query}”.</p>
+        ) : null}
+        {visible.map((r) => (
         <a key={r.id} className="cockpit-fam__row" role="row" href={`/dashboard/familiars/${encodeURIComponent(r.id)}/analytics`}>
           <span className="cockpit-fam__who" role="cell">
             <span className="cockpit-fam__avatar" style={{ background: r.color }}>
@@ -724,7 +776,8 @@ function FamiliarInsightsTable({ rows, loaded }: { rows: FamiliarInsightRow[]; l
           </span>
         </a>
       ))}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -776,6 +829,7 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
         data={segs.map(({ s, n }) => ({ label: STATUS_META[s].label, value: n, color: STATUS_META[s].color }))}
         size={132}
         thickness={18}
+        ariaLabel={`Board status: ${segs.map(({ s, n }) => `${STATUS_META[s].label} ${n}`).join(", ")}`}
       />
       <div className="cockpit-bar__legend">
         {segs.map(({ s, n }) => (
@@ -978,8 +1032,81 @@ function ConfidencePanel({ rows }: { rows: ConfidenceRow[] }) {
             </a>
           ))}
         </div>
-        <Heatmap rows={rows.map((r) => r.name)} cols={cols} cells={cells} colorFor={confidenceColor} height={Math.max(72, rows.length * 26)} />
+        <Heatmap
+          rows={rows.map((r) => r.name)}
+          cols={cols}
+          cells={cells}
+          colorFor={confidenceColor}
+          height={Math.max(72, rows.length * 26)}
+          ariaLabel={`Confidence factors by familiar: ${rows.map((r) => `${r.name} ${r.score}`).join(", ")}`}
+          cellTitle={(c) => `${c.row} · ${c.col}: ${Math.round(c.value * 100)}/100`}
+        />
       </div>
+    </div>
+  );
+}
+
+// ─── Space usage ─────────────────────────────────────────────────────────────────
+
+type SpaceSort = { key: SpaceSortKey; dir: SortDir };
+
+/** Local disk footprint per `~/.coven` area: sortable rows, share bars, and a
+ *  cleanup drill-through per area. Figures come from the bounded server scan. */
+function SpaceUsagePanel({ rows, loaded }: { rows: SpaceUsageRow[]; loaded: boolean }) {
+  const [sort, setSort] = useState<SpaceSort>({ key: "bytes", dir: "desc" });
+  const sorted = useMemo(() => sortSpaceRows(rows, sort.key, sort.dir), [rows, sort]);
+  if (!loaded) return <PanelSkeleton rows={3} />;
+  if (rows.length === 0) return <EmptyState icon="ph:database-bold">No local coven data found.</EmptyState>;
+
+  const cycle = (key: SpaceSortKey, firstDir: SortDir) =>
+    setSort((prev) => prev.key === key
+      ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: firstDir });
+  const ariaSort = (key: SpaceSortKey): "ascending" | "descending" | "none" =>
+    sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
+  const head = (key: SpaceSortKey, label: string, firstDir: SortDir) => (
+    <button type="button" className={`cockpit-sorthead${sort.key === key ? " is-sorted" : ""}`} onClick={() => cycle(key, firstDir)}>
+      {label}
+      <Icon name={sort.key === key ? (sort.dir === "asc" ? "ph:caret-up" : "ph:caret-down") : "ph:caret-up-down"} aria-hidden />
+    </button>
+  );
+
+  return (
+    <div className="cockpit-space" role="table" aria-label="Local space usage by area">
+      <div className="cockpit-space__head" role="row">
+        <span role="columnheader" aria-sort={ariaSort("label")}>{head("label", "Area", "asc")}</span>
+        <span role="columnheader" aria-sort={ariaSort("bytes")}>{head("bytes", "Size", "desc")}</span>
+        <span role="columnheader" className="cockpit-space__filescol" aria-sort={ariaSort("files")}>{head("files", "Files", "desc")}</span>
+        <span role="columnheader" className="cockpit-space__lastcol" aria-sort={ariaSort("lastModified")}>{head("lastModified", "Updated", "desc")}</span>
+      </div>
+      {sorted.map((r) => {
+        const inner = (
+          <>
+            <span className="cockpit-space__area" role="cell" title={r.relPath}>
+              <b>{r.label}</b>
+              <span className="cockpit-space__path">{r.relPath}</span>
+            </span>
+            <span className="cockpit-space__size" role="cell">
+              <b>{formatBytes(r.bytes)}{r.truncated ? "+" : ""}</b>
+              <span className="cockpit-space__bar" aria-hidden>
+                <i style={{ width: `${Math.max(2, r.sharePct)}%` }} />
+              </span>
+            </span>
+            <span className="cockpit-space__files cockpit-space__filescol" role="cell">{r.files}{r.truncated ? "+" : ""}</span>
+            <span className="cockpit-space__last cockpit-space__lastcol" role="cell">
+              {r.lastModifiedMs ? (relativeTime(new Date(r.lastModifiedMs).toISOString()) || "just now") : "—"}
+            </span>
+          </>
+        );
+        // Areas a surface owns drill into that surface; the rest are plain rows.
+        return r.href ? (
+          <a key={r.id} className="cockpit-space__row cockpit-space__row--link" role="row" href={r.href} title={r.actionLabel ?? undefined}>
+            {inner}
+          </a>
+        ) : (
+          <span key={r.id} className="cockpit-space__row" role="row">{inner}</span>
+        );
+      })}
     </div>
   );
 }

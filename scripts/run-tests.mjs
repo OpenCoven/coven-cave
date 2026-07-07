@@ -659,6 +659,7 @@ export const SUITES = {
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
+    "src/lib/server/space-usage.test.ts",
     "src/lib/server/theme-store.test.ts",
     "src/app/api/memory-coven-workspaces.test.ts",
     "src/app/api/memory-excerpt.test.ts",
@@ -777,6 +778,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/server/space-usage.test.ts",
   "src/lib/daily-narrative.test.ts",
   "src/lib/use-code-rail.test.ts",
   "src/lib/cave-familiar-images.test.ts",

@@ -149,6 +149,7 @@ const contracts: RouteContract[] = [
   { route: "/skills/directory/use", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/local", methods: ["GET", "DELETE"], kind: "json" },
   { route: "/skills", methods: ["GET"], kind: "json" },
+  { route: "/space-usage", methods: ["GET"], kind: "json" },
   { route: "/theme", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },

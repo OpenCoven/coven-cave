@@ -8,6 +8,8 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { SparkPoint } from "@/components/ui/sparkline";
 import type { TrendSeries } from "@/components/ui/charts/trend-chart";
+import type { FamiliarInsightRow } from "@/lib/coven-analytics";
+import type { SpaceUsageArea } from "@/lib/server/space-usage";
 
 const DAY_MS = 86_400_000;
 
@@ -185,4 +187,158 @@ export function familiarLoadSeries(
     .sort((a, b) => b.total - a.total)
     .slice(0, topN)
     .map(({ id, label, color, points }) => ({ id, label, color, points }));
+}
+
+// ─── Familiar insights table: sort + filter (pure, DOM-free) ─────────────────────
+
+export type InsightSortKey = "name" | "confidence" | "sessions" | "contract" | "lastActive";
+export type SortDir = "asc" | "desc";
+
+function contractRatio(r: FamiliarInsightRow): number {
+  return r.contractTotal > 0 ? r.contractPass / r.contractTotal : -1;
+}
+
+function lastActiveMs(r: FamiliarInsightRow): number {
+  if (!r.lastActiveAt) return -1;
+  const t = Date.parse(r.lastActiveAt);
+  return Number.isFinite(t) ? t : -1;
+}
+
+/** Default cockpit ordering: scored familiars first (highest confidence), then
+ *  by recent activity — what the table shows before any header is clicked. */
+export function defaultInsightOrder(rows: FamiliarInsightRow[]): FamiliarInsightRow[] {
+  return [...rows].sort((a, b) => {
+    const ca = a.confidenceScore ?? -1, cb = b.confidenceScore ?? -1;
+    if (cb !== ca) return cb - ca;
+    return b.sessions7d - a.sessions7d;
+  });
+}
+
+/** Stable sort by a column. Unscored/never rows always sink to the bottom in
+ *  either direction — "sort by confidence asc" should rank real scores, not
+ *  lead with a wall of dashes. */
+export function sortInsightRows(
+  rows: FamiliarInsightRow[],
+  key: InsightSortKey,
+  dir: SortDir,
+): FamiliarInsightRow[] {
+  const sign = dir === "asc" ? 1 : -1;
+  const val = (r: FamiliarInsightRow): number | string | null => {
+    switch (key) {
+      case "name": return r.name.toLocaleLowerCase();
+      case "confidence": return r.confidenceScore;
+      case "sessions": return r.sessions7d;
+      case "contract": {
+        const ratio = contractRatio(r);
+        return ratio < 0 ? null : ratio;
+      }
+      case "lastActive": {
+        const t = lastActiveMs(r);
+        return t < 0 ? null : t;
+      }
+    }
+  };
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const va = val(a.r), vb = val(b.r);
+      if (va === null && vb === null) return a.i - b.i;
+      if (va === null) return 1; // missing values sink regardless of direction
+      if (vb === null) return -1;
+      if (va < vb) return -1 * sign;
+      if (va > vb) return 1 * sign;
+      return a.i - b.i; // stable
+    })
+    .map((x) => x.r);
+}
+
+/** Case-insensitive substring filter over name / role / health label. */
+export function filterInsightRows(rows: FamiliarInsightRow[], query: string): FamiliarInsightRow[] {
+  const q = query.trim().toLocaleLowerCase();
+  if (!q) return rows;
+  return rows.filter((r) =>
+    r.name.toLocaleLowerCase().includes(q) ||
+    r.role.toLocaleLowerCase().includes(q) ||
+    (r.health ?? "").toLocaleLowerCase().includes(q),
+  );
+}
+
+// ─── Space usage (rows for the cockpit panel) ────────────────────────────────────
+
+export type SpaceUsageRow = {
+  id: string;
+  label: string;
+  relPath: string;
+  bytes: number;
+  files: number;
+  lastModifiedMs: number | null;
+  truncated: boolean;
+  /** 0–100 share of the total scanned bytes (for the inline bar). */
+  sharePct: number;
+  /** Where cleaning this area up happens, when a surface owns it. */
+  href: string | null;
+  actionLabel: string | null;
+};
+
+export type SpaceSortKey = "label" | "bytes" | "files" | "lastModified";
+
+/** Cleanup destinations per area — the surface where the data is managed. */
+const SPACE_ACTIONS: Record<string, { href: string; label: string }> = {
+  conversations: { href: "/?mode=agents", label: "Review sessions" },
+  workspaces: { href: "/?mode=agents", label: "Open familiars" },
+  memory: { href: "/?mode=agents", label: "Manage memory" },
+  knowledge: { href: "/?mode=agents", label: "Open vault" },
+  journal: { href: "/?mode=journal", label: "Open journal" },
+  flows: { href: "/?mode=flow", label: "Open flows" },
+  prompts: { href: "/?mode=marketplace", label: "Manage prompts" },
+  skills: { href: "/?mode=marketplace", label: "Manage skills" },
+};
+
+/** Turn scanned areas into display rows: drop missing/empty areas, compute the
+ *  share of the total, and attach each area's cleanup destination. */
+export function spaceUsageRows(areas: SpaceUsageArea[]): SpaceUsageRow[] {
+  const present = areas.filter((a) => a.exists && a.files > 0);
+  const total = present.reduce((sum, a) => sum + a.bytes, 0);
+  return present.map((a) => ({
+    id: a.id,
+    label: a.label,
+    relPath: a.relPath,
+    bytes: a.bytes,
+    files: a.files,
+    lastModifiedMs: a.lastModifiedMs,
+    truncated: a.truncated,
+    sharePct: total > 0 ? Math.round((a.bytes / total) * 100) : 0,
+    href: SPACE_ACTIONS[a.id]?.href ?? null,
+    actionLabel: SPACE_ACTIONS[a.id]?.label ?? null,
+  }));
+}
+
+/** Stable sort for the space-usage table (default: biggest first). */
+export function sortSpaceRows(rows: SpaceUsageRow[], key: SpaceSortKey, dir: SortDir): SpaceUsageRow[] {
+  const sign = dir === "asc" ? 1 : -1;
+  const val = (r: SpaceUsageRow): number | string =>
+    key === "label" ? r.label.toLocaleLowerCase()
+    : key === "bytes" ? r.bytes
+    : key === "files" ? r.files
+    : r.lastModifiedMs ?? -1;
+  return rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => {
+      const va = val(a.r), vb = val(b.r);
+      if (va < vb) return -1 * sign;
+      if (va > vb) return 1 * sign;
+      return a.i - b.i;
+    })
+    .map((x) => x.r);
+}
+
+/** Human byte size: 0 B, 512 B, 1.2 KB, 34 MB, 1.5 GB. One decimal under 10. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = bytes;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) { v /= 1024; u += 1; }
+  const text = u === 0 ? String(Math.round(v)) : v < 10 ? v.toFixed(1) : String(Math.round(v));
+  return `${text} ${units[u]}`;
 }

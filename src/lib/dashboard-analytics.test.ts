@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { sessionsPerDay, familiarMiniProfiles, familiarLoadSeries, dashboardSignals } from "./dashboard-analytics.ts";
+import { sessionsPerDay, familiarMiniProfiles, familiarLoadSeries, dashboardSignals, defaultInsightOrder, sortInsightRows, filterInsightRows, spaceUsageRows, sortSpaceRows, formatBytes } from "./dashboard-analytics.ts";
 
 const NOW = Date.parse("2026-06-29T12:00:00Z");
 const day = (offset) => new Date(NOW - offset * 86400_000).toISOString();
@@ -85,5 +85,92 @@ assert.equal(
   "/dashboard/familiars/f1/analytics",
   "trending-down signal opens that familiar's analytics",
 );
+
+// ── Insights table: sort + filter (pure) ─
+const row = (id, over = {}) => ({
+  id, name: id, role: "familiar", color: "#a", emoji: null, avatarUrl: null, active: false,
+  confidenceScore: null, confidenceLabel: null, health: null, sessions7d: 0, trend: [],
+  contractPass: 0, contractTotal: 0, lastActiveAt: null, ...over,
+});
+const rows = [
+  row("alpha", { confidenceScore: 60, sessions7d: 1, contractPass: 1, contractTotal: 2, lastActiveAt: day(3) }),
+  row("bravo", { confidenceScore: 90, sessions7d: 5, contractPass: 2, contractTotal: 2, lastActiveAt: day(0), health: "active" }),
+  row("charlie", { sessions7d: 9, lastActiveAt: day(1), role: "scout" }), // unscored, no contract
+];
+
+assert.deepEqual(
+  defaultInsightOrder(rows).map((r) => r.id),
+  ["bravo", "alpha", "charlie"],
+  "default curated order: confidence desc, then activity",
+);
+assert.deepEqual(
+  sortInsightRows(rows, "sessions", "desc").map((r) => r.id),
+  ["charlie", "bravo", "alpha"],
+  "sessions desc",
+);
+assert.deepEqual(
+  sortInsightRows(rows, "name", "asc").map((r) => r.id),
+  ["alpha", "bravo", "charlie"],
+  "name asc",
+);
+assert.deepEqual(
+  sortInsightRows(rows, "confidence", "asc").map((r) => r.id),
+  ["alpha", "bravo", "charlie"],
+  "confidence asc ranks real scores; unscored rows sink even ascending",
+);
+assert.deepEqual(
+  sortInsightRows(rows, "contract", "desc").map((r) => r.id),
+  ["bravo", "alpha", "charlie"],
+  "contract sorts by pass ratio; contract-less rows sink",
+);
+assert.deepEqual(
+  sortInsightRows(rows, "lastActive", "desc").map((r) => r.id),
+  ["bravo", "charlie", "alpha"],
+  "lastActive desc puts most recent first",
+);
+assert.deepEqual(filterInsightRows(rows, " BRA ").map((r) => r.id), ["bravo"], "filter matches names case/space-insensitively");
+assert.deepEqual(filterInsightRows(rows, "scout").map((r) => r.id), ["charlie"], "filter matches roles");
+assert.deepEqual(filterInsightRows(rows, "active").map((r) => r.id), ["bravo"], "filter matches health buckets");
+assert.equal(filterInsightRows(rows, "").length, 3, "empty query keeps everything");
+
+// ── Space usage rows: share, sort, cleanup destinations, formatting ─
+const area = (id, label, bytes, files, over = {}) => ({
+  id, label, relPath: `~/.coven/${id}`, exists: true, bytes, files, lastModifiedMs: NOW - bytes, truncated: false, ...over,
+});
+const spaceAreas = [
+  area("memory", "Familiar memory", 3000, 3),
+  area("conversations", "Chat transcripts", 6000, 10),
+  area("trash", "Trash", 1000, 1, { truncated: true }),
+  area("flows", "Flows", 0, 0),                        // empty → dropped
+  { ...area("journal", "Journal", 0, 0), exists: false }, // missing → dropped
+];
+const spaceRows = spaceUsageRows(spaceAreas);
+assert.deepEqual(spaceRows.map((r) => r.id).sort(), ["conversations", "memory", "trash"], "empty and missing areas are dropped");
+assert.equal(spaceRows.find((r) => r.id === "conversations").sharePct, 60, "share is pct of total scanned bytes");
+assert.equal(spaceRows.find((r) => r.id === "memory").href, "/?mode=agents", "memory row carries a cleanup destination");
+assert.equal(spaceRows.find((r) => r.id === "trash").href, null, "areas without an owning surface stay plain rows");
+assert.equal(spaceRows.find((r) => r.id === "trash").truncated, true, "truncation flag survives to the row");
+
+assert.deepEqual(
+  sortSpaceRows(spaceRows, "bytes", "desc").map((r) => r.id),
+  ["conversations", "memory", "trash"],
+  "space rows sort by size desc",
+);
+assert.deepEqual(
+  sortSpaceRows(spaceRows, "label", "asc").map((r) => r.id),
+  ["conversations", "memory", "trash"],
+  "space rows sort by label asc",
+);
+assert.deepEqual(
+  sortSpaceRows(spaceRows, "files", "asc").map((r) => r.id),
+  ["trash", "memory", "conversations"],
+  "space rows sort by file count asc",
+);
+
+assert.equal(formatBytes(0), "0 B");
+assert.equal(formatBytes(512), "512 B");
+assert.equal(formatBytes(2048), "2.0 KB");
+assert.equal(formatBytes(1024 * 1024 * 34), "34 MB");
+assert.equal(formatBytes(1024 ** 3 * 1.5), "1.5 GB");
 
 console.log("dashboard-analytics.test.ts passed");
