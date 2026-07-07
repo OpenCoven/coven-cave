@@ -94,6 +94,40 @@ The bridge discovers bead IDs from PR title, branch name, body, and labels such 
 
 The merge gate is intentionally conservative. A familiar may prepare a PR for merge, but merge authority still follows repository policy and Val's explicit instructions. For guarded branches, do not merge because Beads says ready; Beads only records that the GitHub state appears ready.
 
+## Morning and Evening Triage Patrol
+
+The patrol is the twice-daily sweep that keeps the PR lanes and the Beads
+queue honest without anyone hand-copying GitHub state. Run it at the start
+and end of every working session (or schedule it — a Coven cron or reminder
+invoking the package script works):
+
+```bash
+pnpm beads:prs:patrol                       # report-only; window picked by local clock
+pnpm beads:prs:patrol -- --window evening   # explicit window
+pnpm beads:prs:patrol:apply                 # also mirror every linked PR's state into its beads
+```
+
+The two windows order the same lanes for different intents:
+
+- **Morning** leads with `Fix first` (failing checks, requested changes),
+  then reviews, then the landing queue — unblock the day before adding to it.
+- **Evening** leads with `Ready to land` — land or hand off what's finished
+  before close, then clear blockers so tomorrow's morning patrol starts clean.
+
+Every patrol also flags two gaps regardless of window:
+
+- **Unlinked PRs** mention no bead id — they are invisible to the Beads
+  queue. Link a bead (title, branch name, body, or a `bead:<id>` label) or
+  consciously decide the PR doesn't need one.
+- **Stale PRs** (default: no update in 24h, `--stale-hours` to tune) are
+  drifting — rebase, nudge review, or close them.
+
+`--apply` is the patrol-sized version of the bridge's per-PR apply: it
+mirrors every linked PR's lane, check, review, and merge state into its
+beads via `--external-ref` and an appended state note. The patrol never
+merges anything — `ready-to-merge` is a queue to work through the merge
+gate above, not authority to merge.
+
 ## Cave Adapter
 
 Cave exposes a local `/api/beads` adapter for UI surfaces. It shells out to `bd` through argv arrays and reads JSON from `bd ready --json`, `bd show <id> --json`, and mutation commands. Mutations stay local-only and must use bounded JSON bodies.

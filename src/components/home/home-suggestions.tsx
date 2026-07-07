@@ -55,18 +55,23 @@ export function HomeSuggestions({ projectName, onPick }: Props) {
 
   return (
     <div className="home-suggestions" role="group" aria-label="Suggested prompts">
-      {suggestions.map((s) => (
-        <button
-          key={s.id}
-          type="button"
-          className="home-suggestion-pill focus-ring"
-          onClick={() => onPick(s.prompt)}
-          title={s.prompt}
-        >
-          <Icon name="ph:sparkle" width={11} aria-hidden />
-          <span className="home-suggestion-label">{s.prompt}</span>
-        </button>
-      ))}
+      {suggestions.map((s) => {
+        // "task:" pills resume real board work; starters are fresh prompts.
+        // The icon encodes the difference so the row scans at a glance.
+        const isTask = s.id.startsWith("task:");
+        return (
+          <button
+            key={s.id}
+            type="button"
+            className={`home-suggestion-pill focus-ring${isTask ? " home-suggestion-pill--task" : ""}`}
+            onClick={() => onPick(s.prompt)}
+            title={s.prompt}
+          >
+            <Icon name={isTask ? "ph:kanban" : "ph:sparkle"} width={11} aria-hidden />
+            <span className="home-suggestion-label">{s.prompt}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

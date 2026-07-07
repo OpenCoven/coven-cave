@@ -4523,14 +4523,14 @@ details[open] > .cave-tool-summary::before {
 }
 
 /* Fullscreen fills its CONTAINING BLOCK via inset alone — no width/height.
-   .cave-mode-fade retains a transform after its entrance animation
-   (animation-fill-mode: both), so every mode wrapper is the containing block
-   for fixed descendants: the rail's origin sits AFTER the shell's icon rail.
-   With width:100vw stacked on that offset, the far-right diffs pane hung past
-   the window edge (clipped stat chips / cut "Diff" header). inset:0 sizes to
-   the containing block exactly — today the mode area (shell nav stays
-   reachable), and still correct if the retained transform ever goes away
-   (falls back to true viewport). Root cause tracked as bead cave-cco. */
+   Historically .cave-mode-fade retained a transform (fill-mode: both) and
+   every mode wrapper was the containing block for fixed descendants —
+   width:100vw stacked on the rail offset hung the diffs pane past the
+   window edge (clipped stat chips / cut "Diff" header). The root cause is
+   fixed (cave-cco, fill-mode: backwards), so this now sizes to the true
+   viewport; inset:0 was chosen precisely to stay correct across that
+   transition. Fullscreen covering the shell's icon rail matches the
+   portaled .chat-artifact--fullscreen precedent. */
 .workspace-rail--fullscreen {
   position: fixed;
   inset: 0;
@@ -5064,6 +5064,33 @@ details[open] > .cave-tool-summary::before {
 .workspace-rail__preview-editor {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* Reading a highlighted code file: the pane, not the chat transcript, owns the
+   height. Lift SyntaxBlock's chat clamp (max-height: min(60vh, 520px)) so the
+   block shrink-fits the body and scrolls internally — short files keep their
+   natural height, long files fill the pane with the sticky header reachable.
+   Mirrors the --edit editor fill above. */
+.workspace-rail__preview-body--code {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workspace-rail__preview-body--code .cave-syntax-block {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.workspace-rail__preview-body--code .cave-code-wrap {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+/* With the clamp lifted there is nothing to expand — the footer would be a
+   no-op button pinned over the last visible line. */
+.workspace-rail__preview-body--code .cave-code-expand {
+  display: none;
 }
 
 .workspace-rail__preview-skeleton {

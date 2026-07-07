@@ -7,6 +7,7 @@ import {
   isSshRuntime,
   normalizeFamiliarRuntime,
 } from "@/lib/familiar-runtime";
+import type { UserProfile } from "@/lib/user-profile-shared";
 
 const CONFIG_PATH = path.join(homedir(), ".coven", "cave-config.json");
 const STATE_PATH = path.join(homedir(), ".coven", "cave-state.json");
@@ -168,6 +169,8 @@ export type CaveConfig = {
   multiHost: CaveMultiHostConfig;
   /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
   remoteHosts: CaveRemoteHost[];
+  /** Operator profile (Settings → Profile). Image lives in ~/.coven/user-avatar.*, not here. */
+  profile?: UserProfile;
 };
 
 export type CaveState = {
@@ -208,6 +211,9 @@ export async function loadConfig(): Promise<CaveConfig> {
       },
       multiHost: normalizeMultiHostConfig(parsed.multiHost),
       remoteHosts: normalizeRemoteHosts(parsed.remoteHosts),
+      // Must be listed — this explicit shape drops unknown keys, and a dropped
+      // profile would be erased by the next saveConfig round-trip.
+      profile: parsed.profile,
     };
   } catch {
     return defaultConfig();
@@ -384,6 +390,8 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
       patch.remoteHosts !== undefined ? normalizeRemoteHosts(patch.remoteHosts) : current.remoteHosts,
     // Replace roles if provided
     roles: patch.roles !== undefined ? patch.roles : current.roles,
+    // Replace-if-provided ("in" so `{ profile: undefined }` clears the key).
+    profile: "profile" in patch ? patch.profile : current.profile,
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);

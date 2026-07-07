@@ -35,8 +35,33 @@ assert.match(
 
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{`What should we build in \$\{selectedProject\?\.name \?\? "Coven Cave"\}\?`\}/,
-  "HomeComposer headline should reflect the selected project name",
+  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "Coven Cave"\}/,
+  "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
+);
+
+// ── Hero presence eyebrow ────────────────────────────────────────────────────
+// The greeting samples the client clock AFTER mount (SSR markup must stay
+// deterministic), fades in via .is-ready, and derives from the pure
+// greetingForHour helper so the boundaries unit-test exactly.
+assert.match(
+  source,
+  /import \{ greetingForHour \} from "@\/lib\/home-greeting"/,
+  "the hero greeting derives from the pure home-greeting helper",
+);
+assert.match(
+  source,
+  /const \[greeting, setGreeting\] = useState<string \| null>\(null\);[\s\S]*?useEffect\(\(\) => \{\s*setGreeting\(greetingForHour\(new Date\(\)\.getHours\(\)\)\);\s*\}, \[\]\)/,
+  "the greeting is sampled after mount so SSR/client markup can't drift",
+);
+assert.match(
+  source,
+  /home-composer-eyebrow\$\{greeting \? " is-ready" : ""\}/,
+  "the eyebrow fades in via .is-ready once the client greeting lands",
+);
+assert.match(
+  source,
+  /className="home-halo" aria-hidden/,
+  "the hearth-glow halo renders behind the composer card and is hidden from AT",
 );
 
 // Project selector lives in the composer toolbar so the user can choose which
@@ -337,8 +362,8 @@ for (const [name, src] of [
   // the slash term on its Escape-dismiss flag: `(!slashDismissed && …)`.)
   assert.match(
     src,
-    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,40}slashSuggestions\.length > 0/,
-    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill)`,
+    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,80}slashSuggestions\.length > 0/,
+    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill, /prompt)`,
   );
 }
 
@@ -349,8 +374,8 @@ for (const [name, src] of [
 // ARIA.
 assert.match(
   source,
-  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| \(!slashDismissed && slashSuggestions\.length > 0\);/,
-  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill)",
+  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\|\s*\(!slashDismissed && \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\)\);/,
+  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill, /prompt, Skills group)",
 );
 
 // ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
@@ -361,7 +386,12 @@ assert.match(
   /<HomeSlashMenu[\s\S]*?ariaLabel="Skills"[\s\S]*?preview=\{<SkillDetailPreview/,
   "HomeComposer renders a Skills picker listbox (via HomeSlashMenu) with the skill detail preview",
 );
-assert.match(source, /buildSkillPrompt\(skill\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt");
+assert.match(source, /buildSkillPrompt\(skill, args\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt (typed arguments ride along)");
+assert.match(
+  source,
+  /skill\.argumentHint && !args && text\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/,
+  "A hinted skill autofills /skill <id> for argument editing instead of starting a chat",
+);
 
 // ── Destination pills are an accessible single-select radiogroup ─────────────
 assert.match(

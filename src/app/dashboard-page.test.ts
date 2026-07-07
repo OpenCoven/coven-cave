@@ -120,4 +120,38 @@ assert.match(inbox, /\{allSelected \? "Clear" : "Select all"\}/, "the bulk bar o
 assert.match(inbox, /onClick=\{\(\) => void bulkAct\("done"\)\}/, "bulk Done is wired");
 assert.match(inbox, /void bulkAct\("snooze", minutes\)/, "bulk Snooze is wired through the menu");
 
+// ── cave-89b close-out: sortable/filterable tables + space usage + hoverable charts ──
+
+// The centerpiece table is sortable (accessible headers) and filterable.
+assert.match(cockpit, /sortInsightRows/, "insights table sorts through the pure helper");
+assert.match(cockpit, /filterInsightRows/, "insights table filters through the pure helper");
+assert.match(cockpit, /defaultInsightOrder/, "unsorted table keeps the curated ranking");
+assert.match(cockpit, /aria-sort=\{ariaSort\("confidence"\)\}/, "sortable headers expose aria-sort");
+assert.match(cockpit, /cockpit-sorthead/, "column headers are real buttons, not dead labels");
+assert.match(cockpit, /Filter familiars by name, role, or health/, "the filter input is labelled for AT");
+
+// Space usage: bounded local scan → sortable rows with cleanup drill-throughs.
+assert.match(cockpit, /\/api\/space-usage/, "cockpit pulls the bounded space-usage scan");
+assert.match(cockpit, /case "space"/, "a Space usage panel is wired into the layout switch");
+assert.match(cockpit, /SpaceUsagePanel/, "renders the space usage panel");
+assert.match(cockpit, /sortSpaceRows/, "space rows sort through the pure helper");
+assert.match(cockpit, /spaceUsageRows/, "space rows derive share + cleanup destinations");
+assert.match(cockpit, /formatBytes/, "sizes render as human-readable bytes");
+
+const spaceRouteUrl = new URL("./api/space-usage/route.ts", import.meta.url);
+assert.equal(existsSync(spaceRouteUrl), true, "space-usage API route exists");
+const spaceRoute = readFileSync(spaceRouteUrl, "utf8");
+assert.match(spaceRoute, /collectSpaceUsage/, "route delegates to the bounded server scanner");
+assert.match(spaceRoute, /force-dynamic/, "space-usage snapshot is never statically cached");
+
+// Diagrams expose hover/focus details and accessible summaries.
+const donut = readFileSync(new URL("../components/ui/charts/donut-chart.tsx", import.meta.url), "utf8");
+assert.match(donut, /<title>/, "donut slices carry native hover titles");
+assert.match(donut, /role: "img"/, "donut can expose an accessible summary");
+const heatmap = readFileSync(new URL("../components/ui/charts/heatmap.tsx", import.meta.url), "utf8");
+assert.match(heatmap, /<title>/, "heatmap cells carry native hover titles");
+assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary");
+assert.match(cockpit, /ariaLabel=\{`Board status:/, "board donut passes a data summary to AT");
+assert.match(cockpit, /ariaLabel=\{`Confidence factors by familiar:/, "confidence heatmap passes a data summary to AT");
+
 console.log("dashboard-page.test.ts: ok");

@@ -708,3 +708,69 @@ a.cockpit-signal--link:hover { background: var(--bg-hover); }
 .cockpit-usage__spark { height: 48px; }
 .cockpit-usage__legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .cockpit-usage__legend li { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-secondary); }
+
+/* ── Sortable column headers (insights + space tables) ── */
+.cockpit-sorthead {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 0; margin: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+  border-radius: 6px;
+}
+.cockpit-sorthead svg { width: 11px; height: 11px; opacity: 0.55; }
+.cockpit-sorthead:hover { color: var(--text-primary); }
+.cockpit-sorthead:hover svg { opacity: 1; }
+.cockpit-sorthead.is-sorted { color: var(--text-primary); }
+.cockpit-sorthead.is-sorted svg { opacity: 1; color: var(--accent-presence); }
+
+/* ── Insights table filter bar ── */
+.cockpit-fam__tools { display: flex; align-items: center; gap: 10px; padding: 0 10px 10px; }
+.cockpit-fam__filter {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 1 240px; min-width: 140px;
+  padding: 5px 10px; border-radius: 9px;
+  border: 1px solid var(--border-hairline); background: var(--bg-sunken, transparent);
+  color: var(--text-muted);
+}
+.cockpit-fam__filter:focus-within { border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline)); }
+.cockpit-fam__filter svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.cockpit-fam__filter input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font-size: 12px; color: var(--text-primary);
+}
+.cockpit-fam__filter input::placeholder { color: var(--text-muted); }
+.cockpit-fam__matchcount { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cockpit-fam__nomatch { padding: 12px 10px; }
+
+/* ── Space usage table ── */
+.cockpit-space { display: flex; flex-direction: column; }
+.cockpit-space__head,
+.cockpit-space__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(96px, 1.2fr) minmax(48px, 0.6fr) minmax(64px, 0.8fr);
+  align-items: center; gap: 10px;
+}
+.cockpit-space__head {
+  padding: 2px 8px 7px; border-bottom: 1px solid var(--border-hairline);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted);
+}
+.cockpit-space__row {
+  padding: 8px; border-radius: 9px; text-decoration: none; color: inherit;
+  transition: background .12s;
+}
+.cockpit-space__row--link:hover { background: var(--bg-hover); }
+.cockpit-space__row + .cockpit-space__row { border-top: 1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent); }
+.cockpit-space__area { display: flex; flex-direction: column; min-width: 0; }
+.cockpit-space__area b { font-size: 12.5px; font-weight: 640; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-space__path { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-space__size { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cockpit-space__size b { font-size: 12px; font-weight: 680; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.cockpit-space__bar { display: block; height: 4px; border-radius: 2px; background: color-mix(in oklch, var(--border-hairline) 55%, transparent); overflow: hidden; }
+.cockpit-space__bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent-presence); }
+.cockpit-space__files { font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.cockpit-space__last { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 620px) {
+  .cockpit-space__head, .cockpit-space__row {
+    grid-template-columns: minmax(0, 1.6fr) minmax(88px, 1.1fr);
+  }
+  .cockpit-space__filescol, .cockpit-space__lastcol { display: none; }
+}

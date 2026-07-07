@@ -3401,8 +3401,16 @@ textarea.required-inputs-control {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+/* fill-mode MUST stay `backwards` (cave-cco): `both` retained the final
+   keyframe's transform forever, and any transform — even identity — makes
+   this wrapper the containing block for every position:fixed descendant.
+   Fixed overlays inside surfaces then resolved against the mode area
+   instead of the viewport, which forced portal-to-body workarounds (#537,
+   #1984, the github-view card, cave-nv3). During the 120ms entrance the
+   wrapper is still a containing block; after it, fixed descendants get the
+   true viewport. */
 .cave-mode-fade {
-  animation: cave-mode-in 120ms ease-out both;
+  animation: cave-mode-in 120ms ease-out backwards;
 }
 
 /* Left nav collapsed strip -- mirrors the agent tab on the right */

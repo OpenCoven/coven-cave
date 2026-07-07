@@ -46,6 +46,12 @@ assert.match(tab, /has access to every project/i, "explains the all-access famil
 // Everything is filtered to THIS familiar.
 assert.match(tab, /p\.targetFamiliarId === familiar\.id/, "requests are scoped to this familiar");
 assert.match(tab, /e\.familiarId === familiar\.id/, "audit is scoped to this familiar");
+assert.match(tab, /useUserProfile\(\)/, "grant source labels subscribe to profile hydration and renames");
+assert.match(
+  tab,
+  /grantSourceMeta\(meta\.source, userDisplayName\(profileSnapshot\?\.profile\)\)/,
+  "human grant source labels use the current operator profile display name",
+);
 
 // ── API still exposes the supreme familiar + a bounded recent audit window ───
 assert.match(route, /supremeFamiliarId: config\.supremeFamiliarId/, "the grants GET returns the supreme familiar id");

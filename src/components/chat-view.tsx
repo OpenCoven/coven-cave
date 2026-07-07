@@ -79,6 +79,7 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } fro
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
+import { readUserProfileSnapshot, useUserProfile, userDisplayName } from "@/lib/user-profile";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
   chatUsagePlanTooltip,
@@ -3826,7 +3827,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // only the visible prose (not hidden reasoning); the draft is never touched.
   function replyToTurn(turn: Turn) {
     const author =
-      turn.role === "assistant" ? familiar.display_name : turn.role === "system" ? "System" : "You";
+      turn.role === "assistant"
+        ? familiar.display_name
+        : turn.role === "system"
+          ? "System"
+          // Read at call time: this closure reaches rows through a memo
+          // comparator that ignores callback identity, so a captured hook
+          // value could go stale (chat-view memo notes below).
+          : userDisplayName(readUserProfileSnapshot()?.profile);
     const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
     const snippet = buildReplySnippet(source);
     if (!snippet) return;
@@ -5562,6 +5570,8 @@ function TurnRowImpl({
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
 }) {
+  const profileSnapshot = useUserProfile();
+  const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
   // Tool activity renders inline while a turn streams (watching tools run IS the
   // live feedback). Once the turn settles, the prose is shown uninterrupted and
   // every tool call is collected into one designated, collapsed "Tool activity"
@@ -5621,7 +5631,7 @@ function TurnRowImpl({
           )}
           <div className="cave-linear-turn-right">
             <div className="cave-linear-turn-meta cave-linear-turn-meta--identity">
-              <span className="cave-linear-turn-name">{turn.role === "user" ? "You" : "System"}</span>
+              <span className="cave-linear-turn-name">{turn.role === "user" ? operatorDisplayName : "System"}</span>
               {turn.role === "user" ? (
                 <span className="cave-linear-turn-badge cave-linear-turn-badge--op">OP</span>
               ) : null}

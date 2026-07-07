@@ -60,6 +60,49 @@
   margin-bottom: 18px;
 }
 
+/* Mono presence eyebrow — the cave greets you before asking for intent. It
+   samples the client clock after mount, so it fades in via .is-ready (the
+   reserved min-height keeps the headline from shifting). */
+.home-composer-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 12px;
+  min-height: 15px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 400ms var(--ease-standard);
+}
+
+.home-composer-eyebrow.is-ready {
+  opacity: 1;
+}
+
+/* Presence dot — the brand accent means "something is alive here". */
+.home-composer-eyebrow-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  box-shadow: 0 0 8px color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-composer-eyebrow-dot {
+    animation: home-dot-pulse 4.5s var(--ease-standard) infinite;
+  }
+}
+
+@keyframes home-dot-pulse {
+  0%, 100% { box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 50%, transparent); }
+  50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
+}
+
 .home-composer-headline {
   font-family: var(--font-fredoka, "Fredoka", system-ui, sans-serif);
   font-weight: 500;
@@ -68,6 +111,11 @@
   color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
   letter-spacing: -0.02em;
   margin: 0 0 6px;
+}
+
+/* The active project name carries the presence tint. */
+.home-composer-headline-project {
+  color: color-mix(in oklch, var(--accent-presence) 78%, var(--text-primary));
 }
 
 .home-composer-sub {
@@ -85,6 +133,48 @@
   max-width: min(1200px, 100%);
   margin-inline: auto;
   container-type: inline-size;
+}
+
+/* ── Hearth glow — the page's signature ──────────────────────────────────────
+ *   A soft lavender halo behind the composer: the accent-is-presence rule made
+ *   ambient. It breathes slowly, brightens while the composer holds focus, and
+ *   holds still under prefers-reduced-motion. Kept inside the page padding so
+ *   it never trips horizontal overflow on the scrollable root. */
+.home-halo {
+  position: absolute;
+  inset: -110px -20px -70px;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    46% 68% at 50% 44%,
+    color-mix(in oklch, var(--accent-presence) 22%, transparent),
+    transparent 72%
+  );
+  opacity: 0.75;
+  transition: opacity 600ms var(--ease-standard);
+}
+
+.home-composer-card-wrap:focus-within .home-halo {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-halo {
+    animation: home-halo-breathe 9s var(--ease-standard) infinite alternate;
+  }
+}
+
+@keyframes home-halo-breathe {
+  from { transform: scale(0.97); }
+  to { transform: scale(1.04); }
+}
+
+/* Light mode: the halo tints rather than glows — damp it. */
+[data-mode="light"] .home-halo {
+  opacity: 0.5;
+}
+[data-mode="light"] .home-composer-card-wrap:focus-within .home-halo {
+  opacity: 0.75;
 }
 
 /* ── Composer card ─────────────────────────────────────────────────────────
@@ -786,12 +876,36 @@
   font-size: 12px;
   line-height: 1.3;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease,
+    border-color 120ms ease, transform 120ms var(--ease-standard);
+}
+
+.home-suggestion-pill svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: color 120ms ease;
+}
+
+/* Task-continuation pills point back at real board work — their icon carries
+   the presence tint so resumable work reads differently from fresh starters. */
+.home-suggestion-pill--task svg {
+  color: var(--accent-presence);
 }
 
 .home-suggestion-pill:hover {
-  background: var(--bg-raised);
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
   color: var(--text-primary);
+}
+
+.home-suggestion-pill:hover svg {
+  color: var(--accent-presence);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-suggestion-pill:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .home-suggestion-label {
@@ -811,10 +925,10 @@
 .home-columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
-  gap: 20px;
+  gap: 24px;
   width: 100%;
   max-width: 860px;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 @media (max-width: 720px) {
@@ -850,8 +964,12 @@
 
 .home-col__empty {
   margin: 0;
+  padding: 14px 16px;
   font-size: 12px;
   color: var(--text-muted);
+  text-align: center;
+  border: 1px dashed var(--border-hairline);
+  border-radius: var(--radius-card);
 }
 
 .home-col-card {
@@ -859,9 +977,9 @@
   align-items: center;
   gap: 9px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -870,10 +988,46 @@
 
 .home-col-card:hover {
   background: var(--bg-raised);
+  border-color: var(--border-strong);
 }
 
+/* The newest session is the resume card: presence-tinted, with a visible
+   Resume affordance (no hover-only reveal — it must read on touch too). */
 .home-col-card--primary {
+  background: color-mix(in oklch, var(--accent-presence) 7%, transparent);
   border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+}
+
+.home-col-card--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
+}
+
+.home-col-card__go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-presence);
+  white-space: nowrap;
+}
+
+.home-col-card__go svg {
+  transition: transform 120ms var(--ease-standard);
+}
+
+.home-col-card--primary:hover .home-col-card__go svg {
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-col-card--primary:hover .home-col-card__go svg {
+    transform: none;
+  }
 }
 
 .home-col-card__icon {
@@ -897,6 +1051,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -914,4 +1069,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Page-load choreography ───────────────────────────────────────────────────
+ *   One orchestrated entrance: hero, composer, pills, columns rise in sequence
+ *   (backwards fill keeps late rows invisible until their turn). Collapsed
+ *   entirely under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .home-composer-hero,
+  .home-suggestions,
+  .home-columns {
+    animation: home-rise 460ms var(--ease-decelerate) backwards;
+  }
+  .home-composer-card-wrap {
+    animation: home-rise 460ms var(--ease-decelerate) 60ms backwards;
+  }
+  .home-suggestions { animation-delay: 140ms; }
+  .home-columns { animation-delay: 220ms; }
+}
+
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 }

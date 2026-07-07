@@ -119,3 +119,23 @@ assert.doesNotMatch(salemBlock, /rgba\(124,\s*77,\s*255/, "salem surfaces should
 assert.doesNotMatch(salemBlock, /#(?:d1c4e9|e8e0f0|c9a7ff|d26bff|a855f7|a89ac0)\b/i, "salem surfaces should not hardcode old purple hex colors");
 
 console.log("globals.css.test.ts (salem tokens) OK");
+
+// The mode-transition wrapper must never RETAIN a transform after its
+// entrance animation: fill-mode `both` kept the final keyframe's transform
+// (even identity), turning every .cave-mode-fade into the containing block
+// for position:fixed descendants — fixed overlays inside surfaces resolved
+// against the mode area instead of the viewport and forced portal-to-body
+// workarounds (#537, #1984, github-view card, cave-nv3). Bead cave-cco.
+const modeFadeRule = css.match(/\.cave-mode-fade\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+assert.match(
+  modeFadeRule,
+  /animation:\s*cave-mode-in\s+120ms\s+ease-out\s+backwards/,
+  ".cave-mode-fade must use fill-mode backwards (nothing retained after the entrance)",
+);
+assert.doesNotMatch(
+  modeFadeRule,
+  /\bboth\b|\bforwards\b/,
+  ".cave-mode-fade must not retain end-state animation styles (containing-block trap, cave-cco)",
+);
+
+console.log("globals.css.test.ts (mode-fade containing block) OK");

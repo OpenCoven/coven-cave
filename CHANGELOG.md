@@ -7,6 +7,29 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.144] - 2026-07-06
+
+> ✨ **A home that feels like yours** — the cold-start surface gets a world-class visual pass (presence eyebrow, breathing hearth glow, resume affordance), and a new **server-side operator profile** lets you set your name, pronouns, bio, timezone, links, and avatar once — surfaced across chat and handed to your familiars as startup context.
+
+Feature release on top of v0.0.143. Ships the redesigned home surface and the operator profile system.
+
+### Features
+- **Home world-class visual pass** (#2540). A distinctive cold-start surface: a time-aware presence eyebrow with a glowing accent dot, an accent-tinted project name in the headline, a signature breathing "hearth glow" behind the composer that brightens on focus, informational pills for board continuations, an always-visible `Resume →` affordance on the newest Continue card, and staggered entrance choreography — all collapsed under `prefers-reduced-motion` and honoring every pinned composer/centering/column contract.
+- **Server-side operator profile** (#2541). Set your name, pronouns, bio, timezone, links, and avatar from a new **Settings → Profile** section. Text fields persist under a `profile` key in `cave-config.json`; the avatar is a single atomic file (SVG rejected as a stored-XSS vector). `GET/PATCH /api/profile` + `GET/POST/DELETE /api/profile/avatar` (field validation, 2 MB cap, ETag/304). The hard-coded "You" across chat, group chat, reply quotes, and grant labels now routes through your display name, and new sessions receive an `operator-profile` startup-context block — zero overhead when unset.
+
+## [0.0.143] - 2026-07-06
+
+> 🧹 **A tighter, more honest cockpit** — the dashboard's Familiar Insights table becomes sortable and filterable, a new space-usage panel gives you an honest read on where `~/.coven` disk is going (with cleanup drill-throughs), and the quick-chat box gets a hardening pass. Behind the scenes, a twice-daily PR triage patrol lands to keep the review queue from rotting.
+
+Patch release on top of v0.0.142. Ships dashboard analytics polish, local space-usage analytics, a quick-chat hardening pass, and the morning/evening PR triage patrol.
+
+### Features
+- **Sortable + filterable dashboard insights, plus local space-usage analytics** (#2538). The Familiar Insights table gets real `aria-sort` column headers (click cycles sorted ↔ reversed ↔ curated default) and a live-count filter; a new space-usage panel does a bounded, symlink-safe scan of `~/.coven` and reports honest lower bounds (`1.3 GB+` when capped) with per-area cleanup drill-throughs. Donut/heatmap diagrams gain hover detail and accessible `role=img` summaries.
+- **Morning/evening PR triage patrol** (#2536). `pnpm beads:prs:patrol` sweeps every open PR into a window-ordered digest — mornings lead with *Fix first*, evenings with *Ready to land* — and flags stale + unlinked PRs. `--apply` mirrors linked PR state into beads; the patrol itself never merges.
+
+### Fixes
+- **Quick-chat hardening** (#2537). Hardened the quick-chat box and de-duplicated the overlay/tray internals.
+
 ## [0.0.142] - 2026-07-06
 
 > 📊 **Analytics you can actually steer by** — familiar analytics and growth pages get pulse trends, drill-through KPIs, and a triage roster, while the marketplace gets an ultraminimal header and a full functionality pass. On iPad, **The Diary** arrives: an experimental Apple Pencil handwriting surface.

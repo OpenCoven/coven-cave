@@ -28,6 +28,7 @@ import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
+import { ProfileSection } from "./settings-profile";
 import { SettingsOverview } from "./settings-overview";
 import {
   SECTIONS,
@@ -337,6 +338,7 @@ export function SettingsShell() {
           className="settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8"
           style={{ paddingBottom: "calc(1.5rem + var(--sai-bottom))" }}
         >
+          {section === "profile" && <ProfileSection />}
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && (
