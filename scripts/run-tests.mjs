@@ -504,6 +504,8 @@ export const SUITES = {
     "src/components/md-editor/md-editor.test.ts",
     "src/components/grimoire-view.test.ts",
     "src/lib/grimoire-link.test.ts",
+    "src/lib/wiki-link-parser.test.ts",
+    "src/lib/wiki-link-resolve.test.ts",
     "src/lib/server/coven-memory-path.test.ts",
     "src/lib/recent-colors.test.ts",
 	    "src/components/ui/color-picker.test.ts",
@@ -798,6 +800,8 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/wiki-link-parser.test.ts",
+  "src/lib/wiki-link-resolve.test.ts",
   "src/lib/server/space-usage.test.ts",
   "src/lib/server/memory-file-inventory.test.ts",
   "src/lib/daily-narrative.test.ts",
