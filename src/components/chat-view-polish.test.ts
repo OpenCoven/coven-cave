@@ -195,8 +195,15 @@ assert.match(
 
 assert.match(
   source,
-  /<header className="cave-chat-linear-header"/,
-  "Chat header should use the dense linear session header",
+  /<header className="cave-chat-linear-header reveal-scope"/,
+  "Chat header uses the linear session header and is the reveal scope for its hover-quiet provenance (cave-xsq.3)",
+);
+// Slim header (cave-xsq.3): the settled provenance quiets to a reveal-on-hover
+// cluster so a resting header reads as just the conversation title.
+assert.match(
+  source,
+  /cave-chat-meta-line__provenance\$\{state === "complete" \? " reveal-on-hover" : ""\}/,
+  "the static meta provenance reveals on hover once the turn has settled (visible inline while streaming)",
 );
 
 assert.match(

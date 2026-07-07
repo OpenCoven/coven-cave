@@ -2584,6 +2584,17 @@ details[open] > .cave-tool-summary::before {
   letter-spacing: 0.01em;
 }
 
+/* Slim header (cave-xsq.3): the settled turn's static provenance
+   (model · runtime · dir · duration · usage · meters) rides inside __meta as a
+   reveal-on-hover cluster (header is the reveal-scope), so a resting header
+   reads as just the conversation title. Inline so it flows + truncates with the
+   meta line; the reveal-on-hover utility owns the opacity + touch/keyboard
+   parity. Only added on the complete state (see MetaLine), so live streaming
+   meta stays visible. */
+.cave-chat-meta-line__provenance {
+  display: inline;
+}
+
 /* CHAT-D3-06: ticking elapsed inside the streaming meta line. Tabular digits
    keep the line from jittering as the counter advances each second. */
 .cave-chat-meta-line__elapsed {

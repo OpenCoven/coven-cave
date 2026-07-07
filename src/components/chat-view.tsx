@@ -1639,23 +1639,33 @@ function MetaLine({
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
-        {segments.map((seg, i) => (
-          <Fragment key={i}>
-            {i > 0 ? " · " : null}
-            {typeof seg === "string" ? (
-              seg
-            ) : (
-              <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
-                <Icon name="ph:folder" width={11} aria-hidden />
-                {seg.dir.label}
-              </span>
-            )}
-          </Fragment>
-        ))}
+        {/* Slim header (cave-xsq.3): when the turn has settled, the static
+            provenance (model · runtime · dir · duration · usage · meters) is a
+            quiet reveal-on-hover cluster so the settled header reads as just the
+            conversation title — like ChatGPT. Live streaming state (elapsed,
+            "esc to cancel") stays visible; provenance shows inline while
+            streaming (no reveal class) so nothing is hidden mid-response. */}
+        <span
+          className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
+        >
+          {segments.map((seg, i) => (
+            <Fragment key={i}>
+              {i > 0 ? " · " : null}
+              {typeof seg === "string" ? (
+                seg
+              ) : (
+                <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
+                  <Icon name="ph:folder" width={11} aria-hidden />
+                  {seg.dir.label}
+                </span>
+              )}
+            </Fragment>
+          ))}
+          {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
+          {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
+        </span>
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
         {state === "streaming" ? " · esc to cancel" : null}
-        {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
-        {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
       </span>
       {children}
     </div>
@@ -4644,7 +4654,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </div>
       ) : null}
-      <header className="cave-chat-linear-header">
+      <header className="cave-chat-linear-header reveal-scope">
         <div className="cave-mobile-header-identity">
           <div className="cave-mobile-header-familiar">
                   <FamiliarIcon familiar={familiar} size="sm" />
