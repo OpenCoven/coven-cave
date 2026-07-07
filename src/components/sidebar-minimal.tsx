@@ -41,7 +41,8 @@ export type FolderMode =
   | "submissions"
   | "capabilities"
   | "familiar-work-queue"
-  | "journal";
+  | "journal"
+  | "grimoire";
 
 export type SidebarMinimalProps = {
   mode: string;
@@ -99,6 +100,7 @@ const FOLDER_MODES: Array<{
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
+  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for

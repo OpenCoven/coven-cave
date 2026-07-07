@@ -500,6 +500,21 @@
   font-size: 13px;
   line-height: 1.6;
 }
+/* Edit mode hosts the shared MdEditor (WYSIWYG/markdown) in place of the old
+ * plain textarea; the frame mirrors .journal-entry__editor's chrome. */
+.journal-entry__md-editor {
+  flex: 1;
+  display: flex;
+  min-height: 320px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: var(--bg-panel, var(--bg-base));
+  overflow: hidden;
+}
+.journal-entry__md-editor > .md-editor {
+  flex: 1;
+  min-width: 0;
+}
 .journal-entry__editor:focus {
   outline: 2px solid var(--ring-focus);
   outline-offset: 2px;
