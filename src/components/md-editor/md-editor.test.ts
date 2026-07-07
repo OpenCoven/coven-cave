@@ -48,7 +48,13 @@ assert.match(memory, /reveal: true/, "editing loads the un-redacted file");
 assert.match(memory, /method: "PUT"/, "saves go through PUT /api/memory/file");
 assert.match(memory, /\/api\/memory\/file/, "memory save endpoint");
 assert.match(memory, /expectedMtimeMs/, "saves carry the mtime conflict baseline");
-assert.match(memory, /res\.status === 409/, "conflicts get a dedicated message");
+assert.match(memory, /res\.status === 409/, "conflicts get dedicated handling");
+assert.match(memory, /json\.currentMtimeMs/, "a 409 re-baselines on the server-reported disk mtime");
+assert.match(
+  memory,
+  /conflict: \{ currentText: json\.currentText \}/,
+  "a 409 forwards the disk text to the editor's conflict panel",
+);
 assert.match(memory, /<MdEditor\s/, "memory editor renders the shared MdEditor");
 assert.match(memory, /key=\{path\}/, "editor remounts per document path");
 
@@ -57,8 +63,8 @@ assert.match(memory, /key=\{path\}/, "editor remounts per document path");
 assert.match(shell, /autoSave = false/, "autoSave is opt-in, off by default");
 assert.match(
   shell,
-  /if \(!autoSave \|\| readOnly \|\| saving \|\| !dirty \|\| !raw\.trim\(\)\) return/,
-  "autosave skips when off, read-only, mid-save, clean, or empty",
+  /if \(!autoSave \|\| readOnly \|\| saving \|\| conflict !== null \|\| !dirty \|\| !raw\.trim\(\)\) return/,
+  "autosave skips when off, read-only, mid-save, conflicted, clean, or empty",
 );
 assert.match(
   shell,
@@ -78,6 +84,22 @@ assert.doesNotMatch(
   /autoSave/,
   "memory files stay explicit-save — agents write those roots concurrently (mtime conflicts)",
 );
+
+// ── Conflict panel: diff + keep-mine / take-theirs / merge (cave-utl) ────────
+
+assert.match(shell, /MdEditorConflictPanel/, "conflicts render a dedicated resolution panel");
+assert.match(shell, /aria-label="Resolve edit conflict"/, "the conflict panel is a labelled region");
+assert.match(shell, /diffLines\(theirs, mine\)/, "the panel diffs the disk version against the draft");
+assert.match(shell, /Keep my draft/, "keep-mine action offered");
+assert.match(shell, /Take disk version/, "take-theirs action offered");
+assert.match(shell, /Merge both/, "merge action offered");
+assert.match(shell, /mergeThreeWay\(baseline, rawRef\.current, current\.currentText\)/, "merge is a three-way merge from the saved baseline");
+assert.match(
+  shell,
+  /if \(merged\.conflicts > 0\) switchMode\("markdown"\)/,
+  "marker-bearing merges land in MARKDOWN mode where the markers are editable",
+);
+assert.match(shell, /setBaseline\(current\.currentText\)/, "take-theirs re-baselines on the disk text");
 
 // ── Theme: crepe vars ride the Cave tokens ───────────────────────────────────
 

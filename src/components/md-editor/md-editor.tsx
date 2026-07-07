@@ -33,6 +33,7 @@ import {
   serializeMdDocument,
 } from "@/lib/md-frontmatter";
 import { computeMdDocStats, formatMdDocStats } from "@/lib/md-doc-stats";
+import { diffLines, mergeThreeWay, type LineDiffOp } from "@/lib/line-diff";
 
 const MdEditorVisual = dynamic(() => import("./md-editor-visual"), {
   ssr: false,
@@ -44,7 +45,13 @@ const MdEditorVisual = dynamic(() => import("./md-editor-visual"), {
 });
 
 export type MdEditorMode = "visual" | "markdown";
-export type MdEditorSaveResult = { ok: boolean; error?: string };
+
+/** A concurrent-write conflict reported by the transport (e.g. the memory
+ *  file API's 409): the document changed underneath the editor. `currentText`
+ *  is the version now on disk. */
+export type MdEditorConflict = { currentText: string };
+
+export type MdEditorSaveResult = { ok: boolean; error?: string; conflict?: MdEditorConflict };
 
 const MODE_PREF_KEY = "cave:md-editor:mode";
 
@@ -108,6 +115,9 @@ export function MdEditor({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  // A 409-style concurrent-write conflict: the transport reported the document
+  // changed underneath us. While set, the body shows the resolution panel.
+  const [conflict, setConflict] = useState<MdEditorConflict | null>(null);
   const rawRef = useRef(raw);
   rawRef.current = raw;
   const onChangeRef = useRef(onChange);
@@ -162,8 +172,11 @@ export function MdEditor({
       const result = await onSave(snapshot);
       if (result.ok) {
         setBaseline(snapshot);
+        setConflict(null);
         setSavedFlash(true);
         window.setTimeout(() => setSavedFlash(false), 1500);
+      } else if (result.conflict) {
+        setConflict(result.conflict);
       } else {
         setSaveError(result.error ?? "Save failed");
       }
@@ -174,20 +187,56 @@ export function MdEditor({
     }
   }, [onSave, readOnly, saving]);
 
+  // ── Conflict resolution ──────────────────────────────────────────────────
+  // Keep mine: overwrite the disk version with the draft (the transport
+  // re-baselined on the conflict, so a plain re-save lands). Take theirs:
+  // adopt the disk version and drop the draft. Merge: three-way merge of
+  // baseline/draft/disk; overlapping edits get git-style markers to resolve.
+  const resolveKeepMine = useCallback(() => {
+    setConflict(null);
+    void save();
+  }, [save]);
+
+  const resolveTakeTheirs = useCallback(() => {
+    setConflict((current) => {
+      if (current) {
+        updateRaw(current.currentText);
+        setBaseline(current.currentText);
+        setVisualEpoch((n) => n + 1);
+      }
+      return null;
+    });
+  }, [updateRaw]);
+
+  const resolveMerge = useCallback(() => {
+    setConflict((current) => {
+      if (current) {
+        const merged = mergeThreeWay(baseline, rawRef.current, current.currentText);
+        updateRaw(merged.text);
+        setVisualEpoch((n) => n + 1);
+        // Conflict markers are raw-text constructs — resolve them in MARKDOWN
+        // mode so the visual editor doesn't normalize them away.
+        if (merged.conflicts > 0) switchMode("markdown");
+      }
+      return null;
+    });
+  }, [baseline, switchMode, updateRaw]);
+
   // Autosave: persist a short while after typing stops (idempotent surfaces
   // only — see the `autoSave` prop doc). A ref keeps the effect from
   // re-subscribing on every `save` identity change; guarding on `saving` means
   // we never stack a second request on an in-flight one, and because `saving`
   // is a dependency the effect re-runs when a save settles and reschedules if
   // the doc advanced meanwhile. Empty docs are skipped — the save handlers
-  // reject them, so autosaving one would just flash an error.
+  // reject them, so autosaving one would just flash an error. An open conflict
+  // panel also pauses autosave: overwriting is an explicit choice.
   const saveRef = useRef(save);
   saveRef.current = save;
   useEffect(() => {
-    if (!autoSave || readOnly || saving || !dirty || !raw.trim()) return;
+    if (!autoSave || readOnly || saving || conflict !== null || !dirty || !raw.trim()) return;
     const timer = window.setTimeout(() => void saveRef.current(), AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [autoSave, readOnly, saving, dirty, raw]);
+  }, [autoSave, readOnly, saving, conflict, dirty, raw]);
 
   const addTagsFromDraft = useCallback(() => {
     const additions = normalizeMdTags(tagDraft);
@@ -316,7 +365,16 @@ export function MdEditor({
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {mode === "visual" ? (
+        {conflict ? (
+          <MdEditorConflictPanel
+            mine={raw}
+            theirs={conflict.currentText}
+            onKeepMine={resolveKeepMine}
+            onTakeTheirs={resolveTakeTheirs}
+            onMerge={resolveMerge}
+            onDismiss={() => setConflict(null)}
+          />
+        ) : mode === "visual" ? (
           <MdEditorVisual
             key={visualEpoch}
             defaultValue={doc.body}
@@ -362,6 +420,150 @@ export function MdEditor({
           ) : null}
         </div>
         <span className="shrink-0 font-mono">{formatMdDocStats(stats)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Conflict panel ───────────────────────────────────────────────────────────
+
+/** Collapse runs of unchanged lines longer than this to a "⋯ n unchanged" row
+ *  so the conflict diff stays focused on the divergence. */
+const CONFLICT_CTX_RUN = 4;
+
+type ConflictDiffRow =
+  | { kind: "op"; op: LineDiffOp }
+  | { kind: "skip"; count: number };
+
+function buildConflictRows(ops: LineDiffOp[]): ConflictDiffRow[] {
+  const rows: ConflictDiffRow[] = [];
+  let run: LineDiffOp[] = [];
+  const flush = (trailing: boolean) => {
+    if (run.length <= CONFLICT_CTX_RUN) {
+      for (const op of run) rows.push({ kind: "op", op });
+    } else if (trailing) {
+      // Keep a couple of context lines at the edge of a change, skip the rest.
+      for (const op of run.slice(0, 2)) rows.push({ kind: "op", op });
+      rows.push({ kind: "skip", count: run.length - 2 });
+    } else {
+      rows.push({ kind: "skip", count: run.length - 2 });
+      for (const op of run.slice(-2)) rows.push({ kind: "op", op });
+    }
+    run = [];
+  };
+  for (const op of ops) {
+    if (op.type === "ctx") {
+      run.push(op);
+    } else {
+      flush(false);
+      rows.push({ kind: "op", op });
+    }
+  }
+  flush(true);
+  return rows;
+}
+
+/**
+ * Concurrent-write conflict resolver: shows the difference between the disk
+ * version ("theirs") and the local draft ("mine") and offers the three
+ * resolutions. Rendered in place of the editor body while a conflict is open.
+ */
+function MdEditorConflictPanel({
+  mine,
+  theirs,
+  onKeepMine,
+  onTakeTheirs,
+  onMerge,
+  onDismiss,
+}: {
+  mine: string;
+  theirs: string;
+  onKeepMine: () => void;
+  onTakeTheirs: () => void;
+  onMerge: () => void;
+  onDismiss: () => void;
+}) {
+  // old = disk, new = draft: green rows are lines only in the draft, red rows
+  // are lines only on disk — i.e. the effect of choosing "Keep my draft".
+  const rows = useMemo(() => buildConflictRows(diffLines(theirs, mine)), [mine, theirs]);
+  const identical = rows.every((r) => r.kind === "skip" || r.op.type === "ctx");
+
+  return (
+    <div
+      role="region"
+      aria-label="Resolve edit conflict"
+      className="md-editor__conflict flex h-full min-h-0 flex-col"
+    >
+      <div className="shrink-0 space-y-1 border-b border-[var(--border-hairline)] px-4 py-3">
+        <p role="alert" className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[var(--color-warning)]">
+          <Icon name="ph:warning-circle" width={13} aria-hidden />
+          This document changed on disk while you were editing
+        </p>
+        <p className="text-[11px] text-[var(--text-muted)]">
+          {identical
+            ? "The disk version now matches your draft — you can safely take either."
+            : "Review the difference, then keep your draft, take the disk version, or merge the two."}
+          {" "}
+          <span className="md-editor__conflict-key md-editor__conflict-key--mine">your draft</span>
+          {" · "}
+          <span className="md-editor__conflict-key md-editor__conflict-key--theirs">on disk</span>
+        </p>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+        <div className="md-editor__conflict-diff font-mono text-[11px] leading-5" role="table" aria-label="Draft vs disk diff">
+          {rows.map((row, i) =>
+            row.kind === "skip" ? (
+              <div key={i} className="md-editor__conflict-line md-editor__conflict-line--skip" role="row">
+                ⋯ {row.count} unchanged line{row.count === 1 ? "" : "s"}
+              </div>
+            ) : (
+              <div
+                key={i}
+                role="row"
+                className={`md-editor__conflict-line md-editor__conflict-line--${row.op.type}`}
+              >
+                <span aria-hidden className="md-editor__conflict-marker">
+                  {row.op.type === "add" ? "+" : row.op.type === "del" ? "−" : " "}
+                </span>
+                {row.op.text || "\u00a0"}
+              </div>
+            ),
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
+        <button
+          type="button"
+          onClick={onKeepMine}
+          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--color-warning)]/40 px-2 text-[11px] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10"
+        >
+          <Icon name="ph:floppy-disk-bold" width={11} aria-hidden />
+          Keep my draft
+        </button>
+        <button
+          type="button"
+          onClick={onTakeTheirs}
+          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
+          Take disk version
+        </button>
+        <button
+          type="button"
+          onClick={onMerge}
+          className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name="ph:git-merge" width={11} aria-hidden />
+          Merge both
+        </button>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="focus-ring inline-flex h-7 items-center rounded-md px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+        >
+          Back to editing
+        </button>
       </div>
     </div>
   );

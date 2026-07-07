@@ -52,3 +52,45 @@
 .md-editor-visual .milkdown .ProseMirror ::selection {
   background: color-mix(in oklch, var(--accent-presence) 28%, transparent);
 }
+
+/* ── Conflict panel (concurrent-write 409) ─────────────────────────────────
+ * Shown in place of the editor body when a save reports the document changed
+ * on disk. Green rows exist only in the local draft, red rows only on disk. */
+.md-editor__conflict-key {
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.md-editor__conflict-key--mine {
+  background: color-mix(in oklch, var(--color-success, #3fb950) 18%, transparent);
+  color: var(--text-primary);
+}
+.md-editor__conflict-key--theirs {
+  background: color-mix(in oklch, var(--color-danger, #f85149) 18%, transparent);
+  color: var(--text-primary);
+}
+.md-editor__conflict-line {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+.md-editor__conflict-marker {
+  flex-shrink: 0;
+  user-select: none;
+  opacity: 0.7;
+}
+.md-editor__conflict-line--add {
+  background: color-mix(in oklch, var(--color-success, #3fb950) 14%, transparent);
+  color: var(--text-primary);
+}
+.md-editor__conflict-line--del {
+  background: color-mix(in oklch, var(--color-danger, #f85149) 14%, transparent);
+  color: var(--text-primary);
+}
+.md-editor__conflict-line--skip {
+  padding: 2px 8px;
+  font-style: italic;
+  opacity: 0.7;
+}

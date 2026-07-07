@@ -6,7 +6,10 @@
  * Loads the un-redacted file (`?reveal=1`) so a save can never write
  * `[REDACTED:…]` placeholders over real secrets, and saves through
  * `PUT /api/memory/file` carrying the loaded `mtimeMs` so concurrent agent
- * writes surface as a conflict instead of a lost update.
+ * writes surface as a conflict instead of a lost update. A 409 forwards the
+ * disk version to the editor's conflict panel (diff + keep-mine / take-theirs
+ * / merge) and re-baselines the expected mtime so the chosen resolution can
+ * land — while still guarding against writes that happen after the 409.
  *
  * Reused by the memory reader's edit mode and the Grimoire surface.
  */
@@ -47,13 +50,20 @@ export function MemoryMdEditor({
         });
         const json = await res.json();
         if (!json.ok) {
-          return {
-            ok: false,
-            error:
-              res.status === 409
-                ? "File changed on disk — cancel and reopen to pick up the latest version."
-                : json.error ?? "Save failed",
-          };
+          if (res.status === 409) {
+            // Conflict: re-baseline on the disk mtime the server reported so
+            // the user's resolution (overwrite / take / merge, then save) can
+            // land, and hand the disk text to the editor's conflict panel.
+            if (typeof json.currentMtimeMs === "number") mtimeRef.current = json.currentMtimeMs;
+            if (typeof json.currentText === "string") {
+              return { ok: false, conflict: { currentText: json.currentText } };
+            }
+            return {
+              ok: false,
+              error: "File changed on disk — cancel and reopen to pick up the latest version.",
+            };
+          }
+          return { ok: false, error: json.error ?? "Save failed" };
         }
         if (typeof json.mtimeMs === "number") mtimeRef.current = json.mtimeMs;
         onSaved?.(raw);

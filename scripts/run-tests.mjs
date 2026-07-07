@@ -501,6 +501,7 @@ export const SUITES = {
     "src/components/familiars-memory-master-detail.test.ts",
     "src/lib/md-frontmatter.test.ts",
     "src/lib/md-doc-stats.test.ts",
+    "src/lib/line-diff.test.ts",
     "src/components/md-editor/md-editor.test.ts",
     "src/components/grimoire-view.test.ts",
     "src/lib/server/coven-memory-path.test.ts",
