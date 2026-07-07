@@ -153,11 +153,18 @@
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 .fwq-card {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+/* The identity + actions row; the comment composer stacks beneath it. */
+.fwq-card-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-hairline);
 }
 
 .fwq-card:last-child {
@@ -250,6 +257,13 @@
   background: color-mix(in oklch, var(--color-warning) 10%, transparent);
 }
 
+/* Verification evidence that justifies a close (a merged PR). */
+.fwq-tag--evidence {
+  color: var(--color-success);
+  border-color: color-mix(in oklch, var(--color-success) 30%, transparent);
+  background: color-mix(in oklch, var(--color-success) 7%, transparent);
+}
+
 .fwq-card-actions {
   display: flex;
   align-items: center;
@@ -257,9 +271,41 @@
   flex-shrink: 0;
 }
 
+/* ── Handoff-note composer ──────────────────────────────────────────────── */
+.fwq-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fwq-composer-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  padding: 7px 9px;
+  border-radius: var(--radius-control, 8px);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base, var(--background));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.fwq-composer-input:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.fwq-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 /* Narrow surface (split tile / mobile): stack card body over actions. */
 @container (max-width: 560px) {
-  .fwq-card {
+  .fwq-card-row {
     flex-direction: column;
     align-items: stretch;
   }

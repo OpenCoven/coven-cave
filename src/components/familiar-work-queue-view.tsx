@@ -59,6 +59,16 @@ async function fetchQueue(signal: AbortSignal): Promise<WorkQueue> {
   return buildWorkQueue(readyBeads, open, merged, { nowMs: Date.now() });
 }
 
+/**
+ * The verification evidence that justifies closing a bead from the queue — a
+ * merged PR. Returns the human-readable evidence string, or `null` when there
+ * is none, in which case the Close affordance is withheld: the queue never
+ * offers a bare "close" without proof the work actually landed (cave-hlv.2).
+ */
+function closeEvidence(item: WorkQueueItem): string | null {
+  return item.merged ? `Merged in PR #${item.merged.number}` : null;
+}
+
 export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
@@ -120,13 +130,16 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   );
 
   const runAction = useCallback(
-    async (item: WorkQueueItem, action: "claim" | "close") => {
+    async (item: WorkQueueItem, action: "claim" | "close" | "comment", comment?: string) => {
       const id = item.bead?.id;
       if (!id) return;
+      const text = comment?.trim();
+      if (action === "comment" && !text) return; // never post an empty handoff note
       setBusyId(item.key);
       try {
         const body: Record<string, string> = { action, id };
-        if (action === "close") body.reason = item.merged ? `Merged in PR #${item.merged.number}` : "Completed";
+        if (action === "close") body.reason = closeEvidence(item) ?? "Completed";
+        if (action === "comment" && text) body.comment = text;
         const res = await fetch("/api/beads", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -134,7 +147,13 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
-        announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
+        announce(
+          action === "claim"
+            ? `Claimed ${id}.`
+            : action === "close"
+              ? `Closed ${id}.`
+              : `Comment added to ${id}.`,
+        );
         await load({ quiet: true });
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
@@ -271,6 +290,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
                     onOpenUrl={onOpenUrl}
                     onClaim={() => void runAction(item, "claim")}
                     onClose={() => void runAction(item, "close")}
+                    onComment={(text) => void runAction(item, "comment", text)}
                   />
                 ))}
               </ul>
@@ -289,6 +309,7 @@ function WorkQueueCard({
   onOpenUrl,
   onClaim,
   onClose,
+  onComment,
 }: {
   item: WorkQueueItem;
   familiarLabel: string;
@@ -296,63 +317,148 @@ function WorkQueueCard({
   onOpenUrl?: (url: string) => void;
   onClaim: () => void;
   onClose: () => void;
+  onComment: (text: string) => void;
 }) {
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState("");
   const beadId = item.bead?.id ?? null;
   const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "Untitled";
   const prNumber = item.pr?.number ?? item.merged?.number ?? null;
   const url = item.pr?.url ?? item.merged?.url ?? null;
+  // Close is gated on real evidence (a merged PR), not just a lane — the queue
+  // never offers a bare close without proof the work landed (cave-hlv.2).
+  const evidence = closeEvidence(item);
+
+  const submitComment = () => {
+    const text = draft.trim();
+    if (!text) return;
+    onComment(text);
+    setDraft("");
+    setComposerOpen(false);
+  };
 
   return (
     <li className={`fwq-card${item.stale ? " is-stale" : ""}`}>
-      <div className="fwq-card-main">
-        <div className="fwq-card-title">
-          {prNumber != null ? <span className="fwq-pr-num">#{prNumber}</span> : null}
-          <span className="fwq-card-name">{title}</span>
+      <div className="fwq-card-row">
+        <div className="fwq-card-main">
+          <div className="fwq-card-title">
+            {prNumber != null ? <span className="fwq-pr-num">#{prNumber}</span> : null}
+            <span className="fwq-card-name">{title}</span>
+          </div>
+          <div className="fwq-card-meta">
+            <span className="fwq-tag fwq-tag--familiar">{familiarLabel}</span>
+            {item.surface ? <span className="fwq-tag">{item.surface}</span> : null}
+            {beadId ? <span className="fwq-tag fwq-tag--bead">{beadId}</span> : null}
+            {item.bead && !item.pr && !item.merged ? (
+              <span className="fwq-tag">P{item.bead.priority}</span>
+            ) : null}
+            {item.pr ? (
+              <>
+                <span className={`fwq-tag fwq-tag--check-${item.pr.checkStatus ?? "unknown"}`}>
+                  checks {item.pr.checkStatus ?? "unknown"}
+                </span>
+                {item.pr.reviewDecision && item.pr.reviewDecision !== "UNKNOWN" ? (
+                  <span className="fwq-tag">{item.pr.reviewDecision.toLowerCase().replace(/_/g, " ")}</span>
+                ) : null}
+                {item.lane === "ready-to-merge" ? <span className="fwq-tag fwq-tag--ready">merge eligible</span> : null}
+              </>
+            ) : null}
+            {evidence ? <span className="fwq-tag fwq-tag--evidence">{evidence}</span> : null}
+            {item.stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
+          </div>
         </div>
-        <div className="fwq-card-meta">
-          <span className="fwq-tag fwq-tag--familiar">{familiarLabel}</span>
-          {item.surface ? <span className="fwq-tag">{item.surface}</span> : null}
-          {beadId ? <span className="fwq-tag fwq-tag--bead">{beadId}</span> : null}
-          {item.bead && !item.pr && !item.merged ? (
-            <span className="fwq-tag">P{item.bead.priority}</span>
+        <div className="fwq-card-actions">
+          {url ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              trailingIcon="ph:arrow-square-out"
+              onClick={() => onOpenUrl?.(url)}
+              disabled={!onOpenUrl}
+            >
+              {item.merged ? "Merged PR" : "Open PR"}
+            </Button>
           ) : null}
-          {item.pr ? (
-            <>
-              <span className={`fwq-tag fwq-tag--check-${item.pr.checkStatus ?? "unknown"}`}>
-                checks {item.pr.checkStatus ?? "unknown"}
-              </span>
-              {item.pr.reviewDecision && item.pr.reviewDecision !== "UNKNOWN" ? (
-                <span className="fwq-tag">{item.pr.reviewDecision.toLowerCase().replace(/_/g, " ")}</span>
-              ) : null}
-              {item.lane === "ready-to-merge" ? <span className="fwq-tag fwq-tag--ready">merge eligible</span> : null}
-            </>
+          {beadId ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              leadingIcon="ph:chat-circle-dots"
+              onClick={() => setComposerOpen((open) => !open)}
+              aria-expanded={composerOpen}
+              aria-label={`Add a handoff note to ${beadId}`}
+            >
+              Comment
+            </Button>
           ) : null}
-          {item.stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
+          {item.lane === "no-open-PR" && beadId ? (
+            <Button variant="secondary" size="xs" loading={busy} leadingIcon="ph:hand" onClick={onClaim}>
+              Claim
+            </Button>
+          ) : null}
+          {evidence && beadId ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              loading={busy}
+              leadingIcon="ph:check"
+              onClick={onClose}
+              title={`Close ${beadId} — verified: ${evidence}`}
+            >
+              Close bead
+            </Button>
+          ) : null}
         </div>
       </div>
-      <div className="fwq-card-actions">
-        {url ? (
-          <Button
-            variant="ghost"
-            size="xs"
-            trailingIcon="ph:arrow-square-out"
-            onClick={() => onOpenUrl?.(url)}
-            disabled={!onOpenUrl}
-          >
-            {item.merged ? "Merged PR" : "Open PR"}
-          </Button>
-        ) : null}
-        {item.lane === "no-open-PR" && beadId ? (
-          <Button variant="secondary" size="xs" loading={busy} leadingIcon="ph:hand" onClick={onClaim}>
-            Claim
-          </Button>
-        ) : null}
-        {item.lane === "post-merge-cleanup" && beadId ? (
-          <Button variant="secondary" size="xs" loading={busy} leadingIcon="ph:check" onClick={onClose}>
-            Close bead
-          </Button>
-        ) : null}
-      </div>
+
+      {composerOpen && beadId ? (
+        <form
+          className="fwq-composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitComment();
+          }}
+        >
+          <textarea
+            className="fwq-composer-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={`Handoff note for ${beadId}…`}
+            rows={2}
+            aria-label={`Handoff note for ${beadId}`}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submitComment();
+              }
+            }}
+          />
+          <div className="fwq-composer-actions">
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                setComposerOpen(false);
+                setDraft("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="secondary"
+              size="xs"
+              loading={busy}
+              disabled={!draft.trim()}
+              leadingIcon="ph:arrow-up-bold"
+            >
+              Add note
+            </Button>
+          </div>
+        </form>
+      ) : null}
     </li>
   );
 }

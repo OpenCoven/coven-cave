@@ -144,7 +144,9 @@ Lanes, ordered fix-first → land → review → bead-driven → waiting:
 - **Post-merge cleanup** — a merged PR whose bead is still open, with a **Close bead** action. (Detection is limited to beads still in the `ready` set; worktree/branch removal stays a CLI step.)
 - **Waiting** — draft, pending-checks, and blocked PRs; shown but never counted as actionable.
 
-Each card carries the familiar and surface labels, the bead id, live check/review state, and a stale flag (no update in 24h). A per-familiar rollup along the top filters the whole board to one familiar. The pure join lives in `src/lib/beads-work-queue.ts`; claim/close map to the `/api/beads` adapter with verification recorded in the bead, not a chat transcript.
+Each card carries the familiar and surface labels, the bead id, live check/review state, and a stale flag (no update in 24h). A per-familiar rollup along the top filters the whole board to one familiar. The pure join lives in `src/lib/beads-work-queue.ts`; claim/comment/close map to the `/api/beads` adapter with verification recorded in the bead, not a chat transcript.
+
+Every bead-backed card exposes a **Comment** affordance — an inline composer that appends a handoff note to the bead (⌘/Ctrl-Enter to send), so context lives on the bead instead of in chat. **Close is evidence-gated**: it appears only on a card that carries verification evidence — today a merged PR, cited on the card and in the close reason — so the queue never offers a bare close on work that hasn't demonstrably landed.
 
 ## Guardrails
 

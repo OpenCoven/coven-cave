@@ -58,7 +58,9 @@ async function gotoWorkQueue(page: Page) {
   await page.evaluate(() =>
     window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
   );
-  await page.waitForSelector(".fwq", { timeout: 30_000 });
+  // Generous: the first navigation cold-compiles the whole surface under
+  // `next dev`, which can exceed 30s on a loaded CI box before .fwq mounts.
+  await page.waitForSelector(".fwq", { timeout: 45_000 });
 }
 
 test.describe("familiar work queue (PR control tower)", () => {
@@ -96,6 +98,13 @@ test.describe("familiar work queue (PR control tower)", () => {
     const noPr = fwq.getByRole("region", { name: "No open PR" });
     await expect(noPr.getByRole("button", { name: "Claim" })).toBeVisible();
 
+    // Close is EVIDENCE-gated: the cleanup card cites its merged PR, and Close
+    // appears nowhere else (a bare bead with no landed work can't be closed).
+    await expect(cleanup.getByText("Merged in PR #90")).toBeVisible();
+    await expect(fwq.getByRole("button", { name: "Close bead" })).toHaveCount(1);
+    // Every bead-backed card exposes a handoff-note affordance.
+    await expect(fwq.getByRole("button", { name: "Add a handoff note to cave-aa1" })).toBeVisible();
+
     // Filtering by Nova drops Kitty-owned lanes (checks-failing was Kitty's).
     await page.getByRole("button", { name: /Nova/ }).click();
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toHaveCount(0);
@@ -118,5 +127,31 @@ test.describe("familiar work queue (PR control tower)", () => {
     const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
     await noPr.getByRole("button", { name: "Claim" }).click();
     await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2" });
+  });
+
+  test("adding a handoff note posts a comment to the beads adapter", async ({ page }) => {
+    let commentBody: unknown = null;
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() === "POST") {
+        commentBody = route.request().postDataJSON();
+        await route.fulfill({ json: { ok: true, data: { id: "cave-aa1" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    });
+    await gotoWorkQueue(page);
+    const fwq = page.locator(".fwq");
+
+    // Open the composer on the failing PR's card (bead cave-aa1), type, send.
+    await fwq.getByRole("button", { name: "Add a handoff note to cave-aa1" }).click();
+    const composer = fwq.locator(".fwq-composer");
+    await composer.getByRole("textbox", { name: "Handoff note for cave-aa1" }).fill("needs a rebase before merge");
+    await composer.getByRole("button", { name: "Add note" }).click();
+
+    await expect
+      .poll(() => commentBody)
+      .toEqual({ action: "comment", id: "cave-aa1", comment: "needs a rebase before merge" });
+    // Composer closes after a successful send.
+    await expect(fwq.locator(".fwq-composer")).toHaveCount(0);
   });
 });
