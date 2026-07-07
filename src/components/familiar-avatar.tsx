@@ -49,7 +49,7 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
       alt={familiar.display_name}
       width={px}
       height={px}
-      className={className ?? "inline-block rounded-sm object-cover"}
+      className={className ?? "inline-block rounded-[var(--radius-control)] object-cover"}
       title={title}
       onError={() => setSrcIdx((i) => i + 1)}
     />

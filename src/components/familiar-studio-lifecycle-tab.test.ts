@@ -24,6 +24,13 @@ assert.match(source, /canMoveDown/, "Rows expose canMoveDown prop for disabled-e
 assert.match(source, /ph:arrow-up-bold/, "Move-up icon is wired");
 assert.match(source, /ph:arrow-down-bold/, "Move-down icon is wired");
 
+// The active roster is also drag-reorderable (dnd-kit), alongside the arrows.
+assert.match(source, /DndContext/, "active roster is wrapped in a DndContext");
+assert.match(source, /SortableContext/, "active rows are sortable");
+assert.match(source, /useSortable/, "each active row hooks the sortable transform");
+assert.match(source, /ph:dots-six-vertical/, "each active row exposes a drag grip");
+assert.match(source, /arrayMove\(ids, oldIndex, newIndex\)/, "drag reorder moves the id then persists via setFamiliarOrder");
+
 // The roster order here is distinct from the avatar-strip pin order in
 // Appearance — the hint cross-links so users find both (2026-07-06).
 assert.match(source, /avatar strip's pinned order/, "lifecycle hint disambiguates roster order from pin order");

@@ -11,6 +11,9 @@ assert.match(source, /avatarImage/, "Must consume the avatarImage field");
 assert.match(source, /FamiliarGlyph/, "Must fall back to FamiliarGlyph when no image");
 assert.match(source, /<img/, "Must render an <img> for image avatars");
 assert.match(source, /alt=/, "img must have alt text for a11y");
+// The default avatar corner radius tracks the standardized control radius so
+// familiar icons match the shared Button/IconButton roundedness.
+assert.match(source, /rounded-\[var\(--radius-control\)\]/, "default avatar radius matches the standardized control radius");
 
 // The avatar image is preferred over the glyph, and EVERY image source is tried
 // before the glyph: a failed load advances through the source list (workspace

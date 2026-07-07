@@ -1,6 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import {
@@ -31,6 +48,30 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
   // selected familiar's per-familiar controls (reset) below it.
   const active = allResolved.filter((f) => !(f.id in archived));
   const archivedList = allResolved.filter((f) => f.id in archived);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  // Rebuild the full roster order from a reordered active list, keeping archived
+  // familiars in their existing slots — the same order model the up/down arrows
+  // persist through.
+  function reorderTo(activeIds: string[]) {
+    let ai = 0;
+    const fullIds = allResolved.map((f) => (f.id in archived ? f.id : activeIds[ai++]));
+    setFamiliarOrder(fullIds);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active: dragged, over } = event;
+    if (!over || dragged.id === over.id) return;
+    const ids = active.map((f) => f.id);
+    const oldIndex = ids.indexOf(String(dragged.id));
+    const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    reorderTo(arrayMove(ids, oldIndex, newIndex));
+  }
 
   function move(id: string, direction: "up" | "down") {
     const ids = allResolved.map((f) => f.id);
@@ -80,20 +121,28 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
           </button>
           .
         </p>
-        {active.map((f, i) => (
-          <FamiliarRow
-            key={f.id}
-            familiar={f}
-            isArchived={false}
-            canMoveUp={i > 0}
-            canMoveDown={i < active.length - 1}
-            onSelect={() => openFamiliarStudio(f.id, "identity")}
-            onArchive={() => archiveFamiliar(f.id)}
-            onUnarchive={() => unarchiveFamiliar(f.id)}
-            onMoveUp={() => move(f.id, "up")}
-            onMoveDown={() => move(f.id, "down")}
-          />
-        ))}
+        <DndContext
+          id="familiar-lifecycle-order"
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={active.map((f) => f.id)} strategy={verticalListSortingStrategy}>
+            {active.map((f, i) => (
+              <SortableFamiliarRow
+                key={f.id}
+                familiar={f}
+                canMoveUp={i > 0}
+                canMoveDown={i < active.length - 1}
+                onSelect={() => openFamiliarStudio(f.id, "identity")}
+                onArchive={() => archiveFamiliar(f.id)}
+                onUnarchive={() => unarchiveFamiliar(f.id)}
+                onMoveUp={() => move(f.id, "up")}
+                onMoveDown={() => move(f.id, "down")}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </section>
       {archivedList.length > 0 ? (
         <section>
@@ -135,6 +184,37 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
   );
 }
 
+// Active rows are draggable; the sortable wrapper feeds the drag handle +
+// transform down into the shared FamiliarRow.
+function SortableFamiliarRow(props: {
+  familiar: ResolvedFamiliar;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onSelect: () => void;
+  onArchive: () => void;
+  onUnarchive: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.familiar.id,
+  });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+  };
+  return (
+    <FamiliarRow
+      {...props}
+      isArchived={false}
+      dragRef={setNodeRef}
+      dragStyle={style}
+      isDragging={isDragging}
+      dragHandle={{ ...attributes, ...listeners }}
+    />
+  );
+}
+
 function FamiliarRow({
   familiar,
   isArchived,
@@ -145,6 +225,10 @@ function FamiliarRow({
   onUnarchive,
   onMoveUp,
   onMoveDown,
+  dragRef,
+  dragStyle,
+  isDragging,
+  dragHandle,
 }: {
   familiar: ResolvedFamiliar;
   isArchived: boolean;
@@ -155,9 +239,28 @@ function FamiliarRow({
   onUnarchive: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  dragRef?: (node: HTMLElement | null) => void;
+  dragStyle?: CSSProperties;
+  isDragging?: boolean;
+  dragHandle?: Record<string, unknown>;
 }) {
   return (
-    <div className="familiar-studio-lifecycle__row">
+    <div
+      ref={dragRef}
+      style={dragStyle}
+      data-dragging={isDragging || undefined}
+      className="familiar-studio-lifecycle__row"
+    >
+      {dragHandle ? (
+        <button
+          type="button"
+          className="familiar-studio-lifecycle__grip focus-ring"
+          aria-label={`Drag to reorder ${familiar.display_name}`}
+          {...dragHandle}
+        >
+          <Icon name="ph:dots-six-vertical" width={13} aria-hidden />
+        </button>
+      ) : null}
       <button type="button" onClick={onSelect} className="familiar-studio-lifecycle__row-main">
         <FamiliarAvatar familiar={familiar} size="sm" />
         <span>{familiar.display_name}</span>

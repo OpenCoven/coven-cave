@@ -6940,8 +6940,12 @@ a.mobile-handoff__link:hover {
 .familiar-studio-lifecycle__btn:hover { background: color-mix(in oklch, var(--text-primary) 8%, var(--bg-raised)); }
 .familiar-studio-lifecycle__btn--danger { color: var(--color-danger); }
 .familiar-studio-lifecycle__btn--confirm { background: var(--color-danger); color: var(--bg-base); border-color: transparent; }
-.familiar-studio-lifecycle__row { display: flex; gap: 4px; padding: 4px; border-radius: 6px; }
+.familiar-studio-lifecycle__row { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 6px; }
 .familiar-studio-lifecycle__row:hover { background: var(--bg-raised); }
+.familiar-studio-lifecycle__row[data-dragging] { background: var(--bg-raised); box-shadow: var(--shadow-popover); opacity: 0.95; position: relative; z-index: 1; }
+.familiar-studio-lifecycle__grip { display: grid; place-items: center; width: 20px; height: 24px; flex-shrink: 0; background: transparent; border: none; color: var(--text-faint); cursor: grab; touch-action: none; }
+.familiar-studio-lifecycle__grip:hover { color: var(--text-secondary); }
+.familiar-studio-lifecycle__row[data-dragging] .familiar-studio-lifecycle__grip { cursor: grabbing; }
 .familiar-studio-lifecycle__row-main { display: flex; gap: 8px; align-items: center; flex: 1; background: transparent; border: none; padding: 4px 6px; cursor: pointer; color: var(--text-primary); font-size: 13px; }
 .familiar-studio-lifecycle__row-action { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
 .familiar-studio-lifecycle__row-action:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-base); }
