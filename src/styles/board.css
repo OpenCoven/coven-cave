@@ -1352,62 +1352,9 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .gh-composer-actions {
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-end;
   gap:8px;
   margin-top:6px;
-}
-.gh-composer-tag { position:relative; }
-.gh-composer-tag-btn {
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  padding:3px 9px;
-  border-radius:7px;
-  border:1px solid var(--border-hairline);
-  background:transparent;
-  color:var(--text-muted);
-  font-size:11px;
-  font-weight:550;
-  cursor:pointer;
-}
-.gh-composer-tag-btn:hover:not(:disabled) {
-  color:var(--text-secondary);
-  background:var(--bg-raised);
-}
-.gh-composer-tag-btn:disabled { opacity:0.4; cursor:default; }
-.gh-composer-tag-menu {
-  position:absolute;
-  bottom:calc(100% + 4px);
-  left:0;
-  z-index:20;
-  min-width:160px;
-  max-height:220px;
-  overflow-y:auto;
-  padding:4px;
-  border:1px solid var(--border-hairline);
-  border-radius:10px;
-  background:var(--bg-elevated);
-  box-shadow:0 8px 24px rgba(0,0,0,0.28);
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-}
-.gh-composer-tag-item {
-  display:flex;
-  align-items:center;
-  gap:7px;
-  padding:5px 8px;
-  border-radius:7px;
-  background:none;
-  border:none;
-  color:var(--text-secondary);
-  font-size:12px;
-  text-align:left;
-  cursor:pointer;
-}
-.gh-composer-tag-item:hover {
-  background:var(--bg-hover);
-  color:var(--text-primary);
 }
 
 /* ── Person chip → clickable profile ─────────────────────────────────────── */
