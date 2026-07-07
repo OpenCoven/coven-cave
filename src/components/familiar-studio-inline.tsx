@@ -30,9 +30,9 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "lifecycle", label: "Lifecycle", icon: "ph:arrows-clockwise" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
+  { id: "journal", label: "Journal", icon: "ph:book-open" },
   { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "vault", label: "Vault", icon: "ph:vault" },
-  { id: "journal", label: "Journal", icon: "ph:book-open" },
 ];
 
 /**
