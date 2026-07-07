@@ -2493,6 +2493,13 @@ details[open] > .cave-tool-summary::before {
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
+  /* Centered reading column (cave-xsq.1): the conversation + composer share one
+     comfortable measure and sit in a centered column — the ChatGPT reading
+     model — instead of spanning the full pane (reverses the 2026-06-18
+     full-width choice below). ~46rem ≈ a ~72ch line at 14px. The header stays a
+     full-bleed bar (its divider spans the pane); only the reading/writing column
+     is capped + centered. */
+  --cave-chat-measure: 46rem;
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
@@ -3255,13 +3262,14 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear .cave-chat-thread {
   gap: 0;
-  /* Full-width chat (2026-06-18): span the whole pane so the transcript lines
-     up with the full-width header and composer instead of sitting in a
-     centered reading column. */
+  /* Centered reading column (cave-xsq.1): cap the transcript to a comfortable
+     measure and center it, so long responses read like ChatGPT instead of
+     running edge-to-edge on a wide pane. The composer shares the same measure
+     (below) so the input lines up under the conversation. */
   width: 100%;
-  max-width: 100%;
+  max-width: var(--cave-chat-measure);
   margin-block: 0;
-  margin-inline: 0;
+  margin-inline: auto;
 }
 
 /* ── Turn rows ──────────────────────────────────────────────────────────── */
@@ -3528,9 +3536,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear .cave-composer-shell {
-  /* Shares the thread's full-width measure so the input lines up with the
-     conversation column; base rule centers via margin auto. */
-  max-width: 100%;
+  /* Shares the thread's centered measure (cave-xsq.1) so the input sits directly
+     under the conversation column; base rule centers via margin auto. */
+  max-width: var(--cave-chat-measure);
 }
 
 .cave-chat-linear .cave-composer-panel {

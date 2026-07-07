@@ -86,39 +86,40 @@ assert.match(
 );
 
 // ---------------------------------------------------------------------------
-// Full-width chat (2026-06-18) — supersedes the 2026-06-13 centered-column
-// decision: the thread spans the whole pane (width: 100%, max-width: 100%, no
-// auto centering) so the transcript lines up with the full-width header and
-// composer. The old 920px and 1180px reading-measure caps stay gone.
+// Centered reading column (cave-xsq.1) — supersedes the 2026-06-18 full-width
+// decision: the transcript + composer share ONE comfortable measure
+// (--cave-chat-measure) and sit in a centered column so long responses read
+// like ChatGPT instead of running edge-to-edge on a wide pane. The old 920px /
+// 1180px hardcoded caps stay gone (the measure is now a token).
 // ---------------------------------------------------------------------------
 
+assert.match(
+  css,
+  /\.cave-chat-linear \{[^}]*--cave-chat-measure:\s*[\d.]+rem/,
+  "the chat surface defines a shared reading measure token",
+);
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,
-  /width:\s*100%/,
-  "Linear thread must fill the pane (width: 100%)",
+  /max-width:\s*var\(--cave-chat-measure\)/,
+  "Linear thread caps to the shared reading measure",
 );
 assert.match(
   linearThread,
-  /max-width:\s*100%/,
-  "Linear thread must span full width (max-width: 100%)",
-);
-assert.doesNotMatch(
-  linearThread,
   /margin-inline:\s*auto/,
-  "Linear thread must not center (no margin-inline: auto)",
+  "Linear thread centers the reading column (margin-inline: auto)",
 );
 assert.doesNotMatch(
   linearThread,
   /max-width:\s*(?:min\(100%,\s*)?(?:920|1180)px/,
-  "The old reading-measure caps (920px / 1180px) must stay gone",
+  "the old hardcoded reading-measure caps (920px / 1180px) must stay gone",
 );
 
 const linearComposerShell = /\.cave-chat-linear \.cave-composer-shell \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearComposerShell,
-  /max-width:\s*100%/,
-  "Linear composer shell must share the thread's full-width measure so the input aligns with the column",
+  /max-width:\s*var\(--cave-chat-measure\)/,
+  "Linear composer shell shares the thread's reading measure so the input aligns under the column",
 );
 
 // ---------------------------------------------------------------------------
