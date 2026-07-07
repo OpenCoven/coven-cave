@@ -30,6 +30,7 @@ import {
   shouldShowChatArchiveNudge,
 } from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
+import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
 import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
@@ -1700,11 +1701,15 @@ function LinkedContextRow({
   onOpenTask,
   sessionId,
   onLinkedContextChange,
+  handoff,
 }: {
   linkedContext: ChatLinkedContext | null;
   onOpenTask?: (cardId: string) => void;
   sessionId?: string | null;
   onLinkedContextChange?: (updater: (prev: ChatLinkedContext | null) => ChatLinkedContext | null) => void;
+  /** Recent turns + familiar/project for the picker's "New task from this chat"
+   *  handoff (cave-px7). Absent → the picker only links existing tasks. */
+  handoff?: ChatHandoffContext | null;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const task = linkedContext?.task ?? null;
@@ -1758,6 +1763,7 @@ function LinkedContextRow({
               linkedIds={linkedIds}
               onAssigned={onAssigned}
               onClose={() => setPickerOpen(false)}
+              handoff={handoff}
             />
           ) : null}
         </span>
@@ -4736,6 +4742,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onOpenTask={onOpenTask}
           sessionId={sessionId}
           onLinkedContextChange={setLinkedContext}
+          handoff={{ turns, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
         />
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />

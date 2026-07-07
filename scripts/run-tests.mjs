@@ -375,6 +375,8 @@ export const SUITES = {
     "src/components/opencoven-submission-panel.test.ts",
     "src/components/opencoven-submissions-navigation.test.ts",
     "src/components/chat-linked-context.test.ts",
+    "src/components/chat-task-handoff-wiring.test.ts",
+    "src/lib/chat-task-handoff.test.ts",
     "src/components/group-chat-view.test.ts",
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
