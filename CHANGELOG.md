@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.143] - 2026-07-06
+
+> 🧹 **A tighter, more honest cockpit** — the dashboard's Familiar Insights table becomes sortable and filterable, a new space-usage panel gives you an honest read on where `~/.coven` disk is going (with cleanup drill-throughs), and the quick-chat box gets a hardening pass. Behind the scenes, a twice-daily PR triage patrol lands to keep the review queue from rotting.
+
+Patch release on top of v0.0.142. Ships dashboard analytics polish, local space-usage analytics, a quick-chat hardening pass, and the morning/evening PR triage patrol.
+
+### Features
+- **Sortable + filterable dashboard insights, plus local space-usage analytics** (#2538). The Familiar Insights table gets real `aria-sort` column headers (click cycles sorted ↔ reversed ↔ curated default) and a live-count filter; a new space-usage panel does a bounded, symlink-safe scan of `~/.coven` and reports honest lower bounds (`1.3 GB+` when capped) with per-area cleanup drill-throughs. Donut/heatmap diagrams gain hover detail and accessible `role=img` summaries.
+- **Morning/evening PR triage patrol** (#2536). `pnpm beads:prs:patrol` sweeps every open PR into a window-ordered digest — mornings lead with *Fix first*, evenings with *Ready to land* — and flags stale + unlinked PRs. `--apply` mirrors linked PR state into beads; the patrol itself never merges.
+
+### Fixes
+- **Quick-chat hardening** (#2537). Hardened the quick-chat box and de-duplicated the overlay/tray internals.
+
 ## [0.0.142] - 2026-07-06
 
 > 📊 **Analytics you can actually steer by** — familiar analytics and growth pages get pulse trends, drill-through KPIs, and a triage roster, while the marketplace gets an ultraminimal header and a full functionality pass. On iPad, **The Diary** arrives: an experimental Apple Pencil handwriting surface.
