@@ -83,6 +83,17 @@ export type FamiliarRollup = {
   laneCounts: Partial<Record<WorkQueueLaneKey, number>>;
 };
 
+/**
+ * An open PR that needs housekeeping attention regardless of lane — the two
+ * gaps the CLI patrol flags: no linked bead (invisible to the queue) and/or no
+ * activity within the stale window. A PR can be both.
+ */
+export type AttentionItem = {
+  pr: PullRequestSummary;
+  unlinked: boolean;
+  stale: boolean;
+};
+
 export type WorkQueue = {
   lanes: WorkQueueLane[];
   byFamiliar: FamiliarRollup[];
@@ -91,6 +102,8 @@ export type WorkQueue = {
   stale: number;
   /** Open PRs mentioning no bead — invisible to the queue join. */
   unlinked: number[];
+  /** Open PRs that are unlinked and/or stale, with the PR summary for display. */
+  attention: AttentionItem[];
 };
 
 const LANE_TITLES: Record<WorkQueueLaneKey, string> = {
@@ -165,15 +178,18 @@ export function buildWorkQueue(
   const items: WorkQueueItem[] = [];
   let staleCount = 0;
   const unlinked: number[] = [];
+  const attention: AttentionItem[] = [];
   const beadIdsWithOpenPr = new Set<string>();
 
   // 1. Open PRs → their lane, joined to a ready bead when one is referenced.
   for (const pr of openPrs) {
-    if (pr.beadIds.length === 0) unlinked.push(pr.number);
+    const isUnlinked = pr.beadIds.length === 0;
+    if (isUnlinked) unlinked.push(pr.number);
     const bead = pr.beadIds.map((id) => beadById.get(id)).find(Boolean);
     for (const id of pr.beadIds) beadIdsWithOpenPr.add(id);
     const stale = isStalePr(pr, opts.nowMs, staleAfterHours);
     if (stale) staleCount += 1;
+    if (isUnlinked || stale) attention.push({ pr, unlinked: isUnlinked, stale });
     items.push({
       key: `pr:${pr.number}`,
       lane: prLaneToQueueLane(pr.lane),
@@ -238,6 +254,7 @@ export function buildWorkQueue(
     actionable,
     stale: staleCount,
     unlinked: unlinked.sort((a, b) => a - b),
+    attention: attention.sort((a, b) => a.pr.number - b.pr.number),
   };
 }
 

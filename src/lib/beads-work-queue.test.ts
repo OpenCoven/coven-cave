@@ -164,4 +164,30 @@ assert.equal(
   "notes without a comment are not verification evidence",
 );
 
+// ── Attention: unlinked and/or stale open PRs, with the PR summary (cave-x1j) ─
+{
+  const beads = [bead("cave-a", { labels: ["familiar:kitty"] })];
+  const prs = [
+    pr(1, "needs-review", { beads: ["cave-a"], updatedAgoHours: 40 }), // stale, linked
+    pr(2, "checks-failing", { beads: [], updatedAgoHours: 40 }), // unlinked AND stale
+    pr(3, "needs-review", { beads: [] }), // unlinked only (fresh)
+    pr(4, "ready-to-merge", { beads: ["cave-a"], updatedAgoHours: 1 }), // clean → excluded
+  ];
+  const q = buildWorkQueue(beads, prs, [], { nowMs: NOW, staleAfterHours: 24 });
+  assert.deepEqual(q.attention.map((a) => a.pr.number), [1, 2, 3], "clean PRs excluded; sorted by number");
+  const byNum = Object.fromEntries(q.attention.map((a) => [a.pr.number, a]));
+  assert.deepEqual({ u: byNum[1].unlinked, s: byNum[1].stale }, { u: false, s: true }, "#1 stale only");
+  assert.deepEqual({ u: byNum[2].unlinked, s: byNum[2].stale }, { u: true, s: true }, "#2 unlinked AND stale");
+  assert.deepEqual({ u: byNum[3].unlinked, s: byNum[3].stale }, { u: true, s: false }, "#3 unlinked only");
+  assert.ok(q.attention.every((a) => a.pr.title && a.pr.url), "carries the PR summary for display");
+
+  const clean = buildWorkQueue(
+    beads,
+    [pr(9, "ready-to-merge", { beads: ["cave-a"], updatedAgoHours: 1 })],
+    [],
+    { nowMs: NOW, staleAfterHours: 24 },
+  );
+  assert.deepEqual(clean.attention, [], "no unlinked/stale PRs → empty attention");
+}
+
 console.log("beads-work-queue.test.ts: ok");

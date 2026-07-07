@@ -86,6 +86,88 @@
   color: var(--accent-presence);
 }
 
+/* ── Attention strip (unlinked / stale PRs — repo hygiene) ───────────────── */
+.fwq-attention {
+  margin: 12px 20px 0;
+  border: 1px solid color-mix(in oklch, var(--color-warning) 34%, transparent);
+  border-radius: var(--radius-panel, 12px);
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+  overflow: hidden;
+}
+
+.fwq-attention-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-warning);
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 20%, transparent);
+}
+
+.fwq-attention-title {
+  flex-shrink: 0;
+}
+
+.fwq-attention-summary {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fwq-attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fwq-attention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 12%, transparent);
+}
+
+.fwq-attention-item:last-child {
+  border-bottom: 0;
+}
+
+.fwq-attention-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fwq-attention-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-attention-tags {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Unlinked (no bead) reads as informational, distinct from the warning stale. */
+.fwq-tag--unlinked {
+  color: var(--text-secondary);
+  border-color: var(--border-strong, var(--border-hairline));
+}
+
+@container (max-width: 560px) {
+  .fwq-attention-item {
+    flex-wrap: wrap;
+  }
+}
+
 .fwq-body {
   flex: 1;
   min-height: 0;

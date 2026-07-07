@@ -158,4 +158,43 @@ test.describe("familiar work queue (PR control tower)", () => {
     // …and Close unlocks (optimistic, without waiting for a re-read).
     await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeEnabled();
   });
+
+  test("Attention strip surfaces stale and unlinked open PRs", async ({ page }) => {
+    await gotoWorkQueue(page);
+    const strip = page.locator(".fwq").getByRole("region", { name: "PRs needing attention" });
+    await expect(strip).toBeVisible();
+
+    // #101 is 40h old (stale, linked); #103 has no bead (unlinked, fresh).
+    const stale = strip.locator(".fwq-attention-item", { hasText: "#101" });
+    await expect(stale.getByText("stale", { exact: true })).toBeVisible();
+    const unlinked = strip.locator(".fwq-attention-item", { hasText: "#103" });
+    await expect(unlinked.getByText("no bead", { exact: true })).toBeVisible();
+
+    // A clean, linked, fresh PR (#102) is NOT flagged.
+    await expect(strip.locator(".fwq-attention-item", { hasText: "#102" })).toHaveCount(0);
+    // Each row can jump to the PR.
+    await expect(stale.getByRole("button", { name: "Open PR" })).toBeVisible();
+  });
+
+  test("Attention strip is absent when no PR is stale or unlinked", async ({ page }) => {
+    // Every open PR is fresh and linked → nothing to flag.
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    const freshPr = { number: 201, title: "All good", url: "https://gh/pull/201", lane: "ready-to-merge", beadIds: ["cave-aa1"], checkStatus: "passing", reviewDecision: "APPROVED", mergeStateStatus: "CLEAN", headRefName: "feat/cave-aa1", updatedAt: new Date().toISOString() };
+    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ json: { ok: true, open: [freshPr], merged: [] } }));
+    await page.route(/\/api\/beads\?/, (r) =>
+      r.fulfill({ json: { ok: true, data: [{ id: "cave-aa1", title: "T", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty"] }] } }),
+    );
+    await page.goto("/");
+    await page.waitForTimeout(500);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })));
+    await page.waitForSelector(".fwq-lane", { timeout: 45_000 });
+    await expect(page.locator(".fwq-attention")).toHaveCount(0);
+  });
 });

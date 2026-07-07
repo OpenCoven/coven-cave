@@ -12,6 +12,7 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
   hasVerificationEvidence,
+  type AttentionItem,
   type ReadyBead,
   type MergedPrRef,
   type WorkQueue,
@@ -270,6 +271,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         </div>
       ) : null}
 
+      {q.attention.length > 0 ? <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} /> : null}
+
       <div className="fwq-body">
         {q.total === 0 ? (
           <EmptyState
@@ -319,6 +322,66 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Repo-wide housekeeping callout for the two gaps the CLI patrol flags: open
+ * PRs with no linked bead (invisible to the queue) and/or gone stale. Global —
+ * NOT filtered by the familiar chips, since an unlinked PR has no familiar and
+ * this is repo hygiene, not one familiar's queue.
+ */
+function AttentionStrip({
+  items,
+  onOpenUrl,
+}: {
+  items: AttentionItem[];
+  onOpenUrl?: (url: string) => void;
+}) {
+  const unlinkedCount = items.filter((i) => i.unlinked).length;
+  const staleCount = items.filter((i) => i.stale).length;
+  const summary = [
+    unlinkedCount ? `${unlinkedCount} unlinked` : null,
+    staleCount ? `${staleCount} stale` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <section className="fwq-attention" aria-label="PRs needing attention">
+      <header className="fwq-attention-head">
+        <Icon name="ph:warning-circle" width={14} aria-hidden />
+        <span className="fwq-attention-title">Needs attention</span>
+        <span className="fwq-attention-summary">{summary}</span>
+      </header>
+      <ul className="fwq-attention-list">
+        {items.map(({ pr, unlinked, stale }) => (
+          <li key={pr.number} className="fwq-attention-item">
+            <div className="fwq-attention-main">
+              <span className="fwq-pr-num">#{pr.number}</span>
+              <span className="fwq-attention-name">{pr.title}</span>
+            </div>
+            <div className="fwq-attention-tags">
+              {unlinked ? (
+                <span className="fwq-tag fwq-tag--unlinked" title="No linked bead — invisible to the queue">
+                  no bead
+                </span>
+              ) : null}
+              {stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
+            </div>
+            <Button
+              variant="ghost"
+              size="xs"
+              trailingIcon="ph:arrow-square-out"
+              onClick={() => onOpenUrl?.(pr.url)}
+              disabled={!onOpenUrl}
+            >
+              Open PR
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
