@@ -604,35 +604,49 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
-              { id: "coven", label: "Group", icon: "ph:users-three", title: "Group chat — broadcast one prompt to a coven of familiars" },
             ]}
           />
-          {/* Mobile / narrow-pane code-rail toggle. On desktop the rail is a
-              third column; below the breakpoint there's no room, so it opens
-              as a right-edge slide-over sheet (below). Mirrors the mobile
-              right-sheet affordance placement. Scoped to the conversation tab
-              so it doesn't hover over the Projects list. */}
-          {mobileRail && scope === "conversation" && (
+          <div className="flex items-center gap-1.5">
+            {/* Group demoted from a co-equal tab (cave-xsq.5): the default chat
+                surface reads as a conversation (Sessions / Projects), and Group
+                — broadcast one prompt to a coven — is a quiet icon here instead.
+                Still one click, still activated by CHAT_OPEN_COVEN_EVENT. */}
             <button
               type="button"
-              className="mobile-code-rail-toggle focus-ring"
-              aria-label={mobileRailOpen ? "Hide code rail" : "Show code rail"}
-              aria-haspopup="dialog"
-              aria-expanded={mobileRailOpen}
-              onClick={() => {
-                // Mutually exclusive with the right-panel sheet: two z-[200]
-                // aria-modal overlays on the same edge would stack and confuse
-                // AT. Opening the code rail dismisses the other sheet.
-                if (!mobileRailOpen) onSetRightPanel?.(null);
-                setMobileRailOpen((v) => !v);
-              }}
+              className={`chat-scope-group-btn focus-ring${scope === "coven" ? " is-active" : ""}`}
+              aria-label="Group chat — broadcast one prompt to a coven of familiars"
+              aria-pressed={scope === "coven"}
+              title="Group chat — broadcast one prompt to a coven of familiars"
+              onClick={() => setScope("coven")}
             >
-              <Icon name="ph:code" width={16} aria-hidden />
-              {changeCount > 0 ? (
-                <span className="mobile-code-rail-toggle__badge">{changeCount}</span>
-              ) : null}
+              <Icon name="ph:users-three" width={16} aria-hidden />
             </button>
-          )}
+            {/* Mobile / narrow-pane code-rail toggle. On desktop the rail is a
+                third column; below the breakpoint there's no room, so it opens
+                as a right-edge slide-over sheet (below). Scoped to the
+                conversation tab so it doesn't hover over the Projects list. */}
+            {mobileRail && scope === "conversation" && (
+              <button
+                type="button"
+                className="mobile-code-rail-toggle focus-ring"
+                aria-label={mobileRailOpen ? "Hide code rail" : "Show code rail"}
+                aria-haspopup="dialog"
+                aria-expanded={mobileRailOpen}
+                onClick={() => {
+                  // Mutually exclusive with the right-panel sheet: two z-[200]
+                  // aria-modal overlays on the same edge would stack and confuse
+                  // AT. Opening the code rail dismisses the other sheet.
+                  if (!mobileRailOpen) onSetRightPanel?.(null);
+                  setMobileRailOpen((v) => !v);
+                }}
+              >
+                <Icon name="ph:code" width={16} aria-hidden />
+                {changeCount > 0 ? (
+                  <span className="mobile-code-rail-toggle__badge">{changeCount}</span>
+                ) : null}
+              </button>
+            )}
+          </div>
         </div>
 
         {scope === "memory" ? (

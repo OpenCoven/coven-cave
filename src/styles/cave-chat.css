@@ -4667,6 +4667,35 @@ details[open] > .cave-tool-summary::before {
   border-color: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 42%, transparent);
   background: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 12%, transparent);
 }
+
+/* Demoted Group entry (cave-xsq.5): a quiet icon on the right of the scope-tab
+   row, muted at rest, accent-tinted when Group is the active scope — so Group
+   stays one click away without competing with Sessions / Projects as a tab. */
+.chat-scope-group-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.chat-scope-group-btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.chat-scope-group-btn.is-active {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
 .mobile-code-rail-toggle__badge {
   position: absolute;
   top: -3px;
