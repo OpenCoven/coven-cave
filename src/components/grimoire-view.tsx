@@ -107,6 +107,65 @@ function compactPath(path: string): string {
   return `…/${segments.slice(-2).join("/")}`;
 }
 
+// ── Open tabs — persisted multi-doc editing ──────────────────────────────────
+// Open documents live in a tab strip above the detail pane. Every open tab's
+// editor STAYS MOUNTED (inactive ones are display:none), so unsaved drafts
+// survive switching tabs. The set (and the active tab) persists to
+// localStorage, which doubles as the "recent documents" memory across
+// sessions.
+
+const TABS_STORAGE_KEY = "cave:grimoire:tabs";
+const ACTIVE_TAB_STORAGE_KEY = "cave:grimoire:active-tab";
+export const MAX_OPEN_TABS = 8;
+
+function parseStoredTabs(raw: string | null): GrimoireSelection[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const tabs: GrimoireSelection[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      if (item.kind === "knowledge" && typeof item.id === "string" && item.id) {
+        tabs.push({ kind: "knowledge", id: item.id });
+      } else if (item.kind === "memory" && typeof item.path === "string" && item.path) {
+        tabs.push({ kind: "memory", path: item.path });
+      } else if (item.kind === "journal" && typeof item.date === "string" && item.date) {
+        tabs.push({ kind: "journal", date: item.date });
+      }
+      // "knowledge-new" drafts are intentionally NOT restored across reloads.
+    }
+    return tabs.slice(0, MAX_OPEN_TABS);
+  } catch {
+    return [];
+  }
+}
+
+function readStoredTabs(): { tabs: GrimoireSelection[]; activeKey: string | null } {
+  if (typeof window === "undefined") return { tabs: [], activeKey: null };
+  try {
+    const tabs = parseStoredTabs(window.localStorage.getItem(TABS_STORAGE_KEY));
+    const activeKey = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    return { tabs, activeKey: activeKey && tabs.some((t) => selectionKey(t) === activeKey) ? activeKey : null };
+  } catch {
+    return { tabs: [], activeKey: null };
+  }
+}
+
+function writeStoredTabs(tabs: GrimoireSelection[], activeKey: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      TABS_STORAGE_KEY,
+      JSON.stringify(tabs.filter((t) => t.kind !== "knowledge-new")),
+    );
+    if (activeKey) window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeKey);
+    else window.localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
+  } catch {
+    /* private mode — tabs stay session-only */
+  }
+}
+
 // ── Knowledge ↔ raw-markdown mapping ─────────────────────────────────────────
 
 /** A vault entry as one raw markdown doc: title/tags ride the frontmatter the
@@ -303,10 +362,76 @@ export function GrimoireView() {
   const [journal, setJournal] = useState<JournalSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selection, setSelection] = useState<GrimoireSelection | null>(() => readGrimoireHash());
   const confirm = useConfirm();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Open tabs + the active one. A #grimoire: deep link wins over the restored
+  // active tab and is merged into the restored tab set.
+  const [{ openTabs, selection }, setTabState] = useState<{
+    openTabs: GrimoireSelection[];
+    selection: GrimoireSelection | null;
+  }>(() => {
+    const stored = readStoredTabs();
+    const fromHash = readGrimoireHash();
+    if (fromHash) {
+      const key = selectionKey(fromHash);
+      const tabs = stored.tabs.some((t) => selectionKey(t) === key)
+        ? stored.tabs
+        : [...stored.tabs, fromHash].slice(-MAX_OPEN_TABS);
+      return { openTabs: tabs, selection: fromHash };
+    }
+    const active = stored.activeKey
+      ? stored.tabs.find((t) => selectionKey(t) === stored.activeKey) ?? null
+      : null;
+    return { openTabs: stored.tabs, selection: active };
+  });
+
+  /** Open (or focus) a document tab. */
+  const openDoc = useCallback((sel: GrimoireSelection) => {
+    setTabState((prev) => {
+      const key = selectionKey(sel);
+      if (prev.openTabs.some((t) => selectionKey(t) === key)) {
+        return { openTabs: prev.openTabs, selection: sel };
+      }
+      let tabs = [...prev.openTabs, sel];
+      if (tabs.length > MAX_OPEN_TABS) {
+        // Evict the oldest non-active tab to stay within the mount budget.
+        const activeKey = prev.selection ? selectionKey(prev.selection) : null;
+        const evictIndex = tabs.findIndex((t) => selectionKey(t) !== activeKey);
+        tabs = tabs.filter((_, i) => i !== evictIndex);
+      }
+      return { openTabs: tabs, selection: sel };
+    });
+  }, []);
+
+  const closeTab = useCallback((key: string) => {
+    setTabState((prev) => {
+      const index = prev.openTabs.findIndex((t) => selectionKey(t) === key);
+      if (index < 0) return prev;
+      const tabs = prev.openTabs.filter((_, i) => i !== index);
+      let selection = prev.selection;
+      if (selection && selectionKey(selection) === key) {
+        selection = tabs[Math.min(index, tabs.length - 1)] ?? null;
+      }
+      return { openTabs: tabs, selection };
+    });
+  }, []);
+
+  /** Swap one tab for another in place (e.g. a saved draft gaining its id). */
+  const replaceTab = useCallback((fromKey: string, next: GrimoireSelection) => {
+    setTabState((prev) => {
+      let tabs = prev.openTabs.map((t) => (selectionKey(t) === fromKey ? next : t));
+      // De-dupe if the target already had a tab.
+      tabs = tabs.filter((t, i) => tabs.findIndex((o) => selectionKey(o) === selectionKey(t)) === i);
+      const selection =
+        prev.selection && selectionKey(prev.selection) === fromKey ? next : prev.selection;
+      return { openTabs: tabs, selection };
+    });
+  }, []);
+
+  useEffect(() => {
+    writeStoredTabs(openTabs, selection ? selectionKey(selection) : null);
+  }, [openTabs, selection]);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -374,14 +499,15 @@ export function GrimoireView() {
         setDeleteError(json.error ?? "Delete failed");
         return;
       }
-      setSelection(null);
+      // A deleted document's tab closes with it.
+      closeTab(selectionKey(selection));
       void load();
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeleting(false);
     }
-  }, [confirm, deleting, load, selection]);
+  }, [closeTab, confirm, deleting, load, selection]);
 
   const q = query.trim().toLowerCase();
   const matches = useCallback(
@@ -409,11 +535,53 @@ export function GrimoireView() {
 
   const loading = knowledge === null || memory === null || journal === null;
   const selectedKey = selection ? selectionKey(selection) : null;
-  const selectedKnowledge =
-    selection?.kind === "knowledge" ? (knowledge ?? []).find((e) => e.id === selection.id) ?? null : null;
+
+  /** Human tab label for a selection (falls back to ids/paths). */
+  const tabTitle = useCallback(
+    (sel: GrimoireSelection): string => {
+      if (sel.kind === "knowledge-new") return "New entry";
+      if (sel.kind === "knowledge") {
+        return (knowledge ?? []).find((e) => e.id === sel.id)?.title ?? sel.id;
+      }
+      if (sel.kind === "memory") return sel.path.split("/").pop() ?? sel.path;
+      return sel.date;
+    },
+    [knowledge],
+  );
+
+  /** Detail editor for one tab. Every open tab stays mounted (hidden when
+   *  inactive) so unsaved drafts survive switching tabs. */
+  const renderTabDetail = (tab: GrimoireSelection) => {
+    const key = selectionKey(tab);
+    if (tab.kind === "memory") {
+      return (
+        <MemoryMdEditor
+          key={tab.path}
+          path={tab.path}
+          sourceLabel={compactPath(tab.path)}
+          onCancel={() => closeTab(key)}
+        />
+      );
+    }
+    if (tab.kind === "journal") {
+      return <JournalMdEditor date={tab.date} onSaved={() => void load()} />;
+    }
+    const entry =
+      tab.kind === "knowledge" ? (knowledge ?? []).find((e) => e.id === tab.id) ?? null : null;
+    return (
+      <KnowledgeMdEditor
+        entry={entry}
+        onSaved={(saved) => {
+          replaceTab(key, { kind: "knowledge", id: saved.id });
+          void load();
+        }}
+        onCancel={() => closeTab(key)}
+      />
+    );
+  };
 
   const detail =
-    selection === null ? (
+    openTabs.length === 0 ? (
       <div className="grid h-full min-h-0 place-items-center p-8">
         <EmptyState
           icon="ph:book-open"
@@ -421,24 +589,63 @@ export function GrimoireView() {
           subtitle="Pick a knowledge entry, memory file, or journal day — or start a new knowledge entry."
         />
       </div>
-    ) : selection.kind === "memory" ? (
-      <MemoryMdEditor
-        key={selection.path}
-        path={selection.path}
-        sourceLabel={compactPath(selection.path)}
-        onCancel={() => setSelection(null)}
-      />
-    ) : selection.kind === "journal" ? (
-      <JournalMdEditor date={selection.date} onSaved={() => void load()} />
     ) : (
-      <KnowledgeMdEditor
-        entry={selectedKnowledge}
-        onSaved={(entry) => {
-          setSelection({ kind: "knowledge", id: entry.id });
-          void load();
-        }}
-        onCancel={() => setSelection(null)}
-      />
+      <div className="flex h-full min-h-0 flex-col">
+        <div
+          role="tablist"
+          aria-label="Open documents"
+          className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-2 py-1.5"
+        >
+          {openTabs.map((tab) => {
+            const key = selectionKey(tab);
+            const active = key === selectedKey;
+            return (
+              <span
+                key={key}
+                className={`inline-flex max-w-52 shrink-0 items-center overflow-hidden rounded-md border text-[11px] transition-colors ${
+                  active
+                    ? "border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                    : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                }`}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  title={tabTitle(tab)}
+                  onClick={() => setTabState((prev) => ({ ...prev, selection: tab }))}
+                  className="focus-ring-inset min-w-0 truncate px-2 py-1"
+                >
+                  {tabTitle(tab)}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Close ${tabTitle(tab)}`}
+                  onClick={() => closeTab(key)}
+                  className="focus-ring-inset shrink-0 px-1.5 py-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  <Icon name="ph:x" width={9} aria-hidden />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+        <div className="relative min-h-0 flex-1">
+          {openTabs.map((tab) => {
+            const key = selectionKey(tab);
+            return (
+              <div key={key} className={key === selectedKey ? "h-full min-h-0" : "hidden"}>
+                {renderTabDetail(tab)}
+              </div>
+            );
+          })}
+          {selectedKey === null ? (
+            <div className="grid h-full min-h-0 place-items-center p-8">
+              <EmptyState icon="ph:book-open" headline="Pick an open tab" subtitle="Or select a document from the list." />
+            </div>
+          ) : null}
+        </div>
+      </div>
     );
 
   return (
@@ -453,7 +660,7 @@ export function GrimoireView() {
             <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Grimoire</h2>
             <button
               type="button"
-              onClick={() => setSelection({ kind: "knowledge-new" })}
+              onClick={() => openDoc({ kind: "knowledge-new" })}
               className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
             >
               <Icon name="ph:plus" width={11} aria-hidden />
@@ -499,7 +706,7 @@ export function GrimoireView() {
                       title={entry.title}
                       subtitle={entry.tags.length ? entry.tags.map((t) => `#${t}`).join(" ") : entry.id}
                       meta={entry.enabled ? undefined : "off"}
-                      onClick={() => setSelection({ kind: "knowledge", id: entry.id })}
+                      onClick={() => openDoc({ kind: "knowledge", id: entry.id })}
                     />
                   ))
                 )}
@@ -521,7 +728,7 @@ export function GrimoireView() {
                         title={entry.relPath.split("/").pop() ?? entry.relPath}
                         subtitle={entry.rootLabel}
                         meta={entry.modified ? relativeTime(entry.modified) : undefined}
-                        onClick={() => setSelection({ kind: "memory", path: entry.fullPath })}
+                        onClick={() => openDoc({ kind: "memory", path: entry.fullPath })}
                       />
                     ))}
                     {visibleMemory.length > memoryLimit ? (
@@ -551,7 +758,7 @@ export function GrimoireView() {
                       selected={selectedKey === `journal:${day.date}`}
                       title={day.date}
                       subtitle={day.preview}
-                      onClick={() => setSelection({ kind: "journal", date: day.date })}
+                      onClick={() => openDoc({ kind: "journal", date: day.date })}
                     />
                   ))
                 )}
@@ -574,7 +781,7 @@ export function GrimoireView() {
             >
               <button
                 type="button"
-                onClick={() => setSelection(null)}
+                onClick={() => setTabState((prev) => ({ ...prev, selection: null }))}
                 aria-label="Back to document list"
                 className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] @min-[880px]/grimoire:hidden"
               >

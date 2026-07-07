@@ -49,7 +49,23 @@ assert.match(view, /\/api\/knowledge\?id=\$\{encodeURIComponent\(selection\.id\)
 assert.match(view, /\/api\/journal\?date=\$\{encodeURIComponent\(selection\.date\)\}/, "journal reflections delete through their API");
 assert.match(view, /Move to trash/, "memory delete is labelled as restorable trash");
 assert.match(view, /danger: true/, "the confirm renders its destructive style");
-assert.match(view, /setSelection\(null\);\s*void load\(\)/, "a successful delete clears the selection and reloads the navigator");
+assert.match(view, /closeTab\(selectionKey\(selection\)\);\s*void load\(\)/, "a successful delete closes the doc's tab and reloads the navigator");
 assert.match(view, /deleteError \? \(\s*<span role="alert"/, "delete failures are announced");
+
+// ── Tabs: persisted multi-doc editing (cave-90u) ─────────────────────────────
+
+assert.match(view, /"cave:grimoire:tabs"/, "open tabs persist to localStorage (recent docs across sessions)");
+assert.match(view, /"cave:grimoire:active-tab"/, "the active tab persists too");
+assert.match(view, /export const MAX_OPEN_TABS = 8/, "open-tab count is capped");
+assert.match(view, /role="tablist"[\s\S]*?aria-label="Open documents"/, "tab strip is an accessible tablist");
+assert.match(view, /role="tab"[\s\S]*?aria-selected=\{active\}/, "tabs expose selection state");
+assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}`\}/, "each tab has a labelled close button");
+// The core multi-tab behavior: every open tab's editor stays mounted so
+// unsaved drafts survive switching tabs (inactive tabs are display:none).
+assert.match(view, /key === selectedKey \? "h-full min-h-0" : "hidden"/, "inactive tab editors stay mounted, just hidden");
+assert.match(view, /kind !== "knowledge-new"/, "unsaved new-entry drafts are not restored across reloads");
+assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id \}\)/, "saving a new entry swaps its draft tab for the real doc");
+assert.match(view, /const evictIndex = tabs\.findIndex/, "over-cap opens evict the oldest non-active tab");
+assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activates within) the restored tab set");
 
 console.log("grimoire-view.test: ok");
