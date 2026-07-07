@@ -148,4 +148,32 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // A failed familiar reply can be retried in place.
   assert.match(view, /const retryReply = useCallback/, "failed replies can be retried");
   assert.match(view, /onClick=\{\(\) => void retryReply\(r\)\}/, "the Retry control re-runs a single familiar");
+
+  // cave-z4s (1): a broadcast streams every familiar concurrently, so recordSession
+  // must compose on the LATEST groups via a functional setGroups (persisting
+  // inside the updater) rather than reading the render-synced groupsRef — else
+  // concurrent session events dropped each other's session ids (last write wins).
+  assert.match(
+    view,
+    /const recordSession = useCallback\([\s\S]*?setGroups\(\(prev\) => \{[\s\S]*?const next = upsertGroup\(prev, setGroupSession\([\s\S]*?saveGroups\(next\);[\s\S]*?return next;[\s\S]*?\}\);[\s\S]*?onSessionStarted\?\.\(sessionId\);\s*\n\s*\},\s*\n?\s*\[onSessionStarted\]/,
+    "recordSession updates groups functionally + persists inside the updater and no longer reads the stale groupsRef (race-safe)",
+  );
+
+  // cave-z4s (2): switching covens aborts the in-flight broadcast (no leaked
+  // stream / stuck bubbles), and both stream-cleanup paths only clear the shared
+  // abort/busy wiring when they still own the active controller.
+  assert.match(
+    view,
+    /swap transcript when the active group changes[\s\S]*?abortRef\.current\?\.abort\(\);\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);/,
+    "changing the active coven aborts any in-flight broadcast before loading the new transcript",
+  );
+  {
+    const guarded = view.match(
+      /if \(abortRef\.current === controller\) \{\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*\}/g,
+    );
+    assert.ok(
+      guarded && guarded.length === 2,
+      "both broadcast and retryReply guard their abort/busy cleanup on still owning the controller",
+    );
+  }
 });
