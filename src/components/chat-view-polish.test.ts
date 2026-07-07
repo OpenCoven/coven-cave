@@ -224,8 +224,21 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size="xl" \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-crest[\s\S]*cave-linear-turn-recency/,
-  "Assistant turns should render a large circular avatar with author identity and recency",
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size="xl" \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-recency[\s\S]*cave-linear-turn-meta-extra[\s\S]*cave-linear-turn-crest/,
+  "Assistant turns render a large circular avatar + name + recency, with the crest/role/usage extras in a trailing reveal-on-hover cluster (cave-xsq.2)",
+);
+// Lean meta (cave-xsq.2): the static extras collapse into a reveal-on-hover
+// cluster so the default row is just name + time; the turn content is the
+// reveal scope so hovering the message brings them back.
+assert.match(
+  turnRow,
+  /cave-linear-turn-content[^"]*reveal-scope/,
+  "the assistant turn content is the reveal scope for its meta extras",
+);
+assert.match(
+  turnRow,
+  /className="cave-linear-turn-meta-extra reveal-on-hover"/,
+  "crest/role/usage/peek live in a trailing reveal-on-hover cluster (name + time stay visible)",
 );
 
 assert.match(

@@ -3425,6 +3425,17 @@ details[open] > .cave-tool-summary::before {
   line-height: 1.4;
 }
 
+/* Lean meta (cave-xsq.2): the trailing cluster of static extras (crest, role,
+   usage, details peek) that reveals on turn hover / focus via reveal-on-hover.
+   Its own inline-flex row keeps the extras aligned with the meta line's rhythm;
+   opacity-hidden by default so the visible row is just name + time. */
+.cave-linear-turn-meta-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 /* Per-turn provenance peek: a quiet ⓘ in the turn meta row whose title tooltip
    reveals model · cwd · duration · tokens · cost for that turn. Faint by
    default so the row stays clean; brightens on hover/focus. */

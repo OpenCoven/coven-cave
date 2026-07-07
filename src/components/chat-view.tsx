@@ -5735,7 +5735,7 @@ function TurnRowImpl({
       data-turn-id={turn.id}
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
     >
-      <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
+      <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
         {/* Avatar (interactive) + right column */}
         <div className={`cave-linear-turn-avatar${expanded ? " is-selected" : ""}`} ref={avatarWrapRef}>
           <button
@@ -5758,14 +5758,14 @@ function TurnRowImpl({
           ) : null}
         </div>
         <div className="cave-linear-turn-right">
+          {/* Lean meta (cave-xsq.2): name + time (and transient live status /
+              error retry) stay visible; the static identity/usage extras —
+              crest, role, token usage, and the details peek — collapse into a
+              trailing cluster that reveals on turn hover / keyboard focus
+              (reveal-scope on the turn content above). Nothing is removed; the
+              default view just reads "Name · 2h ago" like ChatGPT. */}
           <div className="cave-linear-turn-meta">
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            <span className="cave-linear-turn-crest" aria-hidden="true">
-              <Icon name="ph:sparkle" width={13} height={13} />
-            </span>
-            {familiar.role ? (
-              <span className="cave-linear-turn-badge">{familiar.role}</span>
-            ) : null}
             {turnStatus !== "complete" && !indicatorVisible && (
               <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
                 {lifecycleLabel(turnStatus)}
@@ -5792,18 +5792,26 @@ function TurnRowImpl({
                 {recency}
               </time>
             ) : null}
-            <UsageText usage={turn.usage} costUsd={turn.costUsd} />
-            {metaPeek ? (
-              <span
-                className="cave-turn-peek focus-ring"
-                title={metaPeek}
-                tabIndex={0}
-                role="note"
-                aria-label={`Turn details — ${metaPeek}`}
-              >
-                <Icon name="ph:info" width={11} aria-hidden />
+            <span className="cave-linear-turn-meta-extra reveal-on-hover">
+              <span className="cave-linear-turn-crest" aria-hidden="true">
+                <Icon name="ph:sparkle" width={13} height={13} />
               </span>
-            ) : null}
+              {familiar.role ? (
+                <span className="cave-linear-turn-badge">{familiar.role}</span>
+              ) : null}
+              <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+              {metaPeek ? (
+                <span
+                  className="cave-turn-peek focus-ring"
+                  title={metaPeek}
+                  tabIndex={0}
+                  role="note"
+                  aria-label={`Turn details — ${metaPeek}`}
+                >
+                  <Icon name="ph:info" width={11} aria-hidden />
+                </span>
+              ) : null}
+            </span>
           </div>
 
           <div className="cave-linear-turn-body">
