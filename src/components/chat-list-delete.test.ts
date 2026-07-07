@@ -338,7 +338,7 @@ assert.match(source, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes th
 assert.match(source, /scheduleBulkDelete\(\s*removed,/, "bulk delete schedules the batch through the undo window");
 assert.match(source, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted rows are hidden from the list until commit");
 assert.match(source, /<UndoToast[\s\S]{0,160}onUndo=\{undoBulkDelete\}[\s\S]{0,40}onDismiss=\{commitBulkDelete\}/, "an undo toast offers to restore the batch");
-assert.match(source, /const allVisibleSelected = displayIds\.length > 0 && displayIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware");
+assert.match(source, /const allVisibleSelected = visibleIds\.length > 0 && visibleIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware (excludes collapsed rows)");
 assert.match(source, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "toolbar offers select-all / clear");
 
 console.log("chat-list-delete.test.ts: ok");

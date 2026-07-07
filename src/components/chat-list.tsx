@@ -507,6 +507,18 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     () => displayGroups.flatMap((group) => group.sessions.map((session) => session.id)),
     [displayGroups],
   );
+  // `displayIds` keeps rows in collapsed sections (they stay in DOM order for
+  // drag/sort). Bulk select/delete must act only on rows the user can actually
+  // SEE, or "Select all" + Delete would silently remove chats hidden inside a
+  // collapsed section (data loss). The collapsible Pinned/Sessions sections only
+  // exist in the flat "All" view; there a row is hidden when its section is
+  // collapsed. Mirrors the per-row `rowCollapsed` computed during render.
+  const visibleIds = useMemo(() => {
+    if (effectiveSelection !== "all" || collapsedSections.size === 0) return displayIds;
+    return displayIds.filter(
+      (id) => !collapsedSections.has(isSessionPinned(pinnedIds, id) ? "pinned" : "sessions"),
+    );
+  }, [displayIds, effectiveSelection, collapsedSections, pinnedIds]);
   const visibleRows = useMemo(
     () => scopedGroups.reduce((n, g) => n + g.sessions.length, 0),
     [scopedGroups],
@@ -621,21 +633,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return next;
     });
   const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
-  // Visible-aware select-all: acts on the rows currently shown (displayIds).
-  const allVisibleSelected = displayIds.length > 0 && displayIds.every((id) => selectedIds.has(id));
+  // Visible-aware select-all: acts on the rows currently shown (visibleIds,
+  // which excludes rows in a collapsed section).
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   const toggleSelectAllVisible = () =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (allVisibleSelected) displayIds.forEach((id) => next.delete(id));
-      else displayIds.forEach((id) => next.add(id));
+      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
       return next;
     });
-  const selectedVisibleCount = displayIds.filter((id) => selectedIds.has(id)).length;
+  const selectedVisibleCount = visibleIds.filter((id) => selectedIds.has(id)).length;
 
   // Deferred + undoable: hide the selected chats now, fire the DELETEs only
   // after the undo window, refetch once. Undo restores the whole batch.
   const bulkDelete = () => {
-    const idSet = new Set(displayIds.filter((id) => selectedIds.has(id)));
+    // Only delete rows that are both selected AND currently visible — a section
+    // collapsed after selecting must protect its now-hidden chats from deletion.
+    const idSet = new Set(visibleIds.filter((id) => selectedIds.has(id)));
     const removed = mine.filter((s) => idSet.has(s.id));
     if (removed.length === 0) return;
     setError(null);
@@ -660,7 +675,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   };
 
   const bulkArchive = async (archived: boolean) => {
-    const ids = displayIds.filter((id) => selectedIds.has(id));
+    const ids = visibleIds.filter((id) => selectedIds.has(id));
     if (ids.length === 0) return;
     setBulkBusy(true);
     setError(null);
