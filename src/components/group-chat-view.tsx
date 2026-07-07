@@ -134,6 +134,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- swap transcript when the active group changes ----------------------
   useEffect(() => {
+    // Switching covens abandons any in-flight broadcast on the previous one.
+    // Abort it (otherwise its streams keep running and their tokens no-op
+    // against the newly-loaded transcript — a leaked stream) and clear the
+    // busy/abort state so the new coven starts clean. The previous coven keeps
+    // its last-saved transcript; returning to it offers retry on any partial.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
     if (!activeId) {
       setTranscript([]);
       return;
@@ -224,14 +232,23 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   const recordSession = useCallback(
     (groupId: string, familiarId: string, sessionId: string) => {
-      const current = groupsRef.current.find((g) => g.id === groupId);
-      if (!current || current.sessions[familiarId] === sessionId) return;
-      persistGroups(
-        upsertGroup(groupsRef.current, setGroupSession(current, familiarId, sessionId, nowIso())),
-      );
+      // A broadcast streams every familiar concurrently, so several session/done
+      // events can land in the same tick. Reading the render-synced groupsRef
+      // let each call rebase on the SAME stale groups, and the last write dropped
+      // the others' session ids. Update functionally instead so every record
+      // composes on the latest state; persist inside the updater. onSessionStarted
+      // is fired unconditionally (idempotent list refresh) so a session is never
+      // missed — we can't reliably read "did it change" back out of the updater.
+      setGroups((prev) => {
+        const current = prev.find((g) => g.id === groupId);
+        if (!current || current.sessions[familiarId] === sessionId) return prev;
+        const next = upsertGroup(prev, setGroupSession(current, familiarId, sessionId, nowIso()));
+        saveGroups(next);
+        return next;
+      });
       onSessionStarted?.(sessionId);
     },
-    [persistGroups, onSessionStarted],
+    [onSessionStarted],
   );
 
   // --- group CRUD ----------------------------------------------------------
@@ -434,8 +451,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           ),
         ),
       );
-      abortRef.current = null;
-      setBusy(false);
+      // Only clear the shared abort/busy wiring if this broadcast still owns it.
+      // A coven switch (or a newer broadcast) may have replaced abortRef while
+      // this one was aborting; clearing unconditionally would kill the newer
+      // stream's Stop and unlock the composer mid-response.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setBusy(false);
+      }
       // The streaming bubbles are visual-only — announce the outcome for AT.
       const failed = settled.filter((r) => r.status === "error").length;
       const total = settled.length;
@@ -501,8 +524,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         }),
         controller.signal,
       );
-      abortRef.current = null;
-      setBusy(false);
+      // Ownership-guarded (see broadcast): don't clobber a newer stream's wiring.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setBusy(false);
+      }
       const name = byId.get(fresh.familiarId)?.display_name ?? "Familiar";
       announce(
         settled.status === "error" ? `${name} failed again.` : `${name} replied.`,
