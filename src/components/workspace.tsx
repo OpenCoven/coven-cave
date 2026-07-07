@@ -10,6 +10,7 @@ import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { JournalView } from "@/components/journal/journal-view";
+import { GrimoireView } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import {
@@ -141,6 +142,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   capabilities: "Capabilities",
   "familiar-work-queue": "Work Queue",
   journal: "Journal",
+  grimoire: "Grimoire",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -2042,6 +2044,8 @@ export function Workspace() {
       />
     ) : mode === "journal" ? (
       <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
+    ) : mode === "grimoire" ? (
+      <GrimoireView />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode

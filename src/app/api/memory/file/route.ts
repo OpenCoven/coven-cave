@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { redact } from "@/lib/redact";
 import { resolveAllowedMemoryFilePath } from "@/lib/server/memory-file-paths";
+import { writeAllowedMemoryFile } from "@/lib/server/memory-file-write";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +18,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
   let raw: string;
+  let mtimeMs: number | null = null;
   try {
     raw = await readFile(/* turbopackIgnore: true */ allowedPath, "utf8");
+    mtimeMs = (await stat(/* turbopackIgnore: true */ allowedPath)).mtimeMs;
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "read failed" },
@@ -36,5 +39,28 @@ export async function GET(req: Request) {
     text: reveal ? raw : text,
     redactions,
     rawLength: raw.length,
+    mtimeMs,
   });
+}
+
+export async function PUT(req: Request) {
+  let body: { path?: string; text?: string; expectedMtimeMs?: number };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  if (!body.path) {
+    return NextResponse.json({ ok: false, error: "path required" }, { status: 400 });
+  }
+  if (typeof body.text !== "string") {
+    return NextResponse.json({ ok: false, error: "text required" }, { status: 400 });
+  }
+  const expectedMtimeMs = typeof body.expectedMtimeMs === "number" ? body.expectedMtimeMs : null;
+  const result = await writeAllowedMemoryFile(body.path, body.text, expectedMtimeMs);
+  if (!result.ok) {
+    const { status, ...rest } = result;
+    return NextResponse.json(rest, { status });
+  }
+  return NextResponse.json(result);
 }

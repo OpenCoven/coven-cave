@@ -66,6 +66,8 @@
     "@iconify-json/ph": "1.2.2",
     "@iconify/react": "6.0.2",
     "@lezer/highlight": "1.2.3",
+    "@milkdown/crepe": "7.21.2",
+    "@milkdown/react": "7.21.2",
     "@tailwindcss/browser": "4.3.1",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.3.3",
