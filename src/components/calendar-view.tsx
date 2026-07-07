@@ -1236,25 +1236,21 @@ function MiniMonthPopover({
       className="absolute top-full left-0 z-20 mt-2 w-[260px] rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
-          className="focus-ring grid h-6 w-6 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        <IconButton
+          icon="ph:arrow-left-bold"
           aria-label="Previous month"
-        >
-          <Icon name="ph:arrow-left-bold" width={10} />
-        </button>
+          size="sm"
+          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() - 1); return n; })}
+        />
         <span className="text-[12px] font-medium text-[var(--text-primary)]">
           {MONTHS[view.getMonth()]} {view.getFullYear()}
         </span>
-        <button
-          type="button"
-          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
-          className="focus-ring grid h-6 w-6 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        <IconButton
+          icon="ph:arrow-right-bold"
           aria-label="Next month"
-        >
-          <Icon name="ph:arrow-right-bold" width={10} />
-        </button>
+          size="sm"
+          onClick={() => setView((d) => { const n = new Date(d); n.setMonth(n.getMonth() + 1); return n; })}
+        />
       </div>
       <div className="mb-1 grid grid-cols-7 gap-px text-[9px] uppercase tracking-widest text-[var(--text-muted)]">
         {WEEKDAYS.map((wd) => <div key={wd} className="text-center">{wd.slice(0, 1)}</div>)}
@@ -1286,13 +1282,15 @@ function MiniMonthPopover({
           );
         })}
       </div>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        fullWidth
         onClick={() => onPick(today)}
-        className="focus-ring mt-2 w-full rounded-md border border-[var(--border-hairline)] py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        className="mt-2"
       >
         Today
-      </button>
+      </Button>
     </div>
   );
 }

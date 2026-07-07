@@ -270,4 +270,28 @@ assert.match(
   "agenda empty-state actions are Buttons that keep the mobile hook",
 );
 
+// cave-4op mini-month micro-slice: the jump-to-date popover's month nav arrows
+// and its Today shortcut use the shared primitives. The day-cell grid stays
+// bespoke (date cells with today/anchor states, not standard controls).
+assert.match(
+  source,
+  /<IconButton[\s\S]{0,80}icon="ph:arrow-left-bold"[\s\S]{0,80}aria-label="Previous month"/,
+  "mini-month Previous is an IconButton",
+);
+assert.match(
+  source,
+  /<IconButton[\s\S]{0,80}icon="ph:arrow-right-bold"[\s\S]{0,80}aria-label="Next month"/,
+  "mini-month Next is an IconButton",
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,120}fullWidth[\s\S]{0,140}onClick=\{\(\) => onPick\(today\)\}[\s\S]{0,40}>\s*Today\s*<\/Button>/,
+  "mini-month Today is a fullWidth Button",
+);
+assert.doesNotMatch(
+  source,
+  /grid h-6 w-6 place-items-center rounded-md/,
+  "no hand-rolled mini-month nav-arrow markup remains",
+);
+
 console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours + cave-4op control primitives ok");
