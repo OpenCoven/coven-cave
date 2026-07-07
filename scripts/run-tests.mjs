@@ -539,7 +539,6 @@ export const SUITES = {
     "src/components/menu-bar-icon-size.test.ts",
     "src/components/tray-quick-chat.test.ts",
     "src/components/quick-chat-controls.test.ts",
-    "src/components/quick-chat-overlay.test.ts",
     "src/components/familiar-quick-switch.test.ts",
     "src/components/familiar-pin-order.test.ts",
     "src/lib/familiar-quick-switch.test.ts",

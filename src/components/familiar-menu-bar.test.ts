@@ -202,10 +202,18 @@ assert.match(
   /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label="Quick chat"/,
   "the desktop menu bar renders a data-quick-chat-trigger button wired to onOpenQuickChat",
 );
+// cave-xsq.6: the quick-chat trigger jumps straight into a fresh chat with the
+// active familiar (the parallel overlay was retired) rather than opening a
+// duplicate mini-chat popover.
 assert.match(
   workspace,
-  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => setQuickChatOpen\(true\)\}/,
-  "workspace wires the desktop menu bar's quick-chat trigger to open the popover",
+  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => startFamiliarChat\(activeId\)\}/,
+  "workspace wires the desktop menu bar's quick-chat trigger to start a chat with the active familiar",
+);
+assert.doesNotMatch(
+  workspace,
+  /QuickChatOverlay/,
+  "the parallel in-app quick-chat overlay is retired",
 );
 
 console.log("familiar-menu-bar.test.ts: ok");
