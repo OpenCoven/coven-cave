@@ -188,7 +188,38 @@ export async function callDaemonTarget<T = unknown>(
     };
   }
 
+  const first = await callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+  // Retry transport-level failures (status 0: timeout/reset/refused) once for
+  // reads — a briefly-busy daemon must not surface a hard error for a GET
+  // (the /api/familiars 503 flake). Mutations never retry: a timed-out POST
+  // may have been applied. HTTP-level errors (a real status) never retry.
+  if (!first.ok && first.status === 0 && method === "GET") {
+    await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAY_MS));
+    return callDaemonTargetOnce<T>(target, { method, path: reqPath, body, timeoutMs });
+  }
+  return first;
+}
+
+const GET_RETRY_DELAY_MS = 250;
+
+function callDaemonTargetOnce<T = unknown>(
+  target: Exclude<DaemonTarget, { mode: "unconfigured-hub" }>,
+  {
+    method = "GET",
+    path: reqPath,
+    body,
+    timeoutMs = 4000,
+  }: DaemonRequest,
+): Promise<DaemonResponse<T>> {
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value: DaemonResponse<T>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(value);
+    };
+
     const payload = body !== undefined ? JSON.stringify(body) : undefined;
     const headers: Record<string, string> = {};
     if (payload) {
@@ -231,19 +262,24 @@ export async function callDaemonTarget<T = unknown>(
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));
+        // A response that errors mid-body (daemon crash, connection reset)
+        // never emits "end" — without this handler the promise would hang.
+        res.on("error", (err) => {
+          settle({ ok: false, status: 0, data: null, error: normalizeDaemonError(err) });
+        });
         res.on("end", () => {
           const raw = Buffer.concat(chunks).toString("utf8");
           const status = res.statusCode ?? 0;
           const ok = status >= 200 && status < 300;
           if (!raw) {
-            resolve({ ok, status, data: null });
+            settle({ ok, status, data: null });
             return;
           }
           try {
             const parsed = JSON.parse(raw) as T;
-            resolve({ ok, status, data: parsed });
+            settle({ ok, status, data: parsed });
           } catch {
-            resolve({
+            settle({
               ok: false,
               status,
               data: null,
@@ -254,11 +290,20 @@ export async function callDaemonTarget<T = unknown>(
       },
     );
 
+    // `timeout` above is an IDLE timeout — a body that trickles a byte inside
+    // every idle window defeats it. This hard deadline bounds the total
+    // request; daemon responses are small JSON, so 2× the idle budget is
+    // generous for any legitimate reply.
+    const deadline = setTimeout(() => {
+      req.destroy(new Error("timeout"));
+    }, timeoutMs * 2);
+    (deadline as { unref?: () => void }).unref?.();
+
     req.on("timeout", () => {
       req.destroy(new Error("timeout"));
     });
     req.on("error", (err) => {
-      resolve({
+      settle({
         ok: false,
         status: 0,
         data: null,
