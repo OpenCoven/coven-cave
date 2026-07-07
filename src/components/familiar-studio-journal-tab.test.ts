@@ -34,4 +34,41 @@ assert.match(
   "the redirecting provider reuses the helper",
 );
 
+const wrapper = read("./familiar-studio-journal-tab.tsx");
+const inline = read("./familiar-studio-inline.tsx");
+const sections = read("./settings-sections.ts");
+const css = read("../styles/journal.css");
+
+// ── Wrapper: reuse JournalEntries pinned to the studio's familiar ────────────
+assert.match(wrapper, /import "@\/styles\/journal\.css"/, "wrapper carries the journal styles");
+assert.match(wrapper, /<JournalEntries/, "wrapper renders the existing JournalEntries surface");
+assert.match(
+  wrapper,
+  /useMemo\(\(\) => new Set\(\[familiar\.id\]\), \[familiar\.id\]\)/,
+  "the multiselect scope is pinned to the one familiar being edited",
+);
+assert.match(wrapper, /activeFamiliarId=\{familiar\.id\}/, "generation targets the studio familiar");
+
+// ── Inline panel: the tab is registered and rendered ─────────────────────────
+assert.match(
+  inline,
+  /\{ id: "journal", label: "Journal", icon: "ph:book-open" \}/,
+  "the studio tab bar includes Journal",
+);
+assert.match(
+  inline,
+  /activeTab === "journal" \? <FamiliarStudioJournalTab familiar=\{familiar\} allFamiliars=\{familiars\} \/> : null/,
+  "the journal tab body renders the wrapper",
+);
+
+// ── Settings search reaches the tab ──────────────────────────────────────────
+assert.match(sections, /familiarTab: "journal"/, "the journal studio tab is indexed for settings search");
+
+// ── Studio host gives the master-detail journal a bounded height ─────────────
+assert.match(
+  css,
+  /\.familiar-studio-journal \.journal-list \{[\s\S]*?height:/,
+  "journal-list gets an explicit height inside the studio body",
+);
+
 console.log("familiar-studio-journal-tab.test.ts: ok");

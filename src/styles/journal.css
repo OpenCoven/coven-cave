@@ -716,3 +716,10 @@
   color: var(--text-muted);
 }
 .journal-entry__by b { color: var(--accent-presence); }
+
+/* ── Familiar Studio host ─────────────────────────────────────────────────────
+   Inside Settings → Familiars the journal has no full-page flex parent, so the
+   master-detail shell gets an explicit bounded height: the day rail and the
+   detail pane scroll internally instead of growing the settings page. */
+.familiar-studio-journal { display: flex; min-width: 0; }
+.familiar-studio-journal .journal-list { height: min(65vh, 720px); }
