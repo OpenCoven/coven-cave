@@ -81,12 +81,18 @@ assert.match(
   "ChatSurface should label the secondary primary tab Projects instead of Traces",
 );
 
-// Group Chat ("coven") is folded in as a first-class scope tab (retiring the
-// standalone groupchat page); it renders GroupChatView for the coven scope.
-assert.match(
+// Group Chat ("coven") is demoted from a co-equal tab (cave-xsq.5): it's a quiet
+// icon-button on the right of the scope-tab row that switches to the coven scope,
+// not a third tab — so the default surface reads as Sessions / Projects.
+assert.doesNotMatch(
   chatSurface,
   /\{\s*id:\s*"coven",\s*label:\s*"Group"/,
-  "ChatSurface should expose the Group Chat tab",
+  "Group is no longer a co-equal scope tab",
+);
+assert.match(
+  chatSurface,
+  /className=\{`chat-scope-group-btn[\s\S]*onClick=\{\(\) => setScope\("coven"\)\}/,
+  "ChatSurface exposes Group as a demoted icon-button that switches to the coven scope",
 );
 assert.match(
   chatSurface,

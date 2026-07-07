@@ -117,8 +117,8 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
   assert.match(
     chatSurface,
-    /\{\s*id:\s*"coven",\s*label:\s*"Group"/,
-    "ChatSurface exposes a Group tab",
+    /chat-scope-group-btn[\s\S]*onClick=\{\(\) => setScope\("coven"\)\}/,
+    "ChatSurface exposes Group as a demoted icon-button (not a co-equal tab) that opens the coven scope (cave-xsq.5)",
   );
   assert.match(
     chatSurface,
