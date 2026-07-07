@@ -170,7 +170,9 @@ export function ProfileSection() {
 
   async function saveLinks(nextLinks = links) {
     if (!snapshot) return;
-    const normalized = normalizeLinks(nextLinks);
+    // Fully-blank rows (a fresh "Add link") don't block saving the rest —
+    // only rows with exactly one filled field are incomplete.
+    const normalized = normalizeLinks(nextLinks).filter((link) => link.label || link.url);
     const incomplete = normalized.some((link) => !link.label || !link.url);
     if (incomplete) {
       setLinkHint("Each link needs both a label and a URL before it can be saved.");
