@@ -15,6 +15,7 @@ import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import type { AdapterReport } from "@/lib/harness-adapters";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
 type Tab = "memory" | "familiar" | "analytics" | "inbox";
@@ -462,6 +463,14 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
         ← back
       </button>
       <div className="flex-1 truncate font-mono text-[var(--text-secondary)]">{filename}</div>
+      <button
+        onClick={() => openGrimoireDoc("memory", path)}
+        title="Open in the Grimoire editor"
+        aria-label="Open in Grimoire"
+        className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
+      >
+        <Icon name="ph:book-open" width={13} />
+      </button>
       <button
         onClick={() => setFullscreen((v) => !v)}
         title={fullscreen ? "Exit fullscreen" : "Open fullscreen"}

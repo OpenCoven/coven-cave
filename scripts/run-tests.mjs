@@ -503,6 +503,7 @@ export const SUITES = {
     "src/lib/md-doc-stats.test.ts",
     "src/components/md-editor/md-editor.test.ts",
     "src/components/grimoire-view.test.ts",
+    "src/lib/grimoire-link.test.ts",
     "src/lib/server/coven-memory-path.test.ts",
     "src/lib/recent-colors.test.ts",
 	    "src/components/ui/color-picker.test.ts",
