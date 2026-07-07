@@ -1629,26 +1629,26 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
         <div className="flex shrink-0 items-center gap-1">
           {/* Nav arrows */}
-          <button
-            onClick={() => navigate(-1)}
+          <IconButton
+            icon="ph:arrow-left-bold"
             aria-label="Previous"
-            className="calendar-toolbar-icon focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:arrow-left-bold" width={12} />
-          </button>
-          <button
+            onClick={() => navigate(-1)}
+            className="calendar-toolbar-icon"
+          />
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => setAnchor(new Date())}
-            className="calendar-toolbar-button focus-ring inline-flex h-7 items-center rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)]"
+            className="calendar-toolbar-button"
           >
             Today
-          </button>
-          <button
-            onClick={() => navigate(1)}
+          </Button>
+          <IconButton
+            icon="ph:arrow-right-bold"
             aria-label="Next"
-            className="calendar-toolbar-icon focus-ring grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:arrow-right-bold" width={12} />
-          </button>
+            onClick={() => navigate(1)}
+            className="calendar-toolbar-icon"
+          />
         </div>
 
         {/* Heading + pending pill + jump-to-date popover */}
@@ -1696,15 +1696,15 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         </div>
 
         {onAddEntry ? (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:plus-bold"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            aria-label="Add event"
-            className="calendar-toolbar-button focus-ring inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-toolbar-button shrink-0"
           >
-            <Icon name="ph:plus-bold" width={10} />
             Add event
-          </button>
+          </Button>
         ) : null}
       </div>
 

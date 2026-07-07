@@ -142,8 +142,8 @@ assert.doesNotMatch(
 );
 assert.equal(
   (source.match(/Add event/g) ?? []).length,
-  2, // aria-label + button label of the single toolbar button
-  "Exactly one Add event button (toolbar), counted via its label + aria-label",
+  1, // the single toolbar button's visible label (now a shared <Button>, no redundant aria-label)
+  "Exactly one Add event button (toolbar)",
 );
 assert.match(
   source,
@@ -152,14 +152,22 @@ assert.match(
 );
 assert.match(
   source,
-  /inline-flex h-7 items-center rounded-md border[\s\S]{0,200}Today/,
-  "Today button matches the h-7 toolbar height",
+  /<Button[\s\S]{0,200}className="calendar-toolbar-button"\s*>\s*Today\s*<\/Button>/,
+  "Today is the shared Button primitive, keeping the toolbar mobile hook",
 );
 assert.match(
   source,
-  /aria-label="Add event"/,
-  "Toolbar Add event button is labeled",
+  /<Button[\s\S]{0,220}leadingIcon="ph:plus-bold"[\s\S]{0,160}>\s*Add event\s*<\/Button>/,
+  "Toolbar Add event is the shared Button primitive with its label",
 );
+
+// cave-4op toolbar slice: the nav arrows are shared IconButtons and the raw
+// hand-rolled toolbar control markup is gone. The segmented view switcher and
+// the heading / jump-to-date trigger stay bespoke (a segmented control and a
+// text trigger, not standard buttons).
+assert.match(source, /<IconButton[\s\S]{0,80}icon="ph:arrow-left-bold"[\s\S]{0,80}aria-label="Previous"/, "toolbar Previous is an IconButton");
+assert.match(source, /<IconButton[\s\S]{0,80}icon="ph:arrow-right-bold"[\s\S]{0,80}aria-label="Next"/, "toolbar Next is an IconButton");
+assert.doesNotMatch(source, /grid h-7 w-7 place-items-center rounded-md text-\[var\(--text-muted\)\]/, "no hand-rolled toolbar nav-arrow markup remains");
 
 // ───────── Mobile toolbar hit areas ─────────
 assert.match(source, /calendar-toolbar/, "Calendar toolbar should expose a stable mobile hook");
