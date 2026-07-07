@@ -10,6 +10,11 @@
 # previous tag is auto-detected via `git tag --sort=-version:refname` when
 # the second argument is omitted.
 #
+# The Install section hyperlinks each platform's asset name to its
+# releases/download/<tag>/<asset> URL (DMGs keep the `v` prefix; AppImage/MSI
+# use the bare version number), so users can click straight through to the
+# download instead of hunting the assets list.
+#
 # Designed to be run both in CI (release.yml's checksums job re-renders the
 # body after all artifacts have uploaded) and locally for backfilling old
 # releases via `gh release edit <tag> --notes-file -`.
@@ -82,6 +87,13 @@ else
   echo
 fi
 
+# ── Asset download URLs ──────────────────────────────────────────────────────
+# Each Install line hyperlinks the asset name to its release-download URL so
+# users can click straight through. DMG assets carry the `v` prefix
+# (CovenCave-vX.Y.Z-<arch>.dmg); AppImage/MSI assets use the bare version
+# number (CovenCave_X.Y.Z_...). Keep these in sync with release.yml's uploads.
+DL="https://github.com/$REPO/releases/download/$VERSION"
+
 cat <<INSTALL
 
 ## Install
@@ -90,18 +102,18 @@ INSTALL
 
 if [ "$arch_split" = "true" ]; then
   cat <<INSTALL_NEW
-- **macOS (Apple Silicon):** download \`CovenCave-$VERSION-aarch64.dmg\`, open it, drag CovenCave.app to Applications.
-- **macOS (Intel):** download \`CovenCave-$VERSION-x86_64.dmg\`, open it, drag CovenCave.app to Applications.
+- **macOS (Apple Silicon):** download [\`CovenCave-$VERSION-aarch64.dmg\`]($DL/CovenCave-$VERSION-aarch64.dmg), open it, drag CovenCave.app to Applications.
+- **macOS (Intel):** download [\`CovenCave-$VERSION-x86_64.dmg\`]($DL/CovenCave-$VERSION-x86_64.dmg), open it, drag CovenCave.app to Applications.
 INSTALL_NEW
 else
   cat <<INSTALL_LEGACY
-- **macOS:** download \`CovenCave-$VERSION.dmg\`, open it, drag CovenCave.app to Applications.
+- **macOS:** download [\`CovenCave-$VERSION.dmg\`]($DL/CovenCave-$VERSION.dmg), open it, drag CovenCave.app to Applications.
 INSTALL_LEGACY
 fi
 
 cat <<INSTALL_REST
-- **Linux:** download the AppImage asset, \`chmod +x CovenCave_*.AppImage\`, then run it.
-- **Windows:** download the \`.msi\` and double-click to install.
+- **Linux:** download the [AppImage asset]($DL/CovenCave_${VER_NUM}_amd64.AppImage), \`chmod +x CovenCave_*.AppImage\`, then run it.
+- **Windows:** download the [\`.msi\`]($DL/CovenCave_${VER_NUM}_x64_en-US.msi) and double-click to install.
 
 ## Verify checksums
 
