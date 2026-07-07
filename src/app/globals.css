@@ -2694,7 +2694,12 @@ textarea.required-inputs-control {
 .ui-popover-portal {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  /* Popovers are the topmost transient layer: they must paint above every
+     dialog/drawer they can be opened from — including the board task drawer
+     (.board-drawer, z 300/301) — or the drawer's backdrop swallows the click
+     and closes the drawer instead. Kept below drag ghosts (1000) and
+     tooltips (9000). */
+  z-index: 400;
   pointer-events: none;
 }
 .ui-popover {

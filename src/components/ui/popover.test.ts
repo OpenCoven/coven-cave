@@ -48,4 +48,27 @@ assert.match(
   "popover restores focus to the anchor when it would otherwise land on body",
 );
 
+// Stacking: popovers portal to <body>, so they compete with every other
+// portaled layer purely on z-index. The board task drawer (also portaled to
+// <body>) sits at z 300/301 — the popover portal must layer ABOVE it, or the
+// drawer's backdrop paints over the open menu and the click that "selects an
+// option" lands on the backdrop and closes the drawer instead (the Tasks
+// inspector's Status/Priority/Familiar/Project dropdowns were unusable).
+const globalsCss = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
+const boardCss = readFileSync(new URL("../../styles/board.css", import.meta.url), "utf8");
+const portalZ = Number(
+  globalsCss.match(/\.ui-popover-portal\s*\{[^}]*?z-index:\s*(\d+)/)?.[1],
+);
+const drawerZ = Math.max(
+  ...[...boardCss.matchAll(/\.board-drawer(?:-backdrop)?\s*\{[^}]*?z-index:\s*(\d+)/g)].map(
+    (m) => Number(m[1]),
+  ),
+);
+assert.ok(Number.isFinite(portalZ), "found .ui-popover-portal z-index in globals.css");
+assert.ok(Number.isFinite(drawerZ), "found .board-drawer z-index in board.css");
+assert.ok(
+  portalZ > drawerZ,
+  `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
+);
+
 console.log("popover.test.ts: ok");
