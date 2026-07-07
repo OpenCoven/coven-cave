@@ -101,12 +101,14 @@ export async function uploadUserProfileAvatar(image: { dataUrl: string; mime: st
   return { ok: true };
 }
 
-export async function removeUserProfileAvatar(): Promise<void> {
+export async function removeUserProfileAvatar(): Promise<SaveResult> {
   const res = await fetch("/api/profile/avatar", { method: "DELETE" }).catch(() => null);
-  if (!res?.ok) return;
+  const json = res ? ((await res.json().catch(() => null)) as { error?: string } | null) : null;
+  if (!res?.ok) return { ok: false, reason: json?.error ?? "Could not remove image." };
   cached = { profile: cached?.profile ?? {}, avatar: { present: false } };
   notify();
   broadcast();
+  return { ok: true };
 }
 
 function subscribe(fn: () => void): () => void {

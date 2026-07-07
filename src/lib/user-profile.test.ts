@@ -22,4 +22,8 @@ describe("user-profile client store", () => {
   it("exposes avatar URL with an updatedAt cache-buster", () => {
     assert.match(source, /\/api\/profile\/avatar\?v=/);
   });
+  it("reports avatar removal failures instead of silently succeeding", () => {
+    assert.match(source, /export async function removeUserProfileAvatar\(\): Promise<SaveResult>/);
+    assert.match(source, /return \{ ok: false, reason:/);
+  });
 });

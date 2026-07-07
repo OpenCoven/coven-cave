@@ -198,6 +198,7 @@ export const ICON_NAMES = [
   "ph:brain-bold",
   "ph:chats",
   "ph:user",
+  "ph:user-circle",
   "ph:plus",
   "ph:plus-bold",
   "ph:circle-notch-bold",

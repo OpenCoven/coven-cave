@@ -6,6 +6,7 @@
 import type { FamiliarStudioTab } from "@/lib/familiar-studio-context";
 
 export type Section =
+  | "profile"
   | "general"
   | "daemon"
   | "familiars"
@@ -25,6 +26,7 @@ export type SettingsIndexEntry = {
 };
 
 export const SECTIONS: SectionMeta[] = [
+  { id: "profile", label: "Profile", icon: "ph:user-circle", description: "Your name, image, and details familiars know you by.", accent: "#f0c987" },
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, startup, and app-wide defaults.", accent: "#9a8ecd" },
   { id: "daemon", label: "Daemon", icon: "ph:terminal-window", description: "Local runtime status and process controls.", accent: "#69d6a6" },
   { id: "familiars", label: "Familiars", icon: "ph:users-three", description: "Roster, identity, permissions, and pin order.", accent: "#d8a9ff" },
@@ -34,6 +36,7 @@ export const SECTIONS: SectionMeta[] = [
 ];
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
+  profile: ["Display name & pronouns", "Profile image", "Bio, timezone & links"],
   general: ["Workspace path", "Launch behavior", "Default start view"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   familiars: ["Roster & identity", "Per-familiar permissions", "Pinned strip order"],
@@ -43,6 +46,10 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 };
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
+  { section: "profile", group: "Identity", keywords: "profile name display pronouns identity operator user you" },
+  { section: "profile", group: "Image", keywords: "avatar image photo picture upload face profile" },
+  { section: "profile", group: "Details", keywords: "bio about timezone time zone" },
+  { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },

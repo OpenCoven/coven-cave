@@ -149,6 +149,7 @@ export const SUITES = {
     "src/components/pwa-register.test.ts",
     "src/lib/readable-text-color.test.ts",
     "src/components/settings-appearance.test.ts",
+    "src/components/settings-profile.test.ts",
     "src/components/settings-search.test.ts",
     "src/components/settings-daemon-multihost.test.ts",
     "src/components/settings-familiars-section.test.ts",
