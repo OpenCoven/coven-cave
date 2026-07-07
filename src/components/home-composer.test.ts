@@ -35,8 +35,33 @@ assert.match(
 
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{`What should we build in \$\{selectedProject\?\.name \?\? "Coven Cave"\}\?`\}/,
-  "HomeComposer headline should reflect the selected project name",
+  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "Coven Cave"\}/,
+  "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
+);
+
+// ── Hero presence eyebrow ────────────────────────────────────────────────────
+// The greeting samples the client clock AFTER mount (SSR markup must stay
+// deterministic), fades in via .is-ready, and derives from the pure
+// greetingForHour helper so the boundaries unit-test exactly.
+assert.match(
+  source,
+  /import \{ greetingForHour \} from "@\/lib\/home-greeting"/,
+  "the hero greeting derives from the pure home-greeting helper",
+);
+assert.match(
+  source,
+  /const \[greeting, setGreeting\] = useState<string \| null>\(null\);[\s\S]*?useEffect\(\(\) => \{\s*setGreeting\(greetingForHour\(new Date\(\)\.getHours\(\)\)\);\s*\}, \[\]\)/,
+  "the greeting is sampled after mount so SSR/client markup can't drift",
+);
+assert.match(
+  source,
+  /home-composer-eyebrow\$\{greeting \? " is-ready" : ""\}/,
+  "the eyebrow fades in via .is-ready once the client greeting lands",
+);
+assert.match(
+  source,
+  /className="home-halo" aria-hidden/,
+  "the hearth-glow halo renders behind the composer card and is hidden from AT",
 );
 
 // Project selector lives in the composer toolbar so the user can choose which

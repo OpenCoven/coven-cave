@@ -70,6 +70,7 @@ import {
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
 import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
+import { greetingForHour } from "@/lib/home-greeting";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,6 +164,12 @@ export function HomeComposer({
   // open purely as a function of the text). Reset whenever the text changes so
   // typing a fresh command token re-opens them.
   const [slashDismissed, setSlashDismissed] = useState(false);
+  // Time-of-day greeting for the hero eyebrow. Sampled after mount (client
+  // clock) so SSR markup stays deterministic — the eyebrow fades in once set.
+  const [greeting, setGreeting] = useState<string | null>(null);
+  useEffect(() => {
+    setGreeting(greetingForHour(new Date().getHours()));
+  }, []);
   const { announce } = useAnnouncer();
   // Stable per-mount listbox id — the chat composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
@@ -843,16 +850,31 @@ export function HomeComposer({
   return (
     <div className="home-composer-root">
 
-      {/* Headline */}
+      {/* Headline — mono presence eyebrow over the display face; the project
+          name carries the accent tint (presence lives in the place you're
+          working). */}
       <div className="home-composer-hero">
+        <p className={`home-composer-eyebrow${greeting ? " is-ready" : ""}`}>
+          <span className="home-composer-eyebrow-dot" aria-hidden />
+          {greeting ?? "\u00A0"}
+        </p>
         <h1 className="home-composer-headline">
-          {`What should we build in ${selectedProject?.name ?? "Coven Cave"}?`}
+          {"What should we build in "}
+          <span className="home-composer-headline-project">
+            {selectedProject?.name ?? "Coven Cave"}
+          </span>
+          ?
         </h1>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
           card without being clipped by the card's `overflow: hidden`. */}
       <div className="home-composer-card-wrap">
+
+        {/* Hearth glow — the ambient presence halo behind the composer. It
+            breathes slowly and brightens while the composer holds focus
+            (static under prefers-reduced-motion). */}
+        <div className="home-halo" aria-hidden />
 
         {/* Slash suggestion popover — anchored above the card so it doesn't
             push the rest of the layout when it opens. */}
