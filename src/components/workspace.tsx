@@ -568,11 +568,22 @@ export function Workspace() {
     };
     const onOpenProjectFile = (e: Event) => enqueue("files", e);
     const onOpenFileDiff = (e: Event) => enqueue("changes", e);
+    // Projects hub → "Browse files": carries a project ROOT (not a file path);
+    // ChatSurface browses that root with nothing selected (cave-z44).
+    const onBrowseProjectFiles = (e: Event) => {
+      if (modeRef.current === "chat") return;
+      const detail = (e as CustomEvent<{ root?: string }>).detail;
+      if (!detail?.root) return;
+      setPendingCodeRailOpen({ kind: "files", root: detail.root, nonce: Date.now() });
+      setMode("chat");
+    };
     window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
     window.addEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    window.addEventListener("cave:browse-project-files", onBrowseProjectFiles as EventListener);
     return () => {
       window.removeEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
       window.removeEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+      window.removeEventListener("cave:browse-project-files", onBrowseProjectFiles as EventListener);
     };
   }, []);
 

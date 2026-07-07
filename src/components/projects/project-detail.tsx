@@ -399,6 +399,20 @@ export function ProjectDetail({
             <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => void copyRoot()}>
               Copy path
             </PopoverItem>
+            <PopoverItem
+              icon="ph:file-code"
+              onSelect={() => {
+                // Drill into this project's file tree via the code rail. The
+                // event is bridged to chat mode by workspace.tsx (cave-z44);
+                // the rail browses project.root with nothing selected.
+                window.dispatchEvent(
+                  new CustomEvent("cave:browse-project-files", { detail: { root: project.root } }),
+                );
+                announce(`Browsing files in ${project.name}.`);
+              }}
+            >
+              Browse files
+            </PopoverItem>
             <PopoverSeparator />
             <PopoverItem icon="ph:trash-bold" danger onSelect={() => setConfirmDelete(true)}>
               Delete project…

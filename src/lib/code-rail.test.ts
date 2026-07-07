@@ -66,3 +66,19 @@ test("activeTab persists when no signals change", () => {
   const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 2 }, prev);
   assert.equal(r.activeTab, "changes");
 });
+
+// cave-z44: browsing another project's files must NOT be hijacked by that
+// project's pre-existing working-tree changes (which look like a 0→N batch).
+test("browse peek: existing changes do not auto-reveal Changes (stays on Files)", () => {
+  const prev: CodeRailState = { available: true, open: true, activeTab: "files", changeCount: 0 };
+  const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 5, browseActive: true }, prev);
+  assert.equal(r.available, true);
+  assert.equal(r.open, true);
+  assert.equal(r.activeTab, "files", "the browse keeps the Files tab despite a fresh non-zero count");
+});
+
+test("browse peek off: the same 0→N transition still reveals Changes", () => {
+  const prev: CodeRailState = { available: true, open: true, activeTab: "files", changeCount: 0 };
+  const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 5 }, prev);
+  assert.equal(r.activeTab, "changes", "without a browse the reveal behavior is unchanged");
+});

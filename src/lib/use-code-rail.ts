@@ -16,9 +16,12 @@ export type UseCodeRailArgs = {
   /** Pending edit count for this session (0 = none). Caller polls /api/changes. */
   changeCount: number;
   terminalActive: boolean;
+  /** A "browse at root" peek is active — suppress the Changes auto-reveal so the
+   *  browsed project stays on its Files tab (cave-z44). */
+  browseActive?: boolean;
 };
 
-export function useCodeRail({ projectRoot, changeCount, terminalActive }: UseCodeRailArgs) {
+export function useCodeRail({ projectRoot, changeCount, terminalActive, browseActive }: UseCodeRailArgs) {
   const [pinned, setPinned] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState<CodeRailTab>("files");
@@ -30,7 +33,7 @@ export function useCodeRail({ projectRoot, changeCount, terminalActive }: UseCod
   }, []);
 
   const state = resolveCodeRail(
-    { hasRepo: Boolean(projectRoot), changeCount, terminalActive, pinned, dismissed },
+    { hasRepo: Boolean(projectRoot), changeCount, terminalActive, pinned, dismissed, browseActive },
     prevRef.current,
   );
 
