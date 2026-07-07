@@ -9,7 +9,7 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
-import { JournalView } from "@/components/journal/journal-view";
+
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import {
@@ -26,7 +26,7 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { RailInspector } from "@/components/inspector-pane";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { FamiliarsView } from "@/components/familiars-view";
@@ -275,6 +275,14 @@ export function Workspace() {
       markCovenTabPending();
       setModeRaw("chat");
       window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT)), 0);
+      return;
+    }
+    if (next === "journal") {
+      // The Journal page retired — it lives in Settings → Familiars → Journal.
+      // Every entry point (sidebar row, ⌘K palette, ?mode= deep link,
+      // cave:navigate-mode, dashboard links) funnels through setMode, so this
+      // one redirect covers them all.
+      openFamiliarStudioSettingsTab("journal");
       return;
     }
     setModeRaw(next);
@@ -1679,14 +1687,13 @@ export function Workspace() {
         setMode("board");
         return true;
       case "/journal":
-        try { localStorage.setItem("cave:journal:tab", "journal"); } catch { /* ignore */ }
-        setMode("journal");
-        window.dispatchEvent(new CustomEvent("cave:journal-set-tab", { detail: { tab: "journal" } }));
+        setMode("journal"); // redirects to Settings → Familiars → Journal
         return true;
       case "/canvas":
-        try { localStorage.setItem("cave:journal:tab", "canvas"); } catch { /* ignore */ }
-        setMode("journal");
-        window.dispatchEvent(new CustomEvent("cave:journal-set-tab", { detail: { tab: "canvas" } }));
+        // The Canvas page moved to feature/journal-canvas-surface. /canvas is
+        // chat-inline now: hand off to a chat where the composer's /canvas
+        // handler generates (with a prompt) or shows the usage hint (without).
+        startFamiliarChat(activeId);
         return true;
       case "/chats":
       case "/agents":
@@ -2018,8 +2025,6 @@ export function Workspace() {
           openFamiliarSession(sessionId, familiarId);
         }}
       />
-    ) : mode === "journal" ? (
-      <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode

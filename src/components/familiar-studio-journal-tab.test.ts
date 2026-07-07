@@ -85,4 +85,31 @@ assert.match(
   "hasEntry honors the familiar scope",
 );
 
+const ws = read("./workspace.tsx");
+const sidebar = read("./sidebar-minimal.tsx");
+const pageDrag = read("../lib/page-drag.ts");
+const slash = read("../lib/slash-commands.ts");
+
+// ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
+assert.match(
+  ws,
+  /if \(next === "journal"\) \{[\s\S]{0,400}?openFamiliarStudioSettingsTab\("journal"\)/,
+  "setMode redirects journal to Settings → Familiars → Journal",
+);
+assert.doesNotMatch(ws, /import \{ JournalView \}/, "workspace no longer imports JournalView");
+assert.doesNotMatch(ws, /mode === "journal" \?/, "no journal surface branch remains");
+assert.doesNotMatch(ws, /cave:journal-set-tab/, "the journal tab event plumbing is gone");
+assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal routes through the redirect");
+
+// ── Sidebar: the Journal row stays (redirects on click), minus sketches ─────
+assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal row");
+assert.doesNotMatch(sidebar, /generated sketches/, "sidebar description no longer promises the canvas");
+
+// ── A redirect is not a page: journal can't be dragged into a split ─────────
+assert.match(pageDrag, /NON_SPLITTABLE = new Set\(\["terminal", "journal"\]\)/, "journal is excluded from drag-to-split");
+
+// ── Slash palette copy matches the new home ───────────────────────────────────
+assert.match(slash, /name: "\/journal"[^}]*Settings/, "/journal description points at Settings");
+assert.doesNotMatch(slash, /Journal's Canvas tab/, "/canvas no longer advertises the Canvas page");
+
 console.log("familiar-studio-journal-tab.test.ts: ok");
