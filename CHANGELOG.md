@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.149] - 2026-07-07
+
+> 🩹 **Chat polish** — prompt snippets fold into the composer's Options menu, and group chat gains a race-safe session recorder that aborts an in-flight broadcast when you switch covens.
+
+Release on top of v0.0.148.
+
+### Features
+- **Chat: prompt snippets in the Options menu** (#2602, cave-xsq.4). The snippet picker moves into the composer's Options menu.
+
+### Fixes
+- **Group chat: race-safe session recording** (#2603, cave-z4s). `recordSession` is race-safe and aborts an in-flight broadcast on a coven switch.
+
 ## [0.0.148] - 2026-07-07
 
 > 🔗 **Grimoire grows up** — the markdown editor gains a full `[[wiki-link]]` system (parser, outgoing chips, and a graph viewer), multi-tab editing, Open-in-Grimoire cross-links, live-follow of agent writes, and a diff-based 409 conflict resolver. Chat picks up a centered reading column, leaner per-message metadata, and create-task-from-chat. Plus more cave-4op button standardization and the legacy avatar store's retirement.
