@@ -879,13 +879,14 @@ function UserProfileCard({
       ) : state.status === "error" || !p ? (
         <div className="gh-profile-error">
           <p>Couldn’t load @{login}’s profile.</p>
-          <button
-            type="button"
-            className="gh-profile-open"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:arrow-square-out"
             onClick={() => openExternalUrl(`https://github.com/${login}`)}
           >
-            <Icon name="ph:arrow-square-out" width={12} /> Open on GitHub
-          </button>
+            Open on GitHub
+          </Button>
         </div>
       ) : (
         <>
@@ -945,13 +946,14 @@ function UserProfileCard({
             )}
           </div>
 
-          <button
-            type="button"
-            className="gh-profile-open"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:github-logo"
             onClick={() => openExternalUrl(p.htmlUrl ?? `https://github.com/${p.login}`)}
           >
-            <Icon name="ph:github-logo" width={13} /> View full profile
-          </button>
+            View full profile
+          </Button>
         </>
       )}
     </div>
