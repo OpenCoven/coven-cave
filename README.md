@@ -53,11 +53,38 @@ Run against the Tauri desktop shell:
 bash scripts/dev-app.sh
 ```
 
-The wrapper picks a free loopback port in `3000..3010`, starts the custom Next
-dev server when needed, and points `tauri dev` at the selected port. First launch
-can take several minutes while Cargo downloads and compiles Rust crates. Use
-`PORT=3007 bash scripts/dev-app.sh` to force a specific port. `pnpm dev:app`
-calls the same wrapper.
+Run the wrapper in the foreground and leave the terminal attached; stop it with
+`Ctrl-C`. Detached or backgrounded runs can exit without leaving useful Tauri
+logs, so foreground startup is the reliable way to verify the app launched.
+`pnpm dev:app` calls the same wrapper.
+
+The wrapper picks the first free loopback port in `3000..3010` (if `3000` is
+occupied, for example by Docker, it moves to `3001`), reuses an already-running
+dev server on that port or starts the custom Next dev server, writes a
+temporary Tauri config so `devUrl` points at the actual port, and then runs
+`tauri dev`. Use `PORT=3007 bash scripts/dev-app.sh` to force a specific port.
+
+Expected early output looks like:
+
+```text
+[dev:app] port 3001 is free
+[dev:app] starting dev server on 3001
+Running BeforeDevCommand (`PORT=3001 pnpm dev`)
+> Ready on http://127.0.0.1:3001
+Running DevCommand (`cargo run --no-default-features --color always --`)
+```
+
+If startup appears stuck:
+
+- First launch can spend several minutes downloading and compiling Rust crates
+  before the window appears. Cargo `Compiling ...` lines are progress, not a
+  hang.
+- No `[dev:app] port ... is free` line and an error instead means every port in
+  `3000..3010` is occupied — free one or pass an explicit `PORT=`.
+- Stuck before `> Ready on ...` points at the Next dev server; check the
+  wrapper's terminal output for Next/Node errors.
+- Stuck after `Running DevCommand` with no Cargo output points at the Rust
+  toolchain; verify `cargo --version` and the Tauri prerequisites above.
 
 Build:
 
