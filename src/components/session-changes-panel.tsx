@@ -6,6 +6,7 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -993,13 +994,15 @@ export function SessionChangesInner({
                 </button>
               </div>
               {!prOpen && !postCommit.onDefaultBranch ? (
-                <button
-                  type="button"
-                  className="focus-ring mt-1.5 inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon="ph:git-pull-request"
+                  className="mt-1.5"
                   onClick={() => setPrOpen(true)}
                 >
-                  <Icon name="ph:git-pull-request" width={12} aria-hidden /> Create PR
-                </button>
+                  Create PR
+                </Button>
               ) : null}
             </div>
           ) : null}
@@ -1022,22 +1025,22 @@ export function SessionChangesInner({
                 className="focus-ring w-full resize-y rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
               />
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
+                  size="xs"
+                  leadingIcon="ph:git-pull-request"
                   disabled={!prTitle.trim() || creatingPr}
                   onClick={() => void createPr()}
-                  className="focus-ring inline-flex items-center gap-1 rounded bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-presence-foreground,white)] disabled:opacity-40"
                 >
-                  <Icon name="ph:git-pull-request" width={12} aria-hidden />
                   {creatingPr ? "Opening…" : "Create pull request"}
-                </button>
-                <button
-                  type="button"
-                  className="focus-ring rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => setPrOpen(false)}
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -1055,16 +1058,17 @@ export function SessionChangesInner({
                 disabled={!canCommit || committing}
                 className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)] disabled:opacity-40"
               />
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="xs"
+                leadingIcon="ph:git-diff"
                 disabled={!canCommit || !commitMsg.trim() || committing}
                 onClick={() => void commitChanges()}
                 title="Stage all changes and commit"
-                className="focus-ring inline-flex shrink-0 items-center gap-1 rounded bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-presence-foreground,white)] disabled:opacity-40"
+                className="shrink-0"
               >
-                <Icon name="ph:git-diff" width={12} aria-hidden />
                 {committing ? "Committing…" : "Commit"}
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>

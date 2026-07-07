@@ -295,6 +295,7 @@ export const SUITES = {
     "src/components/comux-touch-wiring.test.ts",
     "src/components/comux-preview-crumbs.test.ts",
     "src/components/session-changes-totals.test.ts",
+    "src/components/session-changes-panel.test.ts",
     "src/components/project-tree-keynav.test.ts",
     "src/components/comux-pane-nav-wiring.test.ts",
     "src/components/a11y-audit-fixes.test.ts",
