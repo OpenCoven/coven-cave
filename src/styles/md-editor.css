@@ -22,16 +22,46 @@
   --crepe-color-on-secondary: var(--text-primary);
   --crepe-color-inverse: var(--bg-elevated);
   --crepe-color-on-inverse: var(--text-primary);
-  --crepe-color-inline-code: var(--accent-presence-soft);
+  /* Inline code: the app's soft lavender pill (cave-chat.css `:not(pre) > code`)
+   * — theme-aware, unlike the old --code-surface mapping, which is a fixed
+   * DARK surface and rendered inline code as an unreadable dark blob on light
+   * themes. */
+  --crepe-color-inline-code: color-mix(in oklch, var(--accent-presence) 85%, var(--text-primary));
+  --crepe-color-inline-area: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   --crepe-color-error: var(--color-warning, #ff8a9b);
   --crepe-color-hover: var(--bg-hover);
   --crepe-color-selected: color-mix(in oklch, var(--accent-presence) 22%, transparent);
-  --crepe-color-inline-area: var(--code-surface);
   --crepe-font-title: inherit;
   --crepe-font-default: inherit;
   --crepe-font-code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   height: 100%;
+  background: transparent;
+}
+
+/* Code blocks: the Cave keeps code on the always-dark --code-surface in every
+ * app theme (same convention as read-mode blocks and the Projects editor).
+ * The CodeMirror instance inside gets the mood-c theme via the Crepe
+ * code-mirror feature config (md-editor-visual.tsx); here the surrounding
+ * block chrome (language picker, copy/preview tools) is re-scoped to fixed
+ * light-on-dark inks so it stays readable on the dark surface in light mode. */
+.md-editor-visual .milkdown .milkdown-code-block {
+  --crepe-color-surface: transparent;
+  --crepe-color-surface-low: color-mix(in oklch, white 8%, transparent);
+  --crepe-color-on-surface: #c9c2dc;
+  --crepe-color-on-surface-variant: #8f86ab;
+  --crepe-color-outline: color-mix(in oklch, white 18%, transparent);
+  --crepe-color-hover: color-mix(in oklch, white 10%, transparent);
+  --crepe-color-background: var(--code-surface);
+
+  background: var(--code-surface);
+  border-radius: 10px;
+}
+
+.md-editor-visual .milkdown .milkdown-code-block .cm-editor {
+  background: transparent;
+}
+.md-editor-visual .milkdown .milkdown-code-block .cm-gutters {
   background: transparent;
 }
 

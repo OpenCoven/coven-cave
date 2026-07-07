@@ -41,6 +41,7 @@ assert.match(visual, /\[Crepe\.Feature\.TopBar\]: false/, "Crepe top bar disable
 assert.match(visual, /void crepe\.destroy\(\)/, "Crepe destroyed on unmount");
 assert.match(visual, /setReadonly/, "read-only state forwarded to Crepe");
 assert.match(visual, /@milkdown\/crepe\/theme\/common\/style\.css/, "crepe common theme imported");
+assert.match(visual, /\[Crepe\.Feature\.CodeMirror\]: \{ theme: caveCodeMirrorTheme \}/, "code blocks use the shared Cave CodeMirror theme, not Crepe's bundled one-dark");
 
 // ── Memory wiring: reveal load + guarded PUT ─────────────────────────────────
 
@@ -83,6 +84,19 @@ assert.doesNotMatch(
 
 assert.match(css, /--crepe-color-primary: var\(--accent-presence\)/, "crepe accent mapped to app accent");
 assert.match(css, /--crepe-color-on-background: var\(--text-primary\)/, "crepe ink mapped to app ink");
+// Light-theme legibility (cave-nar): inline code is the app's theme-aware
+// lavender pill, and code blocks keep the always-dark --code-surface with
+// fixed light-on-dark chrome inks — never the old fixed-dark inline mapping.
+assert.match(css, /--crepe-color-inline-code: color-mix\(in oklch, var\(--accent-presence\) 85%, var\(--text-primary\)\)/, "inline code ink is theme-aware");
+assert.match(css, /--crepe-color-inline-area: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\)/, "inline code pill bg is theme-aware");
+assert.doesNotMatch(css, /--crepe-color-inline-area: var\(--code-surface\)/, "inline code must NOT ride the fixed-dark code surface");
+assert.match(css, /\.milkdown-code-block \{[\s\S]*?background: var\(--code-surface\)/, "code blocks stay on the always-dark code surface");
 assert.match(globals, /@import "\.\.\/styles\/md-editor\.css"/, "md-editor.css imported in globals");
+
+// The shared CodeMirror theme is one module for all three editor surfaces.
+const sharedTheme = await readFile(new URL("../code-editor-theme.ts", import.meta.url), "utf8");
+assert.match(sharedTheme, /export const caveCodeMirrorTheme/, "shared theme exported");
+const codeEditor = await readFile(new URL("../code-editor.tsx", import.meta.url), "utf8");
+assert.match(codeEditor, /from "@\/components\/code-editor-theme"/, "code-editor consumes the shared theme");
 
 console.log("md-editor.test: ok");

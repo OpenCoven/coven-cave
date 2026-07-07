@@ -13,6 +13,7 @@
 
 import { useEffect, useRef } from "react";
 import { Crepe } from "@milkdown/crepe";
+import { caveCodeMirrorTheme } from "@/components/code-editor-theme";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame-dark.css";
 
@@ -51,6 +52,12 @@ export default function MdEditorVisual({ defaultValue, readOnly, onChange, onSav
         [Crepe.Feature.AI]: false,
         [Crepe.Feature.Latex]: false,
         [Crepe.Feature.TopBar]: false,
+      },
+      featureConfigs: {
+        // Code blocks use the Cave's CodeMirror theme (mood-c palette on the
+        // always-dark --code-surface) instead of Crepe's bundled one-dark
+        // colors, which don't adapt to app themes.
+        [Crepe.Feature.CodeMirror]: { theme: caveCodeMirrorTheme },
       },
     });
     crepe.on((listener) => {
