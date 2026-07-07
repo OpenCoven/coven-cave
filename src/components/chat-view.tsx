@@ -79,7 +79,7 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } fro
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
-import { useUserProfile, userDisplayName } from "@/lib/user-profile";
+import { readUserProfileSnapshot, useUserProfile, userDisplayName } from "@/lib/user-profile";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
   chatUsagePlanTooltip,
@@ -1984,7 +1984,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
-  const profileSnapshot = useUserProfile();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [activeLeafId, setActiveLeafId] = useState<string>("");
   // Branching: undefined = no pending branch; null = branch at the ROOT (the
@@ -3832,7 +3831,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ? familiar.display_name
         : turn.role === "system"
           ? "System"
-          : userDisplayName(profileSnapshot?.profile);
+          // Read at call time: this closure reaches rows through a memo
+          // comparator that ignores callback identity, so a captured hook
+          // value could go stale (chat-view memo notes below).
+          : userDisplayName(readUserProfileSnapshot()?.profile);
     const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
     const snippet = buildReplySnippet(source);
     if (!snippet) return;
