@@ -319,10 +319,7 @@ export function SettingsShell() {
                   width={showPicker ? 18 : 13}
                   className={section === s.id && !showPicker ? "text-[var(--accent-presence-foreground)] opacity-70" : "text-[var(--text-muted)]"}
                 />
-                <span className="flex flex-1 flex-col">
-                  <span>{s.label}</span>
-                  <span className="settings-nav__description">{s.description}</span>
-                </span>
+                <span className="flex-1">{s.label}</span>
                 {showPicker ? (
                   <Icon name="ph:caret-right" width={14} className="text-[var(--text-muted)]" />
                 ) : null}

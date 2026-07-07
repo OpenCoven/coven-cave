@@ -181,24 +181,6 @@
   margin-bottom: 10px;
 }
 
-.settings-nav__item {
-  min-height: 48px;
-}
-
-.settings-nav__item[aria-current="page"] .settings-nav__description {
-  color: var(--accent-presence-foreground);
-  opacity: 0.78;
-}
-
-.settings-nav__description {
-  display: -webkit-box;
-  overflow: hidden;
-  margin-top: 1px;
-  line-height: 1.25;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .settings-shell__content {
   scroll-padding-top: 18px;
 }
