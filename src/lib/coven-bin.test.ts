@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { covenLaunchCommandForBinary } from "./coven-bin.ts";
+import { covenLaunchCommandForBinary, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 
@@ -86,6 +86,58 @@ assert.deepEqual(
   covenLaunchCommandForBinary(fallbackShim, "win32"),
   { command: process.execPath, fixedArgs: [fallbackScript] },
   "Windows .cmd shims fall back to the standard npm global coven.js location",
+);
+
+// Windows has no $SHELL, so the login-shell PATH probe always failed there
+// and refreshCovenSpawnEnv() could never see PATH entries added after launch
+// (e.g. npm's global dir right after the onboarding installer runs). The
+// registry is where those entries actually land.
+assert.match(
+  source,
+  /process\.platform === "win32"\s*\?\s*windowsRegistryPath\(\)\s*:\s*loginShellPath\(\)/,
+  "Windows spawn PATH comes from the registry, not a POSIX login-shell probe",
+);
+
+assert.match(
+  source,
+  /HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Control\\\\Session Manager\\\\Environment[\s\S]*HKCU\\\\Environment/,
+  "registry PATH merges the machine hive before the user hive, matching Windows' own order",
+);
+
+const regExpandOutput = [
+  "",
+  "HKEY_CURRENT_USER\\Environment",
+  "    Path    REG_EXPAND_SZ    %USERPROFILE%\\go\\bin;C:\\Program Files\\Git\\cmd;%COVEN_UNSET%\\bin",
+  "",
+].join("\r\n");
+
+assert.equal(
+  windowsPathFromRegQuery(regExpandOutput, { USERPROFILE: "C:\\Users\\annie" }),
+  "C:\\Users\\annie\\go\\bin;C:\\Program Files\\Git\\cmd;%COVEN_UNSET%\\bin",
+  "REG_EXPAND_SZ values expand %VAR% and leave unknown variables intact, like Windows does",
+);
+
+assert.equal(
+  windowsPathFromRegQuery(regExpandOutput, { UserProfile: "C:\\Users\\annie" }),
+  "C:\\Users\\annie\\go\\bin;C:\\Program Files\\Git\\cmd;%COVEN_UNSET%\\bin",
+  "%VAR% expansion is case-insensitive, like Windows env lookup",
+);
+
+assert.equal(
+  windowsPathFromRegQuery(
+    "HKEY_CURRENT_USER\\Environment\r\n    PATH    REG_SZ    %USERPROFILE%\\bin;C:\\tools\r\n",
+    { USERPROFILE: "C:\\Users\\annie" },
+  ),
+  "%USERPROFILE%\\bin;C:\\tools",
+  "REG_SZ values are returned verbatim (Windows does not expand them either)",
+);
+
+assert.equal(
+  windowsPathFromRegQuery(
+    "ERROR: The system was unable to find the specified registry key or value.",
+  ),
+  null,
+  "missing Path value yields null so the other hive still contributes",
 );
 
 console.log("coven-bin.test.ts: ok");
