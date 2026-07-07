@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.146] - 2026-07-07
+
+> 📝 **Write where you think** — a new OpenKnowledge-style markdown editor lands across memory, knowledge, and journal, and the marketplace folds its Skills filter rail and leaderboard into one panel. Plus a Gantt scroll fix, cleaner GitHub comments, and a calendar controls refactor onto shared primitives.
+
+Feature release on top of v0.0.145.
+
+### Features
+- **Grimoire: OpenKnowledge-style markdown editor** (#2562). A unified markdown editing surface for memory, knowledge, and journal entries.
+- **Marketplace: unified Skills panel** (#2563, cave-8hn). The Skills filter rail and leaderboard merge into a single panel.
+
+### Fixes
+- **tasks: Gantt timeline scrolls on one bounded viewport** (#2559, cave-hsh). The Gantt timeline now scrolls within a single bounded viewport instead of overflowing.
+- **github: remove @familiar tagging from the comment composer** (#2560, cave-803). The GitHub comment composer no longer injects @familiar tags.
+
+### Refactors & chores
+- **calendar: standardize toolbar, action, and jump-to-date mini-month controls on shared Button/IconButton primitives** (#2565, #2566, #2567, cave-4op).
+- **marketplace: hide the Roles section for now** (#2564, cave-8vy).
+
 ## [0.0.145] - 2026-07-07
 
 > 🛠️ **The work queue grows up** — the Familiar Work Queue lands as a beads + PR control tower with handoff notes and evidence-gated close, iOS finally reads your operator profile (name/avatar instead of "You"), and Projects gets a Files drill-through into the code rail. Plus a solid batch of daemon-resilience, dashboard, proxy, and nav fixes.
