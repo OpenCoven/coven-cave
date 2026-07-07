@@ -16,6 +16,7 @@ import {
   type UserProfileSnapshot,
 } from "@/lib/user-profile";
 import { PROFILE_LIMITS, type ProfileLink, type UserProfilePatch } from "@/lib/user-profile-shared";
+import { readUserAvatarImageSnapshot, whenUserAvatarHydrated } from "@/lib/user-avatar-image";
 
 const PROFILE_IMAGE_ACCEPT = FAMILIAR_IMAGE_ACCEPT
   .split(",")
@@ -55,6 +56,8 @@ function linksMatch(left: ProfileLink[] | undefined, right: ProfileLink[]): bool
 
 function avatarInitial(snapshot: UserProfileSnapshot | null): string {
   const display = userDisplayName(snapshot?.profile);
+  // "You" is the unnamed fallback, not a name — let the icon branch render.
+  if (display === "You") return "";
   return display.trim().charAt(0).toUpperCase();
 }
 
@@ -76,6 +79,21 @@ export function ProfileSection() {
   const [linkHint, setLinkHint] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  // Spec §6: a legacy browser-local SVG avatar can't migrate (server rejects
+  // SVG) — surface a re-upload hint instead of letting it silently vanish.
+  const [legacySvgAvatar, setLegacySvgAvatar] = useState(false);
+  useEffect(() => {
+    if (snapshot?.avatar.present) {
+      setLegacySvgAvatar(false);
+      return;
+    }
+    let cancelled = false;
+    void whenUserAvatarHydrated().then(() => {
+      if (cancelled) return;
+      setLegacySvgAvatar(readUserAvatarImageSnapshot()?.mime === "image/svg+xml");
+    });
+    return () => { cancelled = true; };
+  }, [snapshot?.avatar.present]);
 
   useEffect(() => {
     if (!snapshot || hydratedRef.current) return;
@@ -279,6 +297,11 @@ export function ProfileSection() {
               ) : null}
             </div>
             <p className="text-[11px] text-[var(--text-muted)]">PNG, JPEG, or WebP. Large files are downsized before upload.</p>
+            {legacySvgAvatar ? (
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Your previous avatar was an SVG, which can no longer be used — re-upload it as PNG, JPEG, or WebP.
+              </p>
+            ) : null}
           </div>
         </div>
       </SettingsGroup>

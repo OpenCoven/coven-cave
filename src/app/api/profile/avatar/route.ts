@@ -8,17 +8,19 @@ import {
   writeUserAvatarFile,
 } from "@/lib/server/user-avatar-file";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const avatar = await readUserAvatarFile();
   if (!avatar) return new NextResponse(null, { status: 404 });
-  return new NextResponse(new Uint8Array(avatar.bytes), {
-    status: 200,
-    headers: {
-      "Content-Type": avatar.mime,
-      "Cache-Control": "no-cache",
-      ETag: `"${avatar.updatedAt}-${avatar.bytes.byteLength}"`,
-    },
-  });
+  const etag = `"${avatar.updatedAt}-${avatar.bytes.byteLength}"`;
+  const headers = {
+    "Content-Type": avatar.mime,
+    "Cache-Control": "no-cache",
+    ETag: etag,
+  };
+  if (req.headers.get("if-none-match") === etag) {
+    return new NextResponse(null, { status: 304, headers });
+  }
+  return new NextResponse(new Uint8Array(avatar.bytes), { status: 200, headers });
 }
 
 export async function POST(req: NextRequest) {
