@@ -219,13 +219,15 @@ test.describe("mobile foundations", () => {
   // WorkspaceMode and fails on any crash, daemon-less. It does NOT assert
   // layout (some surfaces legitimately scroll); it only asserts "didn't crash".
   test("no workspace surface crashes on navigation", async ({ page }) => {
-    // The complete WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
+    // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
     // when a new surface is added — a new mode with a render crash should turn
-    // this red.
-    const ALL_SURFACES = [
+    // this red. "journal" is intentionally excluded here: it retired as a
+    // standalone surface and now redirects to Settings → Familiars, so it has
+    // no .shell-frame — it's swept separately after the loop.
+    const IN_SHELL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
       "browser", "terminal", "github", "roles", "marketplace",
-      "flow", "evals", "submissions", "retro", "capabilities", "journal",
+      "flow", "evals", "submissions", "retro", "capabilities",
     ];
 
     const FATAL_RENDER = /maximum update depth|too many re-?renders|minified react error|getsnapshot should be cached|rendered (more|fewer) hooks|hooks can only be called/i;
@@ -240,28 +242,41 @@ test.describe("mobile foundations", () => {
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    for (const surface of ALL_SURFACES) {
+    for (const surface of IN_SHELL_SURFACES) {
       current = surface;
       await page.evaluate(
         (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
         surface,
       );
-      if (surface === "journal") {
-        // "journal" is a redirect-only mode: instead of rendering a workspace
-        // surface it hard-navigates to Settings → Familiars → Journal. The
-        // sweep asserts the redirect landed (no crash), then returns to the
-        // workspace shell before continuing.
-        await page.waitForURL(/\/settings#familiars/, { timeout: 15_000 });
-        await page.goto("/");
-        await page.waitForSelector(".shell-frame");
-        continue;
-      }
       await page.waitForTimeout(250);
       // The shell frame must survive every navigation (a render crash unmounts
       // the app to the top-level error boundary, removing it).
       await expect(page.locator(".shell-frame"), `${surface} must keep the app shell mounted (no crash)`).toBeVisible();
     }
 
+    // Assert no in-shell surface render-crashed BEFORE the journal redirect
+    // below. That step navigates cross-document to /settings, which cancels the
+    // workspace's in-flight chunk/fetch requests; next dev and WebKit surface
+    // those cancellations as benign pageerrors ("Failed to load chunk",
+    // "aborted", "…due to access control checks") that are loading artifacts,
+    // not render crashes. Checking here keeps the canary meaningful without
+    // enumerating every benign message.
     expect(errors, `render crashes while sweeping surfaces:\n${errors.join("\n")}`).toEqual([]);
+
+    // "journal" is a WorkspaceMode but no longer an in-shell surface: it
+    // hard-redirects to Settings → Familiars (openFamiliarStudioSettingsTab →
+    // window.location.assign("/settings#familiars")). Run it last — its
+    // navigation away from the workspace would strand the sweep otherwise — and
+    // assert the redirect lands on the Settings shell. A render crash there
+    // unmounts to the error boundary, so .settings-shell never appears.
+    current = "journal";
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } })),
+    );
+    await page.waitForURL(/\/settings(\?|#|$)/, { timeout: 15_000 });
+    await expect(
+      page.locator(".settings-shell"),
+      "journal must redirect to the Settings shell without crashing",
+    ).toBeVisible({ timeout: 30_000 });
   });
 });
