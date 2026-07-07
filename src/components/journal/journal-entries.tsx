@@ -442,7 +442,12 @@ export function JournalEntries({
   const canGenerate = Boolean(selectedFamiliarId);
   // A pending delete makes the day read as empty (EmptyState) during the undo
   // window without touching the loaded `day` — Undo just clears the pending flag.
-  const hasEntry = Boolean(day?.exists && day.entry.reflection.trim()) && day?.date !== deletePending?.item;
+  // The detail pane honors the same multiselect scope as the day rail: an
+  // out-of-scope reflection reads as "no entry" here, so a scoped surface
+  // (e.g. the Familiar Studio's journal tab) never exposes another
+  // familiar's entry to edit/delete.
+  const dayInScope = !day?.entry.reflectedBy || familiarInScope(scopeFamiliarIds ?? EMPTY_SCOPE, day.entry.reflectedBy);
+  const hasEntry = Boolean(day?.exists && day.entry.reflection.trim()) && day?.date !== deletePending?.item && dayInScope;
 
   // Chronological navigation across the *visible* (scoped + filtered) days.
   // The list is newest-first, so "newer" = lower index, "older" = higher.

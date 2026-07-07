@@ -57,7 +57,7 @@ assert.match(
 );
 assert.match(
   inline,
-  /activeTab === "journal" \? <FamiliarStudioJournalTab familiar=\{familiar\} allFamiliars=\{familiars\} \/> : null/,
+  /activeTab === "journal" \? <FamiliarStudioJournalTab familiar=\{familiar\} allFamiliars=\{resolved\} \/> : null/,
   "the journal tab body renders the wrapper",
 );
 
@@ -69,6 +69,20 @@ assert.match(
   css,
   /\.familiar-studio-journal \.journal-list \{[\s\S]*?height:/,
   "journal-list gets an explicit height inside the studio body",
+);
+
+const entriesSrc = read("./journal/journal-entries.tsx");
+
+// ── Scope also gates the detail pane (not just the day rail) ─────────────────
+assert.match(
+  entriesSrc,
+  /const dayInScope = !day\?\.entry\.reflectedBy \|\| familiarInScope\(scopeFamiliarIds \?\? EMPTY_SCOPE, day\.entry\.reflectedBy\)/,
+  "an out-of-scope reflection reads as no-entry in the detail pane",
+);
+assert.match(
+  entriesSrc,
+  /&& dayInScope/,
+  "hasEntry honors the familiar scope",
 );
 
 console.log("familiar-studio-journal-tab.test.ts: ok");

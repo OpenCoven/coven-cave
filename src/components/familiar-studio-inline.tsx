@@ -170,7 +170,7 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
               ) : null}
               {activeTab === "projects" ? <FamiliarStudioProjectsTab familiar={familiar} /> : null}
-              {activeTab === "journal" ? <FamiliarStudioJournalTab familiar={familiar} allFamiliars={familiars} /> : null}
+              {activeTab === "journal" ? <FamiliarStudioJournalTab familiar={familiar} allFamiliars={resolved} /> : null}
               {activeTab === "vault" ? <VaultPanel /> : null}
             </div>
 
