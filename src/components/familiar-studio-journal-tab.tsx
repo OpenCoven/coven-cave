@@ -26,6 +26,7 @@ export function FamiliarStudioJournalTab({
         familiars={allFamiliars}
         activeFamiliarId={familiar.id}
         scopeFamiliarIds={scope}
+        standalone
       />
     </div>
   );

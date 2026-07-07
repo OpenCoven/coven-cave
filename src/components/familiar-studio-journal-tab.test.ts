@@ -127,4 +127,22 @@ const ghReview = read("./gh-review-actions.tsx");
 assert.doesNotMatch(ghReview, /cave:canvas:layer|mode: "canvas"/, "PR review export no longer jumps to the retired Canvas page");
 assert.match(ghReview, /openArtifactHtml\(artifact\.code\)/, "exported review artifacts open directly in a browser tab");
 
+// ── Settings host: dead workspace events are avoided ─────────────────────────
+assert.match(wrapper, /standalone/, "the studio tab renders JournalEntries in standalone mode");
+assert.match(
+  entriesSrc,
+  /AUTOMATIONS\.filter\(\(a\) => a\.action !== "run"\)/,
+  "standalone mode hides the chat-handoff automation",
+);
+assert.match(
+  entriesSrc,
+  /window\.location\.assign\(`\/\?mode=\$\{encodeURIComponent\(notice\.action!\.mode\)\}`\)/,
+  "standalone toast actions deep-link back into the workspace",
+);
+
+// ── One-entry-per-day store: no silent cross-familiar overwrite ──────────────
+assert.match(entriesSrc, /const outOfScopeBy =/, "derives the out-of-scope author");
+assert.match(entriesSrc, /if \(outOfScopeBy\) return;/, "generate refuses to overwrite an out-of-scope entry");
+assert.match(entriesSrc, /written by \$\{outOfScopeBy\}/, "the empty state names the actual author instead of inviting an overwrite");
+
 console.log("familiar-studio-journal-tab.test.ts: ok");
