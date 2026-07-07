@@ -101,6 +101,11 @@ assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(r
 assert.match(cockpit, /s\.href \?/, "actionable signals render as links");
 assert.match(cockpit, /openExternalUrl\(s\.href!\)/, "external signal links route through the external-URL helper");
 
+// Signals stay scannable: the list is capped and the overflow drills through.
+assert.match(cockpit, /const SIGNALS_CAP = 8/, "signals panel caps the visible list");
+assert.match(cockpit, /signals\.slice\(0, SIGNALS_CAP\)/, "only the top signals render");
+assert.match(cockpit, /\+\{hidden\} more — review on the GitHub surface/, "overflow collapses into a drill-through row");
+
 // KPI deltas carry meaning, not just direction: each vital declares the
 // direction that reads as "good", so a rise in confidence is colored as
 // progress while a rise in "Needs you" is colored as load.

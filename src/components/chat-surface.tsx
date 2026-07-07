@@ -268,15 +268,24 @@ export function ChatSurface({
   const railProjectRoot = activeSession?.project_root ?? null;
   const sessionRunning = activeSession?.status === "running";
 
-  // changeCount = number of pending working-tree files for the active session's
+  // "Browse at root" override (cave-z44): the Projects hub drills into an
+  // arbitrary project's files by asking the rail to browse THAT root instead of
+  // the active session's. A bounded peek — every rail signal (availability,
+  // change count, the Files/Changes tabs) follows the override while it's set,
+  // so the rail stays internally coherent, and it clears on session change or a
+  // manual collapse (see below) so the rail snaps back to the session.
+  const [browseRootOverride, setBrowseRootOverride] = useState<string | null>(null);
+  const effectiveRailRoot = browseRootOverride ?? railProjectRoot;
+
+  // changeCount = number of pending working-tree files for the rail's effective
   // project root. Mirrors session-changes-panel's /api/changes fetch (files
   // length), re-polled on the `cave:changes-refresh` edit signal and, while the
   // session is running, a light 5s interval gated on document visibility.
   const [changeCount, setChangeCount] = useState(0);
   const changeFetchInFlight = useRef(false);
   useEffect(() => {
-    if (!railProjectRoot) { setChangeCount(0); return; }
-    const root = railProjectRoot;
+    if (!effectiveRailRoot) { setChangeCount(0); return; }
+    const root = effectiveRailRoot;
     let cancelled = false;
     const load = async () => {
       if (changeFetchInFlight.current) return;
@@ -306,13 +315,18 @@ export function ChatSurface({
       window.removeEventListener("cave:changes-refresh", onRefresh);
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, [railProjectRoot, sessionRunning]);
+  }, [effectiveRailRoot, sessionRunning]);
 
   // Once the Terminal tab has been opened, keep the rail available (terminalActive)
   // even if the session has no repo and no edits — otherwise switching away would
   // yank the running pty. Flips false→true once; never resets → no render loop.
   const [terminalOpened, setTerminalOpened] = useState(false);
-  const rail = useCodeRail({ projectRoot: railProjectRoot, changeCount, terminalActive: terminalOpened });
+  const rail = useCodeRail({
+    projectRoot: effectiveRailRoot,
+    changeCount,
+    terminalActive: terminalOpened,
+    browseActive: browseRootOverride !== null,
+  });
   const [codeRailFocus, setCodeRailFocus] = useState<PendingCodeRailOpen | null>(null);
   useEffect(() => {
     if (rail.activeTab === "terminal" && rail.open) setTerminalOpened(true);
@@ -339,6 +353,9 @@ export function ChatSurface({
       }
     }
     setTerminalOpened(false);
+    // Engaging a different session ends any "browse at root" peek — the rail
+    // follows the session again (cave-z44).
+    setBrowseRootOverride(null);
   }, [snapshot.sessionId, terminalOpened]);
   const showCodeRail = rail.available && rail.open && !isMobile && !paneNarrow;
 
@@ -372,6 +389,9 @@ export function ChatSurface({
 
   const openCodeRailTarget = useCallback((target: PendingCodeRailOpen) => {
     setScope("conversation");
+    // A "files" target may carry a browse root (Projects hub drill-through);
+    // any other open (a session file, a diff) returns the rail to the session.
+    setBrowseRootOverride(target.kind === "files" ? (target.root ?? null) : null);
     rail.reopen();
     rail.setActiveTab(target.kind === "changes" ? "changes" : "files");
     setCodeRailFocus(target);
@@ -392,11 +412,21 @@ export function ChatSurface({
       if (!detail?.path) return;
       openCodeRailTarget({ kind: "changes", path: detail.path, nonce: Date.now() });
     };
+    // Projects hub → "Browse files": drill into a project's tree with no file
+    // selected. workspace.tsx bridges this event to chat mode from other
+    // surfaces; this listener handles it when the chat surface is already up.
+    const onBrowseProjectFiles = (event: Event) => {
+      const detail = (event as CustomEvent<{ root?: string }>).detail;
+      if (!detail?.root) return;
+      openCodeRailTarget({ kind: "files", root: detail.root, nonce: Date.now() });
+    };
     window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
     window.addEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    window.addEventListener("cave:browse-project-files", onBrowseProjectFiles as EventListener);
     return () => {
       window.removeEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
       window.removeEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+      window.removeEventListener("cave:browse-project-files", onBrowseProjectFiles as EventListener);
     };
   }, [openCodeRailTarget]);
 
@@ -703,13 +733,13 @@ export function ChatSurface({
                     changeCount={changeCount}
                     activeTab={rail.activeTab}
                     pinned={rail.pinned}
-                    projectRoot={railProjectRoot}
+                    projectRoot={effectiveRailRoot}
                     familiarId={snapshot.familiar?.id ?? null}
                     sessionId={snapshot.sessionId ?? null}
                     focus={codeRailFocus}
                     onSelectTab={rail.setActiveTab}
                     onTogglePin={rail.togglePin}
-                    onCollapse={rail.collapse}
+                    onCollapse={() => { setBrowseRootOverride(null); rail.collapse(); }}
                   />
                 </Panel>
               </>
@@ -795,14 +825,14 @@ export function ChatSurface({
               changeCount={changeCount}
               activeTab={rail.activeTab}
               pinned={rail.pinned}
-              projectRoot={railProjectRoot}
+              projectRoot={effectiveRailRoot}
               familiarId={snapshot.familiar?.id ?? null}
               sessionId={snapshot.sessionId ?? null}
               focus={codeRailFocus}
               hidePin
               onSelectTab={rail.setActiveTab}
               onTogglePin={rail.togglePin}
-              onCollapse={() => setMobileRailOpen(false)}
+              onCollapse={() => { setBrowseRootOverride(null); setMobileRailOpen(false); }}
             />
           </div>
         </div>

@@ -7,6 +7,40 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.145] - 2026-07-07
+
+> 🛠️ **The work queue grows up** — the Familiar Work Queue lands as a beads + PR control tower with handoff notes and evidence-gated close, iOS finally reads your operator profile (name/avatar instead of "You"), and Projects gets a Files drill-through into the code rail. Plus a solid batch of daemon-resilience, dashboard, proxy, and nav fixes.
+
+Feature release on top of v0.0.144.
+
+### Features
+- **Familiar Work Queue — beads + PR control tower** (#2547, cave-hlv.4). The epic's control-tower slice: a unified view over beads and open PRs.
+- **Work queue: handoff notes + evidence-gated close** (#2553, cave-hlv.2). Cards carry handoff notes, and closing requires evidence — no silent completions.
+- **iOS reads the operator profile** (#2550, cave-8xb). The iOS surface shows your name and avatar from the operator profile instead of a hard-coded "You".
+- **Projects: Files drill-through into the code rail** (#2548, cave-z44). Jump from a project in the hub straight into its files in the code rail.
+
+### Fixes
+- **Daemon: bound and settle every call; retry transient GETs** (#2551, cave-4po). Every daemon call is now bounded and settled, with automatic retry on transient GET failures.
+- **nav: honest Schedules top-bar button + split-open sidebar state** (#2555, re-land #2501). The Schedules button reflects real state and the sidebar opens split correctly.
+- **browser: close native webviews on surface leave** (#2545, re-land #2500). Native webviews are torn down on leave instead of parked 1×1 offscreen.
+- **dashboard: dedupe stalled-PR signals by URL + cap the Signals panel** (#2543, cave-2it). Stalled-PR signals de-dupe by URL and the panel is length-capped.
+- **proxy: accept the real listen port in the CSRF origin gate on port fallback** (#2544, cave-5sg). The CSRF origin gate honors the actual listen port when the dev server falls back.
+- **settings: show only section labels in the left nav** (#2549, cave-iwb). The settings left nav drops the description row for a cleaner label-only list.
+
+### Tests & docs
+- **e2e: dashboard cockpit interaction contracts** (#2554, cave-1if).
+- **docs: clarify Tauri dev startup** (#2546).
+
+## [0.0.144] - 2026-07-06
+
+> ✨ **A home that feels like yours** — the cold-start surface gets a world-class visual pass (presence eyebrow, breathing hearth glow, resume affordance), and a new **server-side operator profile** lets you set your name, pronouns, bio, timezone, links, and avatar once — surfaced across chat and handed to your familiars as startup context.
+
+Feature release on top of v0.0.143. Ships the redesigned home surface and the operator profile system.
+
+### Features
+- **Home world-class visual pass** (#2540). A distinctive cold-start surface: a time-aware presence eyebrow with a glowing accent dot, an accent-tinted project name in the headline, a signature breathing "hearth glow" behind the composer that brightens on focus, informational pills for board continuations, an always-visible `Resume →` affordance on the newest Continue card, and staggered entrance choreography — all collapsed under `prefers-reduced-motion` and honoring every pinned composer/centering/column contract.
+- **Server-side operator profile** (#2541). Set your name, pronouns, bio, timezone, links, and avatar from a new **Settings → Profile** section. Text fields persist under a `profile` key in `cave-config.json`; the avatar is a single atomic file (SVG rejected as a stored-XSS vector). `GET/PATCH /api/profile` + `GET/POST/DELETE /api/profile/avatar` (field validation, 2 MB cap, ETag/304). The hard-coded "You" across chat, group chat, reply quotes, and grant labels now routes through your display name, and new sessions receive an `operator-profile` startup-context block — zero overhead when unset.
+
 ## [0.0.143] - 2026-07-06
 
 > 🧹 **A tighter, more honest cockpit** — the dashboard's Familiar Insights table becomes sortable and filterable, a new space-usage panel gives you an honest read on where `~/.coven` disk is going (with cleanup drill-throughs), and the quick-chat box gets a hardening pass. Behind the scenes, a twice-daily PR triage patrol lands to keep the review queue from rotting.

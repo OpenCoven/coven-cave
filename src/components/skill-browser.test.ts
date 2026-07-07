@@ -6,11 +6,18 @@ const src = readFileSync(new URL("./skill-browser.tsx", import.meta.url), "utf8"
 const hub = readFileSync(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-// ── Three-column browser: rail · list · detail ───────────────────────────────
+// ── Merged discovery panel (header + filters + list) · detail pane ──────────
 assert.match(src, /export function SkillBrowser\(/, "exports the SkillBrowser component");
-assert.match(src, /className="skill-browser__rail"/, "renders the category rail");
-assert.match(src, /className="skill-browser__list"/, "renders the card list");
+assert.match(src, /className="skill-browser__rail"/, "renders the filter strip");
+assert.match(src, /className="skill-browser__list"/, "renders the merged discovery panel");
 assert.match(src, /className="skill-browser__detail"/, "renders the detail pane");
+// Merged panel: the leaderboard header and the filter strip both live INSIDE
+// the list panel (panel opens, then header, then filters) — not beside it.
+assert.ok(
+  src.indexOf('className="skill-browser__list"') < src.indexOf('className="skill-browser__leaderboard"') &&
+    src.indexOf('className="skill-browser__leaderboard"') < src.indexOf('className="skill-browser__rail"'),
+  "leaderboard header and filter strip are nested inside the merged list panel, header first",
+);
 
 // Category rail: All / Installed / Claude Code / Generic with derived counts.
 assert.match(src, /label: "All Skills"/, "rail has an All Skills entry");
@@ -192,8 +199,13 @@ assert.match(css, /\.skill-browser__card \{[\s\S]*?min-height: 72px;/, "skill ca
 assert.match(css, /\.skill-browser__card\.is-active \{/, "the selected card is highlighted");
 assert.match(
   css,
-  /@media \(max-width: 900px\)[\s\S]*?\.skill-browser__rail \{[\s\S]*?flex-direction: row/,
-  "the rail becomes a horizontal strip on small screens — it is the only category control, so it must never be display:none",
+  /\.skill-browser__rail \{[\s\S]*?flex-direction: row/,
+  "the filter strip is a horizontal chip row inside the merged panel at every width",
+);
+assert.doesNotMatch(
+  css,
+  /\.skill-browser__rail[^{]*\{[^}]*display:\s*none/,
+  "the filter strip is the only category control, so it must never be display:none",
 );
 
 console.log("skill-browser.test.ts OK");

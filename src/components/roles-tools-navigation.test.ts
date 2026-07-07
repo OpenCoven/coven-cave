@@ -62,10 +62,18 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");
 assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retired from the command palette");
+// The roles/capabilities → marketplace aliasing moved into the pure row-state
+// helper (lib/sidebar-nav-state) that the sidebar derives every row from.
+const sidebarNavState = await readFile(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
+assert.match(
+  sidebarNavState,
+  /roles: "marketplace",\s*\n\s*capabilities: "marketplace",/,
+  "The Marketplace entry stays lit while a deep-linked roles/capabilities mode is active",
+);
 assert.match(
   sidebar,
-  /fm\.id === "marketplace" && \(mode === "roles" \|\| mode === "capabilities"\)/,
-  "The Marketplace entry stays lit while a deep-linked roles/capabilities mode is active",
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  "Sidebar rows derive their highlight (including the marketplace aliasing) from sidebarRowState",
 );
 
 // Settings: no separate plugins section, and the roles add-on toggle is gone
@@ -75,7 +83,17 @@ assert.doesNotMatch(settings, /"plugins"/, "Settings must not declare a plugins 
 assert.doesNotMatch(settings, /key: "roles"/, "Settings must not offer a roles add-on toggle — the merged hub is not gated");
 
 // ── The hub composes the store and the setup views ───────────────────────────
-assert.match(marketplaceView, /import \{ RolesSection, type RoleEntry \} from "@\/components\/marketplace\/roles-section"/, "hub renders the Roles section");
+// Roles is hidden from the hub for now: no RolesSection import, no roles tab/
+// panel/rail link. The component and /api/roles stay on disk for re-enabling,
+// and "roles" deep links land on Browse.
+assert.doesNotMatch(marketplaceView, /import \{ RolesSection/, "the Roles section is not imported while hidden");
+assert.doesNotMatch(marketplaceView, /<RolesSection/, "the Roles section does not render while hidden");
+assert.doesNotMatch(marketplaceView, /\{ id: "roles", label: "Roles"/, "no Roles tab while hidden");
+assert.match(
+  marketplaceView,
+  /initialSection === "roles" \? "browse" : initialSection/,
+  "a 'roles' deep link lands on Browse while the section is hidden",
+);
 assert.match(marketplaceView, /import \{ SkillBrowser, type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub renders the Skills browser");
 assert.match(marketplaceView, /SkillDetailDrawer,/, "hub mounts the skill detail drawer for role-card skill chips");
 assert.match(marketplaceView, /import \{ CapabilitiesViewSurface \} from "@\/components\/capabilities-view"/, "hub renders the Capabilities surface");
@@ -96,13 +114,14 @@ assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives
 assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
-for (const id of ["browse", "roles", "skills", "capabilities"]) {
+for (const id of ["browse", "skills", "capabilities"]) {
   assert.match(
     marketplaceView,
     new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
+assert.doesNotMatch(marketplaceView, /marketplace-panel-roles/, "no roles tabpanel while the section is hidden");
 
 // One search field, scoped per section; the self-contained Capabilities
 // surface owns its own search so the hub hides the shared one there.
@@ -112,7 +131,7 @@ assert.match(marketplaceView, /\{section !== "capabilities" \? \(\s*\n\s*<Search
 // The store rail cross-links into the setup sections, so Browse stays aware of
 // what your familiars already have.
 assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setup group");
-assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("roles"\)\}/, "the rail jumps to Roles");
+assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no rail jump to Roles while the section is hidden");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
 assert.match(marketplaceView, /groupPluginsByCategory/, "Browse derives standardized category groups from the visible plugin set");
@@ -288,11 +307,8 @@ assert.match(
 );
 assert.match(marketplaceView, /announce\("Added to your setup", "polite"\)/, "installing a plugin is announced");
 assert.match(marketplaceView, /announce\("Removed from your setup", "polite"\)/, "removing a plugin is announced");
-assert.match(
-  marketplaceView,
-  /announce\(next \? "Role enabled" : "Role disabled", "polite"\)/,
-  "toggling a role announces the new state",
-);
+// (The role-toggle announcement lives in the hidden Roles plumbing — restored
+// with the section.)
 assert.match(marketplaceView, /announce\(msg, "assertive"\)/, "a failed hub action is announced assertively");
 
 console.log("roles-tools-navigation.test.ts OK");

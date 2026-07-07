@@ -14,8 +14,8 @@ assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal det
 assert.match(entries, /editing,\s*setEditing/, "JournalEntries tracks edit mode for daily reflections");
 assert.match(entries, /draftReflection,\s*setDraftReflection/, "JournalEntries keeps a reflection edit draft");
 assert.match(entries, /function startEdit\(\)/, "JournalEntries exposes an edit action");
-assert.match(entries, /async function saveEdit\(\)/, "JournalEntries saves edited reflections");
-assert.match(entries, /fetch\("\/api\/journal",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?reflection:\s*draftReflection/, "JournalEntries persists edited reflection text through /api/journal POST");
+assert.match(entries, /async function saveEdit\(text\?: string\): Promise<boolean>/, "JournalEntries saves edited reflections");
+assert.match(entries, /fetch\("\/api\/journal",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?reflection:\s*draft/, "JournalEntries persists edited reflection text through /api/journal POST");
 assert.match(entries, /function deleteEntry\(\)/, "JournalEntries exposes a delete action");
 assert.match(entries, /fetch\(`\/api\/journal\?date=\$\{encodeURIComponent\(date\)\}`,\s*\{ method: "DELETE" \}/, "JournalEntries deletes the selected persisted day through /api/journal DELETE");
 // Delete is deferred + undoable: it routes through the shared useUndoDelete helper.
@@ -23,14 +23,15 @@ assert.match(entries, /scheduleDelete\(date,/, "JournalEntries defers the delete
 assert.match(entries, /<UndoToast/, "JournalEntries renders an UndoToast for deletes");
 assert.match(entries, /aria-label="Edit journal entry"/, "JournalEntries renders an edit affordance");
 assert.match(entries, /aria-label="Delete journal entry"/, "JournalEntries renders a delete affordance");
-assert.match(entries, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelEdit/, "Journal edit textarea cancels on Escape");
-// ⌘/Ctrl+Enter saves the reflection editor (was: Save reachable only by tabbing
-// to the ✓ button), and focus returns to the Edit button when leaving the editor.
-assert.match(
-  entries,
-  /e\.key === "Enter" && \(e\.metaKey \|\| e\.ctrlKey\)[\s\S]*?void saveEdit\(\)/,
-  "Journal edit textarea saves on ⌘/Ctrl+Enter",
-);
+// Edit mode hosts the shared MdEditor (WYSIWYG + markdown modes) in place of
+// the old plain textarea. The MdEditor owns Save (⌘S) and Cancel (Escape in
+// markdown mode / Cancel button); the draft mirrors back via onChange so the
+// header ✓ Save button stays live.
+assert.match(entries, /<MdEditor/, "Journal edit mode uses the shared MdEditor");
+assert.match(entries, /showHeader=\{false\}/, "Journal reflections have no frontmatter header");
+assert.match(entries, /onChange=\{\(raw\) => setDraftReflection\(raw\)\}/, "MdEditor mirrors the draft for the header Save button");
+assert.match(entries, /onCancel=\{cancelEdit\}/, "MdEditor cancel exits journal edit mode");
+assert.match(entries, /await saveEdit\(raw\)/, "MdEditor save persists through saveEdit");
 assert.match(
   entries,
   /if \(wasEditingRef\.current && !editing\) editBtnRef\.current\?\.focus\(\)/,

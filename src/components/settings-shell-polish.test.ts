@@ -262,10 +262,10 @@ assert.match(
   "SettingsShell should expose a dedicated desktop sidebar class",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /className="settings-nav__description/,
-  "Settings nav items should show concise descriptions, not only labels",
+  "Settings nav items should show only the section label, not a second-row description",
 );
 
 assert.match(

@@ -19,6 +19,7 @@ type RouteContract = {
 const contracts: RouteContract[] = [
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
   { route: "/beads", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/beads/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -103,7 +104,7 @@ const contracts: RouteContract[] = [
   { route: "/marketplace/config/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/validate-endpoint", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/memory/delete", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/memory/file", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/memory/file", methods: ["GET", "PUT"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/memory/inspector", methods: ["GET"], kind: "json" },
   { route: "/memory/purge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/memory/restore", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },

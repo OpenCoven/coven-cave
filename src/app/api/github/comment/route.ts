@@ -3,8 +3,7 @@
  *
  * Posts a comment to an issue or pull-request conversation timeline
  * (REST `POST /repos/{owner}/{repo}/issues/{number}/comments`). Used by the
- * GitHub surface composer, including the familiar-tagging flow where the body
- * already carries the `@familiar` mention text.
+ * GitHub surface reply composer; the body is posted verbatim.
  *
  * Requires a PAT — the public API cannot write. The PAT is read-only from env,
  * never echoed to the client, never logged.

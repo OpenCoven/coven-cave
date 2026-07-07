@@ -78,6 +78,46 @@ export function isAllowedRequestSource(value: string | null, expectedOrigin: str
   return sameOrigin(value, expectedOrigin);
 }
 
+/**
+ * The origins a genuinely first-party request may declare, in the order they
+ * should be tried.
+ *
+ * `req.nextUrl.origin` is pinned to the port Next was CONSTRUCTED with —
+ * server.ts passes the configured `PORT` to `next({ port })` before the
+ * listener runs, and `startListening()` then falls back to the next free port
+ * when the configured one is taken. So on a fallback the browser's real Origin
+ * (the port it actually connected to, carried by the Host header) never equals
+ * `nextUrl.origin` and every /api request 403s "forbidden origin" (cave-5sg).
+ *
+ * The request's own Host header carries the real authority. The host gate in
+ * proxy() has already constrained it to loopback (or an authenticated /
+ * tailnet-trusted remote), so a Host-derived origin is a safe second accepted
+ * value: a cross-site browser attacker's Origin still won't match the Host
+ * (the browser sets both and cannot forge either), and DNS-rebinding is caught
+ * by the loopback host gate. `nextUrl.origin` is kept first so the
+ * Tailscale-Serve / forwarded-host path (where Next trusts x-forwarded-host)
+ * is entirely unchanged.
+ */
+export function expectedRequestOrigins(
+  nextUrlOrigin: string,
+  protocol: string | null,
+  host: string | null,
+): string[] {
+  const origins = [nextUrlOrigin];
+  if (host) {
+    const scheme = protocol && protocol.length > 0 ? protocol : "http:";
+    const derived = `${scheme}//${host}`;
+    if (derived !== nextUrlOrigin) origins.push(derived);
+  }
+  return origins;
+}
+
+/** True when `value` (an Origin/Referer) matches ANY accepted origin. An
+ *  absent value passes (mirrors sameOrigin's null tolerance). */
+export function isAllowedRequestSourceAny(value: string | null, expectedOrigins: string[]) {
+  return expectedOrigins.some((origin) => isAllowedRequestSource(value, origin));
+}
+
 export function shouldRequireMobileAccessCredential(
   _host: string | null,
   _hasSuppliedCredential: boolean,
@@ -98,6 +138,17 @@ export function bearerFromReferer(value: string | null, expectedOrigin: string) 
   } catch {
     return null;
   }
+}
+
+/** bearerFromReferer against ANY accepted origin — so a referer carrying the
+ *  real fallback port still yields its token when nextUrl.origin lags behind
+ *  (see expectedRequestOrigins). Returns the first token found. */
+export function bearerFromRefererAny(value: string | null, expectedOrigins: string[]) {
+  for (const origin of expectedOrigins) {
+    const token = bearerFromReferer(value, origin);
+    if (token) return token;
+  }
+  return null;
 }
 
 /**

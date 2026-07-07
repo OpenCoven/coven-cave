@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { MdEditor } from "@/components/md-editor/md-editor";
 import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
@@ -414,12 +415,13 @@ export function JournalEntries({
     setDraftReflection("");
   }
 
-  async function saveEdit() {
-    if (!day) return;
-    const reflection = draftReflection.trim();
+  async function saveEdit(text?: string): Promise<boolean> {
+    if (!day) return false;
+    const draft = text ?? draftReflection;
+    const reflection = draft.trim();
     if (!reflection) {
       setError("Write a reflection before saving.");
-      return;
+      return false;
     }
     const familiarId = day.entry.reflectedBy ?? selectedFamiliarId;
     setSaving(true);
@@ -428,11 +430,11 @@ export function JournalEntries({
       const res = await fetch("/api/journal", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date: day.date, reflection: draftReflection, reflectedBy: familiarId }),
+        body: JSON.stringify({ date: day.date, reflection: draft, reflectedBy: familiarId }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not save journal entry.");
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return true;
       cancelEdit();
       await loadDay(day.date);
       await loadDays();
@@ -445,8 +447,10 @@ export function JournalEntries({
           if (mountedRef.current) editBtnRef.current?.focus();
         });
       }
+      return true;
     } catch (err) {
       if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not save journal entry.");
+      return false;
     } finally {
       if (mountedRef.current) setSaving(false);
     }
@@ -647,20 +651,18 @@ export function JournalEntries({
             {hasEntry ? (
               <>
                 {editing ? (
-                  <textarea
-                    className="journal-entry__editor"
-                    value={draftReflection}
-                    onChange={(e) => setDraftReflection(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") cancelEdit();
-                      else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                        e.preventDefault();
-                        if (!saving && draftReflection.trim()) void saveEdit();
-                      }
-                    }}
-                    aria-label="Journal reflection (⌘↵ to save, Esc to cancel)"
-                    autoFocus
-                  />
+                  <div className="journal-entry__md-editor">
+                    <MdEditor
+                      value={draftReflection}
+                      showHeader={false}
+                      onChange={(raw) => setDraftReflection(raw)}
+                      onSave={async (raw) => {
+                        const ok = await saveEdit(raw);
+                        return ok ? { ok: true } : { ok: false, error: "Could not save journal entry." };
+                      }}
+                      onCancel={cancelEdit}
+                    />
+                  </div>
                 ) : (
                   <JournalReflection
                     text={day.entry.reflection}

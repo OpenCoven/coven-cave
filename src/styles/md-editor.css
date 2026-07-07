@@ -1,0 +1,54 @@
+/* md-editor.css — theming for the MdEditor (OpenKnowledge-style markdown
+ * editor). The VISUAL mode is Milkdown Crepe; its frame-dark theme ships its
+ * own palette, so we remap the --crepe-* custom properties onto the Cave's
+ * theme tokens here to make the editor ride every app theme instead of
+ * looking like a foreign dark box. */
+
+.md-editor-visual {
+  height: 100%;
+  min-height: 0;
+}
+
+.md-editor-visual .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: var(--text-primary);
+  --crepe-color-surface: var(--bg-raised);
+  --crepe-color-surface-low: var(--bg-elevated);
+  --crepe-color-on-surface: var(--text-primary);
+  --crepe-color-on-surface-variant: var(--text-secondary);
+  --crepe-color-outline: var(--border-hairline);
+  --crepe-color-primary: var(--accent-presence);
+  --crepe-color-secondary: color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  --crepe-color-on-secondary: var(--text-primary);
+  --crepe-color-inverse: var(--bg-elevated);
+  --crepe-color-on-inverse: var(--text-primary);
+  --crepe-color-inline-code: var(--accent-presence-soft);
+  --crepe-color-error: var(--color-warning, #ff8a9b);
+  --crepe-color-hover: var(--bg-hover);
+  --crepe-color-selected: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  --crepe-color-inline-area: var(--code-surface);
+  --crepe-font-title: inherit;
+  --crepe-font-default: inherit;
+  --crepe-font-code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  height: 100%;
+  background: transparent;
+}
+
+/* The ProseMirror page itself: comfortable document measure and the app's
+ * reading rhythm instead of Crepe's defaults. */
+.md-editor-visual .milkdown .ProseMirror {
+  padding: 16px 20px 48px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  caret-color: var(--accent-presence);
+}
+
+.md-editor-visual .milkdown .ProseMirror:focus-visible {
+  outline: none;
+}
+
+.md-editor-visual .milkdown .ProseMirror ::selection {
+  background: color-mix(in oklch, var(--accent-presence) 28%, transparent);
+}

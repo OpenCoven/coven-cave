@@ -1,9 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useMemoryFile } from "@/lib/use-memory-file";
+import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import type { MemoryRow } from "@/lib/memory-rows";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -35,11 +36,21 @@ export function MemoryReaderPane({
 }) {
   const [mode, setMode] = useState<"rendered" | "raw">("rendered");
   const [copied, setCopied] = useState(false);
+  // Edit mode swaps the reader body for the MemoryMdEditor (WYSIWYG/raw
+  // markdown editing with mtime-guarded saves). `refreshToken` re-fetches the
+  // read view after an edit session so it shows what was saved.
+  const [editing, setEditing] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
   // `contentPath` is the absolute, allow-listed path to fetch full content from — set
   // for files and for agent memories the server could resolve. When absent (e.g. an
   // agent memory with no resolvable file), fall back to the entry's `excerpt`.
   const fetchPath = row?.contentPath ?? null;
-  const { text, error, loading } = useMemoryFile(fetchPath);
+  const { text, error, loading } = useMemoryFile(fetchPath, { refreshToken });
+
+  // Leaving a row ends its edit session — a new selection opens in read mode.
+  useEffect(() => {
+    setEditing(false);
+  }, [fetchPath]);
 
   if (!row) {
     return (
@@ -88,6 +99,30 @@ export function MemoryReaderPane({
             {row.title}
           </h3>
           <div className="flex shrink-0 items-center gap-1">
+            {hasFile ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing((prev) => {
+                    if (prev) setRefreshToken((n) => n + 1);
+                    return !prev;
+                  });
+                }}
+                aria-pressed={editing}
+                aria-label={editing ? "Stop editing" : "Edit memory file"}
+                title={editing ? "Stop editing" : "Edit"}
+                className={`focus-ring mr-1 inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[10px] transition-colors ${
+                  editing
+                    ? "bg-[var(--accent-presence)]/15 text-[var(--text-primary)]"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                <Icon name="ph:pencil-simple" width={11} aria-hidden />
+                {editing ? "Done" : "Edit"}
+              </button>
+            ) : null}
+            {!editing ? (
+            <>
             <div className="mr-1 inline-flex overflow-hidden rounded-md border border-[var(--border-hairline)] text-[10px]">
               {(["rendered", "raw"] as const).map((m) => (
                 <button
@@ -114,6 +149,8 @@ export function MemoryReaderPane({
             >
               <Icon name="ph:arrows-out-simple" width={12} aria-hidden />
             </button>
+            </>
+            ) : null}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
@@ -157,6 +194,18 @@ export function MemoryReaderPane({
           </button>
         </div>
       </div>
+      {editing && row.contentPath ? (
+        <div className="min-h-0 flex-1">
+          <MemoryMdEditor
+            path={row.contentPath}
+            sourceLabel={row.sourceLabel}
+            onCancel={() => {
+              setEditing(false);
+              setRefreshToken((n) => n + 1);
+            }}
+          />
+        </div>
+      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {fileError ? (
           <ErrorState
@@ -180,6 +229,7 @@ export function MemoryReaderPane({
           </pre>
         )}
       </div>
+      )}
     </div>
   );
 }

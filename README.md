@@ -50,8 +50,14 @@ pnpm dev
 Run against the Tauri desktop shell:
 
 ```bash
-pnpm dev:app
+bash scripts/dev-app.sh
 ```
+
+The wrapper picks a free loopback port in `3000..3010`, starts the custom Next
+dev server when needed, and points `tauri dev` at the selected port. First launch
+can take several minutes while Cargo downloads and compiles Rust crates. Use
+`PORT=3007 bash scripts/dev-app.sh` to force a specific port. `pnpm dev:app`
+calls the same wrapper.
 
 Build:
 

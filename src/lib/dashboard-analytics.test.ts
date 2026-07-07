@@ -48,7 +48,7 @@ assert.ok(series[0].points.every((p) => typeof p.x === "number" && typeof p.y ==
 
 // ── dashboardSignals: stalled PR + trending-down familiar ─
 const ghItem = (id, kind, updatedOffset, state, title) => ({
-  id, kind, title, repo: "o/r", url: "#", state, updatedAt: day(updatedOffset),
+  id, kind, title, repo: "o/r", url: `https://gh/o/r/${id}`, state, updatedAt: day(updatedOffset),
 });
 const sigGithub = [
   ghItem("p1", "pr", 9, "open", "Old PR"),          // stalled (>7d)
@@ -78,13 +78,26 @@ assert.equal(dashboardSignals({ github: [], sessions: [], familiars: [], nowMs: 
 
 // ── Signals are actionable: each carries the destination to act on it ─
 const stalled = signals.find((s) => s.id === "pr-stalled-p1");
-assert.equal(stalled.href, "#", "stalled-PR signal links to the PR's own URL");
+assert.equal(stalled.href, "https://gh/o/r/p1", "stalled-PR signal links to the PR's own URL");
 assert.equal(stalled.external, true, "PR links leave the app via the external opener");
 assert.equal(
   signals.find((s) => s.id === "familiar-down-f1").href,
   "/dashboard/familiars/f1/analytics",
   "trending-down signal opens that familiar's analytics",
 );
+
+// ── Stalled-PR signals dedupe by URL and lead with the stalest ─
+// The same PR arrives from /api/github/activity (id "pr-<n>") and
+// /api/github/assigned (raw "<n>") — id-keyed merging can't collapse it.
+const dupGithub = [
+  { id: "pr-77", kind: "pr", title: "Same PR", repo: "o/r", url: "https://gh/o/r/pull/77", state: "open", updatedAt: day(20) },
+  { id: "77", kind: "review_request", title: "Same PR", repo: "o/r", url: "https://gh/o/r/pull/77", state: "open", updatedAt: day(12) },
+  { id: "pr-9", kind: "pr", title: "Older PR", repo: "o/r", url: "https://gh/o/r/pull/9", state: "open", updatedAt: day(40) },
+];
+const dupSignals = dashboardSignals({ github: dupGithub, sessions: [], familiars: [], nowMs: NOW });
+assert.equal(dupSignals.length, 2, "same-URL PR rows collapse to one signal");
+assert.match(dupSignals[1].text, /stalled 12d: Same PR/, "the freshest updatedAt wins, so staleness is not overstated");
+assert.match(dupSignals[0].text, /stalled 40d: Older PR/, "stalled signals lead with the stalest PR");
 
 // ── Insights table: sort + filter (pure) ─
 const row = (id, over = {}) => ({

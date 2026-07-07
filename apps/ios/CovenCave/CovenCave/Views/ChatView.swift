@@ -229,7 +229,9 @@ struct ChatView: View {
                                       onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
                                       onForward: { beginForward($0) },
                                       onRetry: canRetry(message) ? { retryAssistant(message) } : nil,
-                                      onReply: { beginReply($0) })
+                                      onReply: { beginReply($0) },
+                                      operatorName: app.operatorDisplayName,
+                                      operatorAvatarURL: app.operatorAvatarURL)
                         .id(message.id)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -798,7 +800,7 @@ struct ChatView: View {
     /// Display name for a message's author, used in the reply banner/quote.
     private func replyAuthor(_ message: DisplayMessage) -> String {
         switch message.role {
-        case .user: return "You"
+        case .user: return app.operatorDisplayName
         case .system: return "System"
         case .assistant: return message.familiarId.flatMap(app.familiar)?.displayName ?? "Familiar"
         }
@@ -852,7 +854,7 @@ struct ChatView: View {
     private func forwardSenderName(for message: DisplayMessage) -> String {
         switch message.role {
         case .user:
-            return "You"
+            return app.operatorDisplayName
         case .assistant:
             return app.familiar(message.familiarId ?? "")?.displayName ?? "Assistant"
         case .system:

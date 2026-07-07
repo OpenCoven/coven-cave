@@ -66,9 +66,17 @@ assert.match(detail, /aria-pressed=\{!project\.color\}/, "the auto swatch report
 // Chrome budget (§8): ≤2 always-visible header actions + one overflow menu.
 assert.match(detail, /import \{ OverflowMenu \} from "@\/components\/ui\/overflow-menu"/, "secondary actions live in the shared OverflowMenu");
 assert.match(detail, /OverflowMenu ariaLabel=\{`More actions for \$\{project\.name\}`\}/, "the overflow trigger is named per project");
-for (const item of ["Rename", "Change folder…", "Copy path", "Delete project…"]) {
+for (const item of ["Rename", "Change folder…", "Copy path", "Browse files", "Delete project…"]) {
   assert.match(detail, new RegExp(item.replace("…", "…")), `overflow offers ${item}`);
 }
+// cave-z44: "Browse files" drills into the project's tree via the code rail by
+// dispatching a cross-surface event workspace.tsx bridges to chat mode. It
+// carries only the root, and stays in the overflow (keeps the ≤2-visible budget).
+assert.match(
+  detail,
+  /new CustomEvent\("cave:browse-project-files", \{ detail: \{ root: project\.root \} \}\)/,
+  "Browse files dispatches the browse event with the project root",
+);
 // Delete is a two-step confirm with an accessible container.
 assert.match(detail, /role="alertdialog"[\s\S]{0,80}?aria-label=\{`Delete \$\{project\.name\}\?`\}/, "delete confirm is an alertdialog");
 // Switching projects resets edit drafts/confirms (no leakage across selections).

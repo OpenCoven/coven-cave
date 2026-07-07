@@ -1352,62 +1352,9 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .gh-composer-actions {
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-end;
   gap:8px;
   margin-top:6px;
-}
-.gh-composer-tag { position:relative; }
-.gh-composer-tag-btn {
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  padding:3px 9px;
-  border-radius:7px;
-  border:1px solid var(--border-hairline);
-  background:transparent;
-  color:var(--text-muted);
-  font-size:11px;
-  font-weight:550;
-  cursor:pointer;
-}
-.gh-composer-tag-btn:hover:not(:disabled) {
-  color:var(--text-secondary);
-  background:var(--bg-raised);
-}
-.gh-composer-tag-btn:disabled { opacity:0.4; cursor:default; }
-.gh-composer-tag-menu {
-  position:absolute;
-  bottom:calc(100% + 4px);
-  left:0;
-  z-index:20;
-  min-width:160px;
-  max-height:220px;
-  overflow-y:auto;
-  padding:4px;
-  border:1px solid var(--border-hairline);
-  border-radius:10px;
-  background:var(--bg-elevated);
-  box-shadow:0 8px 24px rgba(0,0,0,0.28);
-  display:flex;
-  flex-direction:column;
-  gap:2px;
-}
-.gh-composer-tag-item {
-  display:flex;
-  align-items:center;
-  gap:7px;
-  padding:5px 8px;
-  border-radius:7px;
-  background:none;
-  border:none;
-  color:var(--text-secondary);
-  font-size:12px;
-  text-align:left;
-  cursor:pointer;
-}
-.gh-composer-tag-item:hover {
-  background:var(--bg-hover);
-  color:var(--text-primary);
 }
 
 /* ── Person chip → clickable profile ─────────────────────────────────────── */
@@ -1924,7 +1871,16 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .board-gantt {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Frame, not the scroller: controls pinned at top, the timeline scroller
+     fills the middle, the unscheduled tray sits at the bottom. The timeline's
+     own bounded viewport (.board-gantt__scroll) owns BOTH scrollbars so the
+     sticky header/left-column stay put and the horizontal bar stays reachable
+     (cave-hsh). Previously .board-gantt scrolled the whole chart as one block,
+     which scrolled the header off-screen and parked the h-scrollbar below the
+     fold. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 14px;
 }
 .board-gantt--empty {
@@ -1973,7 +1929,15 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
    Dense dark timeline: sticky left table (Group/Task · Owner · Start · End ·
    status dot) + a day/week grid with status-coloured bars, milestone diamonds,
    a red TODAY line, and a legend. Redefines .board-gantt-row__bar by category. */
-.board-gantt__scroll { overflow-x: auto; overflow-y: visible; }
+/* The single bounded scroll viewport for the whole timeline — both axes. As a
+   flex child it fills the frame's remaining height, so .cg-head (sticky top)
+   and .cg-left (sticky left) stay pinned while rows scroll under them and the
+   timeline pans, and both scrollbars stay on-screen (cave-hsh). */
+.board-gantt__scroll { flex: 1; min-height: 0; overflow: auto; }
+/* Controls (top) and the unscheduled tray (bottom) keep their natural height so
+   only the timeline viewport between them scrolls. */
+.board-gantt > .cg-controls,
+.board-gantt > .board-gantt-unscheduled { flex: 0 0 auto; }
 .cg {
   --cg-row-h: 26px;
   width: max-content;

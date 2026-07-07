@@ -9,6 +9,9 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
+// Journal retired as an in-shell surface (redirects to Settings → Familiars),
+// so JournalView is gone; Grimoire is a new in-shell surface from main.
+import { GrimoireView } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import {
@@ -46,6 +49,7 @@ import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import {
   BoardView,
   CalendarView,
+  FamiliarWorkQueueView,
   GitHubView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
@@ -137,7 +141,9 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
+  "familiar-work-queue": "Work Queue",
   journal: "Journal",
+  grimoire: "Grimoire",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -575,11 +581,22 @@ export function Workspace() {
     };
     const onOpenProjectFile = (e: Event) => enqueue("files", e);
     const onOpenFileDiff = (e: Event) => enqueue("changes", e);
+    // Projects hub → "Browse files": carries a project ROOT (not a file path);
+    // ChatSurface browses that root with nothing selected (cave-z44).
+    const onBrowseProjectFiles = (e: Event) => {
+      if (modeRef.current === "chat") return;
+      const detail = (e as CustomEvent<{ root?: string }>).detail;
+      if (!detail?.root) return;
+      setPendingCodeRailOpen({ kind: "files", root: detail.root, nonce: Date.now() });
+      setMode("chat");
+    };
     window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
     window.addEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    window.addEventListener("cave:browse-project-files", onBrowseProjectFiles as EventListener);
     return () => {
       window.removeEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
       window.removeEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+      window.removeEventListener("cave:browse-project-files", onBrowseProjectFiles as EventListener);
     };
   }, []);
 
@@ -1888,9 +1905,18 @@ export function Workspace() {
     startFamiliarChat(activeId, projectRoot);
   }, [activeId, startFamiliarChat]);
 
+  // Page modes currently open as split tiles — the sidebar marks their rows
+  // "open in split" so the active highlight stays honest after drag-to-split
+  // (dropping opens the page beside the primary WITHOUT changing `mode`).
+  const splitPageModes = useMemo(
+    () => splitTargets.filter((t): t is Extract<SplitTarget, { kind: "page" }> => t.kind === "page").map((t) => t.mode),
+    [splitTargets],
+  );
+
   const sidebar = (
     <SidebarMinimal
       mode={mode}
+      splitPageModes={splitPageModes}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       onNewChat={() => {
@@ -2027,6 +2053,8 @@ export function Workspace() {
           openFamiliarSession(sessionId, familiarId);
         }}
       />
+    ) : mode === "grimoire" ? (
+      <GrimoireView />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
@@ -2101,6 +2129,8 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
+    ) : mode === "familiar-work-queue" ? (
+      <FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : (
@@ -2186,7 +2216,7 @@ export function Workspace() {
               sessions={sessions}
               responseNeeded={responseNeeded}
               taskCount={boardTaskCount}
-              inboxCount={inboxBadgeCount}
+              scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
@@ -2198,7 +2228,7 @@ export function Workspace() {
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
-              onViewInbox={() => setMode("inbox")}
+              onViewSchedules={() => setMode("inbox")}
               onOpenQuickChat={() => setQuickChatOpen(true)}
             />
             <TopBar

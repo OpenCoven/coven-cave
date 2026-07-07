@@ -175,6 +175,41 @@ assert.match(
   /if \(!pendingCodeRailOpen\) return[\s\S]*openCodeRailTarget\(pendingCodeRailOpen\)[\s\S]*onPendingCodeRailOpenHandled\(\)/,
   "ChatSurface should consume pending file/diff opens after mounting",
 );
+
+// cave-z44: Projects hub "Browse files" drills into a project ROOT (no file).
+// The shared type carries an optional root; Workspace bridges the event from
+// non-chat modes; ChatSurface consumes it directly when already mounted and
+// arms the browse override.
+assert.match(
+  pendingCodeRailOpenLib,
+  /kind: "files";[\s\S]*root\?: string;/,
+  "the shared type carries an optional browse root on the files open",
+);
+assert.match(
+  workspace,
+  /window\.addEventListener\("cave:browse-project-files", onBrowseProjectFiles as EventListener\)/,
+  "Workspace bridges the Projects-hub browse-files event into chat mode",
+);
+assert.match(
+  workspace,
+  /onBrowseProjectFiles = \(e: Event\) => \{[\s\S]*if \(modeRef\.current === "chat"\) return;[\s\S]*if \(!detail\?\.root\) return;[\s\S]*setPendingCodeRailOpen\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)[\s\S]*setMode\("chat"\)/,
+  "Workspace preserves the browse root and switches to chat",
+);
+assert.match(
+  chatSurface,
+  /onBrowseProjectFiles[\s\S]*if \(!detail\?\.root\) return;[\s\S]*openCodeRailTarget\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)/,
+  "ChatSurface directly consumes the browse-files event when already mounted",
+);
+assert.match(
+  chatSurface,
+  /window\.addEventListener\("cave:browse-project-files", onBrowseProjectFiles as EventListener\)/,
+  "ChatSurface listens for the browse-files event",
+);
+assert.match(
+  chatSurface,
+  /setBrowseRootOverride\(target\.kind === "files" \? \(target\.root \?\? null\) : null\)/,
+  "openCodeRailTarget arms the browse override from a files target's root and clears it otherwise",
+);
 assert.match(
   chatSurface,
   /<WorkspaceRail[\s\S]*focus=\{codeRailFocus\}/,

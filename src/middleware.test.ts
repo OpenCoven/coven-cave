@@ -22,8 +22,16 @@ assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated \
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless app mode (COVEN_CAVE_TAILNET_TRUST) should relax the host gate for tailnet-forwarded requests");
 assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
 assert.match(source, /const referer = req\.headers\.get\("referer"\)/, "API referer gate should read the source referer header once");
-assert.match(source, /isAllowedRequestSource\(origin, expectedOrigin\)/, "API origin gate should require same-origin sources unless header-CSRF-trusted");
-assert.match(source, /isAllowedRequestSource\(referer, expectedOrigin\)/, "API referer gate should require same-origin sources unless header-CSRF-trusted");
+assert.match(source, /isAllowedRequestSourceAny\(origin, expectedOrigins\)/, "API origin gate should require same-origin sources unless header-CSRF-trusted");
+assert.match(source, /isAllowedRequestSourceAny\(referer, expectedOrigins\)/, "API referer gate should require same-origin sources unless header-CSRF-trusted");
+// Port-fallback CSRF fix (cave-5sg): the accepted-origin set is derived from
+// the request (nextUrl.origin is pinned to the configured, not the actual
+// listen port), so the browser Origin on a fallback port still passes.
+assert.match(
+  source,
+  /const expectedOrigins = expectedRequestOrigins\(\s*req\.nextUrl\.origin,\s*req\.nextUrl\.protocol,\s*requestHost,?\s*\)/,
+  "the origin gate must compare against origins derived from the request's own Host, not just the configured-port nextUrl.origin",
+);
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
 assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless-tailnet CSRF guard");
 assert.match(source, /missing request source/, "tokenless tailnet GET webhooks should reject absent Origin and Referer headers");
@@ -41,7 +49,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!headerCsrfTrusted\) \{[\s\S]*?isAllowedRequestSource\(origin, expectedOrigin\)/,
+  /if \(!headerCsrfTrusted\) \{[\s\S]*?isAllowedRequestSourceAny\(origin, expectedOrigins\)/,
   "origin gate must run unless the request is header-CSRF-trusted",
 );
 assert.doesNotMatch(
@@ -56,8 +64,8 @@ assert.doesNotMatch(
 // `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
 {
   const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)");
-  const originIdx = source.indexOf("isAllowedRequestSource(origin, expectedOrigin)");
-  const refererIdx = source.indexOf("isAllowedRequestSource(referer, expectedOrigin)");
+  const originIdx = source.indexOf("isAllowedRequestSourceAny(origin, expectedOrigins)");
+  const refererIdx = source.indexOf("isAllowedRequestSourceAny(referer, expectedOrigins)");
   const contentTypeIdx = source.indexOf("unsupported content-type");
   const bypassIdx = source.indexOf("missing sidecar auth token");
   assert.ok(hostIdx > 0, "host check should be present");

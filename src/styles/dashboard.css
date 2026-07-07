@@ -181,24 +181,6 @@
   margin-bottom: 10px;
 }
 
-.settings-nav__item {
-  min-height: 48px;
-}
-
-.settings-nav__item[aria-current="page"] .settings-nav__description {
-  color: var(--accent-presence-foreground);
-  opacity: 0.78;
-}
-
-.settings-nav__description {
-  display: -webkit-box;
-  overflow: hidden;
-  margin-top: 1px;
-  line-height: 1.25;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
 .settings-shell__content {
   scroll-padding-top: 18px;
 }
@@ -565,6 +547,9 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-signal__text { min-width: 0; }
 a.cockpit-signal--link { text-decoration: none; }
 a.cockpit-signal--link:hover { background: var(--bg-hover); }
+a.cockpit-signal--more { text-decoration: none; color: var(--text-muted); }
+a.cockpit-signal--more:hover { background: var(--bg-hover); color: var(--text-primary); }
+.cockpit-signal--more .cockpit-signal__icon { color: var(--text-muted); }
 
 /* Confidence heatmap */
 .cockpit-confidence { display: flex; flex-direction: column; gap: 6px; }

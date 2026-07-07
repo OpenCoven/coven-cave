@@ -219,11 +219,18 @@ test.describe("mobile foundations", () => {
   // WorkspaceMode and fails on any crash, daemon-less. It does NOT assert
   // layout (some surfaces legitimately scroll); it only asserts "didn't crash".
   test("no workspace surface crashes on navigation", async ({ page }) => {
+    // Sweeping ~17 surfaces plus the /settings redirect all trigger first-hit
+    // route compilation under next dev; on a cold cache that comfortably exceeds
+    // the default per-test budget. Triple it so a slow compile reads as slow,
+    // not broken.
+    test.slow();
     // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
     // when a new surface is added — a new mode with a render crash should turn
-    // this red. "journal" is intentionally excluded here: it retired as a
-    // standalone surface and now redirects to Settings → Familiars, so it has
-    // no .shell-frame — it's swept separately after the loop.
+    // this red. Two modes are intentionally excluded: "journal" retired as a
+    // standalone surface and now redirects to Settings → Familiars (swept
+    // separately after the loop, asserting the redirect); "grimoire" mounts a
+    // heavy Milkdown editor whose cold compile under next dev makes this fast
+    // canary flaky — it has its own coverage (see cave follow-up).
     const IN_SHELL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
       "browser", "terminal", "github", "roles", "marketplace",
@@ -273,10 +280,12 @@ test.describe("mobile foundations", () => {
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } })),
     );
-    await page.waitForURL(/\/settings(\?|#|$)/, { timeout: 15_000 });
+    // /settings now mounts the Milkdown-backed memory/journal editor, whose
+    // first-hit compile under next dev can run well past 15s — wait generously.
+    await page.waitForURL(/\/settings(\?|#|$)/, { timeout: 45_000 });
     await expect(
       page.locator(".settings-shell"),
       "journal must redirect to the Settings shell without crashing",
-    ).toBeVisible({ timeout: 30_000 });
+    ).toBeVisible({ timeout: 45_000 });
   });
 });

@@ -18,6 +18,7 @@ import {
   emitPageDragEnd,
   isSplittablePage,
 } from "@/lib/page-drag";
+import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import { APP_VERSION } from "@/lib/app-version";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -40,10 +41,16 @@ export type FolderMode =
   | "flow"
   | "submissions"
   | "capabilities"
-  | "journal";
+  | "familiar-work-queue"
+  | "journal"
+  | "grimoire";
 
 export type SidebarMinimalProps = {
   mode: string;
+  /** Page modes currently open as secondary split tiles (drag-to-split).
+   *  Their rows get a lighter "open in split" wash instead of the active fill,
+   *  so the highlight stays honest when a page renders beside the primary. */
+  splitPageModes?: readonly string[];
   sessions: SessionRow[];
   activeSessionId?: string | null;
   onNewChat: () => void;
@@ -98,6 +105,7 @@ const FOLDER_MODES: Array<{
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — opens in Settings" },
+  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
@@ -107,6 +115,7 @@ const FOLDER_MODES: Array<{
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
+  { id: "familiar-work-queue", label: "Work Queue", iconName: "ph:list-checks-bold", description: "Ready beads and the PR control tower, by familiar", quiet: true },
 ];
 
 // Rows actually rendered in the sidebar — everything except on-demand surfaces
@@ -120,7 +129,7 @@ function FolderRow({
   id,
   label,
   iconName,
-  active,
+  state,
   badge,
   kbd,
   description,
@@ -131,7 +140,7 @@ function FolderRow({
   id: string;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
-  active: boolean;
+  state: SidebarRowState;
   badge?: string;
   kbd?: string;
   description?: string;
@@ -141,6 +150,8 @@ function FolderRow({
   quietLead?: boolean;
   onClick: () => void;
 }) {
+  const active = state === "active";
+  const split = state === "split";
   // Splittable pages can be dragged into the main area to open beside the
   // current surface (desktop snap-to-split). Non-clickable drags don't fire the
   // onClick, so navigation by click is unaffected.
@@ -148,15 +159,16 @@ function FolderRow({
   // Native title doubles as a desktop hover tooltip and a touch long-press
   // hint, and is exposed to AT as the button's accessible description.
   const dragHint = draggable ? " · drag into the page to split" : "";
+  const splitHint = split ? " · open in split" : "";
   const title = description
     ? kbd
-      ? `${label} — ${description} (${kbd})${dragHint}`
-      : `${label} — ${description}${dragHint}`
+      ? `${label} — ${description} (${kbd})${dragHint}${splitHint}`
+      : `${label} — ${description}${dragHint}${splitHint}`
     : undefined;
   return (
     <button
       type="button"
-      className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}${quiet ? " sidebar-folder-row--quiet" : ""}${quietLead ? " sidebar-folder-row--quiet-lead" : ""}`}
+      className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}${split ? " sidebar-folder-row--split" : ""}${quiet ? " sidebar-folder-row--quiet" : ""}${quietLead ? " sidebar-folder-row--quiet-lead" : ""}`}
       aria-current={active ? "page" : undefined}
       title={title}
       draggable={draggable || undefined}
@@ -238,9 +250,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             id={fm.id}
             label={fm.label}
             iconName={fm.iconName}
-            // Roles and Capabilities are sections of the Marketplace hub, so keep
-            // the Marketplace entry lit when those modes are active.
-            active={mode === fm.id || (fm.id === "marketplace" && (mode === "roles" || mode === "capabilities"))}
+            // Active follows the primary mode (Roles/Capabilities keep the
+            // Marketplace hub lit); pages open as split tiles get a lighter
+            // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
             badge={fm.badge?.(props)}
             kbd={fm.kbd}
             description={fm.description}

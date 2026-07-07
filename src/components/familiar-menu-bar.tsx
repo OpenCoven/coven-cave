@@ -15,8 +15,8 @@ type Props = {
   responseNeeded?: Set<string>;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
-  /** Items needing attention — drives the Inbox badge. */
-  inboxCount: number;
+  /** Schedule items needing attention — drives the Schedules badge. */
+  scheduleNeedsCount: number;
   /** Open the shared context-aware search palette. */
   onOpenSearch: () => void;
   /** Shared top-search query, mirrored with the mobile top bar and palette. */
@@ -32,8 +32,8 @@ type Props = {
   onEnrichTasks?: () => void;
   enrichingTasks?: boolean;
   enrichProgress?: { done: number; total: number } | null;
-  /** Jump to the inbox / schedules. */
-  onViewInbox: () => void;
+  /** Jump to the Schedules surface (calendar + crons). */
+  onViewSchedules: () => void;
   /** Open the quick-chat dropdown (anchored under its trigger in this bar). */
   onOpenQuickChat?: () => void;
 };
@@ -47,7 +47,7 @@ function fmtBadge(n: number): string {
 
 /**
  * A slim, always-visible desktop top menu bar with the familiar selector,
- * global search, and task/inbox counters. It is the desktop counterpart to the
+ * global search, and task/schedule counters. It is the desktop counterpart to the
  * mobile `.top-bar` (which stays hidden ≥1024px); this bar is hidden below
  * 1024px so the two never both render.
  */
@@ -58,7 +58,7 @@ export function FamiliarMenuBar({
   sessions,
   responseNeeded,
   taskCount,
-  inboxCount,
+  scheduleNeedsCount,
   onOpenSearch,
   searchQuery,
   onSearchQueryChange,
@@ -67,7 +67,7 @@ export function FamiliarMenuBar({
   onEnrichTasks,
   enrichingTasks,
   enrichProgress,
-  onViewInbox,
+  onViewSchedules,
   onOpenQuickChat,
 }: Props) {
   const enrichLabel = enrichingTasks
@@ -159,16 +159,20 @@ export function FamiliarMenuBar({
           <span>Tasks</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
+        {/* This button lands on the Schedules surface (workspace mode "inbox"
+            is the Schedules view — calendar + crons), so it is labelled
+            Schedules and badged with the schedule needs-you count. There is no
+            dedicated Inbox surface; inbox items live in the notification bell. */}
         <button
           type="button"
           className="menu-bar__task focus-ring"
-          onClick={onViewInbox}
-          aria-label={inboxCount > 0 ? `View inbox — ${inboxCount} need attention` : "View inbox"}
+          onClick={onViewSchedules}
+          aria-label={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
         >
-          <Icon name="ph:tray" width={22} height={22} aria-hidden />
-          <span>Inbox</span>
-          {inboxCount > 0 ? (
-            <span className="menu-bar__badge menu-bar__badge--alert">{fmtBadge(inboxCount)}</span>
+          <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
+          <span>Schedules</span>
+          {scheduleNeedsCount > 0 ? (
+            <span className="menu-bar__badge menu-bar__badge--alert">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}
         </button>
       </div>

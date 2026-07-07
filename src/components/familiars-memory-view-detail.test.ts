@@ -4,8 +4,12 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 const hook = await readFile(new URL("../lib/use-memory-file.ts", import.meta.url), "utf8");
-assert.match(hook, /\/api\/memory\/file\?path=\$\{encodeURIComponent\(path\)\}/,
+assert.match(hook, /path=\$\{encodeURIComponent\(path\)\}/,
+  "the shared hook must URL-encode the requested path");
+assert.match(hook, /\/api\/memory\/file\?\$\{query\}/,
   "the shared hook must fetch the redaction-safe memory/file endpoint");
+assert.match(hook, /reveal \? "&reveal=1" : ""/,
+  "reveal (un-redacted) fetches are an explicit opt-in for edit mode");
 
 // ───────── #6 basename-prominent rows + file size ─────────
 
