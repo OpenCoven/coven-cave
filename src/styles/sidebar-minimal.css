@@ -525,6 +525,14 @@
   margin-top: var(--space-3);
 }
 
+/* Row whose page is open as a secondary split tile (drag-to-split) but is not
+   the primary surface: a lighter wash of the active accent so it reads
+   "open, not focused" instead of stealing the active highlight. */
+.sidebar-folder-row--split {
+  background: color-mix(in oklch, var(--accent-presence) 4%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+
 .sidebar-folder-icon {
   flex-shrink: 0;
   opacity: 0.6;
@@ -535,6 +543,7 @@
 }
 
 .sidebar-folder-row--active .sidebar-folder-icon,
+.sidebar-folder-row--split .sidebar-folder-icon,
 .sidebar-folder-row:hover .sidebar-folder-icon {
   opacity: 1;
 }

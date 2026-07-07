@@ -365,8 +365,8 @@ assert.match(
 );
 assert.match(
   source,
-  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?\$\{dragHint\}`/,
-  "title combines label + description (+ shortcut when present) + drag-to-split hint",
+  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?\$\{dragHint\}\$\{splitHint\}`/,
+  "title combines label + description (+ shortcut when present) + drag-to-split hint + open-in-split hint",
 );
 
 // The app version renders as the bottommost sidebar element — one
@@ -415,6 +415,48 @@ assert.match(
   styles,
   /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: var\(--space-3\);/,
   "the quiet cluster opens with spacing, not a hairline divider",
+);
+
+// ── Split-open marker ────────────────────────────────────────────────────────
+// Drag-to-split opens a page beside the primary WITHOUT changing `mode`, so
+// active alone would leave the highlight stale. Rows derive a three-way state
+// (active / split / idle) from the pure lib/sidebar-nav-state helper (unit
+// tests in src/lib/sidebar-nav-state.test.ts), and workspace feeds the open
+// split-page modes.
+assert.match(
+  source,
+  /import \{ sidebarRowState, type SidebarRowState \} from "@\/lib\/sidebar-nav-state"/,
+  "row highlight derivation lives in the pure, unit-tested sidebar-nav-state helper",
+);
+assert.match(
+  source,
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  "each row derives active/split/idle from mode + open split pages",
+);
+assert.match(
+  source,
+  /sidebar-folder-row--split/,
+  "rows open in a split carry the --split modifier class",
+);
+assert.match(
+  source,
+  /splitPageModes\?: readonly string\[\]/,
+  "SidebarMinimal accepts the open split-page modes",
+);
+assert.match(
+  workspace,
+  /const splitPageModes = useMemo\([\s\S]{0,220}t\.kind === "page"[\s\S]{0,120}\[splitTargets\],?\s*\n\s*\)/,
+  "workspace derives splitPageModes from the live split tiles",
+);
+assert.match(
+  workspace,
+  /<SidebarMinimal\s+mode=\{mode\}\s+splitPageModes=\{splitPageModes\}/,
+  "workspace threads splitPageModes into the sidebar",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row--split \{[^}]*color-mix\(in oklch, var\(--accent-presence\)/,
+  "the split marker reuses the active accent at a lighter wash",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");
