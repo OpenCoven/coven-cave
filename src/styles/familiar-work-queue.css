@@ -153,6 +153,7 @@
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 .fwq-card {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -257,6 +258,48 @@
   flex-shrink: 0;
 }
 
+/* Handoff-note affordances (cave-hlv.2): a full-width hint + inline composer
+   that wrap below the card's title/actions row. */
+.fwq-card-hint {
+  flex: 0 0 100%;
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.fwq-note {
+  flex: 0 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fwq-note-input {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+  padding: 7px 9px;
+  border-radius: var(--radius-control, 8px);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fwq-note-input:focus-visible {
+  outline: 2px solid var(--ring-focus, var(--accent-presence));
+  outline-offset: 1px;
+}
+
+.fwq-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 /* Narrow surface (split tile / mobile): stack card body over actions. */
 @container (max-width: 560px) {
   .fwq-card {
@@ -265,5 +308,11 @@
   }
   .fwq-card-actions {
     justify-content: flex-end;
+  }
+  /* Column flow already stacks children full-width; the row-mode 100% basis
+     would otherwise resolve against the (vertical) main axis. */
+  .fwq-card-hint,
+  .fwq-note {
+    flex: 0 0 auto;
   }
 }

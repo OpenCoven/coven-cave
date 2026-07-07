@@ -4,7 +4,9 @@
 // post-merge-cleanup derivation. Clock injected for determinism.
 import assert from "node:assert/strict";
 
-const { buildWorkQueue, isActionableLane, laneTitle } = await import("./beads-work-queue.ts");
+const { buildWorkQueue, isActionableLane, laneTitle, hasVerificationEvidence } = await import(
+  "./beads-work-queue.ts"
+);
 
 const NOW = Date.parse("2026-07-07T12:00:00Z");
 const HOURS = 3_600_000;
@@ -148,4 +150,18 @@ function bead(id, { priority = 2, labels = [], type = "feature", assignee = null
 }
 
 assert.equal(laneTitle("ready-to-merge"), "Ready to merge");
+
+// ── hasVerificationEvidence: a recorded comment gates Close (cave-hlv.2) ──────
+assert.equal(hasVerificationEvidence({ ...bead("cave-a"), comment_count: 1 }), true, "one comment = evidence");
+assert.equal(hasVerificationEvidence({ ...bead("cave-a"), comment_count: 3 }), true, "many comments = evidence");
+assert.equal(hasVerificationEvidence({ ...bead("cave-a"), comment_count: 0 }), false, "zero comments = no evidence");
+assert.equal(hasVerificationEvidence(bead("cave-a")), false, "absent comment_count = no evidence");
+assert.equal(hasVerificationEvidence(undefined), false, "no bead = no evidence");
+// notes alone (auto-populated planning text) must NOT count as evidence.
+assert.equal(
+  hasVerificationEvidence({ ...bead("cave-a"), notes: "some planning text", comment_count: 0 }),
+  false,
+  "notes without a comment are not verification evidence",
+);
+
 console.log("beads-work-queue.test.ts: ok");

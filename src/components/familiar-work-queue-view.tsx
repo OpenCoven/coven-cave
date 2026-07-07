@@ -11,6 +11,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
+  hasVerificationEvidence,
   type ReadyBead,
   type MergedPrRef,
   type WorkQueue,
@@ -66,6 +67,9 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
+  // Beads that got a handoff note THIS session — Close unlocks immediately
+  // without waiting for the poll to re-read comment_count (cave-hlv.2).
+  const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
   const loadSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -138,6 +142,37 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         await load({ quiet: true });
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [announce, load],
+  );
+
+  // Handoff note: appends a comment to the bead (the recorded verification
+  // evidence that unlocks Close). Returns whether it landed so the card's inline
+  // composer can stay open on failure. cave-hlv.2.
+  const runComment = useCallback(
+    async (item: WorkQueueItem, text: string): Promise<boolean> => {
+      const id = item.bead?.id;
+      const comment = text.trim();
+      if (!id || !comment) return false;
+      setBusyId(item.key);
+      try {
+        const res = await fetch("/api/beads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "comment", id, comment }),
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error || "comment failed");
+        setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
+        announce(`Handoff note added to ${id}.`);
+        await load({ quiet: true });
+        return true;
+      } catch (err) {
+        announce(err instanceof Error ? err.message : `Could not add a note to ${id}`, "assertive");
+        return false;
       } finally {
         setBusyId(null);
       }
@@ -268,9 +303,14 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
                     item={item}
                     familiarLabel={familiarName(item.familiar)}
                     busy={busyId === item.key}
+                    hasEvidence={
+                      !!item.bead &&
+                      (hasVerificationEvidence(item.bead) || evidenceAdded.has(item.bead.id.toLowerCase()))
+                    }
                     onOpenUrl={onOpenUrl}
                     onClaim={() => void runAction(item, "claim")}
                     onClose={() => void runAction(item, "close")}
+                    onComment={(text) => runComment(item, text)}
                   />
                 ))}
               </ul>
@@ -286,21 +326,40 @@ function WorkQueueCard({
   item,
   familiarLabel,
   busy,
+  hasEvidence,
   onOpenUrl,
   onClaim,
   onClose,
+  onComment,
 }: {
   item: WorkQueueItem;
   familiarLabel: string;
   busy: boolean;
+  hasEvidence: boolean;
   onOpenUrl?: (url: string) => void;
   onClaim: () => void;
   onClose: () => void;
+  onComment: (text: string) => Promise<boolean>;
 }) {
   const beadId = item.bead?.id ?? null;
   const title = item.pr?.title ?? item.merged?.title ?? item.bead?.title ?? "Untitled";
   const prNumber = item.pr?.number ?? item.merged?.number ?? null;
   const url = item.pr?.url ?? item.merged?.url ?? null;
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const isCleanup = item.lane === "post-merge-cleanup";
+  // Close is exposed on the cleanup lane, but only once verification evidence
+  // (a handoff note) is on record — the operator adds one via the composer.
+  const closeBlocked = isCleanup && !hasEvidence;
+
+  const submitNote = async () => {
+    if (!draft.trim()) return;
+    const ok = await onComment(draft);
+    if (ok) {
+      setDraft("");
+      setComposing(false);
+    }
+  };
 
   return (
     <li className={`fwq-card${item.stale ? " is-stale" : ""}`}>
@@ -342,17 +401,82 @@ function WorkQueueCard({
             {item.merged ? "Merged PR" : "Open PR"}
           </Button>
         ) : null}
+        {beadId ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            leadingIcon="ph:note-pencil"
+            onClick={() => setComposing((v) => !v)}
+            aria-expanded={composing}
+            aria-label={`Add a handoff note to ${beadId}`}
+          >
+            Note
+          </Button>
+        ) : null}
         {item.lane === "no-open-PR" && beadId ? (
           <Button variant="secondary" size="xs" loading={busy} leadingIcon="ph:hand" onClick={onClaim}>
             Claim
           </Button>
         ) : null}
-        {item.lane === "post-merge-cleanup" && beadId ? (
-          <Button variant="secondary" size="xs" loading={busy} leadingIcon="ph:check" onClick={onClose}>
+        {isCleanup && beadId ? (
+          <Button
+            variant="secondary"
+            size="xs"
+            loading={busy}
+            leadingIcon="ph:check"
+            onClick={onClose}
+            disabled={closeBlocked}
+            title={closeBlocked ? "Add a handoff note to record verification before closing" : undefined}
+          >
             Close bead
           </Button>
         ) : null}
       </div>
+      {closeBlocked && !composing ? (
+        <p className="fwq-card-hint">Add a handoff note to record verification before closing.</p>
+      ) : null}
+      {composing && beadId ? (
+        <div className="fwq-note">
+          <textarea
+            className="fwq-note-input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={`Handoff note for ${beadId} — what you verified…`}
+            aria-label={`Handoff note for ${beadId}`}
+            rows={2}
+            disabled={busy}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                void submitNote();
+              }
+            }}
+          />
+          <div className="fwq-note-actions">
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                setDraft("");
+                setComposing(false);
+              }}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="secondary"
+              size="xs"
+              loading={busy}
+              leadingIcon="ph:plus"
+              onClick={() => void submitNote()}
+              disabled={!draft.trim() || busy}
+            >
+              Add note
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </li>
   );
 }

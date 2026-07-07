@@ -16,7 +16,24 @@ export type ReadyBead = {
   issue_type?: string | null;
   labels?: string[] | null;
   updated_at?: string | null;
+  /** Number of comments on the bead (`bd ready --json` includes this). Used as
+   *  the verification-evidence signal: a recorded handoff/verification comment
+   *  must exist before the queue exposes Close (cave-hlv.2). */
+  comment_count?: number | null;
 };
+
+/**
+ * True when a bead carries recorded verification evidence — i.e. at least one
+ * comment (a handoff/verification note). Deliberately NOT satisfied by `notes`
+ * (frequently auto-populated planning text) or by a merged PR alone (green CI
+ * is not a substitute for a recorded verification per the familiar PR
+ * protocol): the operator must add a handoff note, which the queue's inline
+ * composer writes as a comment. Gates the Close affordance on the
+ * post-merge-cleanup lane.
+ */
+export function hasVerificationEvidence(bead: ReadyBead | undefined | null): boolean {
+  return (bead?.comment_count ?? 0) > 0;
+}
 
 /** A recently-merged PR, reduced to what the cleanup lane needs. */
 export type MergedPrRef = {

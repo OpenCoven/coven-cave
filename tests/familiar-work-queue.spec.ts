@@ -8,10 +8,12 @@ import { expect, test, type Page } from "@playwright/test";
 // event since Work Queue is a quiet, shortcut-less destination.
 
 const READY_BEADS = [
-  { id: "cave-aa1", title: "Harden the sync path", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty", "surface:github"], updated_at: null },
-  { id: "cave-bb2", title: "iOS profile avatar", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:nova", "surface:ios"], updated_at: null },
-  { id: "cave-open", title: "Merged but unclosed", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:kitty"], updated_at: null },
-  { id: "cave-epic", title: "An epic container", priority: 1, status: "open", issue_type: "epic", labels: ["familiar:nova"], updated_at: null },
+  { id: "cave-aa1", title: "Harden the sync path", priority: 1, status: "open", issue_type: "feature", labels: ["familiar:kitty", "surface:github"], updated_at: null, comment_count: 0 },
+  { id: "cave-bb2", title: "iOS profile avatar", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:nova", "surface:ios"], updated_at: null, comment_count: 0 },
+  // cave-open is the post-merge-cleanup bead (merged PR #90). comment_count: 0
+  // means no recorded verification yet → Close is gated until a handoff note.
+  { id: "cave-open", title: "Merged but unclosed", priority: 2, status: "open", issue_type: "feature", labels: ["familiar:kitty"], updated_at: null, comment_count: 0 },
+  { id: "cave-epic", title: "An epic container", priority: 1, status: "open", issue_type: "epic", labels: ["familiar:nova"], updated_at: null, comment_count: 0 },
 ];
 
 const NOW = Date.now();
@@ -54,11 +56,16 @@ async function gotoWorkQueue(page: Page) {
   await page.route(/\/api\/beads\?/, (route) => route.fulfill({ json: { ok: true, data: READY_BEADS } }));
 
   await page.goto("/");
-  await page.waitForTimeout(500);
-  await page.evaluate(() =>
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
-  );
-  await page.waitForSelector(".fwq", { timeout: 30_000 });
+  // The shell must be mounted before the mode-switch listener exists; dispatch
+  // once the nav is present, then re-fire until the surface appears so a slow
+  // hydration (cold `next dev` compile) can't lose the event to a race.
+  await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+  await expect(async () => {
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+    );
+    await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 test.describe("familiar work queue (PR control tower)", () => {
@@ -118,5 +125,37 @@ test.describe("familiar work queue (PR control tower)", () => {
     const noPr = page.locator(".fwq").getByRole("region", { name: "No open PR" });
     await noPr.getByRole("button", { name: "Claim" }).click();
     await expect.poll(() => claimBody).toEqual({ action: "claim", id: "cave-bb2" });
+  });
+
+  test("cleanup Close is gated on a handoff note; adding one posts a comment and unlocks it", async ({ page }) => {
+    let commentBody: unknown = null;
+    await page.route("**/api/beads", async (route) => {
+      if (route.request().method() === "POST") {
+        commentBody = route.request().postDataJSON();
+        await route.fulfill({ json: { ok: true, data: { id: "cave-open" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, data: READY_BEADS } });
+    });
+    await gotoWorkQueue(page);
+
+    const cleanup = page.locator(".fwq").getByRole("region", { name: "Post-merge cleanup" });
+    // No evidence yet → Close is disabled and the reason is spelled out.
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
+    await expect(cleanup.getByText(/Add a handoff note to record verification/)).toBeVisible();
+
+    // Record a handoff note through the inline composer.
+    await cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ }).click();
+    await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified: lanes render, close gated.");
+    await cleanup.getByRole("button", { name: "Add note" }).click();
+
+    // The note posts as a comment on the bead…
+    await expect.poll(() => commentBody).toEqual({
+      action: "comment",
+      id: "cave-open",
+      comment: "Verified: lanes render, close gated.",
+    });
+    // …and Close unlocks (optimistic, without waiting for a re-read).
+    await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeEnabled();
   });
 });
