@@ -95,6 +95,7 @@ import {
 import {
   buildPromptWithFamiliarStartupContext,
   readFamiliarDailyMemoryStartupContext,
+  buildOperatorProfileContext,
 } from "@/lib/server/familiar-startup-context";
 import {
   buildSshSpawnArgs,
@@ -1179,6 +1180,11 @@ export async function POST(req: Request) {
   const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
     resolvedFamiliarWorkspace,
   );
+  // Operator profile — who the human is. New sessions only: resumed sessions
+  // already carry the block in their transcript.
+  const operatorProfileContext = body.sessionId
+    ? null
+    : buildOperatorProfileContext(config.profile);
   // Knowledge Vault — curated, cross-harness reference knowledge, separate from
   // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
   // consumes `harnessPrompt` below receives the same authoritative context.
@@ -1200,7 +1206,7 @@ export async function POST(req: Request) {
               ),
               mentionedFiles,
             ),
-            [dailyMemoryContext],
+            [operatorProfileContext, dailyMemoryContext],
           ),
           knowledgeVaultEntries,
         ),

@@ -541,7 +541,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /buildPromptWithFamiliarStartupContext\([\s\S]*appendMentionedFilesBlock[\s\S]*\[dailyMemoryContext\]/,
+  /buildPromptWithFamiliarStartupContext\([\s\S]*appendMentionedFilesBlock[\s\S]*\[operatorProfileContext,\s*dailyMemoryContext\]/,
   "The harness prompt should include the familiar startup context before task and identity wrappers",
 );
 
