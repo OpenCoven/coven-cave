@@ -15,6 +15,13 @@ struct MessageBubble: View {
     /// Quote this message into the composer — swipe the bubble right, or use the
     /// long-press menu. nil hides the action.
     var onReply: ((DisplayMessage) -> Void)? = nil
+    /// The human operator's display name, shown above their own bubbles in
+    /// group threads (mirrors the familiar name row). Defaults to "You" so a
+    /// missing profile reads exactly as before.
+    var operatorName: String = "You"
+    /// The operator's server avatar image URL for that same row; nil falls back
+    /// to name initials.
+    var operatorAvatarURL: URL? = nil
 
     /// Horizontal offset while swiping right to reply.
     @State private var replyDrag: CGFloat = 0
@@ -202,6 +209,15 @@ struct MessageBubble: View {
                         .foregroundStyle(Theme.color(for: familiar))
                         .padding(.leading, 4)
                 }
+                // The operator gets the same name row above their own bubbles in
+                // a group thread, so a multi-person transcript attributes every
+                // turn — not just the familiars'.
+                if isUser, isGroup {
+                    Text(operatorName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Theme.color(for: nil))
+                        .padding(.trailing, 4)
+                }
                 if !message.attachmentDataUrls.isEmpty {
                     attachmentImages
                         .contextMenu { messageActions }
@@ -252,6 +268,12 @@ struct MessageBubble: View {
                 if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
                     SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)
                 }
+            }
+
+            // Operator avatar sits at the trailing edge, mirroring the familiar
+            // avatar on the leading edge for assistant bubbles.
+            if isUser, isGroup {
+                AvatarView(familiar: nil, url: operatorAvatarURL, size: 28, fallbackName: operatorName)
             }
 
             if !isUser { Spacer(minLength: 48) }

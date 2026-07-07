@@ -738,6 +738,7 @@ export const SUITES = {
     "scripts/ios-connection-stability.test.mjs",
     "scripts/ios-legacy-token-migration.test.mjs",
     "scripts/ios-offline-compose.test.mjs",
+    "scripts/ios-operator-profile.test.mjs",
     "scripts/ios-connect-paste.test.mjs",
     "scripts/ios-connect-screen-ux.test.mjs",
     "scripts/ios-theme-list-background.test.mjs",

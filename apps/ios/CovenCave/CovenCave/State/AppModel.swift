@@ -161,6 +161,33 @@ final class AppModel {
         }
     }
 
+    // MARK: - Operator profile
+
+    /// The human operator's profile (`GET /api/profile`), mirrored from the
+    /// desktop so the operator's own chat turns show their name/avatar instead
+    /// of a generic "You". `nil` until it loads (disconnected / pre-fetch).
+    var operatorProfile: OperatorProfile?
+
+    /// Name to show for the operator's messages — the profile name, or "You".
+    var operatorDisplayName: String { operatorProfile?.displayName ?? "You" }
+
+    /// Server avatar image URL for the operator, or `nil` when none is set (the
+    /// UI falls back to name initials). Cache-busted by the profile's mtime.
+    var operatorAvatarURL: URL? {
+        guard let client, operatorProfile?.avatarPresent == true else { return nil }
+        return client.operatorAvatarURL(updatedAt: operatorProfile?.avatarUpdatedAt)
+    }
+
+    /// Fetch the operator profile. Best-effort: on failure the last snapshot
+    /// stands (chat keeps showing the current name rather than flashing to
+    /// "You" on a transient poll miss), mirroring `loadTheme`.
+    func loadOperatorProfile() async {
+        guard let client else { return }
+        if let profile = try? await client.operatorProfile() {
+            if operatorProfile != profile { operatorProfile = profile }
+        }
+    }
+
     /// Apply a fetched/published snapshot: refresh the chrome palette and record
     /// the active theme id + mode for the picker. Only assigns on change so an
     /// unchanged poll stays a cheap no-op (no needless view invalidation).
@@ -694,6 +721,10 @@ final class AppModel {
     func validateConnectionOnForeground() async {
         guard connection != nil, connectionState == .connected else { return }
         if let client, await client.ping() {
+            // Profile first (the just-succeeded ping proves the current token is
+            // valid), then the rolling token renewal + queue flush stay adjacent
+            // — the offline-compose flush invariant pins that pair.
+            await loadOperatorProfile()
             await refreshAccessTokenIfNeeded()
             flushQueuedMessages()
             return
@@ -710,6 +741,7 @@ final class AppModel {
         if projectsLoaded { await loadProjects() }
         if journalLoaded { await loadJournal() }
         await loadTheme()
+        await loadOperatorProfile()
     }
 
     /// `quiet` probes without first flipping the state to `.checking`, so a
@@ -747,6 +779,7 @@ final class AppModel {
             } else {
                 await loadFamiliars()
                 await loadTheme()
+                await loadOperatorProfile()
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())

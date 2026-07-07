@@ -33,8 +33,8 @@ assert.match(
 
 assert.match(
   chat,
-  /private func forwardSenderName\(for message: DisplayMessage\) -> String \{[\s\S]*case \.user:[\s\S]*return "You"[\s\S]*case \.assistant:[\s\S]*app\.familiar[\s\S]*displayName[\s\S]*case \.system:[\s\S]*return "System"/,
-  "forwarding should attribute the original sender as You, the familiar display name, or System",
+  /private func forwardSenderName\(for message: DisplayMessage\) -> String \{[\s\S]*case \.user:[\s\S]*return app\.operatorDisplayName[\s\S]*case \.assistant:[\s\S]*app\.familiar[\s\S]*displayName[\s\S]*case \.system:[\s\S]*return "System"/,
+  "forwarding attributes the original sender as the operator name (cave-8xb), the familiar display name, or System",
 );
 
 assert.match(

@@ -578,7 +578,7 @@ struct ThreadRow: View {
     private var previewText: String {
         guard let last = lastMessage else { return "Tap to start chatting" }
         if last.streaming && last.text.isEmpty { return "…" }
-        let prefix = last.role == .user ? "You: " : ""
+        let prefix = last.role == .user ? "\(app.operatorDisplayName): " : ""
         return prefix + last.text.replacingOccurrences(of: "\n", with: " ")
     }
 }
