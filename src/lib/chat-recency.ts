@@ -52,9 +52,14 @@ export function deriveChatRecencyBuckets(
   sessions: SessionRow[],
   nowMs: number,
 ): ChatRecencyBucket[] {
-  const sorted = [...sessions].sort((a, b) =>
-    sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1,
-  );
+  const sorted = [...sessions].sort((a, b) => {
+    // Newest first. Return 0 for equal timestamps: `a < b ? 1 : -1` is
+    // asymmetric (both compare(a,b) and compare(b,a) yield -1 when equal),
+    // which violates the comparator contract and reorders same-timestamp rows.
+    const ta = sessionTimestamp(a);
+    const tb = sessionTimestamp(b);
+    return ta === tb ? 0 : tb > ta ? 1 : -1;
+  });
   const byKey = new Map<ChatRecencyBucketKey, SessionRow[]>();
   for (const session of sorted) {
     const key = bucketKeyFor(sessionTimestamp(session), nowMs);

@@ -3713,11 +3713,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         raiseDebugError({ turnId: assistantId });
       }
     } finally {
-      streamOwnerRef.current = false;
+      // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGeneration(liveGeneration.sessionId);
-      abortRef.current = null;
-      stopKeysRef.current = { runId: null, sessionId: null };
-      setBusy(false);
+      // But only tear down the SHARED stream wiring if we still own it. After a
+      // thread switch + a second send, a settling *background* stream must not
+      // null the newer stream's abort controller / stop keys or re-enable the
+      // composer — otherwise the newer response's Stop button goes dead and the
+      // composer falsely unlocks mid-stream. `controller` is this send's own
+      // AbortController (assigned to abortRef.current when the stream started).
+      if (abortRef.current === controller) {
+        streamOwnerRef.current = false;
+        abortRef.current = null;
+        stopKeysRef.current = { runId: null, sessionId: null };
+        setBusy(false);
+      }
     }
   };
 
@@ -4435,7 +4444,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setInput("");
       return;
     }
-    if (e.key === "Enter" && !e.shiftKey) {
+    // `isComposing` is true for the Enter that confirms an IME candidate
+    // (CJK/pinyin/kana). Treating that Enter as "send" fires a half-composed,
+    // garbled message and destroys the candidate selection, so let the IME keep it.
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void send();
       return;
@@ -4490,6 +4502,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
     setMentionedFiles([]);
     setRuntimeHost(null);
+    // ChatView is a single instance reused across threads (not keyed by
+    // sessionId in ChatRouter), so per-thread composer context must be cleared
+    // on switch or it bleeds into the next conversation's next send: a
+    // reply-quote and staged attachments would be injected into the wrong
+    // thread, a pending branch parent would mis-parent the turn onto a node
+    // that doesn't exist in the new tree, and the "Prompt improved / Revert"
+    // strip would resurrect the previous thread's pre-enhancement draft.
+    setReplyTarget(null);
+    setAttachments([]);
+    setPendingBranchParent(undefined);
+    setEnhanceStatus("idle");
+    setEnhanceOriginal(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 

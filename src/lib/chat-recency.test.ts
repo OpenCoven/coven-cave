@@ -50,6 +50,17 @@ test("empty buckets are omitted; rows sort newest-first within a bucket", () => 
   assert.deepEqual(buckets[0].sessions.map((s) => s.id), ["t-new", "t-old"]);
 });
 
+test("equal timestamps keep a stable, insertion-order arrangement (comparator returns 0)", () => {
+  // Same updated_at for every row: the sort comparator must return 0 for equal
+  // elements (not the old asymmetric `a < b ? 1 : -1`), so ordering is stable
+  // rather than engine-dependent.
+  const ts = daysAgoIso(0, 2);
+  const ids = ["a", "b", "c", "d", "e"];
+  const buckets = deriveChatRecencyBuckets(ids.map((id) => session(id, ts)), NOW_MS);
+  assert.deepEqual(buckets.map((b) => b.key), ["today"]);
+  assert.deepEqual(buckets[0].sessions.map((s) => s.id), ids);
+});
+
 test("created_at fallback; invalid timestamps → Older; future skew reads as today", () => {
   const created = deriveChatRecencyBuckets([session("c1", "", daysAgoIso(1))], NOW_MS);
   assert.deepEqual(created.map((b) => b.key), ["yesterday"]);
