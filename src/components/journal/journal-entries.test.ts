@@ -1,105 +1,14 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
-const mode = read("../../lib/workspace-mode.ts");
-const workspace = read("../workspace.tsx");
-const sidebar = read("../sidebar-minimal.tsx");
-const view = read("./journal-view.tsx");
-const list = read("./canvas-list.tsx");
 const entries = read("./journal-entries.tsx");
 const css = read("../../styles/journal.css");
 
-// Mode renamed canvas -> journal
-assert.match(mode, /\|\s*"journal"/, "WorkspaceMode includes journal");
-assert.doesNotMatch(mode, /\|\s*"canvas"/, "WorkspaceMode no longer includes canvas");
-
-// Workspace wiring
-assert.match(workspace, /journal:\s*"Journal"/, "mode title is Journal");
-assert.match(workspace, /mode === "journal" \?\s*\(\s*<JournalView/, "renders JournalView for journal mode");
-assert.match(workspace, /import \{ JournalView \}/, "imports JournalView");
-assert.doesNotMatch(workspace, /import \{ CanvasView \}/, "no longer imports CanvasView");
-assert.match(workspace, /case "\/journal":/, "has a /journal slash command");
-
-// Sidebar entry renamed
-assert.match(sidebar, /id: "journal"/, "sidebar exposes the journal folder");
-assert.doesNotMatch(sidebar, /id: "canvas"/, "sidebar no longer exposes canvas");
-
-// JournalView is a two-tab shell hosting the Canvas list
-assert.match(view, /<Tabs[\s\S]{0,160}variant="underline"/, "JournalView renders the shared underline Tabs");
-assert.match(view, /label: "Journal"/, "has a Journal tab");
-assert.match(view, /label: "Canvas"/, "has a Canvas tab");
-assert.match(view, /<CanvasList/, "renders CanvasList in the Canvas tab");
-
-// CanvasList reuses the artifact pipeline, not React Flow
-assert.match(list, /\/api\/canvas/, "CanvasList loads artifacts from /api/canvas");
-assert.match(list, /generateArtifactCode/, "CanvasList generates via generateArtifactCode");
-assert.doesNotMatch(list, /@xyflow\/react/, "CanvasList does not use React Flow");
-assert.match(list, /editingTitleId,\s*setEditingTitleId/, "CanvasList tracks which canvas item title is being renamed");
-assert.match(list, /aria-label=\{`Rename \$\{a\.title \|\| "Untitled sketch"\}`\}/, "Canvas item rows expose a rename button");
-assert.match(list, /commitRename/, "CanvasList persists renamed canvas item titles");
-
-// The Code tab offers a Copy button (only while the code view is active) that
-// copies the current editable source via the robust clipboard helper.
-assert.match(list, /import \{ copyText \} from "@\/lib\/clipboard"/, "CanvasList imports the clipboard helper");
-assert.match(list, /view === "code" \? \(/, "Copy button is gated to the Code tab");
-assert.match(list, /copyText\(codeDraft\)/, "Copy button copies the current code draft");
-assert.match(list, /name=\{copied \? "ph:check" : "ph:copy"\}/, "Copy button shows a copied confirmation icon");
-assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Enter"[\s\S]*?commitRename/, "Canvas item rename input commits on Enter");
-assert.match(list, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelRename/, "Canvas item rename input cancels on Escape");
-assert.match(list, /codeDraft,\s*setCodeDraft/, "Canvas Code tab tracks an editable source draft");
-assert.match(list, /function saveCodeEdit\(\)/, "Canvas Code tab exposes a save action for edited source");
-assert.match(list, /persist\(next\)/, "Canvas Code tab saves edited source through the existing canvas artifact store");
-assert.match(list, /aria-label="Edit canvas code"/, "Canvas Code tab renders an editable code textarea");
-assert.match(list, /aria-label="Save canvas code"/, "Canvas Code tab renders a save-code action");
-assert.match(list, /aria-label="Revert canvas code edits"/, "Canvas Code tab renders a revert action");
-assert.match(list, /e\.key === "s"[\s\S]*?saveCodeEdit/, "Canvas Code tab supports Cmd/Ctrl+S save");
-assert.match(list, /e\.key === "Escape"[\s\S]*?revertCodeEdit/, "Canvas Code tab supports Escape to revert unsaved edits");
-
-// ── Fullscreen detail is a real modal dialog (focus trap + Escape + restore) ──
-// Was: a portaled <section> with a manual Escape handler, no focus trap/restore.
-assert.match(
-  list,
-  /useFocusTrap\(fullscreen, detailRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/,
-  "Fullscreen canvas detail traps focus, closes on Escape, and restores focus on exit",
-);
-assert.match(
-  list,
-  /role=\{fullscreen \? "dialog" : undefined\}[\s\S]*?aria-modal=\{fullscreen \? true : undefined\}/,
-  "Fullscreen canvas detail exposes dialog semantics only while full screen",
-);
-assert.doesNotMatch(
-  list,
-  /window\.addEventListener\("keydown", onKeyDown\)/,
-  "the hand-rolled fullscreen Escape listener is replaced by the focus trap",
-);
-// The portal remount defeats useFocusTrap's own restore, so focus is returned to
-// the full-screen toggle explicitly on the next frame after exiting full screen.
-assert.match(
-  list,
-  /if \(wasFullscreenRef\.current && !fullscreen\) \{\s*requestAnimationFrame\(\(\) => fsBtnRef\.current\?\.focus\(\)\)/,
-  "leaving full screen restores focus to the toggle (after the un-portal remount)",
-);
-assert.match(list, /ref=\{fsBtnRef\}/, "the full-screen toggle is the focus-restore target");
-
-// ── Selected canvas item is aria-current (was visual .is-selected only) ──────
-assert.match(list, /aria-current=\{a\.id === selectedId \? "true" : undefined\}/, "the selected canvas item announces itself");
-
-// ── Preview/Code tabs are arrow-navigable with a roving tab stop ─────────────
-assert.match(list, /tabIndex=\{view === "preview" \? 0 : -1\}/, "the preview tab roves the tab stop");
-assert.match(list, /tabIndex=\{view === "code" \? 0 : -1\}/, "the code tab roves the tab stop");
-assert.match(
-  list,
-  /\["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"\]\.includes\(e\.key\)/,
-  "the Preview/Code tablist supports arrow/Home/End navigation",
-);
 assert.match(css, /\.journal-list \{[\s\S]*?min-width:\s*0;/, "Journal master-detail shell can shrink inside the workspace");
 assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal detail pane contains overflowing code surfaces");
-assert.match(css, /\.journal-detail__code \{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Canvas Code tab wraps long source lines instead of overflowing horizontally");
-assert.match(css, /\.journal-detail__code--hl pre\.shiki \{[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Highlighted Canvas code wraps long Shiki lines too");
-assert.match(css, /\.journal-detail__code--editor\s*\{[\s\S]*?resize:\s*none;[\s\S]*?outline:\s*none;/, "Canvas Code tab editor keeps the same contained code pane geometry");
 
 // JournalEntries can be edited and deleted through the persisted journal API.
 assert.match(entries, /editing,\s*setEditing/, "JournalEntries tracks edit mode for daily reflections");
@@ -165,14 +74,6 @@ assert.match(entries, /aria-label="Older entry"/, "detail header has an older-en
 assert.match(entries, /const hasOlder = dayIndex >= 0 && dayIndex < filteredDays\.length - 1/, "older-entry availability derives from the visible list");
 assert.match(css, /\.journal-entry__sec--nav \{[\s\S]*?justify-content: space-between/, "the heading row lays out the nav controls");
 
-// ── Canvas tab: async setState guarded against unmount ──────────────────────
-// Generation is a slow LLM call; leaving Canvas mid-generate must not setState
-// on a dead tree. load() and runGeneration() bail on a cleared mountedRef.
-assert.match(list, /const mountedRef = useRef\(true\)/, "canvas tracks mounted state");
-assert.match(list, /return \(\) => \{ mountedRef\.current = false; \}/, "canvas clears mountedRef on unmount");
-assert.match(list, /await generateArtifactCode\([\s\S]{0,80}?if \(!mountedRef\.current\) return;/, "runGeneration bails after the LLM call if unmounted");
-assert.match(list, /const json = await res\.json\(\)[\s\S]{0,80}?if \(!mountedRef\.current\) return;/, "load bails after the fetch if unmounted");
-
 // ── Click-to-automate: suggested next steps become one-click actions ─────────
 // The familiar's `<coven:next-paths>` suggestions are no longer static text —
 // each opens an automate tray (Run now / Add task / Remind me) that turns the
@@ -216,4 +117,4 @@ assert.match(css, /\.journal-day:active \{ transform:/, "day rows have a tactile
 assert.match(css, /\.journal-entry__action:active:not\(:disabled\) \{ transform: scale/, "entry action icons have a tactile press");
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-next__chip,/, "the new interactions respect prefers-reduced-motion");
 
-console.log("journal-view.test.ts: ok");
+console.log("journal-entries.test.ts: ok");
