@@ -7,6 +7,16 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.144] - 2026-07-06
+
+> ✨ **A home that feels like yours** — the cold-start surface gets a world-class visual pass (presence eyebrow, breathing hearth glow, resume affordance), and a new **server-side operator profile** lets you set your name, pronouns, bio, timezone, links, and avatar once — surfaced across chat and handed to your familiars as startup context.
+
+Feature release on top of v0.0.143. Ships the redesigned home surface and the operator profile system.
+
+### Features
+- **Home world-class visual pass** (#2540). A distinctive cold-start surface: a time-aware presence eyebrow with a glowing accent dot, an accent-tinted project name in the headline, a signature breathing "hearth glow" behind the composer that brightens on focus, informational pills for board continuations, an always-visible `Resume →` affordance on the newest Continue card, and staggered entrance choreography — all collapsed under `prefers-reduced-motion` and honoring every pinned composer/centering/column contract.
+- **Server-side operator profile** (#2541). Set your name, pronouns, bio, timezone, links, and avatar from a new **Settings → Profile** section. Text fields persist under a `profile` key in `cave-config.json`; the avatar is a single atomic file (SVG rejected as a stored-XSS vector). `GET/PATCH /api/profile` + `GET/POST/DELETE /api/profile/avatar` (field validation, 2 MB cap, ETag/304). The hard-coded "You" across chat, group chat, reply quotes, and grant labels now routes through your display name, and new sessions receive an `operator-profile` startup-context block — zero overhead when unset.
+
 ## [0.0.143] - 2026-07-06
 
 > 🧹 **A tighter, more honest cockpit** — the dashboard's Familiar Insights table becomes sortable and filterable, a new space-usage panel gives you an honest read on where `~/.coven` disk is going (with cleanup drill-throughs), and the quick-chat box gets a hardening pass. Behind the scenes, a twice-daily PR triage patrol lands to keep the review queue from rotting.

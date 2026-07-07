@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.0.143"
+version = "0.0.144"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
