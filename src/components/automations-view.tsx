@@ -435,13 +435,14 @@ const ScheduleActionsContext = createContext<ScheduleActions | null>(null);
 // Always-visible labeled row action — the same affordance the All/Flows rows
 // use, so every tab exposes identical controls. Rendered as a sibling of the
 // row's own button (never nested), so a click can't also open the detail panel.
-function RowActionButton({ icon, label, text, onClick }: { icon: IconName; label: string; text: string; onClick: () => void }) {
+function RowActionButton({ icon, label, text, onClick, disabled }: { icon: IconName; label: string; text: string; onClick: () => void; disabled?: boolean }) {
   return (
     <Button
       variant="ghost"
       size="xs"
       aria-label={label}
       onClick={onClick}
+      disabled={disabled}
       className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
       style={{ color: "var(--text-secondary)" }}
       leadingIcon={icon}
@@ -1510,29 +1511,21 @@ function AutomationEntryRow({
           </span>
         </button>
         <span className="mt-1.5 flex items-center gap-1">
-          <button
-            type="button"
-            disabled={busy}
+          <RowActionButton
+            icon="ph:play"
+            label={`Run ${entry.name} now`}
+            text={busy ? "…" : "Run"}
             onClick={() => onRun(entry)}
-            aria-label={`Run ${entry.name} now`}
-            className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            <Icon name="ph:play" width={11} aria-hidden />
-            {busy ? "…" : "Run"}
-          </button>
+            disabled={busy}
+          />
           {onTogglePause && (
-            <button
-              type="button"
-              disabled={busy}
+            <RowActionButton
+              icon={entryPaused ? "ph:play" : "ph:pause"}
+              label={`${entryPaused ? "Resume" : "Pause"} ${entry.name}`}
+              text={entryPaused ? "Resume" : "Pause"}
               onClick={() => onTogglePause(entry)}
-              aria-label={`${entryPaused ? "Resume" : "Pause"} ${entry.name}`}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <Icon name={entryPaused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
-              {entryPaused ? "Resume" : "Pause"}
-            </button>
+              disabled={busy}
+            />
           )}
         </span>
       </span>
@@ -1605,39 +1598,28 @@ function ManagedAutomationRow({
         <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
         <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--text-muted)" }}>{meta}</span>
         <span className="mt-1.5 flex items-center gap-1">
-          <button
-            type="button"
-            disabled={busy}
+          <RowActionButton
+            icon="ph:play"
+            label={`Run ${name} now`}
+            text={busy ? "…" : "Run"}
             onClick={onRun}
-            aria-label={`Run ${name} now`}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            <Icon name="ph:play" width={11} aria-hidden />
-            {busy ? "…" : "Run"}
-          </button>
+            disabled={busy}
+          />
           {onTogglePause && (
-            <button
-              type="button"
-              disabled={busy}
+            <RowActionButton
+              icon={paused ? "ph:play" : "ph:pause"}
+              label={`${paused ? "Resume" : "Pause"} ${name}`}
+              text={paused ? "Resume" : "Pause"}
               onClick={onTogglePause}
-              aria-label={`${paused ? "Resume" : "Pause"} ${name}`}
-              className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <Icon name={paused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
-              {paused ? "Resume" : "Pause"}
-            </button>
+              disabled={busy}
+            />
           )}
-          <button
-            type="button"
+          <RowActionButton
+            icon="ph:arrow-square-out"
+            label={`Open ${name}`}
+            text="Open"
             onClick={onOpen}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            <Icon name="ph:arrow-square-out" width={11} aria-hidden />
-            Open
-          </button>
+          />
         </span>
       </span>
     </div>

@@ -110,8 +110,8 @@ assert.match(source, /actions\.togglePauseReminder\(item\)/, "the reminder row e
 assert.match(source, /item\.kind !== "daily-summary"/, "daily-summary rows get no run/pause actions");
 assert.match(
   source,
-  /entry\.name[\s\S]*?aria-label=\{`Run \$\{entry\.name\} now`\}/,
-  "unified automation row actions render below the automation name",
+  /entry\.name[\s\S]*?label=\{`Run \$\{entry\.name\} now`\}/,
+  "unified automation row Run action routes through RowActionButton (label → aria-label)",
 );
 assert.match(
   source,
@@ -120,8 +120,22 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label=\{`Run \$\{name\} now`\}/,
-  "the managed row's Run button carries a distinct accessible name (not just \"Run\"/\"…\")",
+  /label=\{`Run \$\{name\} now`\}/,
+  "the managed row's Run action carries a distinct accessible name (not just \"Run\"/\"…\")",
+);
+
+// cave-4op: every Schedules row action (Run / Pause / Open) routes through the
+// shared RowActionButton (a ghost Button primitive), which now supports a
+// disabled/busy state — no row hand-rolls its own <button> action.
+assert.match(
+  source,
+  /function RowActionButton\(\{ icon, label, text, onClick, disabled \}/,
+  "RowActionButton accepts a disabled/busy state",
+);
+assert.doesNotMatch(
+  source,
+  /<button[\s\S]{0,220}aria-label=\{`Run \$\{(entry\.name|name)\} now`\}/,
+  "no hand-rolled Run row-action buttons remain — they use RowActionButton",
 );
 
 console.log("automations-view.test.ts: ok");
