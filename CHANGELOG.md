@@ -7,6 +7,30 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.148] - 2026-07-07
+
+> 🔗 **Grimoire grows up** — the markdown editor gains a full `[[wiki-link]]` system (parser, outgoing chips, and a graph viewer), multi-tab editing, Open-in-Grimoire cross-links, live-follow of agent writes, and a diff-based 409 conflict resolver. Chat picks up a centered reading column, leaner per-message metadata, and create-task-from-chat. Plus more cave-4op button standardization and the legacy avatar store's retirement.
+
+Feature release on top of v0.0.147.
+
+### Features
+- **Grimoire: `[[wiki-links]]`** (#2587, #2588, #2597, cave-xr0). A wiki-link parser + resolver, outgoing-link chips below the editor, and a cross-document graph viewer.
+- **Grimoire: multi-tab editing** (#2582, cave-90u). Open several documents at once, persisted across reloads.
+- **Grimoire: Open-in-Grimoire cross-links + delete/trash actions** (#2580, cave-kv3).
+- **Markdown editor: live-follow agent writes** (#2583, cave-e3b). Open memory docs update as agents write them.
+- **Markdown editor: 409 conflict resolver** (#2577, cave-utl). A diff view with keep-mine / take-theirs / merge, replacing cancel-and-reopen.
+- **Chat: centered reading column + leaner metadata** (#2589, #2596, cave-xsq). A focused reading width, and name-plus-time per message with extras on hover.
+- **Chat: create task from chat** (#2595, cave-px7). Turn a chat turn into a board task with a source audit trail.
+
+### Refactors
+- **Control standardization** (#2591, #2584, #2581, cave-4op). Board banner actions, the GitHub profile card, and the onboarding CTAs move onto the shared `Button`.
+- **Marketplace: ultra-minimal Recommended cards** (#2586). Flat cards, chrome on hover.
+- **Retire the legacy browser-local avatar store** (#2590, cave-154). The operator avatar is server-backed now.
+
+### Fixes
+- **Chat: thread-switch isolation** (#2594). Composer state and stream teardown scope per thread, with IME-safe Enter.
+- **Popovers stack above the board task drawer** (#2579).
+
 ## [0.0.147] - 2026-07-07
 
 > ⚡ **Faster and steadier** — memory inventory gets a 130x speedup, the markdown editor picks up debounced autosave for knowledge & journal docs, and the Work Queue surfaces a "Needs attention" strip for stale and unlinked PRs. Plus a round of session-changes and automations button refactors onto shared primitives.
