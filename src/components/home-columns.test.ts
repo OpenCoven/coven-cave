@@ -47,4 +47,15 @@ assert.match(css, /\.home-columns\s*\{[\s\S]*?grid-template-columns: repeat\(aut
 assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*?\.home-columns\s*\{[\s\S]*?grid-template-columns: 1fr/,
   "columns stack on narrow viewports");
 
+// Resume affordance on the newest session is always visible — never a
+// hover-only reveal, so it reads on touch devices too.
+assert.match(cont, /home-col-card__go/, "primary card carries a visible Resume affordance");
+
+// The home entrance choreography and ambient halo motion are opt-in on
+// prefers-reduced-motion: no-preference (reduced motion gets a static page).
+assert.match(css, /@media \(prefers-reduced-motion: no-preference\)\s*\{[\s\S]*?animation: home-rise/,
+  "entrance choreography is gated on no-preference");
+assert.match(css, /@media \(prefers-reduced-motion: no-preference\)\s*\{[\s\S]*?animation: home-halo-breathe/,
+  "halo breathing is gated on no-preference");
+
 console.log("home-columns.test.ts: ok");

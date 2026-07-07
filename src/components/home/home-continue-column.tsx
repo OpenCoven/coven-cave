@@ -73,6 +73,12 @@ export function HomeContinueColumn({ sessions, familiarNameById, onOpenSession }
                   <span className="home-col-card__title">{title}</span>
                   {subtitle ? <span className="home-col-card__meta">{subtitle}</span> : null}
                 </span>
+                {i === 0 ? (
+                  <span className="home-col-card__go" aria-hidden>
+                    Resume
+                    <Icon name="ph:arrow-right-bold" width={11} aria-hidden />
+                  </span>
+                ) : null}
               </button>
             </li>
           );

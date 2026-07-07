@@ -73,6 +73,7 @@ export const SUITES = {
     "src/lib/rss.test.ts",
     "src/lib/home-feed.test.ts",
     "src/lib/home-news-pref.test.ts",
+    "src/lib/home-greeting.test.ts",
     "src/lib/secret-validators.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
