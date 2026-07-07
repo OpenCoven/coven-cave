@@ -117,21 +117,35 @@ export function dashboardSignals(input: {
   const out: DashboardSignal[] = [];
 
   // PR stalled > 7 days (open PRs / review requests with a stale updatedAt).
+  // The same PR can arrive from both /api/github/activity (id "pr-<n>") and
+  // /api/github/assigned (raw "<n>"), so the cockpit's id-keyed merge can't
+  // collapse them — dedupe here by URL (the stable cross-endpoint key),
+  // keeping the freshest updatedAt so staleness is never overstated.
+  const stalledByUrl = new Map<string, GitHubItem>();
   for (const g of github) {
     if (g.kind !== "pr" && g.kind !== "review_request") continue;
     if (g.state === "closed") continue;
     const t = Date.parse(g.updatedAt);
     if (!Number.isFinite(t)) continue;
-    const days = Math.floor((nowMs - t) / DAY_MS);
-    if (days > STALE_PR_DAYS) {
-      out.push({
-        id: `pr-stalled-${g.id}`,
-        severity: "warn",
-        text: `PR stalled ${days}d: ${g.title}`,
-        href: g.url,
-        external: true,
-      });
-    }
+    const key = g.url || g.id;
+    const prev = stalledByUrl.get(key);
+    if (!prev || t > Date.parse(prev.updatedAt)) stalledByUrl.set(key, g);
+  }
+  const stalled: { g: GitHubItem; days: number }[] = [];
+  for (const g of stalledByUrl.values()) {
+    const days = Math.floor((nowMs - Date.parse(g.updatedAt)) / DAY_MS);
+    if (days > STALE_PR_DAYS) stalled.push({ g, days });
+  }
+  // Stalest first — when the panel caps the list, the worst drift leads.
+  stalled.sort((a, b) => b.days - a.days);
+  for (const { g, days } of stalled) {
+    out.push({
+      id: `pr-stalled-${g.id}`,
+      severity: "warn",
+      text: `PR stalled ${days}d: ${g.title}`,
+      href: g.url,
+      external: true,
+    });
   }
 
   // Familiar trending down: active in the prior window, quiet in the last 3 days.

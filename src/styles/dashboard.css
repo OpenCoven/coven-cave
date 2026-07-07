@@ -565,6 +565,9 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-signal__text { min-width: 0; }
 a.cockpit-signal--link { text-decoration: none; }
 a.cockpit-signal--link:hover { background: var(--bg-hover); }
+a.cockpit-signal--more { text-decoration: none; color: var(--text-muted); }
+a.cockpit-signal--more:hover { background: var(--bg-hover); color: var(--text-primary); }
+.cockpit-signal--more .cockpit-signal__icon { color: var(--text-muted); }
 
 /* Confidence heatmap */
 .cockpit-confidence { display: flex; flex-direction: column; gap: 6px; }

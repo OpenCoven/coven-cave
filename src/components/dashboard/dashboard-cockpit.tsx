@@ -961,10 +961,17 @@ function whenLabel(iso: string, now: Date): string {
 // ─── Signals ─────────────────────────────────────────────────────────────────────
 
 const SIGNAL_ICON: Record<DashboardSignal["severity"], IconName> = { warn: "ph:warning", info: "ph:info" };
+
+// Keep the panel scannable: the stalest drift leads, the long tail collapses
+// into a drill-through instead of swamping the column.
+const SIGNALS_CAP = 8;
+
 function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
+  const shown = signals.slice(0, SIGNALS_CAP);
+  const hidden = signals.length - shown.length;
   return (
     <ul className="cockpit-signals">
-      {signals.map((s) => {
+      {shown.map((s) => {
         const inner = (
           <>
             <Icon name={SIGNAL_ICON[s.severity]} className="cockpit-signal__icon" aria-hidden />
@@ -989,6 +996,14 @@ function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
           </li>
         );
       })}
+      {hidden > 0 ? (
+        <li>
+          <a className="cockpit-signal cockpit-signal--more" href="/?mode=github">
+            <Icon name="ph:arrow-right-bold" className="cockpit-signal__icon" aria-hidden />
+            <span className="cockpit-signal__text">+{hidden} more — review on the GitHub surface</span>
+          </a>
+        </li>
+      ) : null}
     </ul>
   );
 }
