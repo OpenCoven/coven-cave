@@ -1468,21 +1468,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   white-space:nowrap;
 }
 .gh-profile-link:hover { text-decoration:underline; }
-.gh-profile-open {
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:6px;
-  padding:6px 10px;
-  border-radius:9px;
-  border:1px solid var(--border-hairline);
-  background:var(--bg-raised);
-  color:var(--text-secondary);
-  font-size:12px;
-  font-weight:550;
-  cursor:pointer;
-}
-.gh-profile-open:hover { background:var(--bg-hover); color:var(--text-primary); }
 
 /* ── Comment reactions ───────────────────────────────────────────────────── */
 .gh-reactions { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
