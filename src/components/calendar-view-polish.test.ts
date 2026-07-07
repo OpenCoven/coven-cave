@@ -207,4 +207,59 @@ assert.match(source, /borderLeftColor: accent, borderLeftWidth: 3/, "the accent 
 assert.match(source, /legendFamiliars\.length >= 2/, "the colour legend only shows when ≥2 familiars are in view");
 assert.match(source, /aria-label="Familiar colour legend"/, "the legend is labelled");
 
-console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours ok");
+// ───────── cave-4op: action controls use the shared Button / IconButton primitives ─────────
+// The Calendar's *action controls* — the item detail panel (Close/Open/Done/
+// Dismiss) and the empty-state / agenda actions (Add task, Show past, Hide
+// past) — are standardized onto the shared primitives so their radius, height,
+// focus ring, and disabled treatment come from one place (cave-4op). Bespoke
+// *content* elements (item/deadline chips, draggable time-grid events, month &
+// mini-month date cells) and the tightly-pinned toolbar / segmented switcher
+// are deliberately out of scope here — they are not standard controls.
+assert.match(
+  source,
+  /import \{ Button \} from "@\/components\/ui\/button"/,
+  "calendar imports the shared Button primitive",
+);
+assert.match(
+  source,
+  /import \{ IconButton \} from "@\/components\/ui\/icon-button"/,
+  "calendar imports the shared IconButton primitive",
+);
+
+/** Slice out a top-level function body by name, up to the next function decl. */
+function fnRegion(name) {
+  const m = new RegExp(`function ${name}\\(`).exec(source);
+  assert.ok(m, `${name} must exist`);
+  const after = source.slice(m.index + m[0].length);
+  const next = /\n(?:export )?function \w+\(/.exec(after);
+  return after.slice(0, next ? next.index : after.length);
+}
+
+// No raw <button> survives in the standardized control clusters.
+for (const name of ["EmptyScheduleState", "AgendaView", "ItemDetailPanel"]) {
+  assert.doesNotMatch(
+    fnRegion(name),
+    /<button\b/,
+    `${name} action controls use <Button>/<IconButton>, not a raw <button>`,
+  );
+}
+
+const detail = fnRegion("ItemDetailPanel");
+assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Close"/, "detail panel Close is an IconButton");
+assert.match(detail, /<Button\b[\s\S]*?variant="primary"/, "detail panel Open is a primary Button");
+assert.match(detail, /<Button\b[\s\S]*?variant="secondary"[\s\S]*?Done/, "detail panel Done is a secondary Button");
+assert.match(detail, /<IconButton\b[\s\S]*?aria-label="Dismiss"/, "detail panel Dismiss is an IconButton");
+
+// The empty-state / agenda actions keep their mobile hook while using the primitive.
+assert.match(
+  fnRegion("EmptyScheduleState"),
+  /<Button\b[\s\S]*?className="calendar-empty-action"/,
+  "empty-schedule Add action is a Button that keeps the mobile hook",
+);
+assert.match(
+  fnRegion("AgendaView"),
+  /<Button\b[\s\S]*?className="calendar-empty-action"/,
+  "agenda empty-state actions are Buttons that keep the mobile hook",
+);
+
+console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours + cave-4op control primitives ok");

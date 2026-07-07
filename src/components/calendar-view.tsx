@@ -11,6 +11,8 @@ import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-forma
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { itemDate, packEventColumns } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
@@ -266,14 +268,14 @@ function EmptyScheduleState({
       <Icon name={icon} className="text-3xl opacity-30" />
       <span>{label}</span>
       {onAddEntry ? (
-        <button
-          type="button"
+        <Button
+          size="sm"
+          leadingIcon="ph:plus"
           onClick={onAddEntry}
-          className="calendar-empty-action inline-flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-elevated)]"
+          className="calendar-empty-action"
         >
-          <Icon name="ph:plus" width={12} />
           Add task or event
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -338,23 +340,23 @@ function AgendaView({
         <Icon name="ph:calendar-blank" width={32} className="text-[var(--text-muted)]" />
         <div>Nothing scheduled upcoming.</div>
         {pastCount > 0 && !showPast ? (
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={() => setShowPast(true)}
-            className="calendar-empty-action focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action"
           >
             Show {pastCount} past item{pastCount !== 1 ? "s" : ""}
-          </button>
+          </Button>
         ) : null}
         {onAddEntry ? (
-          <button
-            type="button"
+          <Button
+            size="sm"
+            leadingIcon="ph:plus"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
-            className="calendar-empty-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action"
           >
-            <Icon name="ph:plus" width={11} />
             Add task or event
-          </button>
+          </Button>
         ) : null}
       </div>
     );
@@ -364,13 +366,14 @@ function AgendaView({
     <div className="flex flex-col gap-6 overflow-y-auto px-3 py-4 sm:px-6">
       {showPast ? (
         <div className="-mb-2 flex justify-end">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setShowPast(false)}
-            className="calendar-empty-action focus-ring rounded-md px-2 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="calendar-empty-action"
           >
             Hide past
-          </button>
+          </Button>
         </div>
       ) : null}
       {groups.map(({ date, items: groupItems, deadlines: groupDeadlines }) => {
@@ -1360,13 +1363,13 @@ function ItemDetailPanel({
               {item.title}
             </span>
           </div>
-          <button
-            onClick={onClose}
+          <IconButton
+            icon="ph:x"
             aria-label="Close"
-            className="focus-ring shrink-0 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <Icon name="ph:x" width={14} />
-          </button>
+            size="sm"
+            onClick={onClose}
+            className="shrink-0"
+          />
         </div>
 
         <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
@@ -1402,23 +1405,27 @@ function ItemDetailPanel({
 
         <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
           {openLabel && onOpen ? (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              fullWidth
+              leadingIcon="ph:arrow-square-out"
               onClick={() => { onOpen(item); onClose(); }}
-              className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
             >
-              <Icon name="ph:arrow-square-out" width={12} />
               {openLabel}
-            </button>
+            </Button>
           ) : null}
           <div className="flex items-center gap-2">
             {!isDone && onComplete ? (
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
+                leadingIcon="ph:check"
                 onClick={() => { onComplete(item.id); announce(`Marked "${item.title}" done`); onClose(); }}
-                className="focus-ring inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                className="flex-1"
               >
-                <Icon name="ph:check" width={12} />
                 Done
-              </button>
+              </Button>
             ) : null}
             {onSnooze ? (
               <SnoozeMenu
@@ -1427,14 +1434,13 @@ function ItemDetailPanel({
               />
             ) : null}
             {onDismiss ? (
-              <button
-                onClick={() => { onDismiss(item.id); announce(`Dismissed "${item.title}"`); onClose(); }}
+              <IconButton
+                icon="ph:trash"
                 aria-label="Dismiss"
-                className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                onClick={() => { onDismiss(item.id); announce(`Dismissed "${item.title}"`); onClose(); }}
+                className="shrink-0"
                 title="Dismiss"
-              >
-                <Icon name="ph:trash" width={12} />
-              </button>
+              />
             ) : null}
           </div>
         </div>
