@@ -714,7 +714,7 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
         let output = std::process::Command::new("osascript")
             .args([
                 "-e",
-                "POSIX path of (choose folder with prompt \"Choose a folder for Graphify\")",
+                "POSIX path of (choose folder with prompt \"Choose a folder for CovenCave\")",
             ])
             .output()
             .map_err(|e| e.to_string())?;
@@ -731,7 +731,7 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        let script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose a folder for Graphify'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($d.SelectedPath) }"#;
+        let script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose a folder for CovenCave'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($d.SelectedPath) }"#;
         let output = std::process::Command::new("powershell.exe")
             .args(["-NoProfile", "-Sta", "-Command", script])
             .output()
@@ -746,7 +746,7 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
     #[cfg(target_os = "linux")]
     {
         let zenity = std::process::Command::new("zenity")
-            .args(["--file-selection", "--directory", "--title", "Choose a folder for Graphify"])
+            .args(["--file-selection", "--directory", "--title", "Choose a folder for CovenCave"])
             .output();
         if let Ok(output) = zenity {
             if output.status.success() {
