@@ -158,4 +158,37 @@ assert.match(
   "the active step is exposed via aria-current",
 );
 
+// ── cave-4op: the wizard's primary CTAs use the shared Button primitive ──────
+// The six accent-background call-to-action buttons (Create Coven home, Start
+// local daemon, Install both tools, Install <adapter>, Create new Coven
+// familiar, Connect agent) render through <Button variant="primary">, so their
+// radius / height / focus ring / disabled + busy treatment come from one place.
+// The two install CTAs use the primitive's `loading` prop for their spinner.
+// Bordered secondary actions, option cards, and skip links stay bespoke here.
+assert.match(
+  source,
+  /import \{ Button \} from "@\/components\/ui\/button"/,
+  "imports the shared Button primitive",
+);
+assert.equal(
+  (source.match(/<Button\s+variant="primary"/g) ?? []).length,
+  6,
+  'all six primary CTAs render through <Button variant="primary">',
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,120}variant="primary"[\s\S]{0,160}scaffoldOnly/,
+  "Create Coven home is a primary Button",
+);
+assert.match(
+  source,
+  /<Button[\s\S]{0,140}loading=\{busy \|\| covenCodeJobRunning\}/,
+  "the Install-both CTA uses the primitive's loading state for its spinner",
+);
+assert.doesNotMatch(
+  source,
+  /className="focus-ring inline-flex[^"]*bg-\[var\(--accent-presence\)\][^"]*text-\[var\(--accent-presence-foreground\)\]/,
+  "the hand-rolled accent-bg CTA recipe is gone (now Button variant=primary)",
+);
+
 console.log("onboarding-polish.test.ts: ok");
