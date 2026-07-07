@@ -152,7 +152,7 @@ assert.match(
 
 assert.match(
   source,
-  /const liveGeneration = \{ sessionId: initialLiveSessionId, controller \}[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns/,
+  /const liveGeneration = \{ sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller \}[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns/,
   "sendRaw should persist the active stream snapshot with its abort controller",
 );
 
@@ -547,5 +547,27 @@ assert.match(
   /e\.key === "Enter" && !e\.shiftKey && !e\.nativeEvent\.isComposing/,
   "the composer's Enter-to-send is gated on !isComposing so IME candidate-confirm doesn't fire a half-composed message",
 );
+
+// New-chat background-generation isolation (cave-8zq): a generation started on
+// a brand-new chat carries an immutable originSessionId, and both the "session"
+// and "done" events only adopt the server-assigned id into the displayed
+// thread's currentSessionRef when the view is STILL on that origin thread.
+// Otherwise (user switched away during first-token latency) the late id would
+// splice the background stream into the wrong thread and mis-address the next
+// send — while onSessionStarted still fires so the router can register it.
+assert.match(
+  source,
+  /const liveGeneration = \{ sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller \}/,
+  "each generation records the immutable thread it started on (originSessionId)",
+);
+{
+  const guarded = source.match(
+    /if \(currentSessionRef\.current === liveGeneration\.originSessionId\) \{\s*\n\s*liveSessionIdRef\.current = ev\.sessionId;\s*\n\s*currentSessionRef\.current = ev\.sessionId;\s*\n\s*setHistoryState\("loaded"\);\s*\n\s*\}\s*\n\s*onSessionStarted\?\.\(ev\.sessionId\);/g,
+  );
+  assert.ok(
+    guarded && guarded.length === 2,
+    "both the session and done events gate currentSessionRef adoption on still owning the displayed thread, yet always notify onSessionStarted",
+  );
+}
 
 console.log("chat-view-lifecycle.test.ts: ok");

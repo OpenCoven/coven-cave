@@ -3555,7 +3555,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
-    const liveGeneration = { sessionId: initialLiveSessionId, controller };
+    // `sessionId` mutates to the server-assigned id as events arrive;
+    // `originSessionId` stays the thread this generation started on, so a
+    // background generation (user switched threads mid-stream) can tell it no
+    // longer owns the displayed view and must not adopt its late session id.
+    const liveGeneration = { sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller };
     const runId = crypto.randomUUID();
     abortRef.current = controller;
     stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
@@ -4049,15 +4053,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     ev: StreamEvent,
     assistantId: string,
     request: FailedSend,
-    liveGeneration: { sessionId: string | null; controller: AbortController },
+    liveGeneration: { sessionId: string | null; originSessionId: string | null; controller: AbortController },
   ) => {
     switch (ev.kind) {
       case "session": {
         liveGeneration.sessionId = ev.sessionId;
         if (ev.sessionId !== currentSessionRef.current) {
-          liveSessionIdRef.current = ev.sessionId;
-          currentSessionRef.current = ev.sessionId;
-          setHistoryState("loaded");
+          // Only adopt the new session id into THIS view's refs when the view is
+          // still on the thread this generation started from. If the user
+          // switched to another conversation before the id arrived (a new chat's
+          // first-token latency), this is a *background* generation: adopting its
+          // id would splice its chunks into the displayed thread and mis-address
+          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
+          // Still notify onSessionStarted — the router promotes a still-open new
+          // chat but leaves an already-switched view alone (chat-router.tsx).
+          if (currentSessionRef.current === liveGeneration.originSessionId) {
+            liveSessionIdRef.current = ev.sessionId;
+            currentSessionRef.current = ev.sessionId;
+            setHistoryState("loaded");
+          }
           onSessionStarted?.(ev.sessionId);
         }
         if (taskArmedRef.current) {
@@ -4211,9 +4225,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveGeneration.sessionId = ev.sessionId;
-          liveSessionIdRef.current = ev.sessionId;
-          currentSessionRef.current = ev.sessionId;
-          setHistoryState("loaded");
+          // Same ownership guard as the "session" event: a background generation
+          // (user switched threads before this settled) must not overwrite the
+          // displayed thread's currentSessionRef. Still let the router register it.
+          if (currentSessionRef.current === liveGeneration.originSessionId) {
+            liveSessionIdRef.current = ev.sessionId;
+            currentSessionRef.current = ev.sessionId;
+            setHistoryState("loaded");
+          }
           onSessionStarted?.(ev.sessionId);
         }
         persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
