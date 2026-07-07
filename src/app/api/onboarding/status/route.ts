@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher } from "@/lib/coven-bin";
 import {
   openCovenToolStatuses,
   type OpenCovenToolStatus,
@@ -85,7 +85,10 @@ async function commandPath(binary: string): Promise<string | null> {
       env: covenSpawnEnv(),
       timeout: 1500,
     });
-    return stdout.trim().split(/\r?\n/)[0] || null;
+    const lines = stdout.split(/\r?\n/);
+    return process.platform === "win32"
+      ? pickWindowsLauncher(lines)
+      : lines.map((l) => l.trim()).find(Boolean) ?? null;
   } catch {
     return null;
   }

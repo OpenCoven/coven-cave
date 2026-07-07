@@ -1,7 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { compareSemver } from "@/lib/app-update";
-import { covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import {
+  covenLaunchCommandForBinary,
+  covenSpawnEnv,
+  pickWindowsLauncher,
+  refreshCovenSpawnEnv,
+} from "@/lib/coven-bin";
 
 const execFileAsync = promisify(execFile);
 
@@ -58,7 +63,13 @@ async function commandPath(binary: string): Promise<string | null> {
         env,
         timeout: 1500,
       });
-      return stdout.trim().split(/\r?\n/)[0] || null;
+      const lines = stdout.split(/\r?\n/);
+      // `where` lists npm's unspawnable extensionless launcher first; the
+      // .cmd/.exe sibling is the one execFile can actually run (versions
+      // below, and callers that spawn the returned path).
+      return process.platform === "win32"
+        ? pickWindowsLauncher(lines)
+        : lines.map((l) => l.trim()).find(Boolean) ?? null;
     } catch {
       return null;
     }
@@ -80,8 +91,12 @@ function firstSemver(text: string): string | null {
 async function installedTool(tool: ToolSpec): Promise<InstalledTool | null> {
   const path = await commandPath(tool.binary);
   if (!path) return null;
+  // Node refuses to execFile a .cmd directly (EINVAL since the batch-file
+  // hardening); convert npm cmd-shims to a direct `node <script>` exec so
+  // the version probe works on Windows instead of silently reporting null.
+  const { command, fixedArgs } = covenLaunchCommandForBinary(path);
   try {
-    const { stdout, stderr } = await execFileAsync(path, tool.versionArgs, {
+    const { stdout, stderr } = await execFileAsync(command, [...fixedArgs, ...tool.versionArgs], {
       env: covenSpawnEnv(),
       timeout: 2500,
     });
