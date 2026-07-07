@@ -24,6 +24,8 @@ import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-edi
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { parseMdDocument, serializeMdDocument, type MdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
+import { GRIMOIRE_HASH_PREFIX } from "@/lib/grimoire-link";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,8 +64,6 @@ function selectionKey(sel: GrimoireSelection): string {
   if (sel.kind === "journal") return `journal:${sel.date}`;
   return "knowledge-new";
 }
-
-const GRIMOIRE_HASH_PREFIX = "#grimoire:";
 
 function readGrimoireHash(): GrimoireSelection | null {
   if (typeof window === "undefined") return null;
@@ -304,6 +304,9 @@ export function GrimoireView() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState<GrimoireSelection | null>(() => readGrimoireHash());
+  const confirm = useConfirm();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -329,6 +332,56 @@ export function GrimoireView() {
   useEffect(() => {
     writeGrimoireHash(selection);
   }, [selection]);
+
+  // Reset any stale delete feedback when the selection changes.
+  useEffect(() => {
+    setDeleteError(null);
+  }, [selection]);
+
+  // Delete/trash the selected document. Memory files archive to the memory
+  // trash (restorable via POST /api/memory/restore); knowledge entries and
+  // journal reflections delete through their APIs.
+  const deleteSelection = useCallback(async () => {
+    if (!selection || selection.kind === "knowledge-new" || deleting) return;
+    const label =
+      selection.kind === "memory"
+        ? "Move this memory file to the trash?"
+        : selection.kind === "knowledge"
+          ? "Delete this knowledge entry?"
+          : `Delete the journal reflection for ${selection.date}?`;
+    const body =
+      selection.kind === "memory"
+        ? "The file moves to the Cave's memory trash and can be restored from there."
+        : "This can't be undone.";
+    if (!(await confirm({ title: label, body, confirmLabel: selection.kind === "memory" ? "Move to trash" : "Delete", danger: true }))) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res =
+        selection.kind === "memory"
+          ? await fetch("/api/memory/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: selection.path }),
+            })
+          : selection.kind === "knowledge"
+            ? await fetch(`/api/knowledge?id=${encodeURIComponent(selection.id)}`, { method: "DELETE" })
+            : await fetch(`/api/journal?date=${encodeURIComponent(selection.date)}`, { method: "DELETE" });
+      const json = await res.json();
+      if (!json.ok) {
+        setDeleteError(json.error ?? "Delete failed");
+        return;
+      }
+      setSelection(null);
+      void load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  }, [confirm, deleting, load, selection]);
 
   const q = query.trim().toLowerCase();
   const matches = useCallback(
@@ -514,16 +567,39 @@ export function GrimoireView() {
       >
         {selection ? (
           <div className="flex h-full min-h-0 flex-col">
-            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 @min-[880px]/grimoire:hidden">
+            <div
+              className={`flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 ${
+                selection.kind === "knowledge-new" ? "@min-[880px]/grimoire:hidden" : ""
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setSelection(null)}
                 aria-label="Back to document list"
-                className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] @min-[880px]/grimoire:hidden"
               >
                 <Icon name="ph:arrow-left" width={13} aria-hidden />
               </button>
-              <span className="text-[11px] text-[var(--text-secondary)]">Documents</span>
+              <span className="text-[11px] text-[var(--text-secondary)] @min-[880px]/grimoire:hidden">Documents</span>
+              <span className="min-w-0 flex-1" />
+              {deleteError ? (
+                <span role="alert" className="min-w-0 truncate text-[10px] text-[var(--color-warning)]">
+                  {deleteError}
+                </span>
+              ) : null}
+              {selection.kind !== "knowledge-new" ? (
+                <button
+                  type="button"
+                  onClick={() => void deleteSelection()}
+                  disabled={deleting}
+                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[10px] text-[var(--text-secondary)] enabled:hover:border-[var(--color-danger)]/40 enabled:hover:bg-[var(--color-danger)]/10 enabled:hover:text-[var(--color-danger)] disabled:opacity-50"
+                >
+                  <Icon name="ph:trash" width={11} aria-hidden />
+                  {deleting
+                    ? selection.kind === "memory" ? "Moving…" : "Deleting…"
+                    : selection.kind === "memory" ? "Move to trash" : "Delete"}
+                </button>
+              ) : null}
             </div>
             <div className="min-h-0 flex-1">{detail}</div>
           </div>
