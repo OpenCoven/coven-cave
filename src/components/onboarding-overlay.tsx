@@ -208,13 +208,18 @@ const PLATFORM_COPY: Record<
     cliInstall: string[];
     sshSetup: string[];
     warning?: string;
+    warningLink?: { label: string; href: string };
   }
 > = {
   windows: {
     label: "Windows",
     installCommand: COVEN_CLI_INSTALL_COMMAND,
     warning:
-      "For now, turn off Smart App Control before downloading or opening the Windows build.",
+      "The Windows build isn't code-signed yet, so Smart App Control blocks it when enabled. Check Windows Security > App & browser control: if Smart App Control is On, turn it off before downloading. On most PCs it's already Off and nothing is needed.",
+    warningLink: {
+      label: "What is Smart App Control?",
+      href: "https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003",
+    },
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org, or run winget install OpenJS.NodeJS.LTS.",
       "Restart Cave afterwards so the new PATH applies.",
@@ -222,7 +227,8 @@ const PLATFORM_COPY: Record<
     ],
     caveInstall: [
       "Download the MSI from the official GitHub Release.",
-      "Before downloading/opening, go to Settings > Privacy & security > Windows Security > App & browser control > Smart App Control, then turn Smart App Control off for now.",
+      "Only if Smart App Control is On (see the notice above): Settings > Privacy & security > Windows Security > App & browser control > Smart App Control settings > Off.",
+      "If SmartScreen shows \"Windows protected your PC\" when you open the MSI, click More info > Run anyway.",
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
@@ -1416,7 +1422,24 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               />
               <div>
                 <div className="font-semibold">Windows download notice</div>
-                <p className="mt-1 leading-6">{platformCopy.warning}</p>
+                <p className="mt-1 leading-6">
+                  {platformCopy.warning}
+                  {platformCopy.warningLink ? (
+                    <>
+                      {" "}
+                      <a
+                        href={platformCopy.warningLink.href}
+                        className="underline"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          openExternalUrl(event.currentTarget.href);
+                        }}
+                      >
+                        {platformCopy.warningLink.label}
+                      </a>
+                    </>
+                  ) : null}
+                </p>
               </div>
             </div>
           </section>
