@@ -73,3 +73,10 @@ export const AutomationsView = dynamic(
   timed("automations", () => import("@/components/automations-view").then((m) => m.AutomationsView)),
   { ssr: false, loading: SurfaceFallback },
 );
+
+export const FamiliarWorkQueueView = dynamic(
+  timed("familiar-work-queue", () =>
+    import("@/components/familiar-work-queue-view").then((m) => m.FamiliarWorkQueueView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);

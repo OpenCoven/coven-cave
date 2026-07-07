@@ -47,6 +47,7 @@ import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import {
   BoardView,
   CalendarView,
+  FamiliarWorkQueueView,
   GitHubView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
@@ -138,6 +139,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
+  "familiar-work-queue": "Work Queue",
   journal: "Journal",
 };
 
@@ -2094,6 +2096,8 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
+    ) : mode === "familiar-work-queue" ? (
+      <FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : (

@@ -40,6 +40,7 @@ export type FolderMode =
   | "flow"
   | "submissions"
   | "capabilities"
+  | "familiar-work-queue"
   | "journal";
 
 export type SidebarMinimalProps = {
@@ -107,6 +108,7 @@ const FOLDER_MODES: Array<{
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
+  { id: "familiar-work-queue", label: "Work Queue", iconName: "ph:list-checks-bold", description: "Ready beads and the PR control tower, by familiar", quiet: true },
 ];
 
 // Rows actually rendered in the sidebar — everything except on-demand surfaces
