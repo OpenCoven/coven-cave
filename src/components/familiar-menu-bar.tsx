@@ -5,7 +5,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
   /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
-   *  itself lives in the chat sidebar's header switcher, not this bar. */
+   *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
   activeFamiliarId: string | null;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
@@ -66,8 +66,8 @@ export function FamiliarMenuBar({
 
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
-      {/* Familiar selection moved to the chat sidebar's header switcher —
-          the bar keeps search + task/schedule chrome only. */}
+      {/* Familiar scope moved to the sidenav header (cave-vtk9) — present on
+          every page there; this bar keeps search + the task verbs. */}
       <form
         className="menu-bar__search"
         role="search"

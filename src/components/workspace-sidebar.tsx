@@ -28,7 +28,6 @@ import {
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
@@ -362,21 +361,12 @@ export function WorkspaceSidebar({
       </button>
 
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Header — familiar selection's one home: a labeled dropdown switcher
-            (scope: a familiar or All familiars) with the organize menu inline.
-            One row; the old Chats/Recent title stack is retired. */}
+        {/* Header — one row: title + Home + the organize menu. Familiar scope
+            moved to the SIDENAV header (cave-vtk9, per operator direction),
+            which sits directly beside this panel — a second switcher here
+            (#2747's brief home for it) doubled the same global scope control. */}
         <header className="cnav__header">
-          <div className="cnav__switcher">
-            <FamiliarSwitcher
-              familiars={familiars}
-              activeFamiliarId={activeFamiliarId}
-              sessions={sessions}
-              responseNeeded={responseNeeded}
-              onSelectFamiliar={onSelectFamiliar}
-              placement="bottom-start"
-              labeled
-            />
-          </div>
+          <span className="cnav__title">Chats</span>
           <button
             type="button"
             aria-label="Go to Home"

@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const menuBarSwitcherRule = globals.match(/\.menu-bar__group--chat \.familiar-switcher__trigger\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+// The switcher moved to the sidenav header (cave-vtk9); its compact geometry
+// is pinned in sidebar-minimal.test.ts against the rail rules instead.
 
 // The bar provides desktop top chrome: chat with familiars, global
 // context-aware search, and view tasks/schedules. It is a labelled landmark so
@@ -47,13 +48,13 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Familiar selection moved OUT of the bar entirely — its one home is the chat
-// sidebar's header switcher (dropdown-only). The bar keeps search + task and
-// schedule chrome and must not hand-roll any familiar markup.
+// Familiar scope moved to the SIDENAV header (cave-vtk9) — present on every
+// page there. The bar keeps search + task and schedule chrome and must not
+// hand-roll any familiar markup.
 assert.doesNotMatch(
   source,
   /FamiliarQuickSwitch|FamiliarSwitcher|menu-bar__group--chat/,
-  "the menu bar no longer hosts familiar selection (it lives in the chat sidebar header)",
+  "the menu bar no longer hosts familiar selection (it lives in the sidenav header)",
 );
 assert.doesNotMatch(
   source,
@@ -76,11 +77,6 @@ assert.doesNotMatch(
   source,
   /onChatWithFamiliar|onComposeChat/,
   "the menu bar no longer owns the chat-start handlers",
-);
-assert.equal(
-  menuBarSwitcherRule,
-  "",
-  "the menu-bar-scoped familiar switcher CSS is retired with the control",
 );
 
 // Right group — tasks. A Tasks button (board) and a Schedules button, each

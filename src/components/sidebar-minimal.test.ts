@@ -108,8 +108,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onFamiliarScopeChange: \(id: string \| null\) => void/,
-  "Sidebar exposes a nullable familiar scope change callback",
+  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean \}\) => void/,
+  "Sidebar exposes a nullable familiar scope change callback (multi-capable for the header strip)",
 );
 
 assert.doesNotMatch(
@@ -320,15 +320,28 @@ assert.match(
 // The sidebar header is a static wordmark — collapsing the panel is owned by
 // the shell's floating top-left toggle (and ⌘B), so the header is no longer a
 // button and the in-panel collapse toggle is gone.
-assert.match(
+assert.doesNotMatch(
   source,
   /className="sidebar-header sidebar-header--static"/,
-  "the sidebar header is a static wordmark, not a collapse button",
+  "the static wordmark header is gone — the familiar switcher owns the slot (collapse stays on the shell's floating toggle + ⌘B)",
+);
+// The header carries the familiar switcher on every page (cave-vtk9) — the
+// wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
+assert.match(
+  source,
+  /<div className="sidebar-familiar-switch">[\s\S]{0,600}<FamiliarQuickSwitch/,
+  "the sidenav header mounts the familiar switcher",
 );
 assert.match(
   source,
-  /<span className="sidebar-title">Coven Cave<\/span>/,
-  "the static header keeps the Coven Cave wordmark",
+  /onSelectFamiliar=\{onFamiliarScopeChange\}/,
+  "the header switcher drives the shared familiar scope",
+);
+const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+assert.match(
+  sidebarCss,
+  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
+  "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(
   source,
