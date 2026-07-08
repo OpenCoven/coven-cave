@@ -48,10 +48,21 @@ function read(file: string) {
   assert.match(threadBlock, /role="log"/, "chat thread has role=log (implicit aria-live=polite)");
 }
 
-// 5. inbox-toast.tsx root has aria-live + aria-atomic.
+// 5. inbox-toast.tsx root has aria-live + aria-atomic. Politeness is
+// urgency-aware (cave-bj68): a familiar blocked on the user interrupts,
+// routine reminders/digests stay polite.
 {
   const src = read("inbox-toast.tsx");
-  assert.match(src, /aria-live="polite"/, "inbox-toast has aria-live=polite");
+  assert.match(
+    src,
+    /aria-live=\{t\.urgent \? "assertive" : "polite"\}/,
+    "inbox-toast politeness follows urgency (assertive only when a response is needed)",
+  );
+  assert.match(
+    src,
+    /role=\{t\.urgent \? "alert" : "status"\}/,
+    "inbox-toast role matches its politeness",
+  );
   assert.match(src, /aria-atomic="true"/, "inbox-toast has aria-atomic=true");
 }
 

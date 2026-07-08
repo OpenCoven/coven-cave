@@ -8,6 +8,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/lib/daily-report";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { nextItemsAfterAction } from "@/lib/dashboard-model";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 type Action = "done" | "dismiss" | "snooze";
 
@@ -31,6 +32,9 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   useMinuteTick();    // keep the per-item "Nm ago" labels current; the parent
                       // cockpit re-fetches the list itself every 30s.
+  // Row removal is the only visual feedback on done/dismiss/snooze — announce
+  // successes so AT users aren't left guessing (errors already role=alert).
+  const { announce } = useAnnouncer();
   const [items, setItems] = useState<InboxItem[]>(initialItems);
   const [error, setError] = useState<string | null>(null);
   const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
@@ -62,6 +66,12 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
       : { method: "POST" };
   }
 
+  function actionAnnouncement(action: Action, subject: string, minutes: number): string {
+    if (action === "done") return `Marked done: ${subject}`;
+    if (action === "dismiss") return `Dismissed: ${subject}`;
+    return `Snoozed for ${minutes >= 60 ? `${Math.round(minutes / 60)}h` : `${minutes}m`}: ${subject}`;
+  }
+
   async function act(item: InboxItem, action: Action, minutes = 60) {
     const prev = items;
     setItems(nextItemsAfterAction(items, item.id)); // optimistic remove
@@ -69,6 +79,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
     try {
       const res = await fetch(`/api/inbox/${item.id}/${action}`, requestInit(action, minutes));
       if (!res.ok) throw new Error(String(res.status));
+      announce(actionAnnouncement(action, item.title, minutes), "polite");
     } catch {
       setItems(prev); // revert
       setError("Couldn't update that item — try again.");
@@ -88,6 +99,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
         ids.map((id) => fetch(`/api/inbox/${id}/${action}`, requestInit(action, minutes)).then((r) => r.ok)),
       );
       if (results.some((ok) => !ok)) throw new Error("partial");
+      announce(actionAnnouncement(action, `${ids.length} item${ids.length === 1 ? "" : "s"}`, minutes), "polite");
     } catch {
       setItems(prev); // revert the whole batch
       setError("Couldn't update some items — try again.");
@@ -200,7 +212,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
               <button
                 type="button"
                 className="dash-act dash-act--ghost"
-                aria-label="Dismiss"
+                aria-label={`Dismiss: ${item.title}`}
                 onClick={() => act(item, "dismiss")}
               >
                 <Icon name="ph:x" aria-hidden />

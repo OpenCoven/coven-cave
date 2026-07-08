@@ -475,6 +475,7 @@ export const SUITES = {
     "src/components/chat-switching.test.ts",
     "src/components/chat-view-first-class.test.ts",
     "src/components/labels-and-live-regions.test.ts",
+    "src/components/inbox-notifications-a11y.test.ts",
     "src/components/workspace-inspector-mount.test.ts",
     "src/middleware.test.ts",
     "src/lib/font-settings.test.ts",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type Props = {
   onSnooze: (untilIso: string) => void;
@@ -27,6 +28,11 @@ const OPTIONS: Option[] = [
 export function SnoozeMenu({ onSnooze, className, size = "sm" }: Props) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Same keyboard contract as the rest of the app's popovers (and the
+  // dashboard ActionInbox's snooze menu): first option focused on open,
+  // Tab/Shift+Tab cycle, Escape closes and returns focus to the trigger.
+  useFocusTrap(open, menuRef, { onEscape: () => setOpen(false) });
 
   useEffect(() => {
     if (!open) return;
@@ -39,24 +45,37 @@ export function SnoozeMenu({ onSnooze, className, size = "sm" }: Props) {
 
   const btnCls =
     size === "xs"
-      ? "rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-      : "rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]";
+      ? "focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+      : "focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]";
 
   return (
     <div ref={wrapRef} className={`relative ${className ?? ""}`}>
-      <button onClick={() => setOpen((v) => !v)} className={btnCls}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={btnCls}
+      >
         Snooze ▾
       </button>
       {open ? (
-        <div className="absolute bottom-full left-0 z-50 mb-1 w-32 overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-xl">
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label="Snooze until"
+          className="absolute bottom-full left-0 z-50 mb-1 w-32 overflow-hidden rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] shadow-xl"
+        >
           {OPTIONS.map((o) => (
             <button
               key={o.label}
+              type="button"
+              role="menuitem"
               onClick={() => {
                 setOpen(false);
                 onSnooze(o.resolve());
               }}
-              className="block w-full px-2 py-1 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+              className="focus-ring block w-full px-2 py-1 text-left text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
             >
               {o.label}
             </button>
