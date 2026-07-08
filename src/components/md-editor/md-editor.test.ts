@@ -27,6 +27,9 @@ assert.match(shell, /e\.key\.toLowerCase\(\) === "s"/, "Cmd/Ctrl+S saves from th
 assert.match(shell, /const dirty = raw !== baseline/, "dirty tracks the saved baseline");
 assert.match(shell, /disabled=\{!dirty \|\| saving\}/, "save button disabled when clean/saving");
 assert.match(shell, /role="alert"/, "save errors are announced");
+// (cave-mglw) the "Saved" flash is the only save confirmation — it must be a
+// polite status so screen readers hear saves (incl. debounced autosaves) too.
+assert.match(shell, /savedFlash \? \(\s*\n[\s\S]{0,220}?<span role="status"/, "the Saved flash is a polite live region");
 
 // Untouched docs must round-trip byte-identical: raw is canonical state.
 assert.match(shell, /const \[raw, setRaw\] = useState\(value\)/, "raw document string is the canonical state");

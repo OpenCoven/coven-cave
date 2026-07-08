@@ -406,7 +406,9 @@ export function MdEditor({
               {saveError}
             </span>
           ) : savedFlash ? (
-            <span className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
+            // role=status: saves (incl. debounced autosaves) were visual-only —
+            // the flash is the sole confirmation, so SRs should hear it too.
+            <span role="status" className="inline-flex items-center gap-1 text-[var(--text-secondary)]">
               <Icon name="ph:check" width={11} aria-hidden />
               Saved
             </span>

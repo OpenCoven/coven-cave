@@ -26,6 +26,8 @@ import { parseMdDocument, serializeMdDocument, type MdDocument } from "@/lib/md-
 import { relativeTime } from "@/lib/relative-time";
 import { GRIMOIRE_HASH_PREFIX } from "@/lib/grimoire-link";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -642,6 +644,7 @@ export function GrimoireView() {
     });
   }, []);
   const confirm = useConfirm();
+  const { announce } = useAnnouncer();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Open tabs + the active one. A #grimoire: deep link wins over the restored
@@ -786,12 +789,20 @@ export function GrimoireView() {
       // A deleted document's tab closes with it.
       closeTab(selectionKey(selection));
       void load();
+      // The row disappearing is the only visual confirmation — say it too.
+      announce(
+        selection.kind === "memory"
+          ? "Memory file moved to trash"
+          : selection.kind === "knowledge"
+            ? "Knowledge entry deleted"
+            : `Journal reflection for ${selection.date} deleted`,
+      );
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeleting(false);
     }
-  }, [closeTab, confirm, deleting, load, selection]);
+  }, [announce, closeTab, confirm, deleting, load, selection]);
 
   const q = query.trim().toLowerCase();
   const matches = useCallback(
@@ -819,6 +830,20 @@ export function GrimoireView() {
 
   const loading = knowledge === null || memory === null || journal === null;
   const selectedKey = selection ? selectionKey(selection) : null;
+
+  // Roving focus for the open-document tab strip (←/→ between tabs, one tab
+  // stop). The shared ui/tabs primitive has no per-tab close button, so the
+  // strip stays hand-rolled — with the same tablist semantics.
+  const tabStripRef = useRef<HTMLDivElement | null>(null);
+  const { setActiveIndex: setTabStopIndex } = useRovingTabIndex({
+    containerRef: tabStripRef,
+    itemSelector: '[role="tab"]',
+    orientation: "horizontal",
+  });
+  const selectedTabIndex = openTabs.findIndex((t) => selectionKey(t) === selectedKey);
+  useEffect(() => {
+    if (selectedTabIndex >= 0) setTabStopIndex(selectedTabIndex);
+  }, [selectedTabIndex, setTabStopIndex]);
 
   // Index of every loaded doc, used to resolve a doc's outgoing [[wiki-links]].
   const docIndex = useMemo<WikiDocIndex>(
@@ -924,11 +949,12 @@ export function GrimoireView() {
     ) : (
       <div className="flex h-full min-h-0 flex-col">
         <div
+          ref={tabStripRef}
           role="tablist"
           aria-label="Open documents"
           className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-2 py-1.5"
         >
-          {openTabs.map((tab) => {
+          {openTabs.map((tab, i) => {
             const key = selectionKey(tab);
             const active = key === selectedKey;
             return (
@@ -943,7 +969,9 @@ export function GrimoireView() {
                 <button
                   type="button"
                   role="tab"
+                  id={`grimoire-tab-${i}`}
                   aria-selected={active}
+                  aria-controls={`grimoire-tabpanel-${i}`}
                   title={tabTitle(tab)}
                   onClick={() => setTabState((prev) => ({ ...prev, selection: tab }))}
                   className="focus-ring-inset min-w-0 truncate px-2 py-1"
@@ -963,10 +991,16 @@ export function GrimoireView() {
           })}
         </div>
         <div className="relative min-h-0 flex-1">
-          {openTabs.map((tab) => {
+          {openTabs.map((tab, i) => {
             const key = selectionKey(tab);
             return (
-              <div key={key} className={key === selectedKey ? "h-full min-h-0" : "hidden"}>
+              <div
+                key={key}
+                role="tabpanel"
+                id={`grimoire-tabpanel-${i}`}
+                aria-labelledby={`grimoire-tab-${i}`}
+                className={key === selectedKey ? "h-full min-h-0" : "hidden"}
+              >
                 {renderTabDetail(tab)}
               </div>
             );

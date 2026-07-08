@@ -68,6 +68,9 @@ assert.match(view, /Move to trash/, "memory delete is labelled as restorable tra
 assert.match(view, /danger: true/, "the confirm renders its destructive style");
 assert.match(view, /closeTab\(selectionKey\(selection\)\);\s*void load\(\)/, "a successful delete closes the doc's tab and reloads the navigator");
 assert.match(view, /deleteError \? \(\s*<span role="alert"/, "delete failures are announced");
+// (cave-mglw) successful deletes are announced too — the row vanishing was the
+// only confirmation, silent to screen readers.
+assert.match(view, /announce\(\s*\n\s*selection\.kind === "memory"\s*\n\s*\? "Memory file moved to trash"/, "successful deletes announce per document kind");
 
 // ── Tabs: persisted multi-doc editing (cave-90u) ─────────────────────────────
 
@@ -77,6 +80,13 @@ assert.match(view, /export const MAX_OPEN_TABS = 8/, "open-tab count is capped")
 assert.match(view, /role="tablist"[\s\S]*?aria-label="Open documents"/, "tab strip is an accessible tablist");
 assert.match(view, /role="tab"[\s\S]*?aria-selected=\{active\}/, "tabs expose selection state");
 assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}`\}/, "each tab has a labelled close button");
+// (cave-mglw) full tabs pattern: one roving tab stop (←/→ between tabs) and
+// tab ↔ tabpanel wiring. The strip stays hand-rolled because the shared
+// ui/tabs primitive has no per-tab close button.
+assert.match(view, /useRovingTabIndex\(\{\s*\n\s*containerRef: tabStripRef,\s*\n\s*itemSelector: '\[role="tab"\]',/, "the tab strip roves focus");
+assert.match(view, /if \(selectedTabIndex >= 0\) setTabStopIndex\(selectedTabIndex\)/, "the tab stop follows the selected tab");
+assert.match(view, /aria-controls=\{`grimoire-tabpanel-\$\{i\}`\}/, "tabs point at their panels");
+assert.match(view, /role="tabpanel"\s*\n\s*id=\{`grimoire-tabpanel-\$\{i\}`\}\s*\n\s*aria-labelledby=\{`grimoire-tab-\$\{i\}`\}/, "panels are labelled by their tabs");
 // The core multi-tab behavior: every open tab's editor stays mounted so
 // unsaved drafts survive switching tabs (inactive tabs are display:none).
 assert.match(view, /key === selectedKey \? "h-full min-h-0" : "hidden"/, "inactive tab editors stay mounted, just hidden");
