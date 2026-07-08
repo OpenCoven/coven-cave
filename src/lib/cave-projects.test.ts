@@ -66,6 +66,25 @@ try {
   });
   assert.equal(slashHeavy.root, "C:/tmp/slash-heavy");
 
+  // (cave-psp8) A manually-typed ~/path expands to the absolute home path —
+  // stored literally it never matched the daemon's absolute project_root, so
+  // Sessions/Git/Tasks stayed empty and the project looked dead.
+  const tilde = await createProject({ name: "Tilde", root: "~/code/my-app" });
+  assert.equal(
+    tilde.root,
+    path.join(os.homedir(), "code/my-app").replace(/\\/g, "/"),
+    "leading ~/ expands to the home directory",
+  );
+  const bareTilde = await createProject({ name: "Home", root: "~" });
+  assert.equal(
+    bareTilde.root,
+    os.homedir().replace(/\\/g, "/"),
+    "a bare ~ expands to the home directory",
+  );
+  // Remove the tilde fixtures so the exact-list assertions below stay true.
+  await deleteProject(tilde.id);
+  await deleteProject(bareTilde.id);
+
   const allSlashProject = await createProject({ name: "All slash", root: "/all-slash" });
   const rootOnly = await patchProject(allSlashProject.id, { root: "////" });
   assert.equal(rootOnly?.root, "/");

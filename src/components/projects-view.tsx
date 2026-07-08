@@ -193,10 +193,18 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   // refetch on window refocus (throttled) — never per selection switch. The
   // Tasks section filters client-side by projectId/cwd.
   const [boardCards, setBoardCards] = useState<Card[]>([]);
+  // Abort the in-flight load per refetch (mount + every refocus): overlapping
+  // loads could land out of order and show stale board cards, and an unmount
+  // mid-flight leaked the setState (cave-psp8; mirrors useProjects.load).
+  const boardAbortRef = useRef<AbortController | null>(null);
   const loadBoardCards = async () => {
+    boardAbortRef.current?.abort();
+    const controller = new AbortController();
+    boardAbortRef.current = controller;
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
+      const res = await fetch("/api/board", { cache: "no-store", signal: controller.signal });
       const json = await res.json();
+      if (controller.signal.aborted) return;
       if (json?.ok && Array.isArray(json.cards)) setBoardCards(json.cards as Card[]);
     } catch {
       /* transient — the Tasks section keeps the last known cards */
@@ -204,6 +212,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   };
   useEffect(() => {
     void loadBoardCards();
+    return () => boardAbortRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useRefreshOnFocus(loadBoardCards);
