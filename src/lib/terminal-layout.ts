@@ -258,10 +258,6 @@ export function normalizeTerminalLayout(state: TerminalLayoutState): TerminalLay
   };
 }
 
-export function terminalLayoutSessionIds(state: TerminalLayoutState): string[] {
-  return state.sessions.map((session) => session.id);
-}
-
 export function terminalLayoutVisibleSessionIds(state: TerminalLayoutState): string[] {
   return visibleIds(state.root).filter((id, index, ids) => ids.indexOf(id) === index);
 }

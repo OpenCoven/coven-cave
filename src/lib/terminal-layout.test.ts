@@ -12,7 +12,6 @@ import {
   renameTerminalSession,
   reorderTerminalSessions,
   splitTerminalPane,
-  terminalLayoutSessionIds,
   terminalLayoutVisibleSessionIds,
   type TerminalLayoutState,
 } from "./terminal-layout.ts";
@@ -23,6 +22,13 @@ function session(id: string, label = id, projectRoot = `/tmp/${id}`) {
 
 function ids(state: TerminalLayoutState): string[] {
   return terminalLayoutVisibleSessionIds(state);
+}
+
+// The full session (tab) list, in tab order — what reorder/close mutate. Read
+// inline off `state.sessions` now that the terminalLayoutSessionIds helper (dead
+// in production) is gone.
+function sessionIds(state: TerminalLayoutState): string[] {
+  return state.sessions.map((session) => session.id);
 }
 
 {
@@ -110,7 +116,7 @@ function ids(state: TerminalLayoutState): string[] {
   state = removeTerminalPaneView(state, "b");
 
   assert.deepEqual(ids(state), ["a"], "removing a split hides the pane from the tree");
-  assert.deepEqual(terminalLayoutSessionIds(state), ["a", "b"], "removing a split does not close the shell session");
+  assert.deepEqual(sessionIds(state), ["a", "b"], "removing a split does not close the shell session");
   assert.equal(state.activeSessionId, "a", "focus falls back to a visible session");
 
   state = focusTerminalSession(state, "b");
@@ -135,7 +141,7 @@ function ids(state: TerminalLayoutState): string[] {
   const next = reorderTerminalSessions(state, "c", "a");
 
   assert.deepEqual(
-    terminalLayoutSessionIds(next),
+    sessionIds(next),
     ["c", "a", "b"],
     "dropping a terminal tab onto another tab reorders only the tab list",
   );
@@ -153,7 +159,7 @@ function ids(state: TerminalLayoutState): string[] {
   state = renameTerminalSession(state, "b", "Build");
   state = closeTerminalSession(state, "a");
 
-  assert.deepEqual(terminalLayoutSessionIds(state), ["b"], "closing removes the session record");
+  assert.deepEqual(sessionIds(state), ["b"], "closing removes the session record");
   assert.deepEqual(ids(state), ["b"], "closing collapses singleton branches");
   assert.equal(state.sessions[0].label, "Build", "renames stay on the session record");
   assert.equal(state.activeSessionId, "b", "closing active pane chooses the surviving visible session");
@@ -163,7 +169,7 @@ function ids(state: TerminalLayoutState): string[] {
   let state = createTerminalLayout([session("a"), session("b")], "a");
   state = closeTerminalSession(state, "a");
 
-  assert.deepEqual(terminalLayoutSessionIds(state), ["b"], "closing removes only the requested session");
+  assert.deepEqual(sessionIds(state), ["b"], "closing removes only the requested session");
   assert.deepEqual(ids(state), ["b"], "closing the last visible pane reattaches a remaining hidden session");
   assert.equal(state.activeSessionId, "b", "the reattached session receives focus");
 }
