@@ -615,7 +615,12 @@ export function CommandPalette({
       ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
       : [];
 
-    return [...salemRows, ...localRows];
+    // Local matches lead; Ask-Salem is the LAST row. Every keystroke resets
+    // activeIdx to 0, so whatever sits first owns the type-then-Enter gesture —
+    // with Salem prepended, Enter always fired an AI network call and the best
+    // local hit was never Enter-reachable (cave-42r5, direction confirmed by
+    // the operator). Salem stays one ArrowUp away (or arrow past the list).
+    return [...localRows, ...salemRows];
   }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects]);
 
   useEffect(() => {

@@ -46,4 +46,19 @@ assert.match(
   "palette keyboard handler ignores keydowns while an IME composition is in progress",
 );
 
+// cave-42r5: every keystroke resets activeIdx to 0, so whatever row is first
+// owns the type-then-Enter gesture. Local matches must lead and Ask-Salem must
+// trail — with Salem prepended, Enter always fired an AI network call and the
+// best local hit was never Enter-reachable.
+assert.match(
+  src,
+  /return \[\.\.\.localRows, \.\.\.salemRows\];/,
+  "the Ask-Salem row trails the local matches (Enter opens the best local hit)",
+);
+assert.doesNotMatch(
+  src,
+  /return \[\.\.\.salemRows, \.\.\.localRows\];/,
+  "the Salem-first ordering must not return",
+);
+
 console.log("command-palette-a11y.test.ts: ok");
