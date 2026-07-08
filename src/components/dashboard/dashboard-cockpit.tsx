@@ -38,7 +38,7 @@ import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
 import {
   DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
-  type DragEndEvent,
+  type Announcements, type DragEndEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext, useSortable, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy,
@@ -75,6 +75,24 @@ const DEFAULT_LAYOUT: Layout = {
   main: ["usage", "signals", "needs", "board", "today"],
   rail: ["confidence", "agents", "load", "space", "github", "agenda"],
 };
+
+// Human titles for drag-and-drop announcements + grip labels (mirrors each
+// widget's <Panel title>). dnd-kit's defaults read the raw ids, which are
+// semantic but terse — screen readers should hear the visible panel names.
+const PANEL_TITLES: Record<string, string> = {
+  usage: "Activity over time",
+  signals: "Signals",
+  needs: "Needs attention",
+  board: "Board",
+  today: "Today summary",
+  confidence: "Performance matrix",
+  agents: "Familiars",
+  load: "Familiar load",
+  space: "Space usage",
+  github: "GitHub",
+  agenda: "Up next",
+};
+const panelTitle = (id: unknown): string => PANEL_TITLES[String(id)] ?? String(id);
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
  *  any new defaults, drop anything unknown (survives version changes). */
@@ -392,6 +410,39 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     }
   };
 
+  // Speak panel titles + positions during drag — dnd-kit's defaults read the
+  // raw widget ids. Positions come from the pre-move layout: with arrayMove
+  // semantics the dragged panel takes over.id's index, so it reads correctly
+  // for the drop announcement too.
+  const positionOf = (id: string): { index: number; count: number } | null => {
+    for (const col of ["main", "rail"] as const) {
+      const idx = layout[col].indexOf(id);
+      if (idx !== -1) return { index: idx + 1, count: layout[col].length };
+    }
+    return null;
+  };
+  const dragAnnouncements: Announcements = {
+    onDragStart({ active }) {
+      const pos = positionOf(String(active.id));
+      return `Picked up ${panelTitle(active.id)}${pos ? `, position ${pos.index} of ${pos.count}` : ""}.`;
+    },
+    onDragOver({ active, over }) {
+      if (!over) return undefined;
+      const pos = positionOf(String(over.id));
+      return pos ? `${panelTitle(active.id)} is over position ${pos.index} of ${pos.count}.` : undefined;
+    },
+    onDragEnd({ active, over }) {
+      if (!over) return `${panelTitle(active.id)} was dropped.`;
+      const pos = positionOf(String(over.id));
+      return pos
+        ? `${panelTitle(active.id)} moved to position ${pos.index} of ${pos.count}.`
+        : `${panelTitle(active.id)} was dropped.`;
+    },
+    onDragCancel({ active }) {
+      return `Dragging ${panelTitle(active.id)} cancelled.`;
+    },
+  };
+
   const isVisible = (id: string) => {
     if (id === "needs") return !model.caughtUp;
     if (id === "signals") return signals.length > 0;
@@ -508,14 +559,14 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       </section>
 
       {/* Secondary panels — drag to rearrange (hover for the grip) */}
-      <DndContext id="dashboard-cockpit" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id="dashboard-cockpit" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} accessibility={{ announcements: dragAnnouncements }}>
         <div className="cockpit-grid">
           {(["main", "rail"] as const).map((col) => {
             const ids = layout[col].filter(isVisible);
             return (
               <div key={col} className={`cockpit-col cockpit-col--${col}`}>
                 <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-                  {ids.map((id) => <SortableWidget key={id} id={id}>{widget(id)}</SortableWidget>)}
+                  {ids.map((id) => <SortableWidget key={id} id={id} title={panelTitle(id)}>{widget(id)}</SortableWidget>)}
                 </SortableContext>
               </div>
             );
@@ -587,7 +638,7 @@ function Panel({ title, icon, count, hint, href, children }: {
 
 // ─── Sortable widget wrapper ─────────────────────────────────────────────────────
 
-function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
+function SortableWidget({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const reduceMotion = usePrefersReducedMotion();
   const style: CSSProperties = {
@@ -601,7 +652,7 @@ function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
   };
   return (
     <div ref={setNodeRef} style={style} className={`cockpit-sortable${isDragging ? " is-dragging" : ""}`}>
-      <button type="button" className="cockpit-grip" aria-label="Drag to rearrange" {...attributes} {...listeners}>
+      <button type="button" className="cockpit-grip" aria-label={`Drag to rearrange: ${title}`} {...attributes} {...listeners}>
         <Icon name="ph:dots-six-vertical" aria-hidden />
       </button>
       {children}
