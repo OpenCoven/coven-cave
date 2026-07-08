@@ -235,9 +235,14 @@ export function SettingsShell() {
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
           route. Desktop always pops the route. */}
+      {/* The band composes the shared .surface-compact-header metrics (40px,
+          hairline, family gap/padding) with .settings-shell__header, which
+          keeps the gradient background and the Tauri window drag-region. The
+          inline paddingTop preserves the mobile safe-area inset on top of the
+          band's 5px. */}
       <header
-        className="settings-shell__header flex shrink-0 items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-2.5"
-        style={{ paddingTop: "calc(0.625rem + var(--sai-top))" }}
+        className="settings-shell__header surface-compact-header shrink-0"
+        style={{ paddingTop: "calc(5px + var(--sai-top))" }}
       >
         <button
           type="button"
@@ -245,13 +250,13 @@ export function SettingsShell() {
             if (isMobile && !pickerView) backToPicker();
             else router.back();
           }}
-          className="settings-back-button focus-ring flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className="settings-back-button focus-ring flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
           <Icon name="ph:arrow-left" width={13} />
           {isMobile && !pickerView ? "Settings" : "Back"}
         </button>
         <div className="min-w-0">
-          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+          <span className="surface-compact-title block truncate">
             {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
           </span>
         </div>
