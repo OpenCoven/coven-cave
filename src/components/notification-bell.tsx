@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
@@ -20,8 +21,16 @@ type Props = {
   onPrefsChanged: () => void;
 };
 
-function relTime(iso: string | null | undefined): string {
-  return iso ? relativeTime(iso) : "—";
+// Live per-row timestamp: ticks each minute so a popover left open doesn't
+// show a stale "2m ago" forever (cave-jm6t). Rows unmount with the popover,
+// so the always-mounted bell trigger pays nothing while closed.
+function BellItemTime({ iso, waiting }: { iso: string | null | undefined; waiting: boolean }) {
+  useMinuteTick();
+  return (
+    <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+      {waiting ? "Waiting on you" : <RelativeTime iso={iso} fallback="—" />}
+    </div>
+  );
 }
 
 export function NotificationBell({
@@ -127,11 +136,11 @@ export function NotificationBell({
   // Close on outside click.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
   }, [open]);
 
   const dismiss = useCallback(
@@ -189,6 +198,8 @@ export function NotificationBell({
     <div ref={wrapRef} className="notification-bell relative">
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         className={`notification-bell__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
           displayBadgeCount > 0
             ? "border-[color-mix(in_oklch,var(--color-warning)_45%,var(--border-strong))] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_22%,transparent)]"
@@ -276,6 +287,7 @@ export function NotificationBell({
                       onClick={() =>
                         setSound(opt.mode, "name" in opt ? opt.name : undefined)
                       }
+                      aria-pressed={active}
                       className={`focus-ring rounded border px-2 py-0.5 text-[10px] transition-colors ${
                         active
                           ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] text-[var(--text-primary)]"
@@ -302,6 +314,8 @@ export function NotificationBell({
                       <span className="truncate text-[var(--text-secondary)]" title={f.display_name}>{f.display_name}</span>
                       <button
                         onClick={() => toggleMute(f.id)}
+                        aria-pressed={muted}
+                        aria-label={`${muted ? "Unmute" : "Mute"} ${f.display_name}`}
                         className={`focus-ring rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
                           muted
                             ? "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
@@ -352,11 +366,10 @@ export function NotificationBell({
                           {it.body}
                         </div>
                       ) : null}
-                      <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-                        {it.kind === "response-needed"
-                          ? "Waiting on you"
-                          : relTime(it.status === "fired" ? it.firedAt : it.updatedAt)}
-                      </div>
+                      <BellItemTime
+                        iso={it.status === "fired" ? it.firedAt : it.updatedAt}
+                        waiting={it.kind === "response-needed"}
+                      />
                     </div>
                     {it.familiarId ? (
                       <button
