@@ -19,9 +19,10 @@ import {
   type NodeTypes,
   type OnConnectStartParams,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import type { FlowDoc, FlowLayoutOrientation, FlowPosition } from "@/lib/flow/flow-doc";
 import {
@@ -225,6 +226,8 @@ if (syncedViewKey !== viewKey) {
     onMoveNodes(Object.fromEntries(nodesRef.current.map((node) => [node.id, node.position])));
   }, [onMoveNodes]);
 
+  const { announce } = useAnnouncer();
+
   const handleNodeClick: NodeMouseHandler<Node<FlowNodeData>> = useCallback(
     (_event, node) => onSelectNode(node.id),
     [onSelectNode],
@@ -238,6 +241,28 @@ if (syncedViewKey !== viewKey) {
       onOpenNode(node.id);
     },
     [onOpenNode],
+  );
+
+  // Keyboard path to open a node (WCAG 2.1.1): double-click is mouse-only, so a
+  // keyboard user could Tab to a focusable React Flow node and select it but
+  // never open it. Enter/Space on the focused node opens its detail view,
+  // mirroring double-click (stickies edit inline, so they're skipped). Keyed off
+  // the focused node's `data-id` rather than selection, so it works the instant
+  // focus lands. The NDV doesn't announce itself, so announce the open here.
+  const handleCanvasKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const target = event.target as HTMLElement | null;
+      const nodeEl = target?.closest?.(".react-flow__node") as HTMLElement | null;
+      const nodeId = nodeEl?.getAttribute("data-id");
+      if (!nodeId) return; // focus is on the toolbar / pane / an input, not a node
+      const source = doc.nodes.find((entry) => entry.id === nodeId);
+      if (!source || catalogNode(source.type)?.sticky === true) return;
+      event.preventDefault(); // Space would page-scroll / toggle selection
+      onOpenNode(nodeId);
+      announce(`Opened ${source.name} settings`);
+    },
+    [doc.nodes, onOpenNode, announce],
   );
 
   const handleConnect = useCallback(
@@ -314,7 +339,7 @@ if (syncedViewKey !== viewKey) {
   }, [onRequestAdd, screenToFlowPosition]);
 
   return (
-    <div className="flow-canvas" aria-label={`${doc.name} canvas`} onDoubleClick={handlePaneDoubleClick}>
+    <div className="flow-canvas" aria-label={`${doc.name} canvas`} onDoubleClick={handlePaneDoubleClick} onKeyDown={handleCanvasKeyDown}>
       <div className="flow-canvas-toolbar">
         <Button
           variant="secondary"

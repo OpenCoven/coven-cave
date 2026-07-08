@@ -116,4 +116,15 @@ assert.match(rmBlock, /\.react-flow__controls-button/, "reduced-motion zeros the
 assert.match(rmBlock, /\.react-flow__viewport[\s\S]*?transition: none !important/, "reduced-motion zeros the viewport pan/zoom transition (beats React Flow's inline transition)");
 assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{ \.flow-run-step-spin \{ animation: none; \} \}/, "the existing run-step spinner guard stays");
 
+// ── Keyboard path to open a node (cave-6pp8, WCAG 2.1.1) ──────────────────────
+// Double-click is mouse-only; a keyboard user must be able to open the focused
+// node with Enter/Space. Keyed off the focused node's data-id, skips stickies,
+// announces the open (the NDV doesn't announce itself).
+assert.match(canvas, /const handleCanvasKeyDown = useCallback\(/, "canvas has a keyboard handler for opening nodes");
+assert.match(canvas, /event\.key !== "Enter" && event\.key !== " "/, "Enter or Space triggers the open");
+assert.match(canvas, /closest\?\.\(".react-flow__node"\)[\s\S]*?getAttribute\("data-id"\)/, "the open targets the focused React Flow node by data-id");
+assert.match(canvas, /catalogNode\(source\.type\)\?\.sticky === true\) return/, "sticky notes are skipped (they edit inline)");
+assert.match(canvas, /onOpenNode\(nodeId\);\s*\n\s*announce\(/, "opening a node via keyboard announces it");
+assert.match(canvas, /onKeyDown=\{handleCanvasKeyDown\}/, "the handler is wired on the canvas wrapper");
+
 console.log("flow-canvas.test.ts OK");
