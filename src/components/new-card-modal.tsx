@@ -67,7 +67,6 @@ export function NewCardModal({
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
-  const [cwd, setCwd] = useState("");
   const [links, setLinks] = useState("");
   const [labels, setLabels] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -85,7 +84,6 @@ export function NewCardModal({
     setFamiliarId(defaultFamiliarId);
     setSessionId(null);
     setProjectId(null);
-    setCwd("");
     setLinks(defaultLinks ? defaultLinks.join("\n") : "");
     setLabels(defaultLabels ? defaultLabels.join(", ") : "");
     setStartDate("");
@@ -96,6 +94,10 @@ export function NewCardModal({
   const eligibleSessions = familiarId
     ? sessions.filter((s) => s.familiarId === familiarId)
     : sessions;
+
+  // The selected project drives the card's working directory — there is no
+  // free-form cwd field, so drafts never carry machine-specific paths.
+  const selectedProject = projects.find((p) => p.id === projectId) ?? null;
 
   const create = async () => {
     if (!title.trim() || busy) return;
@@ -110,7 +112,7 @@ export function NewCardModal({
         familiarId,
         sessionId,
         projectId,
-        cwd: cwd.trim() || null,
+        cwd: selectedProject?.root ?? null,
         links: parseDelimited(links),
         labels: parseDelimited(labels),
         startDate: startDate || null,
@@ -129,8 +131,7 @@ export function NewCardModal({
     familiars.find((f) => f.id === familiarId)?.display_name ?? "Default familiar";
   const sessionLabel =
     sessions.find((s) => s.id === sessionId)?.title ?? null;
-  const projectLabel =
-    projects.find((p) => p.id === projectId)?.name ?? null;
+  const projectLabel = selectedProject?.name ?? null;
 
   return (
     <Modal
@@ -235,6 +236,27 @@ export function NewCardModal({
             ]}
           />
         </Field>
+
+        <Field label="Project">
+          <Select
+            value={projectId ?? ""}
+            onChange={(v) => setProjectId(v || null)}
+            options={[
+              { value: "", label: "No project" },
+              ...projects.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+        </Field>
+      </div>
+
+      {/* Optional metadata lives behind a disclosure so the default modal
+          stays a short title/notes/pickers form. Open it when a caller
+          prefilled links or labels so they aren't hidden. */}
+      <details className="mb-4" open={Boolean(defaultLinks?.length || defaultLabels?.length)}>
+        <summary className="focus-ring mb-2 cursor-pointer select-none text-[10px] uppercase tracking-widest text-muted-foreground hover:text-foreground">
+          More options
+        </summary>
+
         <Field label="Session (optional)">
           <Select
             value={sessionId ?? ""}
@@ -249,62 +271,44 @@ export function NewCardModal({
           />
         </Field>
 
-        <Field label="Project">
-          <Select
-            value={projectId ?? ""}
-            onChange={(v) => setProjectId(v || null)}
-            options={[
-              { value: "", label: "No project" },
-              ...projects.map((p) => ({ value: p.id, label: p.name })),
-            ]}
+        <div className="mb-4 grid grid-cols-2 gap-4">
+          <Field label="Start date">
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            />
+          </Field>
+          <Field label="End date">
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            />
+          </Field>
+        </div>
+
+        <Field label="Links">
+          <textarea
+            value={links}
+            onChange={(e) => setLinks(e.target.value)}
+            placeholder="One link per line, e.g. https://github.com/owner/repo/pull/123"
+            rows={3}
+            className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
 
-        <Field label="Start date">
+        <Field label="Labels">
           <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            value={labels}
+            onChange={(e) => setLabels(e.target.value)}
+            placeholder="ui, docs"
             className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
-        <Field label="End date">
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-          />
-        </Field>
-      </div>
-
-      <Field label="CWD">
-        <input
-          value={cwd}
-          onChange={(e) => setCwd(e.target.value)}
-          placeholder="/Users/buns/Documents/GitHub/OpenCoven/coven-cave"
-          className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-        />
-      </Field>
-
-      <Field label="Links">
-        <textarea
-          value={links}
-          onChange={(e) => setLinks(e.target.value)}
-          placeholder="https://github.com/OpenCoven/coven-cave/pull/153"
-          rows={3}
-          className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-        />
-      </Field>
-
-      <Field label="Labels">
-        <input
-          value={labels}
-          onChange={(e) => setLabels(e.target.value)}
-          placeholder="ui, docs"
-          className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
-        />
-      </Field>
+      </details>
 
       {error ? (
         <div className="mb-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">

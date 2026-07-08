@@ -79,7 +79,8 @@ assert.doesNotMatch(boardView, /label="Labels"/, "Tasks header should not show L
 assert.doesNotMatch(boardView, /allLabels/, "Tasks view should not build a dedicated labels filter row");
 
 const newCardModal = await readFile(new URL("../components/new-card-modal.tsx", import.meta.url), "utf8");
-assert.match(newCardModal, /label="CWD"/, "New task modal should include cwd");
+assert.doesNotMatch(newCardModal, /label="CWD"/, "New task modal should not expose a raw cwd field — the project picker drives cwd");
+assert.match(newCardModal, /cwd: selectedProject\?\.root \?\? null/, "New task modal derives cwd from the selected project");
 assert.match(newCardModal, /label="Links"/, "New task modal should include links");
 assert.match(newCardModal, /label="Session \(optional\)"/, "New task modal should mark session optional");
 
