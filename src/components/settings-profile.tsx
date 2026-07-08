@@ -219,7 +219,7 @@ export function ProfileSection() {
       ) : null}
 
       {error ? (
-        <p className="rounded-xl border border-[var(--danger)] bg-[color-mix(in_oklch,var(--danger)_12%,transparent)] px-4 py-3 text-[12px] text-[var(--danger)]">
+        <p className="rounded-xl border border-[var(--color-danger)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-4 py-3 text-[12px] text-[var(--color-danger)]">
           {error}
         </p>
       ) : null}
@@ -389,12 +389,12 @@ export function ProfileSection() {
                   </Button>
                 </div>
                 {rowIncomplete ? (
-                  <p className="text-[11px] text-[var(--danger)] md:col-span-3">Add both fields to save this link.</p>
+                  <p className="text-[11px] text-[var(--color-danger)] md:col-span-3">Add both fields to save this link.</p>
                 ) : null}
               </div>
             );
           })}
-          {linkHint ? <p className="text-[11px] text-[var(--danger)]">{linkHint}</p> : null}
+          {linkHint ? <p className="text-[11px] text-[var(--color-danger)]">{linkHint}</p> : null}
           <div>
             <Button
               variant="secondary"
