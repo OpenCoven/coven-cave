@@ -128,7 +128,13 @@ export function mergeSessionRows({
         defaultChatTitleForSession(session.id),
       archived_at,
       familiarId: state.sessionFamiliar[session.id] ?? null,
-      origin: inferOrigin(session),
+      // A Cave conversation records real provenance at send time; harness/
+      // title inference is only the fallback for daemon-only sessions.
+      origin: local?.origin ?? inferOrigin(session),
+      // No conversation + nothing better than the inferred-"chat" default =
+      // a run some generator spawned (journal narrative, flow, automation,
+      // CLI), not something a person typed into a chat surface.
+      ...(!local && inferOrigin(session) === "chat" ? { generated: true } : {}),
       initiator:
         session.initiator ??
         initiatorFromSessionKey("", state.sessionFamiliar[session.id] ?? session.harness),

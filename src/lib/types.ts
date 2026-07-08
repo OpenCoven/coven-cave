@@ -61,6 +61,13 @@ export type SessionRow = {
   updated_at: string;
   familiarId?: string | null;
   origin?: SessionOrigin;
+  /**
+   * True for daemon sessions with no Cave conversation behind them — runs
+   * spawned by generators (journal narratives, flows, automations, CLI runs)
+   * rather than by someone chatting. Chat lists hide these; the sessions stay
+   * reachable from their origination surfaces (Work Queue, Schedules, …).
+   */
+  generated?: boolean;
   initiator?: SessionInitiator;
   git?: SessionGitContext | null;
   pullRequest?: SessionPullRequestContext | null;
@@ -89,7 +96,8 @@ export type SessionOrigin =
   | "board"
   | "cron"
   | "heartbeat"
-  | "call";
+  | "call"
+  | "canvas";
 
 export type SessionInitiator = {
   kind: "human" | "familiar" | "system" | "unknown";

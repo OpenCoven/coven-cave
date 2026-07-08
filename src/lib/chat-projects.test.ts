@@ -54,6 +54,27 @@ assert.deepEqual(
   "specific familiar scope should still show only that familiar's chats",
 );
 
+// Externally-generated sessions stay out of the chat lists: daemon-only runs
+// flagged `generated` (journal narratives, flows, automations, CLI) and
+// generator origins (canvas refines, cron/heartbeat automations). They remain
+// reachable from their origination surfaces; the chat rail is for chats.
+{
+  const noisy = [
+    ...sessions,
+    { ...session("journal-run", "", "2026-06-06T00:00:00.000Z", "nova"), generated: true },
+    { ...session("canvas-refine", "", "2026-06-07T00:00:00.000Z", "nova"), origin: "canvas" },
+    { ...session("cron-sweep", "", "2026-06-08T00:00:00.000Z", "nova"), origin: "cron" },
+    { ...session("heartbeat-tick", "", "2026-06-09T00:00:00.000Z", "nova"), origin: "heartbeat" },
+    { ...session("task-chat", "/work/alpha", "2026-06-10T00:00:00.000Z", "nova"), origin: "board" },
+    { ...session("telegram-ping", "", "2026-06-11T00:00:00.000Z", "nova"), origin: "mention" },
+  ];
+  assert.deepEqual(
+    filterVisibleChatSessions(noisy, null).map((s) => s.id),
+    ["telegram-ping", "task-chat", "scratch", "new-alpha", "beta", "old-alpha"],
+    "generated runs and canvas/cron/heartbeat origins are hidden; board tasks and mentions stay",
+  );
+}
+
 const groups = deriveChatProjectGroups(filterVisibleChatSessions(sessions, null), projects);
 
 assert.deepEqual(

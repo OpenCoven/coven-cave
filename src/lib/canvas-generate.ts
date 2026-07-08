@@ -55,6 +55,9 @@ export async function generateArtifactCode(opts: {
         familiarId: opts.familiarId,
         prompt: opts.prompt,
         projectRoot: opts.projectRoot ?? undefined,
+        // Provenance: these sends belong to the Canvas/artifact surface, so
+        // the chat lists can keep them out of the conversation rail.
+        origin: "canvas",
       }),
       signal: opts.signal,
     });
