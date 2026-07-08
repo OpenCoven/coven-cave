@@ -174,7 +174,6 @@ export const SUITES = {
     "src/components/home-composer.test.ts",
     "src/components/home-digest-carousel.test.ts",
     "src/components/home-feed.test.ts",
-    "src/components/home-columns.test.ts",
     "src/components/home-composer-centering.test.ts",
     "src/components/home-composer-hide-archived.test.ts",
     "src/components/ios-theme-api.test.ts",

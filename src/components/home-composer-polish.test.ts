@@ -130,8 +130,8 @@ assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo 
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Resume still reaches the Continue column.
-assert.match(source, /<HomeContinueColumn/, "HomeComposer renders the Continue column");
-assert.match(source, /onOpenSession=\{onOpenSession\}/, "the Continue column receives the resume handler");
+// Resume still reaches the recent-chats track of the digest carousel.
+assert.match(source, /<HomeDigestCarousel/, "HomeComposer renders the digest carousel");
+assert.match(source, /onOpenSession=\{onOpenSession\}/, "the carousel receives the resume handler");
 
 console.log("home-composer-polish.test.ts: ok");
