@@ -29,6 +29,20 @@ assert.equal(skillSlashOptions("/skills verify", SKILLS).length, 1, "/skills als
 assert.equal(skillSlashOptions("/skill nomatch", SKILLS).length, 0, "no match → empty (not null)");
 assert.equal(skillSlashOptions("/model gpt", SKILLS), null, "a different command → null");
 
+// The scan returns the same skill from several roots (~/.claude/skills +
+// ~/.agents/skills copies). The picker must render one row per id — composers
+// key list items by s.id, so a duplicate here is a duplicate React key AND a
+// doubled menu row (seen live: two `brainstorming` entries).
+const MULTI_ROOT = [
+  { id: "brainstorming", name: "brainstorming", familiar: "user", path: "/u/.claude/skills/brainstorming/SKILL.md" },
+  { id: "code-review", name: "code-review", familiar: "user" },
+  { id: "brainstorming", name: "brainstorming", familiar: "agents-user", path: "/u/.agents/skills/brainstorming/SKILL.md" },
+];
+const dedupedPick = skillSlashOptions("/skill ", MULTI_ROOT);
+assert.deepEqual(dedupedPick.map((s) => s.id), ["brainstorming", "code-review"], "one row per skill id");
+assert.equal(dedupedPick[0].familiar, "user", "first scan root (scope precedence) wins");
+assert.equal(skillSlashOptions("/skill brains", MULTI_ROOT).length, 1, "filtering operates on the deduped list");
+
 // ── resolveSkillArg: exact then substring ────────────────────────────────────
 assert.equal(resolveSkillArg("verify", SKILLS)?.id, "verify", "exact name");
 assert.equal(resolveSkillArg("CODE-REVIEW", SKILLS)?.id, "code-review", "case-insensitive exact");
@@ -48,6 +62,14 @@ const list = formatSkillList(SKILLS);
 assert.match(list, /Available skills/, "list has a header");
 assert.match(list, /deep-research/, "list includes each skill");
 assert.match(formatSkillList([]), /No skills found/, "empty list is explained");
+assert.equal(
+  formatSkillList([
+    { id: "brainstorming", name: "brainstorming" },
+    { id: "brainstorming", name: "brainstorming" },
+  ]).match(/brainstorming/g).length,
+  2, // once in "name — `id`" form on a single line
+  "the bare /skills system message lists a multi-root skill once",
+);
 
 // ── resolveSkillInvocation: whole name first, then first-token + args ────────
 assert.deepEqual(
