@@ -392,10 +392,26 @@ assert.match(
   "The 56px rail has no room for text — the version line hides there",
 );
 
-// Quiet cluster (§8): occasional destinations (Marketplace, GitHub) stay in the
-// same flat list but render muted-until-hover, with the first quiet row opening
-// a spacing gap instead of a divider. (Browser is now navHidden, so Marketplace
-// leads the quiet cluster.)
+// Quiet cluster (§8): occasional destinations stay in the same flat list but
+// render muted-until-hover, with the first quiet row opening a spacing gap.
+// Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
+// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Journal
+// and Grimoire lead the quiet cluster, followed by Marketplace/GitHub/Work Queue.
+assert.match(
+  source,
+  /\{ id: "journal",[^}]*quiet: true \}/,
+  "Journal is in the quiet cluster (cave-xsq.8)",
+);
+assert.match(
+  source,
+  /\{ id: "grimoire",[^}]*quiet: true \}/,
+  "Grimoire is in the quiet cluster (cave-xsq.8)",
+);
+assert.match(
+  source,
+  /id: "inbox",[\s\S]*?\{ id: "journal"/,
+  "the ⌘-numbered prominent cluster (…Schedules) renders above the quiet cluster",
+);
 assert.match(
   source,
   /\{ id: "marketplace",[^}]*quiet: true \}/,

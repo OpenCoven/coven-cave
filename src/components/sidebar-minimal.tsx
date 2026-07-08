@@ -104,9 +104,14 @@ const FOLDER_MODES: Array<{
   // Group Chat ("coven") is no longer a standalone destination — it lives as the
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — opens in Settings" },
-  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
+  // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
+  // also carries the needs-you badge). Journal and Grimoire join the quiet
+  // cluster: same flat list, same reachability (rows, palette, deep links),
+  // just muted-until-hover so the conversation-first surfaces read first.
+  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — opens in Settings", quiet: true },
+  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
   // those launchers but hidden from the sidebar rows.
