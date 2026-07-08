@@ -31,4 +31,10 @@ assert.equal(buildNextPathsDirective(0), "");
   assert.equal(r.visible, "Answer.");
   assert.deepEqual(r.suggestions, ["Run the tests", "Open a"]);
 }
+// over-eager agent -> at most 4 pills ever surface (the chip-row product cap)
+{
+  const lines = ["One", "Two", "Three", "Four", "Five", "Six"].map((s) => `- ${s}`).join("\n");
+  const r = extractNextPaths(`Answer.\n<coven:next-paths>\n${lines}\n</coven:next-paths>`);
+  assert.deepEqual(r.suggestions, ["One", "Two", "Three", "Four"]);
+}
 console.log("next-paths.test.ts: ok");

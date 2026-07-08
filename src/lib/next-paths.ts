@@ -53,7 +53,9 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
     .split(/\r?\n/)
     .map((l) => l.replace(/^\s*[-*•]\s*/, "").trim())
     .filter((l) => l.length > 0 && !l.startsWith("first next step") && !l.startsWith("second next step"))
-    .slice(0, 6);
+    // At most 4 pills ever render — the chip row's product cap (an over-eager
+    // agent that lists more gets trimmed, not a fifth row).
+    .slice(0, DEFAULT_NEXT_PATHS_COUNT);
   const visible = (text.slice(0, open) + text.slice(blockEnd)).replace(/\s+$/, "");
   return { visible, suggestions };
 }

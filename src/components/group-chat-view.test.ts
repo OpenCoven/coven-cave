@@ -35,7 +35,11 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
     "strips the next-paths block and parses suggestions from coven replies",
   );
   // Parsed suggestions render as click-to-send chips that broadcast the line.
-  assert.match(view, /className="cave-next-paths/, "renders the next-paths chip row");
+  assert.match(
+    view,
+    /className="cave-next-paths mt-1\.5" data-count=\{suggestions\.length\}/,
+    "renders the next-paths chip row, stamping its count for the uniform-rows layout",
+  );
   assert.match(view, /onClick=\{\(\) => void broadcast\(s\)\}/, "clicking a chip broadcasts the suggestion");
 });
 
