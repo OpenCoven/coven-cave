@@ -971,8 +971,11 @@ function HeaderReflectButton({
       disabled={reflecting}
       onClick={onReflect}
     >
+      {/* Sparkle, not brain: reflections land in the daily note's Reflection
+          section (iconed ph:sparkle), and the brain belongs to the thinking
+          toggle two buttons away — two identical brains in one header row. */}
       <Icon
-        name={reflecting ? "ph:circle-notch-bold" : "ph:brain-bold"}
+        name={reflecting ? "ph:circle-notch-bold" : "ph:sparkle-bold"}
         width={15}
         className={reflecting ? "animate-spin" : undefined}
         aria-hidden
