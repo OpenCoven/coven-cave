@@ -117,4 +117,17 @@ assert.match(
   "cursor blink tracks prefers-reduced-motion changes without a remount",
 );
 
+// The find-bar match counter must NOT be a second polite live region beside
+// the SR mirror — updating on every keystroke it produced double/overlapping
+// announcements (cave-eatw). It's tied to the find input via aria-describedby
+// instead, so AT can still discover the count on demand. The only polite
+// regions are the startup status overlay and the SR mirror.
+assert.equal(
+  (source.match(/aria-live="polite"/g) ?? []).length,
+  2,
+  "exactly two polite live regions: startup status + SR mirror (the find counter is non-live)",
+);
+assert.match(source, /aria-describedby=\{findCountId\}/, "the find input references the match counter via aria-describedby");
+assert.match(source, /id=\{findCountId\}/, "the match counter carries the descriptor id");
+
 console.log("bottom-terminal-sr-mirror.test.ts OK");
