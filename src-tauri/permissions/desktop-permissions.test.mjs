@@ -415,7 +415,9 @@ test("terminal commands use Tauri camelCase command arguments", () => {
   );
   assert.match(
     bottomTerminal,
-    /invoke\("pty_resize", \{[\s\S]*threadId: threadId,[\s\S]*cols:[\s\S]*rows:/,
+    // cols/rows may be longhand (`cols: cols`) or shorthand (`cols,`) — #2651
+    // moved to shorthand and this pin (then unwired from CI) silently drifted.
+    /invoke\("pty_resize", \{[\s\S]*threadId: threadId,[\s\S]*cols[,:][\s\S]*rows[,:]/,
     "pty_resize must pass threadId so desktop resize reaches Rust",
   );
   assert.match(
