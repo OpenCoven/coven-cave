@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -31,6 +31,18 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
                       // cockpit re-fetches the list itself every 30s.
   const [items, setItems] = useState<InboxItem[]>(initialItems);
   const [error, setError] = useState<string | null>(null);
+  // The cockpit repolls every 30s and passes a fresh needsAttention list —
+  // adopt it, so items fired/done elsewhere update this widget instead of it
+  // freezing on its mount-time copy (cave-bzch). Locally-acted ids stay
+  // filtered until the incoming list confirms their removal, so a poll that
+  // raced an action can't resurrect a row the user just cleared.
+  const actedIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    setItems(initialItems.filter((it) => !actedIdsRef.current.has(it.id)));
+    for (const id of Array.from(actedIdsRef.current)) {
+      if (!initialItems.some((it) => it.id === id)) actedIdsRef.current.delete(id);
+    }
+  }, [initialItems]);
   const { announce } = useAnnouncer();
   // Bulk triage: select several items and done/dismiss/snooze them together.
   const [selectMode, setSelectMode] = useState(false);
@@ -61,6 +73,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
 
   async function act(item: InboxItem, action: Action, minutes = 60) {
     const prev = items;
+    actedIdsRef.current.add(item.id);
     setItems(nextItemsAfterAction(items, item.id)); // optimistic remove
     setError(null);
     try {
@@ -70,6 +83,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
       // happened (error feedback already has the role=alert banner).
       announce(`${ACTION_PAST_TENSE[action]} '${item.title}'.`);
     } catch {
+      actedIdsRef.current.delete(item.id);
       setItems(prev); // revert
       setError("Couldn't update that item — try again.");
     }
@@ -80,6 +94,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
     const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
     if (ids.length === 0) return;
     const prev = items;
+    ids.forEach((id) => actedIdsRef.current.add(id));
     setItems(items.filter((i) => !selectedIds.has(i.id)));
     exitSelect();
     setError(null);
@@ -90,6 +105,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
       if (results.some((ok) => !ok)) throw new Error("partial");
       announce(`${ACTION_PAST_TENSE[action]} ${ids.length} ${ids.length === 1 ? "item" : "items"}.`);
     } catch {
+      ids.forEach((id) => actedIdsRef.current.delete(id));
       setItems(prev); // revert the whole batch
       setError("Couldn't update some items — try again.");
     }

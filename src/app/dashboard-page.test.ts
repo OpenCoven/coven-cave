@@ -176,4 +176,22 @@ assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each g
   }
 }
 
+// ── ActionInbox follows the cockpit's 30s repoll (cave-bzch) ─────────────────
+// The widget froze on its mount-time copy; it now adopts each fresh
+// needsAttention list, with locally-acted ids filtered until the incoming
+// list confirms removal (a racing poll can't resurrect a cleared row).
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  assert.match(inbox, /setItems\(initialItems\.filter\(\(it\) => !actedIdsRef\.current\.has\(it\.id\)\)\)/, "prop updates sync into the widget minus acted ids");
+  assert.match(inbox, /actedIdsRef\.current\.add\(item\.id\)/, "single actions register the acted id");
+  assert.match(inbox, /ids\.forEach\(\(id\) => actedIdsRef\.current\.add\(id\)\)/, "bulk actions register acted ids");
+}
+// The workspace SSE 'updated' branch bails on content-equal echoes, so an
+// optimistic complete/dismiss/snooze doesn't trigger one redundant re-render
+// of every inboxItemsWithEphemeral consumer.
+{
+  const ws = readFileSync(new URL("../components/workspace.tsx", import.meta.url), "utf8");
+  assert.match(ws, /if \(JSON\.stringify\(prev\[idx\]\) === JSON\.stringify\(e\.item\)\) return prev;/, "SSE update echoes keep the array identity");
+}
+
 console.log("dashboard-page.test.ts: ok");
