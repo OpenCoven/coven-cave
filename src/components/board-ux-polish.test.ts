@@ -225,4 +225,14 @@ assert.match(kanban, /if \(grabbedCardId && !inBoard\)/, "a grab releases when f
 assert.match(kanban, /document\.querySelector<HTMLElement>\(`\[data-card-id="\$\{movedId\}"\]`\)\?\.focus\(\)/, "keyboard drop refocuses the moved card");
 assert.match(gantt, /announce\(`Rescheduled '\$\{row\.label\}':/, "gantt step reschedules announce the committed range");
 
+// ── Selection survives a view-mode switch AND stays visible (P1-6, 2026-07-03
+// heuristic audit): the new view mounts at scroll 0, so BoardView scrolls the
+// still-selected card back into view. Scroll only — no focus steal.
+assert.match(view, /prevViewModeRef\.current !== viewMode/, "view switches are detected against the previous mode, not selection changes");
+assert.match(view, /\[data-card-id="\$\{selectedCardId\}"\]/, "the selected card is located by its data-card-id in the mounted view");
+assert.match(view, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/, "the selected card scrolls into view without recentering the whole board");
+assert.match(view, /return \(\) => cancelAnimationFrame\(frame\);/, "the scroll rAF is a fresh closure cancelled on cleanup (no persistent ref guard to wedge)");
+assert.doesNotMatch(view, /querySelector<HTMLElement>\(`\[data-card-id="\$\{selectedCardId\}"\]`\)\s*\?\.focus\(\)/, "view switches must not steal focus from the toggle the user clicked");
+assert.match(gantt, /data-card-id=\{row\.cardId\}/, "gantt rows carry data-card-id so the view-switch scroll finds them");
+
 console.log("board-ux-polish.test.ts: ok");

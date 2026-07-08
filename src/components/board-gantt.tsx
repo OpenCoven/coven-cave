@@ -790,6 +790,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                     <button
                       key={row.rowId}
                       type="button"
+                      data-card-id={row.cardId}
                       className={`cg-row${selectedCardId === row.cardId ? " cg-row--sel" : ""}`}
                       onClick={() => {
                         if (suppressClickRef.current) { suppressClickRef.current = false; return; }

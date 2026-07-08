@@ -7,6 +7,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import type { InboxPrefs, SoundMode } from "@/lib/cave-inbox-prefs";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type Props = {
   items: InboxItem[];
@@ -35,6 +36,12 @@ export function NotificationBell({
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  // Trap focus while the popover is open: Escape closes, Tab cycles inside,
+  // and closing restores focus to whatever opened it (the bell trigger for
+  // keyboard users). Same pattern as github-action-popover.
+  useFocusTrap(open, popoverRef, { onEscape: () => setOpen(false) });
 
   const familiarName = useCallback(
     (id: string | null | undefined) =>
@@ -151,7 +158,13 @@ export function NotificationBell({
       </button>
 
       {open ? (
-        <div className="notification-bell__popover group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl">
+        <div
+          ref={popoverRef}
+          role="dialog"
+          aria-label="Notifications"
+          tabIndex={-1}
+          className="notification-bell__popover group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
+        >
           <div className="notification-bell__header flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
             <span className="text-[11px] font-medium text-[var(--text-primary)]">
               Notifications
@@ -159,7 +172,7 @@ export function NotificationBell({
             <div className="notification-bell__header-actions flex items-center gap-1.5">
               <button
                 onClick={() => setSettingsOpen((v) => !v)}
-                className="notification-bell__settings-btn touch-always-visible focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
+                className="notification-bell__settings-btn touch-always-visible focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] group-hover/popover:opacity-100 focus-visible:opacity-100"
                 title="Notification settings"
                 aria-label="Notification settings"
               >
@@ -298,7 +311,7 @@ export function NotificationBell({
                         onClick={() => void toggleMute(it.familiarId!)}
                         title={muted ? `Unmute ${fname}` : `Mute ${fname}`}
                         aria-label={muted ? `Unmute ${fname}` : `Mute ${fname}`}
-                        className="notification-bell__mute touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100"
+                        className="notification-bell__mute touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100 focus-visible:opacity-100"
                       >
                         <Icon
                           name={muted ? "ph:bell-slash-fill" : "ph:bell-slash"}

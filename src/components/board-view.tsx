@@ -289,6 +289,25 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (selectedCardId && !cards.some((c) => c.id === selectedCardId)) setSelectedCardId(null);
   }, [cards, selectedCardId]);
 
+  // Selection survives a view-mode switch (state lives here, not in the
+  // views), but the freshly mounted view renders from scroll 0 — the
+  // still-selected card the open inspector describes can sit far off-screen.
+  // After the new view commits, bring it back into view. Scroll only, no
+  // focus steal — the user's focus belongs on the toggle they just clicked.
+  const viewAreaRef = useRef<HTMLDivElement | null>(null);
+  const prevViewModeRef = useRef(viewMode);
+  useEffect(() => {
+    const switched = prevViewModeRef.current !== viewMode;
+    prevViewModeRef.current = viewMode;
+    if (!switched || !selectedCardId) return;
+    const frame = requestAnimationFrame(() => {
+      viewAreaRef.current
+        ?.querySelector<HTMLElement>(`[data-card-id="${selectedCardId}"]`)
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [viewMode, selectedCardId]);
+
   const lifecycleForStatus = (status: CardStatus) => {
     if (status === "running") return "running" as const;
     if (status === "review") return "review" as const;
@@ -881,7 +900,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       )}
 
       {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div ref={viewAreaRef} style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
         {cardSelect.selectMode && (
           <div className="px-5 pt-3">
             <SelectionToolbar
