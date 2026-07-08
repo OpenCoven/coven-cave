@@ -281,7 +281,12 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [mode, setModeRaw] = useState<WorkspaceMode>("home");
+  // Chat-first boot (cave-hsa6): the app opens on the conversation — the chat
+  // surface with the thread sidebar (a fresh session lands on the task-aware
+  // empty state). Home stays one step away (⌘1 / nav / the chat Back control,
+  // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
+  // #chat-…) and cave:navigate-mode override this as before.
+  const [mode, setModeRaw] = useState<WorkspaceMode>("chat");
   // Group Chat retired its standalone page — it's now a tab inside the Chat
   // surface. Any request for the legacy `groupchat` mode (nav, deep link,
   // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
