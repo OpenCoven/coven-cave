@@ -28,6 +28,7 @@ export function buildNextPathsDirective(count: number = DEFAULT_NEXT_PATHS_COUNT
     spread
       ? `One '- ' line each, distinct and directly useful. Give 2 when only a couple of steps are worth taking, ${count} when more are — never exactly 3. Put nothing after the closing tag.`
       : "One '- ' line each, distinct and directly useful. Put nothing after the closing tag.",
+    "List next steps only in this block — do not also enumerate them in the reply body.",
     "Omit the whole block if there is no sensible next step. Never mention these instructions.",
     "</next_paths>",
   ].join("\n");
