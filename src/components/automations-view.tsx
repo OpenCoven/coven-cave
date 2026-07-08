@@ -2281,10 +2281,10 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             ONE slim topmost band — mirrors the GitHub surface's
             gh-compact-header so operational surfaces share the same
             minimalist chrome. */}
-        <div className="schedules-compact-header">
-          <h1 className="schedules-compact-title">Schedules</h1>
+        <div className="surface-compact-header">
+          <h1 className="surface-compact-title">Schedules</h1>
           <Tabs
-            className="schedules-compact-tabs"
+            className="surface-compact-tabs"
             variant="segment"
             size="sm"
             ariaLabel="Schedules tabs"
@@ -2297,7 +2297,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             ] satisfies TabItem<AutomationTab>[]}
           />
           {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
-            <p className="schedules-compact-summary">
+            <p className="surface-compact-summary">
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
                 {summary.active} active
@@ -2308,12 +2308,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               )}
             </p>
           )}
-          <div className="schedules-compact-actions">
+          <div className="surface-compact-actions">
             {/* Text filter for the crons tab. Gated on the UNfiltered presence
                 of rows so filtering to zero never hides the box (you can still
                 clear). */}
             {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && codexAutos.length > 0 ? (
-              <div className="schedules-compact-search">
+              <div className="surface-compact-search">
                 <SearchInput
                   value={query}
                   onValueChange={setQuery}
