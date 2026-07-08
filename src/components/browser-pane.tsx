@@ -802,25 +802,31 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           {/* Toolbar — absolute overlay that slides down when open. The page
               webview is hidden while it's open (see the bounds sync), so the
               DOM toolbar and the native overlay never fight for the same space. */}
+          {/* The summoned toolbar wears the shared .surface-compact chrome
+              (40px band, hairline, 26px controls) so the browser matches the
+              header family when its chrome IS visible — while staying
+              chromeless (full-viewport page) the rest of the time. It keeps
+              its opaque raised bg since it overlays the page. */}
           <header
           className={[
-            "browser-toolbar absolute inset-x-0 top-0 z-30 flex min-h-10 items-center gap-1",
-            "border-b border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1.5",
+            "browser-toolbar surface-compact-header absolute inset-x-0 top-0 z-30",
+            "bg-[var(--bg-raised)]",
             "transition-transform duration-150 ease-out",
             toolbarOpen ? "translate-y-0" : "pointer-events-none -translate-y-full",
           ].join(" ")}
           aria-hidden={!toolbarOpen}
           inert={!toolbarOpen || undefined}
         >
+          <h1 className="surface-compact-title">Browser</h1>
           {/* Back */}
           <button type="button" onClick={goBack} disabled={!canBack}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
             title="Back" aria-label="Back">
             <Icon name="ph:arrow-left-bold" width={13} />
           </button>
           {/* Forward */}
           <button type="button" onClick={goForward} disabled={!canForward}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
             title="Forward" aria-label="Forward">
             <Icon name="ph:arrow-right-bold" width={13} />
           </button>
@@ -830,7 +836,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               if (bridge) void bridge.invoke("browser_reload", { label: tabLabel(activeTabId) });
               else navigateTo(activeUrl);
             }}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title={loading ? "Stop" : "Reload"} aria-label={loading ? "Stop" : "Reload"}>
             {loading
               ? <Icon name="ph:x-bold" width={12} />
@@ -857,7 +863,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           </form>
           {/* Home */}
           <button type="button" onClick={() => navigateTo(HOME_URL)}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title="Home" aria-label="Home">
             <Icon name="ph:house-bold" width={13} />
           </button>
@@ -872,13 +878,13 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
                 window.open(activeUrl, "_blank", "noopener");
               }
             }}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title="Open in system browser" aria-label="Open in system browser">
             <Icon name="ph:arrow-square-out" width={13} />
           </button>
           {/* Close toolbar — restores the full-pane page */}
           <button type="button" onClick={() => setToolbarOpen(false)}
-            className="browser-toolbar-button browser-toolbar-close focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button browser-toolbar-close focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title="Close (Esc)" aria-label="Close address bar">
             <Icon name="ph:x-bold" width={12} />
           </button>
