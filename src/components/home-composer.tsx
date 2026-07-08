@@ -739,33 +739,9 @@ export function HomeComposer({
           />
         ) : null}
 
-        {/* Destination tabs — Chat vs Task is a mode choice, not an input
-            control, so it sits above the card as its own tab row instead of
-            crowding the composer footer. */}
-        <div
-          className="hc-dest-pills hc-dest-pills--above"
-          role="radiogroup"
-          aria-label="Send to"
-          ref={destGroupRef}
-          onKeyDown={handleDestKeyDown}
-        >
-          {DESTINATIONS.map((d) => (
-            <button
-              key={d.id}
-              type="button"
-              className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
-              role="radio"
-              aria-checked={destination === d.id}
-              tabIndex={destination === d.id ? 0 : -1}
-              onClick={() => setDestination(d.id)}
-              disabled={sending}
-            >
-              <Icon name={d.icon} width={14} aria-hidden />
-              <span className="hc-dest-label">{d.label}</span>
-            </button>
-          ))}
-        </div>
-
+        {/* Composer card — reference layout: the input leads; the mode pills,
+            attach, model chip, and mic all live INSIDE the card's control row,
+            with a darker attached footer band beneath for context pickers. */}
         <div
           className={`home-composer-card cave-composer-panel${dropActive ? " is-drop-active" : ""}`}
           {...dropHandlers}
@@ -863,9 +839,9 @@ export function HomeComposer({
           </div>
         ) : null}
 
-        {/* Controls — chat-composer footer: utility cluster (attach · voice ·
-            Options) plus the home-only agent picker on the left; enhance ·
-            send hug the right. (Chat/Task moved above the card.) */}
+        {/* Controls — reference layout: `+` attach and the Chat/Task pills sit
+            bottom-left inside the card; the model chip, voice, enhance, and
+            send hug the right. Context pickers move to the footer band. */}
         <div className="cave-composer-controls">
           <input
             ref={fileInputRef}
@@ -886,58 +862,33 @@ export function HomeComposer({
                 disabled={sending || attachments.length >= 10}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Icon name="ph:paperclip" width={14} aria-hidden />
+                <Icon name="ph:plus" width={15} aria-hidden />
               </button>
-              <button
-                type="button"
-                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                title="Voice input (coming soon)"
-                aria-label="Voice input"
-                disabled
+              <div
+                className="hc-dest-pills hc-dest-pills--inline"
+                role="radiogroup"
+                aria-label="Send to"
+                ref={destGroupRef}
+                onKeyDown={handleDestKeyDown}
               >
-                <Icon name="ph:microphone" width={15} aria-hidden />
-              </button>
-              <ComposerOptionsMenu
-                hostValue={runtimeHost ?? LOCAL_HOST_ID}
-                onHostPick={setRuntimeHost}
-                disabled={sending}
-                indicator={
-                  thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                  responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
-                }
-                sections={[
-                  {
-                    id: "runtime",
-                    label: "Runtime",
-                    value: selectedRuntime,
-                    options: runtimeSectionOptions,
-                    onChange: (id: string) => handleSelectRuntime(id),
-                  } satisfies ComposerOptionSection,
-                  ...(runtimeModelOptions.length > 0
-                    ? [{
-                        id: "model",
-                        label: "Model",
-                        value: selectedModelId,
-                        options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
-                        onChange: (id: string) => handleSelectModel(id),
-                      } satisfies ComposerOptionSection]
-                    : []),
-                  {
-                    id: "thinking",
-                    label: "Thinking",
-                    value: thinkingEffort,
-                    options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                    onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
-                  } satisfies ComposerOptionSection,
-                  {
-                    id: "speed",
-                    label: "Speed",
-                    value: responseSpeed,
-                    options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                    onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
-                  } satisfies ComposerOptionSection,
-                ]}
-              />
+                {DESTINATIONS.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                    role="radio"
+                    aria-checked={destination === d.id}
+                    tabIndex={destination === d.id ? 0 : -1}
+                    onClick={() => setDestination(d.id)}
+                    disabled={sending}
+                  >
+                    <Icon name={d.icon} width={14} aria-hidden />
+                    <span className="hc-dest-label">{d.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="cave-composer-submit-row">
               {/* Always-visible runtime mark + model, one click to switch —
                   parity with the chat composer's chip (cave-yq5l). */}
               <ComposerRuntimeChip
@@ -948,34 +899,15 @@ export function HomeComposer({
                 onPickModel={handleSelectModel}
                 disabled={sending}
               />
-
-              <HomeSelect
-                icon="ph:warning-circle"
-                value={selectedFamiliarId}
-                onChange={(value) => {
-                  if (value) onSetActiveFamiliar(value);
-                }}
-                groups={familiarSelectGroups}
-                ariaLabel="Choose chat agent"
-                disabled={visibleFamiliars.length === 0 || sending}
-                className="hc-access-chip"
-              />
-              {/* Project selector — picks which project the new chat runs in
-                  (mirrors the chat composer). Its own search popover, so it sits
-                  alongside the familiar select rather than inside the ⚙ menu. */}
-              <ProjectPicker
-                projects={projects}
-                value={selectedProjectId || null}
-                onChange={setSelectedProjectId}
-                allowNoProject
-                familiarId={selectedFamiliarId || null}
-                createProject={createProject}
-                disabled={sending}
-                ariaLabel="Choose project"
-                className="hc-project-selector"
-              />
-            </div>
-            <div className="cave-composer-submit-row">
+              <button
+                type="button"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                title="Voice input (coming soon)"
+                aria-label="Voice input"
+                disabled
+              >
+                <Icon name="ph:microphone" width={15} aria-hidden />
+              </button>
               <button
                 type="button"
                 className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
@@ -1002,6 +934,79 @@ export function HomeComposer({
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Footer band — the darker strip attached to the card's underside
+            (reference layout): where the message runs (project) and who runs
+            it (agent) on the left, run settings (Options) on the right. */}
+        <div className="hc-footer-band">
+          <div className="hc-footer-band-left">
+            {/* Project selector — picks which project the new chat runs in
+                (mirrors the chat composer). */}
+            <ProjectPicker
+              projects={projects}
+              value={selectedProjectId || null}
+              onChange={setSelectedProjectId}
+              allowNoProject
+              familiarId={selectedFamiliarId || null}
+              createProject={createProject}
+              disabled={sending}
+              ariaLabel="Choose project"
+              className="hc-project-selector"
+            />
+            <HomeSelect
+              icon="ph:warning-circle"
+              value={selectedFamiliarId}
+              onChange={(value) => {
+                if (value) onSetActiveFamiliar(value);
+              }}
+              groups={familiarSelectGroups}
+              ariaLabel="Choose chat agent"
+              disabled={visibleFamiliars.length === 0 || sending}
+              className="hc-access-chip"
+            />
+          </div>
+          <ComposerOptionsMenu
+            hostValue={runtimeHost ?? LOCAL_HOST_ID}
+            onHostPick={setRuntimeHost}
+            disabled={sending}
+            indicator={
+              thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+              responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
+            }
+            sections={[
+              {
+                id: "runtime",
+                label: "Runtime",
+                value: selectedRuntime,
+                options: runtimeSectionOptions,
+                onChange: (id: string) => handleSelectRuntime(id),
+              } satisfies ComposerOptionSection,
+              ...(runtimeModelOptions.length > 0
+                ? [{
+                    id: "model",
+                    label: "Model",
+                    value: selectedModelId,
+                    options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
+                    onChange: (id: string) => handleSelectModel(id),
+                  } satisfies ComposerOptionSection]
+                : []),
+              {
+                id: "thinking",
+                label: "Thinking",
+                value: thinkingEffort,
+                options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
+              } satisfies ComposerOptionSection,
+              {
+                id: "speed",
+                label: "Speed",
+                value: responseSpeed,
+                options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
+              } satisfies ComposerOptionSection,
+            ]}
+          />
         </div>
         </div>
       </div>

@@ -218,6 +218,40 @@
   border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
 }
 
+/* ── Footer band ────────────────────────────────────────────────────────────
+ * The darker strip attached to the card's underside (reference layout):
+ * context pickers (project · agent) on the left, run settings on the right.
+ * Last child of the card, so the panel's overflow clips it to the rounded
+ * bottom corners — it reads as part of the card, one tone deeper. */
+.hc-footer-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+}
+
+.hc-footer-band-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Phone width: the band's pickers wrap instead of crushing each other. */
+@container (max-width: 620px) {
+  .hc-footer-band {
+    flex-wrap: wrap;
+  }
+  .hc-footer-band-left {
+    flex-wrap: wrap;
+  }
+}
+
 /* ── Textarea ──────────────────────────────────────────────────────────────
  *   Sizing and chrome come from the shared .cave-composer-input class plus the
  *   same utility classes the chat composer uses; .hc-textarea stays as a
@@ -456,11 +490,11 @@
   border: 1px solid var(--border-hairline);
 }
 
-/* Above-card placement: the mode tabs lead the input, outside its chrome. */
-.hc-dest-pills--above {
+/* Inline placement (reference layout): the pills sit inside the card's
+ * control row next to the + attach button — compact, no outer margin. */
+.hc-dest-pills--inline {
   position: relative;
-  z-index: 1;
-  margin-bottom: 8px;
+  padding: 2px;
 }
 
 .hc-dest-pill {

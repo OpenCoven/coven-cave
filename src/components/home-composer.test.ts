@@ -412,20 +412,20 @@ assert.match(
 // ── Destination pills are an accessible single-select radiogroup ─────────────
 assert.match(
   source,
-  /className="hc-dest-pills hc-dest-pills--above"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
+  /className="hc-dest-pills hc-dest-pills--inline"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
   "Destination pills form a labelled radiogroup with keyboard navigation",
 );
-// The Chat/Task tabs live ABOVE the input card (mode choice, not an input
-// control) — they render before the card and never inside the footer rows.
+// Reference layout: the Chat/Task pills sit INSIDE the card's control row,
+// next to the + attach trigger — not above the card, not in the footer band.
 assert.match(
   source,
-  /hc-dest-pills hc-dest-pills--above[\s\S]*?className=\{`home-composer-card cave-composer-panel/,
-  "Destination tabs render above the composer card, outside the input area",
+  /cave-composer-utility-row[\s\S]*?aria-label="Attach images, videos, or files"[\s\S]*?hc-dest-pills hc-dest-pills--inline/,
+  "Destination pills render inside the utility row, after the attach trigger",
 );
 assert.doesNotMatch(
   source,
-  /cave-composer-utility-row[\s\S]*?hc-dest-pills/,
-  "The composer footer no longer hosts the destination pills",
+  /hc-dest-pills--above/,
+  "The above-card pill placement is retired",
 );
 assert.match(
   source,
@@ -454,8 +454,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?cave-composer-submit-row[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"/,
-  "The footer has attach/voice/Options + access chip left; enhance + send right",
+  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?<ComposerRuntimeChip[\s\S]*?ph:microphone[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?hc-access-chip[\s\S]*?<ComposerOptionsMenu/,
+  "Control row: + attach and Chat/Task pills left, model chip · voice · enhance · send right; the footer band beneath carries project + agent + Options",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────
@@ -545,8 +545,8 @@ assert.match(
 // ── Attachments ─────────────────────────────────────────────────────────────
 assert.match(
   source,
-  /aria-label="Attach images, videos, or files"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:paperclip/,
-  "the paperclip button opens the file picker (chat-composer parity)",
+  /aria-label="Attach images, videos, or files"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:plus/,
+  "the + button opens the file picker (reference layout)",
 );
 assert.match(
   source,
