@@ -389,22 +389,25 @@ export function MarketplaceViewSurface({
     // viewport, so the surface also adapts inside a narrow drag-to-split pane
     // on a wide screen (same pattern as chat's chatlist/composer containers).
     <section className="marketplace-view @container/marketplace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
-      {/* Slim header — one row: section tabs (live counts, subtitle as
-          tooltip) plus the scoped search. The shared Tabs primitive supplies
+      {/* Compact header — one slim topmost band (shared .surface-compact
+          chrome with Schedules and the GitHub surface): small title, size-sm
+          segment section tabs (live counts, subtitle as tooltip), scoped
+          search on the right. The shared Tabs primitive supplies
           role=tablist/tab, roving tabindex, and the marketplace-tab / panel
           aria wiring via idPrefix. */}
-      <header className="border-b border-[var(--border-hairline)] px-4 @min-[560px]/marketplace:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-x-4">
-          <div className="-mx-3 min-w-0 overflow-x-auto">
-            <Tabs
-              items={sectionTabs}
-              value={section}
-              onChange={selectSection}
-              ariaLabel="Marketplace sections"
-              idPrefix="marketplace"
-              bordered={false}
-            />
-          </div>
+      <header className="surface-compact-header">
+        <h1 className="surface-compact-title">Marketplace</h1>
+        <Tabs
+          items={sectionTabs}
+          value={section}
+          onChange={selectSection}
+          ariaLabel="Marketplace sections"
+          idPrefix="marketplace"
+          variant="segment"
+          size="sm"
+          className="surface-compact-tabs"
+        />
+        <div className="surface-compact-actions">
           {section !== "capabilities" ? (
             <SearchInput
               ref={searchRef}
@@ -412,17 +415,17 @@ export function MarketplaceViewSurface({
               onValueChange={setQuery}
               onClear={() => setQuery("")}
               placeholder={SEARCH_LABEL[section]}
-              containerClassName="my-1.5 w-full self-center @min-[680px]/marketplace:w-72"
+              containerClassName="surface-compact-search"
               aria-label={SEARCH_LABEL[section]}
             />
           ) : null}
         </div>
-        {activeError ? (
-          <p role="alert" className="mb-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
-            {activeError}
-          </p>
-        ) : null}
       </header>
+      {activeError ? (
+        <p role="alert" className="mx-4 mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          {activeError}
+        </p>
+      ) : null}
 
       {section === "browse" ? (
         <div
