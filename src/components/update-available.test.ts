@@ -51,6 +51,16 @@ assert.doesNotMatch(
   "native updater check failures must not be silently collapsed into the browser fallback path",
 );
 
+// Banner: long-running desktops re-check periodically — a mount-only check
+// would leave always-on instances permanently unaware of new releases.
+assert.match(src, /setInterval\(runCheck, RECHECK_INTERVAL_MS\)/, "banner re-checks for updates on an interval");
+assert.match(src, /clearInterval\(interval\)/, "banner re-check interval is torn down on unmount");
+assert.match(
+  src,
+  /if \(installing\) return;/,
+  "a periodic re-check must not clobber an in-flight install's progress banner",
+);
+
 // Banner: dismissible CTA, persisted per version.
 assert.match(src, /pushBanner\(/, "pushes a shell banner when an update is available");
 assert.match(src, /cave:update:dismissed:/, "persists dismissal keyed by version");

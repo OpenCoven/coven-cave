@@ -42,6 +42,8 @@ export const SUITES = {
     "src/lib/open-external.test.ts",
     "src/lib/coven-version.test.ts",
     "src/components/update-available.test.ts",
+    "src-tauri/permissions/desktop-permissions.test.mjs",
+    "src-tauri/release-runtime.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",

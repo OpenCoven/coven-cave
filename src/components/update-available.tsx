@@ -148,9 +148,15 @@ async function resolveUpdate(): Promise<Resolved> {
   return { kind: "current" };
 }
 
+// The cave is a long-running control-room app and releases ship several times
+// a week, so a mount-only check would leave open instances permanently unaware
+// of new versions. Re-check on this cadence (per-version dismissals still hold).
+const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 /**
- * Desktop-only. On mount, checks for an update and (if available and not
- * dismissed for that version) shows a dismissible shell banner. Renders nothing.
+ * Desktop-only. On mount and every RECHECK_INTERVAL_MS thereafter, checks for
+ * an update and (if available and not dismissed for that version) shows a
+ * dismissible shell banner. Renders nothing.
  */
 export function UpdateBannerTrigger() {
   const isDesktop = useIsTauriDesktop();
@@ -159,52 +165,65 @@ export function UpdateBannerTrigger() {
   useEffect(() => {
     if (!isDesktop) return;
     let cancelled = false;
-    void resolveUpdate().then((r) => {
-      if (cancelled || r.kind === "current") return;
-      if (isDismissed(r.version)) return;
+    // While an install is downloading, a periodic re-check must not clobber
+    // the progress banner (they share BANNER_ID) with a fresh "available" one.
+    let installing = false;
 
-      pushBanner({
-        id: BANNER_ID,
-        severity: r.kind === "native-unavailable" ? "warning" : "info",
-        title:
-          r.kind === "native-unavailable"
-            ? `Native updater unavailable — v${r.version}`
-            : `Update available — v${r.version}`,
-        cta: {
-          label: r.kind === "native" ? "Install & restart" : "Open installer in Browser",
-          onClick: () => {
-            if (r.kind === "native") {
-              pushBanner({ id: BANNER_ID, severity: "info", title: `Preparing update v${r.version}…` });
-              void installNativeUpdate(r.update, (pct) => {
-                pushBanner({
-                  id: BANNER_ID,
-                  severity: "info",
-                  title: `Downloading update v${r.version}… ${pct}%`,
+    const runCheck = () => {
+      if (installing) return;
+      void resolveUpdate().then((r) => {
+        if (cancelled || installing || r.kind === "current") return;
+        if (isDismissed(r.version)) return;
+
+        pushBanner({
+          id: BANNER_ID,
+          severity: r.kind === "native-unavailable" ? "warning" : "info",
+          title:
+            r.kind === "native-unavailable"
+              ? `Native updater unavailable — v${r.version}`
+              : `Update available — v${r.version}`,
+          cta: {
+            label: r.kind === "native" ? "Install & restart" : "Open installer in Browser",
+            onClick: () => {
+              if (r.kind === "native") {
+                installing = true;
+                pushBanner({ id: BANNER_ID, severity: "info", title: `Preparing update v${r.version}…` });
+                void installNativeUpdate(r.update, (pct) => {
+                  pushBanner({
+                    id: BANNER_ID,
+                    severity: "info",
+                    title: `Downloading update v${r.version}… ${pct}%`,
+                  });
+                }).catch((err) => {
+                  installing = false;
+                  const reason = err instanceof Error ? err.message : "";
+                  pushBanner({
+                    id: BANNER_ID,
+                    severity: "warning",
+                    title: reason
+                      ? `Update failed (${reason})`
+                      : "Update failed",
+                    cta: { label: "Open release page in Browser", onClick: openReleasePageInBrowser },
+                    onDismiss: () => markDismissed(r.version),
+                  });
                 });
-              }).catch((err) => {
-                const reason = err instanceof Error ? err.message : "";
-                pushBanner({
-                  id: BANNER_ID,
-                  severity: "warning",
-                  title: reason
-                    ? `Update failed (${reason})`
-                    : "Update failed",
-                  cta: { label: "Open release page in Browser", onClick: openReleasePageInBrowser },
-                  onDismiss: () => markDismissed(r.version),
-                });
-              });
-            } else if (r.kind === "native-unavailable") {
-              openReleasePageInBrowser();
-            } else {
-              openInAppBrowserUrl(r.url);
-            }
+              } else if (r.kind === "native-unavailable") {
+                openReleasePageInBrowser();
+              } else {
+                openInAppBrowserUrl(r.url);
+              }
+            },
           },
-        },
-        onDismiss: () => markDismissed(r.version),
+          onDismiss: () => markDismissed(r.version),
+        });
       });
-    });
+    };
+
+    runCheck();
+    const interval = window.setInterval(runCheck, RECHECK_INTERVAL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
       dismissBanner(BANNER_ID);
     };
   }, [isDesktop, pushBanner, dismissBanner]);

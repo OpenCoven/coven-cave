@@ -12,6 +12,9 @@ const loopbackMainEventsCapability = JSON.parse(
 const loopbackWindowDragCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-window-drag.json", import.meta.url), "utf8"),
 );
+const loopbackUpdaterCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-updater.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
@@ -21,6 +24,7 @@ const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx"
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
 const trayQuickChat = readFileSync(new URL("../../src/components/tray-quick-chat.tsx", import.meta.url), "utf8");
+const updateAvailable = readFileSync(new URL("../../src/components/update-available.tsx", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -56,9 +60,27 @@ const requiredCommands = [
   "shell_open",
 ];
 
+// Node 22 (CI's runtime) has no global URLPattern, so match capability
+// remote URL patterns component-wise the way Tauri's urlpattern crate does
+// for the simple `scheme://host:port/path` + `*` shapes this repo uses.
+// Backslash escapes in patterns (e.g. the IPv6 colons in
+// "http://[\:\:1]:*/*") are URLPattern literal escapes — strip them first.
+function originMatchesPattern(pattern, origin) {
+  const literal = pattern.replace(/\\(.)/g, "$1");
+  const parts = /^([a-z][a-z0-9+.-]*|\*):\/\/(\[[^\]]*\]|[^:/]*)(?::([^/]*))?(\/.*)?$/i.exec(literal);
+  assert.ok(parts, `unsupported capability URL pattern shape: ${pattern}`);
+  const [, scheme, host, port, path] = parts;
+  const url = new URL(origin);
+  const schemeOk = scheme === "*" || url.protocol === `${scheme.toLowerCase()}:`;
+  const hostOk = host === "*" || url.hostname.toLowerCase() === host.toLowerCase();
+  const portOk = port === "*" || (port ?? "") === url.port;
+  const pathOk = path === undefined || path === "/*" || url.pathname === path;
+  return schemeOk && hostOk && portOk && pathOk;
+}
+
 function capabilityAllowsOrigin(capability, origin) {
   const patterns = capability.remote?.urls ?? [];
-  return patterns.some((pattern) => new URLPattern(pattern).test(origin));
+  return patterns.some((pattern) => originMatchesPattern(pattern, origin));
 }
 
 function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
@@ -295,6 +317,72 @@ test("loopback app webviews can drive native window drag for the seamless titleb
   assert.ok(
     trayQuickChat.includes('<header className="quick-chat-overlay__header" data-tauri-drag-region="deep">'),
     "the quick-chat tray header must be a deep Tauri drag region so the decoration-less window can be moved",
+  );
+});
+
+// Like window drag above, the in-app updater runs from the loopback main
+// webview — a REMOTE execution context where the local-only default.json
+// grants (updater:default / process:default) never apply. Without this
+// remote-scoped capability every plugin-updater check() throws an ACL denial
+// and update-available.tsx falls back to "Open installer in Browser", which
+// defeats the whole in-app update experience. Scoped to webviews:["main"]
+// (not windows) so in-app browser child webviews that a user navigates to a
+// localhost page can never invoke install/relaunch IPC.
+test("the trusted main loopback webview can run the native in-app updater", () => {
+  assert.deepEqual(
+    loopbackUpdaterCapability.webviews,
+    ["main"],
+    "updater/relaunch IPC must be limited to the trusted main webview — never in-app browser child webviews on loopback origins",
+  );
+  assert.equal(
+    loopbackUpdaterCapability.windows,
+    undefined,
+    "scope by webview label, not window label — browser child webviews live inside the main window",
+  );
+  assert.deepEqual(
+    loopbackUpdaterCapability.platforms,
+    ["linux", "macOS", "windows"],
+    "updater permissions are desktop-only and must not leak into mobile Tauri builds",
+  );
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+    "http://127.0.0.1:64203/",
+    "http://localhost:64203/",
+    "http://[::1]:64203/",
+  ]) {
+    assert.ok(
+      capabilityAllowsOrigin(loopbackUpdaterCapability, origin),
+      `loopback origin ${origin} must be allowed to run the native updater`,
+    );
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackUpdaterCapability, "http://example.com:64203/"),
+    false,
+    "remote non-loopback origins should stay denied",
+  );
+  assert.deepEqual(
+    loopbackUpdaterCapability.permissions,
+    ["updater:default", "process:allow-restart", "os:allow-platform", "os:allow-arch"],
+    "grant exactly check/download/install (updater:default), relaunch, and the platform/arch reads used to pick installer fallbacks — nothing else (no process:allow-exit)",
+  );
+
+  // The web side must actually drive the native path: check() from
+  // plugin-updater, downloadAndInstall on the returned update, and relaunch()
+  // from plugin-process. If a refactor drops any of these the capability
+  // grant is dead weight and users silently regress to browser downloads.
+  assert.ok(
+    updateAvailable.includes('await import("@tauri-apps/plugin-updater")'),
+    "update-available.tsx must check for updates through the native plugin-updater",
+  );
+  assert.ok(
+    updateAvailable.includes("downloadAndInstall"),
+    "update-available.tsx must install through the native updater download",
+  );
+  assert.ok(
+    updateAvailable.includes('await import("@tauri-apps/plugin-process")'),
+    "update-available.tsx must relaunch through plugin-process after installing",
   );
 });
 
