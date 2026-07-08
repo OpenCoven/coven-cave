@@ -11,6 +11,7 @@ import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
 // Hidden for now — the OpenCoven submissions panel (add a new harness/runtime)
@@ -230,41 +231,51 @@ export function CapabilitiesViewSurface({
   // stale map + stale "Scanned N ago". Abort the prior load on each new one, drop
   // a superseded/aborted response before any setState, and abort on unmount.
   const loadCtlRef = useRef<AbortController | null>(null);
+  const { announce } = useAnnouncer();
   const load = useCallback(async (refresh = false) => {
     loadCtlRef.current?.abort();
     const ctl = new AbortController();
     loadCtlRef.current = ctl;
     setRefreshing(refresh);
     if (!refresh) setLoaded(false);
+    // Only user-triggered refreshes announce — the mount load would be noise.
+    if (refresh) announce("Refreshing capabilities…");
     try {
       const url = refresh ? "/api/capabilities?refresh=1" : "/api/capabilities";
       const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as CapabilitiesResponse;
       if (ctl.signal.aborted) return;
       if (!json.ok) {
-        setError(json.error ?? "Couldn't reach the Coven daemon.");
+        const msg = json.error ?? "Couldn't reach the Coven daemon.";
+        setError(msg);
         setItems([]);
         setCovenSkills([]);
         setScannedAt(null);
+        if (refresh) announce(`Capabilities refresh failed: ${msg}`, "assertive");
       } else {
         setError(null);
-        setItems(json.harness_capabilities ?? []);
-        setCovenSkills(json.coven_skills ?? []);
+        const harness = json.harness_capabilities ?? [];
+        const skills = json.coven_skills ?? [];
+        setItems(harness);
+        setCovenSkills(skills);
         setScannedAt(json.scanned_at ?? null);
+        if (refresh) announce(`Capabilities refreshed — ${harness.length + skills.length} items.`);
       }
     } catch (err) {
       if (ctl.signal.aborted) return; // superseded by a newer load — ignore
-      setError(err instanceof Error ? err.message : "fetch failed");
+      const msg = err instanceof Error ? err.message : "fetch failed";
+      setError(msg);
       setItems([]);
       setCovenSkills([]);
       setScannedAt(null);
+      if (refresh) announce(`Capabilities refresh failed: ${msg}`, "assertive");
     } finally {
       if (!ctl.signal.aborted) {
         setLoaded(true);
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [announce]);
 
   useEffect(() => {
     void load(false);
@@ -409,11 +420,13 @@ export function CapabilitiesViewSurface({
     try {
       await copyText(value);
       setCopiedKey(key);
+      announce(`Copied ${key}.`);
       window.setTimeout(() => setCopiedKey(null), 1200);
     } catch {
       setCopiedKey(null);
+      announce("Copy failed.", "assertive");
     }
-  }, []);
+  }, [announce]);
 
   const openLocalPath = useCallback(async (path?: string) => {
     if (!path || !path.startsWith("/")) return;

@@ -196,4 +196,13 @@ assert.match(source, /Show more|Show less/, "clamp exposes a Show more/Show less
 assert.match(source, /<InspectorMetaItem label="Detail" value=\{item\.description\}/, "the Detail metadata field is collapsed into the inline meta row");
 assert.match(source, /<InspectorMetaItem label="Warning" value=\{item\.warningMessage\} tone="warning"/, "Warning metadata stays collapsed but keeps warning tone");
 
+// ── Announcements (cave-vmj8) ────────────────────────────────────────────────
+// Refresh and copy were visual-only — spinner, "Scanned N ago", and the
+// copied-check flash said nothing to screen readers.
+assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "the surface uses the shared announcer");
+assert.match(source, /if \(refresh\) announce\("Refreshing capabilities…"\)/, "user-triggered refresh announces start (mount load stays quiet)");
+assert.match(source, /announce\(`Capabilities refreshed — \$\{harness\.length \+ skills\.length\} items\.`\)/, "refresh success announces the item count");
+assert.match(source, /announce\(`Capabilities refresh failed: \$\{msg\}`, "assertive"\)/, "refresh failures announce assertively");
+assert.match(source, /announce\(`Copied \$\{key\}\.`\)/, "copy success is announced");
+
 console.log("capabilities-view-polish.test.ts OK");
