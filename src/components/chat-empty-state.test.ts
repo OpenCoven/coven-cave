@@ -131,6 +131,42 @@ test("chat-first landing: time greeting eyebrow, calm first paint, disclosed con
   assert.match(styles, /\.cave-chat-empty-context-toggle \{[\s\S]*?border-radius: 999px/, "context toggle reads as a pill control");
 });
 
+test("starter pills resume unassigned + own board work, marked as tasks (cave-qvwu)", () => {
+  // The pill card set is wider than the rail (unassigned cards are fair game —
+  // clicking routes the work to THIS familiar) but never another familiar's.
+  assert.match(
+    emptyState,
+    /\.filter\(\(card\) => !card\.familiarId \|\| card\.familiarId === familiar\.id\)/,
+    "resumable pills include unassigned cards but exclude other familiars' work",
+  );
+  assert.match(
+    emptyState,
+    /cardMatchesProject\(card, \{/,
+    "resumable pills reuse the shared project-scope filter (chat-open-tasks)",
+  );
+  assert.match(
+    emptyState,
+    /taskCards: resumableCards,/,
+    "the pill card set feeds deriveStarterSuggestions as taskCards",
+  );
+  // Task pills are visually distinct: leading kanban glyph + tinted variant.
+  assert.match(
+    emptyState,
+    /\{isTask && <Icon name="ph:kanban"/,
+    "task pills carry a leading kanban glyph",
+  );
+  assert.match(
+    emptyState,
+    /cave-chat-empty-prompt--task/,
+    "task pills opt into the tinted variant class",
+  );
+  assert.match(
+    styles,
+    /\.cave-chat-empty-prompt--task \{[\s\S]*?var\(--accent-presence\)/,
+    "the task-pill tint stays on the presence accent token",
+  );
+});
+
 test("task-aware styles use semantic tokens and respect reduced motion", () => {
   assert.match(
     styles,

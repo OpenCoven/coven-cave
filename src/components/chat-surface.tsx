@@ -67,6 +67,7 @@ type Props = {
   daemonRunning: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
+  familiarsLoaded?: boolean;
   inboxItems: InboxItem[];
   inspectorOpen: boolean;
   rightPanel?: RightPanelKind | null;
@@ -192,6 +193,7 @@ export function ChatSurface({
   daemonRunning,
   routerRef,
   sessionsLoaded,
+  familiarsLoaded,
   inboxItems,
   inspectorOpen,
   rightPanel: rightPanelProp,
@@ -706,6 +708,7 @@ export function ChatSurface({
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
+                  familiarsLoaded={familiarsLoaded}
                   compact={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}

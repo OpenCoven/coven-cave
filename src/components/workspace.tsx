@@ -270,6 +270,10 @@ export function Workspace() {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
+  // false until the first /api/familiars fetch settles (success or error) —
+  // lets the chat boot view hold a quiet frame instead of flashing the
+  // "choose a familiar" empty-state copy while the roster is in flight.
+  const [familiarsLoaded, setFamiliarsLoaded] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
@@ -692,6 +696,8 @@ export function Workspace() {
     } catch (err) {
       setFamiliars([]);
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
+    } finally {
+      setFamiliarsLoaded(true);
     }
   }, []);
 
@@ -2095,6 +2101,7 @@ export function Workspace() {
         routerRef={routerRef}
         hideThreadRail
         sessionsLoaded={sessionsLoaded}
+        familiarsLoaded={familiarsLoaded}
         inboxItems={inboxItemsWithEphemeral}
         inspectorOpen={inspectorOpen}
         rightPanel={rightPanel}

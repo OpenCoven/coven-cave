@@ -23,7 +23,7 @@ import { Icon } from "@/lib/icon";
 import { ProjectPicker } from "@/components/project-picker";
 import { FamiliarIcon } from "@/components/familiar-icon";
 import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib/chat-projects";
-import { deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
+import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
 import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
@@ -166,9 +166,25 @@ export function ChatEmptyState({
     excludeSessionId: sessionId,
     cap: CONTINUE_CAP,
   });
+  // Resumable pills take a wider net than the rail: unassigned cards are fair
+  // game (clicking a pill routes the work to THIS familiar), but another
+  // familiar's cards are not — that would misroute their work.
+  const resumableCards = cards
+    .filter((card) => cardMatchesProject(card, {
+      projectId: project?.id ?? null,
+      projectRoot: project?.root ?? null,
+    }))
+    .filter((card) => !card.familiarId || card.familiarId === familiar.id)
+    .map((card) => ({
+      id: card.id,
+      title: card.title,
+      status: card.status,
+      updatedAt: card.updatedAt,
+    }));
   const suggestions = deriveStarterSuggestions({
     cards: openCards,
     sessions: filterVisibleChatSessions(sessions, familiar.id),
+    taskCards: resumableCards,
     projectName: project?.name ?? null,
     nowMs,
   });
@@ -276,17 +292,21 @@ export function ChatEmptyState({
 
         {((onPrompt && suggestions.length > 0) || onOpenPromptSnippets) && (
           <div className="cave-chat-empty-prompts" aria-label="Starter prompts">
-            {onPrompt && suggestions.map((suggestion) => (
-              <button
-                key={suggestion.id}
-                type="button"
-                onClick={() => onPrompt(suggestion.text)}
-                className="cave-chat-empty-prompt"
-              >
-                <span>{suggestion.label}</span>
-                <Icon name="ph:arrow-right-bold" width={13} aria-hidden />
-              </button>
-            ))}
+            {onPrompt && suggestions.map((suggestion) => {
+              const isTask = suggestion.id.startsWith("task:");
+              return (
+                <button
+                  key={suggestion.id}
+                  type="button"
+                  onClick={() => onPrompt(suggestion.text)}
+                  className={`cave-chat-empty-prompt${isTask ? " cave-chat-empty-prompt--task" : ""}`}
+                >
+                  {isTask && <Icon name="ph:kanban" width={13} aria-hidden />}
+                  <span>{suggestion.label}</span>
+                  <Icon name="ph:arrow-right-bold" width={13} aria-hidden />
+                </button>
+              );
+            })}
             {onOpenPromptSnippets && (
               <button
                 type="button"
@@ -462,7 +482,7 @@ export function ChatEmptyState({
         ) : null}
 
         <p className="cave-chat-empty-hint">
-          Ready for the next thread.
+          Ready for the next thread — / for commands, @ for files.
         </p>
       </div>
     </div>

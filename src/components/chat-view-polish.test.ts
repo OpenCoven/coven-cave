@@ -392,6 +392,19 @@ assert.match(
   /ph:microphone/,
   "desktop composer has a mic/voice button",
 );
+// Voice can only attach to a live session, so pre-session the button is
+// hidden rather than disabled-forever (design language: hide, don't disable —
+// the zero-turn landing must not show a dead affordance).
+assert.match(
+  source,
+  /\{sessionId \? \([\s\S]{0,400}aria-label="Voice"/,
+  "the voice button is conditionally rendered on sessionId (hidden pre-session)",
+);
+assert.doesNotMatch(
+  source,
+  /aria-label="Voice"[\s\S]{0,200}disabled=\{!sessionId\}/,
+  "the voice button must not be a permanently disabled affordance on the zero-turn landing",
+);
 
 assert.match(
   source,
@@ -579,8 +592,16 @@ assert.doesNotMatch(
 );
 assert.match(
   emptyStateSource,
-  /Ready for the next thread\./,
+  /Ready for the next thread — \/ for commands, @ for files\./,
   "Empty-state hint uses the redesigned launch-screen ready copy",
+);
+// Discoverability, dosed: one terse fragment for the composer's hidden powers.
+// ⌘K already lives in the hub footer and "↵ to send" in the placeholder —
+// repeating either here would exceed the dose.
+assert.match(
+  emptyStateSource,
+  /\/ for commands/,
+  "Empty-state hint surfaces the slash-command entry point (skills, prompts, /model)",
 );
 
 assert.match(

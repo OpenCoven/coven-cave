@@ -50,11 +50,16 @@ assert.match(
 
 // ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
 const bootComposeEffect =
-  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[sessionsLoaded, familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
+  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
 assert.match(
   bootComposeEffect,
   /if \(bootComposeRef\.current\) return;/,
   "the boot-compose effect fires once, so returning to the list later sticks",
+);
+assert.doesNotMatch(
+  bootComposeEffect,
+  /sessionsLoaded/,
+  "boot must not wait for the sessions fetch (cave-qvwu) — /api/sessions/list can take many seconds cold, and gating compose on it left users staring at the list skeletons; the compose landing needs only a familiar",
 );
 assert.match(
   bootComposeEffect,

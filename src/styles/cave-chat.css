@@ -1301,6 +1301,28 @@
   transform: translateX(2px);
 }
 
+/* Task-resume pills: existing board work is *present*, so the pill carries a
+ * quiet accent tint (standard recipe: low-% fill, mid-% border) and a leading
+ * kanban glyph. The label takes the slack so icon/label/arrow read as one
+ * left-aligned row instead of space-between drift. */
+.cave-chat-empty-prompt--task {
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+}
+
+.cave-chat-empty-prompt--task span {
+  flex: 1;
+}
+
+.cave-chat-empty-prompt--task > svg:first-child {
+  color: var(--accent-presence);
+}
+
+/* Only the trailing arrow leans on hover — the kanban marker stays put. */
+.cave-chat-empty-prompt--task:hover > svg:first-child {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cave-chat-empty-prompt,
   .cave-chat-empty-prompt svg {

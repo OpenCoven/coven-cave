@@ -43,6 +43,7 @@ type Props = {
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
   sessionsLoaded?: boolean;
+  familiarsLoaded?: boolean;
   onSlashFromChat?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   pendingProjectRoot?: string | null;
@@ -93,6 +94,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSessionStarted,
     onSessionsChanged,
     sessionsLoaded,
+    familiarsLoaded,
     onSlashFromChat,
     onOpenOnboarding,
     pendingProjectRoot,
@@ -276,10 +278,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   // `#chat-<id>` deep link (workspace.tsx restores that session itself). No server
   // session is created: the compose view holds sessionId=null until the first
   // send. Returning to the list later sticks — the ref guards against re-entry.
+  // Deliberately independent of the sessions fetch (cave-qvwu): a zero-session
+  // compose view needs only a familiar, and /api/sessions/list can take many
+  // seconds cold — waiting on it left users staring at the list skeletons. The
+  // `#chat-` latch below is synchronous, so deep links are unaffected.
   const bootComposeRef = useRef(false);
   useEffect(() => {
     if (bootComposeRef.current) return;
-    if (sessionsLoaded === false) return;
     if (typeof window !== "undefined") {
       if (window.location.hash.startsWith("#chat-")) {
         bootComposeRef.current = true; // a deep link owns the boot view
@@ -300,7 +305,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     setView((prev) =>
       prev.kind === "list" ? { kind: "chat", sessionId: null, familiarId: bootFamiliarId } : prev,
     );
-  }, [sessionsLoaded, familiar?.id, fallbackFamiliar?.id]);
+  }, [familiar?.id, fallbackFamiliar?.id]);
 
   useImperativeHandle(
     ref,
@@ -334,6 +339,18 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   );
 
   if (familiars.length === 0 && !familiar) {
+    // While the roster fetch is still in flight, hold a quiet frame — the
+    // "choose a familiar" copy below is wrong for a loading beat, and
+    // skeletons would just be another wall. Loaded-and-empty falls through.
+    if (familiarsLoaded === false) {
+      return (
+        <section
+          className="h-full bg-[var(--bg-base)]"
+          role="status"
+          aria-label="Loading familiars"
+        />
+      );
+    }
     // Empty-state copy is mode-aware: on phones the nav/sidebar/agent panels
     // are drawers behind a toggle, so "from the sidebar selector" / "left
     // panel" reads as broken. Point users at the drawer or the setup CTA

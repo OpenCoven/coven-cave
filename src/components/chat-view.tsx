@@ -5462,16 +5462,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   >
                     <Icon name="ph:paperclip" width={14} aria-hidden />
                   </button>
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                    title="Voice"
-                    aria-label="Voice"
-                    disabled={!sessionId}
-                    onClick={() => setVoiceCallOpen(true)}
-                  >
-                    <Icon name="ph:microphone" width={15} aria-hidden />
-                  </button>
+                  {/* Voice needs a live session (the overlay attaches to it), so
+                      pre-session the button is hidden, not disabled-forever —
+                      it appears once the first send creates the session. */}
+                  {sessionId ? (
+                    <button
+                      type="button"
+                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                      title="Voice"
+                      aria-label="Voice"
+                      onClick={() => setVoiceCallOpen(true)}
+                    >
+                      <Icon name="ph:microphone" width={15} aria-hidden />
+                    </button>
+                  ) : null}
                   <ComposerOptionsMenu
                     hostValue={composerHostValue}
                     onHostPick={setRuntimeHost}
