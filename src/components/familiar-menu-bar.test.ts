@@ -47,33 +47,26 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Left group — chat. The bar embeds FamiliarQuickSwitch: a strip of recent +
-// pinned familiar avatars for one-tap switching, plus the full switcher menu.
-assert.match(
+// Familiar selection moved OUT of the bar entirely — its one home is the chat
+// sidebar's header switcher (dropdown-only). The bar keeps search + task and
+// schedule chrome and must not hand-roll any familiar markup.
+assert.doesNotMatch(
   source,
-  /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
-  "embeds the quick-switch strip + switcher for scope/full list",
+  /FamiliarQuickSwitch|FamiliarSwitcher|menu-bar__group--chat/,
+  "the menu bar no longer hosts familiar selection (it lives in the chat sidebar header)",
 );
-// The top bar surfaces EVERY familiar, not just the default 6 most-recent.
-assert.match(
-  source,
-  /<FamiliarQuickSwitch[\s\S]*max=\{familiars\.length\}/,
-  "passes max={familiars.length} so the strip shows all familiars",
-);
-// The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
-// here — the menu bar must not hand-roll its own bubble/presence markup.
 assert.doesNotMatch(
   source,
   /menu-bar__familiars|menu-bar__familiar|MAX_QUICK_CHAT|quickChat/,
-  "menu bar delegates bubbles to FamiliarQuickSwitch rather than its own markup",
+  "menu bar must not hand-roll familiar bubble/presence markup",
 );
 assert.doesNotMatch(
   source,
   /computePresence\(|<FamiliarAvatar/,
-  "presence/avatar computation lives in FamiliarQuickSwitch, not the menu bar",
+  "presence/avatar computation does not live in the menu bar",
 );
 // The New chat control now lives at the top of the left sidebar
-// (SidebarMinimal), not the desktop menu bar — the bar keeps only the switcher.
+// (SidebarMinimal), not the desktop menu bar.
 assert.doesNotMatch(
   source,
   /menu-bar__new|menu-bar__compose|NewChatMenu/,
@@ -84,15 +77,10 @@ assert.doesNotMatch(
   /onChatWithFamiliar|onComposeChat/,
   "the menu bar no longer owns the chat-start handlers",
 );
-assert.match(
+assert.equal(
   menuBarSwitcherRule,
-  /width:\s*28px;/,
-  "desktop menu-bar familiar selector should stay a square avatar button, not collapse to content width",
-);
-assert.doesNotMatch(
-  menuBarSwitcherRule,
-  /width:\s*auto;/,
-  "desktop menu-bar familiar selector must not use content-width sizing after the label/caret were removed",
+  "",
+  "the menu-bar-scoped familiar switcher CSS is retired with the control",
 );
 
 // Right group — tasks. A Tasks button (board) and a Schedules button, each
@@ -133,8 +121,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge menu-bar__badge--alert">/,
-  "the Schedules badge shows the needs-you count and hides at zero",
+  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
+  "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the

@@ -11,7 +11,7 @@ const GROUPS = {
   theme: ["Mode", "Theme", "Import from tweakcn"],
   colors: ["Theme tokens"],
   text: ["Reading text"],
-  interface: ["Familiar switcher", "Corners"],
+  interface: ["Corners"],
 };
 
 test("returns null when there is no scroll target", () => {
@@ -47,9 +47,11 @@ test("Settings no longer hides Appearance or Add-ons groups behind tabs", () => 
 });
 
 test("every tab-map group label still has a matching SettingsGroup in the shell", () => {
+  // "Familiar switcher" is retired — familiar selection is dropdown-only and
+  // lives in the chat sidebar header, so it has no Settings group anymore.
   const labels = [
     "Mode", "Theme", "Theme tokens", "Import from tweakcn",
-    "Familiar switcher", "Corners",
+    "Corners",
   ];
   for (const label of labels) {
     assert.match(shell, new RegExp(`<SettingsGroup label="${label}"`), `${label} group still rendered`);

@@ -770,40 +770,45 @@ tr[role="checkbox"]:focus-visible {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.cnav__title {
-  font-size: 14px;
-  font-weight: 640;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-  color: var(--text-primary);
+/* Familiar switcher IS the header — the labeled dropdown trigger stretches
+   across the row so the panel leads with whose chats these are. */
+.cnav__switcher {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
 }
-.cnav__eyebrow {
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+.cnav__switcher .familiar-quickswitch,
+.cnav__switcher .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+.cnav__switcher .familiar-switcher__trigger--labeled {
+  height: 32px;
+  justify-content: flex-start;
 }
 
-/* Primary "New chat" + secondary quick actions */
+/* One-row quick actions: New chat takes the slack; Scheduled/Plugins ride
+   along as icon chips. */
 .cnav__quick {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 5px;
   padding: 4px var(--cnav-pad) 8px;
 }
 .cnav__new {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 10px;
   border: 1px solid color-mix(in oklch, var(--accent) 32%, var(--border-hairline));
   background: color-mix(in oklch, var(--accent) 12%, transparent);
   color: var(--text-primary);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 560;
   text-align: left;
   transition: background var(--duration-fast) var(--ease-standard),
@@ -820,6 +825,9 @@ tr[role="checkbox"]:focus-visible {
 .cnav__new-label {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cnav__kbd {
   flex-shrink: 0;
@@ -831,21 +839,19 @@ tr[role="checkbox"]:focus-visible {
   border: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
-.cnav__mini-row {
-  display: flex;
-  gap: 4px;
-}
 .cnav__mini {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: 0 1 auto;
-  min-width: 0;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 8px;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 34px;
+  min-width: 30px;
+  padding: 0 4px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hairline);
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 11px;
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
@@ -857,25 +863,23 @@ tr[role="checkbox"]:focus-visible {
   flex-shrink: 0;
   color: var(--text-muted);
 }
-.cnav__mini-label {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* Count rides the chip's corner (overlay, not inline) so the icon chips stay
+   narrow enough for the one-row layout at the sidebar's minimum width. */
 .cnav__mini-count {
-  flex-shrink: 0;
-  min-width: 18px;
-  height: 16px;
-  padding: 0 5px;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 8%, transparent);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
+  border: 1px solid var(--bg-raised);
+  background: color-mix(in oklch, var(--foreground) 12%, var(--bg-raised));
+  font-size: 9px;
+  font-weight: 650;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -4962,6 +4966,15 @@ button:active > .edge-rail-chip {
   transform: scale(0.94);
 }
 
+/* History Back/Forward — quiet chevrons right of the nav toggle (Codex-style).
+   They reuse the shell-top-toggle chrome; the tight gap groups them as a pair. */
+.shell-top-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
 /* Open state: accent-tinted to match the panel it controls. */
 .shell-top-toggle--active {
   color: var(--accent-presence);
@@ -5159,8 +5172,11 @@ button:active > .edge-rail-chip {
    `topBar` slot above `.shell-body`. */
 .menu-bar {
   display: none;
+  /* Search is absolutely centered in the bar (Codex-style); the task chrome
+     anchors the right edge. position: relative hosts the centered search. */
+  position: relative;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   min-width: 0;
   width: 100%;
@@ -5188,28 +5204,24 @@ button:active > .edge-rail-chip {
   min-width: 0;
 }
 
-.menu-bar__group--chat {
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
 .menu-bar__group--tasks {
   flex: 0 0 auto;
 }
 
 .menu-bar__search {
-  flex: 1 1 420px;
-  min-width: 220px;
-  max-width: 620px;
+  /* Centered in the title bar (Codex-style), with the pill border always
+     visible so search reads as a landmark rather than a ghost. */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 42vw);
   display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  /* Ghost at rest — the pill materializes on hover/focus so the title bar
-     stays a quiet strip (ultra-minimal reference look). */
-  border: 1px solid transparent;
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  background: transparent;
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
   color: var(--text-muted);
   transition: border-color var(--duration-fast) var(--ease-standard),
     background var(--duration-fast) var(--ease-standard),
@@ -5218,8 +5230,8 @@ button:active > .edge-rail-chip {
 
 .menu-bar__search:hover,
 .menu-bar__search:focus-within {
-  border-color: var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  border-color: var(--border-strong);
+  background: var(--bg-raised);
   color: var(--text-secondary);
 }
 
@@ -5273,50 +5285,6 @@ button:active > .edge-rail-chip {
 .menu-bar__search:focus-within kbd {
   border-color: var(--border-hairline);
   background: var(--bg-raised);
-}
-
-/* The menu bar uses the compact selector by default; the labeled variant
-   expands just enough to show the familiar name. */
-.menu-bar__group--chat .familiar-switcher__trigger {
-  flex: 0 0 auto;
-  width: 28px;
-  max-width: 200px;
-  /* Seamless bar: the switcher joins the quiet chrome — pill materializes on
-     hover/focus like the search and task chips. */
-  border-color: transparent;
-  background: transparent;
-}
-
-.menu-bar__group--chat .familiar-switcher__trigger:hover,
-.menu-bar__group--chat .familiar-switcher__trigger:focus-visible {
-  border-color: var(--border-hairline);
-  background: var(--bg-raised);
-}
-
-.menu-bar__group--chat .familiar-switcher__trigger--labeled {
-  width: auto;
-  min-width: 0;
-  max-width: 180px;
-}
-
-/* Desktop top bar: the strip surfaces every familiar. Let it grow with the
-   available width (responsive cap) so they're visible rather than hidden behind
-   a 6-avatar limit; the search keeps its min-width and the strip scrolls
-   horizontally only when the familiars genuinely overflow the cap. */
-.menu-bar__group--chat .familiar-quickswitch {
-  min-width: 0;
-}
-
-.menu-bar__group--chat .familiar-quickswitch__strip {
-  max-width: clamp(280px, 40vw, 600px);
-}
-
-/* Avatar tiles match the height of the top-bar action buttons / search box
-   (~28px) so the strip lines up with the rest of the bar. Scoped to the
-   desktop menu bar so the mobile `.top-bar` strip is unaffected. */
-.menu-bar .familiar-quickswitch__btn {
-  width: 28px;
-  height: 28px;
 }
 
 .menu-bar__new,
@@ -5391,11 +5359,6 @@ button:active > .edge-rail-chip {
   /* Solid accent so the paired foreground keeps its contrast. A 60%-alpha fill
      composited over the dark app background dropped the count to ~1:1 (WCAG). */
   background: var(--accent-presence);
-}
-
-.menu-bar__badge--alert {
-  color: #fff;
-  background: var(--color-warning);
 }
 
 /* New-chat quick-compose dropdown (anchored to the "New chat" button). The
@@ -5915,115 +5878,14 @@ button:active > .edge-rail-chip {
   cursor: grab;
 }
 
-/* ── Quick-switch strip ─────────────────────────────────────────────────────
-   A row of one-tap familiar avatars (pinned first, then most-recent) shown in
-   the top bars beside the full familiar switcher. The strip scrolls
-   horizontally so it never blows out the bar on narrow screens. */
+/* ── Quick-switch wrapper ───────────────────────────────────────────────────
+   Familiar selection is dropdown-only (the one-tap avatar strip is retired);
+   this wrapper hosts the FamiliarSwitcher on its remaining top-bar call site. */
 .familiar-quickswitch {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.familiar-quickswitch__strip {
-  display: inline-flex;
-  align-items: center;
-  /* no gap — items overlap by default; spacing animates on hover */
-  gap: 0;
-  margin: 0;
-  padding: 4px 2px;
-  list-style: none;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: visible;
-  scrollbar-width: none;
-}
-
-.familiar-quickswitch__strip::-webkit-scrollbar {
-  display: none;
-}
-
-.familiar-quickswitch__item {
-  flex: 0 0 auto;
-  overflow: visible;
-  /* stack avatars: each item after the first overlaps 10px */
-  margin-left: -10px;
-  transition: margin 300ms ease-out;
-  will-change: margin;
-}
-
-/* first item has no leading overlap */
-.familiar-quickswitch__item:first-child {
-  margin-left: 0;
-}
-
-/* on strip hover: fan out to give each item breathing room */
-.familiar-quickswitch__strip:hover .familiar-quickswitch__item {
-  margin-left: 4px;
-}
-.familiar-quickswitch__strip:hover .familiar-quickswitch__item:first-child {
-  margin-left: 0;
-}
-
-.familiar-quickswitch__btn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  cursor: pointer;
-  /* ring separator so stacked avatars read as distinct */
-  box-shadow: 0 0 0 2px var(--bg-base);
-  will-change: transform;
-  transition: transform 300ms ease-out,
-              background 140ms var(--ease-standard),
-              border-color 140ms var(--ease-standard),
-              box-shadow 140ms var(--ease-standard);
-}
-
-.familiar-quickswitch__btn:hover {
-  transform: translateY(-2px);
-  z-index: 10;
-  background: var(--bg-hover);
-  border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
-}
-
-.familiar-quickswitch__btn.is-active {
-  border: 2px solid var(--familiar-accent, var(--accent-presence));
-}
-
-.familiar-quickswitch__avatar {
-  display: inline-flex;
-  border-radius: calc(var(--radius-control) - 1px);
-  overflow: hidden;
-}
-
-.familiar-quickswitch__btn img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: calc(var(--radius-control) - 1px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .familiar-quickswitch__item {
-    transition: none;
-  }
-  .familiar-quickswitch__btn {
-    transition: background 140ms var(--ease-standard),
-                border-color 140ms var(--ease-standard),
-                box-shadow 140ms var(--ease-standard);
-  }
-  .familiar-quickswitch__btn:hover {
-    transform: none;
-  }
 }
 
 /* ── Settings: pinned-familiar order ───────────────────────────────────────── */
@@ -7216,20 +7078,11 @@ a.mobile-handoff__link:hover {
     max-width: min(132px, 36vw);
     padding-inline: 6px 8px;
   }
-  /* The quick-switch strip stays compact on phones — a few avatars that scroll
-     horizontally — so it never crowds out the rest of the action cluster. The
-     full list is always one tap away in the switcher menu beside it. */
+  /* Familiar selection is dropdown-only — the wrapper just keeps the switcher
+     compact inside the phone action cluster. */
   .top-bar__actions .familiar-quickswitch {
     min-width: 0;
     gap: 4px;
-  }
-  .top-bar__actions .familiar-quickswitch__strip {
-    max-width: min(118px, 30vw);
-  }
-  .top-bar__actions .familiar-quickswitch__btn {
-    width: 30px;
-    height: 30px;
-    min-width: 30px;
   }
   .top-bar__actions .notification-bell {
     position: static;
