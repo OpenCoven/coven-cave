@@ -3326,7 +3326,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       createdAt: new Date().toISOString(),
     };
     appendTurn(newTurn);
-    setTurns((prev) => [...prev, newTurn]);
+    // Route through the live registry (cave-7ft): while a response streams the
+    // registry is the source of truth — a raw setTurns append would be
+    // discarded when the next assistant_chunk mirrors the registry snapshot
+    // back. updateLiveTurns also keeps turnsRef in sync. Preserve the current
+    // leaf: mid-stream the registry's activeLeafId is the streaming assistant
+    // turn, and overwriting it with this view's (possibly stale) state would
+    // re-point the rendered branch.
+    const live = currentSessionRef.current ? liveChatRegistry.read(currentSessionRef.current) : null;
+    updateLiveTurns((prev) => [...prev, newTurn], live?.activeLeafId ?? activeLeafId);
   };
 
   const runCovenExec = async (subcommand: "doctor" | "daemon") => {
