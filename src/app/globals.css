@@ -8790,18 +8790,18 @@ a.mobile-handoff__link:hover {
 /* ── Chat next-path suggestion chips ─────────────────────────────────────────
    Clickable next-step chips under an assistant reply (parsed from the
    <coven:next-paths> block); clicking sends the suggestion as the next turn.
-   Rows stay UNIFORM — 1, 2, or 3 chips per row, keyed off the row's chip
-   count (data-count): 2 and 4 chips pair into two columns (4 = 2×2, never a
-   3+1 orphan), and only an exactly-3 row spreads to three columns. */
+   Rows stay UNIFORM, keyed off the row's chip count (data-count): 2 and 4
+   chips pair into two columns (4 = 2×2, never a 3+1 orphan); any other count
+   (legacy 3-chip transcripts predating the 2-or-4 directive) stacks
+   full-width. A three-column rule for exactly-3 rows can't work here: the
+   chatturn container is capped by the 46rem reading column (~672px inner),
+   below any breakpoint where three ~7-word chips fit. */
 .cave-next-paths {
   display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 10px; width: 100%;
 }
 @container chatturn (min-width: 540px) {
   .cave-next-paths[data-count="2"],
   .cave-next-paths[data-count="4"] { grid-template-columns: repeat(2, 1fr); }
-}
-@container chatturn (min-width: 760px) {
-  .cave-next-paths[data-count="3"] { grid-template-columns: repeat(3, 1fr); }
 }
 .cave-next-path {
   display: inline-flex; align-items: center; width: 100%; max-width: 100%;
