@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildDashboardModel, dashboardLayout } from "./dashboard-model.ts";
+import { buildDashboardModel } from "./dashboard-model.ts";
 import { nextItemsAfterAction } from "./dashboard-model.ts";
 
 const ISO = "2026-06-20T09:00:00.000Z";
@@ -36,7 +36,6 @@ function summary(slug) {
   const model = buildDashboardModel([summary("2026-06-19")], now);
   assert.equal(model.caughtUp, true, "no open items => caught up");
   assert.equal(model.needsAttention.length, 0);
-  assert.deepEqual(dashboardLayout(model), ["caughtUpStrip", "metrics", "todaySummary", "familiarUpdates", "launcher", "recentReports"]);
 }
 
 // busy when a response is pending today
@@ -47,7 +46,6 @@ function summary(slug) {
   );
   assert.equal(model.caughtUp, false, "open item => busy");
   assert.equal(model.needsAttention.length, 1);
-  assert.deepEqual(dashboardLayout(model), ["actionInbox", "metrics", "todaySummary", "launcher", "recentReports"]);
 }
 
 // needsAttention is capped at 8

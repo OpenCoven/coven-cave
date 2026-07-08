@@ -20,16 +20,6 @@ import {
   type RecentReport,
 } from "./daily-report";
 
-/** Zones the dashboard can render, in display order. Presence varies by state. */
-export type DashboardZone =
-  | "caughtUpStrip"
-  | "actionInbox"
-  | "metrics"
-  | "todaySummary"
-  | "familiarUpdates"
-  | "launcher"
-  | "recentReports";
-
 /** Today's generated daily summary, surfaced inline on the dashboard. */
 export type TodaySummary = {
   title: string;
@@ -107,25 +97,6 @@ export function buildDashboardModel(items: InboxItem[], now: Date): DashboardMod
     featuredReport,
     recentReports: reports.filter((r) => r.slug !== featuredReport?.slug),
   };
-}
-
-/**
- * Ordered zones for the current state on the single unified page.
- *
- * - Busy → lead with the action inbox (triage), then the day at a glance,
- *   today's summary, the launcher, and recent reports.
- * - Caught up → lead with the calm strip, then metrics, today's story,
- *   familiar updates, the launcher, and recent reports.
- *
- * The `metrics` and `todaySummary` zones always render: `metrics` shows live
- * counts before a report exists, and `todaySummary` falls back to a callout
- * linking the latest report when today's hasn't generated yet.
- */
-export function dashboardLayout(model: DashboardModel): DashboardZone[] {
-  if (model.caughtUp) {
-    return ["caughtUpStrip", "metrics", "todaySummary", "familiarUpdates", "launcher", "recentReports"];
-  }
-  return ["actionInbox", "metrics", "todaySummary", "launcher", "recentReports"];
 }
 
 /**
