@@ -65,6 +65,12 @@ assert.match(view, /role="rowgroup"[\s\S]{0,220}\{weeks\.map\(\(week, wi\) => \(
 assert.match(view, /role="gridcell"\s*\n\s*data-month-cell="true"\s*\n\s*tabIndex=\{-1\}[\s\S]*?onKeyDown=\{\(e\) => \{[\s\S]*?Enter[\s\S]*?onCell/, "month day cells are roving gridcells, keyboard-operable");
 assert.match(view, /itemSelector: '\[data-month-cell="true"\]',\s*\n\s*columns: 7,/, "month cells rove 2-D over a 7-column grid");
 assert.match(view, /if \(anchorIndex >= 0\) setActiveIndex\(anchorIndex\)/, "the grid's tab stop follows the anchor day");
+// (cave-sth7) Nested widgets stay OUT of the tab order — 42 tabbable date
+// buttons (plus overflow buttons) defeated the single roving tab stop. The
+// date button's open-day action moves to Shift+Enter on the cell.
+assert.match(view, /<button\n\s*type="button"\n\s*tabIndex=\{-1\}\n\s*onClick=\{\(e\) => \{ e\.stopPropagation\(\); onDayClick\?\.\(day\); \}\}/, "the date-number button is tab-skipped");
+assert.match(view, /if \(e\.key === "Enter" && e\.shiftKey\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*onDayClick\?\.\(day\);/, "Shift+Enter on the cell opens the day (keyboard path for the date button)");
+assert.ok((view.match(/tabIndex=\{-1\}\n\s*onClick=\{\(e\) => \{\n\s*e\.stopPropagation\(\);\n\s*onDayClick\?\.\(day\);/g) ?? []).length >= 2, "both month overflow buttons are tab-skipped");
 // (cave-zqsj) The selected/anchor day was colour-or-nothing; it now carries
 // aria-selected + a ", selected" label token (mirroring the mini-month), and
 // the week header names today instead of a bg tint alone.

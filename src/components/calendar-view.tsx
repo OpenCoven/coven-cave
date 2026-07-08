@@ -1178,20 +1178,31 @@ function MonthView({
                   aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}${isAnchor ? ", selected" : ""}`}
                   onClick={onCell}
                   onKeyDown={(e) => {
+                    // Shift+Enter opens the day — the keyboard path for what
+                    // the (tab-skipped) date-number button does on click.
+                    if (e.key === "Enter" && e.shiftKey) {
+                      e.preventDefault();
+                      onDayClick?.(day);
+                      return;
+                    }
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       onCell();
                     }
                   }}
-                  title={canAdd ? "Click to add a reminder — click the date to open the day" : undefined}
+                  title={canAdd ? "Click to add a reminder — click the date (or Shift+Enter) to open the day" : undefined}
                   className={`group relative focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
                   } ${isToday ? "ring-1 ring-inset ring-[var(--accent-presence)]" : ""}`}
                 >
+                  {/* Out of the tab order (cave-sth7): 42 of these defeated
+                      the grid's single roving tab stop. Mouse click still
+                      works; keyboard uses Shift+Enter on the cell. */}
                   <button
                     type="button"
+                    tabIndex={-1}
                     onClick={(e) => { e.stopPropagation(); onDayClick?.(day); }}
                     aria-label={`Open ${fmtDateHeading(day)}`}
                     className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
@@ -1210,6 +1221,7 @@ function MonthView({
                     ))}
                     {dayDeadlines.length > 2 && (
                       <button
+                        tabIndex={-1}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDayClick?.(day);
@@ -1245,6 +1257,7 @@ function MonthView({
                     })}
                     {dayItems.length > 3 && (
                       <button
+                        tabIndex={-1}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDayClick?.(day);
