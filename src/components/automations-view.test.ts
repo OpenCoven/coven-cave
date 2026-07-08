@@ -204,3 +204,14 @@ assert.equal(
   "both detail panels are role=dialog, labelled by their title, focusable as a fallback",
 );
 assert.doesNotMatch(source, /aria-modal=/, "aria-modal is omitted — it would be a lie on the desktop split-pane");
+
+// ── In-flight run-poll stability (cave-1e6k) ─────────────────────────────────
+// The poll effect depends on a derived boolean, not the runs array — an
+// unchanged 2.5s tick must not tear down and recreate the interval. The runs
+// write is content-guarded for the same reason, and the poll no longer fans
+// out one request per automation: refreshRuns' own response maintains the
+// selected automation's last-run badge.
+assert.match(source, /const hasRunningRun = automationRuns\.some\(\(r\) => r\.status === "running"\)/, "poll gate is a derived boolean");
+assert.match(source, /\}, \[selectedCodex\?\.id, hasRunningRun, refreshRuns\]\);/, "the poll effect does not depend on the runs array identity");
+assert.match(source, /setAutomationRuns\(\(prev\) => \(arrayContentEqual\(prev, runs\) \? prev : runs\)\)/, "unchanged run polls keep the array identity");
+assert.doesNotMatch(source, /void refreshRuns\(id\);\s*\n\s*void refreshLastRuns\(\);/, "the hot poll loop no longer fans out per-automation requests");

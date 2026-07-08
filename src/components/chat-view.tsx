@@ -2395,13 +2395,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       );
       void (async () => {
         try {
-          await fetch("/api/config", {
+          const res = await fetch("/api/config", {
             method: "PATCH",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
             }),
           });
+          // The roster's familiar.harness feeds the empty-state identity line
+          // (and anything else reading the familiars list) — refresh it now
+          // rather than waiting out the next natural reload.
+          if (res.ok) window.dispatchEvent(new Event("cave:familiars-refresh"));
         } finally {
           await refreshModelState();
         }

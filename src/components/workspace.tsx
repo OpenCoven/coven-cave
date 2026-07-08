@@ -781,6 +781,15 @@ export function Workspace() {
     loadFamiliars();
     loadSessions();
   }, [loadFamiliars, loadSessions]);
+  // Composers rebind a familiar's runtime through /api/config (the runtime
+  // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
+  // empty-state identity line) shouldn't wait for the next natural reload —
+  // the switch paths fire this event so the roster catches up immediately.
+  useEffect(() => {
+    const onFamiliarsRefresh = () => void loadFamiliars();
+    window.addEventListener("cave:familiars-refresh", onFamiliarsRefresh);
+    return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
+  }, [loadFamiliars]);
   usePausablePoll(() => void loadSessions(), 4000, {
     pauseWhileInputActive: true,
   });

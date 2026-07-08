@@ -120,12 +120,25 @@ function projectNameWithParent(projectRoot: string): string {
   return parts[0] ?? projectRoot;
 }
 
+// Sessions that exist because a generator ran — canvas refines, cron and
+// heartbeat automations — not because someone opened a chat. They stay
+// reachable from their origination surfaces (Canvas, Schedules, Work Queue);
+// listing them here is just noise between real conversations.
+const CHAT_HIDDEN_ORIGINS: ReadonlySet<string> = new Set(["cron", "heartbeat", "canvas"]);
+
+/** True when the row is a generated run rather than a user-facing chat. */
+export function isGeneratedChatSession(session: SessionRow): boolean {
+  if (session.generated) return true;
+  return session.origin != null && CHAT_HIDDEN_ORIGINS.has(session.origin);
+}
+
 export function filterVisibleChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
 ): SessionRow[] {
   return sessions
     .filter((session) => !DEAD_CHAT_STATUSES.has(session.status))
+    .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
 }

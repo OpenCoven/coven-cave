@@ -237,4 +237,48 @@ const analyticsRows = localConversationSessionRows(
 );
 assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps to regular chat");
 
+// Provenance: a daemon session with no Cave conversation and only the
+// inferred-"chat" default is a generated run (journal narrative, flow,
+// automation, CLI) — flagged so chat lists can hide it. A conversation-backed
+// row keeps the conversation's recorded origin and is never flagged.
+{
+  const bareState = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const daemonRun = (id, title) => ({
+    id,
+    project_root: "/repo",
+    harness: "codex",
+    title,
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-06-08T18:00:00.000Z",
+    updated_at: "2026-06-08T18:05:00.000Z",
+  });
+  const rows = mergeSessionRows({
+    daemonSessions: [
+      daemonRun("spawned-run", "Write a short narrative of my day"),
+      daemonRun("cron-run", "[cron] nightly sweep"),
+      daemonRun("canvas-run", "Build a pricing page"),
+    ],
+    localConversations: [
+      {
+        sessionId: "canvas-run",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Build a pricing page",
+        updatedAt: "2026-06-08T18:06:00.000Z",
+        origin: "canvas",
+      },
+    ],
+    state: bareState,
+    includeArchived: false,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("spawned-run")?.generated, true, "daemon-only inferred-chat run is flagged generated");
+  assert.equal(byId.get("cron-run")?.origin, "cron", "explicit provenance patterns still infer their origin");
+  assert.equal(byId.get("cron-run")?.generated, undefined, "non-default inferred origins carry no generated flag");
+  assert.equal(byId.get("canvas-run")?.origin, "canvas", "a conversation's recorded origin beats title inference");
+  assert.equal(byId.get("canvas-run")?.generated, undefined, "conversation-backed rows are real chats, never flagged");
+}
+
 console.log("session-list-merge.test.ts: ok");

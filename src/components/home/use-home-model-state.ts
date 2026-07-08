@@ -108,7 +108,12 @@ export function useHomeModelState(selectedFamiliarId: string) {
             }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
-          if (json.ok) refetchModelState();
+          if (json.ok) {
+            // Roster consumers (chat empty-state identity line, selectors)
+            // read familiar.harness — let them catch up immediately.
+            window.dispatchEvent(new Event("cave:familiars-refresh"));
+            refetchModelState();
+          }
         } catch {
           refetchModelState();
         }
