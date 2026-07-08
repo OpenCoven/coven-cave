@@ -232,4 +232,36 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
     /if \(e\.nativeEvent\.isComposing\) return;\s*\n\s*if \(e\.key === "Enter"\) \(e\.target as HTMLInputElement\)\.blur\(\);/,
     "the coven rename input ignores the IME-confirm Enter",
   );
+
+  // cave-mpk4: labeling + keyboard-visible focus + per-coven drafts.
+  assert.match(
+    view,
+    /aria-label="Coven name — Enter saves, Escape cancels"/,
+    "the rename input is a labeled text field with discoverable save/cancel",
+  );
+  assert.match(
+    view,
+    /aria-label=\{`Rename coven: \$\{activeGroup\.name\}`\}/,
+    "the rename affordance names its action for AT, not just via title=",
+  );
+  {
+    // Every button inside the familiar picker and @mention popovers must carry
+    // the shared focus-ring class so keyboard focus is visible.
+    const options = view.match(/className="(?:focus-ring )?flex w-full items-center gap-2 rounded px-2 py-1\.5 text-left[^"]*"/g) ?? [];
+    assert.ok(options.length >= 2, "found the picker and mention option buttons");
+    assert.ok(
+      options.every((c) => c.includes("focus-ring")),
+      "picker and @mention options use the global focus-ring class",
+    );
+  }
+  assert.match(
+    view,
+    /if \(draftOwnerRef\.current\) draftsByGroupRef\.current\.set\(draftOwnerRef\.current, draftRef\.current\);[\s\S]{0,220}?setDraft\(activeId \? draftsByGroupRef\.current\.get\(activeId\) \?\? "" : ""\);/,
+    "switching covens stashes the outgoing draft and restores the incoming one (no cross-coven bleed)",
+  );
+  assert.match(
+    view,
+    /draftsByGroupRef\.current\.delete\(id\);/,
+    "deleting a coven drops its stashed draft",
+  );
 });

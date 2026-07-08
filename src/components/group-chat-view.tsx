@@ -111,6 +111,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // without re-creating its callback on every streaming token.
   const transcriptRef = useRef<GroupTurn[]>(transcript);
   transcriptRef.current = transcript;
+  // Per-coven composer drafts: text typed for one coven must not silently
+  // become a pending message to another on switch. Stashed by the swap
+  // effect (in-memory only — a draft is not precious enough to persist).
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const draftsByGroupRef = useRef(new Map<string, string>());
+  const draftOwnerRef = useRef<string | null>(null);
   // Which group the in-memory transcript belongs to (set by the swap effect).
   // The persist effect must not save until the swap has caught up, or the
   // previous coven's turns get written under the new coven's key.
@@ -163,6 +170,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     // carries ITS group id, so this can never write under the new coven's key.
     flushPendingSave();
     transcriptOwnerRef.current = activeId;
+    // Swap the composer draft along with the transcript: stash the outgoing
+    // coven's draft and restore the incoming one's (or a clean slate).
+    if (draftOwnerRef.current !== activeId) {
+      if (draftOwnerRef.current) draftsByGroupRef.current.set(draftOwnerRef.current, draftRef.current);
+      draftOwnerRef.current = activeId;
+      setDraft(activeId ? draftsByGroupRef.current.get(activeId) ?? "" : "");
+      setMention(null);
+    }
     if (!activeId) {
       setTranscript([]);
       return;
@@ -309,6 +324,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           saveTimerRef.current = null;
         }
       }
+      draftsByGroupRef.current.delete(id);
       if (typeof localStorage !== "undefined") {
         try {
           localStorage.removeItem(`cave:group-chat:transcript:${id}`);
@@ -736,7 +752,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   <input
                     autoFocus
                     defaultValue={activeGroup.name}
-                    className="w-full rounded bg-transparent text-[15px] font-semibold outline-none"
+                    aria-label="Coven name — Enter saves, Escape cancels"
+                    className="focus-ring-inset w-full rounded bg-transparent text-[15px] font-semibold outline-none"
                     style={{ color: "var(--text-primary)" }}
                     onBlur={(e) => {
                       renameGroup(e.target.value);
@@ -751,9 +768,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                 ) : (
                   <button
                     type="button"
-                    className="truncate text-[15px] font-semibold"
+                    className="focus-ring truncate text-[15px] font-semibold"
                     style={{ color: "var(--text-primary)" }}
                     title="Rename coven"
+                    aria-label={`Rename coven: ${activeGroup.name}`}
                     onClick={() => setRenaming(true)}
                   >
                     {activeGroup.name}
@@ -803,7 +821,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         <button
                           key={f.id}
                           type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
+                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
                           onClick={() => toggleParticipant(f.id)}
                         >
                           <FamiliarAvatar familiar={f} size="md" className="rounded-full object-cover" />
@@ -1062,7 +1080,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         <button
                           key={f.id}
                           type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
                           style={i === mentionIndex ? { background: "var(--bg-raised)" } : undefined}
                           // Use mousedown so the textarea's onBlur doesn't fire first and close us.
                           onMouseDown={(e) => {
