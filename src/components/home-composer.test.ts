@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const draftHook = await readFile(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
+const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
 const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
@@ -184,7 +185,7 @@ assert.match(
 
 assert.match(
   source,
-  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); setAttachments\(\[\]\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
+  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); clearAttachments\(\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
   "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
 );
 
@@ -556,14 +557,22 @@ assert.match(
 // Enhance undo UI removed from toolbar; revertEnhance callback remains in code.
 
 // ── Drag-and-drop attachments ───────────────────────────────────────────────
+// The staging state machine (cap, dragDepth-counted overlay, files-win paste)
+// lives in the shared use-attachment-staging hook; these pins hold home's
+// wiring, the hook test holds the semantics.
 assert.match(
   source,
-  /onDrop=\{\(e\) => \{[\s\S]*?hasDraggedFiles\(e\.dataTransfer\.types\)[\s\S]*?void addFiles\(e\.dataTransfer\.files\)/,
-  "dropping files onto the composer card routes through addFiles",
+  /home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}\s*\{\.\.\.dropHandlers\}/,
+  "the composer card is the drop target (drag handlers attach to the card, not the page)",
 );
 assert.match(
-  source,
-  /onDragEnter=\{\(e\) => \{[\s\S]*?setDropActive\(true\)/,
+  attachHook,
+  /onDrop: \(e: DragEvent\) => \{[\s\S]*?hasDraggedFiles\(e\.dataTransfer\.types\)[\s\S]*?void addFiles\(e\.dataTransfer\.files\)/,
+  "dropping files routes through addFiles",
+);
+assert.match(
+  attachHook,
+  /onDragEnter: \(e: DragEvent\) => \{[\s\S]*?setDropActive\(true\)/,
   "a file drag arms the drop overlay",
 );
 assert.match(
@@ -575,8 +584,13 @@ assert.match(
 // ── Paste-to-attach ─────────────────────────────────────────────────────────
 assert.match(
   source,
-  /onPaste=\{\(e\) => \{[\s\S]*?e\.clipboardData\.items[\s\S]*?item\.kind === "file"[\s\S]*?void addFiles\(pastedFiles\)/,
-  "pasting files into the composer stages them as attachments",
+  /onPaste=\{handlePaste\}/,
+  "pasting into the composer routes through the shared files-win-over-text handler",
+);
+assert.match(
+  source,
+  /onLimit: \(\) => onToast\("Attachment limit reached \(10\)\."\)/,
+  "home surfaces the attachment cap as a toast (chat stays silent — deliberate asymmetry)",
 );
 
 // ── Image attachment thumbnails ─────────────────────────────────────────────
@@ -599,7 +613,7 @@ assert.match(
 );
 assert.match(
   source,
-  /hc-attachments-clear[\s\S]*?onClick=\{\(\) => setAttachments\(\[\]\)\}[\s\S]*?Clear all/,
+  /hc-attachments-clear[\s\S]*?onClick=\{clearAttachments\}[\s\S]*?Clear all/,
   "a Clear all control empties the staged attachments",
 );
 
@@ -646,6 +660,6 @@ assert.match(
 );
 assert.match(
   source,
-  /Attached \$\{next\.length\} file/,
+  /onAdded: \(count\) => announce\(`Attached \$\{count\} file/,
   "adding attachments is announced (there is no toast on the success path)",
 );

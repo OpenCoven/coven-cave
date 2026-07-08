@@ -129,7 +129,7 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?setAttachments\(\[\]\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?clearAttachments\(\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
   "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
 );
 
@@ -532,7 +532,7 @@ assert.match(
 // enhance-draft into the next conversation's next send.
 assert.match(
   source,
-  /setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*setAttachments\(\[\]\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/,
+  /setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*clearAttachments\(\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/,
   "the session-switch reset effect clears reply-target, attachments, pending branch parent, and enhance state so they don't leak across threads",
 );
 

@@ -10,6 +10,8 @@ const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url),
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // fileToAttachment moved to the shared lib (reused by the home composer).
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
+// The staging state machine (cap, drag overlay, paste) lives in the shared hook.
+const attachStagingHook = readFileSync(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   globalsSrc,
@@ -742,7 +744,14 @@ assert.equal(
 );
 
 // — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —
-const pasteHandler = source.match(/onPaste=\{\(e\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? "";
+// Paste-to-attach moved into the shared use-attachment-staging hook; the
+// composer pin holds the wiring, the hook pins hold the files-win semantics.
+assert.match(
+  source,
+  /onPaste=\{handlePaste\}/,
+  "Composer paste routes through the shared attachment-staging handler",
+);
+const pasteHandler = attachStagingHook.match(/const handlePaste = useCallback\([\s\S]*?\[addFiles\],\s*\);/)?.[0] ?? "";
 assert.match(
   pasteHandler,
   /e\.clipboardData\.items[\s\S]*item\.kind === "file"[\s\S]*item\.getAsFile\(\)/,
@@ -750,7 +759,7 @@ assert.match(
 );
 assert.match(
   pasteHandler,
-  /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void attachFiles\(pastedFiles\);\s*\n\s*return;/,
+  /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void addFiles\(pastedFiles\);/,
   "Pasted files win over any clipboard text and route through the existing attach pipeline; preventDefault only fires when files were consumed",
 );
 assert.doesNotMatch(
@@ -766,28 +775,35 @@ assert.match(
   "Drag file detection must normalize DataTransfer.types before calling includes for WebKit/WebView DOMStringList compatibility",
 );
 assert.doesNotMatch(
-  source,
+  source + attachStagingHook,
   /dataTransfer\.types\.includes\("Files"\)/,
   "Drag handlers must not call DataTransfer.types.includes directly; WebKit DOMStringList may not implement includes",
 );
+// The drag state machine lives in the shared use-attachment-staging hook; the
+// chat section spreads its handler bundle (whole-surface drop target).
 assert.match(
   source,
-  /onDragEnter=\{\(e\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
+  /onKeyDown=\{onChatSectionKeyDown\}\s*\{\.\.\.dropHandlers\}/,
+  "the whole chat section is the drop target (handlers spread from the shared hook)",
+);
+assert.match(
+  attachStagingHook,
+  /onDragEnter: \(e: DragEvent\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;\s*\n\s*setDropActive\(true\);/,
   "dragenter must guard on a Files-type drag (text selections must not hijack) and use counter-based depth tracking",
 );
 assert.match(
-  source,
-  /onDragOver=\{\(e\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;\s*\n\s*e\.preventDefault\(\);/,
+  attachStagingHook,
+  /onDragOver: \(e: DragEvent\) => \{\s*\n\s*if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;\s*\n\s*e\.preventDefault\(\);/,
   "dragover must preventDefault (only for file drags) so the browser allows the drop",
 );
 assert.match(
-  source,
-  /onDragLeave=\{\(e\) => \{[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
+  attachStagingHook,
+  /onDragLeave: \(e: DragEvent\) => \{[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
   "dragleave must decrement the depth counter and only hide the overlay at depth 0 — child-element transitions must not flicker it",
 );
 assert.match(
-  source,
-  /onDrop=\{\(e\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?void attachFiles\(e\.dataTransfer\.files\);/,
+  attachStagingHook,
+  /onDrop: \(e: DragEvent\) => \{\s*\n\s*dragDepthRef\.current = 0;\s*\n\s*setDropActive\(false\);[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?void addFiles\(e\.dataTransfer\.files\);/,
   "drop must reset the overlay state and route dataTransfer.files through the existing attach pipeline",
 );
 assert.match(
@@ -1045,7 +1061,7 @@ assert.match(
 );
 assert.match(
   mentionSource,
-  /setInput\(""\);[\s\S]{0,400}?setAttachments\(\[\]\);\s*\n\s*setMentionedFiles\(\[\]\);/,
+  /setInput\(""\);[\s\S]{0,400}?clearAttachments\(\);\s*\n\s*setMentionedFiles\(\[\]\);/,
   "Sending must clear staged mentions with the composer",
 );
 

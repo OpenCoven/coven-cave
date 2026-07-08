@@ -37,11 +37,8 @@ import { openExternalUrl } from "@/lib/open-external";
 import {
   attachmentIcon,
   extractAgentAttachmentMarkers,
-  fileToAttachment,
-  hasDraggedFiles,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
-  type ComposerAttachment,
 } from "@/lib/chat-attachments";
 import {
   FILE_MENTION_RESULT_LIMIT,
@@ -128,6 +125,7 @@ import { diffStat } from "@/lib/tool-edit-stat";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { useComposerHistory } from "@/lib/use-composer-history";
+import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
@@ -2163,7 +2161,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
   // chat deliberately never records slash commands (send() returns before the push).
   const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   // Reply to Chat: the turn the next message quotes, shown as a composer chip
   // and prepended as a markdown blockquote to the outgoing prompt at send time.
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
@@ -2240,12 +2237,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
-  // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
-  // dragenter/dragleave pairs so transitions across child elements don't
-  // flicker the overlay; only file drags (dataTransfer.types includes
-  // "Files") arm it, so dragging a text selection never hijacks the surface.
-  const [dropActive, setDropActive] = useState(false);
-  const dragDepthRef = useRef(0);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const turnsRef = useRef<Turn[]>([]);
@@ -2392,6 +2383,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Attachments staged in the composer (cap 10) with drag-and-drop
+  // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
+  // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
+  // Shared hook — chat stays silent on cap/add, unlike home's toast+announce.
+  const {
+    attachments,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
+    handlePaste,
+    dropActive,
+    dropHandlers,
+  } = useAttachmentStaging({
+    focus: () => inputRef.current?.focus(),
+  });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -4013,7 +4019,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // surface), which would leave the pre-send text in storage to reappear as an
     // unsent draft on return.
     clearDraft();
-    setAttachments([]);
+    clearAttachments();
     setMentionedFiles([]);
     // The enhance "Prompt improved / Revert" strip belongs to the draft just
     // sent — reset it so it doesn't linger over the now-empty composer and let
@@ -4066,15 +4072,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt, sessionId]);
-
-  const attachFiles = async (files: FileList | File[] | null) => {
-    if (!files?.length) return;
-    const selected = Array.from(files).slice(0, Math.max(0, 10 - attachments.length));
-    if (selected.length === 0) return;
-    const next = await Promise.all(selected.map(fileToAttachment));
-    setAttachments((prev) => [...prev, ...next]);
-    inputRef.current?.focus();
-  };
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -4589,7 +4586,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // that doesn't exist in the new tree, and the "Prompt improved / Revert"
     // strip would resurrect the previous thread's pre-enhancement draft.
     setReplyTarget(null);
-    setAttachments([]);
+    clearAttachments();
     setPendingBranchParent(undefined);
     setEnhanceStatus("idle");
     setEnhanceOriginal(null);
@@ -4686,28 +4683,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
-      onDragEnter={(e) => {
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        e.preventDefault();
-        dragDepthRef.current += 1;
-        setDropActive(true);
-      }}
-      onDragOver={(e) => {
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        e.preventDefault();
-      }}
-      onDragLeave={(e) => {
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-        if (dragDepthRef.current === 0) setDropActive(false);
-      }}
-      onDrop={(e) => {
-        dragDepthRef.current = 0;
-        setDropActive(false);
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        e.preventDefault();
-        void attachFiles(e.dataTransfer.files);
-      }}
+      {...dropHandlers}
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
@@ -5336,7 +5312,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
                     <button
                       type="button"
-                      onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
+                      onClick={() => removeAttachment(attachment.id)}
                       className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title={`Remove ${attachment.name}`}
                       aria-label={`Remove ${attachment.name}`}
@@ -5376,21 +5352,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onKeyUp={syncComposerCaret}
               onClick={syncComposerCaret}
               onSelect={syncComposerCaret}
-              onPaste={(e) => {
-                // Paste-to-attach (CHAT-D1-02): clipboard files (screenshots,
-                // copied images/files) win over any text payload riding along.
-                // Only preventDefault when files were actually consumed so
-                // plain-text paste — including the CSV sniff — is untouched.
-                const pastedFiles = Array.from(e.clipboardData.items)
-                  .filter((item) => item.kind === "file")
-                  .map((item) => item.getAsFile())
-                  .filter((file): file is File => file !== null);
-                if (pastedFiles.length > 0) {
-                  e.preventDefault();
-                  void attachFiles(pastedFiles);
-                  return;
-                }
-              }}
+              onPaste={handlePaste}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
               inputMode="text"
@@ -5449,10 +5411,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onChange={(e) => {
                   // Snapshot the files and clear the input synchronously so picking the
                   // SAME file again still fires onChange (e.g. re-attach after the CSV
-                  // or 10-attachment-cap early returns in attachFiles).
+                  // or 10-attachment-cap early returns in addFiles).
                   const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
                   e.currentTarget.value = "";
-                  void attachFiles(files);
+                  void addFiles(files);
                 }}
               />
               <div className="cave-composer-control-row">

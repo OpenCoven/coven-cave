@@ -278,6 +278,7 @@ export const SUITES = {
     "src/lib/use-autogrow-textarea.test.ts",
     "src/lib/use-composer-draft.test.ts",
     "src/lib/use-composer-history.test.ts",
+    "src/lib/use-attachment-staging.test.ts",
     "src/lib/prompt-enhancer.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/comux-project-order.test.ts",
