@@ -136,7 +136,7 @@ export function FamiliarMenuBar({
             title="Quick chat (⌘J)"
           >
             <Icon name="ph:chat-circle-dots" width={22} height={22} aria-hidden />
-            <span>Chat</span>
+            <span className="menu-bar__task-label">Chat</span>
           </button>
         ) : null}
         {onEnrichTasks ? (
@@ -149,7 +149,11 @@ export function FamiliarMenuBar({
             title={activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
           >
             <Icon name="ph:sparkle" width={22} height={22} aria-hidden />
-            <span>{enrichingTasks ? enrichLabel : "Enhance"}</span>
+            {/* Live progress is information, not chrome — it stays visible
+                while a run is in flight; the idle label is icon-only. */}
+            <span className={enrichingTasks ? "menu-bar__task-label menu-bar__task-label--live" : "menu-bar__task-label"}>
+              {enrichingTasks ? enrichLabel : "Enhance"}
+            </span>
           </button>
         ) : null}
         <button
@@ -159,7 +163,7 @@ export function FamiliarMenuBar({
           aria-label={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
         >
           <Icon name="ph:kanban" width={22} height={22} aria-hidden />
-          <span>Tasks</span>
+          <span className="menu-bar__task-label">Tasks</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
         {/* This button lands on the Schedules surface (workspace mode "inbox"
@@ -173,7 +177,7 @@ export function FamiliarMenuBar({
           aria-label={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
         >
           <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
-          <span>Schedules</span>
+          <span className="menu-bar__task-label">Schedules</span>
           {scheduleNeedsCount > 0 ? (
             <span className="menu-bar__badge menu-bar__badge--alert">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}

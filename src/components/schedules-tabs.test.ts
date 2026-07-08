@@ -39,8 +39,8 @@ assert.match(
 // no inbox tab and inbox items live in the notification bell instead.
 assert.match(
   menuBar,
-  /<Icon name="ph:calendar-check"[\s\S]{0,120}<span>Schedules<\/span>/,
-  "Desktop menu bar names the surface Schedules with the calendar-check icon",
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Schedules<\/span>/,
+  "Desktop menu bar names the surface Schedules with the calendar-check icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
 );
 assert.doesNotMatch(
   menuBar,
