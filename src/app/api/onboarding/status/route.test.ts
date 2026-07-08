@@ -101,6 +101,25 @@ assert.match(
   /s\.ok \|\| s\.optional/,
   "complete treats optional steps as non-blocking",
 );
+
+// Familiar creation lives in the in-app Summoning Circle now: the familiars
+// and binding checks stay in the payload for diagnostics and Salem context,
+// but they are advisory — `complete` means the infrastructure is ready.
+assert.match(
+  source,
+  /Summon your first familiar inside Cave/,
+  "the familiars hint points at the in-app summoning circle",
+);
+assert.match(
+  source,
+  /binding: \{ \.\.\.binding, optional: true \}/,
+  "the binding step is advisory — it must never gate completion",
+);
+assert.match(
+  source,
+  /async function checkFamiliars[\s\S]{0,700}optional: true[\s\S]{0,700}optional: true/,
+  "the familiars step is advisory on both its ok and not-ok branches",
+);
 assert.match(
   source,
   /changes panel, project files, and checkpoints need Git/,

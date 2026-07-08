@@ -13,18 +13,19 @@ import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
-import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
-import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { openExternalUrl } from "@/lib/open-external";
 import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
 
-// Guided onboarding: one numbered path from "nothing installed" to "chatting
-// with a familiar". Every step carries its own instructions, a one-click
-// action where Cave can do the work itself, the exact manual command for
-// users who prefer a terminal, and a troubleshooting block — so nobody is
-// ever stuck staring at a red card with no next move.
+// Guided onboarding: one numbered path from "nothing installed" to "ready to
+// summon". Every step carries its own instructions, a one-click action where
+// Cave can do the work itself, the exact manual command for users who prefer
+// a terminal, and a troubleshooting block — so nobody is ever stuck staring
+// at a red card with no next move. Familiar creation itself lives INSIDE the
+// app (the Familiar Summoning Circle on the Familiars surface): the wizard
+// stops at infrastructure — tools, home, runtime, daemon — and the workspace
+// walks a familiar-less user into the circle after dismissal.
 
 type PruneState =
   | { idle: true }
@@ -74,19 +75,6 @@ type HarnessReport = {
   installHint: string;
   source: string;
   manifestPath: string | null;
-};
-
-type OpenClawAgent = {
-  id: string;
-  displayName: string;
-  role: string;
-  workspacePath: string | null;
-};
-
-type CaveFamiliar = {
-  id: string;
-  display_name?: string;
-  role?: string;
 };
 
 type InstallTarget =
@@ -148,12 +136,6 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
 // error instead of an empty runtime grid polling silently forever.
 const HARNESS_RETRY_BUDGET = 15;
 
-type SshCheckState =
-  | { state: "idle" }
-  | { state: "checking" }
-  | { state: "ok"; detail: string }
-  | { state: "fail"; detail: string };
-
 const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
 const OPENCLAW_AGENT_ROOT = "~/.openclaw/agents";
 const OPENCLAW_WORKSPACE_ROOT = "~/.openclaw/workspace";
@@ -186,7 +168,7 @@ const HARNESS_ONE_CLICK: Partial<
     target: "openclaw",
     command: "npm i -g openclaw@latest",
     afterInstall:
-      `then connect an agent from ${OPENCLAW_AGENT_ROOT} in the familiar step`,
+      `then summon a familiar from an agent in ${OPENCLAW_AGENT_ROOT} once you're inside Cave (Familiars → Summon familiar)`,
   },
   hermes: {
     target: "hermes",
@@ -206,7 +188,6 @@ const PLATFORM_COPY: Record<
     nodeSetup: string[];
     caveInstall: string[];
     cliInstall: string[];
-    sshSetup: string[];
     warning?: string;
     warningLink?: { label: string; href: string };
   }
@@ -236,11 +217,6 @@ const PLATFORM_COPY: Record<
       "Make sure coven.exe is on PATH after the global npm install.",
       "Click Re-check after Windows can run coven from a new terminal.",
     ],
-    sshSetup: [
-      "Enable the OpenSSH client: Settings > Apps > Optional features > OpenSSH Client.",
-      'Create a key with ssh-keygen, then copy it to the remote with: type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh <host> "cat >> ~/.ssh/authorized_keys".',
-      "Run ssh <host> once in a terminal to accept the host key before testing here.",
-    ],
   },
   linux: {
     label: "Linux",
@@ -259,11 +235,6 @@ const PLATFORM_COPY: Record<
       "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven is on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the CLI.",
-    ],
-    sshSetup: [
-      "Create a key with ssh-keygen -t ed25519 if you don't have one.",
-      "Copy it to the remote with ssh-copy-id <host>.",
-      "Run ssh <host> once to accept the host key before testing here.",
     ],
   },
   mac: {
@@ -284,11 +255,6 @@ const PLATFORM_COPY: Record<
       "Make sure a terminal can run coven after the global npm install.",
       "Click Re-check here after install.",
     ],
-    sshSetup: [
-      "Create a key with ssh-keygen -t ed25519 if you don't have one.",
-      "Copy it to the remote with ssh-copy-id <host>.",
-      "Run ssh <host> once to accept the host key before testing here.",
-    ],
   },
   unknown: {
     label: "Your platform",
@@ -307,10 +273,6 @@ const PLATFORM_COPY: Record<
       "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
       "Make sure coven is on PATH.",
       "Click Re-check here after install.",
-    ],
-    sshSetup: [
-      "Create an SSH key and copy it to the remote host (ssh-copy-id <host>).",
-      "Run ssh <host> once to accept the host key before testing here.",
     ],
   },
 };
@@ -361,23 +323,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
-  const [familiarName, setFamiliarName] = useState("");
-  const [familiarRole, setFamiliarRole] = useState("Familiar");
-  const [familiarDescription, setFamiliarDescription] = useState("");
-  const [familiarGlyph, setFamiliarGlyph] = useState("ph:sparkle-fill");
-  const [openclawAgents, setOpenclawAgents] = useState<OpenClawAgent[]>([]);
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
   // Consecutive /api/harnesses failures — the empty-list retry loop gives up
   // once this hits HARNESS_RETRY_BUDGET and StepRuntimes offers a Retry.
   const [harnessFailures, setHarnessFailures] = useState(0);
-  const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
-    null,
-  );
-  const [confirmCreateNewFamiliar, setConfirmCreateNewFamiliar] =
-    useState(false);
-  const [agentsLoading, setAgentsLoading] = useState(false);
-  const [agentsError, setAgentsError] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [prune, setPrune] = useState<PruneState>({ idle: true });
   const [statusFailures, setStatusFailures] = useState(0);
   // Guided-step navigation: which step the user manually expanded. `null`
@@ -406,23 +355,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // user can skip it so a failing install never permanently strands onboarding.
   const [covenCodeSkipped, setCovenCodeSkipped] = useState(false);
   const [nodeHint, setNodeHint] = useState<string | null>(null);
-  // Remote (SSH) runtime for the new familiar (/api/onboarding/ssh-check)
-  const [sshEnabled, setSshEnabled] = useState(false);
-  const [sshHost, setSshHost] = useState("");
-  const [sshCwd, setSshCwd] = useState("");
-  const [sshCommand, setSshCommand] = useState("");
-  const [sshCheck, setSshCheck] = useState<SshCheckState>({ state: "idle" });
   const [onboardingMultiHostMode, setOnboardingMultiHostMode] =
     useState<MultiHostMode>("local");
   const [onboardingHubUrl, setOnboardingHubUrl] = useState("");
   const [onboardingExecutorText, setOnboardingExecutorText] = useState("");
   const [savingOnboardingConnection, setSavingOnboardingConnection] =
     useState(false);
-  // Created familiars (final step lists them with Edit affordances)
-  const [familiarsList, setFamiliarsList] = useState<CaveFamiliar[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const { openFamiliarStudio } = useFamiliarStudio();
 
   useFocusTrap(open, dialogRef, { onEscape: onDismiss });
 
@@ -475,34 +415,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       .catch(() => {});
   }, [open]);
 
-  const loadOpenClawAgents = useCallback(async () => {
-    setAgentsLoading(true);
-    setAgentsError(null);
-    try {
-      const res = await fetch("/api/openclaw-agents", { cache: "no-store" });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        agents?: OpenClawAgent[];
-        error?: string;
-      };
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "failed to load OpenClaw agents");
-      const agents = json.agents ?? [];
-      setOpenclawAgents(agents);
-      setSelectedAgentId((current) =>
-        current && agents.some((agent) => agent.id === current)
-          ? current
-          : null,
-      );
-    } catch (err) {
-      setAgentsError(
-        err instanceof Error ? err.message : "failed to load OpenClaw agents",
-      );
-    } finally {
-      setAgentsLoading(false);
-    }
-  }, []);
-
   const loadHarnesses = useCallback(async () => {
     try {
       const res = await fetch("/api/harnesses", { cache: "no-store" });
@@ -514,20 +426,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         setHarnessFailures((n) => n + 1);
         return;
       }
-      const next = json.harnesses ?? [];
-      setHarnesses(next);
+      setHarnesses(json.harnesses ?? []);
       setHarnessFailures(0);
-      setSelectedHarnessId((current) => {
-        if (
-          current &&
-          next.some(
-            (adapter) =>
-              adapter.id === current && adapter.installed && adapter.chatSupported,
-          )
-        )
-          return current;
-        return null;
-      });
     } catch {
       // Advisory, but count the failure — the empty-list retry loop below
       // gives up on a persistent error instead of spinning silently forever.
@@ -535,32 +435,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   }, []);
 
-  const loadFamiliars = useCallback(async () => {
-    try {
-      const res = await fetch("/api/familiars", { cache: "no-store" });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        familiars?: CaveFamiliar[];
-      };
-      if (!res.ok || json.ok === false) return;
-      setFamiliarsList(json.familiars ?? []);
-    } catch {
-      /* advisory — the daemon step covers reachability */
-    }
-  }, []);
-
   useEffect(() => {
     if (!open) return;
     void refresh();
     void loadHarnesses();
-    void loadOpenClawAgents();
-    void loadFamiliars();
     pollRef.current = setInterval(refresh, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, refresh, loadHarnesses, loadOpenClawAgents, loadFamiliars]);
+  }, [open, refresh, loadHarnesses]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
@@ -578,17 +462,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     return () => clearInterval(retry);
   }, [open, harnesses.length, harnessFailures, loadHarnesses]);
 
-  // Refresh the familiar list when the familiars step flips healthy so the
-  // final step can list them for editing.
-  const familiarsOk = !!status?.steps.familiars.ok;
-  useEffect(() => {
-    if (familiarsOk) void loadFamiliars();
-  }, [familiarsOk, loadFamiliars]);
-
   const platformCopy = PLATFORM_COPY[platform];
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
-  const selectedHarness =
-    chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
 
   // Header-button feedback: both actions were silent, so clicks felt dead.
   // Re-check spins its icon while the status fetch is in flight (held for a
@@ -626,10 +501,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // user hitting an unmet step).
           statusFailures,
           setupError,
-          agentsError,
           installResults,
           nodeHint,
-          sshCheck,
           harnesses: harnesses.map((adapter) => ({
             id: adapter.id,
             label: adapter.label,
@@ -640,11 +513,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             installHint: adapter.installHint,
             source: adapter.source,
             manifestPath: adapter.manifestPath,
-          })),
-          openclawAgents: openclawAgents.map((agent) => ({
-            id: agent.id,
-            displayName: agent.displayName,
-            workspacePath: agent.workspacePath,
           })),
         },
         null,
@@ -966,49 +834,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     };
   }, [open]);
 
-  const testSsh = async () => {
-    const host = sshHost.trim();
-    if (!host) {
-      setSshCheck({ state: "fail", detail: "Enter a host first." });
-      return;
-    }
-    setSshCheck({ state: "checking" });
-    try {
-      const res = await fetch("/api/onboarding/ssh-check", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ host }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        reachable?: boolean;
-        covenPath?: string | null;
-        hint?: string;
-        error?: string;
-      };
-      if (json.ok && json.reachable) {
-        setSshCheck({
-          state: "ok",
-          detail: json.covenPath
-            ? `Connected — coven found at ${json.covenPath}.`
-            : `Connected. ${json.hint ?? ""}`.trim(),
-        });
-      } else {
-        setSshCheck({
-          state: "fail",
-          detail:
-            [json.error, json.hint].filter(Boolean).join(" — ") ||
-            "SSH check failed.",
-        });
-      }
-    } catch (err) {
-      setSshCheck({
-        state: "fail",
-        detail: err instanceof Error ? err.message : "SSH check failed.",
-      });
-    }
-  };
-
   const scaffoldOnly = async () => {
     setPicking("scaffold");
     setSetupError(null);
@@ -1018,119 +843,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (!res.ok || json.ok === false)
         throw new Error(json.error ?? "setup failed");
       await refresh();
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "setup failed");
-    } finally {
-      setPicking(null);
-    }
-  };
-
-  const createFamiliar = async () => {
-    if (!status?.steps.daemon.ok) {
-      setSetupError("Start the daemon before creating or connecting a familiar.");
-      return;
-    }
-    const selectedAgent =
-      openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null;
-    if (!selectedAgent) {
-      setSetupError(
-        "Pick an existing OpenClaw agent first, or create a new familiar from an installed runtime instead.",
-      );
-      return;
-    }
-    setPicking("familiar");
-    setSetupError(null);
-    try {
-      const res = await fetch("/api/onboarding/setup", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          familiar: {
-            id: selectedAgent.id,
-            displayName: familiarName,
-            role: familiarRole,
-            description: familiarDescription,
-            glyph: familiarGlyph,
-            openclawAgentId: selectedAgent.id,
-          },
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "setup failed");
-      await refresh();
-      await loadFamiliars();
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "setup failed");
-    } finally {
-      setPicking(null);
-    }
-  };
-
-  const createLocalFamiliar = async () => {
-    if (!status?.steps.daemon.ok) {
-      setSetupError("Start the daemon before creating or connecting a familiar.");
-      return;
-    }
-    const selectedHarness =
-      chatHarnesses.find(
-        (adapter) => adapter.id === selectedHarnessId && adapter.installed,
-      ) ?? null;
-    if (!selectedHarness) {
-      setSetupError(
-        "Pick an installed runtime first, or choose an existing OpenClaw agent.",
-      );
-      return;
-    }
-    if (!confirmCreateNewFamiliar) {
-      setSetupError(
-        "Confirm that you want to create a new Coven familiar before continuing.",
-      );
-      return;
-    }
-    if (sshEnabled && (!sshHost.trim() || !sshCwd.trim())) {
-      setSetupError(
-        "Remote runtime needs a host and a remote working directory — or untick \"Runs on a remote machine\".",
-      );
-      return;
-    }
-    setPicking("local");
-    setSetupError(null);
-    try {
-      const res = await fetch("/api/onboarding/setup", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          familiar: {
-            id: `${selectedHarness.id}-local`,
-            displayName: familiarName.trim() || selectedHarness.label,
-            role: familiarRole.trim() || "Code Familiar",
-            description:
-              familiarDescription.trim() ||
-              (sshEnabled
-                ? `Remote ${selectedHarness.label} adapter over SSH (${sshHost.trim()}).`
-                : `Local ${selectedHarness.label} adapter on this machine.`),
-            glyph: familiarGlyph,
-            harness: selectedHarness.id,
-            model: defaultModelForRuntime(selectedHarness.id),
-            ...(sshEnabled
-              ? {
-                  runtime: {
-                    kind: "ssh",
-                    host: sshHost.trim(),
-                    cwd: sshCwd.trim(),
-                    command: sshCommand.trim(),
-                  },
-                }
-              : {}),
-          },
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.ok === false)
-        throw new Error(json.error ?? "setup failed");
-      await refresh();
-      await loadFamiliars();
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : "setup failed");
     } finally {
@@ -1187,12 +899,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     } finally {
       setSavingOnboardingConnection(false);
     }
-  };
-
-  const editFamiliar = (id: string) => {
-    // The studio renders under this overlay, so close the overlay first.
-    onDismiss();
-    openFamiliarStudio(id);
   };
 
 
@@ -1263,20 +969,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:plug",
       },
       {
-        key: "binding",
-        title: "Create your familiar",
-        ok: !!s?.binding.ok,
-        detail: s?.binding.detail ?? s?.binding.hint ?? "checking…",
-        icon: "ph:sparkle",
-      },
-      {
-        key: "familiars",
-        title: "Meet your familiars",
-        ok: !!s?.familiars.ok,
-        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking…",
-        icon: "ph:user",
-      },
-      {
         key: "git",
         title: "Find Git (recommended)",
         optional: true,
@@ -1337,7 +1029,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     familiarCount: status?.steps.familiars.ok ? 1 : 0,
   }), [platform, status]);
 
-  const openStepKey = expandedStep ?? activeStepKey ?? "familiars";
+  // With every required step done, rest on the daemon step (the last one) —
+  // familiar creation itself lives in the app's summoning circle now.
+  const openStepKey = expandedStep ?? activeStepKey ?? "daemon";
 
   if (!open) return null;
 
@@ -1623,70 +1317,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               void runCodexPortPreflight()
                             }
                           />
-                        ) : step.key === "binding" ? (
-                          <StepFamiliar
-                            chatHarnesses={chatHarnesses}
-                            daemonReady={!!status?.steps.daemon.ok}
-                            selectedHarnessId={selectedHarnessId}
-                            selectedHarness={selectedHarness}
-                            openclawAgents={openclawAgents}
-                            selectedAgentId={selectedAgentId}
-                            agentsLoading={agentsLoading}
-                            agentsError={agentsError}
-                            familiarName={familiarName}
-                            familiarRole={familiarRole}
-                            familiarGlyph={familiarGlyph}
-                            familiarDescription={familiarDescription}
-                            confirmCreateNewFamiliar={confirmCreateNewFamiliar}
-                            picking={picking}
-                            sshEnabled={sshEnabled}
-                            sshHost={sshHost}
-                            sshCwd={sshCwd}
-                            sshCommand={sshCommand}
-                            sshCheck={sshCheck}
-                            sshSetup={platformCopy.sshSetup}
-                            setFamiliarName={setFamiliarName}
-                            setFamiliarRole={setFamiliarRole}
-                            setFamiliarGlyph={setFamiliarGlyph}
-                            setFamiliarDescription={setFamiliarDescription}
-                            setConfirmCreateNewFamiliar={
-                              setConfirmCreateNewFamiliar
-                            }
-                            setSshEnabled={setSshEnabled}
-                            setSshHost={(v) => {
-                              setSshHost(v);
-                              setSshCheck({ state: "idle" });
-                            }}
-                            setSshCwd={setSshCwd}
-                            setSshCommand={setSshCommand}
-                            onTestSsh={() => void testSsh()}
-                            onSelectHarness={(adapter) => {
-                              if (!adapter.installed) return;
-                              setSelectedHarnessId(adapter.id);
-                              setSelectedAgentId(null);
-                              setConfirmCreateNewFamiliar(false);
-                              setFamiliarName(adapter.label);
-                              setFamiliarRole("Code Familiar");
-                              setFamiliarDescription(
-                                sshEnabled && sshHost.trim()
-                                  ? `Remote ${adapter.label} adapter over SSH (${sshHost.trim()}).`
-                                  : `Local ${adapter.label} adapter on this machine.`,
-                              );
-                            }}
-                            onSelectAgent={(agent) => {
-                              setSelectedAgentId(agent.id);
-                              setSelectedHarnessId(null);
-                              setConfirmCreateNewFamiliar(false);
-                              setFamiliarName(agent.displayName);
-                              setFamiliarRole(agent.role);
-                              setFamiliarDescription(
-                                `Connected to OpenClaw agent "${agent.id}".`,
-                              );
-                            }}
-                            onRefreshAgents={() => void loadOpenClawAgents()}
-                            onCreateLocal={() => void createLocalFamiliar()}
-                            onConnectAgent={() => void createFamiliar()}
-                          />
                         ) : step.key === "daemon" ? (
                           <div className="flex flex-col gap-3">
                             <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
@@ -1777,14 +1407,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               ) : null}
                             </div>
                           </div>
-                        ) : step.key === "familiars" ? (
-                          <StepMeetFamiliars
-                            familiars={familiarsList}
-                            statusOk={step.ok}
-                            complete={effectiveComplete}
-                            onEdit={editFamiliar}
-                            onOpenCave={finishOnboarding}
-                          />
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1838,7 +1460,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
             >
               <Icon name="ph:rocket-launch-bold" />
-              Open Cave
+              Open Cave — summon your familiar
             </button>
           ) : (
             <span className="text-[11px] text-[var(--text-muted)]">
@@ -2406,651 +2028,6 @@ function StepRuntimes({
         <p className="text-[11px] leading-4 text-[var(--color-warning)]">
           npm-based one-click installs need Node.js — see step 1 for the setup notice. (Hermes brings its own toolchain.)
         </p>
-      ) : null}
-    </div>
-  );
-}
-
-function StepFamiliar(props: {
-  chatHarnesses: HarnessReport[];
-  daemonReady: boolean;
-  selectedHarnessId: string | null;
-  selectedHarness: HarnessReport | null;
-  openclawAgents: OpenClawAgent[];
-  selectedAgentId: string | null;
-  agentsLoading: boolean;
-  agentsError: string | null;
-  familiarName: string;
-  familiarRole: string;
-  familiarGlyph: string;
-  familiarDescription: string;
-  confirmCreateNewFamiliar: boolean;
-  picking: string | null;
-  sshEnabled: boolean;
-  sshHost: string;
-  sshCwd: string;
-  sshCommand: string;
-  sshCheck: SshCheckState;
-  sshSetup: string[];
-  setFamiliarName: (v: string) => void;
-  setFamiliarRole: (v: string) => void;
-  setFamiliarGlyph: (v: string) => void;
-  setFamiliarDescription: (v: string) => void;
-  setConfirmCreateNewFamiliar: (v: boolean) => void;
-  setSshEnabled: (v: boolean) => void;
-  setSshHost: (v: string) => void;
-  setSshCwd: (v: string) => void;
-  setSshCommand: (v: string) => void;
-  onTestSsh: () => void;
-  onSelectHarness: (adapter: HarnessReport) => void;
-  onSelectAgent: (agent: OpenClawAgent) => void;
-  onRefreshAgents: () => void;
-  onCreateLocal: () => void;
-  onConnectAgent: () => void;
-}) {
-  const {
-    chatHarnesses,
-    daemonReady,
-    selectedHarnessId,
-    selectedHarness,
-    openclawAgents,
-    selectedAgentId,
-    agentsLoading,
-    agentsError,
-    familiarName,
-    familiarRole,
-    familiarGlyph,
-    familiarDescription,
-    confirmCreateNewFamiliar,
-    picking,
-    sshEnabled,
-    sshHost,
-    sshCwd,
-    sshCommand,
-    sshCheck,
-    sshSetup,
-  } = props;
-  const [agentQuery, setAgentQuery] = useState("");
-  const glyphInvalid =
-    familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:");
-  const selectedOpenClawAgent =
-    selectedAgentId != null
-      ? openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null
-      : null;
-  const firstInstalledHarness =
-    chatHarnesses.find((adapter) => adapter.installed) ?? null;
-  const openClawAgentCountLabel = agentsLoading
-    ? "Scanning"
-    : `${openclawAgents.length} ${openclawAgents.length === 1 ? "agent" : "agents"}`;
-  // Exactly one path is ever selected — picking a harness clears the agent and
-  // vice versa upstream. Drives progressive disclosure of the config form below.
-  const optionChosen = selectedHarnessId != null || selectedAgentId != null;
-  // Option B can list many discovered agents; surface a filter once the list is
-  // long enough to be awkward to scan by eye.
-  const showAgentSearch = openclawAgents.length > 6;
-  const trimmedAgentQuery = agentQuery.trim().toLowerCase();
-  const visibleAgents = trimmedAgentQuery
-    ? openclawAgents.filter((agent) =>
-        [
-          agent.displayName,
-          agent.id,
-          agent.role ?? "",
-          agent.workspacePath ?? "",
-        ].some((field) => field.toLowerCase().includes(trimmedAgentQuery)),
-      )
-    : openclawAgents;
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        A familiar is your named agent — pick what powers it, name it, and
-        everything stays editable later in the Familiar Studio (Agents &rarr;
-        pick a familiar &rarr; Edit).
-      </p>
-      {!daemonReady ? (
-        <div className="rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
-          Start the daemon first. Familiar creation unlocks once Cave can reach it.
-        </div>
-      ) : null}
-
-      <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-        Choose one setup path
-      </p>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div>
-          <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-            Option A — start fresh from an installed runtime
-          </h3>
-          <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
-            Spin up a brand-new Coven familiar powered by a runtime installed on
-            this machine.
-          </p>
-          <div className="mt-2 grid gap-2">
-            {chatHarnesses.length === 0 ? (
-              <div className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[11px] leading-5 text-[var(--text-secondary)]">
-                <p className="font-medium text-[var(--text-primary)]">
-                  No runtimes detected on this machine yet.
-                </p>
-                <p className="mt-1">
-                  Install one in{" "}
-                  <span className="font-medium text-[var(--text-primary)]">
-                    step 3
-                  </span>{" "}
-                  (Codex, Claude Code, …) — this list refreshes automatically. If
-                  you just installed a runtime, restart Cave so its PATH applies.
-                </p>
-                <p className="mt-1">
-                  <span className="font-medium text-[var(--text-primary)]">
-                    Option B
-                  </span>{" "}
-                  remains available to connect an existing OpenClaw agent.
-                </p>
-              </div>
-            ) : (
-              chatHarnesses.map((adapter) => {
-                const active = selectedHarnessId === adapter.id;
-                return (
-                  <button
-                    key={adapter.id}
-                    onClick={() => props.onSelectHarness(adapter)}
-                    disabled={!adapter.installed}
-                    className={`focus-ring rounded-lg border p-2.5 text-left ${
-                      active
-                        ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
-                        : adapter.installed
-                          ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
-                    }`}
-                    title={
-                      adapter.installed
-                        ? undefined
-                        : `Not installed yet — see step 3. ${adapter.installHint}`
-                    }
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[12px] font-medium">
-                        {adapter.label}
-                      </span>
-                      {active ? (
-                        <Icon
-                          name="ph:check-bold"
-                          className="text-[var(--accent-presence)]"
-                        />
-                      ) : !adapter.installed ? (
-                        <span className="text-[10px]">not installed</span>
-                      ) : null}
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] p-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-                  Option B — connect an existing OpenClaw agent
-                </h3>
-                <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-presence)]">
-                  <Icon name="ph:git-fork" /> {openClawAgentCountLabel}
-                </span>
-              </div>
-              <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
-                Use an existing OpenClaw agent as a Cave familiar. Cave scans{" "}
-                <code className="font-mono text-[var(--text-primary)]">
-                  {OPENCLAW_AGENT_ROOT}
-                </code>
-                {" "}and preserves its workspace under{" "}
-                <code className="font-mono text-[var(--text-primary)]">
-                  {OPENCLAW_WORKSPACE_ROOT}
-                </code>
-                .
-              </p>
-            </div>
-            <button
-              onClick={props.onRefreshAgents}
-              disabled={agentsLoading}
-              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-            >
-              <Icon
-                name="ph:arrows-clockwise-bold"
-                className={agentsLoading ? "animate-spin" : undefined}
-              />
-              {agentsLoading ? "Scanning…" : "Refresh"}
-            </button>
-          </div>
-          {agentsError ? (
-            <div className="mt-2 rounded border border-[color-mix(in_oklch,var(--color-danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] px-3 py-2 text-[12px] text-[var(--color-danger)]">
-              {agentsError}
-            </div>
-          ) : openclawAgents.length === 0 ? (
-            <div className="mt-3 rounded-md border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
-              <div className="flex items-start gap-2">
-                <Icon
-                  name="ph:magnifying-glass"
-                  className="mt-0.5 shrink-0 text-[var(--accent-presence)]"
-                />
-                <div>
-                  <p className="font-medium text-[var(--text-primary)]">
-                    No OpenClaw agents found yet.
-                  </p>
-                  <p className="mt-1">
-                    Create or sync one under{" "}
-                    <code className="font-mono text-[var(--text-primary)]">
-                      {OPENCLAW_AGENT_ROOT}
-                    </code>
-                    , then refresh this list. Option A remains available for a
-                    brand-new Coven familiar.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              {showAgentSearch ? (
-                <div className="relative mt-3">
-                  <Icon
-                    name="ph:magnifying-glass"
-                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-                  />
-                  <input
-                    value={agentQuery}
-                    onChange={(e) => setAgentQuery(e.target.value)}
-                    placeholder={`Search ${openclawAgents.length} agents by name, id, or role…`}
-                    aria-label="Search OpenClaw agents"
-                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] py-1.5 pl-8 pr-3 text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                  />
-                </div>
-              ) : null}
-              {visibleAgents.length === 0 ? (
-                <p className="mt-3 text-[12px] leading-5 text-[var(--text-secondary)]">
-                  No agents match{" "}
-                  <span className="font-medium text-[var(--text-primary)]">
-                    {agentQuery.trim()}
-                  </span>
-                  .
-                </p>
-              ) : (
-                <div className="mt-3 grid max-h-[16rem] gap-2 overflow-y-auto pr-1">
-                  {visibleAgents.map((agent) => {
-                    const active = selectedAgentId === agent.id;
-                    return (
-                      <button
-                        key={agent.id}
-                        onClick={() => props.onSelectAgent(agent)}
-                        className={`focus-ring rounded-lg border p-3 text-left ${
-                          active
-                            ? "border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--text-primary)]"
-                            : "border-[var(--border-hairline)] bg-[var(--bg-base)]/55 text-[var(--text-secondary)] hover:border-[var(--accent-presence)]"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-[12px] font-medium">
-                            {agent.displayName}
-                          </span>
-                          {active ? (
-                            <Icon
-                              name="ph:check-bold"
-                              className="text-[var(--accent-presence)]"
-                            />
-                          ) : null}
-                        </div>
-                        <div className="mt-1 grid gap-0.5 font-mono text-[10px] text-[var(--text-muted)]">
-                          <div className="truncate">{agent.id}</div>
-                          {agent.workspacePath ? (
-                            <div className="truncate">{agent.workspacePath}</div>
-                          ) : null}
-                        </div>
-                        {agent.role ? (
-                          <div className="mt-1 truncate text-[11px] text-[var(--text-secondary)]">
-                            {agent.role}
-                          </div>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Config form is revealed only once a path is chosen, and the SSH /
-          confirm blocks below are scoped to Option A — so the user never sees
-          fields that don't apply to their selection. The CTA row still keeps
-          the other path reachable so Option A never disappears after choosing
-          an OpenClaw agent. */}
-      {optionChosen ? (
-        <>
-          <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
-            {selectedHarnessId ? (
-              <>
-                Setting up a new{" "}
-                <span className="font-medium text-[var(--text-primary)]">
-                  {selectedHarness?.label}
-                </span>{" "}
-                familiar. Every field below is optional — sensible defaults fill
-                in.
-              </>
-            ) : (
-              <>
-                Connecting{" "}
-                <span className="font-medium text-[var(--text-primary)]">
-                  {selectedOpenClawAgent?.displayName}
-                </span>
-                . Give it a name; the rest is optional.
-              </>
-            )}
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Name{selectedAgentId ? " (required)" : " (optional)"}
-              </span>
-              <input
-                value={familiarName}
-                onChange={(e) => props.setFamiliarName(e.target.value)}
-                placeholder="Example: Riley"
-                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Role (optional)
-              </span>
-              <input
-                value={familiarRole}
-                onChange={(e) => props.setFamiliarRole(e.target.value)}
-                placeholder="Research, Code, Ops…"
-                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Glyph (optional)
-              </span>
-              <input
-                value={familiarGlyph}
-                onChange={(e) => props.setFamiliarGlyph(e.target.value)}
-                placeholder="ph:sparkle-fill"
-                aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
-                className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
-                  glyphInvalid
-                    ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
-                    : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
-                }`}
-              />
-              {glyphInvalid ? (
-                <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
-                  Must start with <code className="font-mono">ph:</code> — see{" "}
-                  <a
-                    href="https://phosphoricons.com"
-                    className="underline"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      openExternalUrl("https://phosphoricons.com");
-                    }}
-                  >
-                    phosphoricons.com
-                  </a>
-                  .
-                </span>
-              ) : null}
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                Description (optional)
-              </span>
-              <input
-                value={familiarDescription}
-                onChange={(e) => props.setFamiliarDescription(e.target.value)}
-                placeholder="What should this familiar help with?"
-                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-              />
-            </label>
-          </div>
-
-          {selectedHarnessId ? (
-            <section className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={sshEnabled}
-                  onChange={(e) => props.setSshEnabled(e.currentTarget.checked)}
-                  className="mt-1 h-4 w-4 accent-[var(--accent-presence)]"
-                />
-                <span className="text-[12px] leading-5 text-[var(--text-secondary)]">
-                  <span className="font-medium text-[var(--text-primary)]">
-                    Optional remote runtime (SSH)
-                  </span>{" "}
-                  — Skip this unless you want this familiar to run on another machine
-                  (a build server, a homelab, a VM). When enabled, it runs on a
-                  remote machine over SSH. Cave connects non-interactively with
-                  your SSH keys and never stores passwords or key material.
-                </span>
-              </label>
-              {sshEnabled ? (
-                <div className="mt-3 flex flex-col gap-3">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <label className="block">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                        Host
-                      </span>
-                      <input
-                        value={sshHost}
-                        onChange={(e) => props.setSshHost(e.target.value)}
-                        placeholder="ssh-alias or hostname"
-                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                        Remote directory
-                      </span>
-                      <input
-                        value={sshCwd}
-                        onChange={(e) => props.setSshCwd(e.target.value)}
-                        placeholder="/home/me/projects"
-                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                        Remote coven command
-                      </span>
-                      <input
-                        value={sshCommand}
-                        onChange={(e) => props.setSshCommand(e.target.value)}
-                        placeholder="coven (default)"
-                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                      />
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={props.onTestSsh}
-                      disabled={sshCheck.state === "checking" || !sshHost.trim()}
-                      className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-                    >
-                      <Icon name="ph:plug-bold" />
-                      {sshCheck.state === "checking" ? "Testing…" : "Test connection"}
-                    </button>
-                    {sshCheck.state === "ok" ? (
-                      <span className="text-[11px] text-[var(--color-success)]">
-                        {sshCheck.detail}
-                      </span>
-                    ) : sshCheck.state === "fail" ? (
-                      <span className="text-[11px] text-[var(--color-danger)]">
-                        {sshCheck.detail}
-                      </span>
-                    ) : null}
-                  </div>
-                  <details>
-                    <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
-                      SSH key setup (one-time)
-                    </summary>
-                    <div className="mt-2">
-                      <InstructionList title="" items={sshSetup} />
-                    </div>
-                  </details>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {selectedHarnessId ? (
-            <label className="flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
-              <input
-                type="checkbox"
-                checked={confirmCreateNewFamiliar}
-                onChange={(e) =>
-                  props.setConfirmCreateNewFamiliar(e.currentTarget.checked)
-                }
-                disabled={!daemonReady || !selectedHarnessId || picking !== null}
-                className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
-              />
-              <span>
-                I understand this creates a new Coven familiar
-                {selectedHarness ? (
-                  <>
-                    {" "}bound to the{" "}
-                    <span className="font-medium text-[var(--text-primary)]">
-                      {selectedHarness.label}
-                    </span>{" "}runtime
-                  </>
-                ) : null}
-                .
-              </span>
-            </label>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-3">
-            {selectedHarnessId ? (
-              <Button
-                variant="primary"
-                leadingIcon="ph:terminal-window"
-                onClick={props.onCreateLocal}
-                disabled={
-                  !daemonReady ||
-                  picking !== null ||
-                  !confirmCreateNewFamiliar ||
-                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-                }
-              >
-                {picking === "local" ? "Creating…" : "Create new Coven familiar"}
-              </Button>
-            ) : null}
-            {!selectedHarnessId && selectedAgentId ? (
-              <button
-                type="button"
-                onClick={() => {
-                  if (firstInstalledHarness) props.onSelectHarness(firstInstalledHarness);
-                }}
-                disabled={!daemonReady || picking !== null || !firstInstalledHarness}
-                title={
-                  firstInstalledHarness
-                    ? `Use ${firstInstalledHarness.label} for Option A`
-                    : "Install a runtime first to create a new Coven familiar."
-                }
-                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] font-medium text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-              >
-                <Icon name="ph:terminal-window" />
-                Create new Coven familiar
-              </button>
-            ) : null}
-            {selectedAgentId ? (
-              <Button
-                variant="primary"
-                leadingIcon="ph:git-fork"
-                onClick={props.onConnectAgent}
-                disabled={
-                  !daemonReady ||
-                  picking !== null ||
-                  familiarName.trim().length === 0 ||
-                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-                }
-              >
-                {picking === "familiar"
-                  ? "Connecting…"
-                  : selectedOpenClawAgent
-                    ? `Connect ${selectedOpenClawAgent.displayName}`
-                    : "Connect OpenClaw agent"}
-              </Button>
-            ) : null}
-          </div>
-        </>
-      ) : (
-        <p className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
-          Pick{" "}
-          <span className="font-medium text-[var(--text-primary)]">Option A</span>{" "}
-          or{" "}
-          <span className="font-medium text-[var(--text-primary)]">Option B</span>{" "}
-          above to name and create your familiar.
-        </p>
-      )}
-    </div>
-  );
-}
-
-function StepMeetFamiliars({
-  familiars,
-  statusOk,
-  complete,
-  onEdit,
-  onOpenCave,
-}: {
-  familiars: CaveFamiliar[];
-  statusOk: boolean;
-  complete: boolean;
-  onEdit: (id: string) => void;
-  onOpenCave: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        {statusOk
-          ? "Your familiars are loaded. Everything about them stays editable — name, look, brain, runtime, transport — in the Familiar Studio, any time."
-          : "Once the daemon is running and a familiar exists, they appear here."}
-      </p>
-      {familiars.length > 0 ? (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {familiars.map((familiar) => (
-            <div
-              key={familiar.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                  {familiar.display_name ?? familiar.id}
-                </div>
-                <div className="truncate text-[11px] text-[var(--text-muted)]">
-                  {familiar.role ?? familiar.id}
-                </div>
-              </div>
-              <button
-                onClick={() => onEdit(familiar.id)}
-                className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)]"
-              >
-                <Icon name="ph:pencil-simple" />
-                Edit
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {complete ? (
-        <button
-          onClick={onOpenCave}
-          className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
-        >
-          <Icon name="ph:rocket-launch-bold" />
-          Open Cave
-        </button>
       ) : null}
     </div>
   );

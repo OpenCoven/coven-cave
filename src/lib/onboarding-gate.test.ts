@@ -84,11 +84,24 @@ assert.equal(
 );
 assert.equal(
   shouldAutoOpenOnboarding(
-    payload({ complete: false, steps: { ...allStepsOk, binding: { ok: false } } }),
+    payload({ complete: false, steps: { ...allStepsOk, adapters: { ok: false } } }),
     false,
   ),
   true,
-  "daemon up with genuine setup work left → auto-open",
+  "daemon up with genuine setup work left (runtime missing) → auto-open",
+);
+
+// Familiar creation moved into the app (the Summoning Circle): the server now
+// reports complete=true with familiars/binding advisory, so a machine with
+// complete infrastructure and ZERO familiars is done with setup — the wizard
+// must not auto-open; the workspace walks the user to the circle instead.
+assert.equal(
+  shouldAutoOpenOnboarding(
+    payload({ steps: { ...allStepsOk, binding: { ok: false }, familiars: { ok: false } } }),
+    false,
+  ),
+  false,
+  "infra complete + no familiars → no wizard; the summoning circle owns creation",
 );
 assert.equal(
   shouldAutoOpenOnboarding({ complete: false }, false),

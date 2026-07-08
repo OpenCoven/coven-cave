@@ -35,8 +35,10 @@ export function isCovenCodeSatisfied(
  * not-ok while it's down), and that would relaunch the full wizard for an
  * already-set-up machine on every visit. Daemon-down on a set-up machine
  * belongs to the offline banner, not the first-run flow. When the daemon IS
- * reachable, any remaining incompleteness (no familiar yet, no binding, Coven
- * Code missing) is genuine setup work, so the wizard opens.
+ * reachable, any remaining incompleteness (a missing tool or runtime, Coven
+ * Code unhandled) is genuine setup work, so the wizard opens. A machine with
+ * no familiars is NOT unfinished — the status route reports familiars/binding
+ * as advisory since creation moved to the in-app Summoning Circle.
  */
 export function shouldAutoOpenOnboarding(
   payload: OnboardingStatusPayload,

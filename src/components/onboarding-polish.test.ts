@@ -49,28 +49,12 @@ assert.doesNotMatch(
   "Onboarding should not auto-close after setup becomes complete; adding a familiar must leave setup open",
 );
 
-// Glyph input validation
-assert.match(
+// Familiar creation (and its glyph validation) moved to the in-app summoning
+// circle — the wizard carries no familiar form fields at all.
+assert.doesNotMatch(
   source,
-  /aria-invalid=\{familiarGlyph\.trim\(\) !== "" && !familiarGlyph\.trim\(\)\.startsWith\("ph:"\)\}/,
-  "Glyph input should mark itself invalid when a non-ph: value is typed",
-);
-assert.match(
-  source,
-  /Must start with <code className="font-mono">ph:<\/code>/,
-  "Glyph input should explain the validation requirement inline",
-);
-
-// Both create buttons should refuse invalid glyphs
-const createBlocks = source.match(/disabled=\{[\s\S]*?\}/g) ?? [];
-const glyphGated = createBlocks.filter((block) =>
-  /familiarGlyph\.trim\(\) !== "" && !familiarGlyph\.trim\(\)\.startsWith\("ph:"\)/.test(
-    block,
-  ),
-);
-assert.ok(
-  glyphGated.length >= 2,
-  `Both create buttons should refuse invalid glyphs; found ${glyphGated.length} guarded block(s)`,
+  /familiarGlyph/,
+  "the wizard has no familiar glyph field — the summoning circle owns creation",
 );
 
 // Install polling gives up after a failure budget so a network drop mid-install
@@ -101,14 +85,14 @@ assert.match(
 );
 assert.equal(
   source.match(/(?:onClick=\{finishOnboarding\}|onOpenCave=\{finishOnboarding\})/g)?.length,
-  2,
-  "both Open Cave CTAs (footer + meet-familiars step) finish via finishOnboarding",
+  1,
+  "the footer Open Cave CTA (the only one — the meet-familiars step is retired) finishes via finishOnboarding",
 );
 
 // The shared setup-action error banner must be a live alert with a dismiss —
-// every setup action (scaffold, daemon start, familiar create, connection
-// save) reports through it, and a silent <div> means SR users never hear
-// why their click did nothing.
+// every setup action (scaffold, daemon start, connection save) reports
+// through it, and a silent <div> means SR users never hear why their click
+// did nothing.
 assert.match(
   source,
   /\{setupError \? \([\s\S]{0,700}?role="alert"/,
@@ -159,12 +143,12 @@ assert.match(
 );
 
 // ── cave-4op: the wizard's primary CTAs use the shared Button primitive ──────
-// The six accent-background call-to-action buttons (Create Coven home, Start
-// local daemon, Install both tools, Install <adapter>, Create new Coven
-// familiar, Connect agent) render through <Button variant="primary">, so their
-// radius / height / focus ring / disabled + busy treatment come from one place.
-// The two install CTAs use the primitive's `loading` prop for their spinner.
-// Bordered secondary actions, option cards, and skip links stay bespoke here.
+// The four accent-background call-to-action buttons (Create Coven home, Start
+// local daemon, Install both tools, Install <adapter>) render through
+// <Button variant="primary">, so their radius / height / focus ring /
+// disabled + busy treatment come from one place. The two install CTAs use the
+// primitive's `loading` prop for their spinner. Bordered secondary actions,
+// option cards, and skip links stay bespoke here.
 assert.match(
   source,
   /import \{ Button \} from "@\/components\/ui\/button"/,
@@ -172,8 +156,8 @@ assert.match(
 );
 assert.equal(
   (source.match(/<Button\s+variant="primary"/g) ?? []).length,
-  6,
-  'all six primary CTAs render through <Button variant="primary">',
+  4,
+  'all four primary CTAs render through <Button variant="primary">',
 );
 assert.match(
   source,

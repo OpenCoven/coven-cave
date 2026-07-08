@@ -1019,7 +1019,12 @@ export function Workspace() {
   const closeOnboarding = useCallback(() => {
     setOnboardingOpen(false);
     void loadFamiliars();
-  }, [loadFamiliars]);
+    // Familiar creation lives in the app now (the Summoning Circle on the
+    // Familiars surface), not in the wizard. A user who leaves setup with a
+    // live daemon and an empty roster can't chat yet — walk them to the
+    // circle's invitation instead of dropping them on a familiar-less Home.
+    if (daemonRunning && familiars.length === 0) setMode("agents");
+  }, [loadFamiliars, daemonRunning, familiars.length, setMode]);
 
   // First-run: auto-open onboarding if setup is missing and the user hasn't
   // explicitly skipped or finished it. The decision lives in the shared

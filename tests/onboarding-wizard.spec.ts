@@ -19,8 +19,9 @@ const FRESH_STATUS = {
     git: { ok: true, optional: true, detail: "/usr/bin/git" },
     adapters: { ok: false, detail: "no adapters detected" },
     daemon: { ok: false, detail: "daemon socket not reachable" },
-    familiars: { ok: false, detail: "no familiars" },
-    binding: { ok: false, detail: "no binding configured" },
+    // Advisory since familiar creation moved to the in-app summoning circle.
+    familiars: { ok: false, optional: true, detail: "no familiars" },
+    binding: { ok: false, optional: true, detail: "no binding configured" },
   },
   tools: [],
 };
@@ -36,8 +37,8 @@ const DAEMON_DOWN_VETERAN_STATUS = {
     git: { ok: true, optional: true, detail: "/usr/bin/git" },
     adapters: { ok: true, detail: "Codex" },
     daemon: { ok: false, detail: "daemon socket not reachable" },
-    familiars: { ok: false, detail: "daemon offline" },
-    binding: { ok: false, detail: "Waiting for the daemon" },
+    familiars: { ok: false, optional: true, detail: "daemon offline" },
+    binding: { ok: false, optional: true, detail: "Waiting for the daemon" },
   },
   tools: [],
 };
