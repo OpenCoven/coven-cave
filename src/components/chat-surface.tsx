@@ -281,16 +281,20 @@ export function ChatSurface({
   // project root. Mirrors session-changes-panel's /api/changes fetch (files
   // length), re-polled on the `cave:changes-refresh` edit signal and, while the
   // session is running, a light 5s interval gated on document visibility.
-  const [changeCount, setChangeCount] = useState(0);
+  // null = not yet loaded for this root. The distinction matters (cave-xsq.7):
+  // only a genuinely observed 0→N transition auto-reveals the closed-by-default
+  // rail, so pre-existing repo dirt arriving with the first load must come in
+  // over a null (unknown), not a fake zero.
+  const [changeCount, setChangeCount] = useState<number | null>(null);
   const changeCountRootRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!effectiveRailRoot) { setChangeCount(0); changeCountRootRef.current = null; return; }
+    if (!effectiveRailRoot) { setChangeCount(null); changeCountRootRef.current = null; return; }
     const root = effectiveRailRoot;
-    // On a root switch, clear the previous root's count while we load this one —
+    // On a root switch, drop to unknown while this root's count loads —
     // otherwise the badge lingers on the old project's number. (Only on a real
     // root change, so a sessionRunning toggle on the same root doesn't flash.)
     if (changeCountRootRef.current !== root) {
-      setChangeCount(0);
+      setChangeCount(null);
       changeCountRootRef.current = root;
     }
     let cancelled = false;
@@ -305,9 +309,12 @@ export function ChatSurface({
         const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(root)}`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; files?: unknown[] };
         if (cancelled) return;
-        setChangeCount(res.ok && json.ok ? (json.files?.length ?? 0) : 0);
+        // Failures stay `null` (unknown), never a fake zero — a transient
+        // error followed by a successful load must not read as a fresh 0→N
+        // edit batch and pop the closed-by-default rail open (cave-xsq.7).
+        setChangeCount(res.ok && json.ok ? (json.files?.length ?? 0) : null);
       } catch {
-        if (!cancelled) setChangeCount(0);
+        if (!cancelled) setChangeCount(null);
       } finally {
         inFlight = false;
       }
@@ -652,7 +659,7 @@ export function ChatSurface({
                 }}
               >
                 <Icon name="ph:code" width={16} aria-hidden />
-                {changeCount > 0 ? (
+                {(changeCount ?? 0) > 0 ? (
                   <span className="mobile-code-rail-toggle__badge">{changeCount}</span>
                 ) : null}
               </button>
@@ -755,7 +762,7 @@ export function ChatSurface({
                 >
                   {/* TODO: reconcile the duplicate Changes UI with RightPanel's SessionChangesPanel in a later PR of this arc */}
                   <WorkspaceRail
-                    changeCount={changeCount}
+                    changeCount={changeCount ?? 0}
                     activeTab={rail.activeTab}
                     pinned={rail.pinned}
                     projectRoot={effectiveRailRoot}
@@ -847,7 +854,7 @@ export function ChatSurface({
             aria-label="Code rail"
           >
             <WorkspaceRail
-              changeCount={changeCount}
+              changeCount={changeCount ?? 0}
               activeTab={rail.activeTab}
               pinned={rail.pinned}
               projectRoot={effectiveRailRoot}
