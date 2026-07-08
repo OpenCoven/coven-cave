@@ -616,6 +616,7 @@ export const SUITES = {
     "src/app/api/app/latest-release/route.test.ts",
     "src/app/api/opencoven-tools/status/route.test.ts",
     "src/app/api/daemon/status/route.test.ts",
+    "src/app/api/daemon/capabilities/route.test.ts",
     "src/app/api/travel/client/route.test.ts",
     "src/app/api/travel/offline-work-queue.test.ts",
     "src/lib/executor-status.test.ts",
