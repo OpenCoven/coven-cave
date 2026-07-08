@@ -615,7 +615,12 @@ export function CommandPalette({
       ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
       : [];
 
-    return [...salemRows, ...localRows];
+    // Ask-Salem is the FALLBACK row, not the default (cave-42r5): Enter on a
+    // typed query must open the best local match (sessions, familiars, cards,
+    // surfaces), not fire a network AI call. With zero local matches the
+    // Salem row is still rows[0], so unmatched queries keep their one-Enter
+    // AI path.
+    return [...localRows, ...salemRows];
   }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects]);
 
   useEffect(() => {

@@ -62,6 +62,15 @@ assert.match(
   "Command palette includes a Salem AI answer row",
 );
 
+// (cave-42r5) Ask-Salem trails the local matches: Enter on a typed query opens
+// the best local hit; the AI row is the fallback (rows[0] only when nothing
+// matches locally).
+assert.match(
+  source,
+  /return \[\.\.\.localRows, \.\.\.salemRows\];/,
+  "local matches come before the Ask-Salem fallback row",
+);
+
 assert.match(
   source,
   /fetch\("\/api\/salem"[\s\S]*body: JSON\.stringify\(\{[\s\S]*message:\s*query\.trim\(\)[\s\S]*context:/,
