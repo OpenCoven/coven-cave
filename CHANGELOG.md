@@ -7,6 +7,51 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.155] - 2026-07-08
+
+> 🔍 **Review means the one you picked** — a chat edit card's Review no longer keeps snapping the Changes panel back to its own file while an agent is mid-edit; whichever diff you expand stays expanded. Plus a roomier reading measure and a friendlier crons detail panel.
+
+Patch release on top of v0.0.154.
+
+### Fixes
+- **Chat: Review jump-to-diff applies exactly once** (#2742, cave-bvbw). The Changes panel's focus effect re-asserted the original Review target on every 5-second poll while an agent was editing, clobbering whichever diff you had manually selected. Each Review click now consumes its focus once (still retrying until a just-edited file appears in the list), and path matching aligns on `/` boundaries so look-alike filenames can't cross-match.
+
+### Features
+- **Crons: sleek beginner-friendly detail panel**, expandable to full page width (#2740, cave-4p6k).
+- **Chat: the shared reading/composer measure widens one step** (46rem → 52rem) for roomier transcripts (#2739, cave-cy8o).
+
+## [0.0.154] - 2026-07-08
+
+> ⚗️ **One family of controls** — the composer's runtime chip lands everywhere (logo + model, one-click switching, now on Home too) and every icon button rounds up to match it. The daemon's control-plane catalog gets a proxy route, the projects hub takes five upgrades, and an a11y sweep makes bells, schedules, calendars, and pickers honest to assistive tech.
+
+Feature release on top of v0.0.153.
+
+### Features
+- **Composer: always-on runtime chip** (#2711, cave-yq5l) — the active runtime's logo + effective model live in the composer, one click to switch either; **on Home too, with instant roster refresh after runtime switches** (#2718, cave-v25g).
+- **Composer: icon buttons match the chip** (#2735, cave-8jp4). Attach/voice/options/stop/send become 30px capsules like the runtime and host chips — one control family at every breakpoint.
+- **Daemon: control-plane capability catalog proxy** (#2695/#2724). `GET /api/daemon/capabilities` normalizes the daemon's catalog with three feature-detectable states (offline / no catalog / ok).
+- **Projects: five hub updates** (#2730, cave-ihox) — task quick-add, honest git chip, Recent sort, meta titles, grants clarity; **one project per root enforced in the store** (#2732, cave-729h).
+- **Home: Chat/Task tabs above the composer card**, project chip width fit, wordless News lane (#2725).
+- **Chat: externally-generated sessions stay out of the chat lists** (#2719, cave-73fr); **file links render only when the click can actually open them** (#2698).
+- **Chrome: seamless ultra-minimalist title bar** (#2714, cave-r1f5).
+
+### Fixes
+- **Quick chat: the thread fills the window height** — the dropdown-era 46vh cap is gone (#2729, cave-8f9h); **intent-based follow release for quick-chat + group chat** (#2696, cave-o8si).
+- **Home/palette: IME composition no longer sends half-composed drafts** (#2720, #2705); **palette Enter opens the top local match** with Ask-Salem as the fallback row (#2706).
+- **GitHub: detail fetches abort on switch, optimistic resolves protected, PAT modal guarded mid-save** (#2726, cave-b8ba); **review familiar backfills once the list loads** (#2723).
+- **Automations: stable in-flight run poll** (no interval churn, no N+1 fan-out — #2716), stale-response guard on the run log (#2702), status-shaped run icons + associated labels (#2703).
+- **Settings: abort/ordering guards on daemon-status + config fetches** (#2701); the undefined `var(--danger)` becomes the real `--color-danger` token (#2700).
+- **Board: a card's cwd derives server-side from its project, never the client body** (#2708, cave-pw83).
+- **Browser: closing the active tab fully activates its replacement** (#2707); **popovers close on focus-out** per their non-modal role (#2712).
+- **UX: confusion-helpers sweep** — jargon defined at decision points, states labeled, verbs made honest (#2699).
+
+### Accessibility
+- **Bell**: trigger names its dialog, chips are real toggles, times stay live, pointer-wide dismiss (#2728); failed notification mutations are announced (#2727).
+- **Schedules**: both detail panels are real dialogs (#2717). **Calendar**: month gridcells keep a single tab stop (#2710) with a committed e2e keyboard model (#2722). **Projects**: the directory picker traps focus (#2733).
+
+### Internal
+- CI: `timeout-minutes` on every job — hung steps no longer stall required checks for the 6-hour default (#2715). Shared inline slash-menus hook (#2697). Committed e2e spec for the runtime-chip switch flow (#2721). Canvas sandbox postMessage invariant pinned (#2704).
+
 ## [0.0.153] - 2026-07-08
 
 > 🕸️ **The grimoire grows a graph** — every doc's [[wiki-links]] and semantic kinships spread across a force-directed canvas you can wander. Chat learns the Codex model catalog, the browser pane finally leaves the boot bundle, and suggestion chips close out their 2-or-4 arc with the dead CSS swept.

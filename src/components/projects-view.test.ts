@@ -441,4 +441,9 @@ assert.match(
 );
 assert.match(projectsView, /onSelect=\{\(\) => setMenuView\("root"\)\}[\s\S]{0,40}?Back/, "the picker has a Back affordance");
 
+// (cave-psp8) Board-card loads abort the in-flight request per refetch —
+// mount + every window refocus fired overlapping fetches that could land out
+// of order (stale cards) or setState after unmount.
+assert.match(projectsView, /boardAbortRef\.current\?\.abort\(\);/, "each board-cards load aborts the in-flight one");
+assert.match(projectsView, /fetch\("\/api\/board", \{ cache: "no-store", signal: controller\.signal \}\)/, "the board-cards fetch carries an abort signal");
 console.log("projects-view.test.ts: ok");

@@ -141,9 +141,9 @@ function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNo
   );
 }
 
-function CronDetailSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function CronDetailSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-[var(--radius-control)] border p-3"
+    <section className={`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`}
       style={{ borderColor: "var(--border-hairline)", background: "color-mix(in oklch, var(--bg-base) 72%, transparent)" }}>
       <div>
         <h3 className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h3>
@@ -153,6 +153,14 @@ function CronDetailSection({ title, description, children }: { title: string; de
     </section>
   );
 }
+
+// Beginner-facing names for the schedule cadence modes: the presets read as
+// plain cadences, and the raw-RRULE escape hatch is labeled for what it is.
+const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
+  weekly: "Weekly",
+  daily: "Daily",
+  raw: "Advanced",
+};
 
 function CronSummaryTile({ label, value, tone = "default" }: { label: string; value: ReactNode; tone?: "default" | "active" | "paused" | "danger" }) {
   const valueColor =
@@ -665,6 +673,8 @@ function ReminderTaskList({
 function CodexDetailPanel({
   auto,
   busy,
+  expanded,
+  onToggleExpanded,
   onClose,
   onToggle,
   onSave,
@@ -674,6 +684,10 @@ function CodexDetailPanel({
 }: {
   auto: CodexAutomation;
   busy: boolean;
+  /** Full-page-width mode: the rail grows to fill the surface and the form
+   *  reflows into a two-column canvas (list hidden until collapsed). */
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onClose: () => void;
   onToggle: (auto: CodexAutomation) => void;
   onSave: (auto: CodexAutomation, patch: CodexAutomationPatch) => void;
@@ -839,6 +853,16 @@ function CodexDetailPanel({
             <Button
               variant="ghost"
               size="xs"
+              onClick={onToggleExpanded}
+              aria-pressed={expanded}
+              aria-label={expanded ? "Collapse to side panel" : "Expand to full width"}
+              title={expanded ? "Collapse to side panel" : "Expand to full width"}
+              className="hidden rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] md:inline-flex"
+              leadingIcon={expanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"}
+            />
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={onClose}
               aria-label="Close"
               className="rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
@@ -848,14 +872,18 @@ function CodexDetailPanel({
         </div>
       </div>
 
-      <div className="@container flex-1 overflow-y-auto px-5 py-5 space-y-5">
-        <div className="cron-detail-summary-grid grid grid-cols-2 gap-2">
+      {/* Merge of main's expanded variant with the split-fit container: columns
+          key off the pane, not the viewport (cave-hivd). */}
+      <div className={`@container flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
+        <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
+        <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " @min-[900px]:grid-cols-4" : ""}`}>
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
           <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
           <CronSummaryTile label="Model" value={model.trim() || "Default"} />
           <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
         </div>
 
+        <div className={expanded ? "grid items-start gap-5 lg:grid-cols-2" : "space-y-5"}>
         <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
           <div>
             <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
@@ -923,13 +951,13 @@ function CodexDetailPanel({
                 size="xs"
                 onClick={() => setScheduleMode(mode)}
                 aria-pressed={scheduleMode === mode}
-                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] capitalize"
+                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px]"
                 style={{
                   background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
                   color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
                 }}
               >
-                {mode}
+                {SCHEDULE_MODE_LABEL[mode]}
               </Button>
             ))}
           </div>
@@ -979,9 +1007,20 @@ function CodexDetailPanel({
               />
             </div>
           )}
-          <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
-            {nextRrule || "RRULE required"}
-          </p>
+          {/* Plain-language echo of the chosen cadence for preset modes; the
+              cryptic RRULE line only surfaces in Advanced mode or when the
+              schedule is invalid — beginners never have to read iCalendar. */}
+          {scheduleMode !== "raw" && !invalidSchedule ? (
+            <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {scheduleMode === "daily"
+                ? `Runs every day at ${scheduleTime}`
+                : `Runs weekly on ${scheduleDays.map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
+            </p>
+          ) : (
+            <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
+              {nextRrule || "RRULE required"}
+            </p>
+          )}
         </CronDetailSection>
 
         <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
@@ -1045,7 +1084,7 @@ function CodexDetailPanel({
         </CronDetailSection>
 
         {runs.length > 0 && (
-          <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
+          <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron." className={expanded ? "lg:col-span-2" : undefined}>
             <ul className="mt-1 space-y-1">
               {runs.slice(0, 10).map((r) => (
                 <li key={r.id}>
@@ -1084,10 +1123,13 @@ function CodexDetailPanel({
             </ul>
           </CronDetailSection>
         )}
+        </div>
+        </div>
       </div>
 
-      <div className="cron-detail-actions border-t px-5 py-4 space-y-3"
+      <div className="cron-detail-actions border-t px-5 py-4"
         style={{ borderColor: "var(--border-hairline)" }}>
+        <div className={`space-y-3${expanded ? " mx-auto w-full max-w-xl" : ""}`}>
         {saveBlockedReason ? (
           <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
             {saveBlockedReason}
@@ -1133,6 +1175,7 @@ function CodexDetailPanel({
           >
             Delete
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -2307,6 +2350,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const selectedReminderId = selectedItem?.id ?? null;
   const selectedAutomationId = selectedCodex?.id ?? null;
   const detailOpen = Boolean(selectedItem || selectedCodex);
+  // The cron detail can grow from its side rail into the full page width —
+  // the compact rail stays the default; expanding gives the form room to
+  // breathe (summary tiles go 4-up, sections flow into two columns) and
+  // hides the list until collapsed again. Reminder details keep the rail.
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const cronDetailExpanded = detailExpanded && Boolean(selectedCodex);
 
   // At-a-glance operational summary for the header: how many automations are
   // live vs paused. Crons fire server-side, so they don't contribute a next-fire
@@ -2338,7 +2387,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     >
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
-      <div className={`${detailOpen ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col`}>
+      <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
         {/* Compact header: title, tabs, live summary, filter, and actions in
             ONE slim topmost band — mirrors the GitHub surface's
             gh-compact-header so operational surfaces share the same
@@ -2471,7 +2520,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
       {detailOpen && (
-        <div className="w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+        <div
+          className={
+            cronDetailExpanded
+              ? "w-full min-w-0 flex-1 overflow-hidden"
+              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]"
+          }
+          style={{ borderLeft: "1px solid var(--border-hairline)" }}
+        >
           {selectedItem && (
             <DetailPanel
               item={selectedItem}
@@ -2490,7 +2546,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <CodexDetailPanel
               auto={selectedCodex}
               busy={busyId === selectedCodex.id}
-              onClose={() => setSelectedCodex(null)}
+              expanded={cronDetailExpanded}
+              onToggleExpanded={() => setDetailExpanded((v) => !v)}
+              onClose={() => { setSelectedCodex(null); setDetailExpanded(false); }}
               onToggle={toggleCodex}
               onSave={saveCodex}
               onDelete={deleteCodex}
