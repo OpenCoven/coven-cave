@@ -955,7 +955,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   </div>
                                 ) : null}
                                 {r.status === "done" && suggestions.length > 0 ? (
-                                  <div className="cave-next-paths mt-1.5">
+                                  <div className="cave-next-paths mt-1.5" data-count={suggestions.length}>
                                     {suggestions.map((s, i) => {
                                       // The agent lists next steps best-first, so
                                       // flag the top one as the recommendation.

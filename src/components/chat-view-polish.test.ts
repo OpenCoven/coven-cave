@@ -1098,6 +1098,29 @@ assert.match(
   "the first follow-up is marked as the recommended next step",
 );
 
+// Suggestion pills lay out in UNIFORM rows — 1, 2, or 3 per row, keyed off the
+// chip count: 2 and 4 chips pair into two columns (4 = 2×2, never a 3+1 orphan
+// wrap) and only an exactly-3 row spreads to three columns (cave-wrso).
+assert.match(
+  source,
+  /className="cave-next-paths" data-count=\{nextPaths\.length\}/,
+  "the chip row stamps its count so CSS can key columns off it",
+);
+assert.match(
+  globalsSrc,
+  /\.cave-next-paths\[data-count="2"\],\s*\n\s*\.cave-next-paths\[data-count="4"\] \{ grid-template-columns: repeat\(2, 1fr\); \}/,
+  "2 and 4 chips pair into two columns (4 renders 2×2)",
+);
+assert.match(
+  globalsSrc,
+  /\.cave-next-paths\[data-count="3"\] \{ grid-template-columns: repeat\(3, 1fr\); \}/,
+  "only an exactly-3 row spreads to three columns",
+);
+assert.ok(
+  !/\.cave-next-paths \{ grid-template-columns: repeat\(/.test(globalsSrc),
+  "no count-blind multi-column rule survives (it produced 3+1 orphan wraps)",
+);
+
 // File picker resets its value synchronously so re-selecting the same file (or
 // re-attaching after the CSV / 10-cap early returns) still fires onChange.
 assert.ok(

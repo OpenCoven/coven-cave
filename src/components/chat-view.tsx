@@ -6049,7 +6049,9 @@ function TurnRowImpl({
                 element (click to send), so they sit closest to the composer and
                 aren't pushed up the turn by the tool-activity section. */}
             {nextPaths.length > 0 && !turn.pending ? (
-              <div className="cave-next-paths">
+              // data-count keys the row layout: pills lay out 1, 2, or 3 per
+              // row — 4 pills pair into a 2×2, never a 3+1 orphan wrap.
+              <div className="cave-next-paths" data-count={nextPaths.length}>
                 {nextPaths.map((s, i) => {
                   // The agent lists next steps best-first, so flag the top one as
                   // the recommendation (green pulsing border + leading dot).
