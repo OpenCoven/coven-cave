@@ -129,11 +129,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // the board (setCards([])) or flash an error — leave the last-good cards in
   // place. Explicit loads (mount, focus, reload event) stay loud. Callers that
   // pass an event (e.g. useRefreshOnFocus) read as not-quiet, which is correct.
+  //
+  // Sequence guard: load() fires from five overlapping sources (mount, focus
+  // refresh, the reload event, the 15s poll, and the failure-revert paths in
+  // patchCard/deleteCards/handleClearDone). Without this, whichever GET
+  // *resolves* last wins — which may be an *older* request, so a slow poll can
+  // land after an optimistic move (drag/table edit, neither of which pauses the
+  // poll) and clobber it back to the pre-move state until the next tick. Abort
+  // the prior in-flight load before each new one and drop a superseded (aborted)
+  // response, so only the latest load ever touches state (mirrors
+  // capabilities-view / marketplace-configure).
+  const loadCtlRef = useRef<AbortController | null>(null);
   const load = useCallback(async (opts?: { quiet?: boolean }) => {
     const quiet = opts?.quiet === true;
+    loadCtlRef.current?.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
     try {
-      const res = await fetch("/api/board", { cache: "no-store" });
+      const res = await fetch("/api/board", { cache: "no-store", signal: ctl.signal });
       const json = await res.json();
+      if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       if (json.ok) {
         const loaded = json.cards as Card[];
         // Poll ticks rebuild an identical array most of the time; keep the
@@ -147,16 +162,19 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         setError(json.error ?? "load failed");
       }
     } catch (err) {
+      if (ctl.signal.aborted) return; // aborted mid-flight — leave state to the newer load
       if (!quiet) {
         setCards([]);
         setError(err instanceof Error ? err.message : "load failed");
       }
     } finally {
-      setHasLoaded(true);
+      if (!ctl.signal.aborted) setHasLoaded(true);
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  // Abort any in-flight load when the board unmounts.
+  useEffect(() => () => loadCtlRef.current?.abort(), []);
 
   // "/" jumps to the task search (GitHub-style) while the board is shown,
   // unless the user is already typing in a field or holding a modifier.

@@ -8,7 +8,7 @@ const styles = await readFile(new URL("../styles/board.css", import.meta.url), "
 
 // ───────── Loading state (no empty-CTA flash on open) ─────────
 assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "BoardView must track a hasLoaded flag");
-assert.match(view, /finally\s*\{\s*setHasLoaded\(true\);/, "load() must set hasLoaded in finally");
+assert.match(view, /finally\s*\{\s*if \(!ctl\.signal\.aborted\) setHasLoaded\(true\);/, "load() must set hasLoaded in finally (skipping a superseded/aborted load)");
 assert.match(view, /!hasLoaded && !error \?/, "A loading branch must precede the empty-state branch");
 assert.match(view, /role="status" aria-label="Loading tasks"/, "Loading state must be announced");
 
@@ -170,6 +170,15 @@ assert.match(
   /setCards\(\(prev\) => \(arrayContentEqual\(prev, loaded\) \? prev : loaded\)\)/,
   "the board poll guards setCards with arrayContentEqual",
 );
+
+// 2b. load() is sequence-guarded: five overlapping callers (mount, focus,
+//    reload event, 15s poll, failure-revert paths) mean an older GET can
+//    resolve last and clobber a fresher optimistic move. Abort the prior load
+//    and drop a superseded response so only the latest load touches state.
+assert.match(view, /const loadCtlRef = useRef<AbortController \| null>\(null\)/, "the board load has an abort controller");
+assert.match(view, /loadCtlRef\.current\?\.abort\(\);\s*\n\s*const ctl = new AbortController\(\)/, "each load aborts the prior in-flight one");
+assert.match(view, /if \(ctl\.signal\.aborted\) return; \/\/ superseded/, "a superseded load response is dropped before touching state");
+assert.match(view, /useEffect\(\(\) => \(\) => loadCtlRef\.current\?\.abort\(\), \[\]\)/, "the in-flight load aborts on unmount");
 
 // 3. A second reschedule inside the undo window must not clobber the snapshot —
 //    Undo restores the ORIGINAL dates, not the intermediate position.
