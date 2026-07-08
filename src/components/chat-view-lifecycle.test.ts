@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const draftHook = readFileSync(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 
@@ -469,33 +470,35 @@ assert.match(
 
 // The composer draft survives a reload: input initialises from localStorage
 // and is written back on change (and cleared when emptied, e.g. after a send).
+// The plumbing lives in the shared use-composer-draft hook (parity with home);
+// these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(\)\)/,
+  /const \[input, setInput\] = useState\(\(\) => readComposerDraft\(COMPOSER_DRAFT_KEY\)\)/,
   "composer input initialises from the persisted draft",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(input\);\s*\}, COMPOSER_DRAFT_WRITE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[input\]\)/,
-  "the draft is debounced so mobile typing does not write localStorage on every keystroke",
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS\)/,
+  "the draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
 );
 assert.match(
-  source,
-  /if \(text\) window\.localStorage\.setItem\(COMPOSER_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(COMPOSER_DRAFT_KEY\)/,
+  draftHook,
+  /if \(text\) window\.localStorage\.setItem\(key, text\);\s*else window\.localStorage\.removeItem\(key\)/,
   "an emptied draft removes the key (sent messages don't reappear on reload)",
 );
 
-// The ↑/↓ prompt-history survives a reload: it initialises from localStorage
-// and is persisted whenever it changes.
+// The ↑/↓ prompt-history survives a reload — shared hook; the pin holds the
+// keyed call site, the hook test holds the recall/persist semantics.
 assert.match(
   source,
-  /const \[inputHistory, setInputHistory\] = useState<string\[\]>\(\(\) => readComposerHistory\(COMPOSER_HISTORY_KEY\)\)/,
-  "input history initialises from the persisted recall stack",
+  /const \{ push: pushHistory, handleArrowKey \} = useComposerHistory\(COMPOSER_HISTORY_KEY\)/,
+  "input history rides the shared persisted recall stack",
 );
 assert.match(
   source,
-  /writeComposerHistory\(COMPOSER_HISTORY_KEY, inputHistory\)/,
-  "input history is persisted when it changes",
+  /if \(handleArrowKey\(e, input, setInput\)\) return;/,
+  "↑/↓ recall is delegated to the shared hook from the composer keyboard handler",
 );
 
 // ── Mid-stream thread switch must not cross wires (2026-07-03 audit P0) ───────

@@ -1159,10 +1159,10 @@ assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists")
 // (3) send() clears the persisted draft synchronously — the 250ms debounced
 //     writer is cancelled if ChatView unmounts right after send, else the
 //     pre-send text reappears as a draft on return.
-assert.match(source, /setInput\(""\);\s*\n\s*\/\/[\s\S]*?writeComposerDraft\(""\);/, "send clears the persisted composer draft synchronously");
+assert.match(source, /setInput\(""\);\s*\n\s*\/\/[\s\S]*?clearDraft\(\);/, "send clears the persisted composer draft synchronously");
 // (2) send() resets the enhance strip so it doesn't linger over an empty
 //     composer and let Revert repopulate the already-sent message.
-assert.match(source, /writeComposerDraft\(""\);[\s\S]{0,400}?setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/, "send resets the enhance (Prompt improved / Revert) state");
+assert.match(source, /clearDraft\(\);[\s\S]{0,400}?setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/, "send resets the enhance (Prompt improved / Revert) state");
 // (1) the /model, /skill and /prompt inline pickers each dismiss on Escape
 //     (their footers advertise "esc cancel"); previously Esc fell through and
 //     cancelled a live stream. Together with the slash-menu branch that's 4.

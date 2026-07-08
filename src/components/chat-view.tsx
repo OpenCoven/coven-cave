@@ -116,6 +116,8 @@ import {
 } from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
+import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { ProjectPicker, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
@@ -125,7 +127,7 @@ import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-inpu
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
-import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
+import { useComposerHistory } from "@/lib/use-composer-history";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
@@ -410,24 +412,6 @@ function writeComposerPrefs(prefs: {
   }
 }
 
-function readComposerDraft(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    return window.localStorage.getItem(COMPOSER_DRAFT_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function writeComposerDraft(text: string) {
-  if (typeof window === "undefined") return;
-  try {
-    if (text) window.localStorage.setItem(COMPOSER_DRAFT_KEY, text);
-    else window.localStorage.removeItem(COMPOSER_DRAFT_KEY);
-  } catch {
-    /* best effort */
-  }
-}
 
 function shouldKeepLiveNewChatState({
   sessionId,
@@ -2171,10 +2155,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft());
-  // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
-  const [inputHistory, setInputHistory] = useState<string[]>(() => readComposerHistory(COMPOSER_HISTORY_KEY));
-  const [inputHistoryIdx, setInputHistoryIdx] = useState<number>(-1);
+  const [input, setInput] = useState(() => readComposerDraft(COMPOSER_DRAFT_KEY));
+  // Persist the composer draft so a reload restores a half-written message.
+  // Cleared (key removed) when the input empties — e.g. after a send. Shared
+  // hook — debounce + remove-on-empty semantics live in use-composer-draft.
+  const { clearNow: clearDraft } = useDraftPersistence(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
+  // chat deliberately never records slash commands (send() returns before the push).
+  const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   // Reply to Chat: the turn the next message quotes, shown as a composer chip
   // and prepended as a markdown blockquote to the outgoing prompt at send time.
@@ -3361,20 +3349,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   }, [sessionId]);
 
-  function resizeComposer() {
-    const el = inputRef.current;
-    if (!el) return;
-    const computedMaxHeight = Number.parseFloat(window.getComputedStyle(el).maxHeight);
-    const maxHeight = Number.isFinite(computedMaxHeight) ? computedMaxHeight : COMPOSER_MAX_HEIGHT;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-    const isOverflowing = el.scrollHeight > maxHeight;
-    el.style.overflowY = isOverflowing ? "auto" : "hidden";
-  }
-
-  useEffect(() => {
-    resizeComposer();
-  }, [input]);
+  // Auto-grow the composer with its content (shared with the home composer).
+  useAutogrowTextarea(inputRef, input, { fallbackMaxHeight: COMPOSER_MAX_HEIGHT });
 
   // CHAT-D10-03: Track new turns arriving while not following
   const appendTurn = (newTurn: Turn | Turn[]) => {
@@ -4026,8 +4002,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .slice(0, MAX_FILE_MENTIONS);
     // CHAT-D11-04: Add to input history (the raw draft, without the quote
     // prefix — ↑ recall should restore what the user typed, not the blockquote).
-    setInputHistory((prev) => [...prev, text]);
-    setInputHistoryIdx(-1);
+    pushHistory(text);
     // Reply to Chat: fold the quoted target into the outgoing prompt so the
     // model sees it and it persists in the transcript; pass-through when unset.
     const outgoingText = buildQuotedPrompt(replyTarget, text);
@@ -4037,7 +4012,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // cancelled if ChatView unmounts right after a send (navigating to another
     // surface), which would leave the pre-send text in storage to reappear as an
     // unsent draft on return.
-    writeComposerDraft("");
+    clearDraft();
     setAttachments([]);
     setMentionedFiles([]);
     // The enhance "Prompt improved / Revert" strip belongs to the draft just
@@ -4561,26 +4536,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
     }
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
-    if (e.key === "ArrowUp" && input === "" && inputHistory.length > 0) {
-      e.preventDefault();
-      const idx = inputHistoryIdx < inputHistory.length - 1 ? inputHistoryIdx + 1 : inputHistoryIdx;
-      setInputHistoryIdx(idx);
-      setInput(inputHistory[inputHistory.length - 1 - idx] ?? "");
-      return;
-    }
-    if (e.key === "ArrowDown" && inputHistoryIdx > 0) {
-      e.preventDefault();
-      const idx = inputHistoryIdx - 1;
-      setInputHistoryIdx(idx);
-      setInput(inputHistory[inputHistory.length - 1 - idx] ?? "");
-      return;
-    }
-    if (e.key === "ArrowDown" && inputHistoryIdx === 0) {
-      e.preventDefault();
-      setInputHistoryIdx(-1);
-      setInput("");
-      return;
-    }
+    if (handleArrowKey(e, input, setInput)) return;
     // `isComposing` is true for the Enter that confirms an IME candidate
     // (CJK/pinyin/kana). Treating that Enter as "send" fires a half-composed,
     // garbled message and destroys the candidate selection, so let the IME keep it.
@@ -4594,20 +4550,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelSend();
     }
   };
-
-  // Persist the composer draft so a reload restores a half-written message.
-  // Cleared (key removed) when the input empties — e.g. after a send.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      writeComposerDraft(input);
-    }, COMPOSER_DRAFT_WRITE_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [input]);
-
-  // Persist the ↑/↓ prompt-history so past prompts survive a reload.
-  useEffect(() => {
-    writeComposerHistory(COMPOSER_HISTORY_KEY, inputHistory);
-  }, [inputHistory]);
 
   // Sync the selected project when switching sessions. Also initialise the draft
   // the first time projects load (when it is still null). Do NOT overwrite a
