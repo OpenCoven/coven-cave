@@ -7,6 +7,30 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.150] - 2026-07-08
+
+> 🔮 **The Summoning Circle** — familiar creation leaves the setup wizard for a gamified in-app rite: choose a vessel (this machine, SSH, or an OpenClaw agent), name it, give it form, and summon — then return to the circle to enhance. Chat becomes the front door, seven surfaces adopt the shared compact chrome, and Windows launching gets sturdier.
+
+Feature release on top of v0.0.149.
+
+### Features
+- **Familiars: the Summoning Circle** (#2635, cave-xxy8). Creation is a staged rite around an animated circle — vessel (local runtime, remote over SSH with a pre-summon connection test, or an OpenClaw agent bridge), name (with suggestions and a live id preview), form (sigil, portrait, aura), summoning (with celebration). An Enhancement Rite alters existing familiars — identity, form, and mind batched behind one act, with honest vitality signals.
+- **Onboarding ends at infrastructure** (#2637, cave-ej9r). The wizard stops at tools → Coven home → runtime → daemon; familiar creation lives exclusively in the Summoning Circle, and a familiar-less dismissal lands on the circle's invitation.
+- **Chat-first IA** (#2632, #2633, cave-hsa6). Cave boots into a ChatGPT-style compose landing — the conversation is the front door.
+- **Chat: quieter shell** (#2628 cave-xsq.7, #2629 cave-xsq.8, #2606 cave-xsq.5, #2608 cave-xsq.6). Code rail closed by default, Journal + Grimoire join the quiet nav cluster, Group demotes to an icon, and the quick-chat overlay retires for a thin chat launcher.
+- **Shared compact chrome across seven surfaces** (#2627, #2631, #2634, #2636, #2638, #2639, #2644). Schedules, Marketplace, Tasks, Grimoire, Work queue, the browser toolbar, and Settings adopt the one slim GitHub-style header band.
+- **Chat: adaptive suggestion chips** (#2642, #2648). Next-path and artifact-refine chips come as 2 or 4, never a fixed 3.
+- **Home: Continue/News digest carousel restored** (#2630, cave-ican) and the orphaned column components removed (#2645, cave-he9d).
+- **Familiars: drag-to-reorder the Lifecycle roster** (#2609, cave-f2vo).
+- **Work queue: world-class pass** (#2638, #2641, cave-d3pg). Truthful degradation, freshness, poll performance, cleanup dedup, composer focus.
+
+### Fixes
+- **Chat: stale-state fixes on rapid thread/root switch + /clear teardown** (#2607, cave-b63); **system echoes survive mid-stream** (#2646, cave-7ft); **the Reflect header button gets its own sparkle** — no more twin brains (#2643, cave-gdth); **quieter code-block header** (#2640, cave-8bfz).
+- **Windows: sturdier launching** (#2621, #2625). Spawn PATH rebuilds from the registry instead of a login shell, and `coven` resolves through PATH before the literal-name fallback. The onboarding Smart App Control notice now explains itself and links Microsoft's doc (#2622).
+- **Browser: close inactive native webviews** (#2626) and a WAAPI mode-fade replacing the localhost probe (#2620).
+- **Board: simpler new-task modal** without workspace-specific defaults (#2647).
+- **Desktop: folder picker no longer says "Choose a folder for Graphify"** (#2623); **platform-aware search shortcut badge** instead of a hard-coded ⌘K (#2624).
+
 ## [0.0.149] - 2026-07-07
 
 > 🩹 **Chat polish** — prompt snippets fold into the composer's Options menu, and group chat gains a race-safe session recorder that aborts an in-flight broadcast when you switch covens.
