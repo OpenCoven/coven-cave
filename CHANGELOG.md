@@ -7,6 +7,32 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.153] - 2026-07-08
+
+> 🕸️ **The grimoire grows a graph** — every doc's [[wiki-links]] and semantic kinships spread across a force-directed canvas you can wander. Chat learns the Codex model catalog, the browser pane finally leaves the boot bundle, and suggestion chips close out their 2-or-4 arc with the dead CSS swept.
+
+Feature release on top of v0.0.152.
+
+### Features
+- **Grimoire: Obsidian-class doc graph** (#2676, cave-hand). Semantic edge generation plus a force-directed canvas viewer, with a surface UX pass to match.
+- **Chat: Codex model catalog + anonymous-calm landing** (#2677). Model picking covers the Codex catalog; the landing calms down when no familiar is signed in; skill scans dedupe by realpath.
+- **Marketplace: "Explain code" starter prompt in the Essentials pack** (#2690).
+
+### Accessibility
+- **Flow** (#2680, cave-sky3; #2685, cave-6pp8). React Flow controls and viewport pan/zoom honor `prefers-reduced-motion`; graph nodes open from the keyboard, not just double-click.
+- **Dashboard** (#2687, cave-0k5b). Drag announcements speak panel titles and positions; grips name their panel.
+- **Grimoire** (#2686, cave-mglw). Deletes and saves are announced; the document strip is a full tabs pattern.
+- **Notifications + board** (#2684, cave-6fqb). The notification popover traps focus; the selected board card stays in view across view switches.
+
+### Performance
+- **Browser pane lazy-loads** (#2683, cave-masj) — the last surface out of the boot bundle.
+- **Familiars: single 30s memory poll** (#2679, cave-5dnw) — the embedded memory view mirrors the parent feed instead of double-fetching.
+
+### Changed
+- **Settings and Capabilities action buttons standardize on the shared Button primitive** (#2675, #2678, cave-0k3z).
+- **Dead code swept**: the unused /api/youtube chain and RailMemoryList (#2682, cave-kdkg), the zones-era dashboard model surface and test-only `dashboardLayout()` (#2688, #2689, cave-pbk4), hidden-Roles marketplace remnants (#2692, cave-vp4h), and the unreachable 3-column suggestion-pill breakpoint (#2693, cave-98bs) — closing out the chips 2-or-4 arc.
+- **Terminal docs pin the keepalive visibility invariant** (#2681, cave-hnn5).
+
 ## [0.0.152] - 2026-07-08
 
 > 🪟 **Quick chat, multiplied** — the tray window holds several conversations at once behind a glassy new face: tabs that inherit your familiar, ⌘N to open another, and vibrancy shining through on macOS. The summoning circle learns to hold a full OpenClaw roster, and the calendar gets a proper accessibility pass.
