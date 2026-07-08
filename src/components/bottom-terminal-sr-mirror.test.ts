@@ -65,11 +65,30 @@ assert.match(source, /const \{ term, fit, search \} = await createXterm\(wrap, \
 assert.match(source, /^function searchDecorations\(\)/m, "searchDecorations is hoisted to module scope");
 assert.match(source, /decorations:\s*searchDecorations\(\)/, "search decorations are resolved when search runs");
 
-// The mirror must not re-render while the pane is backgrounded/hidden — a busy
+// The mirror must not re-render while the pane is HIDDEN (keepalive) — a busy
 // background stream otherwise re-renders the 50-line mirror every 250ms
 // off-screen. pushToMirror keeps decoding (decoder stays consistent) but skips
-// the flush when the pane isn't active, and drains on becoming active.
-assert.match(source, /if \(!activeRef\.current\) \{[\s\S]{0,180}return;/, "the SR mirror doesn't re-render while the pane is hidden");
-assert.match(source, /if \(active\) \{\s*\n\s*flushMirror\(\);/, "buffered output is drained into the mirror when the pane becomes active");
+// the flush when the pane isn't visible, and drains on reveal. Crucially it is
+// VISIBILITY — not focus — that gates the mirror: a visible-but-unfocused
+// split pane must keep announcing its output (cave-2956).
+assert.match(source, /if \(!visibleRef\.current\) \{[\s\S]{0,180}return;/, "the SR mirror doesn't re-render while the pane is hidden");
+assert.match(source, /if \(visible\) flushMirror\(\);/, "buffered output is drained into the mirror when the pane is shown");
+assert.doesNotMatch(source, /activeRef/, "focus (active) must not gate the SR mirror — visibility does");
+
+// Resize storms (cave-2956): the local refit stays per-observer-callback, but
+// the PTY push (SIGWINCH) is throttled, deduped on unchanged cols/rows, and
+// skipped entirely for hidden keepalive panes.
+assert.match(source, /function makeResizer\(/, "both transports share the throttled resizer");
+assert.match(source, /RESIZE_PUSH_DEBOUNCE_MS/, "the PTY resize push is debounced");
+assert.match(source, /if \(!isVisible\(\)\) return;/, "hidden panes fit locally but never push pty_resize");
+assert.match(source, /if \(cols === last\.cols && rows === last\.rows\) return;/, "unchanged dimensions don't reach the PTY");
+assert.equal((source.match(/makeResizer\(term, fit/g) ?? []).length, 2, "both the Tauri and WS transports use makeResizer");
+assert.equal((source.match(/resizer\.dispose\(\)/g) ?? []).length, 2, "both transports clear the pending resize push on cleanup");
+
+// comux threads a separate `visible` signal: true for every rendered split
+// pane (so unfocused siblings keep announcing), false only for keepalive.
+const comux = readFileSync(new URL("./comux-view.tsx", import.meta.url), "utf8");
+assert.match(comux, /active=\{active && isActive\}\s*\n\s*visible=\{active\}/, "split panes are visible whenever the surface is, focused or not");
+assert.match(comux, /active=\{false\}\s*\n\s*visible=\{false\}/, "keepalive mounts are explicitly not visible");
 
 console.log("bottom-terminal-sr-mirror.test.ts OK");
