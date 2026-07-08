@@ -5308,7 +5308,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <div className="cave-composer-utility-row">
                   <button
                     type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                     title="Attach images, videos, or files"
                     aria-label="Attach images, videos, or files"
                     disabled={busy || attachments.length >= 10}
@@ -5322,7 +5322,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   {sessionId ? (
                     <button
                       type="button"
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                       title="Voice"
                       aria-label="Voice"
                       onClick={() => setVoiceCallOpen(true)}
@@ -5385,7 +5385,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <div className="cave-composer-submit-row">
                   <button
                     type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
                     title="Enhance prompt"
                     aria-label="Enhance prompt"
                     disabled={busy || enhanceStatus === "loading" || !input.trim()}
@@ -5397,7 +5397,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <button
                       type="button"
                       onClick={cancelSend}
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
+                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
                       title="Cancel (esc)"
                       aria-label="Cancel response"
                     >
@@ -5408,7 +5408,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       type="button"
                       onClick={() => void send()}
                       disabled={!input.trim() && attachments.length === 0}
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
