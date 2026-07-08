@@ -118,6 +118,61 @@ function loginShellPath(): string | null {
 }
 
 /**
+ * Parse the `Path` value out of `reg query <key> /v Path` output. For
+ * REG_EXPAND_SZ values, expand %VAR% references against `env`
+ * (case-insensitively, leaving unknown variables intact — both matching
+ * Windows' own expansion); REG_SZ values are returned verbatim.
+ * Exported for tests.
+ */
+export function windowsPathFromRegQuery(
+  output: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const match = /^\s*Path\s+(REG_SZ|REG_EXPAND_SZ)\s+(.+)$/im.exec(output);
+  const type = match?.[1];
+  const value = match?.[2]?.trim();
+  if (!type || !value) return null;
+  if (type.toUpperCase() !== "REG_EXPAND_SZ") return value;
+  const lookup = new Map(
+    Object.entries(env).map(([key, val]) => [key.toUpperCase(), val] as const),
+  );
+  return value.replace(
+    /%([^%;=]+)%/g,
+    (whole, name: string) => lookup.get(name.toUpperCase()) ?? whole,
+  );
+}
+
+// Windows equivalent of loginShellPath(): SHELL is unset there, so the
+// login-shell probe always fails and refreshCovenSpawnEnv() could never see
+// PATH entries added after launch. Installers (including our onboarding
+// `npm i -g @opencoven/cli` flow) register new tool dirs by editing the
+// machine/user Path in the registry and broadcasting WM_SETTINGCHANGE —
+// which already-running processes never receive. Re-reading the registry is
+// how a refresh actually picks those up without an app restart.
+function windowsRegistryPath(): string | null {
+  // Machine PATH first, then user PATH — the same order Windows itself uses
+  // when it builds a process environment.
+  const keys = [
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+    "HKCU\\Environment",
+  ];
+  const parts: string[] = [];
+  for (const key of keys) {
+    try {
+      const out = execFileSync("reg", ["query", key, "/v", "Path"], {
+        encoding: "utf-8",
+        timeout: 2000,
+      });
+      const value = windowsPathFromRegQuery(out);
+      if (value) parts.push(value);
+    } catch {
+      /* key or value missing — keep whatever the other hive provides */
+    }
+  }
+  return parts.length > 0 ? parts.join(path.delimiter) : null;
+}
+
+/**
  * Resolve the absolute path to the `coven` binary. If nothing is found,
  * returns the literal string "coven" so callers can still spawn — the OS
  * will resolve via PATH and surface a "not found" error to the user.
@@ -210,11 +265,12 @@ export function covenLaunchCommand(): CovenLaunchCommand {
  */
 export function covenSpawnEnv(): NodeJS.ProcessEnv {
   if (cachedPath === null) {
-    const fromShell = loginShellPath();
+    const fromSystem =
+      process.platform === "win32" ? windowsRegistryPath() : loginShellPath();
     const prependedDirs = candidateDirs();
     const parts = [
       ...prependedDirs,
-      ...(fromShell ? fromShell.split(path.delimiter) : []),
+      ...(fromSystem ? fromSystem.split(path.delimiter) : []),
       ...(process.env.PATH ? process.env.PATH.split(path.delimiter) : []),
     ];
     const seen = new Set<string>();
