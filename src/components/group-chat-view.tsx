@@ -111,6 +111,23 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // without re-creating its callback on every streaming token.
   const transcriptRef = useRef<GroupTurn[]>(transcript);
   transcriptRef.current = transcript;
+  // Which group the in-memory transcript belongs to (set by the swap effect).
+  // The persist effect must not save until the swap has caught up, or the
+  // previous coven's turns get written under the new coven's key.
+  const transcriptOwnerRef = useRef<string | null>(null);
+  // Throttled persistence: the newest un-persisted transcript, tagged with
+  // its group id so a flush after a coven switch still targets the right key.
+  const pendingSaveRef = useRef<{ groupId: string; turns: GroupTurn[] } | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current != null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) saveTranscript(pending.groupId, pending.turns);
+  }, []);
 
   const byId = useMemo(() => {
     const m = new Map<string, ResolvedFamiliar>();
@@ -142,17 +159,37 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     abortRef.current?.abort();
     abortRef.current = null;
     setBusy(false);
+    // Persist the outgoing coven's tail before swapping — the pending record
+    // carries ITS group id, so this can never write under the new coven's key.
+    flushPendingSave();
+    transcriptOwnerRef.current = activeId;
     if (!activeId) {
       setTranscript([]);
       return;
     }
     setTranscript(loadTranscript(activeId));
-  }, [activeId]);
+  }, [activeId, flushPendingSave]);
 
-  // --- persist transcript on settle ---------------------------------------
+  // --- persist transcript (throttled) --------------------------------------
+  // Streaming produces a transcript state update per SSE token, from several
+  // familiars concurrently; JSON.stringifying the whole transcript into
+  // localStorage on each one is heavy synchronous main-thread work. Coalesce
+  // to at most one write per interval, with the pending record flushed on
+  // coven switch and unmount so no settled tail is lost. The owner guard
+  // skips the stale commit right after a switch, where this effect still
+  // sees the PREVIOUS coven's transcript against the new activeId (writing
+  // it would clobber the new coven's stored transcript).
   useEffect(() => {
-    if (activeId) saveTranscript(activeId, transcript);
-  }, [activeId, transcript]);
+    if (!activeId || transcriptOwnerRef.current !== activeId) return;
+    pendingSaveRef.current = { groupId: activeId, turns: transcript };
+    if (saveTimerRef.current == null) {
+      saveTimerRef.current = window.setTimeout(() => {
+        saveTimerRef.current = null;
+        flushPendingSave();
+      }, 400);
+    }
+  }, [activeId, transcript, flushPendingSave]);
+  useEffect(() => () => flushPendingSave(), [flushPendingSave]);
 
   // --- autoscroll to newest, but only when the reader is already at the bottom
   // Streaming replies grow the transcript constantly; force-scrolling on every
@@ -263,6 +300,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     (id: string) => {
       const next = removeGroup(groupsRef.current, id);
       persistGroups(next);
+      // Drop any throttled save queued for this coven — flushing it later
+      // (e.g. on the switch below) would resurrect the just-deleted transcript.
+      if (pendingSaveRef.current?.groupId === id) {
+        pendingSaveRef.current = null;
+        if (saveTimerRef.current != null) {
+          window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+      }
       if (typeof localStorage !== "undefined") {
         try {
           localStorage.removeItem(`cave:group-chat:transcript:${id}`);
@@ -574,14 +620,21 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- derived transcript view --------------------------------------------
   // Group replies under the user turn they answer for a clean threaded layout.
+  // Single pass: this memo recomputes on every streaming token, so the old
+  // users.map(… transcript.filter …) shape was O(userTurns × transcript).
   const threads = useMemo(() => {
-    const users = transcript.filter((t): t is GroupUserTurn => t.role === "user");
-    return users.map((u) => ({
-      user: u,
-      replies: transcript.filter(
-        (t): t is GroupReply => t.role === "assistant" && t.replyTo === u.id,
-      ),
-    }));
+    const users: GroupUserTurn[] = [];
+    const repliesByUser = new Map<string, GroupReply[]>();
+    for (const t of transcript) {
+      if (t.role === "user") {
+        users.push(t);
+        continue;
+      }
+      const bucket = repliesByUser.get(t.replyTo);
+      if (bucket) bucket.push(t);
+      else repliesByUser.set(t.replyTo, [t]);
+    }
+    return users.map((u) => ({ user: u, replies: repliesByUser.get(u.id) ?? [] }));
   }, [transcript]);
 
   const participants = activeGroup
