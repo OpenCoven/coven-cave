@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -247,13 +248,22 @@ function DetailPanel({
   const isReminder = item.kind === "reminder";
   const busy = busyId === item.id;
 
+  // The detail panel is a dialog: trap focus, close on Escape, and restore focus
+  // to the row that opened it (useFocusTrap does the return-focus). aria-modal is
+  // deliberately omitted — on desktop the list stays an interactive sibling, and
+  // on mobile it's display:none, so claiming the rest is inert would be a lie.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(true, panelRef, { onEscape: onClose });
+
   return (
-    <div className="flex h-full flex-col"
+    <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
+      className="flex h-full flex-col focus:outline-none"
       style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b px-5 py-3"
         style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+        <h2 id={titleId} className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
           {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
         </h2>
         <Button
@@ -672,6 +682,11 @@ function CodexDetailPanel({
   runs: AutomationRunRecord[];
 }) {
   const isActive = auto.status === "ACTIVE";
+  // Dialog semantics for the cron detail panel — trap focus, Escape closes, focus
+  // returns to the opening row. aria-modal omitted (see DetailPanel's note).
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(true, panelRef, { onEscape: onClose });
   const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
   const promptParts = splitAutomationPrompt(auto.prompt);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
@@ -795,7 +810,8 @@ function CodexDetailPanel({
     : "No runs yet";
 
   return (
-    <div className="flex h-full flex-col"
+    <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
+      className="flex h-full flex-col focus:outline-none"
       style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
       <div className="border-b px-5 py-4"
         style={{ borderColor: "var(--border-hairline)" }}>
@@ -804,7 +820,7 @@ function CodexDetailPanel({
             <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
               Cron details
             </p>
-            <h2 className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+            <h2 id={titleId} className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
               {name.trim() || auto.name}
             </h2>
           </div>

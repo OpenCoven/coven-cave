@@ -187,6 +187,24 @@ assert.match(source, /const req = \+\+runLogReqRef\.current;/, "each log fetch t
 assert.match(source, /if \(req !== runLogReqRef\.current\) return;/, "stale log responses are dropped");
 assert.match(source, /runLogReqRef\.current \+= 1;\s*\n\s*setOpenRunId\(null\);/, "closing the log invalidates the in-flight fetch");
 
+// ── Detail panels are dialogs (cave-qfdv) ────────────────────────────────────
+// Both the reminder DetailPanel and the cron CodexDetailPanel trap focus, close
+// on Escape, and restore focus to the opening row (useFocusTrap does return-focus).
+// role="dialog" + aria-labelledby name them; aria-modal is deliberately omitted
+// (desktop keeps the list as an interactive sibling; mobile hides it via display:none).
+assert.match(source, /import \{ useFocusTrap \} from "@\/lib\/use-focus-trap"/, "the surface uses the shared focus-trap hook");
+assert.equal(
+  (source.match(/useFocusTrap\(true, panelRef, \{ onEscape: onClose \}\)/g) ?? []).length,
+  2,
+  "both detail panels trap focus and close on Escape",
+);
+assert.equal(
+  (source.match(/role="dialog" aria-labelledby=\{titleId\} tabIndex=\{-1\}/g) ?? []).length,
+  2,
+  "both detail panels are role=dialog, labelled by their title, focusable as a fallback",
+);
+assert.doesNotMatch(source, /aria-modal=/, "aria-modal is omitted — it would be a lie on the desktop split-pane");
+
 // ── In-flight run-poll stability (cave-1e6k) ─────────────────────────────────
 // The poll effect depends on a derived boolean, not the runs array — an
 // unchanged 2.5s tick must not tear down and recreate the interval. The runs
