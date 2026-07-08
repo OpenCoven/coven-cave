@@ -450,9 +450,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
               <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
-              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
-              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
-              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
+              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} help="Files written by this Cave's own familiars and conversations" />
+              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} help="Memory kept by other agent tools on this machine (e.g. Claude Code, Codex)" />
+              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} help="Working files a runtime writes for itself while it runs" />
               {sourceFilter !== "all" ? (
                 <button
                   type="button"
@@ -886,17 +886,22 @@ function SourceFilterChip({
   count,
   active,
   onClick,
+  help,
 }: {
   label: string;
   count: number;
   active: boolean;
   onClick: () => void;
+  /** One line saying what this source actually is — the three source names
+   *  read as synonyms without it. */
+  help?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={help}
       className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors ${
         active
           ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"

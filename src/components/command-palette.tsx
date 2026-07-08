@@ -1032,7 +1032,7 @@ export function CommandPalette({
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">Ask Salem: {row.query}</span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
-                          Context-aware AI answer via salem.opencoven.ai
+                          Salem is the docs familiar — answers from the OpenCoven docs
                         </span>
                       </span>
                       <span className="text-[10px] text-[var(--text-muted)]">ask</span>
@@ -1046,6 +1046,7 @@ export function CommandPalette({
         </ul>
         <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
           <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
+          <span className="hidden sm:inline">@familiar scopes results</span>
           <span>{keys.mod}K</span>
         </div>
       </div>

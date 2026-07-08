@@ -122,7 +122,9 @@ function ProjectListRow({
           {status ? (
             <span
               className={`projects-status-dot ${chatDotClass(status)}${status === "running" ? " animate-pulse" : ""}`}
-              aria-hidden
+              role="img"
+              aria-label={`Latest chat ${status}`}
+              title={`Latest chat in this project: ${status}`}
             />
           ) : null}
         </span>

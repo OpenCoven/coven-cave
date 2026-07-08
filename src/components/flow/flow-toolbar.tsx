@@ -143,6 +143,7 @@ function FlowToolbarImpl(props: FlowToolbarProps) {
             className="flow-toolbar-execute"
             onClick={props.onExecute}
             disabled={props.executing}
+            title="Run the current draft once, right now — publishing is what arms its trigger"
           >
             {props.executing ? "Running…" : "Execute"}
           </Button>

@@ -314,7 +314,11 @@ export function OpenCovenSubmissionPanel() {
           </div>
           <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
             Submit once to OpenCoven, validate against OpenCoven contracts, publish into the
-            OpenCoven catalog, then route through OpenCoven execution services.
+            OpenCoven catalog, then route through OpenCoven execution services. A{" "}
+            <strong className="font-medium text-[var(--text-secondary)]">harness</strong> is an agent
+            environment (like Claude Code); a{" "}
+            <strong className="font-medium text-[var(--text-secondary)]">runtime</strong> is the
+            execution layer it runs on — harnesses stay disabled until a compatible runtime exists.
           </p>
         </div>
         <div className="flex shrink-0 rounded-[var(--radius-control)] border border-border bg-background p-1" aria-label="Submission type">
@@ -533,10 +537,7 @@ function CatalogDiscovery({ catalog }: { catalog: CatalogEntry[] }) {
                   <dt className="font-medium text-foreground">Version</dt>
                   <dd>{entry.latestCompatibleVersion}</dd>
                 </div>
-                <div>
-                  <dt className="font-medium text-foreground">Validation status</dt>
-                  <dd>{entry.validationStatus}</dd>
-                </div>
+                {/* Validation status renders once, as the header badge. */}
                 <div>
                   <dt className="font-medium text-foreground">Examples / docs</dt>
                   <dd>
