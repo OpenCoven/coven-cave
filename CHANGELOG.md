@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.157] - 2026-07-08
+
+> 🔔 **Heard, not just seen** — inbox triage speaks to assistive tech: one snooze menu with real menu semantics everywhere, actions that announce what they did, urgency-aware toasts, and capabilities that narrate their refreshes. Plus the familiar switcher in every page's sidenav and split tiles that fit every screen.
+
+Patch release on top of v0.0.156.
+
+### Features
+- **Shell: the familiar switcher lives in the sidenav header on every page** (#2750, cave-vtk9).
+
+### Fixes
+- **Inbox: prefs writes are serialized** — concurrent PATCHes can no longer drop each other's changes (#2758, cave-g6ew).
+- **Shell: split tiles fit every screen** — pixel floor, even remounts, container-keyed grids (#2743, cave-hivd).
+
+### Accessibility
+- **One SnoozeMenu, real menu semantics** (#2760, cave-1y0d). The shared snooze menu (inbox toast, inspector, calendar, dashboard) declares `aria-haspopup`/`aria-expanded`, renders a named `role=menu` with `menuitem` options, traps focus with Escape-to-trigger, and the dashboard's hand-rolled copy is gone. Inbox actions announce their outcomes — item titles for single actions, counts for bulk — and the icon-only dismiss names its item.
+- **Toasts: urgency-aware politeness, pausable auto-hide, one titled dismiss** (#2757, cave-bj68).
+- **Capabilities: refresh lifecycle and copy outcomes are announced** (#2755, cave-vmj8).
+
 ## [0.0.156] - 2026-07-08
 
 > 🎛️ **A palette worthy of the slash** — the chat composer's slash view becomes a sectioned palette: Commands and Skills headers, icon-led rows with inline descriptions, and a roomy elevated panel. The shell picks up a familiar dropdown atop the chat sidebar with a Codex-style title bar.
