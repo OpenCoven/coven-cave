@@ -8,6 +8,7 @@ import type { Familiar } from "@/lib/types";
 import type { InboxPrefs, SoundMode } from "@/lib/cave-inbox-prefs";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 type Props = {
   items: InboxItem[];
@@ -37,6 +38,25 @@ export function NotificationBell({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  const { announce } = useAnnouncer();
+
+  // Every bell mutation is a fire-and-forget fetch whose UI feedback arrives
+  // via the inbox SSE reconcile — so a network failure or 5xx used to be a
+  // silent no-op (the click did nothing and the rejection was unhandled).
+  // Route them through one guard that verifies res.ok and announces failures.
+  const mutate = useCallback(
+    async (run: () => Promise<Response>, failureMessage: string): Promise<boolean> => {
+      try {
+        const res = await run();
+        if (!res.ok) throw new Error(String(res.status));
+        return true;
+      } catch {
+        announce(failureMessage, "assertive");
+        return false;
+      }
+    },
+    [announce],
+  );
 
   // Trap focus while the popover is open: Escape closes, Tab cycles inside,
   // and closing restores focus to whatever opened it (the bell trigger for
@@ -51,26 +71,34 @@ export function NotificationBell({
 
   const toggleMute = useCallback(
     async (familiarId: string) => {
-      await fetch("/api/inbox/prefs", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ toggleMuteFor: familiarId }),
-      });
-      onPrefsChanged();
+      const ok = await mutate(
+        () =>
+          fetch("/api/inbox/prefs", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ toggleMuteFor: familiarId }),
+          }),
+        "Mute change failed — check your connection.",
+      );
+      if (ok) onPrefsChanged();
     },
-    [onPrefsChanged],
+    [mutate, onPrefsChanged],
   );
 
   const setSound = useCallback(
     async (mode: SoundMode, name?: string) => {
-      await fetch("/api/inbox/prefs", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sound: { mode, name } }),
-      });
-      onPrefsChanged();
+      const ok = await mutate(
+        () =>
+          fetch("/api/inbox/prefs", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ sound: { mode, name } }),
+          }),
+        "Sound change failed — check your connection.",
+      );
+      if (ok) onPrefsChanged();
     },
-    [onPrefsChanged],
+    [mutate, onPrefsChanged],
   );
 
   // Items shown in the dropdown: most-recent fired + the loudest pending alerts
@@ -106,9 +134,15 @@ export function NotificationBell({
     return () => window.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const dismiss = useCallback(async (id: string) => {
-    await fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
-  }, []);
+  const dismiss = useCallback(
+    async (id: string) => {
+      await mutate(
+        () => fetch(`/api/inbox/${id}/dismiss`, { method: "POST" }),
+        "Dismiss failed — check your connection.",
+      );
+    },
+    [mutate],
+  );
 
   // Fired notifications are the dismissible stack the badge counts; response-
   // needed bridges aren't dismissed here (they need a reply, not a clear).
@@ -119,19 +153,37 @@ export function NotificationBell({
 
   const dismissAll = useCallback(async () => {
     // Fan out the existing per-item dismiss; the inbox SSE reconciles the list
-    // and badge (same path the single ✕ uses).
-    await Promise.all(
-      dismissableIds.map((id) => fetch(`/api/inbox/${id}/dismiss`, { method: "POST" })),
+    // and badge (same path the single ✕ uses). allSettled so one failure
+    // doesn't abandon the rest of the stack; report the stragglers once.
+    const results = await Promise.allSettled(
+      dismissableIds.map(async (id) => {
+        const res = await fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
+        if (!res.ok) throw new Error(String(res.status));
+      }),
     );
-  }, [dismissableIds]);
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      announce(
+        `${failed} of ${results.length} notifications could not be dismissed — check your connection.`,
+        "assertive",
+      );
+    }
+  }, [dismissableIds, announce]);
 
-  const snooze = useCallback(async (id: string) => {
-    await fetch(`/api/inbox/${id}/snooze`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ minutes: 10 }),
-    });
-  }, []);
+  const snooze = useCallback(
+    async (id: string) => {
+      await mutate(
+        () =>
+          fetch(`/api/inbox/${id}/snooze`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ minutes: 10 }),
+          }),
+        "Snooze failed — check your connection.",
+      );
+    },
+    [mutate],
+  );
 
   return (
     <div ref={wrapRef} className="notification-bell relative">

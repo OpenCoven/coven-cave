@@ -213,6 +213,7 @@ export const SUITES = {
     "src/components/chat-view-canvas-artifact.test.ts",
     "src/components/chat-response-metadata.test.ts",
     "src/components/daily-summary-notifications.test.ts",
+    "src/components/notification-bell-mutations.test.ts",
     "src/components/surface-error-states.test.ts",
     "src/components/surface-loading-states.test.ts",
     "src/components/chat-header-row.test.ts",
