@@ -108,4 +108,12 @@ assert.match(templateGallery, /disabled=\{busy != null\}/, "template creation di
 assert.match(view, /onUse=\{\(id\) => fromTemplate\(id\)\}/, "FlowTemplateGallery receives the template creation promise");
 assert.doesNotMatch(nodeCatalog, /<button\b/, "NodeCatalogPanel should not hand-roll button controls");
 
+// ── Reduced motion (cave-sky3): React Flow's own chrome must honour it too ──
+// The Controls buttons and the viewport pan/zoom transition (fitView/zoomTo)
+// ship no reduced-motion flag of their own, so flow.css must zero them.
+const rmBlock = styles.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.react-flow__viewport[\s\S]*?\}\s*\}/)?.[0] ?? "";
+assert.match(rmBlock, /\.react-flow__controls-button/, "reduced-motion zeros the Flow controls-button transitions");
+assert.match(rmBlock, /\.react-flow__viewport[\s\S]*?transition: none !important/, "reduced-motion zeros the viewport pan/zoom transition (beats React Flow's inline transition)");
+assert.match(styles, /@media \(prefers-reduced-motion: reduce\) \{ \.flow-run-step-spin \{ animation: none; \} \}/, "the existing run-step spinner guard stays");
+
 console.log("flow-canvas.test.ts OK");
