@@ -15,6 +15,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
+import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 
 export type QuickChatSelectOption<T extends string> = StandardSelectOption<T>;
 
@@ -410,27 +411,23 @@ export function QuickChatThread({
   onRegenerate?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Follow the stream only while the user is already at the bottom — pinning
-  // scrollTop on every token would fight scrolling up to reread earlier turns.
-  const stickRef = useRef(true);
+  // Follow the stream with intent-based release (cave-o8si): scrolling up
+  // detaches, returning to the true bottom re-attaches. The old 48px position
+  // threshold re-stuck a reader pausing near the bottom, so the next streamed
+  // token yanked them back down.
+  const { schedulePin, stick } = useStickToBottom(scrollRef);
   const lastText = messages.length > 0 ? messages[messages.length - 1].text : "";
 
-  const onScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-  }, []);
-
-  // A new turn (sending / a reply starting) re-engages follow-along.
+  // A new turn (sending / a reply starting) re-engages follow-along; on mount
+  // this doubles as the initial snap to the latest turn.
   useEffect(() => {
-    stickRef.current = true;
-  }, [messages.length]);
+    stick();
+  }, [messages.length, stick]);
 
   // Keep the newest turn in view as it streams.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages.length, lastText]);
+    schedulePin();
+  }, [messages.length, lastText, schedulePin]);
 
   const lastAssistantId = (() => {
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -440,7 +437,7 @@ export function QuickChatThread({
   })();
 
   return (
-    <div ref={scrollRef} onScroll={onScroll} className="quick-chat-thread" aria-live="polite">
+    <div ref={scrollRef} className="quick-chat-thread" aria-live="polite">
       {messages.length === 0 ? (
         <div className="quick-chat-empty">
           <span className="quick-chat-empty__glyph" aria-hidden>

@@ -137,9 +137,12 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
 });
 
 test("Group chat is a world-class chat surface (a11y + resilience)", () => {
-  // Smart autoscroll: never yank a reader who scrolled up; offer a jump pill.
-  assert.match(view, /stickToBottomRef/, "tracks whether the transcript is pinned to the bottom");
-  assert.match(view, /onTranscriptScroll/, "recomputes stickiness on scroll");
+  // Smart autoscroll (cave-o8si): intent-based release via the shared hook —
+  // scrolling up detaches, only the true bottom re-attaches. No position
+  // threshold (the old `< 48` re-stick yanked readers hovering near bottom).
+  assert.match(view, /useStickToBottom\(scrollRef, \{/, "follow behavior comes from the shared intent-release hook");
+  assert.match(view, /stuckRef: stickToBottomRef/, "tracks whether the transcript is pinned to the bottom");
+  assert.doesNotMatch(view, /clientHeight < 48/, "the position-threshold re-stick stays gone");
   assert.match(view, /jumpToLatest/, "offers a jump-to-latest affordance");
   // Transcript is an accessible log region.
   assert.match(view, /role="log"/, "transcript is exposed as a log region");

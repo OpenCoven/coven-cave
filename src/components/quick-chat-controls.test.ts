@@ -73,23 +73,36 @@ assert.match(
 );
 
 // ── Thread auto-scroll must not fight the user ────────────────────────────────
-// Follow-along only sticks while the user is at the bottom; scrolling up to
-// reread during a streaming reply stays put, and a new turn re-engages it.
+// (cave-o8si) Follow-along uses the shared intent-release hook: scrolling up
+// detaches, only returning to the true bottom re-attaches, and pins are
+// rAF-coalesced. The old `< 48px` position re-stick — which yanked a reader
+// pausing near the bottom — stays gone.
 assert.match(
   source,
-  /stickRef\.current = el\.scrollHeight - el\.scrollTop - el\.clientHeight < 48/,
-  "the thread tracks whether the user is near the bottom",
+  /const \{ schedulePin, stick \} = useStickToBottom\(scrollRef\)/,
+  "the thread follows via the shared intent-release hook",
+);
+assert.doesNotMatch(
+  source,
+  /clientHeight < 48/,
+  "the position-threshold re-stick stays gone",
 );
 assert.match(
   source,
-  /if \(el && stickRef\.current\) el\.scrollTop = el\.scrollHeight/,
-  "streamed tokens only auto-scroll while the user is following along",
+  /schedulePin\(\);\s*\}, \[messages\.length, lastText, schedulePin\]\)/,
+  "streamed tokens pin through the coalesced scheduler",
 );
 assert.match(
   source,
-  /stickRef\.current = true;\s*\}, \[messages\.length\]\)/,
+  /stick\(\);\s*\}, \[messages\.length, stick\]\)/,
   "a new turn re-engages follow-along scrolling",
 );
+{
+  const hook = readFileSync(new URL("../lib/use-stick-to-bottom.ts", import.meta.url), "utf8");
+  assert.match(hook, /e\.deltaY < 0 && stuckRef\.current && scrollable\(\)/, "wheel-up releases the stick");
+  assert.match(hook, /clientHeight <= 4\) setStuck\(true\)/, "only the true bottom re-sticks");
+  assert.match(hook, /cancelAnimationFrame\(pinFrameRef\.current\);[\s\S]{0,400}pinFrameRef\.current = null;/, "the rAF guard nulls on cancel (StrictMode wedge)");
+}
 
 // ── Copy affordance resets ────────────────────────────────────────────────────
 assert.match(

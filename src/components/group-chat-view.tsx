@@ -25,6 +25,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -93,7 +94,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // scrolled up to review history, new streaming content must NOT yank them
   // back down — instead we surface a "jump to latest" pill.
   const [showJump, setShowJump] = useState(false);
-  const stickToBottomRef = useRef(true);
   const dtPrefs = useDateTimePrefs();
   const confirm = useConfirm();
   const { announce } = useAnnouncer();
@@ -101,6 +101,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Intent-based follow (cave-o8si): scrolling up releases the stick, and only
+  // returning to the true bottom re-attaches — the old 48px position threshold
+  // re-stuck a reader pausing near the bottom, so the next streamed token
+  // yanked them back down.
+  const { stuckRef: stickToBottomRef, schedulePin, stick } = useStickToBottom(scrollRef, {
+    onStickChange: (stuck) => {
+      if (stuck) setShowJump(false);
+    },
+  });
   const composerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Caret to restore after we programmatically rewrite the draft (mention insert).
@@ -210,40 +219,25 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // Streaming replies grow the transcript constantly; force-scrolling on every
   // update would fight a reader who scrolled up to re-read an earlier answer.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
     if (stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+      schedulePin();
       setShowJump(false);
     } else {
       // Something new landed while scrolled up — offer a jump affordance.
       setShowJump(true);
     }
-  }, [transcript]);
+  }, [transcript, schedulePin, stickToBottomRef]);
 
   // When the active group changes, snap to the bottom of its transcript.
   useEffect(() => {
-    stickToBottomRef.current = true;
+    stick();
     setShowJump(false);
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [activeId]);
-
-  const onTranscriptScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // 48px slop so a near-bottom position still counts as "stuck to bottom".
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    stickToBottomRef.current = atBottom;
-    if (atBottom) setShowJump(false);
-  }, []);
+  }, [activeId, stick]);
 
   const jumpToLatest = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    stickToBottomRef.current = true;
+    stick();
     setShowJump(false);
-  }, []);
+  }, [stick]);
 
   // --- restore caret after a programmatic draft rewrite (mention insert) ---
   useEffect(() => {
@@ -847,7 +841,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             <div className="relative min-h-0 flex-1">
             <div
               ref={scrollRef}
-              onScroll={onTranscriptScroll}
               role="log"
               aria-label="Coven transcript"
               aria-live="off"
