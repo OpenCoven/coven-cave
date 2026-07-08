@@ -8,8 +8,8 @@
  *   3. RSS cards — freshest merged AI-related headlines; non-AI feed items
  *      are filtered out (see `isAiRelated`).
  *
- * Consumed by the home News column (home-news-column.tsx) for the RSS path;
- * summary and session paths remain for potential reuse and are covered by
+ * Consumed by the home digest carousel (home-digest-carousel.tsx), which drifts
+ * the summary, session, and RSS cards across its two marquee tracks; covered by
  * home-digest.test.ts. Pure and clock-injected (`nowMs`) for unit-testing
  * without network, DOM, or wall clock.
  */
