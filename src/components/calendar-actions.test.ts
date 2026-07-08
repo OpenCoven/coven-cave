@@ -55,7 +55,23 @@ assert.match(view, /now && isSameDay\(col\.date, now\) &&/, "the now-line only r
 assert.ok((view.match(/const now = useNow\(\)/g) ?? []).length >= 5, "every grid sub-view uses useNow for today");
 
 // ───────── Month-cell keyboard access ─────────
-assert.match(view, /role="button"[\s\S]*?tabIndex=\{0\}[\s\S]*?onKeyDown=\{\(e\) => \{[\s\S]*?Enter[\s\S]*?onDayClick/, "Month day cells must be keyboard-operable");
+// (cave-zqsj) The month is a real ARIA grid: grid → header row of
+// columnheaders + a rowgroup of week rows → roving gridcells (←/→ = day,
+// ↑/↓ = week). Cells previously were role="button" divs WRAPPING nested
+// buttons — invalid — with no row/position semantics and no 2-D arrow nav.
+assert.match(view, /role="grid"\s*\n\s*aria-label=\{`\$\{MONTHS\[anchor\.getMonth\(\)\]\} \$\{anchor\.getFullYear\(\)\}`\}/, "the month grid is a labelled ARIA grid");
+assert.match(view, /<div role="row" className="mb-1 grid grid-cols-7">\s*\n\s*\{WEEKDAYS\.map[\s\S]{0,160}role="columnheader"/, "weekday headers are columnheaders in a row");
+assert.match(view, /role="rowgroup"[\s\S]{0,220}\{weeks\.map\(\(week, wi\) => \(\s*\n\s*<div key=\{wi\} role="row"/, "day cells render as one ARIA row per week");
+assert.match(view, /role="gridcell"\s*\n\s*data-month-cell="true"\s*\n\s*tabIndex=\{-1\}[\s\S]*?onKeyDown=\{\(e\) => \{[\s\S]*?Enter[\s\S]*?onCell/, "month day cells are roving gridcells, keyboard-operable");
+assert.match(view, /itemSelector: '\[data-month-cell="true"\]',\s*\n\s*columns: 7,/, "month cells rove 2-D over a 7-column grid");
+assert.match(view, /if \(anchorIndex >= 0\) setActiveIndex\(anchorIndex\)/, "the grid's tab stop follows the anchor day");
+// (cave-zqsj) The selected/anchor day was colour-or-nothing; it now carries
+// aria-selected + a ", selected" label token (mirroring the mini-month), and
+// the week header names today instead of a bg tint alone.
+assert.match(view, /aria-selected=\{isAnchor \|\| undefined\}/, "the anchor day is aria-selected");
+assert.match(view, /\$\{isAnchor \? ", selected" : ""\}`\}/, "the anchor day is named selected");
+assert.match(view, /aria-current=\{now && isSameDay\(col\.date, now\) \? "date" : undefined\}/, "the week header today-column carries aria-current");
+assert.match(view, /\{now && isSameDay\(col\.date, now\) && <span className="sr-only">, today<\/span>\}/, "the week header today-column has a text token");
 // Month cells list a day's items in chronological order, like every other view.
 assert.match(view, /list\.sort\(\(a, b\) => \(itemDate\(a\)\?\.getTime\(\) \?\? 0\) - \(itemDate\(b\)\?\.getTime\(\) \?\? 0\)\)/, "Month items are sorted by time");
 // Month deadline overflow surfaces a "+N due" affordance instead of dropping silently.
@@ -110,8 +126,9 @@ assert.match(view, /aria-label=\{`\$\{deadline\.title\}, task deadline/, "deadli
 assert.match(view, /function MiniMonthPopover[\s\S]*?useFocusTrap\(true, ref, \{ onEscape: onClose \}\)/, "MiniMonthPopover traps focus");
 // Today is conveyed with aria-current, not colour alone (month cell + mini-month).
 assert.ok((view.match(/aria-current=\{isToday \? "date" : undefined\}/g) ?? []).length >= 2, "today is marked with aria-current=\"date\"");
-// Horizontal arrows don't page the period out from under a focused grid event.
-assert.match(view, /if \(target\.closest\('\[data-calendar-event="true"\]'\)\) break;/, "a focused event keeps its own Arrow handling");
+// Horizontal arrows don't page the period out from under a focused grid event
+// or month day-cell (both own their arrows via roving nav).
+assert.match(view, /if \(target\.closest\('\[data-calendar-event="true"\], \[data-month-cell="true"\]'\)\) break;/, "a focused event or month cell keeps its own Arrow handling");
 
 // ───────── Detail panel reconciles with live items (cave-latd) ─────────
 // `selectedItem` is a snapshot captured at click; an effect keyed on

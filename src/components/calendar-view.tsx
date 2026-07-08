@@ -1002,6 +1002,7 @@ function WeekView({
           {columns.map((col, i) => (
             <div
               key={i}
+              aria-current={now && isSameDay(col.date, now) ? "date" : undefined}
               className={`group relative flex-1 min-w-[80px] px-2 py-2 text-center ${
                 now && isSameDay(col.date, now) ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
               }`}
@@ -1026,6 +1027,7 @@ function WeekView({
                 }`}
               >
                 {col.date.getDate()}
+                {now && isSameDay(col.date, now) && <span className="sr-only">, today</span>}
               </div>
             </div>
           ))}
@@ -1073,6 +1075,21 @@ function MonthView({
 
   // 6 weeks × 7 days grid
   const cells = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  const weeks = Array.from({ length: 6 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+
+  // 2-D roving focus over the day cells (←/→ = day, ↑/↓ = week), per the
+  // WAI-ARIA grid pattern. The tab stop follows the anchor day — the roving
+  // default of "first cell" would land on the previous month's tail.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const { setActiveIndex } = useRovingTabIndex({
+    containerRef: gridRef,
+    itemSelector: '[data-month-cell="true"]',
+    columns: 7,
+  });
+  const anchorIndex = cells.findIndex((d) => isSameDay(d, anchor));
+  useEffect(() => {
+    if (anchorIndex >= 0) setActiveIndex(anchorIndex);
+  }, [anchorIndex, setActiveIndex]);
 
   const byDay = useMemo(() => {
     const map = new Map<string, InboxItem[]>();
@@ -1107,25 +1124,35 @@ function MonthView({
     <div className="flex flex-1 flex-col overflow-hidden px-2 pb-3 sm:px-4 sm:pb-4">
       {/* Weekday headers */}
       <div className="min-h-0 flex-1 overflow-x-auto">
-        <div className="flex h-full min-w-[560px] flex-col">
-          <div className="mb-1 grid grid-cols-7">
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-label={`${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`}
+          className="flex h-full min-w-[560px] flex-col"
+        >
+          <div role="row" className="mb-1 grid grid-cols-7">
             {WEEKDAYS.map((wd) => (
               <div
                 key={wd}
+                role="columnheader"
                 className="py-1 text-center text-[10px] uppercase tracking-wider text-[var(--text-secondary)]"
               >
                 {wd}
               </div>
             ))}
           </div>
-          {/* Day cells */}
-          <div className="grid flex-1 grid-cols-7 grid-rows-6 gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
-            {cells.map((day, i) => {
+          {/* Day cells — one row per week (flex-col + gap-px reproduces the
+              old grid-rows-6 hairline lattice while giving SRs real rows). */}
+          <div role="rowgroup" className="flex flex-1 flex-col gap-px overflow-hidden rounded-lg bg-[var(--border-hairline)]">
+            {weeks.map((week, wi) => (
+            <div key={wi} role="row" className="grid flex-1 grid-cols-7 gap-px">
+            {week.map((day) => {
               const key = startOfDay(day).toISOString();
               const dayItems = byDay.get(key) ?? [];
               const dayDeadlines = deadlinesByDay.get(key) ?? [];
               const isCurrentMonth = day.getMonth() === anchor.getMonth();
               const isToday = now ? isSameDay(day, now) : false;
+              const isAnchor = isSameDay(day, anchor);
 
               // Clicking an empty part of a current-month day pre-fills the add
               // form for that day; the date number still navigates into the day.
@@ -1137,11 +1164,13 @@ function MonthView({
               };
               return (
                 <div
-                  key={i}
-                  role="button"
-                  tabIndex={0}
+                  key={key}
+                  role="gridcell"
+                  data-month-cell="true"
+                  tabIndex={-1}
+                  aria-selected={isAnchor || undefined}
                   aria-current={isToday ? "date" : undefined}
-                  aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}`}
+                  aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}${isAnchor ? ", selected" : ""}`}
                   onClick={onCell}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -1225,6 +1254,8 @@ function MonthView({
                 </div>
               );
             })}
+            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1606,10 +1637,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       const tag = target.tagName.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
       switch (e.key) {
-        // A focused grid event owns its own Arrow handling (roving nav +
-        // Alt+↑/↓ reschedule); don't also page the whole period out from under it.
-        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"]')) break; e.preventDefault(); navigate(-1); break;
-        case "ArrowRight": if (target.closest('[data-calendar-event="true"]')) break; e.preventDefault(); navigate(1);  break;
+        // A focused grid event or month day-cell owns its own Arrow handling
+        // (roving nav + Alt+↑/↓ reschedule); don't also page the whole period
+        // out from under it.
+        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": if (target.closest('[data-calendar-event="true"], [data-month-cell="true"]')) break; e.preventDefault(); navigate(1);  break;
         case "t": case "T": setAnchor(new Date()); break;
         case "d": case "D": setViewMode("day");    break;
         case "w": case "W": setViewMode("week");   break;
