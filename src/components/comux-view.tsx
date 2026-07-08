@@ -1352,7 +1352,19 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               }}
             >
               {visiblePaneCount > 1 ? (
-                <span className="comux-terminal-pane-num" aria-hidden>{paneNumbers.get(s.id)}</span>
+                <button
+                  type="button"
+                  draggable={false}
+                  className="comux-terminal-pane-num"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    focusSessionById(s.id);
+                  }}
+                  aria-label={`Focus pane ${paneNumbers.get(s.id)}: ${s.label}`}
+                  title={`Go directly to pane ${paneNumbers.get(s.id)}`}
+                >
+                  {paneNumbers.get(s.id)}
+                </button>
               ) : (
                 <Icon name="ph:terminal-window" width={12} aria-hidden />
               )}

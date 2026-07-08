@@ -3041,6 +3041,7 @@ textarea.required-inputs-control {
 /* Pane number badge — backs ⌘1…9 quick-jump and reads like a tmux pane index.
    Tints to the brand accent on the focused pane. */
 .comux-terminal-pane-num {
+  border: 0;
   display: inline-grid;
   place-items: center;
   min-width: 15px;
@@ -3049,10 +3050,22 @@ textarea.required-inputs-control {
   border-radius: 4px;
   background: color-mix(in oklch, var(--text-muted) 22%, transparent);
   color: var(--text-secondary);
+  cursor: pointer;
   font-size: 9px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+
+.comux-terminal-pane-num:hover,
+.comux-terminal-pane-num:focus-visible {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.comux-terminal-pane-num:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 40%, transparent);
 }
 
 .comux-terminal-pane[data-active="true"] .comux-terminal-pane-num {

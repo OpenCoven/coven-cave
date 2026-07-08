@@ -28,6 +28,8 @@ assert.match(comux, /active=\{active && isActive\}[\s\S]{0,160}paneId=\{s\.id\}[
 assert.match(comux, /data-broadcast-active=\{broadcast \? "true" : undefined\}/, "toolbar toggle reflects state");
 assert.match(comux, /data-broadcast=\{broadcast \? "true" : undefined\}/, "pane carries the broadcast flag for the ring");
 assert.match(comux, /⌘⇧B broadcast/, "footer advertises ⌘⇧B");
+assert.match(comux, /className="comux-terminal-pane-num"[\s\S]{0,180}focusSessionById\(s\.id\)/, "pane numbers focus panes directly");
+assert.match(comux, /title=\{`Go directly to pane \$\{paneNumbers\.get\(s\.id\)\}`\}/, "pane number exposes direct-jump affordance");
 
 // BottomTerminal: props + writer + input emit on BOTH transports.
 assert.match(term, /registerWriter\?: \(paneId: string, write: \(\(data: string\) => void\) \| null\) => void/, "registerWriter prop");
@@ -41,6 +43,7 @@ assert.equal((term.match(/writerRef\.current = \(d\) =>/g) || []).length, 2, "ex
 // CSS for the broadcast ring/toggle exists.
 assert.match(css, /\.comux-terminal-pane\[data-broadcast="true"\]/, "broadcast pane ring styled");
 assert.match(css, /\.comux-terminal-toolbar-button\[data-broadcast-active="true"\]/, "broadcast toggle styled");
+assert.match(css, /\.comux-terminal-pane-num:focus-visible/, "pane number direct-jump control has a focus state");
 
 // ── Keepalive a11y invariant (cave-hnn5) ────────────────────────────────────
 // The keepalive wrapper hides inactive sessions' panes with visibility:hidden.
