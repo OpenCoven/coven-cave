@@ -93,4 +93,16 @@ assert.match(
   "Internal daily report links should navigate in-app instead of opening the browser pane",
 );
 
+// ── Bell a11y/polish (cave-jm6t) ─────────────────────────────────────────────
+// The trigger names its popup + state; sound/mute chips are real toggles;
+// item times stay live while the popover is open (per-row minute tick, zero
+// cost while closed); outside-close covers pen/touch via pointerdown.
+assert.match(bell, /aria-haspopup="dialog"\s*\n\s*aria-expanded=\{open\}/, "the bell trigger exposes its dialog + open state");
+assert.match(bell, /aria-pressed=\{active\}/, "sound chips announce the selected mode");
+assert.match(bell, /aria-pressed=\{muted\}/, "mute chips are real toggles");
+assert.match(bell, /function BellItemTime\(\{ iso, waiting \}[\s\S]{0,120}useMinuteTick\(\)/, "item timestamps tick while mounted");
+assert.match(bell, /<RelativeTime iso=\{iso\} fallback="—" \/>/, "timestamps render through the shared RelativeTime");
+assert.match(bell, /addEventListener\("pointerdown", onDown\)/, "outside-close listens to pointerdown (mouse + pen + touch)");
+assert.doesNotMatch(bell, /addEventListener\("mousedown", onDown\)/, "the mouse-only closer stays gone");
+
 console.log("daily-summary-notifications.test.ts: ok");
