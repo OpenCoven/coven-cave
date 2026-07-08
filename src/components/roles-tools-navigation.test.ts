@@ -9,6 +9,7 @@ const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url)
 const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
 const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
+const marketplaceConfigure = await readFile(new URL("./marketplace/marketplace-configure.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
@@ -309,5 +310,16 @@ assert.match(
   /const remove = useCallback\(async[\s\S]*?markBusy\(id, true\);[\s\S]*?setError\(null\);/,
   "remove() clears the error banner on a fresh uninstall attempt",
 );
+
+// cave-4kl7: the configure modal aborts a superseded config load (the dialog
+// stays mounted between opens, so a late load must not clobber freshly-seeded
+// fields), and tracks in-flight saves as a Set so concurrent field saves keep
+// their own spinner rather than one clearing the other.
+assert.match(marketplaceConfigure, /const loadCtlRef = useRef<AbortController \| null>\(null\)/, "config load has an abort controller");
+assert.match(marketplaceConfigure, /loadCtlRef\.current\?\.abort\(\);[\s\S]*?new AbortController\(\)/, "each load aborts the prior one");
+assert.match(marketplaceConfigure, /if \(ctl\.signal\.aborted\) return/, "a superseded load response is dropped");
+assert.match(marketplaceConfigure, /useEffect\(\(\) => \(\) => loadCtlRef\.current\?\.abort\(\), \[\]\)/, "the in-flight load aborts on unmount");
+assert.match(marketplaceConfigure, /const \[busyKeys, setBusyKeys\] = useState<Set<string>>/, "saving fields are tracked as a Set, not a scalar");
+assert.match(marketplaceConfigure, /loading=\{busyKeys\.has\(f\.key\)\}/, "each field's spinner keys off its own membership in the busy Set");
 
 console.log("roles-tools-navigation.test.ts OK");
