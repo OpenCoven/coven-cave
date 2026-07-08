@@ -635,7 +635,7 @@ assert.match(
 );
 
 // — CHAT-D10-01 + CHAT-D13-03: instant scroll pin, intent-based release —
-const pinEffect = source.match(/\/\/ Pin: while following[\s\S]*?\}, \[turns\]\);/)?.[0] ?? "";
+const pinEffect = source.match(/\/\/ Pin: while following[\s\S]*?\}, \[turns, schedulePin\]\);/)?.[0] ?? "";
 assert.match(
   pinEffect,
   /requestAnimationFrame\(\(\) => \{[\s\S]*el\.scrollTop = el\.scrollHeight/,
@@ -663,8 +663,8 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(e\.deltaY < 0 && followingRef\.current\) updateFollowing\(false\)/,
-  "Wheel-up (negative deltaY) is the user intent that detaches following",
+  /if \(e\.deltaY < 0 && followingRef\.current && scrollable\(\)\) updateFollowing\(false\)/,
+  "Wheel-up (negative deltaY) on a scrollable transcript is the user intent that detaches following",
 );
 assert.match(
   source,
@@ -678,7 +678,7 @@ assert.match(
 );
 assert.match(
   source,
-  /y > lastTouchY && followingRef\.current\) updateFollowing\(false\)/,
+  /y > lastTouchY && followingRef\.current && scrollable\(\)\) \{\s*updateFollowing\(false\)/,
   "Touch drag toward earlier content (finger moving down) detaches following",
 );
 assert.match(

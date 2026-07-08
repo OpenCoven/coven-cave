@@ -31,6 +31,7 @@ export const SUITES = {
     "src/lib/page-drag.test.ts",
     "src/lib/sidebar-nav-state.test.ts",
     "src/components/chat-view-render-cap.test.ts",
+    "src/components/chat-view-scroll-pin.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",
     "src/lib/app-version.test.ts",
     "src/lib/endpoint-validators.test.ts",

@@ -2263,6 +2263,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
   // touch drag toward earlier content), never on mere scroll position — the
@@ -3212,12 +3213,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [sessionId, historyRetryKey, flowBackedSession]);
 
-  // Pin: while following, every turns mutation snaps the scroller to the
-  // bottom INSTANTLY (scrollTop assignment inside a rAF, coalescing multiple
-  // SSE chunks per frame). Never a queued smooth animation per chunk — that
-  // is the CHAT-D10-01 bug, and instant pinning also satisfies
+  // Pin: while following, snap the scroller to the bottom INSTANTLY
+  // (scrollTop assignment inside a rAF, coalescing multiple triggers per
+  // frame). Never a queued smooth animation per chunk — that is the
+  // CHAT-D10-01 bug, and instant pinning also satisfies
   // prefers-reduced-motion during streaming (CHAT-D13-03).
-  useEffect(() => {
+  const schedulePin = useCallback(() => {
     if (!followingRef.current) return;
     if (pinFrameRef.current !== null) return;
     pinFrameRef.current = requestAnimationFrame(() => {
@@ -3226,10 +3227,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (!el || !followingRef.current) return;
       el.scrollTop = el.scrollHeight;
     });
-  }, [turns]);
+  }, []);
+
+  useEffect(() => {
+    schedulePin();
+  }, [turns, schedulePin]);
+
+  // CHAT-D10-04: turns mutations are not the only thing that moves the tail.
+  // MarkdownBlock (async mdToHtml), SyntaxBlock (async shiki swap), mermaid,
+  // and images all change transcript height AFTER the final turns-driven pin
+  // lands — without this observer the viewport is left sitting above the
+  // bottom while `following` is still true ("the chat scrolled up by
+  // itself"). While following, ANY size change of the thread (content
+  // growth) or the scroller (composer/window resize) re-pins through the
+  // same coalesced rAF; while released it does nothing, so a reader's place
+  // is never disturbed.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (followingRef.current) schedulePin();
+    });
+    ro.observe(scroller);
+    const thread = threadRef.current;
+    if (thread) ro.observe(thread);
+    return () => ro.disconnect();
+  }, [schedulePin]);
 
   useEffect(() => () => {
-    if (pinFrameRef.current !== null) cancelAnimationFrame(pinFrameRef.current);
+    if (pinFrameRef.current !== null) {
+      cancelAnimationFrame(pinFrameRef.current);
+      // MUST null: StrictMode (dev) and Suspense reveals re-run effects while
+      // refs persist. Leaving the cancelled id in place wedges the coalescing
+      // guard in schedulePin, and no pin ever runs again for the lifetime of
+      // the component — the "chat opens at the top and never follows" bug.
+      pinFrameRef.current = null;
+    }
   }, []);
 
   // A freshly opened chat (or session switch) follows by default; the pin
@@ -3244,14 +3277,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // Release on intent: only USER input events detach following. Programmatic
   // pins (scrollTop assignment, FAB scrollTo) emit scroll events but never
-  // wheel/touch/key events, so they are structurally excluded from intent
-  // detection here.
+  // wheel/touch/key/scrollbar-grab events, so they are structurally excluded
+  // from intent detection here.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let lastTouchY: number | null = null;
+    // A transcript that doesn't overflow can't be scrolled away from the
+    // bottom — releasing there would only strand the FAB with nothing to
+    // re-pin it (re-pin needs a scroll event that will never come).
+    const scrollable = () => el.scrollHeight - el.clientHeight > 1;
     const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0 && followingRef.current) updateFollowing(false);
+      if (e.deltaY < 0 && followingRef.current && scrollable()) updateFollowing(false);
     };
     const onTouchStart = (e: TouchEvent) => {
       lastTouchY = e.touches[0]?.clientY ?? null;
@@ -3260,7 +3297,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const y = e.touches[0]?.clientY;
       if (y === undefined) return;
       // Finger moving down the screen drags content down = scrolling up.
-      if (lastTouchY !== null && y > lastTouchY && followingRef.current) updateFollowing(false);
+      if (lastTouchY !== null && y > lastTouchY && followingRef.current && scrollable()) {
+        updateFollowing(false);
+      }
       lastTouchY = y;
     };
     const onKeyDown = (e: KeyboardEvent) => {
@@ -3268,15 +3307,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         updateFollowing(false);
       }
     };
+    // Scrollbar drags emit no wheel/touch/key events, so without this a
+    // scrollbar scroll-up left `following` armed and the next SSE chunk
+    // yanked the reader straight back to the bottom. A grab lands on the
+    // scroller itself with its X past the content box (the gutter, LTR);
+    // only an actual upward move during the grab releases, so clicking the
+    // padding or grabbing without moving changes nothing.
+    let scrollbarGrab = false;
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.target === el && e.offsetX >= el.clientWidth) scrollbarGrab = true;
+    };
+    const onMouseUp = () => {
+      scrollbarGrab = false;
+    };
+    const onScroll = () => {
+      if (!scrollbarGrab || !followingRef.current) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 4) updateFollowing(false);
+    };
     el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: true });
     el.addEventListener("keydown", onKeyDown);
+    el.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+      el.removeEventListener("scroll", onScroll);
     };
   }, [updateFollowing]);
 
@@ -4818,6 +4880,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
+          ref={threadRef}
           className="cave-chat-thread"
           role="log"
           aria-label="Conversation"
