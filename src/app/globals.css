@@ -3134,6 +3134,8 @@ textarea.required-inputs-control {
 .comux-terminal-keepalive {
   position: absolute;
   inset: 0;
+  /* visibility (never opacity/clip): keeps xterm's helper textarea inside the
+     aria-hidden wrapper unfocusable — see cave-hnn5 pin. */
   visibility: hidden;
   pointer-events: none;
 }

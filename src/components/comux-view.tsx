@@ -1714,6 +1714,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     ? renderTerminalNode({ kind: "leaf", sessionId: zoomedSessionId })
                     : renderTerminalNode(terminalLayout.root)
                   : null}
+                {/* a11y invariant (cave-hnn5): the keepalive class hides via
+                    visibility:hidden, which makes every descendant — including
+                    xterm's helper textarea, which only opacity-hides itself —
+                    unfocusable AND hidden from AT. So this aria-hidden never
+                    hides focusable content. If the CSS ever moves to
+                    opacity/clip hiding, add `inert` here. */}
                 <div className="comux-terminal-keepalive" aria-hidden="true">
                   {hiddenPaneSessions.map((s) => (
                     <BottomTerminal
