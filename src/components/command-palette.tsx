@@ -722,6 +722,10 @@ export function CommandPalette({
   };
 
   const onComposerKey = (e: React.KeyboardEvent) => {
+    // The Enter/arrows that drive an IME candidate picker (CJK input) belong
+    // to the IME — confirming a character must not fire the active row or
+    // move the highlight. Mirrors the ChatView / group-chat composer guards.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIdx((i) => Math.min(i + 1, rows.length - 1));
