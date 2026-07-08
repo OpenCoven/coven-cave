@@ -24,7 +24,15 @@ function projectsFilePath(): string {
 }
 
 function normalizeRoot(root: string): string {
-  const normalized = root.trim().replace(/\\/g, "/");
+  let trimmed = root.trim();
+  // Expand a leading ~ — a manually-typed ~/code/app was stored literally and
+  // never matched the daemon's absolute project_root, so Sessions/Git/Tasks
+  // stayed empty and the project looked dead (cave-psp8).
+  if (trimmed === "~") trimmed = homedir();
+  else if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    trimmed = path.join(homedir(), trimmed.slice(2));
+  }
+  const normalized = trimmed.replace(/\\/g, "/");
   let endIndex = normalized.length;
   while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
   return normalized.slice(0, endIndex) || "/";
