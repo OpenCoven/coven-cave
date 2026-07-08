@@ -297,11 +297,18 @@ export function ThemeColorEditor({
   }, []);
   const commitRecent = (hex: string) => setRecents(addRecentColor(hex));
 
+  // The saved-flash timer must clear on unmount (and on re-save) or it fires
+  // setState on an unmounted editor (cave-fu1y).
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+  }, []);
   const handleSave = () => {
     persistCustomTheme(basePreset, colors, mode);
     setSaved(true);
     onSave?.(colors);
-    setTimeout(() => setSaved(false), 2000);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {

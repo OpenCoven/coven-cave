@@ -414,3 +414,15 @@ assert.match(
   /function applyTokenOverride\(key: string, hex: string, mode: Mode\)/,
   "editing a token forks the active theme to a custom theme and re-syncs",
 );
+
+// ── Editor reset clears persistence (cave-fu1y) ──────────────────────────────
+// Resetting from the theme editor only reset React state; the persisted
+// custom theme resurrected on reload. The onReset path now drops the key,
+// matching the Appearance-tab reset. The editor's saved-flash timer also
+// clears on unmount/re-save instead of firing setState on a dead component.
+assert.match(settings, /localStorage\.removeItem\(COVEN_CUSTOM_THEME_KEY\); \} catch [\s\S]{0,80}setActiveTheme\(colorEditorBase\)/, "editor reset drops the persisted custom theme");
+{
+  const editor = await readFile(new URL("./theme-color-editor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /savedTimerRef\.current = setTimeout\(\(\) => setSaved\(false\), 2000\)/, "the saved flash goes through a tracked timer");
+  assert.match(editor, /if \(savedTimerRef\.current\) clearTimeout\(savedTimerRef\.current\);\n  \}, \[\]\)/, "the saved timer clears on unmount");
+}

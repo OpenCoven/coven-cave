@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { FOCUSABLE } from "@/lib/use-focus-trap";
 import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/lib/icon";
 
@@ -114,6 +115,38 @@ export function Popover({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      // Tab containment (cave-fu1y): role=dialog + aria-modal promise AT that
+      // focus stays inside — wrap at the edges and recapture if focus escaped.
+      // Implemented here (not useFocusTrap) to keep Popover's conditional
+      // return-focus: the shared trap always yanks focus back to the trigger
+      // on close, which would steal it from a control the user just clicked.
+      if (e.key === "Tab") {
+        const el = popoverRef.current;
+        if (!el) return;
+        const focusables = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+          (f) => !f.hasAttribute("disabled"),
+        );
+        if (focusables.length === 0) {
+          e.preventDefault();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !el.contains(active)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       if (e.key === "Escape") {
         // Consume the Escape so it doesn't bubble to a parent dialog's keydown
         // handler (e.g. the Settings panel, which closes itself on Escape). The
@@ -149,6 +182,18 @@ export function Popover({
     };
   }, [open, onOpenChange, anchorRef, compute]);
 
+  // Move focus into the popover on open — role=dialog without focus entering
+  // it leaves keyboard users tabbing the page behind. Consumers that place
+  // focus themselves (own useFocusTrap, autoFocus) win: child effects run
+  // first, and we bail if focus is already inside.
+  useEffect(() => {
+    if (!open) return;
+    const el = popoverRef.current;
+    if (!el || el.contains(document.activeElement)) return;
+    const first = el.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? el).focus();
+  }, [open]);
+
   // Return focus to the trigger when the popover closes, so keyboard users aren't
   // stranded (Escape, item-select, or outside-click on empty space all leave focus
   // on document.body once the popover unmounts). If the user moved focus to another
@@ -171,6 +216,8 @@ export function Popover({
         className={["ui-popover", className ?? ""].filter(Boolean).join(" ")}
         style={style}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={ariaLabel}
       >
         {children}

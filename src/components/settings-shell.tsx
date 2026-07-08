@@ -1615,6 +1615,10 @@ function AppearanceSection() {
                 } catch { /* ignore */ }
               }}
               onReset={() => {
+                // Drop the persisted custom theme too — resetting only React
+                // state left the stale swatches in localStorage to resurrect
+                // on reload (cave-fu1y); the Appearance reset already clears.
+                try { localStorage.removeItem(COVEN_CUSTOM_THEME_KEY); } catch { /* ignore */ }
                 setActiveTheme(colorEditorBase);
                 setCustomData(null);
               }}

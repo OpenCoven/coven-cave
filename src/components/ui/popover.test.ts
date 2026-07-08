@@ -71,4 +71,16 @@ assert.ok(
   `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
 );
 
+// ── Honest dialog semantics (cave-fu1y) ─────────────────────────────────────
+// role=dialog promised AT a dialog while Tab walked the page behind it. The
+// popover now contains Tab (wrap + recapture), moves focus in on open unless
+// a consumer already placed it, and declares aria-modal. Containment lives in
+// Popover's own capture handler — NOT useFocusTrap, whose unconditional
+// return-focus would steal focus from a control the user clicked to dismiss.
+assert.match(src, /aria-modal="true"/, "the popover declares modal semantics");
+assert.match(src, /tabIndex=\{-1\}/, "the popover container can take fallback focus");
+assert.match(src, /if \(e\.key === "Tab"\) \{/, "Tab is contained inside the popover");
+assert.match(src, /if \(!active \|\| !el\.contains\(active\)\) \{/, "escaped focus is recaptured on Tab");
+assert.match(src, /if \(!el \|\| el\.contains\(document\.activeElement\)\) return;/, "open only moves focus in when a consumer hasn't already");
+
 console.log("popover.test.ts: ok");
