@@ -53,12 +53,13 @@ assert.match(
 );
 
 // ───────── Command-bar hierarchy ─────────
-// Chat-composer footer: utility cluster (attach · voice · Options) plus the
-// home-only destination pills and agent picker left; enhance · send right.
+// The Chat/Task destination tabs sit ABOVE the input card; the footer keeps
+// the utility cluster (attach · voice · Options) and agent picker left,
+// enhance · send right.
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="hc-dest-pills"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
-  "home composer utility cluster has attach + voice + Options + Chat/Task destination + warning-circle access chip",
+  /className="hc-dest-pills hc-dest-pills--above"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
+  "destination tabs precede the card; the utility cluster keeps attach + voice + Options + warning-circle access chip",
 );
 assert.match(
   source,

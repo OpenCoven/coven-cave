@@ -739,6 +739,33 @@ export function HomeComposer({
           />
         ) : null}
 
+        {/* Destination tabs — Chat vs Task is a mode choice, not an input
+            control, so it sits above the card as its own tab row instead of
+            crowding the composer footer. */}
+        <div
+          className="hc-dest-pills hc-dest-pills--above"
+          role="radiogroup"
+          aria-label="Send to"
+          ref={destGroupRef}
+          onKeyDown={handleDestKeyDown}
+        >
+          {DESTINATIONS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+              role="radio"
+              aria-checked={destination === d.id}
+              tabIndex={destination === d.id ? 0 : -1}
+              onClick={() => setDestination(d.id)}
+              disabled={sending}
+            >
+              <Icon name={d.icon} width={14} aria-hidden />
+              <span className="hc-dest-label">{d.label}</span>
+            </button>
+          ))}
+        </div>
+
         <div
           className={`home-composer-card cave-composer-panel${dropActive ? " is-drop-active" : ""}`}
           {...dropHandlers}
@@ -837,8 +864,8 @@ export function HomeComposer({
         ) : null}
 
         {/* Controls — chat-composer footer: utility cluster (attach · voice ·
-            Options) plus the home-only destination pills and agent picker on
-            the left; enhance · send hug the right. */}
+            Options) plus the home-only agent picker on the left; enhance ·
+            send hug the right. (Chat/Task moved above the card.) */}
         <div className="cave-composer-controls">
           <input
             ref={fileInputRef}
@@ -921,30 +948,6 @@ export function HomeComposer({
                 onPickModel={handleSelectModel}
                 disabled={sending}
               />
-
-              <div
-                className="hc-dest-pills"
-                role="radiogroup"
-                aria-label="Send to"
-                ref={destGroupRef}
-                onKeyDown={handleDestKeyDown}
-              >
-                {DESTINATIONS.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
-                    role="radio"
-                    aria-checked={destination === d.id}
-                    tabIndex={destination === d.id ? 0 : -1}
-                    onClick={() => setDestination(d.id)}
-                    disabled={sending}
-                  >
-                    <Icon name={d.icon} width={14} aria-hidden />
-                    <span className="hc-dest-label">{d.label}</span>
-                  </button>
-                ))}
-              </div>
 
               <HomeSelect
                 icon="ph:warning-circle"
