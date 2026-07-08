@@ -9,7 +9,6 @@ const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url)
 const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
 const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
-const rolesSection = await readFile(new URL("./marketplace/roles-section.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
@@ -83,11 +82,21 @@ assert.doesNotMatch(settings, /"plugins"/, "Settings must not declare a plugins 
 assert.doesNotMatch(settings, /key: "roles"/, "Settings must not offer a roles add-on toggle — the merged hub is not gated");
 
 // ── The hub composes the store and the setup views ───────────────────────────
-// Roles is hidden from the hub for now: no RolesSection import, no roles tab/
-// panel/rail link. The component and /api/roles stay on disk for re-enabling,
-// and "roles" deep links land on Browse.
-assert.doesNotMatch(marketplaceView, /import \{ RolesSection/, "the Roles section is not imported while hidden");
-assert.doesNotMatch(marketplaceView, /<RolesSection/, "the Roles section does not render while hidden");
+// Roles is hidden from the hub, and the RolesSection component + its CSS +
+// the addons.roles config flag were DELETED as dead code (cave-vp4h — git
+// history keeps them). /api/roles stays: it serves the live role definitions.
+// "roles" deep links land on Browse.
+{
+  const { existsSync } = await import("node:fs");
+  assert.equal(
+    existsSync(new URL("./marketplace/roles-section.tsx", import.meta.url)),
+    false,
+    "roles-section.tsx stays deleted (was dead code — nothing rendered it)",
+  );
+}
+assert.doesNotMatch(marketplaceView, /import \{ RolesSection/, "the Roles section is not imported");
+assert.doesNotMatch(marketplaceView, /<RolesSection/, "the Roles section does not render");
+assert.doesNotMatch(css, /plugins-role-|marketplace-roles-summary/, "roles-section-only CSS stays deleted");
 assert.doesNotMatch(marketplaceView, /\{ id: "roles", label: "Roles"/, "no Roles tab while hidden");
 assert.match(
   marketplaceView,
@@ -173,30 +182,6 @@ assert.match(css, /\.marketplace-detail__decision-card \{[\s\S]*?min-height:/, "
 // ── Role cards keep their capability map (MCP servers first-class) ──────────
 assert.match(rolesRoute, /mcpServers:\s*string\[\]/, "Roles API should expose mcpServers as a first-class role capability list");
 assert.match(rolesRoute, /mcpServers:\s*parseRoleMcpServers\(text\)/, "Roles API should read mcpServers plus supported MCP aliases from ROLE.md");
-assert.match(rolesSection, /mcpServers:\s*string\[\]/, "Role cards should type MCP servers alongside skills, tools, plugins, and workflows");
-assert.match(rolesSection, /\.\.\.role\.mcpServers/, "Roles search should include MCP server names");
-assert.match(
-  rolesSection,
-  /label="MCP Servers"[\s\S]{0,160}items=\{role\.mcpServers\}/,
-  "Role cards should render a dedicated MCP Servers row",
-);
-assert.match(
-  rolesSection,
-  /No MCP servers/,
-  "Role cards should explain roles with no MCP server bindings instead of treating MCP as generic tools",
-);
-assert.match(
-  rolesSection,
-  /Browse the marketplace/,
-  "The empty Roles section cross-sells the store — that's the point of the merge",
-);
-assert.match(rolesSection, /function roleCapabilityCount\(role: RoleEntry\)/, "Roles section derives capability counts per role");
-assert.match(rolesSection, /const rolesSetupSummary = useMemo/, "Roles section derives a setup summary from the visible roles");
-assert.match(rolesSection, /className="marketplace-roles-summary"/, "Roles section renders a summary strip before role cards");
-assert.match(rolesSection, /className="marketplace-roles-summary__card"/, "Roles setup summary uses stable summary-card hooks");
-assert.match(rolesSection, /className="plugins-role-card__facts"/, "Role cards render compact decision facts");
-assert.match(css, /\.marketplace-roles-summary \{[\s\S]*?grid-template-columns/, "Roles setup summary uses a responsive grid");
-assert.match(css, /\.plugins-role-card__facts \{[\s\S]*?display: flex;/, "Role card facts have a stable flex layout");
 
 // --- Keyboard shortcuts sheet (CHAT-D11-03) ---
 

@@ -43,9 +43,11 @@ import {
 
 export type MarketplaceSection = "browse" | "roles" | "skills" | "capabilities";
 
-// Roles is hidden from the hub for now (kept in the MarketplaceSection type so
+// Roles is hidden from the hub (kept in the MarketplaceSection type so
 // `mode === "roles"` deep links keep type-checking — they land on Browse).
-// The RolesSection component and /api/roles stay intact for re-enabling.
+// The RolesSection component, its CSS, and the addons.roles config flag were
+// removed as dead code (cave-vp4h — git history keeps them); /api/roles stays
+// intact because it serves the live role definitions.
 const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
   { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
   { id: "skills", label: "Skills", icon: "ph:sparkle" },
