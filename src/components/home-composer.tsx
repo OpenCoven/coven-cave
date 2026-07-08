@@ -615,8 +615,11 @@ export function HomeComposer({
       // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
       // take priority over history/submit while one is open — shared hook.
       if (handleMenuKey(e)) return;
-      // plain Enter sends; Shift+Enter inserts newline
-      if (e.key === "Enter" && !e.shiftKey) {
+      // plain Enter sends; Shift+Enter inserts newline. `isComposing` is true
+      // for the Enter that confirms an IME candidate (CJK/pinyin/kana) —
+      // treating it as "send" would fire a half-composed prompt and destroy
+      // the candidate selection, so let the IME keep it (mirrors chat-view).
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         void handleSubmit();
         return;

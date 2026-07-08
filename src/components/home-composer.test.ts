@@ -282,6 +282,14 @@ assert.match(
   /if \(handleMenuKey\(e\)\) return;/,
   "the inline menus consume their keys before Enter-submit and history recall",
 );
+// The Enter that confirms an IME candidate (CJK/pinyin/kana) reports
+// isComposing — it must never submit a half-composed prompt (cave-572k;
+// parity with chat-view's send guard).
+assert.match(
+  handleKeyDownBlock,
+  /e\.key === "Enter" && !e\.shiftKey && !e\.nativeEvent\.isComposing/,
+  "Enter during IME composition must not send — the candidate-confirm Enter belongs to the IME",
+);
 
 assert.doesNotMatch(
   handleKeyDownBlock,
