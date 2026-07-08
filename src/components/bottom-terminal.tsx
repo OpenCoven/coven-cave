@@ -22,10 +22,16 @@ import { useAnnouncer } from "@/components/ui/live-region";
 // (e.g. `cargo build`) don't flood SR or thrash React.
 const MIRROR_LINES = 50;
 const MIRROR_DEBOUNCE_MS = 250;
-// While the pane is backgrounded the mirror isn't re-rendered; cap the buffered
-// text so a busy background stream can't grow it without bound before the pane
-// is next active (the flush trims to MIRROR_LINES anyway).
+// While the pane is hidden (keepalive) the mirror isn't re-rendered; cap the
+// buffered text so a busy background stream can't grow it without bound before
+// the pane is next shown (the flush trims to MIRROR_LINES anyway).
 const MIRROR_PENDING_CAP = 16384;
+// ResizeObserver fires every frame during a divider drag / window resize, and
+// each callback used to push pty_resize immediately — a SIGWINCH storm to the
+// shell (and to every hidden keepalive pane, which keeps full size at inset:0).
+// The local xterm refit stays per-callback for smooth visuals; only the PTY
+// push is throttled to this window, and skipped when the size didn't change.
+const RESIZE_PUSH_DEBOUNCE_MS = 150;
 // The xterm lazy-import + PTY handshake is "a few seconds"; well past that with
 // no connection means startup hung (a wedged native command, a transport await
 // that never settled, or `platform` never resolving off "unknown"). Surface a
@@ -82,6 +88,45 @@ type XtermBundle = {
   fit: import("@xterm/addon-fit").FitAddon;
   search: import("@xterm/addon-search").SearchAddon;
 };
+
+// Shared resize handling for both transports: refit the local xterm on every
+// observer callback (cheap; keeps the canvas crisp during divider drags), but
+// throttle the PTY push (SIGWINCH to the shell) to RESIZE_PUSH_DEBOUNCE_MS and
+// skip it for hidden panes and unchanged cols/rows. Hidden keepalive panes sit
+// at inset:0 so they'd otherwise mirror every window resize straight to N
+// background shells.
+function makeResizer(
+  term: import("@xterm/xterm").Terminal,
+  fit: import("@xterm/addon-fit").FitAddon,
+  isVisible: () => boolean,
+  push: (cols: number, rows: number) => void,
+) {
+  let last = { cols: -1, rows: -1 };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const fire = () => {
+    timer = null;
+    // Hidden pane: local fit already happened (so reveal is crisp); the PTY
+    // learns the size on the next visible resize instead.
+    if (!isVisible()) return;
+    const { cols, rows } = term;
+    if (cols === last.cols && rows === last.rows) return;
+    last = { cols, rows };
+    push(cols, rows);
+  };
+  const doResize = () => {
+    try {
+      fit.fit();
+    } catch { /* harmless mid-tear-down */ }
+    if (timer == null) timer = setTimeout(fire, RESIZE_PUSH_DEBOUNCE_MS);
+  };
+  const dispose = () => {
+    if (timer != null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+  return { doResize, dispose };
+}
 
 // Build the xterm instance + addons shared by both transports (Tauri IPC and the
 // WebSocket bridge). The two effects differ only in how bytes flow to/from the
@@ -147,13 +192,20 @@ async function createXterm(
 export function BottomTerminal({
   threadId,
   active = true,
+  visible = active,
   projectRoot,
   paneId,
   registerWriter,
   onUserInput,
 }: {
   threadId: string;
+  /** This pane has keyboard focus (drives refit + refocus on activation). */
   active?: boolean;
+  /** This pane is rendered on-screen. True for EVERY pane of a visible split
+   *  (not just the focused one) so the screen-reader mirror keeps flowing for
+   *  visible-but-unfocused panes; false only for hidden keepalive mounts.
+   *  Defaults to `active` for single-pane hosts. */
+  visible?: boolean;
   projectRoot?: string;
   /** Stable id for comux's broadcast registry (defaults to threadId). */
   paneId?: string;
@@ -267,10 +319,12 @@ export function BottomTerminal({
   if (!decoderRef.current) {
     decoderRef.current = new TextDecoder("utf-8", { fatal: false });
   }
-  // Mirror `active` into a ref so the byte handlers (registered once per mount)
-  // can read the current value without re-subscribing.
-  const activeRef = useRef(active);
-  activeRef.current = active;
+  // Mirror `visible` into a ref so the byte handlers and resize observers
+  // (registered once per mount) can read the current value without
+  // re-subscribing. `active` (focus) deliberately does NOT gate the mirror:
+  // a visible-but-unfocused split pane must keep announcing output.
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const flushMirror = useCallback(() => {
     flushTimerRef.current = null;
@@ -290,13 +344,13 @@ export function BottomTerminal({
       // consistent — but don't re-render the (aria-hidden) mirror off-screen: a
       // busy background stream otherwise re-rendered the 50-line mirror every
       // 250ms while the terminal wasn't even visible. Buffer (bounded) and drain
-      // when the pane is next active.
+      // when the pane is next shown.
       const text = stripAnsi(
         decoderRef.current.decode(bytes, { stream: true }),
       );
       if (!text) return;
       pendingMirrorRef.current += text;
-      if (!activeRef.current) {
+      if (!visibleRef.current) {
         if (pendingMirrorRef.current.length > MIRROR_PENDING_CAP) {
           pendingMirrorRef.current = pendingMirrorRef.current.slice(-MIRROR_PENDING_CAP);
         }
@@ -331,17 +385,22 @@ export function BottomTerminal({
   // Also forward every BottomTerminal log line back to Rust so we can read
   // them in the tauri-dev stderr without needing WebView devtools.
 
-  // Re-fit + refocus whenever this terminal becomes the active tab.
+  // Drain output buffered while the pane was hidden as soon as it's shown —
+  // independent of focus, so every pane of a revealed split resumes announcing.
+  useEffect(() => {
+    if (visible) flushMirror();
+  }, [visible, flushMirror]);
+
+  // Re-fit + refocus whenever this terminal becomes the active (focused) pane.
   useEffect(() => {
     if (active) {
-      flushMirror(); // drain output buffered while the pane was hidden
       const id = requestAnimationFrame(() => {
         fitRef.current?.();
         termRef.current?.focus();
       });
       return () => cancelAnimationFrame(id);
     }
-  }, [active, flushMirror]);
+  }, [active]);
 
   // Startup watchdog: covers every way the terminal can stall before `ready` —
   // a native pty_* command that never returns, a transport await that throws/
@@ -501,16 +560,14 @@ export function BottomTerminal({
       if (!disposed) setReady(true);
       term.focus();
 
-      const doResize = () => {
-        try {
-          fit.fit();
-          void bridge.invoke("pty_resize", {
-            threadId: threadId,
-            cols: term.cols,
-            rows: term.rows,
-          });
-        } catch { /* harmless mid-tear-down */ }
-      };
+      const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
+        void bridge.invoke("pty_resize", {
+          threadId: threadId,
+          cols,
+          rows,
+        }).catch(() => { /* harmless mid-tear-down */ });
+      });
+      const doResize = resizer.doResize;
 
       // Refit on container size changes.
       const ro = new ResizeObserver(doResize);
@@ -524,6 +581,7 @@ export function BottomTerminal({
 
       cleanup = () => {
         ro.disconnect();
+        resizer.dispose();
         onDataDispose.dispose();
         unlistenData();
         unlistenExit();
@@ -687,14 +745,12 @@ export function BottomTerminal({
       });
       writerRef.current = (d) => bridge.write(new TextEncoder().encode(d));
 
-      const doResize = () => {
+      const resizer = makeResizer(term, fit, () => visibleRef.current, (cols, rows) => {
         try {
-          fit.fit();
-          bridge.resize(term.cols, term.rows);
-        } catch {
-          /* harmless mid-tear-down */
-        }
-      };
+          bridge.resize(cols, rows);
+        } catch { /* harmless mid-tear-down */ }
+      });
+      const doResize = resizer.doResize;
 
       const ro = new ResizeObserver(doResize);
       ro.observe(wrap);
@@ -732,6 +788,7 @@ export function BottomTerminal({
 
       cleanup = () => {
         ro.disconnect();
+        resizer.dispose();
         onDataDispose.dispose();
         if (typeof document !== "undefined") {
           document.removeEventListener("visibilitychange", onForeground);

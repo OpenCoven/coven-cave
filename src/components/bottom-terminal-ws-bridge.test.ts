@@ -11,7 +11,7 @@ assert.match(src, /if \(platform !== "desktop"\) return;/, "Tauri IPC path remai
 assert.match(src, /if \(platform !== "browser" && platform !== "ios" && platform !== "android"\) return;/, "WS bridge path covers browser and Tauri-mobile");
 assert.match(src, /bridge\.connect\(threadId,\s*term\.cols,\s*term\.rows,\s*projectRootRef\.current\)/, "WS bridge connects with terminal dimensions and cwd");
 assert.match(src, /bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/, "terminal input flows to WS bridge");
-assert.match(src, /bridge\.resize\(term\.cols,\s*term\.rows\)/, "terminal resize flows to WS bridge");
+assert.match(src, /bridge\.resize\(cols,\s*rows\)/, "terminal resize flows to WS bridge (throttled via makeResizer)");
 assert.match(src, /bridge\.dispose\(\)/, "WS bridge is disposed on cleanup");
 
 console.log("bottom-terminal-ws-bridge.test.ts OK");

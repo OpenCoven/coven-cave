@@ -1427,6 +1427,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               <BottomTerminal
                 threadId={`cave.comux.${s.id}`}
                 active={active && isActive}
+                visible={active}
                 projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
                 paneId={s.id}
                 registerWriter={registerPaneWriter}
@@ -1676,6 +1677,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       key={s.id}
                       threadId={`cave.comux.${s.id}`}
                       active={false}
+                      visible={false}
                       projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
                     />
                   ))}
