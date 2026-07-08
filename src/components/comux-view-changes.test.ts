@@ -19,10 +19,12 @@ assert.match(
 // matching file's diff (repo-relative or suffix match) when a transcript edit
 // tool is clicked.
 assert.match(changes, /focusPath\?: string \| null;/, "SessionChangesInner takes a focusPath prop");
+// cave-bvbw moved the raw endsWith pair to a /-boundary suffix helper so
+// sibling files with a common string suffix can't cross-match.
 assert.match(
   changes,
-  /focusPath\.endsWith\(f\.path\) \|\| f\.path\.endsWith\(focusPath\)/,
-  "focusPath matches repo-relative or absolute paths by suffix",
+  /suffixMatch\(focusPath, f\.path\) \|\| suffixMatch\(f\.path, focusPath\)/,
+  "focusPath matches repo-relative or absolute paths by /-boundary suffix",
 );
 
 // comux imports it and renders it for the SELECTED project (not the active

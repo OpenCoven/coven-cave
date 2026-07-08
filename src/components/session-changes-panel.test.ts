@@ -88,4 +88,25 @@ assert.match(
   "Refresh stays a raw button to keep its inner-glyph spin",
 );
 
+// cave-bvbw: the jump-to-diff focus must apply each nonce exactly once. The
+// effect is (deliberately) keyed on filesSig so a late-appearing file still
+// gets focused — but filesSig churns on every 5s poll while an agent edits,
+// and an unguarded effect re-expanded the stale focus target on every refresh,
+// snapping the panel away from the diff the user had manually selected.
+assert.match(
+  src,
+  /appliedFocusNonceRef\.current === focusNonce\) return;/,
+  "a consumed focus nonce must not re-assert itself on poll refreshes",
+);
+assert.match(
+  src,
+  /if \(!match\) return;\s*\n\s*appliedFocusNonceRef\.current = focusNonce;/,
+  "the nonce is consumed only once a match lands (retry stays alive for late-appearing files)",
+);
+assert.match(
+  src,
+  /long === short \|\| long\.endsWith\(`\/\$\{short\}`\)/,
+  "focus matching aligns on / boundaries — bare string suffixes cross-match sibling files",
+);
+
 console.log("session-changes-panel.test.ts: cave-4op footer + icon-button control primitives ok");
