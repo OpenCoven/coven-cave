@@ -35,6 +35,10 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.match(src, /Select this folder/, "can select the current folder");
   assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
   assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
+  // cave-psp8: a true modal must trap focus + restore it on close, not just listen
+  // for Escape at the window (which let Tab escape to the page behind the scrim).
+  assert.match(src, /useFocusTrap\(open, dialogRef, \{ onEscape: onClose \}\)/, "modal traps focus, closes on Escape, and returns focus on close");
+  assert.doesNotMatch(src, /addEventListener\("keydown"/, "the hand-rolled window Escape listener is gone (useFocusTrap owns it)");
   assert.doesNotMatch(
     src,
     /rounded-md|rounded-lg|rounded(?=\s|")/,
