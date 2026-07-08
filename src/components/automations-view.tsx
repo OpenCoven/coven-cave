@@ -1835,7 +1835,26 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const json = await res.json().catch(() => null);
       // Drop a stale runs response: a later selection (or poll) superseded it.
       if (reqId !== runsReqRef.current || !mountedRef.current) return;
-      if (json?.ok && Array.isArray(json.runs)) setAutomationRuns(json.runs);
+      if (json?.ok && Array.isArray(json.runs)) {
+        // Content-guard: an unchanged poll keeps the array identity, so the
+        // in-flight poll effect below stops tearing down its interval every
+        // 2.5s tick (cave-1e6k).
+        const runs = json.runs as AutomationRunRecord[];
+        setAutomationRuns((prev) => (arrayContentEqual(prev, runs) ? prev : runs));
+        // This response already carries the newest run — update the row badge
+        // map here instead of re-fetching the same endpoint via the
+        // every-automation fan-out.
+        const newest = runs[0];
+        if (newest) {
+          setLastRunById((prev) => {
+            const current = prev.get(id);
+            if (current && JSON.stringify(current) === JSON.stringify(newest)) return prev;
+            const next = new Map(prev);
+            next.set(id, newest);
+            return next;
+          });
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -1904,17 +1923,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   }, [selectedCodex?.id, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // While a run is in flight, poll so its status + log fill in without a manual refresh.
+  // Depends on a derived boolean (not the runs array) so the interval survives
+  // poll ticks; refreshRuns also maintains this automation's last-run badge,
+  // so the every-automation refreshLastRuns fan-out stays out of the hot loop
+  // (cave-1e6k).
+  const hasRunningRun = automationRuns.some((r) => r.status === "running");
   useEffect(() => {
-    if (!selectedCodex?.id) return;
-    if (!automationRuns.some((r) => r.status === "running")) return;
+    if (!selectedCodex?.id || !hasRunningRun) return;
     const id = selectedCodex.id;
     const t = setInterval(() => {
       if (document.hidden) return; // don't poll a backgrounded tab
       void refreshRuns(id);
-      void refreshLastRuns();
     }, 2500);
     return () => clearInterval(t);
-  }, [selectedCodex?.id, automationRuns, refreshRuns, refreshLastRuns]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCodex?.id, hasRunningRun, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh last-run map whenever the automation list changes
   useEffect(() => {
