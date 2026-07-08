@@ -118,7 +118,9 @@ function useObjectUrl(file: File | null): string | null {
       return;
     }
     const next = URL.createObjectURL(file);
-    setUrl(next);
+    // createObjectURL always yields a same-origin blob: URL; assert the
+    // scheme so nothing else can ever reach the <img src> this feeds.
+    setUrl(/^blob:/.test(next) ? next : null);
     return () => URL.revokeObjectURL(next);
   }, [file]);
   return url;
