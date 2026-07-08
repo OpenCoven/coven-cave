@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
@@ -19,10 +19,6 @@ type Props = {
   onOpenItem?: (item: InboxItem) => void;
   onPrefsChanged: () => void;
 };
-
-function relTime(iso: string | null | undefined): string {
-  return iso ? relativeTime(iso) : "—";
-}
 
 export function NotificationBell({
   items,
@@ -124,14 +120,14 @@ export function NotificationBell({
   }, [items]);
   const displayBadgeCount = badgeCount ?? derivedBadgeCount;
 
-  // Close on outside click.
+  // Close on outside press (pointerdown covers mouse, pen, and touch alike).
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
   }, [open]);
 
   const dismiss = useCallback(
@@ -189,6 +185,8 @@ export function NotificationBell({
     <div ref={wrapRef} className="notification-bell relative">
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className={`notification-bell__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
           displayBadgeCount > 0
             ? "border-[color-mix(in_oklch,var(--color-warning)_45%,var(--border-strong))] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_22%,transparent)]"
@@ -273,6 +271,7 @@ export function NotificationBell({
                   return (
                     <button
                       key={opt.label}
+                      aria-pressed={active}
                       onClick={() =>
                         setSound(opt.mode, "name" in opt ? opt.name : undefined)
                       }
@@ -302,6 +301,8 @@ export function NotificationBell({
                       <span className="truncate text-[var(--text-secondary)]" title={f.display_name}>{f.display_name}</span>
                       <button
                         onClick={() => toggleMute(f.id)}
+                        aria-pressed={muted}
+                        aria-label={muted ? `Unmute ${f.display_name}` : `Mute ${f.display_name}`}
                         className={`focus-ring rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
                           muted
                             ? "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
@@ -353,14 +354,20 @@ export function NotificationBell({
                         </div>
                       ) : null}
                       <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-                        {it.kind === "response-needed"
-                          ? "Waiting on you"
-                          : relTime(it.status === "fired" ? it.firedAt : it.updatedAt)}
+                        {it.kind === "response-needed" ? (
+                          "Waiting on you"
+                        ) : (
+                          <RelativeTime
+                            iso={it.status === "fired" ? it.firedAt : it.updatedAt}
+                            fallback="—"
+                          />
+                        )}
                       </div>
                     </div>
                     {it.familiarId ? (
                       <button
                         onClick={() => void toggleMute(it.familiarId!)}
+                        aria-pressed={muted}
                         title={muted ? `Unmute ${fname}` : `Mute ${fname}`}
                         aria-label={muted ? `Unmute ${fname}` : `Mute ${fname}`}
                         className="notification-bell__mute touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] group-hover/popover:opacity-100 focus-visible:opacity-100"

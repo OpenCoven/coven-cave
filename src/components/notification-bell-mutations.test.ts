@@ -58,4 +58,31 @@ assert.doesNotMatch(
   "the all-or-nothing Promise.all fan-out must not return",
 );
 
+// ── cave-jm6t: bell a11y/polish ──
+assert.match(
+  src,
+  /aria-expanded=\{open\}\s*\n\s*aria-haspopup="dialog"/,
+  "the bell trigger exposes popover state (aria-expanded) and kind (aria-haspopup)",
+);
+assert.match(
+  src,
+  /key=\{opt\.label\}\s*\n\s*aria-pressed=\{active\}/,
+  "sound-mode chips announce their selection via aria-pressed",
+);
+assert.equal(
+  (src.match(/aria-pressed=\{muted\}/g) ?? []).length,
+  2,
+  "both mute toggles (settings list + per-item) are proper aria-pressed toggles",
+);
+assert.match(
+  src,
+  /<RelativeTime\s*\n\s*iso=\{it\.status === "fired" \? it\.firedAt : it\.updatedAt\}\s*\n\s*fallback="—"/,
+  "item timestamps render through the shared RelativeTime (semantic <time>, exact-time hover, prefs-aware)",
+);
+assert.match(
+  src,
+  /window\.addEventListener\("pointerdown", onDown\)/,
+  "outside-press dismissal listens to pointerdown (mouse, pen, and touch alike)",
+);
+
 console.log("notification-bell-mutations.test.ts: ok");
