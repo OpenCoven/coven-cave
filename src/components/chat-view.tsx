@@ -11,7 +11,7 @@ import { segmentTurn } from "@/lib/turn-segments";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
-import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,23 +53,19 @@ import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/co
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
-import { modelSlashOptions, resolveModelArg, formatModelList } from "@/lib/slash-model";
+import { resolveModelArg, formatModelList } from "@/lib/slash-model";
 import {
-  skillSlashOptions,
   resolveSkillInvocation,
   formatSkillList,
   buildSkillPrompt,
-  skillCommandMatches,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
-  promptSlashOptions,
   resolvePromptArg,
   formatPromptList,
   promptInsertion,
   type PromptOption,
 } from "@/lib/slash-prompt";
-import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
@@ -126,6 +122,7 @@ import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
@@ -2707,60 +2704,45 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
       : 0;
 
-  // Slash suggestions
-  const slashMatches: SlashCommand[] = useMemo(() => {
-    const firstWord = input.trimStart().split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || input.trimStart().includes(" ")) return [];
-    return matchSlash(firstWord);
-  }, [input]);
-  const [slashIdx, setSlashIdx] = useState(0);
-  // Esc hides the menu for the current input; any edit brings it back.
-  const [slashDismissed, setSlashDismissed] = useState(false);
-  const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
-  // Skills for the inline `/skill` / `/skills` picker — fetched once from the
-  // local skill scan (Coven skills + ~/.claude/skills).
-  const [skills, setSkills] = useState<SkillOption[]>([]);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/skills/local", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
-      })
-      .catch(() => {
-        /* offline → no inline skill picker (the command menu still works) */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  // Prompt templates for the `/prompt` / `/prompts` picker and the Prompt
-  // snippets modal. Seeded with the built-ins so the picker works instantly
-  // (and offline); the fetch layers in ~/.coven/prompts files and installed
-  // marketplace prompt packs.
-  const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
-  const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/prompts", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
-      })
-      .catch(() => {
-        /* offline → built-in templates only */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  // While typing "/model <partial>", the menu shows model options instead of
-  // commands (an inline picker). null ⇒ not in /model arg position.
+  // Inline slash menus (/command listbox + Skills group, /model, /skill,
+  // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
+  // stays chat's: model picks append a system line + clear, skill picks send
+  // in-thread (invokeSkillOption), prompts insert-for-editing, and Enter on a
+  // command runs the highlighted suggestion's intent — never the partially
+  // typed text, and never recorded in ↑ history (send() owns that push).
   const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
-  const modelOptions = useMemo(
-    () => (slashDismissed ? null : modelSlashOptions(input, modelHarness)),
-    [input, modelHarness, slashDismissed],
-  );
+  const {
+    skills,
+    prompts,
+    slashSuggestions,
+    skillCommandRows,
+    modelOptions,
+    skillOptions,
+    promptOptions,
+    modelMenuActive,
+    skillMenuActive,
+    promptMenuActive,
+    menuOpen,
+    slashIdx,
+    setSlashIdx,
+    slashListboxId,
+    handleKeyDown: handleMenuKey,
+  } = useInlineSlashMenus({
+    text: input,
+    setText: setInput,
+    modelHarness,
+    onPickModel: (id) => {
+      handleSelectModel(id);
+      appendSystem(`Model set to ${id}.`);
+      setInput("");
+    },
+    onPickSkill: (s) => invokeSkillOption(s),
+    onInsertPrompt: (p) => insertPrompt(p),
+    onRunCommand: (cmd) => {
+      intentFromSlash(cmd.name);
+    },
+  });
+  const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete above, which is null outside `/model <arg>` position).
   const composerModelOptions = useMemo(
@@ -2771,36 +2753,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : composerModelOptions[0]?.id ?? "";
-  const modelMenuActive = (modelOptions?.length ?? 0) > 0;
-  // Inline `/skill` / `/skills` picker — null ⇒ not in a skill-picker position.
-  const skillOptions = useMemo(
-    () => (slashDismissed ? null : skillSlashOptions(input, skills)),
-    [input, skills, slashDismissed],
-  );
-  const skillMenuActive = (skillOptions?.length ?? 0) > 0;
-  // Inline `/prompt` / `/prompts` picker — null ⇒ not in a prompt-picker position.
-  const promptOptions = useMemo(
-    () => (slashDismissed ? null : promptSlashOptions(input, prompts)),
-    [input, prompts, slashDismissed],
-  );
-  const promptMenuActive = (promptOptions?.length ?? 0) > 0;
-  // Skills surfaced directly in the command menu — typing `/revi` finds the
-  // code-review skill without the /skill prefix. Same first-token-only rule as
-  // slashMatches so arg positions never double-render.
-  const skillCommandRows: SkillOption[] = useMemo(() => {
-    if (slashDismissed) return [];
-    const t = input.trimStart();
-    const firstWord = t.split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || t.includes(" ")) return [];
-    return skillCommandMatches(firstWord, skills);
-  }, [input, skills, slashDismissed]);
-  // The slash-command, /model, /skill and /prompt pickers are mutually
-  // exclusive inline listboxes sharing one listbox id, so the composer's
-  // combobox ARIA tracks whichever is open.
-  const menuOpen = modelMenuActive || skillMenuActive || promptMenuActive || slashSuggestions.length > 0 || skillCommandRows.length > 0;
-  // Stable per-mount listbox id — the home composer mounts its own slash menu,
-  // so ids must be unique across simultaneously mounted composers.
-  const slashListboxId = useId();
 
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
@@ -2963,9 +2915,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return { groupedTurns: grouped, turnIndexMap };
   }, [activePath]);
 
+  // The slash-menu index/dismissal resets live in useInlineSlashMenus; the
+  // @-mention picker re-arms here (same any-edit-brings-it-back contract).
   useEffect(() => {
-    setSlashIdx(0);
-    setSlashDismissed(false);
     setMentionIdx(0);
     setMentionDismissed(false);
   }, [input]);
@@ -4388,150 +4340,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
-    if (modelMenuActive && modelOptions) {
-      const opts = modelOptions;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const m = opts[slashIdx];
-        if (m) setInput(`/model ${m.id}`);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const m = opts[slashIdx];
-        if (m) {
-          handleSelectModel(m.id);
-          appendSystem(`Model set to ${m.id}.`);
-          setInput("");
-        }
-        return;
-      }
-      // Esc dismisses the picker (its footer advertises "esc cancel"); without
-      // this, Esc fell through to the busy branch and cancelled a live stream.
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-    }
-    if (skillMenuActive && skillOptions) {
-      const opts = skillOptions;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const s = opts[slashIdx];
-        if (s) setInput(`/skill ${s.id}`);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const s = opts[slashIdx];
-        if (s) invokeSkillOption(s);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-    }
-    if (promptMenuActive && promptOptions) {
-      const opts = promptOptions;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const p = opts[slashIdx];
-        if (p) setInput(`/prompt ${p.id}`);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const p = opts[slashIdx];
-        if (p) insertPrompt(p);
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-    }
-    if (slashSuggestions.length > 0 || skillCommandRows.length > 0) {
-      // One roving index across commands, then the Skills group beneath them.
-      const total = slashSuggestions.length + skillCommandRows.length;
-      const skillAt = (i: number): SkillOption | undefined =>
-        skillCommandRows[i - slashSuggestions.length];
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, total - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const cmd = slashSuggestions[slashIdx];
-        const s = skillAt(slashIdx);
-        if (cmd) setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
-        else if (s) setInput(`/skill ${s.id} `);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const cmd = slashSuggestions[slashIdx];
-        const s = skillAt(slashIdx);
-        // If the highlighted command takes an argument and the input isn't
-        // the exact command yet, autocomplete first (like Tab) so the user
-        // can fill in args; otherwise run the highlighted suggestion — not
-        // the partially typed text. Mirrors home-composer.
-        if (cmd && cmd.argPlaceholder && canonicalize(input.trim()) !== cmd.name) {
-          setInput(cmd.name + " ");
-        } else if (cmd) {
-          intentFromSlash(cmd.name);
-        } else if (s) {
-          invokeSkillOption(s);
-        }
-        return;
-      }
-      // Esc precedence: an open slash menu consumes Esc (dismiss) before
-      // the busy branch below gets a chance to cancel the stream.
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-    }
+    // The inline slash menus (Esc-dismiss, ↑↓/Tab/Enter across all four
+    // pickers) — shared hook. Ordering is load-bearing: the @-mention branch
+    // above consumes Esc first (#402), and the busy-cancel branch below only
+    // sees Esc once no menu is open, so a dismissed menu never costs a
+    // live stream.
+    if (handleMenuKey(e)) return;
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
     if (handleArrowKey(e, input, setInput)) return;
     // `isComposing` is true for the Enter that confirms an IME candidate

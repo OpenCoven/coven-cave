@@ -63,13 +63,18 @@ const slashCmds = await readFile(new URL("./slash-commands.ts", import.meta.url)
 assert.match(slashCmds, /name: "\/prompt",[\s\S]*?argPlaceholder: "name"/, "/prompt is registered with an arg placeholder");
 assert.match(slashCmds, /name: "\/prompts"/, "/prompts is registered");
 
+// The picker machinery (option memo, menuOpen union, the /api/prompts fetch,
+// the built-in seed) lives in the shared use-inline-slash-menus hook, consumed
+// by BOTH composers; the insert-not-send contract stays pinned per composer.
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
-assert.match(chatView, /promptSlashOptions\(input, prompts\)/, "chat-view computes the inline /prompt options");
-assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "chat-view menuOpen includes the prompt picker");
+const menusHook = await readFile(new URL("./use-inline-slash-menus.ts", import.meta.url), "utf8");
+assert.match(menusHook, /promptSlashOptions\(text, prompts\)/, "the shared hook computes the inline /prompt options");
+assert.match(menusHook, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "menuOpen includes the prompt picker");
 assert.match(chatView, /command === "\/prompt" \|\| command === "\/prompts"/, "chat-view dispatches /prompt and /prompts");
 assert.match(chatView, /role="listbox" aria-label="Prompts"/, "chat-view renders a Prompts listbox");
-assert.match(chatView, /fetch\("\/api\/prompts"/, "chat-view sources templates from /api/prompts");
-assert.match(chatView, /useState<PromptOption\[\]>\(BUILTIN_PROMPTS\)/, "picker is seeded with the built-ins so it works offline");
+assert.match(menusHook, /fetch\("\/api\/prompts"/, "the shared hook sources templates from /api/prompts");
+assert.match(menusHook, /useState<PromptOption\[\]>\(BUILTIN_PROMPTS\)/, "picker is seeded with the built-ins so it works offline");
+assert.match(chatView, /onInsertPrompt: \(p\) => insertPrompt\(p\)/, "the hook's prompt picks route through chat-view's insert helper");
 // The core contract: picking a prompt INSERTS into the composer — never sends.
 assert.match(chatView, /const insertPrompt = \(p: PromptOption\)/, "chat-view has the shared insert helper");
 assert.doesNotMatch(chatView, /sendRaw\([^)]*promptInsertion/, "prompt insertion is never routed into sendRaw");
@@ -89,10 +94,11 @@ const emptyState = await readFile(new URL("../components/chat-empty-state.tsx", 
 assert.match(emptyState, /onOpenPromptSnippets/, "empty state exposes the snippets entry point");
 
 // ── Home composer parity ─────────────────────────────────────────────────────
+// Parity is structural now: home consumes the same hook (asserted above), so
+// only home's own pick plumbing needs pins.
 const homeComposer = await readFile(new URL("../components/home-composer.tsx", import.meta.url), "utf8");
-assert.match(homeComposer, /promptSlashOptions\(text, prompts\)/, "home computes the inline /prompt options");
-assert.match(homeComposer, /fetch\("\/api\/prompts"/, "home sources templates from /api/prompts");
-assert.match(homeComposer, /useState<PromptOption\[\]>\(BUILTIN_PROMPTS\)/, "home picker is seeded with the built-ins");
+assert.match(homeComposer, /useInlineSlashMenus\(\{/, "home consumes the shared inline-menus hook");
+assert.match(homeComposer, /onInsertPrompt: \(p\) => insertPromptTemplate\(p\)/, "the hook's prompt picks route through home's insert helper");
 assert.match(homeComposer, /command === "\/prompt" \|\| command === "\/prompts"/, "home dispatches /prompt and /prompts");
 assert.match(homeComposer, /const insertPromptTemplate = useCallback/, "home has the template-insert helper");
 assert.doesNotMatch(homeComposer, /onStartChat\([^)]*promptInsertion/, "a template body never starts a chat directly");

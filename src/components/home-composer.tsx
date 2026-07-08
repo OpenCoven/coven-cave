@@ -12,34 +12,30 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
-import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
+import { resolveModelArg } from "@/lib/slash-model";
 import {
-  skillSlashOptions,
   resolveSkillInvocation,
   buildSkillPrompt,
-  skillCommandMatches,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
-  promptSlashOptions,
   resolvePromptArg,
   promptInsertion,
   type PromptOption,
 } from "@/lib/slash-prompt";
-import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
-import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import { canonicalize } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
@@ -140,11 +136,6 @@ export function HomeComposer({
   // Persisted ↑/↓ prompt-history recall — shared hook (use-composer-history);
   // home records slash commands in history too, so pushes stay at call sites.
   const { push: pushHistory, handleArrowKey } = useComposerHistory(HOME_HISTORY_KEY);
-  const [slashIdx, setSlashIdx] = useState(0);
-  // Escape dismisses the inline slash/model/skill menus (they otherwise stay
-  // open purely as a function of the text). Reset whenever the text changes so
-  // typing a fresh command token re-opens them.
-  const [slashDismissed, setSlashDismissed] = useState(false);
   // Time-of-day greeting for the hero eyebrow. Sampled after mount (client
   // clock) so SSR markup stays deterministic — the eyebrow fades in once set.
   const [greeting, setGreeting] = useState<string | null>(null);
@@ -152,9 +143,6 @@ export function HomeComposer({
     setGreeting(greetingForHour(new Date().getHours()));
   }, []);
   const { announce } = useAnnouncer();
-  // Stable per-mount listbox id — the chat composer mounts its own slash menu,
-  // so ids must be unique across simultaneously mounted composers.
-  const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Attachments staged in the composer (cap 10, mirroring the chat composer);
   // handed to the opened chat on submit. Shared hook — home adds the limit
@@ -283,71 +271,40 @@ export function HomeComposer({
     setSelectedProjectId(projects[0]?.id ?? "");
   }, [projects, selectedProjectId]);
 
-  // Mirror the chat composer's matching rule: surface only while the user is
-  // still typing the command token (no whitespace yet).
-  const slashSuggestions: SlashCommand[] = useMemo(() => {
-    const firstWord = text.trimStart().split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || text.trimStart().includes(" ")) return [];
-    return matchSlash(firstWord);
-  }, [text]);
-
-  // Inline model picker: typing "/model <partial>" shows model options.
+  // Inline slash menus (/command listbox + Skills group, /model, /skill,
+  // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
+  // stays home's: model picks toast + clear, skill picks start a new chat
+  // (invokeSkill), prompts insert-for-editing, and Enter on a command (or
+  // nothing highlighted) falls through to handleSubmit — home dispatches the
+  // typed text, so slash commands also land in the ↑ history.
   const modelHarness =
     modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
-  const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
-  const modelMenuActive = !slashDismissed && (modelOptions?.length ?? 0) > 0;
-  // Inline skill picker: "/skill <partial>" / "/skills" shows skill options.
-  const [skills, setSkills] = useState<SkillOption[]>([]);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/skills/local", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
-      })
-      .catch(() => {
-        /* offline → no inline skill picker */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const skillOptions = useMemo(() => skillSlashOptions(text, skills), [text, skills]);
-  const skillMenuActive = !slashDismissed && (skillOptions?.length ?? 0) > 0;
-  // Prompt templates for the "/prompt <partial>" / "/prompts" picker. Seeded
-  // with the built-ins so it works instantly (and offline); the fetch layers
-  // in ~/.coven/prompts files and installed marketplace prompt packs.
-  const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/prompts", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
-      })
-      .catch(() => {
-        /* offline → built-in templates only */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const promptOptions = useMemo(() => promptSlashOptions(text, prompts), [text, prompts]);
-  const promptMenuActive = !slashDismissed && (promptOptions?.length ?? 0) > 0;
-  // Skills surfaced directly in the command menu — typing `/revi` finds the
-  // code-review skill without the /skill prefix. Same first-token-only rule
-  // as slashSuggestions; mirrors chat-view.
-  const skillCommandRows: SkillOption[] = useMemo(() => {
-    const t = text.trimStart();
-    const firstWord = t.split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || t.includes(" ")) return [];
-    return skillCommandMatches(firstWord, skills);
-  }, [text, skills]);
-  // The inline listboxes (slash commands, /model, /skill, /prompt) share the
-  // same listbox id, so the textarea's combobox ARIA tracks whichever is open.
-  const menuOpen =
-    modelMenuActive || skillMenuActive || promptMenuActive ||
-    (!slashDismissed && (slashSuggestions.length > 0 || skillCommandRows.length > 0));
+  const {
+    skills,
+    prompts,
+    slashSuggestions,
+    skillCommandRows,
+    modelOptions,
+    skillOptions,
+    promptOptions,
+    modelMenuActive,
+    skillMenuActive,
+    promptMenuActive,
+    menuOpen,
+    slashIdx,
+    setSlashIdx,
+    slashListboxId,
+    handleKeyDown: handleMenuKey,
+  } = useInlineSlashMenus({
+    text,
+    setText,
+    modelHarness,
+    onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
+    onPickSkill: (s) => invokeSkill(s),
+    onInsertPrompt: (p) => insertPromptTemplate(p),
+    onRunCommand: () => { void handleSubmit(); },
+    onNoMatchEnter: () => { void handleSubmit(); },
+  });
 
   // Invoke a skill from home = open a new chat that asks the familiar to run
   // it. A skill with an argument-hint autofills `/skill <id> ` for argument
@@ -398,11 +355,6 @@ export function HomeComposer({
     },
     [announce],
   );
-
-  useEffect(() => {
-    setSlashIdx(0);
-    setSlashDismissed(false);
-  }, [text]);
 
   // Persist the draft so a reload restores it; cleared when the input empties
   // (e.g. after a send), so sent prompts don't reappear. Shared hook —
@@ -659,93 +611,9 @@ export function HomeComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      // Escape closes any open inline menu — the menu footers advertise
-      // "Esc cancel", and typing re-opens it (slashDismissed resets on text).
-      if (e.key === "Escape" && menuOpen) {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-      // Inline model picker takes priority when "/model <partial>" is open.
-      if (modelMenuActive && modelOptions) {
-        const opts = modelOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) setText(`/model ${m.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const m = opts[slashIdx];
-          if (m) { handleSelectModel(m.id); onToast(`Model set to ${m.id}.`); setText(""); }
-          return;
-        }
-      }
-      // Inline skill picker ("/skill <partial>" or "/skills").
-      if (skillMenuActive && skillOptions) {
-        const opts = skillOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const s = opts[slashIdx]; if (s) setText(`/skill ${s.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const s = opts[slashIdx];
-          if (s) invokeSkill(s);
-          return;
-        }
-      }
-      // Inline prompt picker ("/prompt <partial>" or "/prompts") — Enter
-      // INSERTS the template into the composer for editing, never a start.
-      if (promptMenuActive && promptOptions) {
-        const opts = promptOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const p = opts[slashIdx]; if (p) setText(`/prompt ${p.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const p = opts[slashIdx];
-          if (p) insertPromptTemplate(p);
-          return;
-        }
-      }
-      // Slash menu hotkeys take priority over history/submit when it's open.
-      // One roving index across commands, then the Skills group beneath them.
-      if (!slashDismissed && (slashSuggestions.length > 0 || skillCommandRows.length > 0)) {
-        const total = slashSuggestions.length + skillCommandRows.length;
-        const skillAt = (i: number): SkillOption | undefined =>
-          skillCommandRows[i - slashSuggestions.length];
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSlashIdx((i) => Math.min(i + 1, total - 1));
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSlashIdx((i) => Math.max(i - 1, 0));
-          return;
-        }
-        if (e.key === "Tab") {
-          e.preventDefault();
-          const cmd = slashSuggestions[slashIdx];
-          const s = skillAt(slashIdx);
-          if (cmd) setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
-          else if (s) setText(`/skill ${s.id} `);
-          return;
-        }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const cmd = slashSuggestions[slashIdx];
-          const s = skillAt(slashIdx);
-          // If the input is an exact command (no args yet), run it directly;
-          // otherwise autocomplete first so the user can fill in args.
-          if (cmd && cmd.argPlaceholder && canonicalize(text.trim()) !== cmd.name) {
-            setText(cmd.name + " ");
-          } else if (s) {
-            invokeSkill(s);
-          } else {
-            void handleSubmit();
-          }
-          return;
-        }
-      }
+      // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
+      // take priority over history/submit while one is open — shared hook.
+      if (handleMenuKey(e)) return;
       // plain Enter sends; Shift+Enter inserts newline
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -754,26 +622,7 @@ export function HomeComposer({
       }
       if (handleArrowKey(e, text, setText)) return;
     },
-    [
-      handleSubmit,
-      handleSelectModel,
-      handleArrowKey,
-      modelMenuActive,
-      modelOptions,
-      skillMenuActive,
-      skillOptions,
-      invokeSkill,
-      promptMenuActive,
-      promptOptions,
-      insertPromptTemplate,
-      onToast,
-      menuOpen,
-      slashDismissed,
-      slashIdx,
-      slashSuggestions,
-      skillCommandRows,
-      text,
-    ],
+    [handleMenuKey, handleSubmit, handleArrowKey, text],
   );
 
   return (
@@ -851,7 +700,7 @@ export function HomeComposer({
               if (p) insertPromptTemplate(p);
             }}
           />
-        ) : !slashDismissed && (slashSuggestions.length > 0 || skillCommandRows.length > 0) ? (
+        ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
           <HomeSlashMenu
             listboxId={slashListboxId}
             ariaLabel="Slash commands"

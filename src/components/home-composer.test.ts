@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const draftHook = await readFile(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
+const menusHook = await readFile(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
 const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
@@ -269,10 +270,17 @@ assert.doesNotMatch(
   "HomeComposer should allow OpenClaw familiars through native chat send",
 );
 
+// The menu branches live in the shared hook (use-inline-slash-menus); the
+// keyboard handler depends on the hook's dispatcher + the current submit.
 assert.match(
   handleKeyDownBlock,
-  /\[[\s\S]*handleSubmit[\s\S]*modelMenuActive[\s\S]*modelOptions[\s\S]*\]/,
-  "HomeComposer Enter-submit keyboard handler should depend on the current submit callback and model menu state",
+  /\[handleMenuKey, handleSubmit, handleArrowKey, text\]/,
+  "HomeComposer Enter-submit keyboard handler should depend on the shared menu dispatcher and the current submit callback",
+);
+assert.match(
+  handleKeyDownBlock,
+  /if \(handleMenuKey\(e\)\) return;/,
+  "the inline menus consume their keys before Enter-submit and history recall",
 );
 
 assert.doesNotMatch(
@@ -358,30 +366,28 @@ for (const [name, src] of [
     /aria-activedescendant=\{\s*menuOpen \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
     `${name} aria-activedescendant should track the highlighted index and be absent when the menu is closed`,
   );
-  // menuOpen unifies the slash-command and /model listboxes (both share the
-  // listbox id), so the combobox ARIA covers the /model picker too — not just
-  // the slash menu. Both composers must use it. (HomeComposer additionally gates
-  // the slash term on its Escape-dismiss flag: `(!slashDismissed && …)`.)
+  // menuOpen unifies the slash-command, /model, /skill and /prompt listboxes
+  // (all share the listbox id) so the combobox ARIA covers whichever is open.
+  // Its definition lives in the shared hook; each composer must destructure it
+  // from there rather than deriving its own.
   assert.match(
     src,
-    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,80}slashSuggestions\.length > 0/,
-    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill, /prompt)`,
+    /menuOpen,[\s\S]{0,200}?\} = useInlineSlashMenus\(\{/,
+    `${name} combobox ARIA must reflect every inline menu via the shared hook's menuOpen`,
   );
 }
 
-// ── HomeComposer combobox ARIA covers the /model picker, not just slash ──────
-// Both inline listboxes share the listbox id; menuOpen unifies them so the
-// textarea announces the /model picker too (was: slash-only). The slash term is
-// gated on the Escape-dismiss flag so a dismissed menu also drops the combobox
-// ARIA.
+// ── The menuOpen union itself lives in the shared hook ───────────────────────
+// The slash/skills terms fold the Escape-dismiss flag into the lists (emptied
+// while dismissed), so a dismissed menu also drops the combobox ARIA.
 assert.match(
-  source,
-  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\|\s*\(!slashDismissed && \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\)\);/,
-  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill, /prompt, Skills group)",
+  menusHook,
+  /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/,
+  "menuOpen reflects every inline menu (slash, /model, /skill, /prompt, Skills group)",
 );
 
 // ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
-assert.match(source, /skillSlashOptions\(text, skills\)/, "HomeComposer offers inline /skill autocomplete");
+assert.match(menusHook, /skillSlashOptions\(text, skills\)/, "the shared hook offers inline /skill autocomplete");
 assert.match(source, /command === "\/skill" \|\| command === "\/skills"/, "HomeComposer handles the /skill and /skills commands");
 assert.match(
   source,
@@ -452,9 +458,14 @@ assert.match(
 );
 
 assert.match(
-  source,
+  menusHook,
   /modelSlashOptions\(text, modelHarness\)/,
-  "HomeComposer offers inline /model autocomplete",
+  "the shared hook offers inline /model autocomplete",
+);
+assert.match(
+  source,
+  /onPickModel: \(id\) => \{ handleSelectModel\(id\); onToast\(`Model set to \$\{id\}\.`\); setText\(""\); \}/,
+  "a /model pick lands as the home model selection with a toast (chat appends a system line instead)",
 );
 
 assert.match(
@@ -623,29 +634,31 @@ assert.match(
 // (reset on text change) closes them; and the genuinely-silent state changes
 // (enhance success, attachment add — neither raises a toast) announce to the
 // shared live region so screen-reader users aren't left guessing.
+// (The dismiss machinery moved into the shared hook — one flag, reset on text,
+// options nulled while dismissed so every *MenuActive respects it.)
 assert.match(
-  source,
+  menusHook,
   /const \[slashDismissed, setSlashDismissed\] = useState\(false\)/,
   "a slashDismissed flag backs Escape-to-dismiss for the inline menus",
 );
 assert.match(
-  source,
-  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,120}setSlashDismissed\(true\);[\s\S]{0,40}return;/,
+  menusHook,
+  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,400}setSlashDismissed\(true\);[\s\S]{0,40}return true;/,
   "Escape closes any open inline menu (the footers advertise Esc cancel)",
 );
 assert.match(
-  source,
-  /setSlashIdx\(0\);\s*setSlashDismissed\(false\);/,
+  menusHook,
+  /setSlashIdx\(0\);\s*setSlashDismissed\(false\);\s*\}, \[text\]\);/,
   "the dismissed flag resets when the text changes so a fresh token re-opens the menu",
 );
 assert.match(
-  source,
-  /const modelMenuActive = !slashDismissed &&/,
+  menusHook,
+  /slashDismissed \? null : modelSlashOptions\(text, modelHarness\)/,
   "the model menu respects the dismissed flag",
 );
 assert.match(
-  source,
-  /const skillMenuActive = !slashDismissed &&/,
+  menusHook,
+  /slashDismissed \? null : skillSlashOptions\(text, skills\)/,
   "the skill menu respects the dismissed flag",
 );
 assert.match(

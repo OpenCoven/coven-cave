@@ -12,6 +12,8 @@ const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), 
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
 // The staging state machine (cap, drag overlay, paste) lives in the shared hook.
 const attachStagingHook = readFileSync(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
+// The inline slash menus (options, dismiss, keyboard branches) live in theirs.
+const menusHookSource = readFileSync(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
 
 assert.doesNotMatch(
   globalsSrc,
@@ -623,32 +625,40 @@ assert.doesNotMatch(
 );
 
 // — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —
+// The menu branches live in the shared use-inline-slash-menus hook; chat's
+// onComposerKey delegates to its dispatcher. Semantics pin the hook, ordering
+// pins chat's handler.
 const composerKey = source.match(/const onComposerKey = [\s\S]*?\n  \};/)?.[0] ?? "";
-const slashBranch = composerKey.match(/if \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
+const slashBranch = menusHookSource.match(/if \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\) \{[\s\S]*?\n      \}/)?.[0] ?? "";
 
 assert.match(
   slashBranch,
-  /if \(e\.key === "Enter" && !e\.shiftKey\) \{[\s\S]*slashSuggestions\[slashIdx\][\s\S]*intentFromSlash\(cmd\.name\)/,
+  /if \(e\.key === "Enter" && !e\.shiftKey\) \{[\s\S]*slashSuggestions\[slashIdx\][\s\S]*onRunCommand\(cmd\)/,
   "Slash-menu Enter must run the highlighted suggestion, not send the partially typed text",
 );
 assert.match(
+  source,
+  /onRunCommand: \(cmd\) => \{\s*\n\s*intentFromSlash\(cmd\.name\);\s*\n\s*\}/,
+  "chat routes a run command through intentFromSlash (home submits the typed text instead)",
+);
+assert.match(
   slashBranch,
-  /cmd\.argPlaceholder && canonicalize\(input\.trim\(\)\) !== cmd\.name[\s\S]*setInput\(cmd\.name \+ " "\)/,
+  /cmd\.argPlaceholder && canonicalize\(text\.trim\(\)\) !== cmd\.name[\s\S]*setText\(cmd\.name \+ " "\)/,
   "Slash-menu Enter autocompletes argument-taking commands (like Tab) instead of running them bare",
 );
 assert.match(
-  slashBranch,
-  /if \(e\.key === "Escape"\) \{[\s\S]*setSlashDismissed\(true\)/,
-  "Esc with the slash menu open must dismiss the menu",
+  menusHookSource,
+  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,400}setSlashDismissed\(true\);[\s\S]{0,40}return true;/,
+  "Esc with any inline menu open must dismiss the menu",
 );
 assert.ok(
-  composerKey.includes("setSlashDismissed(true)") &&
-    composerKey.indexOf("setSlashDismissed(true)") < composerKey.indexOf("cancelSend()"),
-  "Esc precedence: dismiss the slash menu before the busy-cancel branch can kill the stream",
+  composerKey.includes("handleMenuKey(e)") &&
+    composerKey.indexOf("handleMenuKey(e)") < composerKey.indexOf("cancelSend()"),
+  "Esc precedence: the menu dispatcher (which consumes Esc while open) runs before the busy-cancel branch can kill the stream",
 );
 assert.match(
-  source,
-  /setSlashIdx\(0\);\s*\n\s*setSlashDismissed\(false\);/,
+  menusHookSource,
+  /setSlashIdx\(0\);\s*\n\s*setSlashDismissed\(false\);\s*\n\s*\}, \[text\]\);/,
   "Editing the input must re-arm dismissed slash suggestions",
 );
 assert.match(
@@ -1020,17 +1030,20 @@ assert.match(
   /if \(mentionOpen\) \{[\s\S]*?setMentionDismissed\(true\)/,
   "Esc with the mention picker open must dismiss the picker",
 );
+// The slash branches live behind the shared hook's dispatcher, so the #402
+// ordering contract anchors on the dispatch call: mention branch → menu
+// dispatcher (consumes Esc while any menu is open) → busy-cancel.
 assert.ok(
   mentionComposerKey.indexOf("if (mentionOpen) {") <
-    mentionComposerKey.indexOf("if (slashSuggestions.length > 0 || skillCommandRows.length > 0) {"),
-  "The mention branch must run before the slash branch in onComposerKey",
+    mentionComposerKey.indexOf("handleMenuKey(e)"),
+  "The mention branch must run before the slash-menu dispatcher in onComposerKey",
 );
 assert.ok(
   mentionComposerKey.indexOf("setMentionDismissed(true)") <
-    mentionComposerKey.indexOf("setSlashDismissed(true)") &&
-    mentionComposerKey.indexOf("setSlashDismissed(true)") <
+    mentionComposerKey.indexOf("handleMenuKey(e)") &&
+    mentionComposerKey.indexOf("handleMenuKey(e)") <
       mentionComposerKey.indexOf("cancelSend()"),
-  "Esc precedence: mention dismiss before slash dismiss before busy-cancel",
+  "Esc precedence: mention dismiss before slash dismiss (inside the dispatcher) before busy-cancel",
 );
 assert.match(
   mentionComposerKey,
@@ -1202,10 +1215,12 @@ assert.match(source, /setInput\(""\);\s*\n\s*\/\/[\s\S]*?clearDraft\(\);/, "send
 // (2) send() resets the enhance strip so it doesn't linger over an empty
 //     composer and let Revert repopulate the already-sent message.
 assert.match(source, /clearDraft\(\);[\s\S]{0,400}?setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/, "send resets the enhance (Prompt improved / Revert) state");
-// (1) the /model, /skill and /prompt inline pickers each dismiss on Escape
+// (1) the slash, /model, /skill and /prompt pickers all dismiss on Escape
 //     (their footers advertise "esc cancel"); previously Esc fell through and
-//     cancelled a live stream. Together with the slash-menu branch that's 4.
-{
-  const escDismiss = source.match(/if \(e\.key === "Escape"\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSlashDismissed\(true\);\s*\n\s*return;\s*\n\s*\}/g);
-  assert.ok(escDismiss && escDismiss.length >= 4, "the slash, model, skill and prompt pickers all dismiss on Escape (setSlashDismissed)");
-}
+//     cancelled a live stream. The shared hook guards ONE Escape branch on
+//     menuOpen — the union of all four pickers — so none can leak Esc through.
+assert.match(
+  menusHookSource,
+  /if \(e\.key === "Escape" && menuOpen\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSlashDismissed\(true\);\s*\n\s*return true;\s*\n\s*\}/,
+  "the slash, model, skill and prompt pickers all dismiss on Escape (setSlashDismissed behind menuOpen)",
+);
