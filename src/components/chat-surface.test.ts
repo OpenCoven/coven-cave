@@ -297,6 +297,6 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(0\);/,
-  "changeCount resets on a real root change so the badge doesn't show the previous project's count",
+  /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(null\);/,
+  "changeCount drops to null (unknown) on a real root change — clears the stale badge AND keeps first-load dirt from faking a fresh-batch reveal (cave-xsq.7)",
 );

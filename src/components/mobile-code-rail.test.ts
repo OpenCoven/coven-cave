@@ -51,10 +51,11 @@ assert.match(
   "toggle button opens the sheet",
 );
 // The change-count badge rides the toggle when there are pending edits.
+// (changeCount is number|null since cave-xsq.7 — null coerces before compare.)
 assert.match(
   source,
-  /changeCount > 0[\s\S]{0,120}mobile-code-rail-toggle__badge/,
-  "toggle button shows the change-count badge when changeCount > 0",
+  /\(changeCount \?\? 0\) > 0[\s\S]{0,120}mobile-code-rail-toggle__badge/,
+  "toggle button shows the change-count badge when the loaded count is > 0",
 );
 
 // ── The sheet: cloned from chat-right-sheet ─────────────────────────────────

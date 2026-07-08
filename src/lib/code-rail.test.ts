@@ -26,6 +26,28 @@ test("new AI edits (0→N) → open to Changes with the count", () => {
   assert.equal(r.activeTab, "changes");
 });
 
+// Closed-by-default (cave-xsq.7): only a genuinely OBSERVED 0→N transition is a
+// fresh batch. Pre-existing repo dirt arriving with the FIRST count load — the
+// previous tick saw null (unknown), not a real zero — must not pop the rail.
+test("first count load on a dirty repo does NOT auto-reveal (null → N is not a fresh batch)", () => {
+  const prev: CodeRailState = { available: true, open: false, activeTab: "files", changeCount: null };
+  const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 12, dismissed: true }, prev);
+  assert.equal(r.available, true);
+  assert.equal(r.open, false, "pre-existing dirt stays closed — it isn't new agent edits");
+  assert.equal(r.activeTab, "files");
+});
+
+test("first render (prev = null) with a nonzero count does not auto-reveal either", () => {
+  const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 5, dismissed: true }, null);
+  assert.equal(r.open, false, "no observed transition yet — nothing is 'fresh'");
+});
+
+test("unknown count (null) still counts the repo for availability, echoes null", () => {
+  const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: null }, null);
+  assert.equal(r.available, true);
+  assert.equal(r.changeCount, null, "null echoes so the next tick can tell unknown from a real zero");
+});
+
 test("new AI edits re-reveal even after a manual collapse", () => {
   const prev: CodeRailState = { available: true, open: false, activeTab: "files", changeCount: 0 };
   const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 2, dismissed: true }, prev);
