@@ -159,6 +159,27 @@ assert.doesNotMatch(
   "summoning-circle.css uses tokens, not hardcoded hex colors",
 );
 
+// ── Long vessel lists scroll INSIDE the panel (cave-hpsz) ────────────────────
+// With ~12 OpenClaw agents the list used to blow past the dialog's max-height
+// and paint through the Cancel/Continue footer: the panel was the scroller,
+// so flexbox shrank __content and its overflow escaped. The content is the
+// one scroller; the panel clips; the grid row may shrink below its content.
+assert.match(
+  css,
+  /\.summoning-panel \{[^}]*overflow: hidden;/,
+  "the panel clips — heading and footer stay pinned",
+);
+assert.match(
+  css,
+  /\.summoning-panel__content \{[^}]*overflow-y: auto;/,
+  "the stage content is the one scroller",
+);
+assert.match(
+  css,
+  /\.summoning-layout \{[^}]*grid-template-rows: minmax\(0, 1fr\);/s,
+  "the layout row can shrink below a long vessel list",
+);
+
 // ── The circle is the only creation path (dialog fully replaced) ────────────
 const familiarsView = await readFile(new URL("./familiars-view.tsx", import.meta.url), "utf8");
 const settingsShell = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");

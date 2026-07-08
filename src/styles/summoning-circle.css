@@ -30,6 +30,7 @@
 .summoning-body {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   container-type: inline-size;
   container-name: summoning;
@@ -81,6 +82,10 @@
 .summoning-layout {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
+  /* minmax(0, …) lets the row shrink below its content — without it a long
+     vessel list (many OpenClaw agents) sized the row to the content and blew
+     the whole dialog past its max-height. */
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
   flex: 1;
 }
@@ -96,6 +101,10 @@
   overflow-y: auto;
 }
 
+/* The panel itself never scrolls: the heading and the Cancel/Continue footer
+   stay pinned, and __content below is the one scroller. When the panel was
+   the scroller, flexbox shrank __content to the leftover space and its
+   overflow painted straight through the footer. */
 .summoning-panel {
   display: flex;
   flex-direction: column;
@@ -103,7 +112,7 @@
   min-width: 0;
   padding: var(--space-4);
   gap: var(--space-3);
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .summoning-panel__title {
@@ -137,8 +146,10 @@
 .summoning-panel__content {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: var(--space-3);
   min-height: 0;
+  overflow-y: auto;
 }
 
 /* Stepper */
@@ -690,6 +701,9 @@
 @container summoning (max-width: 700px) {
   .summoning-layout {
     grid-template-columns: minmax(0, 1fr);
+    /* Stacked: the circle column keeps its natural height, the panel row
+       shrinks and scrolls its content. */
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .summoning-stagecol {
