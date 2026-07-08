@@ -156,3 +156,18 @@ export function projectById(
   if (!id) return null;
   return projects.find((project) => project.id === id) ?? null;
 }
+
+/**
+ * The server-trusted working directory for a card assigned to `projectId`: the
+ * project's own root, loaded server-side. A card's `cwd` must never be taken
+ * from a client body alongside a `projectId` — the two could contradict, and a
+ * mismatched cwd then feeds board search (`cwd:` token), display, and the
+ * no-project chat fallback (cave-pw83). Returns `{ ok: false }` when the id
+ * doesn't resolve so the caller can reject with a 409.
+ */
+export async function trustedProjectCwd(
+  projectId: string,
+): Promise<{ ok: true; root: string } | { ok: false }> {
+  const project = projectById(projectId, await loadProjects());
+  return project ? { ok: true, root: project.root } : { ok: false };
+}

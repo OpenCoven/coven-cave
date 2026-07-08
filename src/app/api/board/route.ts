@@ -7,6 +7,7 @@ import {
 } from "@/lib/cave-board";
 import type { CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,16 @@ export async function POST(req: Request) {
   if (!body.title || !body.title.trim()) {
     return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
   }
+  // A card assigned to a project derives its cwd from that project server-side —
+  // never from the client body, which could contradict the project (cave-pw83).
+  let cwd = body.cwd ?? null;
+  if (body.projectId) {
+    const resolved = await trustedProjectCwd(body.projectId);
+    if (!resolved.ok) {
+      return NextResponse.json({ ok: false, error: "assigned project not found" }, { status: 409 });
+    }
+    cwd = resolved.root;
+  }
   const card = await createCard({
     title: body.title,
     notes: body.notes,
@@ -49,7 +60,7 @@ export async function POST(req: Request) {
     priority: body.priority,
     familiarId: body.familiarId,
     sessionId: body.sessionId,
-    cwd: body.cwd,
+    cwd,
     projectId: body.projectId,
     links: body.links,
     github: body.github,

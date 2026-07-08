@@ -73,6 +73,21 @@ assert.match(boardApi, /links\?: string\[\]/, "Create API should accept task lin
 assert.match(boardApi, /cwd\?: string \| null/, "Create API should accept task cwd");
 assert.match(boardApi, /projectId\?: string \| null/, "Create API should accept task projectId");
 
+// cave-pw83: a card's cwd is derived server-side from its assigned project, never
+// trusted from the client body (a mismatched cwd would poison board search/display).
+const projectsLib = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
+assert.match(projectsLib, /export async function trustedProjectCwd/, "cave-projects exposes a server-trusted cwd resolver");
+assert.match(boardApi, /trustedProjectCwd\(body\.projectId\)/, "Create API resolves the assigned project's cwd server-side");
+assert.match(boardApi, /cwd = resolved\.root/, "Create API stores the server-resolved project root as cwd, not the client's");
+
+const boardIdApi = await readFile(new URL("../app/api/board/[id]/route.ts", import.meta.url), "utf8");
+assert.match(boardIdApi, /trustedProjectCwd\(body\.projectId\)/, "PATCH API derives cwd when a project is (re)assigned");
+assert.match(
+  boardIdApi,
+  /body\.cwd !== undefined && body\.projectId === undefined[\s\S]*?trustedProjectCwd\(current\.projectId\)/,
+  "PATCH API re-derives cwd from the card's current project when cwd changes alone (no client override)",
+);
+
 const boardView = await readFile(new URL("../components/board-view.tsx", import.meta.url), "utf8");
 assert.match(boardView, /board-search-input/, "Tasks header should expose one search input");
 assert.doesNotMatch(boardView, /label="Labels"/, "Tasks header should not show Labels as a separate filter control");

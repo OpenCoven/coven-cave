@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   deleteCard,
+  loadBoard,
   updateCard,
   type CardLifecycle,
   type CardPriority,
@@ -10,6 +11,7 @@ import type { CardStep } from "@/lib/cave-board-types";
 import type { CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { CardOps } from "@/lib/board-card-ops";
+import { trustedProjectCwd } from "@/lib/cave-projects";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +48,25 @@ export async function PATCH(
     body = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  // Keep a card's cwd consistent with its project, server-side (cave-pw83):
+  //  - assigning a project (projectId set) → derive cwd from it, ignoring the body's;
+  //  - changing cwd alone → re-derive from the card's CURRENT project if it has one,
+  //    so a client can't point a project-assigned card at a contradictory cwd.
+  // Clearing the project (projectId === null) leaves the client cwd (no project to
+  // anchor to). Neither path lets a mismatched body.cwd through.
+  if (body.projectId) {
+    const resolved = await trustedProjectCwd(body.projectId);
+    if (!resolved.ok) {
+      return NextResponse.json({ ok: false, error: "assigned project not found" }, { status: 409 });
+    }
+    body = { ...body, cwd: resolved.root };
+  } else if (body.cwd !== undefined && body.projectId === undefined) {
+    const current = (await loadBoard()).cards.find((entry) => entry.id === id);
+    if (current?.projectId) {
+      const resolved = await trustedProjectCwd(current.projectId);
+      if (resolved.ok) body = { ...body, cwd: resolved.root };
+    }
   }
   const card = await updateCard(id, body);
   if (!card) {
