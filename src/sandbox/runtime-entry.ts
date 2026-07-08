@@ -57,6 +57,11 @@ function stripModuleSyntax(src: string): string {
 
 function reportError(message: string, stack?: string) {
   try {
+    // targetOrigin "*" is correct here (cave-mnz1): this frame's own origin
+    // is opaque ("null"), and the payload originates from the sandboxed
+    // artifact code itself — delivering it broadly reveals nothing the
+    // receiver couldn't already know. The parent side authenticates the
+    // sender by e.source identity, not origin.
     window.parent?.postMessage({ type: "sandbox-error", message, stack }, "*");
   } catch {
     /* parent may be gone */

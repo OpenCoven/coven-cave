@@ -37,4 +37,17 @@ assert.match(src, /useFocusTrap\(fullscreen, shellRef, \{ onEscape: \(\) => setF
 assert.match(src, /role: "dialog" as const, "aria-modal": true/, "fullscreen overlay is a labelled modal dialog");
 assert.doesNotMatch(src, /addEventListener\("keydown"/, "the hand-rolled Escape listener is gone (the focus trap owns it)");
 
+// ── Sandbox postMessage validation invariant (cave-mnz1) ────────────────────
+// The iframe is sandboxed WITHOUT allow-same-origin, so its origin is opaque
+// and its messages arrive with e.origin === "null". The e.source identity
+// check is the correct (and stronger) validation; adding an e.origin
+// equality check would silently break the error overlay. Audits keep
+// flagging this — it is deliberate.
+assert.match(src, /if \(e\.source !== frameRef\.current\?\.contentWindow\) return;/, "sandbox messages are authenticated by frame identity");
+assert.doesNotMatch(src, /e\.origin !== window\.location\.origin/, "no origin-equality check (opaque-origin messages carry origin 'null')");
+{
+  const runtime = readFileSync(new URL("../sandbox/runtime-entry.ts", import.meta.url), "utf8");
+  assert.match(runtime, /targetOrigin "\*" is correct here \(cave-mnz1\)/, "the runtime documents why it posts to '*'");
+}
+
 console.log("chat-artifact-viewer source contract: ok");
