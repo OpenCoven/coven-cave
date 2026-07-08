@@ -105,4 +105,14 @@ assert.match(bell, /<RelativeTime iso=\{iso\} fallback="—" \/>/, "timestamps r
 assert.match(bell, /addEventListener\("pointerdown", onDown\)/, "outside-close listens to pointerdown (mouse + pen + touch)");
 assert.doesNotMatch(bell, /addEventListener\("mousedown", onDown\)/, "the mouse-only closer stays gone");
 
+// ── Toast urgency + pausable auto-hide + single dismiss (cave-bj68) ─────────
+assert.match(toast, /const urgent = t\.kind === "response-needed"/, "reply requests announce assertively, everything else politely");
+assert.match(toast, /role=\{urgent \? "alert" : "status"\}/, "the live-region role follows urgency");
+assert.match(toast, /\.filter\(\(t\) => !pausedIds\.has\(t\.id\)\)/, "hover/focus pauses the 8s auto-hide (WCAG 2.2.1)");
+assert.match(toast, /onMouseEnter=\{\(\) => setPaused\(t\.id, true\)\}/, "hover pauses");
+assert.match(toast, /e\.currentTarget\.contains\(e\.relatedTarget as Node \| null\)/, "focus-within keeps the pause until focus leaves the toast");
+assert.match(toast, /aria-label=\{`Dismiss: \$\{t\.title\}`\}/, "the dismiss control names its toast");
+assert.doesNotMatch(toast, />\s*Dismiss\s*<\/button>/, "the duplicate text Dismiss button stays gone");
+assert.match(toast, /kind: item\.kind,/, "toastFromItem carries the inbox kind for urgency");
+
 console.log("daily-summary-notifications.test.ts: ok");
