@@ -14,7 +14,6 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { FamiliarPinOrder } from "@/components/familiar-pin-order";
 import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
@@ -45,18 +44,6 @@ import {
   readCornerRadius,
   type CornerRadius,
 } from "@/lib/appearance-corner-radius";
-import {
-  FAMILIAR_SWITCHER_STYLE_OPTIONS,
-  FAMILIAR_SWITCHER_STYLE_LABELS,
-  setFamiliarSwitcherStyle,
-  useFamiliarSwitcherStyle,
-} from "@/lib/familiar-switcher-style";
-import {
-  FAMILIAR_STRIP_SCOPE_OPTIONS,
-  FAMILIAR_STRIP_SCOPE_LABELS,
-  setFamiliarStripScope,
-  useFamiliarStripScope,
-} from "@/lib/familiar-strip-scope";
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 
@@ -633,18 +620,19 @@ function DaemonSection() {
             className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
           />
         </SettingControlRow>
-        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+        {/* Save hugs the section's bottom-right corner at the short (xs)
+            control height — same as the Status row's Refresh button. */}
+        <div className="flex flex-wrap items-center justify-end gap-2 px-4 pb-2.5 pt-0.5">
+          {connectionError && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
           <Button
             variant="secondary"
-            size="sm"
-            className="settings-touch-action"
+            size="xs"
             onClick={() => void saveConnection()}
             disabled={savingConnection}
             leadingIcon="ph:floppy-disk-bold"
           >
             {savingConnection ? "Saving..." : "Save connection"}
           </Button>
-          {connectionError && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
         </div>
       </SettingsGroup>
 
@@ -1400,8 +1388,6 @@ function AppearanceSection() {
     }
   };
   const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
-  const familiarSwitcherStyle = useFamiliarSwitcherStyle();
-  const familiarStripScope = useFamiliarStripScope();
 
   // Read persisted theme + mode on mount
   useEffect(() => {
@@ -1704,67 +1690,6 @@ function AppearanceSection() {
       </SettingsGroup>
 
       <FontSettings />
-
-      {/* ── Familiar switcher ── choose the top-bar familiar control: a row of
-          quick-switch avatars, or just the switcher dropdown. */}
-      <SettingsGroup label="Familiar switcher">
-        <SettingControlRow
-          label="Top-bar style"
-          hint="Show recent & pinned familiars as a row of avatars, or just the switcher dropdown."
-        >
-          <Segmented
-            ariaLabel="Familiar switcher style"
-            options={FAMILIAR_SWITCHER_STYLE_OPTIONS}
-            value={familiarSwitcherStyle}
-            onChange={(option) => setFamiliarSwitcherStyle(option)}
-            getLabel={(option) => FAMILIAR_SWITCHER_STYLE_LABELS[option]}
-          />
-        </SettingControlRow>
-
-        {/* Avatars shown + Pin order — only meaningful for the avatar strip, so
-            they follow the style toggle and show only when that style is active. */}
-        {familiarSwitcherStyle === "avatars" ? (
-          <>
-            <SettingControlRow
-              label="Avatars shown"
-              hint="Show only your pinned familiars in the strip, or every familiar."
-              className="border-t border-[var(--border-hairline)]"
-            >
-              <Segmented
-                ariaLabel="Familiars shown in the avatar strip"
-                options={FAMILIAR_STRIP_SCOPE_OPTIONS}
-                value={familiarStripScope}
-                onChange={(option) => setFamiliarStripScope(option)}
-                getLabel={(option) => FAMILIAR_STRIP_SCOPE_LABELS[option]}
-              />
-            </SettingControlRow>
-
-            <div className="border-t border-[var(--border-hairline)] px-4 py-3">
-              <div className="mb-2 min-w-0">
-                <div className="text-[12px] font-medium text-[var(--text-secondary)]">
-                  Pin order
-                </div>
-                <div className="text-[11px] text-[var(--text-muted)]">
-                  Drag to set the order pinned familiars appear in the avatar strip.
-                  The app-wide roster order is separate —{" "}
-                  <button
-                    type="button"
-                    className="focus-ring underline underline-offset-2 hover:text-[var(--text-primary)]"
-                    onClick={() => {
-                      setStudioTab("lifecycle");
-                      window.location.hash = "familiars";
-                    }}
-                  >
-                    set it in Familiars › Lifecycle
-                  </button>
-                  .
-                </div>
-              </div>
-              <FamiliarPinOrder />
-            </div>
-          </>
-        ) : null}
-      </SettingsGroup>
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}

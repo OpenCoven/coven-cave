@@ -38,7 +38,6 @@ import {
   getLastSurface,
   setLastSurface,
 } from "@/lib/familiar-memory";
-import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
@@ -708,8 +707,6 @@ export function Workspace() {
   const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
-    // Stamp recency so the top-bar quick-switch strip reflects real usage.
-    recordFamiliarUsed(id);
     // A multi-toggle shouldn't yank the surface around — only a plain single
     // select restores that familiar's last-viewed surface.
     if (opts?.multi) return;
@@ -2057,9 +2054,11 @@ export function Workspace() {
   const chatSidebar = (
     <WorkspaceSidebar
       sessions={sessions}
+      familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
-      onBack={exitChatMode}
+      responseNeeded={responseNeeded}
+      onSelectFamiliar={selectFamiliarScope}
       onOpenSession={(session) => {
         openFamiliarSession(session.id, session.familiarId);
         shellRef.current?.dismissNavMobile();
@@ -2306,11 +2305,7 @@ export function Workspace() {
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
             <FamiliarMenuBar
-              familiars={resolvedFamiliars}
               activeFamiliarId={activeId}
-              selectedFamiliarIds={scopeIds}
-              sessions={sessions}
-              responseNeeded={responseNeeded}
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
@@ -2319,7 +2314,6 @@ export function Workspace() {
                 setTopSearchQuery(query);
                 setPaletteOpen(true);
               }}
-              onSelectFamiliar={selectFamiliarScope}
               onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}

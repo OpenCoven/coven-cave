@@ -6,7 +6,6 @@ const files = [
   "src/lib/flow/flow-templates.ts",
   "src/components/workspace.tsx",
   "src/components/settings-shell.tsx",
-  "src/components/familiar-pin-order.tsx",
   "automations/familiar-weekly-reflection.toml",
   "automations/familiar-daily-notes.toml",
 ];

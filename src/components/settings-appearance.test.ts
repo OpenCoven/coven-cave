@@ -316,37 +316,13 @@ assert.match(
   "Root layout should mount the global screen magnification controller",
 );
 
-// Familiar switcher style — choose the top-bar control (avatar strip vs dropdown).
-assert.match(
+// Familiar switcher style — RETIRED. Familiar selection is dropdown-only (the
+// chat sidebar header hosts it), so the avatar-strip style/scope/pin-order
+// settings are gone with the strip.
+assert.doesNotMatch(
   settings,
-  /Familiar switcher/,
-  "Appearance settings should expose a Familiar switcher style control",
-);
-assert.match(
-  settings,
-  /setFamiliarSwitcherStyle\(option\)/,
-  "the familiar-switcher control writes the chosen style preference",
-);
-assert.match(
-  settings,
-  /Pin order[\s\S]*<FamiliarPinOrder \/>/,
-  "the avatar style exposes a drag-to-reorder pin-order manager",
-);
-assert.match(
-  settings,
-  /familiarSwitcherStyle === "avatars" \?[\s\S]*<FamiliarPinOrder/,
-  "the pin-order manager only shows for the avatar strip style",
-);
-// "Avatars shown" — restrict the strip to pinned familiars (default) or show all.
-assert.match(
-  settings,
-  /Avatars shown[\s\S]*setFamiliarStripScope\(option\)/,
-  "the avatar style exposes a pinned-only / all scope control",
-);
-assert.match(
-  settings,
-  /familiarSwitcherStyle === "avatars" \?[\s\S]*setFamiliarStripScope/,
-  "the scope control only shows for the avatar strip style",
+  /setFamiliarSwitcherStyle|setFamiliarStripScope|FamiliarPinOrder/,
+  "the avatar-strip style, scope, and pin-order controls are retired (dropdown-only selection)",
 );
 
 // Corner radius drives the shared --radius tokens app-wide, so its boot block
