@@ -80,3 +80,10 @@ export const FamiliarWorkQueueView = dynamic(
   ),
   { ssr: false, loading: SurfaceFallback },
 );
+
+// BrowserPane's imperative handle crosses this boundary as the regular
+// `handleRef` prop — next/dynamic does not forward element refs (cave-masj).
+export const BrowserPane = dynamic(
+  timed("browser", () => import("@/components/browser-pane").then((m) => m.BrowserPane)),
+  { ssr: false, loading: SurfaceFallback },
+);

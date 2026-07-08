@@ -42,12 +42,13 @@ import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
-import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
+import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
 import {
   BoardView,
+  BrowserPane,
   CalendarView,
   FamiliarWorkQueueView,
   GitHubView,
@@ -2195,7 +2196,7 @@ export function Workspace() {
         }
       />
     ) : mode === "browser" ? (
-      <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} active={browserVisible} />
+      <BrowserPane handleRef={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} active={browserVisible} />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}

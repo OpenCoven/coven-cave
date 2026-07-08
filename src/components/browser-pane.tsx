@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from "react";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
@@ -239,7 +239,10 @@ export type BrowserPaneHandle = {
   navigateTo: (url: string) => void;
 };
 
-export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activeFamiliarId?: string | null; active?: boolean }>(function BrowserPane({ label = "default", activeFamiliarId = null, active = true }: { label?: string; activeFamiliarId?: string | null; active?: boolean }, ref: React.Ref<BrowserPaneHandle>) {
+// The imperative handle rides a regular `handleRef` prop (not an element ref):
+// BrowserPane loads through next/dynamic (lazy-surfaces), whose wrapper does
+// not forward element refs — a plain prop crosses the boundary losslessly.
+export function BrowserPane({ label = "default", activeFamiliarId = null, active = true, handleRef }: { label?: string; activeFamiliarId?: string | null; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle> }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBridge | null>(null);
@@ -589,7 +592,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     setToolbarOpen(false);
   };
 
-  useImperativeHandle(ref, () => ({ navigateTo }), [navigateTo]);
+  useImperativeHandle(handleRef, () => ({ navigateTo }), [navigateTo]);
 
   const h = historyRef.current[activeTabId] ?? { stack: [activeUrl], idx: 0 };
   const canBack = h.idx > 0;
@@ -927,4 +930,4 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       </div>{/* end main area */}
     </div>
   );
-});
+}
