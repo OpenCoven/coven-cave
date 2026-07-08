@@ -743,6 +743,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                       setRenaming(false);
                     }}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                       if (e.key === "Escape") setRenaming(false);
                     }}
@@ -1001,6 +1002,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   onClick={syncMention}
                   onBlur={() => setMention(null)}
                   onKeyDown={(e) => {
+                    // `isComposing` is true for the Enter/Tab that confirms an
+                    // IME candidate (CJK input) — confirming a character must
+                    // never pick a mention or broadcast the half-composed
+                    // draft. Mirrors ChatView's composer guard.
+                    if (e.nativeEvent.isComposing) return;
                     if (mentionOpen) {
                       if (e.key === "ArrowDown") {
                         e.preventDefault();

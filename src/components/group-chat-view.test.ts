@@ -218,4 +218,18 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
     /replies: transcript\.filter\(/,
     "the O(userTurns × transcript) per-token grouping shape must not return",
   );
+
+  // cave-hkls: the Enter that confirms an IME candidate (CJK input) must never
+  // broadcast the draft, pick a mention, or commit a rename — ChatView has the
+  // same guard on its composer.
+  assert.match(
+    view,
+    /if \(e\.nativeEvent\.isComposing\) return;[\s\S]{0,220}?if \(mentionOpen\) \{/,
+    "the composer ignores keydowns while an IME composition is in progress",
+  );
+  assert.match(
+    view,
+    /if \(e\.nativeEvent\.isComposing\) return;\s*\n\s*if \(e\.key === "Enter"\) \(e\.target as HTMLInputElement\)\.blur\(\);/,
+    "the coven rename input ignores the IME-confirm Enter",
+  );
 });
