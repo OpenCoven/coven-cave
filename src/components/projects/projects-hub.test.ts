@@ -117,7 +117,16 @@ assert.match(detail, /<GitSection projectRoot=\{project\.root\} sessionBranch=\{
 // Tasks: one board fetch in the SHELL (not per selection — the detail remounts
 // on every switch), refetched on window refocus, filtered client-side.
 assert.equal((shell.match(/fetch\("\/api\/board"/g) ?? []).length, 1, "the shell fetches the board exactly once per mount");
-assert.doesNotMatch(sections, /fetch\("\/api\/board"/, "the Tasks section never fetches — cards arrive from the shell");
+assert.equal(
+  (sections.match(/fetch\("\/api\/board"/g) ?? []).length,
+  1,
+  "the Tasks section touches /api/board exactly once",
+);
+assert.match(
+  sections,
+  /fetch\("\/api\/board", \{\s*\n\s*method: "POST"/,
+  "…and that one call is the quick-add create (a mutation) — card READS still arrive from the shell",
+);
 assert.match(shell, /useRefreshOnFocus\(loadBoardCards\)/, "board cards refetch on window refocus (throttled)");
 assert.match(
   sections,
@@ -178,5 +187,32 @@ assert.doesNotMatch(boardCss, /projects-table|projects-session-count|projects-se
 for (const dead of ["../../lib/projects/projects-ui-state.ts", "../../lib/projects/use-projects-ui-state.ts"]) {
   assert.equal(existsSync(new URL(dead, import.meta.url)), false, `${dead} stays deleted`);
 }
+
+// ── Hub updates (cave-ihox): quick-add · honest git · sort · titles ─────────
+// Tasks quick-add: optimistic local append + a board-reload nudge for the rest
+// of the app; the created card comes back from the server (cwd derived from
+// projectId server-side, never client-supplied).
+assert.match(sections, /JSON\.stringify\(\{ title, projectId: project\.id \}\)/, "quick-add sends title + projectId only");
+assert.match(sections, /setCreatedCards\(\(prev\) => \[json\.card as Card, \.\.\.prev\]\)/, "the created card appends optimistically");
+assert.match(sections, /window\.dispatchEvent\(new Event\("cave:board:reload"\)\)/, "creation nudges the app-wide board reload");
+assert.match(sections, /aria-label=\{`Add a task to \$\{project\.name\}`\}/, "the quick-add input is named for AT");
+
+// Git: a dirty tree is status, not activity — the chip must not pulse; the
+// branch is click-to-copy.
+assert.doesNotMatch(sections, /projects-session-chip--running"\s*\n?\s*title=\{`\$\{changes\.count\}/, "the changed-files chip does not wear the running pulse");
+assert.match(sections, /uncommitted changes in the working tree/, "the chip says what the count actually is");
+assert.match(sections, /aria-label=\{`Copy branch name \$\{branch\}`\}/, "the branch is a copy button");
+
+// List sort: alphabetical or most-recent-first, persisted per machine.
+assert.match(shell, /"cave:projects:sort"/, "the sort choice persists to localStorage");
+assert.match(shell, /aria-label="Sort projects"/, "the sort toggle is a labelled group");
+assert.match(shell, /lastActiveByRootKey\.get\(normalizeProjectRoot\(b\.root\)\) \?\? 0/, "recent sort orders by last session activity");
+
+// Meta-row comprehension: the status word and session count explain themselves.
+assert.match(detail, /title="Project state, derived from its latest sessions"/, "the status word carries its derivation");
+assert.match(detail, /\} in this project`\}/, "the session count chip is titled");
+
+// Grants explain themselves where the chips are.
+assert.match(sections, /dashed means no access yet/, "the grants section says what a chip click does");
 
 console.log("projects-hub.test.ts: ok");
