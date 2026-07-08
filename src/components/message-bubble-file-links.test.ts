@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const { FILE_REF_RE } = await import("../lib/file-ref.ts");
+const { FILE_REF_RE, resolveFileRefTarget } = await import("../lib/file-ref.ts");
 
 // ── FILE_REF_RE: matches real file refs, ignores ordinary prose/code ─────────
 const matches = (s) => FILE_REF_RE.exec(s);
@@ -26,9 +26,23 @@ const matches = (s) => FILE_REF_RE.exec(s);
   assert.equal(matches("just some text"), null, "prose");
 }
 
+// ── resolveFileRefTarget: only real project files are openable ───────────────
+{
+  const root = "/repo/app";
+  const files = new Set(["src/foo.ts", "docs/guide.md"]);
+  assert.equal(resolveFileRefTarget({ path: "src/foo.ts" }, root, files), "src/foo.ts", "indexed relative path resolves");
+  assert.equal(resolveFileRefTarget({ path: "./src/foo.ts" }, root, files), "src/foo.ts", "leading ./ is normalized");
+  assert.equal(resolveFileRefTarget({ path: "/repo/app/docs/guide.md" }, root, files), "docs/guide.md", "absolute path under the root resolves to its repo-relative form");
+  assert.equal(resolveFileRefTarget({ path: "src/missing.ts" }, root, files), null, "a path absent from the index never resolves");
+  assert.equal(resolveFileRefTarget({ path: "/elsewhere/foo.ts" }, root, files), null, "an absolute path outside the root never resolves");
+  assert.equal(resolveFileRefTarget({ path: "src/foo.ts" }, null, files), null, "no project root ⇒ nothing resolves");
+  assert.equal(resolveFileRefTarget({ path: "src/foo.ts" }, root, null), null, "no index ⇒ nothing resolves (strict: unverified refs stay plain text)");
+}
+
 // ── wiring ───────────────────────────────────────────────────────────────────
 const bubble = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
 const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
+const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 
 // Linkify only inline code, never fenced-block lines.
@@ -42,9 +56,21 @@ assert.match(
   /dispatchEvent\(new CustomEvent\("cave:open-project-file", \{ detail: \{ path, line \} \}\)\)/,
   "clicking a file ref opens it in the Code workspace",
 );
-// Chat prose enables linkify; the shared MarkdownBlock must NOT.
-assert.match(bubble, /useWireCopyButtons\(html, onOpenUrl, true\)/, "MarkdownContent (chat) enables linkifyPaths");
+// A ref is only linkified when the surface's resolver confirms the click can
+// open it; wiring reconciles (adds AND removes the affordance) so a resolver
+// change never leaves a stale clickable ref.
+assert.match(bubble, /const want = Boolean\(ref && resolve\?\.\(ref\)\)/, "linkify is gated on the resolver approving the ref");
+assert.match(bubble, /_caveFileLinkCleanup = \(\) => \{[\s\S]*?removeEventListener\("click", open\)[\s\S]*?classList\.remove\("cave-file-link"\)/, "wiring keeps a cleanup so a rejected ref is un-linkified in place");
+// Chat prose supplies the resolver via context; the shared MarkdownBlock must NOT.
+assert.match(bubble, /const fileLinkResolver = useContext\(FileLinkResolverContext\)/, "MarkdownContent reads the resolver from FileLinkResolverContext");
 assert.match(bubble, /const containerRef = useWireCopyButtons\(html\);/, "MarkdownBlock keeps linkify off (default)");
+// ChatView provides the resolver over its transcript, backed by the project
+// file index, so links only render for files that exist under the session root.
+assert.match(chatView, /<FileLinkResolverContext\.Provider value=\{fileLinkResolver\}>/, "chat transcript provides the file-link resolver");
+assert.match(chatView, /resolveFileRefTarget\(ref, transcriptFileRoot, fileRefIndex\.files\) != null/, "the chat resolver verifies refs against the fetched project file index");
+// The tool file chip needs the code rail (a project root) to open anything —
+// no root ⇒ plain text, not a dead button.
+assert.match(chatView, /targetFile && railRoot \? \(/, "tool file chips are gated on a project root");
 
 // comux resolves relative refs against the selected project root.
 assert.match(

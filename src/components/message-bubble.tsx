@@ -17,7 +17,9 @@
  */
 
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -35,7 +37,7 @@ import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
-import { parseFileRef } from "@/lib/file-ref";
+import { parseFileRef, type FileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
@@ -758,29 +760,54 @@ function wireMarkdownLinks(container: HTMLElement, onOpenUrl?: (url: string) => 
 // Inline file references in prose (e.g. `src/foo.ts` or `lib/bar.py:42`) become
 // clickable, opening the file in the Code workspace. Match logic lives in
 // @/lib/file-ref (pure + unit-tested); only inline code is considered.
-function wireFilePathLinks(container: HTMLElement) {
+//
+// A ref is only linkified when the surface's resolver confirms the click can
+// actually open it (project root known + file present in its index) — a dead
+// affordance is worse than plain text. Reconciles rather than wires-once:
+// when the resolver changes (project switch, index load), refs gain or lose
+// the affordance in place, so a stale link never lingers.
+export type FileLinkResolver = (ref: FileRef) => boolean;
+
+/** Chat provides a resolver over its transcript; everywhere else (group chat,
+ *  quick chat, previews) the default null keeps prose refs as plain text. */
+export const FileLinkResolverContext = createContext<FileLinkResolver | null>(null);
+
+function wireFilePathLinks(container: HTMLElement, resolve: FileLinkResolver | null) {
   for (const code of Array.from(container.querySelectorAll<HTMLElement>("code"))) {
     // Inline code only — never the highlighted lines inside a fenced block.
     if (code.closest("pre") || code.closest(".cave-code-wrap")) continue;
-    const flagged = code as HTMLElement & { _caveFileLink?: boolean };
-    if (flagged._caveFileLink) continue;
+    const flagged = code as HTMLElement & { _caveFileLinkCleanup?: () => void };
     const ref = parseFileRef(code.textContent ?? "");
-    if (!ref) continue;
-    flagged._caveFileLink = true;
-    const { path, line } = ref;
+    const want = Boolean(ref && resolve?.(ref));
+    if (want === Boolean(flagged._caveFileLinkCleanup)) continue;
+    if (!want) {
+      flagged._caveFileLinkCleanup?.();
+      delete flagged._caveFileLinkCleanup;
+      continue;
+    }
+    const { path, line } = ref!;
     code.classList.add("cave-file-link");
     code.setAttribute("role", "button");
     code.setAttribute("tabindex", "0");
     code.title = `Open ${path}${line ? `:${line}` : ""} in the Code workspace`;
     const open = () =>
       window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail: { path, line } }));
-    code.addEventListener("click", open);
-    code.addEventListener("keydown", (e) => {
+    const onKeydown = (e: KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         open();
       }
-    });
+    };
+    code.addEventListener("click", open);
+    code.addEventListener("keydown", onKeydown);
+    flagged._caveFileLinkCleanup = () => {
+      code.removeEventListener("click", open);
+      code.removeEventListener("keydown", onKeydown);
+      code.classList.remove("cave-file-link");
+      code.removeAttribute("role");
+      code.removeAttribute("tabindex");
+      code.removeAttribute("title");
+    };
   }
 }
 
@@ -877,10 +904,11 @@ function openTableLightbox(scroll: HTMLElement) {
  * returned ref, otherwise its Copy buttons render but silently do nothing
  * (wireCopyButtons is idempotent per button via the `_wired` flag).
  *
- * `linkifyPaths` opts inline file references in prose into clickable
- * Code-workspace links; only the chat prose path enables it.
+ * `fileLinkResolver` opts inline file references in prose into clickable
+ * Code-workspace links; only chat prose (via FileLinkResolverContext) supplies
+ * one, and only refs the resolver confirms openable get the affordance.
  */
-function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, linkifyPaths = false) {
+function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => void, fileLinkResolver: FileLinkResolver | null = null) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = containerRef.current;
@@ -890,7 +918,7 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
       wireMarkdownLinks(el, onOpenUrl);
       wireMermaidDiagrams(el);
       wireExpandableTables(el);
-      if (linkifyPaths) wireFilePathLinks(el);
+      wireFilePathLinks(el, fileLinkResolver);
     };
     wireAll();
     // Re-wire when nodes are added after the first pass. Components that render
@@ -904,7 +932,7 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
     const observer = new MutationObserver(() => wireAll());
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
-  }, [html, onOpenUrl, linkifyPaths]);
+  }, [html, onOpenUrl, fileLinkResolver]);
   return containerRef;
 }
 
@@ -915,8 +943,11 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
 
 function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?: boolean; onOpenUrl?: (url: string) => void }) {
   const [html, setHtml] = useState<string | null>(null);
-  // linkifyPaths=true: chat prose file references (`src/foo.ts:42`) open in Code.
-  const containerRef = useWireCopyButtons(html, onOpenUrl, true);
+  // Chat prose file references (`src/foo.ts:42`) open in Code — but only when
+  // the surface's resolver (FileLinkResolverContext) confirms the file exists
+  // under the session's project root. No resolver ⇒ refs stay plain text.
+  const fileLinkResolver = useContext(FileLinkResolverContext);
+  const containerRef = useWireCopyButtons(html, onOpenUrl, fileLinkResolver);
   // Out-of-order guard: mdToHtml is async and during streaming several
   // renders can be in flight at once. Every render takes a monotonically
   // increasing stamp, and a result only commits if it is newer than the

@@ -4,7 +4,8 @@ import { createContext, forwardRef, Fragment, memo, useCallback, useContext, use
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
@@ -2822,6 +2823,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [mentionToken, mentionRoot, mentionIndex, familiar.id]);
 
+  // Transcript file-ref links: prose refs (`src/foo.ts:42`) only render as
+  // clickable when they resolve to a real file under the session's project
+  // root — a rendered link is a promise the click opens it in the code rail,
+  // so no root or an unindexed path keeps the ref as plain text. The index is
+  // fetched once per root (same /api/project/files the @-mention picker uses;
+  // the API's short-lived cache absorbs re-opens).
+  const transcriptFileRoot = session?.project_root ?? projectRoot ?? null;
+  const [fileRefIndex, setFileRefIndex] = useState<{ root: string; files: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!transcriptFileRoot || fileRefIndex?.root === transcriptFileRoot) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ root: transcriptFileRoot, familiarId: familiar.id });
+        const res = await fetch(`/api/project/files?${params.toString()}`, { cache: "no-store" });
+        const json = await res.json() as { ok?: boolean; repo?: boolean; files?: string[] };
+        if (cancelled) return;
+        setFileRefIndex({
+          root: transcriptFileRoot,
+          files: new Set(json.ok === true && json.repo === true && Array.isArray(json.files) ? json.files : []),
+        });
+      } catch {
+        if (!cancelled) setFileRefIndex({ root: transcriptFileRoot, files: new Set<string>() });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [transcriptFileRoot, fileRefIndex, familiar.id]);
+  const fileLinkResolver = useCallback(
+    (ref: FileRef) =>
+      fileRefIndex?.root === transcriptFileRoot &&
+      resolveFileRefTarget(ref, transcriptFileRoot, fileRefIndex.files) != null,
+    [fileRefIndex, transcriptFileRoot],
+  );
+
   // Insert the picked path inline, replacing the `@query` token (Claude Code
   // convention: `@src/foo.ts`), and record it for the send body.
   const selectMention = (relPath: string) => {
@@ -4610,6 +4647,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
+      <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
           ref={threadRef}
@@ -4828,6 +4866,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </button>
         )}
       </div>
+      </FileLinkResolverContext.Provider>
       </ToolProjectRootContext.Provider>
 
       {reflectError ? (
@@ -6083,6 +6122,11 @@ function EditCardActions({
 }
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
+  // The file chip's click opens the code rail, which needs a project root —
+  // without one the rail never shows, so the chip renders as plain text
+  // instead of a dead button (the edit card's Review has its own modal
+  // fallback and stays clickable regardless).
+  const railRoot = useContext(ToolProjectRootContext);
   const argSummary = toolArgSummary(tool.name, tool.input);
   // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
   // structured before/after diff instead of the raw JSON payload; null for
@@ -6159,7 +6203,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
-          targetFile ? (
+          targetFile && railRoot ? (
             <button
               type="button"
               onClick={openTargetFile}
