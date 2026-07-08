@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 import { Icon } from "@/lib/icon";
@@ -94,6 +95,8 @@ async function createXterm(
     onResults: (index: number, count: number) => void;
     /** ⌘F / Ctrl+F pressed inside the terminal — open the find bar. */
     onRequestFind: () => void;
+    /** prefers-reduced-motion at creation time — disables cursor blink. */
+    reducedMotion?: boolean;
   },
 ): Promise<XtermBundle> {
   const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
@@ -108,7 +111,9 @@ async function createXterm(
       'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
     fontSize: 12,
     lineHeight: 1.2,
-    cursorBlink: true,
+    // A permanently blinking cursor is exactly the kind of continuous motion
+    // prefers-reduced-motion opts out of; kept in sync after creation too.
+    cursorBlink: !handlers.reducedMotion,
     // Required for the search addon's match decorations (highlights + count).
     allowProposedApi: true,
     theme: {
@@ -149,6 +154,7 @@ export function BottomTerminal({
   active = true,
   projectRoot,
   paneId,
+  label,
   registerWriter,
   onUserInput,
 }: {
@@ -157,6 +163,9 @@ export function BottomTerminal({
   projectRoot?: string;
   /** Stable id for comux's broadcast registry (defaults to threadId). */
   paneId?: string;
+  /** Human-readable pane name (the comux tab/pane label) so AT can tell split
+   *  panes apart — names the terminal region and its screen-reader mirror. */
+  label?: string;
   /** Register/unregister this pane's PTY writer so broadcast can fan input in. */
   registerWriter?: (paneId: string, write: ((data: string) => void) | null) => void;
   /** Called with every keystroke (post Ctrl-transform) so comux can mirror it
@@ -194,6 +203,16 @@ export function BottomTerminal({
   // typed character into its control code. clearCtrlRef lets that handler reset
   // the visual state from inside its stable closure.
   const isCoarse = useIsCoarsePointer();
+  // Reactive: flipping the OS setting stops/starts the blink without a
+  // remount (xterm applies option changes live). The ref feeds the async
+  // createXterm calls so the initial value is right without re-running them.
+  const reducedMotion = usePrefersReducedMotion();
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.cursorBlink = !reducedMotion;
+  }, [reducedMotion]);
   const [ctrlActive, setCtrlActive] = useState(false);
   const ctrlStickyRef = useRef(false);
   const clearCtrlRef = useRef<() => void>(() => {});
@@ -395,6 +414,7 @@ export function BottomTerminal({
       const { term, fit, search } = await createXterm(wrap, {
         onResults: (index, count) => setFindInfo({ index, count }),
         onRequestFind: openFind,
+        reducedMotion: reducedMotionRef.current,
       });
       termRef.current = term;
       searchRef.current = search;
@@ -576,6 +596,7 @@ export function BottomTerminal({
       const { term, fit, search } = await createXterm(wrap, {
         onResults: (index, count) => setFindInfo({ index, count }),
         onRequestFind: openFind,
+        reducedMotion: reducedMotionRef.current,
       });
       termRef.current = term;
       searchRef.current = search;
@@ -779,9 +800,10 @@ export function BottomTerminal({
         className="min-h-0 w-full flex-1 overflow-hidden"
         style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
         // xterm renders into an opaque <canvas>; label the region so AT can name
-        // it (live output is exposed via the screen-reader mirror below).
+        // it (live output is exposed via the screen-reader mirror below). The
+        // pane label keeps split panes distinguishable.
         role="group"
-        aria-label="Terminal"
+        aria-label={label ? `Terminal: ${label}` : "Terminal"}
         // Clicking anywhere in the terminal area refocuses xterm so keyboard
         // input is routed correctly without the user having to click exactly
         // on the cursor.
@@ -870,7 +892,7 @@ export function BottomTerminal({
         role="region"
         aria-live="polite"
         aria-atomic="false"
-        aria-label="Terminal output"
+        aria-label={label ? `Terminal output: ${label}` : "Terminal output"}
       >
         {mirrorLines.map((line, i) => (
           <div key={i}>{line}</div>

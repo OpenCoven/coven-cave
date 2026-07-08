@@ -1420,6 +1420,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 active={active && isActive}
                 projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
                 paneId={s.id}
+                label={s.label}
                 registerWriter={registerPaneWriter}
                 onUserInput={handlePaneInput}
               />
@@ -1485,11 +1486,19 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         <div className="flex flex-1 flex-col min-h-0">
           {/* Session tab strip */}
           <div className="comux-terminal-tab-strip flex items-center gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/20 px-2 py-1 text-[11px]">
-            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+            <div
+              className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+              role="tablist"
+              aria-orientation="horizontal"
+              aria-label="Terminal sessions"
+            >
               {sessions.map((s, i) => (
                 <div
                   key={s.id}
                   draggable
+                  role="tab"
+                  aria-selected={i === currentIdx}
+                  tabIndex={i === currentIdx ? 0 : -1}
                   className={`comux-terminal-tab group flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 transition-colors ${
                     i === currentIdx
                       ? "bg-[var(--bg-base)] text-[var(--text-primary)]"
@@ -1497,6 +1506,37 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   }${tabDropTargetId === s.id ? " comux-terminal-tab--drop-target" : ""}`}
                   data-terminal-tab-id={s.id}
                   onClick={() => selectSession(i)}
+                  onKeyDown={(e) => {
+                    // Roving tablist keys act on the tab itself; keystrokes
+                    // inside the rename textbox (a child) must not re-route.
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      selectSession(i);
+                      return;
+                    }
+                    if (e.key === "F2") {
+                      e.preventDefault();
+                      e.currentTarget.querySelector<HTMLElement>("[data-terminal-tab-rename]")?.focus();
+                      return;
+                    }
+                    const last = sessions.length - 1;
+                    const next =
+                      e.key === "ArrowRight" ? (i === last ? 0 : i + 1)
+                      : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1)
+                      : e.key === "Home" ? 0
+                      : e.key === "End" ? last
+                      : null;
+                    if (next === null || next === i) return;
+                    e.preventDefault();
+                    // Selection follows focus (WAI-ARIA tabs pattern). The
+                    // keyed node persists across the re-render, so focusing
+                    // it synchronously is safe.
+                    selectSession(next);
+                    document
+                      .querySelector<HTMLElement>(`[data-terminal-tab-id="${window.CSS.escape(sessions[next].id)}"]`)
+                      ?.focus();
+                  }}
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = "move";
                     e.dataTransfer.setData(TERMINAL_SESSION_DRAG_TYPE, s.id);
@@ -1535,6 +1575,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   <span
                     contentEditable
                     suppressContentEditableWarning
+                    role="textbox"
+                    aria-label={`Rename terminal ${s.label} — Enter saves, Escape cancels`}
+                    data-terminal-tab-rename
                     onBlur={(e) =>
                       renameSession(i, e.currentTarget.textContent ?? s.label)
                     }
@@ -1550,7 +1593,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         (e.target as HTMLElement).blur();
                       }
                     }}
-                    title="Click to rename · Enter to save · Esc to cancel"
+                    title="Click or F2 to rename · Enter to save · Esc to cancel"
                     className="max-w-[120px] truncate rounded-[3px] px-0.5 outline-none focus:bg-[var(--bg-base)] focus:ring-1 focus:ring-[var(--accent-presence)]"
                   >
                     {s.label}
@@ -1668,6 +1711,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       threadId={`cave.comux.${s.id}`}
                       active={false}
                       projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
+                      label={s.label}
                     />
                   ))}
                 </div>

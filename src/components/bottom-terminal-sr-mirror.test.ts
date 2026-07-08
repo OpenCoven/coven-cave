@@ -72,4 +72,30 @@ assert.match(source, /decorations:\s*searchDecorations\(\)/, "search decorations
 assert.match(source, /if \(!activeRef\.current\) \{[\s\S]{0,180}return;/, "the SR mirror doesn't re-render while the pane is hidden");
 assert.match(source, /if \(active\) \{\s*\n\s*flushMirror\(\);/, "buffered output is drained into the mirror when the pane becomes active");
 
+// ── Terminal a11y (cave-p767) ──
+// Per-pane labels: split panes must be distinguishable to AT — the region and
+// its SR mirror are both named after the pane when a label is threaded in.
+assert.match(
+  source,
+  /aria-label=\{label \? `Terminal: \$\{label\}` : "Terminal"\}/,
+  "the terminal region is named after its pane label",
+);
+assert.match(
+  source,
+  /aria-label=\{label \? `Terminal output: \$\{label\}` : "Terminal output"\}/,
+  "the SR mirror region is named after its pane label",
+);
+// Reduced motion: the blinking cursor is continuous motion — off under
+// prefers-reduced-motion, both at creation and reactively on change.
+assert.match(
+  source,
+  /cursorBlink: !handlers\.reducedMotion/,
+  "cursor blink is disabled at creation under prefers-reduced-motion",
+);
+assert.match(
+  source,
+  /term\.options\.cursorBlink = !reducedMotion/,
+  "cursor blink tracks prefers-reduced-motion changes without a remount",
+);
+
 console.log("bottom-terminal-sr-mirror.test.ts OK");

@@ -333,4 +333,43 @@ assert.match(
   "renameSession ignores blank/whitespace-only names",
 );
 
+// ── Terminal a11y (cave-p767): tab strip is a real keyboard-operable tablist ──
+assert.match(
+  source,
+  /role="tablist"\s*\n\s*aria-orientation="horizontal"\s*\n\s*aria-label="Terminal sessions"/,
+  "the tab strip is a labeled horizontal tablist",
+);
+assert.match(
+  source,
+  /role="tab"\s*\n\s*aria-selected=\{i === currentIdx\}\s*\n\s*tabIndex=\{i === currentIdx \? 0 : -1\}/,
+  "each terminal tab is role=tab with aria-selected and roving tabindex",
+);
+assert.match(
+  source,
+  /if \(e\.target !== e\.currentTarget\) return;/,
+  "roving tablist keys ignore keystrokes bubbling from the rename textbox",
+);
+assert.match(
+  source,
+  /e\.key === "ArrowRight" \? \(i === last \? 0 : i \+ 1\)\s*\n\s*: e\.key === "ArrowLeft" \? \(i === 0 \? last : i - 1\)\s*\n\s*: e\.key === "Home" \? 0\s*\n\s*: e\.key === "End" \? last/,
+  "Arrow/Home/End move between tabs (selection follows focus, wrapping)",
+);
+assert.match(
+  source,
+  /if \(e\.key === "F2"\) \{[\s\S]{0,180}?\[data-terminal-tab-rename\]/,
+  "F2 on a tab enters the inline rename",
+);
+assert.match(
+  source,
+  /role="textbox"\s*\n\s*aria-label=\{`Rename terminal \$\{s\.label\} — Enter saves, Escape cancels`\}/,
+  "the contentEditable rename span is an aria-labeled textbox with discoverable save/cancel",
+);
+// Per-pane region labels: visible pane and keepalive pane both name their
+// BottomTerminal after the session so AT can tell split panes apart.
+assert.equal(
+  (source.match(/label=\{s\.label\}/g) ?? []).length,
+  2,
+  "both BottomTerminal instances (visible + keepalive) thread the pane label",
+);
+
 console.log("comux terminal chord/close assertions: ok");
