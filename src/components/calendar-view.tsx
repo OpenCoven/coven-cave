@@ -146,8 +146,17 @@ function useNow(): Date | null {
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
+    // Anchor ticks to the wall-clock minute (a mount-anchored interval left
+    // the now-line and Today highlight up to ~60s behind at each rollover).
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const align = setTimeout(() => {
+      setNow(new Date());
+      interval = setInterval(() => setNow(new Date()), 60_000);
+    }, 60_000 - (Date.now() % 60_000));
+    return () => {
+      clearTimeout(align);
+      if (interval) clearInterval(interval);
+    };
   }, []);
   return now;
 }
@@ -176,6 +185,8 @@ function defaultEntryFireAt(day: Date): string {
   // opens on the day the user actually clicked.
   if (isSameDay(day, now)) {
     const slot = new Date(now);
+    // The +5 is a buffer: a slot boundary under 5 minutes away is skipped for
+    // the one after it (:56-59 → :15 past). setMinutes(75) carries the hour.
     slot.setMinutes(Math.ceil((slot.getMinutes() + 5) / 15) * 15, 0, 0);
     return slot.toISOString();
   }

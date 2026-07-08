@@ -46,6 +46,9 @@ assert.doesNotMatch(view, /minHeight: 20/, "Old fixed 20px event height must be 
 // re-ticks each minute, so today-highlights + the now-line don't mismatch SSR
 // and the current-time indicator tracks the clock.
 assert.match(view, /function useNow\(\): Date \| null \{[\s\S]*?setInterval\(\(\) => setNow\(new Date\(\)\), 60_000\)/, "useNow ticks every minute");
+// (cave-6xer) The first tick is aligned to the next wall-clock minute — a
+// mount-anchored interval left the now-line up to ~60s stale at each rollover.
+assert.match(view, /setTimeout\(\(\) => \{[\s\S]{0,120}?\}, 60_000 - \(Date\.now\(\) % 60_000\)\)/, "useNow aligns its first tick to the wall-clock minute");
 assert.match(view, /now && isSameDay\(col\.date, now\) &&/, "the now-line only renders once `now` resolves, derived from TimeGrid's own clock");
 // The grid sub-views derive "today" from useNow (hydration-safe + live), not a
 // render-time `new Date()` (Agenda, Day, Week, Month, TimeGrid).
