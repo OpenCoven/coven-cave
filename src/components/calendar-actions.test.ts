@@ -131,4 +131,17 @@ assert.match(
   "a deleted item closes the panel instead of lingering over a dead id",
 );
 
+// ───────── a11y: reschedules are announced; chips name their familiar ─────────
+// (cave-nsmi) Alt+↑/↓ and drag reschedules confirm the new time via the live
+// region — moving an event was silent to SR/keyboard users before.
+assert.match(view, /onReschedule\(ev\.item\.id, slot\.toISOString\(\)\);\s*\n\s*announce\(`Rescheduled "\$\{ev\.item\.title\}" to \$\{fmtTime\(slot\.toISOString\(\)\)\}`\)/, "keyboard reschedule announces the new time");
+assert.match(view, /announce\(`Rescheduled "\$\{dragged\?\.title \?\? "event"\}" to \$\{col\.label\}, \$\{fmtTime\(slot\.toISOString\(\)\)\}`\)/, "drag-drop reschedule announces the day and time");
+// (cave-nsmi) The owning familiar was colour-only (left-border accent, WCAG
+// 1.4.1) — every chip variant now names it in the accessible name / tooltip.
+assert.match(view, /const FamiliarNameContext = createContext/, "familiar names are provided alongside the accent colours");
+assert.match(view, /<FamiliarNameContext\.Provider value=\{nameFor\}>/, "CalendarView provides the familiar-name lookup");
+assert.ok((view.match(/\{familiarName && <span className="sr-only">, \{familiarName\}<\/span>\}/g) ?? []).length >= 2, "agenda/all-day + month chips append the familiar name for AT");
+assert.match(view, /task deadline\$\{done \? ", done" : ""\}\$\{familiarName \? `, \$\{familiarName\}` : ""\}/, "deadline chips name their familiar");
+assert.match(view, /\$\{done \? ", done" : ""\}\$\{familiarName \? `, \$\{familiarName\}` : ""\}`\}\n\s*title=\{`\$\{familiarName \? `\$\{ev\.item\.title\} — \$\{familiarName\}` : ev\.item\.title\}/, "grid events name their familiar in label + tooltip");
+
 console.log("calendar-actions.test.ts: ok");

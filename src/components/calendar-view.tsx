@@ -26,6 +26,14 @@ function useFamiliarAccent(familiarId: string | null | undefined): string | null
   return useContext(FamiliarColorContext)(familiarId);
 }
 
+// Per-familiar display name, same shape as the colour context. The accent
+// colour alone is a colour-only encoding (WCAG 1.4.1) — every chip also names
+// its owning familiar in the accessible name / tooltip.
+const FamiliarNameContext = createContext<(familiarId: string | null | undefined) => string | null>(() => null);
+function useFamiliarName(familiarId: string | null | undefined): string | null {
+  return useContext(FamiliarNameContext)(familiarId);
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ViewMode = "agenda" | "day" | "week" | "month";
@@ -230,10 +238,11 @@ function ItemChip({
 }) {
   const done = item.status === "done";
   const accent = useFamiliarAccent(item.familiarId);
+  const familiarName = useFamiliarName(item.familiarId);
   return (
     <button
       onClick={onClick}
-      title={item.title}
+      title={familiarName ? `${item.title} — ${familiarName}` : item.title}
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
       className={`focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-2.5 text-left text-[13px] transition-colors md:py-1 md:text-[11px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
     >
@@ -245,6 +254,7 @@ function ItemChip({
         className="shrink-0 text-[var(--text-muted)] text-[12px]"
       />
       <span className={`flex-1 truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
+      {familiarName && <span className="sr-only">, {familiarName}</span>}
       {(item.fireAt ?? item.firedAt) && (
         <span className="shrink-0 text-[var(--text-muted)]">
           {fmtTime((item.fireAt ?? item.firedAt)!)}
@@ -503,6 +513,7 @@ function DeadlineChip({
 }) {
   const done = deadline.status === "done";
   const accent = useFamiliarAccent(deadline.familiarId);
+  const familiarName = useFamiliarName(deadline.familiarId);
   return (
     <button
       type="button"
@@ -511,8 +522,8 @@ function DeadlineChip({
         e.stopPropagation();
         onOpen?.(deadline.id);
       }}
-      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}`}
-      title={`${deadline.title} — task deadline`}
+      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+      title={`${deadline.title} — task deadline${familiarName ? ` — ${familiarName}` : ""}`}
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
       className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
     >
@@ -606,6 +617,10 @@ function TimeGrid({
   // Read the per-familiar accent fn once (events render in a loop, so we can't
   // call the hook per item).
   const accentFor = useContext(FamiliarColorContext);
+  const nameFor = useContext(FamiliarNameContext);
+  // Reschedules (drag drop + Alt+↑/↓) move the event silently for AT users
+  // otherwise — confirm the new time through the shared live region.
+  const { announce } = useAnnouncer();
   // Tracks the in-flight drag: the item id + where in the block it was grabbed,
   // so the drop snaps the block's start (not the cursor) to the new time.
   const dragRef = useRef<{ id: string; grabY: number } | null>(null);
@@ -704,6 +719,10 @@ function TimeGrid({
                     const slot = new Date(col.date);
                     slot.setHours(0, minutes, 0, 0);
                     onReschedule(drag.id, slot.toISOString());
+                    // Cross-day drags land in a different column than the one
+                    // that owns the item — search every column for the title.
+                    const dragged = columns.flatMap((c) => c.items).find((it) => it.id === drag.id);
+                    announce(`Rescheduled "${dragged?.title ?? "event"}" to ${col.label}, ${fmtTime(slot.toISOString())}`);
                   }
                 : undefined
             }
@@ -736,6 +755,7 @@ function TimeGrid({
               const leftPct = ev.lane * widthPct;
               const height = Math.max(18, ((ev.end - ev.start) / 60) * HOUR_HEIGHT - 2);
               const done = ev.item.status === "done";
+              const familiarName = nameFor(ev.item.familiarId);
               return (
                 <button
                   key={ev.item.id}
@@ -768,11 +788,12 @@ function TimeGrid({
                           const slot = new Date(col.date);
                           slot.setHours(0, minutes, 0, 0);
                           onReschedule(ev.item.id, slot.toISOString());
+                          announce(`Rescheduled "${ev.item.title}" to ${fmtTime(slot.toISOString())}`);
                         }
                       : undefined
                   }
-                  aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}`}
-                  title={onReschedule ? `${ev.item.title} — drag, or Alt+↑/↓, to reschedule` : ev.item.title}
+                  aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+                  title={`${familiarName ? `${ev.item.title} — ${familiarName}` : ev.item.title}${onReschedule ? " — drag, or Alt+↑/↓, to reschedule" : ""}`}
                   className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
@@ -1034,6 +1055,7 @@ function MonthView({
   onOpenDeadline?: (id: string) => void;
 }) {
   const accentFor = useContext(FamiliarColorContext);
+  const nameFor = useContext(FamiliarNameContext);
   const now = useNow();
   const monthStart = startOfMonth(anchor);
   const gridStart = startOfWeek(monthStart);
@@ -1156,6 +1178,7 @@ function MonthView({
                     {dayItems.slice(0, 3).map((item) => {
                       const done = item.status === "done";
                       const accent = accentFor(item.familiarId);
+                      const familiarName = nameFor(item.familiarId);
                       return (
                       <button
                         key={item.id}
@@ -1163,7 +1186,7 @@ function MonthView({
                           e.stopPropagation();
                           onOpenItem?.(item);
                         }}
-                        title={item.title}
+                        title={familiarName ? `${item.title} — ${familiarName}` : item.title}
                         style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
                         className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[9px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
                       >
@@ -1171,6 +1194,7 @@ function MonthView({
                           ? <Icon name="ph:check" width={8} className="shrink-0 text-[var(--text-muted)]" />
                           : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
                         <span className={`truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
+                        {familiarName && <span className="sr-only">, {familiarName}</span>}
                       </button>
                       );
                     })}
@@ -1540,6 +1564,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     (familiarId: string | null | undefined) => (familiarId ? familiarColorById.get(familiarId) ?? null : null),
     [familiarColorById],
   );
+  const nameFor = useCallback(
+    (familiarId: string | null | undefined) => (familiarId ? familiarNameById.get(familiarId) ?? null : null),
+    [familiarNameById],
+  );
 
   // Legend: the distinct familiars that own something currently in view. Only
   // worth showing when ≥2 — with one (or none) there's nothing to disambiguate.
@@ -1638,6 +1666,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
   return (
     <FamiliarColorContext.Provider value={accentFor}>
+    <FamiliarNameContext.Provider value={nameFor}>
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
       <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
@@ -1799,6 +1828,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         />
       )}
     </div>
+    </FamiliarNameContext.Provider>
     </FamiliarColorContext.Provider>
   );
 }
