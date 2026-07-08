@@ -6,6 +6,7 @@ import { buildNextPathsDirective, extractNextPaths, DEFAULT_NEXT_PATHS_COUNT } f
 assert.equal(DEFAULT_NEXT_PATHS_COUNT, 4);
 assert.match(buildNextPathsDirective(), /append 2 or 4 short/);
 assert.match(buildNextPathsDirective(), /never exactly 3/);
+assert.match(buildNextPathsDirective(), /only in this block — do not also enumerate them in the reply body/);
 assert.match(buildNextPathsDirective(3), /<coven:next-paths>/);
 assert.match(buildNextPathsDirective(2), /up to 2 short/);
 assert.equal(buildNextPathsDirective(0), "");
