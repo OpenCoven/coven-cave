@@ -2009,6 +2009,7 @@ export function Workspace() {
     <SidebarMinimal
       mode={mode}
       splitPageModes={splitPageModes}
+      selectedFamiliarIds={scopeIds}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       onNewChat={() => {
@@ -2306,11 +2307,7 @@ export function Workspace() {
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
             <FamiliarMenuBar
-              familiars={resolvedFamiliars}
               activeFamiliarId={activeId}
-              selectedFamiliarIds={scopeIds}
-              sessions={sessions}
-              responseNeeded={responseNeeded}
               taskCount={boardTaskCount}
               scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
@@ -2319,7 +2316,6 @@ export function Workspace() {
                 setTopSearchQuery(query);
                 setPaletteOpen(true);
               }}
-              onSelectFamiliar={selectFamiliarScope}
               onViewTasks={() => setMode("board")}
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}

@@ -10,6 +10,7 @@
  */
 
 import React from "react";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import {
@@ -62,7 +63,9 @@ export type SidebarMinimalProps = {
   inboxPrefs?: InboxPrefs;
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
-  onFamiliarScopeChange: (id: string | null) => void;
+  /** Multiselect scope for the header switcher's strip highlight. */
+  selectedFamiliarIds?: ReadonlySet<string>;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
@@ -210,6 +213,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onModeChange,
     onOpenSession,
     activeSessionId,
+    familiars,
+    activeFamiliarId,
+    selectedFamiliarIds,
+    onFamiliarScopeChange,
+    sessions,
+    responseNeeded,
   } = props;
 
   // Arrow-key navigation across the flat nav rows: one tab stop, Up/Down moves
@@ -228,11 +237,21 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {/* Familiar scope selection lives in the desktop top menu bar
-          (FamiliarMenuBar) and the mobile top bar. "New chat" is the left
-          panel's top CTA, so the nav flows under it. */}
-      <div className="sidebar-header sidebar-header--static">
-        <span className="sidebar-title">Coven Cave</span>
+      {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
+          header carries the switcher: the user's strip/dropdown preference in
+          the open drawer, the avatar-only trigger in the collapsed rail. The
+          mobile top bar keeps its own (the drawer hides this one). */}
+      <div className="sidebar-familiar-switch">
+        <FamiliarQuickSwitch
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId ?? null}
+          selectedFamiliarIds={selectedFamiliarIds}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
+          onSelectFamiliar={onFamiliarScopeChange}
+          placement="bottom-start"
+          labeled
+        />
       </div>
 
       <div className="sidebar-actions">

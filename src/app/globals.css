@@ -5188,10 +5188,6 @@ button:active > .edge-rail-chip {
   min-width: 0;
 }
 
-.menu-bar__group--chat {
-  flex: 1 1 auto;
-  overflow: hidden;
-}
 
 .menu-bar__group--tasks {
   flex: 0 0 auto;
@@ -5277,39 +5273,14 @@ button:active > .edge-rail-chip {
 
 /* The menu bar uses the compact selector by default; the labeled variant
    expands just enough to show the familiar name. */
-.menu-bar__group--chat .familiar-switcher__trigger {
-  flex: 0 0 auto;
-  width: 28px;
-  max-width: 200px;
-  /* Seamless bar: the switcher joins the quiet chrome — pill materializes on
-     hover/focus like the search and task chips. */
-  border-color: transparent;
-  background: transparent;
-}
 
-.menu-bar__group--chat .familiar-switcher__trigger:hover,
-.menu-bar__group--chat .familiar-switcher__trigger:focus-visible {
-  border-color: var(--border-hairline);
-  background: var(--bg-raised);
-}
 
-.menu-bar__group--chat .familiar-switcher__trigger--labeled {
-  width: auto;
-  min-width: 0;
-  max-width: 180px;
-}
 
 /* Desktop top bar: the strip surfaces every familiar. Let it grow with the
    available width (responsive cap) so they're visible rather than hidden behind
    a 6-avatar limit; the search keeps its min-width and the strip scrolls
    horizontally only when the familiars genuinely overflow the cap. */
-.menu-bar__group--chat .familiar-quickswitch {
-  min-width: 0;
-}
 
-.menu-bar__group--chat .familiar-quickswitch__strip {
-  max-width: clamp(280px, 40vw, 600px);
-}
 
 /* Avatar tiles match the height of the top-bar action buttons / search box
    (~28px) so the strip lines up with the rest of the bar. Scoped to the

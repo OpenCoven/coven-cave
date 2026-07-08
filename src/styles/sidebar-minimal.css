@@ -63,6 +63,24 @@
   border-color: transparent;
 }
 
+/* Header familiar switcher (cave-vtk9) — the scope selector on every page. */
+.sidebar-familiar-switch {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 2px 4px 2px 7px;
+}
+.sidebar-familiar-switch .familiar-quickswitch {
+  min-width: 0;
+  flex: 1;
+}
+/* The strip wraps within the drawer width instead of clipping. */
+.sidebar-familiar-switch .familiar-quickswitch__strip {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
 .sidebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -1037,12 +1055,29 @@
   align-items: center;
 }
 
-/* Wordmark, section headers, and the recent-activity rollup have no compact
-   form, so they drop out entirely in the rail. */
-.shell-nav--rail .sidebar-header,
+/* Section headers and the recent-activity rollup have no compact form, so
+   they drop out entirely in the rail. */
 .shell-nav--rail .sidebar-section-label,
 .shell-nav--rail .recent-activity {
   display: none;
+}
+
+/* The header familiar switcher survives the rail as the avatar-only trigger:
+   the strip and the trigger label drop, the 28px avatar stays reachable. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-quickswitch__strip,
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
+  display: none;
+}
+.shell-nav--rail .sidebar-familiar-switch {
+  padding: 0;
+  justify-content: center;
+}
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  justify-content: center;
 }
 
 /* Labels and count pills collapse away; the icon is all that stays per row.

@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const menuBarSwitcherRule = globals.match(/\.menu-bar__group--chat \.familiar-switcher__trigger\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+// The switcher moved to the sidenav header (cave-vtk9); its compact geometry
+// is pinned in sidebar-minimal.test.ts against the rail rules instead.
 
 // The bar provides desktop top chrome: chat with familiars, global
 // context-aware search, and view tasks/schedules. It is a labelled landmark so
@@ -47,19 +48,11 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Left group — chat. The bar embeds FamiliarQuickSwitch: a strip of recent +
-// pinned familiar avatars for one-tap switching, plus the full switcher menu.
-assert.match(
-  source,
-  /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
-  "embeds the quick-switch strip + switcher for scope/full list",
-);
-// The top bar surfaces EVERY familiar, not just the default 6 most-recent.
-assert.match(
-  source,
-  /<FamiliarQuickSwitch[\s\S]*max=\{familiars\.length\}/,
-  "passes max={familiars.length} so the strip shows all familiars",
-);
+// Familiar scope moved to the sidenav header (cave-vtk9) — this bar must not
+// grow a second switcher; it keeps search + the task verbs.
+assert.doesNotMatch(source, /FamiliarQuickSwitch/, "the menu bar no longer embeds the familiar switcher");
+assert.doesNotMatch(source, /menu-bar__group--chat/, "the chat group is gone with it");
+
 // The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
 // here — the menu bar must not hand-roll its own bubble/presence markup.
 assert.doesNotMatch(
@@ -84,17 +77,6 @@ assert.doesNotMatch(
   /onChatWithFamiliar|onComposeChat/,
   "the menu bar no longer owns the chat-start handlers",
 );
-assert.match(
-  menuBarSwitcherRule,
-  /width:\s*28px;/,
-  "desktop menu-bar familiar selector should stay a square avatar button, not collapse to content width",
-);
-assert.doesNotMatch(
-  menuBarSwitcherRule,
-  /width:\s*auto;/,
-  "desktop menu-bar familiar selector must not use content-width sizing after the label/caret were removed",
-);
-
 // Right group — tasks. A Tasks button (board) and a Schedules button, each
 // with a live count badge that is hidden at zero.
 assert.match(

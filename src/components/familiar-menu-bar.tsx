@@ -1,19 +1,10 @@
 "use client";
 
 import { Icon } from "@/lib/icon";
-import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useKeySymbols } from "@/lib/platform-keys";
-import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
-import type { SessionRow } from "@/lib/types";
 
 type Props = {
-  familiars: ResolvedFamiliar[];
   activeFamiliarId: string | null;
-  /** The full multiselect scope (empty = All). Drives multi-highlight in the
-   *  avatar strip; `activeFamiliarId` stays the single-primary for the rest. */
-  selectedFamiliarIds?: ReadonlySet<string>;
-  sessions: SessionRow[];
-  responseNeeded?: Set<string>;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
   /** Schedule items needing attention — drives the Schedules badge. */
@@ -24,9 +15,6 @@ type Props = {
   searchQuery: string;
   /** Update shared top-search query. */
   onSearchQueryChange: (query: string) => void;
-  /** Change the familiar scope. `opts.multi` (⌘/Ctrl-click) toggles the id in
-   *  the multiselect set; a plain click selects only that one (`null` = All). */
-  onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   /** Jump to the task board. */
   onViewTasks: () => void;
   /** Enrich active tasks for the selected familiar. */
@@ -53,17 +41,12 @@ function fmtBadge(n: number): string {
  * 1024px so the two never both render.
  */
 export function FamiliarMenuBar({
-  familiars,
   activeFamiliarId,
-  selectedFamiliarIds,
-  sessions,
-  responseNeeded,
   taskCount,
   scheduleNeedsCount,
   onOpenSearch,
   searchQuery,
   onSearchQueryChange,
-  onSelectFamiliar,
   onViewTasks,
   onEnrichTasks,
   enrichingTasks,
@@ -80,23 +63,8 @@ export function FamiliarMenuBar({
 
   return (
     <nav className="menu-bar" aria-label="Chat with familiars and view tasks">
-      <div className="menu-bar__group menu-bar__group--chat">
-        <FamiliarQuickSwitch
-          familiars={familiars}
-          activeFamiliarId={activeFamiliarId}
-          selectedFamiliarIds={selectedFamiliarIds}
-          sessions={sessions}
-          responseNeeded={responseNeeded}
-          onSelectFamiliar={onSelectFamiliar}
-          placement="bottom-start"
-          labeled
-          // Surface every familiar in the top bar, not just the 6 most-recent.
-          // The strip stays pin/recency-ordered and scrolls horizontally when
-          // they overflow the available width.
-          max={familiars.length}
-        />
-      </div>
-
+      {/* Familiar scope moved to the sidenav header (cave-vtk9) — present on
+          every page there; this bar keeps search + the task verbs. */}
       <form
         className="menu-bar__search"
         role="search"
