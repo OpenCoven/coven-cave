@@ -100,6 +100,16 @@ import {
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
+type WorkspaceTauriInternals = {
+  invoke?: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+};
+
+function closeAllNativeBrowserWebviews(): void {
+  if (typeof window === "undefined") return;
+  const internals = (window as typeof window & { __TAURI_INTERNALS__?: WorkspaceTauriInternals }).__TAURI_INTERNALS__;
+  void internals?.invoke?.("browser_close_all");
+}
+
 // What the drag-to-split secondary pane is showing: either a draggable page
 // (a workspace mode) or one of the companion surfaces (Salem / Memory /
 // Browser) that were re-homed here when the right rail was removed.
@@ -1912,6 +1922,17 @@ export function Workspace() {
     () => splitTargets.filter((t): t is Extract<SplitTarget, { kind: "page" }> => t.kind === "page").map((t) => t.mode),
     [splitTargets],
   );
+  const browserVisible = useMemo(
+    () =>
+      mode === "browser" ||
+      splitTargets.some((target) => target.kind === "browser" || (target.kind === "page" && target.mode === "browser")),
+    [mode, splitTargets],
+  );
+
+  useEffect(() => {
+    if (browserVisible) return;
+    closeAllNativeBrowserWebviews();
+  }, [browserVisible]);
 
   const sidebar = (
     <SidebarMinimal
@@ -2112,7 +2133,7 @@ export function Workspace() {
         }
       />
     ) : mode === "browser" ? (
-      <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
+      <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} active={browserVisible} />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}
@@ -2173,7 +2194,7 @@ export function Workspace() {
     ) : target.kind === "memory" ? (
       <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
     ) : (
-      <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />
+      <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} active={browserVisible} />
     );
 
   const splitTiles: DetailSplitTile[] = splitTargets
