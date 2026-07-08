@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { StandardSelect } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
@@ -485,20 +486,17 @@ export function CapabilitiesViewSurface({
                     Scanned <RelativeTime iso={scannedAt} />
                   </span>
                 )}
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => void load(true)}
+                  loading={refreshing}
                   disabled={refreshing}
                   title="Refresh (⌘R)"
-                  className="focus-ring flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  leadingIcon="ph:arrows-clockwise-bold"
                 >
-                  <Icon
-                    name="ph:arrows-clockwise-bold"
-                    width={11}
-                    className={refreshing ? "animate-spin" : undefined}
-                  />
-                  <span>{refreshing ? "Refreshing" : "Refresh"}</span>
-                </button>
+                  {refreshing ? "Refreshing" : "Refresh"}
+                </Button>
               </div>
             </div>
           </div>
@@ -1117,14 +1115,13 @@ function CapabilityPreviewModal({
           <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]" title={path ?? undefined}>
             {heading}
           </span>
-          <button
-            type="button"
+          <IconButton
+            icon="ph:x-bold"
+            size="sm"
+            className="ml-1"
             onClick={onClose}
-            className="focus-ring ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             aria-label="Close preview"
-          >
-            <Icon name="ph:x-bold" width={11} aria-hidden />
-          </button>
+          />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
           <div className="mx-auto w-full max-w-[820px]">
