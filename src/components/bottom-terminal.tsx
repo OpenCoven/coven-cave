@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -249,6 +249,8 @@ export function BottomTerminal({
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findInfo, setFindInfo] = useState<{ index: number; count: number }>({ index: 0, count: 0 });
+  // Ties the (non-live) match counter to the find input via aria-describedby.
+  const findCountId = useId();
   // Touch accessory key bar: soft keyboards lack Esc/Tab/Ctrl/arrows. Only shown
   // on coarse pointers. Ctrl is sticky — the toggle flips ctrlStickyRef, and the
   // onData handler (set up once at mount) reads the ref to transform the next
@@ -360,10 +362,10 @@ export function BottomTerminal({
     (bytes: Uint8Array) => {
       if (!decoderRef.current) return;
       // Keep decoding even while hidden so the streaming decoder state stays
-      // consistent — but don't re-render the (aria-hidden) mirror off-screen: a
-      // busy background stream otherwise re-rendered the 50-line mirror every
-      // 250ms while the terminal wasn't even visible. Buffer (bounded) and drain
-      // when the pane is next shown.
+      // consistent — but don't re-render the (sr-only, aria-live=polite) mirror
+      // off-screen: a busy background stream otherwise re-rendered the 50-line
+      // mirror every 250ms while the terminal wasn't even visible. Buffer
+      // (bounded) and drain when the pane is next shown.
       const text = stripAnsi(
         decoderRef.current.decode(bytes, { stream: true }),
       );
@@ -886,9 +888,18 @@ export function BottomTerminal({
             }}
             placeholder="Find in terminal…"
             aria-label="Find in terminal"
+            aria-describedby={findCountId}
             className="focus-ring-inset w-44 bg-transparent text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
-          <span className="min-w-[34px] text-right text-[10px] tabular-nums text-[var(--text-muted)]" aria-live="polite">
+          {/* Match counter is deliberately NOT a live region: the SR mirror
+              region below is already aria-live=polite, and a second polite
+              region updating on every keystroke produced double/overlapping
+              announcements. aria-describedby on the input keeps the count
+              discoverable to AT without competing announcements. */}
+          <span
+            id={findCountId}
+            className="min-w-[34px] text-right text-[10px] tabular-nums text-[var(--text-muted)]"
+          >
             {findInfo.count > 0 ? `${findInfo.index}/${findInfo.count}` : findQuery ? "0/0" : ""}
           </span>
           <button type="button" onClick={() => runFind(-1)} title="Previous match (⇧⏎)" aria-label="Previous match"
