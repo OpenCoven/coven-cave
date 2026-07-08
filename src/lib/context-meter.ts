@@ -28,8 +28,13 @@ export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
  * rather than relying on the fallback.
  */
 export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  // OpenAI (codex runtime) — estimate; adjust when authoritative.
+  // OpenAI (codex runtime) — estimate; adjust when authoritative. The retired
+  // GPT-5.1 ids stay listed so the meter keeps working for older sessions and
+  // custom configs that still name them.
   "openai/gpt-5.5": 400_000,
+  "openai/gpt-5.4": 400_000,
+  "openai/gpt-5.4-mini": 400_000,
+  "openai/gpt-5.3-codex-spark": 400_000,
   "openai/gpt-5.1-codex-max": 400_000,
   "openai/gpt-5.1-codex": 400_000,
   "openai/gpt-5.1-codex-mini": 400_000,

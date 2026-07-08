@@ -7,6 +7,34 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.156] - 2026-07-08
+
+> 🎛️ **A palette worthy of the slash** — the chat composer's slash view becomes a sectioned palette: Commands and Skills headers, icon-led rows with inline descriptions, and a roomy elevated panel. The shell picks up a familiar dropdown atop the chat sidebar with a Codex-style title bar.
+
+Patch release on top of v0.0.155.
+
+### Features
+- **Chat: slash menus become a sectioned palette** (#2752, cave-nl9n). Sentence-case Commands/Skills headers, leading icons with medium names and unified muted inline descriptions, inset rounded row highlights, and an elevated rounded panel — across the slash menu, /model, /skill, /prompt, and @-file pickers. Keyboard contract unchanged.
+- **Shell: familiar dropdown heads the chat sidebar** · Codex-style title bar · one-row sidepanel chrome (#2747).
+
+### Fixes
+- **Models: the GPT-5.1 generation retires from the codex model menu** (#2751).
+- **Settings: On/Off switches match the shared button shape** (#2741, cave-9yll).
+- **Calendar: week view falls back to day rendering in narrow split panes** (#2748, cave-87zv).
+
+## [0.0.155] - 2026-07-08
+
+> 🔍 **Review means the one you picked** — a chat edit card's Review no longer keeps snapping the Changes panel back to its own file while an agent is mid-edit; whichever diff you expand stays expanded. Plus a roomier reading measure and a friendlier crons detail panel.
+
+Patch release on top of v0.0.154.
+
+### Fixes
+- **Chat: Review jump-to-diff applies exactly once** (#2742, cave-bvbw). The Changes panel's focus effect re-asserted the original Review target on every 5-second poll while an agent was editing, clobbering whichever diff you had manually selected. Each Review click now consumes its focus once (still retrying until a just-edited file appears in the list), and path matching aligns on `/` boundaries so look-alike filenames can't cross-match.
+
+### Features
+- **Crons: sleek beginner-friendly detail panel**, expandable to full page width (#2740, cave-4p6k).
+- **Chat: the shared reading/composer measure widens one step** (46rem → 52rem) for roomier transcripts (#2739, cave-cy8o).
+
 ## [0.0.154] - 2026-07-08
 
 > ⚗️ **One family of controls** — the composer's runtime chip lands everywhere (logo + model, one-click switching, now on Home too) and every icon button rounds up to match it. The daemon's control-plane catalog gets a proxy route, the projects hub takes five upgrades, and an a11y sweep makes bells, schedules, calendars, and pickers honest to assistive tech.

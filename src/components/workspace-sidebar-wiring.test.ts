@@ -23,7 +23,16 @@ assert.match(workspaceSidebar, /<span className="sr-only">\{project\.name\}<\/sp
 assert.doesNotMatch(workspaceSidebar, /cnav__footer|cnav__user-plan/, "should not render user plan footer");
 // New features from code-sidebar
 assert.match(workspaceSidebar, /cave:code-select-project/, "should broadcast code-select-project on project expand");
-assert.match(workspaceSidebar, /cnav__mini-row/, "should include Scheduled/Plugins shortcuts");
+// One-row quick actions: New chat + the Scheduled/Plugins icon chips share a
+// single row (no stacked mini-row), and the header hosts the familiar switcher.
+assert.doesNotMatch(workspaceSidebar, /cnav__mini-row/, "the stacked mini-row is retired — quick actions are one row");
+assert.match(workspaceSidebar, /aria-label=\{scheduledCount \? `Scheduled \(\$\{scheduledCount\}\)` : "Scheduled"\}/, "Scheduled shortcut is an icon chip with an accessible name");
+// Familiar scope moved to the SIDENAV header (cave-vtk9, operator direction) —
+// it sits directly beside this panel, so a second switcher here doubled the
+// same global control. The header keeps a plain title + Home + organize.
+assert.doesNotMatch(workspaceSidebar, /FamiliarSwitcher/, "the chat sidebar header no longer duplicates the sidenav familiar switcher");
+assert.match(workspaceSidebar, /<span className="cnav__title">Chats<\/span>/, "the header anchors with a plain Chats title");
+assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");
 // Outer CSS classes for e2e compat

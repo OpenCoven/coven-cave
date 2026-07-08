@@ -296,4 +296,18 @@ assert.match(marketplaceView, /announce\("Removed from your setup", "polite"\)/,
 // with the section.)
 assert.match(marketplaceView, /announce\(msg, "assertive"\)/, "a failed hub action is announced assertively");
 
+// cave-owvm: install/uninstall clear any prior error banner on a fresh attempt —
+// `error` was only ever set on failure and otherwise never cleared without a
+// reload, so a stale "install failed" alert used to persist across Browse.
+assert.match(
+  marketplaceView,
+  /const add = useCallback\(async[\s\S]*?markBusy\(id, true\);[\s\S]*?setError\(null\);/,
+  "add() clears the error banner on a fresh install attempt",
+);
+assert.match(
+  marketplaceView,
+  /const remove = useCallback\(async[\s\S]*?markBusy\(id, true\);[\s\S]*?setError\(null\);/,
+  "remove() clears the error banner on a fresh uninstall attempt",
+);
+
 console.log("roles-tools-navigation.test.ts OK");

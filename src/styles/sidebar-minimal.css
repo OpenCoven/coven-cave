@@ -75,12 +75,6 @@
   min-width: 0;
   flex: 1;
 }
-/* The strip wraps within the drawer width instead of clipping. */
-.sidebar-familiar-switch .familiar-quickswitch__strip {
-  max-width: 100%;
-  flex-wrap: wrap;
-}
-
 .sidebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -1063,8 +1057,7 @@
 }
 
 /* The header familiar switcher survives the rail as the avatar-only trigger:
-   the strip and the trigger label drop, the 28px avatar stays reachable. */
-.shell-nav--rail .sidebar-familiar-switch .familiar-quickswitch__strip,
+   the trigger label drops, the 28px avatar stays reachable. */
 .shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
   display: none;
 }

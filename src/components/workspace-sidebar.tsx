@@ -28,14 +28,19 @@ import {
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
   sessions: SessionRow[];
+  /** Roster for the header switcher — familiar selection's one home. */
+  familiars: ResolvedFamiliar[];
   /** Selected familiar (null = "All familiars"). Scopes the project list, the
    *  per-project session rows, and the project grant when registering. */
   activeFamiliarId?: string | null;
   activeSessionId?: string | null;
-  onBack: () => void;
+  responseNeeded?: Set<string>;
+  /** Change the familiar scope from the header switcher (`null` = All). */
+  onSelectFamiliar: (id: string | null) => void;
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
@@ -183,9 +188,11 @@ function ThreadRow({
 
 export function WorkspaceSidebar({
   sessions,
+  familiars,
   activeFamiliarId = null,
   activeSessionId,
-  onBack,
+  responseNeeded,
+  onSelectFamiliar,
   onOpenSession,
   onNewChat,
   onDeleteSession,
@@ -354,20 +361,21 @@ export function WorkspaceSidebar({
       </button>
 
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
+        {/* Header — one row: title + Home + the organize menu. Familiar scope
+            moved to the SIDENAV header (cave-vtk9, per operator direction),
+            which sits directly beside this panel — a second switcher here
+            (#2747's brief home for it) doubled the same global scope control. */}
         <header className="cnav__header">
+          <span className="cnav__title">Chats</span>
           <button
             type="button"
-            aria-label="Back to previous surface"
-            title="Back to previous surface"
-            onClick={onBack}
-            className="cnav__back focus-ring"
+            aria-label="Go to Home"
+            title="Home"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "home" } }))}
+            className="cnav__back focus-ring ml-auto"
           >
-            <Icon name="ph:arrow-left" width={15} aria-hidden />
+            <Icon name="ph:house-bold" width={15} aria-hidden />
           </button>
-          <div className="min-w-0">
-            <div className="cnav__title">Chats</div>
-            <div className="cnav__eyebrow">{view === "recent" ? "Recent" : "By project"}</div>
-          </div>
           <button
             ref={menuAnchorRef}
             type="button"
@@ -376,7 +384,7 @@ export function WorkspaceSidebar({
             aria-expanded={menuOpen}
             title="Sidebar options"
             onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring ml-auto"
+            className="cnav__back focus-ring"
           >
             <Icon name="ph:dots-three-bold" width={15} aria-hidden />
           </button>
@@ -402,33 +410,35 @@ export function WorkspaceSidebar({
           </Popover>
         </header>
 
+        {/* One-row quick actions: New chat takes the slack; the Scheduled and
+            Plugins shortcuts ride along as icon chips (labels live in
+            title/aria — the badge still shows the scheduled count). */}
         <div className="cnav__quick">
-          <button type="button" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
+          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
             <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
             <span className="cnav__new-label">New chat</span>
-            <span className="cnav__kbd" aria-hidden>⌘N</span>
           </button>
-          <div className="cnav__mini-row">
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
-              className="cnav__mini focus-ring"
-            >
-              <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
-              <span className="cnav__mini-label">Scheduled</span>
-              {typeof scheduledCount === "number" && scheduledCount > 0 ? (
-                <span className="cnav__mini-count">{scheduledCount}</span>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
-              className="cnav__mini focus-ring"
-            >
-              <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
-              <span className="cnav__mini-label">Plugins</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            title="Scheduled"
+            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
+            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
+              <span className="cnav__mini-count">{scheduledCount}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            title="Plugins"
+            aria-label="Plugins"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
+          </button>
         </div>
 
         <div className="cnav__search-wrap">

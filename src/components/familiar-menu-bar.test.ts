@@ -48,25 +48,26 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Familiar scope moved to the sidenav header (cave-vtk9) — this bar must not
-// grow a second switcher; it keeps search + the task verbs.
-assert.doesNotMatch(source, /FamiliarQuickSwitch/, "the menu bar no longer embeds the familiar switcher");
-assert.doesNotMatch(source, /menu-bar__group--chat/, "the chat group is gone with it");
-
-// The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
-// here — the menu bar must not hand-roll its own bubble/presence markup.
+// Familiar scope moved to the SIDENAV header (cave-vtk9) — present on every
+// page there. The bar keeps search + task and schedule chrome and must not
+// hand-roll any familiar markup.
+assert.doesNotMatch(
+  source,
+  /FamiliarQuickSwitch|FamiliarSwitcher|menu-bar__group--chat/,
+  "the menu bar no longer hosts familiar selection (it lives in the sidenav header)",
+);
 assert.doesNotMatch(
   source,
   /menu-bar__familiars|menu-bar__familiar|MAX_QUICK_CHAT|quickChat/,
-  "menu bar delegates bubbles to FamiliarQuickSwitch rather than its own markup",
+  "menu bar must not hand-roll familiar bubble/presence markup",
 );
 assert.doesNotMatch(
   source,
   /computePresence\(|<FamiliarAvatar/,
-  "presence/avatar computation lives in FamiliarQuickSwitch, not the menu bar",
+  "presence/avatar computation does not live in the menu bar",
 );
 // The New chat control now lives at the top of the left sidebar
-// (SidebarMinimal), not the desktop menu bar — the bar keeps only the switcher.
+// (SidebarMinimal), not the desktop menu bar.
 assert.doesNotMatch(
   source,
   /menu-bar__new|menu-bar__compose|NewChatMenu/,
@@ -77,6 +78,7 @@ assert.doesNotMatch(
   /onChatWithFamiliar|onComposeChat/,
   "the menu bar no longer owns the chat-start handlers",
 );
+
 // Right group — tasks. A Tasks button (board) and a Schedules button, each
 // with a live count badge that is hidden at zero.
 assert.match(
@@ -115,8 +117,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge menu-bar__badge--alert">/,
-  "the Schedules badge shows the needs-you count and hides at zero",
+  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
+  "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the

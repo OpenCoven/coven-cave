@@ -224,13 +224,23 @@ export function CapabilitiesViewSurface({
     error: null,
   });
 
+  // A refresh (?refresh=1) fans out to the daemon + a disk skill scan — slow and
+  // variable — so two loads can resolve out of order. Without cancellation the
+  // LAST-to-resolve wins the setState (which may be the OLDER request), leaving a
+  // stale map + stale "Scanned N ago". Abort the prior load on each new one, drop
+  // a superseded/aborted response before any setState, and abort on unmount.
+  const loadCtlRef = useRef<AbortController | null>(null);
   const load = useCallback(async (refresh = false) => {
+    loadCtlRef.current?.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
     setRefreshing(refresh);
     if (!refresh) setLoaded(false);
     try {
       const url = refresh ? "/api/capabilities?refresh=1" : "/api/capabilities";
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as CapabilitiesResponse;
+      if (ctl.signal.aborted) return;
       if (!json.ok) {
         setError(json.error ?? "Couldn't reach the Coven daemon.");
         setItems([]);
@@ -243,18 +253,22 @@ export function CapabilitiesViewSurface({
         setScannedAt(json.scanned_at ?? null);
       }
     } catch (err) {
+      if (ctl.signal.aborted) return; // superseded by a newer load — ignore
       setError(err instanceof Error ? err.message : "fetch failed");
       setItems([]);
       setCovenSkills([]);
       setScannedAt(null);
     } finally {
-      setLoaded(true);
-      setRefreshing(false);
+      if (!ctl.signal.aborted) {
+        setLoaded(true);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void load(false);
+    return () => loadCtlRef.current?.abort();
   }, [load]);
 
   // "/" jumps to the search (GitHub-style) while this surface is shown, unless

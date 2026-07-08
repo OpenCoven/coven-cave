@@ -340,8 +340,8 @@ assert.match(
 const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 assert.match(
   sidebarCss,
-  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-quickswitch__strip,\s*\n\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
-  "the rail keeps the avatar-only trigger (strip + label drop)",
+  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
+  "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(
   source,

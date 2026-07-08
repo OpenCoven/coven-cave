@@ -4954,8 +4954,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       >
         <div className="cave-composer-shell">
           {mentionOpen ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={mentionListboxId} role="listbox" aria-label="Workspace files">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={mentionListboxId} role="listbox" aria-label="Workspace files">
                 {mentionMatches.map((file, i) => {
                   const active = i === mentionActiveIdx;
                   const base = file.split("/").pop() ?? file;
@@ -4972,13 +4972,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeMentionOptionRef : null}
                         onMouseEnter={() => setMentionIdx(i)}
                         onClick={() => selectMention(file)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name="ph:file-code" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="font-mono text-[var(--text-primary)]">{base}</span>
-                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">{file}</span>
+                        <Icon name="ph:file-code" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-mono font-medium text-[var(--text-primary)]">{base}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">{file}</span>
                       </button>
                     </li>
                   );
@@ -4990,8 +4990,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </div>
           ) : null}
           {modelMenuActive && modelOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Models">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Models">
                 {modelOptions.map((m, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5007,11 +5007,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           setInput("");
                           inputRef.current?.focus();
                         }}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <span className="text-[var(--text-primary)]">{m.label}</span>
+                        <span className="font-medium text-[var(--text-primary)]">{m.label}</span>
                         <span className="flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">{m.id}</span>
                       </button>
                     </li>
@@ -5023,9 +5023,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : skillMenuActive && skillOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
               <div className="flex">
-              <ul className="max-h-64 flex-1 min-w-0 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Skills">
+              <ul className="max-h-72 flex-1 min-w-0 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Skills">
                 {skillOptions.map((s, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5036,13 +5036,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
+                        <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                        <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
                         {s.argumentHint ? (
@@ -5062,8 +5062,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : promptMenuActive && promptOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Prompts">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Prompts">
                 {promptOptions.map((p, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5074,13 +5074,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => insertPrompt(p)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name={promptIconName(p.icon)} width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="text-[var(--text-primary)]">{p.name}</span>
-                        <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
+                        <Icon name={promptIconName(p.icon)} width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {p.description || p.id}
                         </span>
                       </button>
@@ -5093,8 +5093,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Slash commands">
+                {slashSuggestions.length > 0 ? (
+                  <li role="presentation" className="px-3 pb-1 pt-1.5 text-[12px] font-medium text-[var(--text-muted)]">
+                    Commands
+                  </li>
+                ) : null}
                 {slashSuggestions.map((cmd, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5113,12 +5118,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
                           inputRef.current?.focus();
                         }}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <span className="font-mono text-[var(--text-primary)]">{cmd.name}</span>
-                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">
+                        <Icon name="ph:terminal-window" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-mono font-medium text-[var(--text-primary)]">{cmd.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {cmd.description}
                         </span>
                         {cmd.argPlaceholder ? (
@@ -5131,7 +5137,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
                 {skillCommandRows.length > 0 ? (
-                  <li role="presentation" className="mt-1 border-t border-[var(--border-hairline)] px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                  <li role="presentation" className="px-3 pb-1 pt-2.5 text-[12px] font-medium text-[var(--text-muted)]">
                     Skills
                   </li>
                 ) : null}
@@ -5146,13 +5152,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(idx)}
                         onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">
+                        <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                        <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
                         {s.argumentHint ? (

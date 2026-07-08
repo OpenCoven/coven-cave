@@ -34,8 +34,20 @@ assert.ok(
 );
 assert.ok(catalogForRuntime("codex").models.length > 1, "codex should seed a multi-model menu, not just the default");
 assert.ok(
-  catalogForRuntime("codex").models.some((m) => m.id === "openai/gpt-5.1-codex"),
-  "codex catalog should seed GPT-5.1 Codex",
+  catalogForRuntime("codex").models.some((m) => m.id === "openai/gpt-5.4"),
+  "codex catalog should seed GPT-5.4",
+);
+assert.ok(
+  catalogForRuntime("codex").models.some((m) => m.id === "openai/gpt-5.4-mini"),
+  "codex catalog should seed GPT-5.4 Mini",
+);
+assert.ok(
+  catalogForRuntime("codex").models.some((m) => m.id === "openai/gpt-5.3-codex-spark"),
+  "codex catalog should seed GPT-5.3 Codex Spark",
+);
+assert.ok(
+  !catalogForRuntime("codex").models.some((m) => m.id.includes("gpt-5.1")),
+  "the retired GPT-5.1 generation must not reappear in the codex menu",
 );
 assert.equal(
   catalogForRuntime("codex").models[0].id,

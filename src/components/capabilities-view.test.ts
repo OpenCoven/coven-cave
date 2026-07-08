@@ -47,4 +47,14 @@ assert.match(source, /filename === AUTOMATION_PREVIEW_FILE_NAME/, "preview gate 
 assert.match(source, /json\.path \?\? previewPath/, "preview state should preserve the server-resolved markdown file path");
 assert.match(source, /Markdown preview/, "capability file previews should be explicitly labelled as markdown previews");
 
+// cave-yg1x: the (slow, daemon-fanning) capabilities load is cancellable — a
+// newer refresh aborts the prior one and a superseded/aborted response is dropped
+// before any setState, so an out-of-order resolution can't leave a stale map, and
+// unmount during a refresh doesn't setState on a dead component.
+assert.match(source, /const loadCtlRef = useRef<AbortController \| null>\(null\)/, "load holds an abort controller");
+assert.match(source, /loadCtlRef\.current\?\.abort\(\);\s*\n\s*const ctl = new AbortController\(\)/, "each load aborts the prior one");
+assert.match(source, /fetch\(url, \{ cache: "no-store", signal: ctl\.signal \}\)/, "the load fetch is wired to the abort signal");
+assert.match(source, /if \(ctl\.signal\.aborted\) return;/, "a superseded load response is dropped before setState");
+assert.match(source, /void load\(false\);\s*\n\s*return \(\) => loadCtlRef\.current\?\.abort\(\)/, "the in-flight load aborts on unmount");
+
 console.log("capabilities-view.test.ts: ok");

@@ -170,4 +170,15 @@ assert.ok((view.match(/\{familiarName && <span className="sr-only">, \{familiarN
 assert.match(view, /task deadline\$\{done \? ", done" : ""\}\$\{familiarName \? `, \$\{familiarName\}` : ""\}/, "deadline chips name their familiar");
 assert.match(view, /\$\{done \? ", done" : ""\}\$\{familiarName \? `, \$\{familiarName\}` : ""\}`\}\n\s*title=\{`\$\{familiarName \? `\$\{ev\.item\.title\} — \$\{familiarName\}` : ev\.item\.title\}/, "grid events name their familiar in label + tooltip");
 
+// ── Narrow split panes (cave-87zv) ───────────────────────────────────────────
+// Week view needs ~7 usable columns; below 560px of container width it falls
+// back to the DAY presentation without clobbering the user's stored week
+// choice. Everything presentation-driven (render switch, heading, navigate
+// step, announcements) reads effectiveView; the toggle keeps viewMode.
+assert.match(view, /const effectiveView: ViewMode = viewMode === "week" && narrowPane \? "day" : viewMode/, "week falls back to day rendering in narrow panes");
+assert.match(view, /setNarrowPane\(w > 0 && w < 560\)/, "the fallback keys on container width, not viewport");
+assert.match(view, /\{effectiveView === "week" && \(/, "the render switch reads the effective view");
+assert.match(view, /if \(effectiveView === "week"\) return addDays\(prev, dir \* 7\)/, "navigate steps by the VISIBLE unit");
+assert.match(view, /aria-pressed=\{viewMode === id\}/, "the view toggle still reflects the user's stored choice");
+
 console.log("calendar-actions.test.ts: ok");

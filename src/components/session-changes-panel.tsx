@@ -580,14 +580,24 @@ export function SessionChangesInner({
 
   // Jump-to-diff: when a transcript edit tool is clicked, expand that file's
   // diff. The changes list is repo-relative while focusPath may be absolute (or
-  // vice versa), so match on exact path or suffix. Keyed on focusNonce + the
-  // file list so it retries once the just-edited file appears in the diff list.
+  // vice versa), so match on exact path or a /-boundary suffix (a bare string
+  // suffix would let `utils/foo.ts` match a sibling `s/foo.ts`). Keyed on
+  // focusNonce + the file list so it retries once the just-edited file appears
+  // in the diff list — but each nonce applies exactly ONCE: filesSig churns on
+  // every 5s poll while an agent is editing (+/- counts change), and without
+  // the consumed guard the stale focus re-expanded its file on every refresh,
+  // snapping the panel away from whichever diff the user had selected.
+  const appliedFocusNonceRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    if (!focusPath) return;
+    if (!focusPath || focusNonce === undefined) return;
+    if (appliedFocusNonceRef.current === focusNonce) return;
+    const suffixMatch = (long: string, short: string) =>
+      long === short || long.endsWith(`/${short}`);
     const match = files.find(
-      (f) => f.path === focusPath || focusPath.endsWith(f.path) || f.path.endsWith(focusPath),
+      (f) => suffixMatch(focusPath, f.path) || suffixMatch(f.path, focusPath),
     );
     if (!match) return;
+    appliedFocusNonceRef.current = focusNonce;
     setExpandedPath(match.path);
     if (!diffs[match.path]) void fetchDiff(match.path);
     // eslint-disable-next-line react-hooks/exhaustive-deps

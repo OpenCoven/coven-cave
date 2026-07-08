@@ -653,6 +653,31 @@ function ShellInner({
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   ) : null;
+  // Codex-style history controls beside the nav toggle: browser Back/Forward
+  // drive the app's own history entries (chat hashes and surface deep links
+  // already push state and handle popstate in workspace.tsx).
+  const historyNav = !isMobile ? (
+    <div className="shell-top-history" role="group" aria-label="History">
+      <button
+        type="button"
+        className="shell-top-toggle focus-ring"
+        aria-label="Go back"
+        title="Back"
+        onClick={() => window.history.back()}
+      >
+        <Icon name="ph:caret-left" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+      </button>
+      <button
+        type="button"
+        className="shell-top-toggle focus-ring"
+        aria-label="Go forward"
+        title="Forward"
+        onClick={() => window.history.forward()}
+      >
+        <Icon name="ph:caret-right" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div
@@ -671,6 +696,7 @@ function ShellInner({
       <div className="shell-top" data-tauri-drag-region="deep">
         <div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" />
         {navToggle}
+        {historyNav}
         <div className="shell-top__bar" data-tauri-drag-region="deep">{renderedTopBar}</div>
       </div>
       <div className="shell-body flex flex-1 min-h-0">

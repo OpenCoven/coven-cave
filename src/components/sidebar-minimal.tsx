@@ -63,8 +63,6 @@ export type SidebarMinimalProps = {
   inboxPrefs?: InboxPrefs;
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
-  /** Multiselect scope for the header switcher's strip highlight. */
-  selectedFamiliarIds?: ReadonlySet<string>;
   onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
@@ -215,7 +213,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     activeSessionId,
     familiars,
     activeFamiliarId,
-    selectedFamiliarIds,
     onFamiliarScopeChange,
     sessions,
     responseNeeded,
@@ -238,14 +235,13 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
       {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
-          header carries the switcher: the user's strip/dropdown preference in
-          the open drawer, the avatar-only trigger in the collapsed rail. The
-          mobile top bar keeps its own (the drawer hides this one). */}
+          header carries the labeled dropdown switcher; the collapsed rail
+          keeps the avatar-only trigger. The mobile top bar keeps its own
+          (the drawer hides this one). */}
       <div className="sidebar-familiar-switch">
         <FamiliarQuickSwitch
           familiars={familiars}
           activeFamiliarId={activeFamiliarId ?? null}
-          selectedFamiliarIds={selectedFamiliarIds}
           sessions={sessions}
           responseNeeded={responseNeeded}
           onSelectFamiliar={onFamiliarScopeChange}

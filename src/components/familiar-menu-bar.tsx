@@ -4,6 +4,8 @@ import { Icon } from "@/lib/icon";
 import { useKeySymbols } from "@/lib/platform-keys";
 
 type Props = {
+  /** Gates the Enhance action (needs a selected familiar). Familiar SELECTION
+   *  itself lives in the sidenav header switcher (cave-vtk9), not this bar. */
   activeFamiliarId: string | null;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
   taskCount: number;
@@ -35,10 +37,11 @@ function fmtBadge(n: number): string {
 }
 
 /**
- * A slim, always-visible desktop top menu bar with the familiar selector,
- * global search, and task/schedule counters. It is the desktop counterpart to the
- * mobile `.top-bar` (which stays hidden ≥1024px); this bar is hidden below
- * 1024px so the two never both render.
+ * A slim, always-visible desktop top menu bar with global search and
+ * task/schedule counters. It is the desktop counterpart to the mobile
+ * `.top-bar` (which stays hidden ≥1024px); this bar is hidden below 1024px so
+ * the two never both render. Familiar selection lives in the chat sidebar's
+ * header switcher, not here.
  */
 export function FamiliarMenuBar({
   activeFamiliarId,
@@ -147,7 +150,7 @@ export function FamiliarMenuBar({
           <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
           <span className="menu-bar__task-label">Schedules</span>
           {scheduleNeedsCount > 0 ? (
-            <span className="menu-bar__badge menu-bar__badge--alert">{fmtBadge(scheduleNeedsCount)}</span>
+            <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}
         </button>
       </div>

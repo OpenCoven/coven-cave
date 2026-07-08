@@ -242,9 +242,9 @@ export function ChatEmptyState({
   const role = familiar.role?.trim();
   const railVisible =
     boardEnabled && (railCards.length > 0 || (loading && slow) || Boolean(boardError));
-  // Anything worth disclosing behind the "context" toggle?
+  // Anything worth disclosing behind the "context" toggle? (The project picker
+  // moved to the top section — it is not part of the disclosure.)
   const hasContext =
-    Boolean(onProjectChange) ||
     railVisible ||
     recents.length > 0 ||
     Boolean(project && onArmTask && linkedTasks.length === 0);
@@ -267,6 +267,31 @@ export function ChatEmptyState({
             </p>
           </div>
         </div>
+
+        {/* Project selection leads the page (top section) — it decides where
+            the next send runs, so it isn't buried in the context disclosure. */}
+        {onProjectChange && (
+          <div className="cave-chat-empty-project">
+            <span className="cave-chat-empty-project-head">
+              <Icon name="ph:folder-open" width={14} aria-hidden />
+              <span className="cave-chat-empty-project-label">Project</span>
+              <ProjectPicker
+                projects={projects}
+                value={projectId ?? null}
+                onChange={onProjectChange}
+                allowNoProject
+                familiarId={familiar.id}
+                createProject={createProject}
+                ariaLabel="Project for this chat"
+              />
+            </span>
+            {project ? (
+              <span className="cave-chat-empty-project-root" title={project.root}>
+                {project.root}
+              </span>
+            ) : null}
+          </div>
+        )}
 
         {linkedTasks.length > 0 ? (
           <section className="cave-chat-empty-work" aria-label="Linked task">
@@ -322,34 +347,11 @@ export function ChatEmptyState({
               onClick={() => setShowContext((v) => !v)}
             >
               <Icon name={showContext ? "ph:caret-up" : "ph:caret-down"} width={12} aria-hidden />
-              <span>{showContext ? "Hide context" : "Project & open work"}</span>
+              <span>{showContext ? "Hide context" : "Open work & recents"}</span>
             </button>
 
             {showContext ? (
               <div className="cave-chat-empty-context-body">
-                {onProjectChange && (
-                  <div className="cave-chat-empty-project">
-                    <span className="cave-chat-empty-project-head">
-                      <Icon name="ph:folder-open" width={14} aria-hidden />
-                      <span className="cave-chat-empty-project-label">Project</span>
-                      <ProjectPicker
-                        projects={projects}
-                        value={projectId ?? null}
-                        onChange={onProjectChange}
-                        allowNoProject
-                        familiarId={familiar.id}
-                        createProject={createProject}
-                        ariaLabel="Project for this chat"
-                      />
-                    </span>
-                    {project ? (
-                      <span className="cave-chat-empty-project-root" title={project.root}>
-                        {project.root}
-                      </span>
-                    ) : null}
-                  </div>
-                )}
-
                 {railVisible ? (
                   <section className="cave-chat-empty-work" aria-label="Open work">
                     <span className="cave-chat-empty-section-label">
