@@ -61,6 +61,16 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
 
   // The opaque-origin sandbox can only talk back via postMessage; match the
   // message to THIS frame and surface runtime/compile failures as an overlay.
+  //
+  // Validation invariant (cave-mnz1): the e.source identity check IS the
+  // security boundary here, and an e.origin check must NOT be added. The
+  // iframe sandbox omits the same-origin flag, so its origin is OPAQUE —
+  // its messages arrive with e.origin === "null", and comparing against
+  // window.location.origin would silently drop every legitimate message.
+  // The source check is also the stronger guarantee: only this exact frame's
+  // contentWindow passes, so a hostile embedder of the app can never spoof
+  // sandbox-error events. (Audits keep flagging the "missing" origin check —
+  // it's deliberate.)
   useEffect(() => {
     setRuntimeError(null);
     function onMessage(e: MessageEvent) {
