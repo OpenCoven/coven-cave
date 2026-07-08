@@ -469,7 +469,10 @@ export function ProjectDetail({
 
       {/* Status line: state in words + stats chips + branch + recency. */}
       <div className="projects-detail-head__meta">
-        <span className="inline-flex items-center gap-1.5">
+        <span
+          className="inline-flex items-center gap-1.5"
+          title="Project state, derived from its latest sessions"
+        >
           {projectStatus ? (
             <span className={`projects-status-dot ${chatDotClass(projectStatus)}`} aria-hidden />
           ) : null}
@@ -478,6 +481,7 @@ export function ProjectDetail({
         <span
           className="projects-session-count"
           aria-label={`${chats.length} ${chats.length === 1 ? "session" : "sessions"}`}
+          title={`${chats.length} ${chats.length === 1 ? "session" : "sessions"} in this project`}
         >
           <Icon name="ph:chats-circle" width={12} aria-hidden />
           {chats.length}

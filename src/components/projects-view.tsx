@@ -83,6 +83,24 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   // never surprisingly hidden). It only narrows the list; it never reorders it,
   // so the alphabetical order stays stable.
   const [statusFilter, setStatusFilter] = useState<"all" | "active">("all");
+  // List order: alphabetical (stable, scannable) or most-recently-active first
+  // (find what you were just working on). Persisted per machine.
+  const [sortMode, setSortMode] = useState<"az" | "recent">(() => {
+    if (typeof window === "undefined") return "az";
+    try {
+      return window.localStorage.getItem("cave:projects:sort") === "recent" ? "recent" : "az";
+    } catch {
+      return "az";
+    }
+  });
+  const changeSortMode = (mode: "az" | "recent") => {
+    setSortMode(mode);
+    try {
+      window.localStorage.setItem("cave:projects:sort", mode);
+    } catch {
+      /* private mode — sort stays session-only */
+    }
+  };
   const searchRef = useRef<HTMLInputElement>(null);
   const rootInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -225,20 +243,29 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     return byRoot;
   }, [sessions, projectOverrides, order, deletePending]);
 
-  // Keep projects stable and scannable: alphabetical by project name/root.
-  // Session rows inside the detail pane keep their own manual/recency ordering.
-  const sortedProjects = useMemo(() => {
-    return sortProjectsAlphabetically(projects);
-  }, [projects]);
-
-  // Resolve the selection each render: the stored id when it still exists,
-  // otherwise the most recently active project (then the first). Deleting the
-  // selected project or a familiar-scope change re-runs this automatically.
   const lastActiveByRootKey = useMemo(() => {
     const map = new Map<string, number>();
     for (const [root, list] of chatsByRoot) map.set(root, lastActiveMs(list));
     return map;
   }, [chatsByRoot]);
+
+  // List order per the sort toggle: alphabetical (stable, scannable) or by
+  // last session activity, newest first (alphabetical tiebreak so idle
+  // projects don't shuffle). Session rows inside the detail pane keep their
+  // own manual/recency ordering either way.
+  const sortedProjects = useMemo(() => {
+    const az = sortProjectsAlphabetically(projects);
+    if (sortMode === "az") return az;
+    return [...az].sort(
+      (a, b) =>
+        (lastActiveByRootKey.get(normalizeProjectRoot(b.root)) ?? 0) -
+        (lastActiveByRootKey.get(normalizeProjectRoot(a.root)) ?? 0),
+    );
+  }, [projects, sortMode, lastActiveByRootKey]);
+
+  // Resolve the selection each render: the stored id when it still exists,
+  // otherwise the most recently active project (then the first). Deleting the
+  // selected project or a familiar-scope change re-runs this automatically.
   const selectedProjectId = useMemo(
     () =>
       resolveSelectedProjectId(
@@ -493,6 +520,34 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                     }`}
                   >
                     {opt.value === "active" ? `Active ${activeCount}` : opt.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            {projects.length > 1 ? (
+              <div
+                role="group"
+                aria-label="Sort projects"
+                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
+              >
+                {([
+                  { value: "az", label: "A–Z", help: "Alphabetical" },
+                  { value: "recent", label: "Recent", help: "Most recently active first" },
+                ] as const).map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => changeSortMode(opt.value)}
+                    aria-pressed={sortMode === opt.value}
+                    title={opt.help}
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                      sortMode === opt.value
+                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {opt.label}
                   </Button>
                 ))}
               </div>
