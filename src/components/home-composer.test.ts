@@ -412,8 +412,20 @@ assert.match(
 // ── Destination pills are an accessible single-select radiogroup ─────────────
 assert.match(
   source,
-  /className="hc-dest-pills"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
+  /className="hc-dest-pills hc-dest-pills--above"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
   "Destination pills form a labelled radiogroup with keyboard navigation",
+);
+// The Chat/Task tabs live ABOVE the input card (mode choice, not an input
+// control) — they render before the card and never inside the footer rows.
+assert.match(
+  source,
+  /hc-dest-pills hc-dest-pills--above[\s\S]*?className=\{`home-composer-card cave-composer-panel/,
+  "Destination tabs render above the composer card, outside the input area",
+);
+assert.doesNotMatch(
+  source,
+  /cave-composer-utility-row[\s\S]*?hc-dest-pills/,
+  "The composer footer no longer hosts the destination pills",
 );
 assert.match(
   source,
@@ -428,8 +440,8 @@ assert.match(
 
 // ── Single-row toolbar replaces mode strip + run rail ───────────────────────
 // The top mode strip and the separate run rail were removed. The footer is the
-// chat composer's: attach/voice/Options + Chat-Task pills + agent chip on the
-// left, enhance + send on the right.
+// chat composer's: attach/voice/Options + agent chip on the left (Chat/Task
+// moved above the card), enhance + send on the right.
 assert.doesNotMatch(
   source,
   /className="hc-mode-strip"/,
@@ -442,8 +454,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?hc-dest-pills[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?cave-composer-submit-row[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"/,
-  "The footer has attach/voice/Options + Chat/Task destination + access chip left; enhance + send right",
+  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?cave-composer-submit-row[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"/,
+  "The footer has attach/voice/Options + access chip left; enhance + send right",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────

@@ -36,9 +36,10 @@ assert.doesNotMatch(view, /aria-label="Close news carousel"/, "the inline X clos
 assert.doesNotMatch(view, /home-digest__media-close/, "no close-button markup remains");
 assert.match(
   view,
-  /className="home-digest__media-chrome"[\s\S]*className="home-digest__media-label"[\s\S]*News[\s\S]*home-digest__track home-digest__track--media/,
-  "news row chrome still labels the media lane outside the moving track",
+  /className="home-digest__media-chrome"[\s\S]*className="home-digest__media-label"[\s\S]*ph:newspaper[\s\S]*home-digest__track home-digest__track--media/,
+  "news row chrome still marks the media lane (icon-only) outside the moving track",
 );
+assert.doesNotMatch(view, />News</, "the visible 'News' word is removed from the media lane chrome");
 
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
 assert.match(view, /home-digest__thumb/, "media card renders an image thumbnail when available");

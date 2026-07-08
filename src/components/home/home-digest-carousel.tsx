@@ -89,9 +89,10 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
       {mediaCards.length > 0 && newsEnabled ? (
         <div className="home-digest__media">
           <div className="home-digest__media-chrome">
-            <span className="home-digest__media-label">
+            {/* Icon-only lane marker — the track below carries the accessible
+                "Media headlines" name, so the chrome stays wordless. */}
+            <span className="home-digest__media-label" aria-hidden="true">
               <Icon name="ph:newspaper" width={12} aria-hidden />
-              <span>News</span>
             </span>
           </div>
           <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">

@@ -420,10 +420,13 @@
   color: var(--text-secondary);
 }
 
+/* The picker's caret is INLINE (unlike the familiar chip's absolute
+ * .hc-select-caret), so no phantom right padding — the chip hugs its
+ * avatar + name + caret and only ever truncates on long names. */
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
   min-height: 30px;
   max-width: 178px;
-  padding: 3px 22px 3px 6px;
+  padding: 3px 8px 3px 6px;
   border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
   border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
@@ -441,7 +444,7 @@
   flex-shrink: 0;
 }
 
-/* Destination pills — a segmented toggle in the composer footer. */
+/* Destination pills — a segmented toggle for Chat vs Task. */
 .hc-dest-pills {
   display: inline-flex;
   gap: 2px;
@@ -451,6 +454,13 @@
   border-radius: var(--radius-control);
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
+}
+
+/* Above-card placement: the mode tabs lead the input, outside its chrome. */
+.hc-dest-pills--above {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 8px;
 }
 
 .hc-dest-pill {
