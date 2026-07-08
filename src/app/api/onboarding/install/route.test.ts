@@ -115,7 +115,7 @@ assert.match(
 
 assert.match(
   source,
-  /import \{ covenBin, covenSpawnEnv, refreshCovenSpawnEnv \} from "@\/lib\/coven-bin"/,
+  /import \{\s*covenBin,\s*covenSpawnEnv,\s*pickWindowsLauncher,\s*refreshCovenSpawnEnv,?\s*\} from "@\/lib\/coven-bin"/,
   "install route can refresh Cave's cached PATH before declaring npm missing",
 );
 
