@@ -10,22 +10,18 @@ assert.doesNotMatch(
   "Terminal code chrome should not inject traffic lights before the language label",
 );
 
-assert.match(
+// Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
+// were dropped from the code header — no ornamental ::after chrome.
+assert.doesNotMatch(
   css,
-  /\.cave-code-header::after[\s\S]*box-shadow:/,
-  "Terminal code chrome should render traffic lights after the language label",
+  /\.cave-code-header::after/,
+  "The code header should not inject decorative traffic-light dots (Phase-4 minimalism)",
 );
 
 assert.match(
   css,
   /\.cave-code-lang[\s\S]*order:\s*0/,
-  "The language label should be first in terminal code headers",
-);
-
-assert.match(
-  css,
-  /\.cave-code-header::after[\s\S]*order:\s*1/,
-  "Traffic lights should sit immediately to the right of the language label",
+  "The language label should be first in code headers",
 );
 
 assert.match(

@@ -673,24 +673,9 @@
   backdrop-filter: blur(4px);
 }
 
-/* decorative traffic-light dots; BASH/lang stays first, then the dots. */
-.cave-code-header::after {
-  content: "";
-  display: block;
-  order: 1;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: color-mix(in oklch, var(--code-chrome-accent) 40%, oklch(0.4 0 0));
-  box-shadow:
-    16px 0 0 color-mix(in oklch, oklch(0.75 0.18 60) 40%, oklch(0.4 0 0)),
-    32px 0 0 color-mix(in oklch, oklch(0.65 0.18 170) 40%, oklch(0.4 0 0));
-  margin-left: 2px;
-  margin-right: 34px;
-  opacity: 0.65;
-}
-
+/* Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
+   were dropped from the code header — the language label + filename + Copy
+   button carry it, no ornamental chrome. */
 .cave-code-lang {
   order: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
