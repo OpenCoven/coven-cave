@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { covenHome } from "@/lib/coven-paths";
 import {
+  dedupeByRealPath,
   scanAgentSharedSkills,
   scanClaudeUserSkills,
   scanCodexUserSkills,
@@ -551,11 +552,15 @@ function isDirectoryMatch(entry: SkillDirectoryEntry, key: string, source?: stri
 
 export async function listSkillDirectoryEntriesWithLocal(query?: string): Promise<SkillDirectoryListResponse> {
   const q = normalizeSearchQuery(query);
-  const locals: LocalSkillEntry[] = [];
-  await scanSkillsDir(path.join(covenHome(), "skills"), "global", locals);
-  await scanClaudeUserSkills().then((items) => locals.push(...items));
-  await scanCodexUserSkills().then((items) => locals.push(...items));
-  await scanAgentSharedSkills().then((items) => locals.push(...items));
+  const rawLocals: LocalSkillEntry[] = [];
+  await scanSkillsDir(path.join(covenHome(), "skills"), "global", rawLocals);
+  await scanClaudeUserSkills().then((items) => rawLocals.push(...items));
+  await scanCodexUserSkills().then((items) => rawLocals.push(...items));
+  await scanAgentSharedSkills().then((items) => rawLocals.push(...items));
+  // One physical skill can sit under several roots (~/.claude/skills symlinks
+  // into ~/.agents/skills) — collapse those before the directory merge so the
+  // browser doesn't list the same install twice.
+  const locals = await dedupeByRealPath(rawLocals);
 
   const directory = await listSkillDirectoryEntries(q);
   const merged = mergeDirectoryWithLocal(directory.entries, locals);

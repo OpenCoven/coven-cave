@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 
@@ -123,6 +123,30 @@ export async function scanSkillsDir(dir: string, familiar: LocalSkillScope, out:
       });
     } catch { continue; }
   }
+}
+
+/**
+ * Drop entries that are the same skill reached through different scan roots.
+ * The Skills CLI symlinks ~/.claude/skills/<id> to its canonical
+ * ~/.agents/skills copy, so an aggregate scan sees one physical skill twice
+ * and id-keyed consumers render duplicate rows (duplicate React keys).
+ * First-seen wins — the aggregation's scan order sets scope precedence.
+ */
+export async function dedupeByRealPath(entries: LocalSkillEntry[]): Promise<LocalSkillEntry[]> {
+  const seen = new Set<string>();
+  const out: LocalSkillEntry[] = [];
+  for (const entry of entries) {
+    let key = entry.path;
+    try {
+      key = await realpath(entry.path);
+    } catch {
+      // Unresolvable (dangling symlink, race) — fall back to the declared path.
+    }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(entry);
+  }
+  return out;
 }
 
 /** The user's own Claude Code skills (~/.claude/skills). */

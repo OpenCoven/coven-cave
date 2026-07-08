@@ -1231,7 +1231,7 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
             ) : (
               <ul className="space-y-1 pt-1">
                 {familiarSkills.map((s) => (
-                  <li key={s.id} className="rounded bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)] px-2 py-1">
+                  <li key={s.path} className="rounded bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)] px-2 py-1">
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
                       <KindBadge kind={s.kind ?? "agent"} />
@@ -1276,7 +1276,7 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
             ) : (
               <ul className="space-y-1 pt-1">
                 {globalSkills.map((s) => (
-                  <li key={s.id} className="rounded bg-[var(--bg-raised)]/60 px-2 py-1">
+                  <li key={s.path} className="rounded bg-[var(--bg-raised)]/60 px-2 py-1">
                     <div className="flex items-center gap-1.5">
                       <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
                       <KindBadge kind={s.kind ?? "agent"} />

@@ -21,7 +21,6 @@ import type { CaveProject } from "@/lib/cave-projects-types";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import { Icon } from "@/lib/icon";
 import { ProjectPicker } from "@/components/project-picker";
-import { FamiliarIcon } from "@/components/familiar-icon";
 import { NO_PROJECT_ID, chatProjectById, filterVisibleChatSessions } from "@/lib/chat-projects";
 import { cardMatchesProject, deriveOpenTaskCards, deriveContinueThreads } from "@/lib/chat-open-tasks";
 import { deriveStarterSuggestions } from "@/lib/chat-starter-suggestions";
@@ -259,13 +258,7 @@ export function ChatEmptyState({
         </p>
 
         <div className="cave-chat-empty-familiar">
-          <div className="cave-chat-empty-mark">
-            <FamiliarIcon familiar={familiar} size="lg" />
-          </div>
           <div className="cave-chat-empty-familiar-copy">
-            <h2 className="cave-chat-empty-title">
-              {familiar.display_name}
-            </h2>
             {role ? <p className="cave-chat-empty-role">{role}</p> : null}
             <p className="cave-chat-empty-meta">
               <span>{familiar.harness}</span>

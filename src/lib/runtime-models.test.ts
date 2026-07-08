@@ -32,6 +32,16 @@ assert.ok(
   !catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
   "claude catalog should not offer Claude Fable 5",
 );
+assert.ok(catalogForRuntime("codex").models.length > 1, "codex should seed a multi-model menu, not just the default");
+assert.ok(
+  catalogForRuntime("codex").models.some((m) => m.id === "openai/gpt-5.1-codex"),
+  "codex catalog should seed GPT-5.1 Codex",
+);
+assert.equal(
+  catalogForRuntime("codex").models[0].id,
+  "openai/gpt-5.5",
+  "GPT-5.5 must stay first so it remains the codex default",
+);
 
 // Namespaced model id convention (`provider/model`) holds across the seed.
 for (const catalog of Object.values(RUNTIME_MODEL_CATALOG)) {

@@ -1120,45 +1120,25 @@
   }
 }
 
+/* Identity row without the identity: the avatar and name are retired so the
+   landing stays anonymous-calm — only the quiet role + runtime meta remain,
+   centered under the greeting. */
 .cave-chat-empty-familiar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-}
-
-.cave-chat-empty-mark {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  color: var(--accent-presence);
-}
-/* The mark now holds the real familiar avatar/glyph (which carries its own
-   color), so the frame stays neutral — no competing accent box. */
-.cave-chat-empty-mark img,
-.cave-chat-empty-mark > * {
-  border-radius: 9px;
 }
 
 .cave-chat-empty-familiar-copy {
   min-width: 0;
-}
-
-.cave-chat-empty-title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1.15;
-  letter-spacing: 0;
+  text-align: center;
 }
 
 .cave-chat-empty-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   margin: 5px 0 0;
   color: var(--text-muted);
@@ -1249,6 +1229,12 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+/* An odd chip count strands the last chip beside an empty cell; stretching it
+ * across both columns keeps every row of the grid full. */
+.cave-chat-empty-prompts > .cave-chat-empty-prompt:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .cave-chat-empty-prompt {
@@ -1352,9 +1338,9 @@
   text-align: center;
 }
 
-/* Familiar role — quiet secondary line between the name and the meta row. */
+/* Familiar role — quiet lead line of the identity block, above the meta row. */
 .cave-chat-empty-role {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.3;
@@ -1710,19 +1696,6 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 
   .cave-chat-empty-shell {
     gap: 12px;
-  }
-
-  .cave-chat-empty-familiar {
-    justify-content: flex-start;
-  }
-
-  .cave-chat-empty-mark {
-    width: 38px;
-    height: 38px;
-  }
-
-  .cave-chat-empty-title {
-    font-size: 16px;
   }
 
   .cave-chat-empty-meta {

@@ -30,6 +30,10 @@ export const DEFAULT_CONTEXT_WINDOW_TOKENS = 200_000;
 export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // OpenAI (codex runtime) — estimate; adjust when authoritative.
   "openai/gpt-5.5": 400_000,
+  "openai/gpt-5.1-codex-max": 400_000,
+  "openai/gpt-5.1-codex": 400_000,
+  "openai/gpt-5.1-codex-mini": 400_000,
+  "openai/gpt-5.1": 400_000,
   // Anthropic (claude runtime) — from the Claude models catalog.
   "anthropic/claude-fable-5": 1_000_000,
   "anthropic/claude-opus-4-8": 1_000_000,

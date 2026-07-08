@@ -32,7 +32,13 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   codex: {
     runtime: "codex",
     provider: "openai",
-    models: [{ id: "openai/gpt-5.5", label: "GPT-5.5" }],
+    models: [
+      { id: "openai/gpt-5.5", label: "GPT-5.5" },
+      { id: "openai/gpt-5.1-codex-max", label: "GPT-5.1 Codex Max" },
+      { id: "openai/gpt-5.1-codex", label: "GPT-5.1 Codex" },
+      { id: "openai/gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini" },
+      { id: "openai/gpt-5.1", label: "GPT-5.1" },
+    ],
     allowCustom: true,
   },
   claude: {
