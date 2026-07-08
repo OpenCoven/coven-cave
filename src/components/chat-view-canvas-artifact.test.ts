@@ -11,5 +11,10 @@ assert.match(src, /extractArtifactBlocks/, "uses extractArtifactBlocks to find b
 assert.match(src, /function splitTextForArtifacts/, "has the text→segments splitter");
 assert.match(src, /<ChatArtifactViewer\b/, "renders the viewer as a block segment");
 assert.match(src, /splitTextForArtifacts\(visible/, "splits the plain text path (no tools)");
+assert.match(
+  src,
+  /const preceding = text\.slice\(cursor, b\.index\)\.trim\(\)/,
+  "each artifact titles from the prose since the previous block, not the whole message",
+);
 
 console.log("chat-view canvas artifact wiring: ok");

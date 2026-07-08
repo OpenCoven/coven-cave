@@ -5604,7 +5604,10 @@ function splitTextForArtifacts(
       const pre = text.slice(cursor, b.index);
       if (pre.trim()) out.push({ kind: "text", text: pre });
     }
-    const preceding = text.slice(0, b.index).trim();
+    // Title from the prose since the PREVIOUS block (cursor), not the whole
+    // message — otherwise every artifact in a multi-artifact turn inherits
+    // the message's first line as its title.
+    const preceding = text.slice(cursor, b.index).trim();
     const title = preceding ? titleFromPrompt(preceding) : "Canvas artifact";
     out.push({
       kind: "block",
