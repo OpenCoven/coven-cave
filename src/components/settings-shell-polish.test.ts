@@ -309,4 +309,14 @@ assert.match(source, /aria-label="Executor addresses, one per line"/, "the execu
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
 assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
 
+// (cave-rj0z) var(--danger) is NOT a defined token — only --color-danger
+// exists. Uses of the phantom variable silently resolved to nothing, so
+// error text/borders rendered unstyled. Keep it out of the settings sources.
+{
+  const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
+  for (const [name, src] of [["settings-shell", source], ["settings-profile", profile]]) {
+    assert.doesNotMatch(src, /var\(--danger\)/, `${name} must use var(--color-danger), not the undefined var(--danger)`);
+  }
+}
+
 console.log("settings-shell-polish.test.ts OK");

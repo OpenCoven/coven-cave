@@ -1829,7 +1829,7 @@ function MobileModeToggle() {
           {busy ? "Updating..." : mobileModeEnabled ? "On" : "Off"}
         </button>
         {host ? <code className="max-w-[220px] truncate text-[11px] text-[var(--text-muted)]">{host}</code> : null}
-        {error ? <span className="max-w-[220px] text-right text-[11px] text-[var(--danger)]">{error}</span> : null}
+        {error ? <span className="max-w-[220px] text-right text-[11px] text-[var(--color-danger)]">{error}</span> : null}
       </div>
     </SettingsRow>
   );
