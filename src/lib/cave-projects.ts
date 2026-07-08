@@ -24,7 +24,16 @@ function projectsFilePath(): string {
 }
 
 function normalizeRoot(root: string): string {
-  const normalized = root.trim().replace(/\\/g, "/");
+  let normalized = root.trim().replace(/\\/g, "/");
+  // Expand a leading ~ to the home directory. A hand-typed "~/code/app" would
+  // otherwise be stored literally and never match the absolute project_root the
+  // daemon reports, so the project's Sessions/Git/Tasks stay empty and it looks
+  // permanently dead. Server-side only (createProject/patchProject) so the CLI
+  // and API agree. `~user` (other users' homes) is left untouched — we don't
+  // guess it. Runs before the trailing-slash trim below.
+  if (normalized === "~" || normalized.startsWith("~/")) {
+    normalized = homedir().replace(/\\/g, "/") + normalized.slice(1);
+  }
   let endIndex = normalized.length;
   while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
   return normalized.slice(0, endIndex) || "/";

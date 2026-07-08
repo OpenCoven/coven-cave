@@ -66,6 +66,19 @@ try {
   });
   assert.equal(slashHeavy.root, "C:/tmp/slash-heavy");
 
+  // cave-pgvc: a leading ~ expands to the home dir server-side, so a hand-typed
+  // "~/code/app" is stored absolute and can match the daemon's project_root.
+  const home = os.homedir().replace(/\\/g, "/");
+  const tildeProject = await createProject({ name: "Tilde", root: "~/code/app/" });
+  assert.equal(tildeProject.root, `${home}/code/app`, "leading ~/ expands to $HOME and trims the trailing slash");
+  const bareTilde = await createProject({ name: "Bare tilde", root: "~" });
+  assert.equal(bareTilde.root, home, "a bare ~ expands to $HOME exactly");
+  const notTilde = await createProject({ name: "Mid tilde", root: "/opt/~keep" });
+  assert.equal(notTilde.root, "/opt/~keep", "a ~ that isn't a leading home marker is left untouched");
+  await deleteProject(tildeProject.id);
+  await deleteProject(bareTilde.id);
+  await deleteProject(notTilde.id);
+
   const allSlashProject = await createProject({ name: "All slash", root: "/all-slash" });
   const rootOnly = await patchProject(allSlashProject.id, { root: "////" });
   assert.equal(rootOnly?.root, "/");
