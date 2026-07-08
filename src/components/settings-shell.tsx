@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -414,10 +414,14 @@ function HomeNewsToggle() {
 function WorkspacePathField() {
   const [path, setPath] = useState("");
   useEffect(() => {
-    fetch("/api/daemon/status", { cache: "no-store" })
+    const ctl = new AbortController();
+    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
-      .then((j: { workspacePath?: string }) => { if (j.workspacePath) setPath(j.workspacePath); })
+      .then((j: { workspacePath?: string }) => {
+        if (!ctl.signal.aborted && j.workspacePath) setPath(j.workspacePath);
+      })
       .catch(() => {});
+    return () => ctl.abort();
   }, []);
   return (
     <input
@@ -457,20 +461,42 @@ function DaemonSection() {
   const [savingTravel, setSavingTravel] = useState(false);
   const [travelError, setTravelError] = useState<string | null>(null);
 
+  // Abort the in-flight status read on each refresh: Start/Restart/Manual-
+  // Offline each trigger one, and without cancellation a slow earlier
+  // response can land after a newer one and flash a stale pre-action status
+  // (same guard FamiliarsSection uses for its loads).
+  const refreshCtlRef = useRef<AbortController | null>(null);
   const refresh = () => {
+    refreshCtlRef.current?.abort();
+    const ctl = new AbortController();
+    refreshCtlRef.current = ctl;
     setLoading(true);
-    fetch("/api/daemon/status", { cache: "no-store" })
+    fetch("/api/daemon/status", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
-      .then((j: DaemonStatus) => { setStatus(j); setLoading(false); })
-      .catch(() => { setStatus({ running: false }); setLoading(false); });
+      .then((j: DaemonStatus) => {
+        if (ctl.signal.aborted) return;
+        setStatus(j); setLoading(false);
+      })
+      .catch(() => {
+        if (ctl.signal.aborted) return;
+        setStatus({ running: false }); setLoading(false);
+      });
   };
 
-  useEffect(refresh, []);
+  useEffect(() => {
+    refresh();
+    return () => refreshCtlRef.current?.abort();
+    // refresh is stable-by-construction (only touches refs/setters); running
+    // this once on mount is the intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    fetch("/api/config", { cache: "no-store" })
+    const ctl = new AbortController();
+    fetch("/api/config", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
       .then((j: { ok?: boolean; config?: { multiHost?: { mode?: MultiHostMode; hubUrl?: string; executorUrls?: string[] } } }) => {
+        if (ctl.signal.aborted) return;
         const multiHost = j.config?.multiHost;
         if (!j.ok || !multiHost) return;
         setMode(multiHost.mode === "hub" ? "hub" : "local");
@@ -478,6 +504,7 @@ function DaemonSection() {
         setExecutorText((multiHost.executorUrls ?? []).join("\n"));
       })
       .catch(() => {});
+    return () => ctl.abort();
   }, []);
 
   const saveConnection = async (nextMode = mode) => {
@@ -1583,7 +1610,7 @@ function AppearanceSection() {
               onSave={() => {
                 setActiveTheme("custom");
                 try {
-                  const raw = localStorage.getItem("coven-custom-theme");
+                  const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
                   if (raw) setCustomData(JSON.parse(raw) as CustomThemeData);
                 } catch { /* ignore */ }
               }}
