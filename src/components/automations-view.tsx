@@ -677,19 +677,31 @@ function CodexDetailPanel({
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [runLog, setRunLog] = useState<string>("");
   const [runLogLoading, setRunLogLoading] = useState(false);
+  // Rapid run switches: only the latest log request may write state, or a
+  // slow earlier response renders the WRONG log under the newer run's header
+  // (same stale-response guard as runsReqRef for the runs list).
+  const runLogReqRef = useRef(0);
   const toggleRunLog = async (runId: string) => {
-    if (openRunId === runId) { setOpenRunId(null); return; }
+    if (openRunId === runId) {
+      // Closing also invalidates any in-flight fetch for this run's log.
+      runLogReqRef.current += 1;
+      setOpenRunId(null);
+      return;
+    }
+    const req = ++runLogReqRef.current;
     setOpenRunId(runId);
     setRunLog("");
     setRunLogLoading(true);
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/runs/${encodeURIComponent(runId)}/log`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
+      if (req !== runLogReqRef.current) return;
       setRunLog(json?.ok ? (json.truncated ? "…(truncated)…\n" : "") + (json.log ?? "") : (json?.error ?? "no log"));
     } catch {
+      if (req !== runLogReqRef.current) return;
       setRunLog("failed to load log");
     } finally {
-      setRunLogLoading(false);
+      if (req === runLogReqRef.current) setRunLogLoading(false);
     }
   };
   const [name, setName] = useState(auto.name);

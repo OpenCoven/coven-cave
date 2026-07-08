@@ -179,3 +179,10 @@ assert.match(source, /This fires the reminder immediately\./, "reminder run-now 
 assert.doesNotMatch(source, /const toggleFlowActive = useCallback|saveFlow\(setFlowActive|setFlows\(/, "Flow pause/poll mutations are absent");
 assert.match(source, /runAutomation: runCodexNow/, "cron run-now remains wired");
 assert.match(source, /togglePauseAutomation: toggleCodex/, "cron pause/resume remains wired");
+
+// ── Run-log stale-response guard (cave-s1i6) ─────────────────────────────────
+// Rapid run switches must not render run A's log under run B's header: only
+// the latest request may write state, and closing invalidates in-flight reads.
+assert.match(source, /const req = \+\+runLogReqRef\.current;/, "each log fetch takes a request token");
+assert.match(source, /if \(req !== runLogReqRef\.current\) return;/, "stale log responses are dropped");
+assert.match(source, /runLogReqRef\.current \+= 1;\s*\n\s*setOpenRunId\(null\);/, "closing the log invalidates the in-flight fetch");
