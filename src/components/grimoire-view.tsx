@@ -800,36 +800,42 @@ export function GrimoireView() {
     );
 
   return (
-    <div className="grimoire-view flex h-full min-h-0 gap-3 p-3 @container/grimoire">
+    <div className="grimoire-view flex h-full min-h-0 flex-col @container/grimoire">
+      {/* Compact header — the shared .surface-compact band (GitHub / Schedules /
+          Marketplace / Tasks): small title on the left, the surface verbs on the
+          right. The rail keeps its own search (it filters the rail list). */}
+      <header className="surface-compact-header">
+        <h1 className="surface-compact-title">Grimoire</h1>
+        <div className="surface-compact-actions">
+          <button
+            type="button"
+            onClick={() => setShowGraph((v) => !v)}
+            aria-pressed={showGraph}
+            title={showGraph ? "Back to documents" : "View the [[wiki-link]] graph"}
+            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:link" width={11} aria-hidden />
+            {showGraph ? "Docs" : "Graph"}
+          </button>
+          <button
+            type="button"
+            onClick={() => openDoc({ kind: "knowledge-new" })}
+            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:plus" width={11} aria-hidden />
+            New entry
+          </button>
+        </div>
+      </header>
+      <div className="flex min-h-0 flex-1 gap-3 p-3">
       <aside
         className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:w-[300px] @min-[880px]/grimoire:shrink-0 ${
           selection ? "hidden @min-[880px]/grimoire:flex" : ""
         }`}
       >
-        <div className="shrink-0 space-y-2 border-b border-[var(--border-hairline)] p-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Grimoire</h2>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowGraph((v) => !v)}
-                aria-pressed={showGraph}
-                title={showGraph ? "Back to documents" : "View the [[wiki-link]] graph"}
-                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:link" width={11} aria-hidden />
-                {showGraph ? "Docs" : "Graph"}
-              </button>
-              <button
-                type="button"
-                onClick={() => openDoc({ kind: "knowledge-new" })}
-                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:plus" width={11} aria-hidden />
-                New entry
-              </button>
-            </div>
-          </div>
+        {/* Title + surface verbs moved to the compact band above; the rail
+            keeps only its list filter. */}
+        <div className="shrink-0 border-b border-[var(--border-hairline)] p-3">
           <input
             type="search"
             value={query}
@@ -985,6 +991,7 @@ export function GrimoireView() {
           detail
         )}
       </main>
+      </div>
     </div>
   );
 }
