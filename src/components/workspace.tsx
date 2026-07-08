@@ -869,7 +869,9 @@ export function Workspace() {
         | { type: "updated"; item: InboxItem }
         | { type: "deleted"; id: string };
       if (e.type === "snapshot") {
-        setInboxItems(e.items);
+        // Reconnect snapshots usually carry what we already have — keep the
+        // reference so inboxItemsWithEphemeral consumers don't re-render.
+        setInboxItems((prev) => (arrayContentEqual(prev, e.items) ? prev : e.items));
         return;
       }
       if (e.type === "created") {
@@ -881,9 +883,14 @@ export function Workspace() {
         return;
       }
       if (e.type === "updated") {
-        setInboxItems((prev) =>
-          prev.map((it) => (it.id === e.item.id ? e.item : it)),
-        );
+        setInboxItems((prev) => {
+          // Server echoes of our own optimistic writes (dismiss/done/snooze
+          // set state locally, then the broadcast arrives) can be
+          // content-identical — bail before minting a new array reference.
+          const existing = prev.find((it) => it.id === e.item.id);
+          if (existing && JSON.stringify(existing) === JSON.stringify(e.item)) return prev;
+          return prev.map((it) => (it.id === e.item.id ? e.item : it));
+        });
         return;
       }
       if (e.type === "deleted") {

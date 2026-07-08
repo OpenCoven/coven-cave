@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import { Icon, type IconName } from "@/lib/icon";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -30,6 +31,14 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   useMinuteTick();    // keep the per-item "Nm ago" labels current; the parent
                       // cockpit re-fetches the list itself every 30s.
   const [items, setItems] = useState<InboxItem[]>(initialItems);
+  // The cockpit re-fetches its model every 30s and re-renders us with fresh
+  // initialItems — but useState reads the prop once, so items fired, done or
+  // dismissed elsewhere stayed in this widget until remount (cave-bzch).
+  // Reconcile on prop change; the content-equal guard keeps the reference
+  // (and any in-flight optimistic removal) stable when nothing moved.
+  useEffect(() => {
+    setItems((prev) => (arrayContentEqual(prev, initialItems) ? prev : initialItems));
+  }, [initialItems]);
   const [error, setError] = useState<string | null>(null);
   const { announce } = useAnnouncer();
   // Bulk triage: select several items and done/dismiss/snooze them together.
