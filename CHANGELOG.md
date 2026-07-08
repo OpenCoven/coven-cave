@@ -7,6 +7,37 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.154] - 2026-07-08
+
+> 🧵 **Composer with a spine** — a runtime chip lives in the composer on Chat and Home (logo + model, one-click switching), the quick chat finally fills its window, the title bar goes seamless ultra-minimal, and the Projects hub picks up five practical upgrades. Underneath: CI job timeouts so hung checks can't stall PRs for hours.
+
+Feature release on top of v0.0.153.
+
+### Features
+- **Composer runtime chip** (#2711, #2718, #2735, cave-yq5l/v25g/8jp4). Always-on logo + model chip in the Chat and Home composers with one-click runtime switching, instant roster refresh, and 30px-capsule icon buttons to match.
+- **Seamless ultra-minimalist title bar** (#2714, cave-r1f5).
+- **Projects hub: five updates** (#2730, cave-ihox) — task quick-add, honest git chip, Recent sort, meta titles, grants clarity — plus one-project-per-root enforcement (#2732) and a focus-trapped directory picker (#2733).
+- **Home: Chat/Task tabs above the composer card**, project chip width fit, wordless News lane (#2725).
+- **Chat: externally-generated sessions stay out of the chat lists** (#2719); file links render only when the click can actually open them (#2698).
+- **Daemon: control-plane capability catalog proxied** (#2695, #2724).
+
+### Fixes
+- **Quick chat: the thread fills the window height** (#2729, cave-8f9h). The dropdown-era 46vh cap left a dead gap under the composer; the tray pane now stretches edge to edge. Quick chat and group chat also release follow-along based on intent (#2696).
+- **Palette: Enter opens the top local match** with Ask-Salem as the fallback row (#2706); IME-composition keydowns ignored (#2705); Home's composer ignores IME Enter too (#2720).
+- **GitHub: detail fetches abort cleanly, optimistic resolves protected, PAT modal guarded mid-save** (#2726); review familiar backfills once the list loads (#2723).
+- **Automations: stable in-flight run polling** — no interval churn or N+1 fan-out (#2716); stale-response guard on run logs (#2702); status-shaped run icons + associated detail labels (#2703).
+- **Board: a card's cwd derives server-side from its project, never the client body** (#2708).
+- **Browser: closing the active tab fully activates its replacement** (#2707); BrowserPane lazy-loads out of the boot bundle (#2683).
+- **Settings: abort/ordering guards on daemon-status + config fetches** (#2701); undefined `var(--danger)` → real token (#2700).
+- **Bell/notifications: focus-trapped popover** (#2684), failed mutations announced (#2727), real toggle chips + live times (#2728).
+- **CI: `timeout-minutes` on every job** — hung steps stalled required checks for the 6-hour default (#2715, cave-whm5).
+
+### Accessibility
+- Calendar month grid: single tab stop with 2-D roving day cells (#2710, #2670-era follow-ups) with committed e2e coverage (#2722); schedules detail panels are real dialogs (#2717); grimoire announces deletes/saves with a full tabs pattern (#2686); flow nodes open from the keyboard (#2685) and React Flow honors reduced motion (#2680); dashboard drag announcements speak panel titles (#2687); a jargon-defining confusion-helpers sweep across surfaces (#2699).
+
+### Performance
+- Familiars: one 30s memory poll shared by the embedded memory view (#2679, cave-5dnw); automations poll stabilized (#2716).
+
 ## [0.0.153] - 2026-07-08
 
 > 🕸️ **The grimoire grows a graph** — every doc's [[wiki-links]] and semantic kinships spread across a force-directed canvas you can wander. Chat learns the Codex model catalog, the browser pane finally leaves the boot bundle, and suggestion chips close out their 2-or-4 arc with the dead CSS swept.
