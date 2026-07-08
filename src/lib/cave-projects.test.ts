@@ -35,6 +35,13 @@ try {
   assert.equal(created.root, "/tmp/test");
   assert.equal((await loadProjects()).length, 1);
 
+  // cave-729h: one project per root. A second create at the same root (even the
+  // trailing-slash variant) returns the existing project and writes no duplicate.
+  const dup = await createProject({ name: "Dup", root: "/tmp/test/" });
+  assert.equal(dup.id, created.id, "creating at an existing root returns the existing project");
+  assert.equal(dup.name, "Test", "the existing project comes back unchanged, not renamed");
+  assert.equal((await loadProjects()).length, 1, "no duplicate root is persisted on disk");
+
   const patched = await patchProject(created.id, { name: "New", root: "/tmp/test/" });
   assert.equal(patched?.name, "New");
   assert.equal(patched?.root, "/tmp/test");
@@ -62,6 +69,20 @@ try {
   const allSlashProject = await createProject({ name: "All slash", root: "/all-slash" });
   const rootOnly = await patchProject(allSlashProject.id, { root: "////" });
   assert.equal(rootOnly?.root, "/");
+
+  // cave-729h: a root change that would collide with a *different* project is
+  // dropped (keeps the one-per-root invariant), but the patch's other fields apply.
+  const collideSrc = await createProject({ name: "Collide", root: "/tmp/collide-src" });
+  const collided = await patchProject(collideSrc.id, { name: "Renamed", root: "/tmp/test" });
+  assert.equal(collided?.root, "/tmp/collide-src", "a root change colliding with another project is dropped");
+  assert.equal(collided?.name, "Renamed", "non-colliding fields of the same patch still apply");
+  assert.equal(
+    (await loadProjects()).filter((entry) => entry.root === "/tmp/test").length,
+    1,
+    "only one project ever owns /tmp/test",
+  );
+  // Restore the store to the three projects the rest of the suite expects.
+  await deleteProject(collideSrc.id);
 
   const projects = await loadProjects();
   assert.equal(projectForRoot("/tmp/test/", projects)?.id, created.id);
