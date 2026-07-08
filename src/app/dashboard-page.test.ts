@@ -159,4 +159,21 @@ assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary")
 assert.match(cockpit, /ariaLabel=\{`Board status:/, "board donut passes a data summary to AT");
 assert.match(cockpit, /ariaLabel=\{`Confidence factors by familiar:/, "confidence heatmap passes a data summary to AT");
 
+// ── Drag a11y (cave-0k5b): titles, not ids ───────────────────────────────────
+// dnd-kit's default announcements read the raw widget ids; the cockpit supplies
+// its own with human panel titles + 1-based positions, and each grip names its
+// panel instead of a generic "Drag to rearrange".
+assert.match(cockpit, /const dragAnnouncements: Announcements = \{/, "cockpit defines custom drag announcements");
+assert.match(cockpit, /accessibility=\{\{ announcements: dragAnnouncements \}\}/, "DndContext receives the custom announcements");
+assert.match(cockpit, /moved to position \$\{pos\.index\} of \$\{pos\.count\}/, "drops announce the panel's new position");
+assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each grip names its panel");
+// The titles map must cover every layout id, or announcements degrade to ids.
+{
+  const layoutIds = cockpit.match(/DEFAULT_LAYOUT: Layout = \{\s*main: \[([^\]]*)\],\s*rail: \[([^\]]*)\]/s);
+  const ids = `${layoutIds[1]},${layoutIds[2]}`.match(/"([^"]+)"/g).map((q) => q.slice(1, -1));
+  for (const id of ids) {
+    assert.match(cockpit, new RegExp(`^  ${id}: "`, "m"), `PANEL_TITLES covers "${id}"`);
+  }
+}
+
 console.log("dashboard-page.test.ts: ok");
