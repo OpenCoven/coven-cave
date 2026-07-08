@@ -2277,42 +2277,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
       <div className={`${detailOpen ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col`}>
-        {/* Page header */}
-        <div className="flex items-center justify-between px-8 pt-8 pb-5">
-          <div>
-            <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
-              Schedules
-            </h1>
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              {activeTab === "calendar"
-                ? "Calendar deadlines and cron schedules in one place."
-                : "Recurring cron schedules that run your familiar workflows."}
-            </p>
-            {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
-              <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-                <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
-                  {summary.active} active
-                </span>
-                {summary.paused > 0 && <span>· {summary.paused} paused</span>}
-                {summary.soonest && (
-                  <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
-                )}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {activeTab === "crons" ? (
-              <Button ref={newBtnRef} className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
-                New cron
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="px-8 pb-4">
+        {/* Compact header: title, tabs, live summary, filter, and actions in
+            ONE slim topmost band — mirrors the GitHub surface's
+            gh-compact-header so operational surfaces share the same
+            minimalist chrome. */}
+        <div className="schedules-compact-header">
+          <h1 className="schedules-compact-title">Schedules</h1>
           <Tabs
+            className="schedules-compact-tabs"
             variant="segment"
+            size="sm"
             ariaLabel="Schedules tabs"
             idPrefix="automations"
             value={activeTab}
@@ -2322,28 +2296,45 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               { id: "crons", label: "Crons", count: codexAutos.length },
             ] satisfies TabItem<AutomationTab>[]}
           />
-        </div>
-
-        {/* Text filter for the active tab. Gated on the UNfiltered presence of
-            rows so filtering to zero never hides the box (you can still clear). */}
-        {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && (
-          codexAutos.length > 0
-        ) ? (
-          <div className="px-8 pb-4">
-            <SearchInput
-              value={query}
-              onValueChange={setQuery}
-              onClear={() => setQuery("")}
-              placeholder="Filter crons…"
-              aria-label="Filter crons"
-            />
+          {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
+            <p className="schedules-compact-summary">
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
+                {summary.active} active
+              </span>
+              {summary.paused > 0 && <span>· {summary.paused} paused</span>}
+              {summary.soonest && (
+                <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
+              )}
+            </p>
+          )}
+          <div className="schedules-compact-actions">
+            {/* Text filter for the crons tab. Gated on the UNfiltered presence
+                of rows so filtering to zero never hides the box (you can still
+                clear). */}
+            {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && codexAutos.length > 0 ? (
+              <div className="schedules-compact-search">
+                <SearchInput
+                  value={query}
+                  onValueChange={setQuery}
+                  onClear={() => setQuery("")}
+                  placeholder="Filter crons…"
+                  aria-label="Filter crons"
+                />
+              </div>
+            ) : null}
+            {activeTab === "crons" ? (
+              <Button ref={newBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+                New cron
+              </Button>
+            ) : null}
           </div>
-        ) : null}
+        </div>
 
         {error && (
           <div
             role="alert"
-            className="mx-8 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
+            className="mx-8 mt-3 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate">{error}</span>
@@ -2362,7 +2353,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           role="tabpanel"
           id={`automations-panel-${activeTab}`}
           aria-labelledby={`automations-tab-${activeTab}`}
-          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pt-4 pb-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
           ) : !initialLoadDone ? (

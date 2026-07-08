@@ -8045,6 +8045,50 @@ a.mobile-handoff__link:hover {
   }
 }
 
+/* ── Schedules compact header ────────────────────────────────────────────────
+   One slim topmost band (title · tabs · summary · filter · actions) mirroring
+   the GitHub surface's gh-compact-header, so operational surfaces share the
+   same minimalist chrome. Wraps gracefully on narrow widths. */
+.schedules-compact-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.schedules-compact-title {
+  margin-right: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.schedules-compact-summary {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.schedules-compact-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Keep the inline crons filter band-sized instead of full-width. */
+.schedules-compact-search {
+  flex: 0 1 220px;
+  min-width: 140px;
+}
+
 .workflow-dialog-backdrop {
   position: fixed;
   inset: 0;
