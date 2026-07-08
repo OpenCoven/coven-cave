@@ -53,6 +53,7 @@ export const SUITES = {
     "src/lib/screen-magnification.test.ts",
     "src/lib/no-builtin-familiar-roster.test.ts",
     "src/lib/cave-projects.test.ts",
+    "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/project-permissions.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/project-status.test.ts",
