@@ -129,9 +129,12 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // without threading it through a state updater.
   const selectedIdRef = useRef<string | null>(selectedFamiliarId);
   selectedIdRef.current = selectedFamiliarId;
-  // Roster-load bookkeeping: fire once (latched on `enabled`), abort on unmount.
+  // Roster-load bookkeeping: fire once (latched on `enabled`), abort via the
+  // effect's own cleanup. `rosterLoadedRef` marks a COMPLETED load so the
+  // cleanup can tell "hide mid-fetch" (un-latch, the re-run must refetch)
+  // from "hide after success" (stay latched, the roster is already in state).
   const rosterStartedRef = useRef(false);
-  const rosterAbortRef = useRef<AbortController | null>(null);
+  const rosterLoadedRef = useRef(false);
 
   const nextId = useCallback((prefix: string) => `${prefix}-${msgSeqRef.current++}`, []);
 
@@ -152,7 +155,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     if (!enabled || rosterStartedRef.current) return;
     rosterStartedRef.current = true;
     const controller = new AbortController();
-    rosterAbortRef.current = controller;
     setLoading(true);
     void (async () => {
       try {
@@ -163,6 +165,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         const next = (json?.familiars ?? []) as Familiar[];
         const stored = readLastFamiliar();
         const preferred = preferredRef.current;
+        rosterLoadedRef.current = true;
         setError(null);
         setFamiliars(next);
         // Default priority: the workspace's active familiar, then the last
@@ -184,6 +187,16 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         if (!controller.signal.aborted) setLoading(false);
       }
     })();
+    return () => {
+      // Suspense hide / StrictMode re-runs this effect with REFS PRESERVED
+      // (setup → cleanup → setup). Abort the in-flight load, and un-latch
+      // unless a load already completed — otherwise the re-run early-returns
+      // on the stale latch and the pane shows "Loading…" forever. Hit for
+      // real: a tab pane mounted after boot suspends on a cold chunk, the
+      // hide aborted its roster fetch, and the reveal never refetched.
+      controller.abort();
+      if (!rosterLoadedRef.current) rosterStartedRef.current = false;
+    };
   }, [enabled]);
 
   // Follow the workspace's active familiar as it changes — until the user has
@@ -194,11 +207,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setSelectedFamiliarId(preferredFamiliarId);
   }, [preferredFamiliarId, familiars]);
 
-  // Abort any in-flight stream + roster load when the consumer unmounts.
+  // Abort any in-flight stream when the consumer unmounts. (The roster load
+  // aborts through its own effect cleanup above.)
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
-      rosterAbortRef.current?.abort();
     };
   }, []);
 

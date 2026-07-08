@@ -93,6 +93,7 @@ dependencies = [
  "tauri-plugin-os",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "window-vibrancy",
 ]
 
 [[package]]

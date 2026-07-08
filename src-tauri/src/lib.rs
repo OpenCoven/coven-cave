@@ -92,8 +92,19 @@ fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Url) {
         return;
     }
 
+    // On macOS the window opens transparent with an NSVisualEffectView behind
+    // it (applied after build), and `?glass=1` tells the page to drop its
+    // opaque background — the glassmorphic quick chat. Other platforms keep
+    // the opaque window and never receive the flag, so the page stays solid.
+    #[cfg(target_os = "macos")]
+    let quick_chat_url = {
+        let mut glass_url = quick_chat_url.clone();
+        glass_url.query_pairs_mut().append_pair("glass", "1");
+        glass_url
+    };
+
     let (x, y) = quick_chat_position(app);
-    match WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         QUICK_CHAT_WINDOW_LABEL,
         WebviewUrl::External(quick_chat_url.clone()),
@@ -101,16 +112,32 @@ fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Url) {
     .title("CovenCave Quick Chat")
     .inner_size(QUICK_CHAT_WIDTH, QUICK_CHAT_HEIGHT)
     .min_inner_size(340.0, 420.0)
-    .resizable(false)
+    // Resizable since the window holds multiple chats now — the min size
+    // keeps a single tab's composer + thread usable.
+    .resizable(true)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
     .position(x, y)
     .shadow(true)
-    .disable_drag_drop_handler()
-    .build()
-    {
+    .disable_drag_drop_handler();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true);
+
+    match builder.build() {
         Ok(window) => {
+            #[cfg(target_os = "macos")]
+            {
+                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                // 14.0 matches .tray-quick-chat__frame's border-radius so the
+                // vibrancy layer and the DOM frame round together.
+                if let Err(e) =
+                    apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, Some(14.0))
+                {
+                    log::warn!("[cave] quick chat vibrancy unavailable: {}", e);
+                }
+            }
             let _ = window.show();
             let _ = window.set_focus();
         }

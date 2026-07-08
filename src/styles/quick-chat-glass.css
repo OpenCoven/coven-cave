@@ -1,0 +1,201 @@
+/* ── Quick chat tray: multi-tab frame + glassmorphism ───────────────────────
+   The Rust shell opens the tray window transparent with OS vibrancy behind
+   it on macOS and appends ?glass=1; TrayQuickChat mirrors that as
+   html[data-glass]. With the flag, surfaces go translucent over the vibrancy
+   layer and the header/composer pick up backdrop blur so content scrolling
+   beneath them reads with depth. Without it (plain browser, Linux, Windows)
+   everything stays opaque on the same tokens. */
+
+html[data-glass],
+html[data-glass] body {
+  background: transparent !important;
+}
+
+.tray-quick-chat {
+  background: var(--bg-base);
+}
+
+html[data-glass] .tray-quick-chat {
+  background: transparent;
+}
+
+.tray-quick-chat__frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+}
+
+html[data-glass] .tray-quick-chat__frame {
+  /* Matches the 14px radius apply_vibrancy() rounds the window layer to. */
+  border-radius: 14px;
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 58%, transparent);
+}
+
+/* Header carries the tab strip; under glass it blurs the thread scrolling
+   beneath it. */
+.tray-quick-chat__header {
+  gap: var(--space-2);
+}
+
+html[data-glass] .tray-quick-chat__header {
+  background: color-mix(in oklch, var(--bg-panel) 35%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+}
+
+/* ── Tab strip ── */
+.quick-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.quick-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  min-width: 0;
+}
+
+.quick-tab--active {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+html[data-glass] .quick-tab--active {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.quick-tab__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 2px var(--space-1) 2px 2px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+
+.quick-tab--active .quick-tab__button {
+  color: var(--text-primary);
+}
+
+.quick-tab__label {
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+/* Inactive tabs shrink to just the avatar so several chats fit in 390px. */
+.quick-tab:not(.quick-tab--active) .quick-tab__label {
+  display: none;
+}
+
+.quick-tab:not(.quick-tab--active) .quick-tab__close {
+  display: none;
+}
+
+.quick-tab:not(.quick-tab--active):hover .quick-tab__close,
+.quick-tab:not(.quick-tab--active):focus-within .quick-tab__close {
+  display: inline-flex;
+}
+
+.quick-tab__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 60%, transparent);
+  animation: quick-tab-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes quick-tab-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── Panes ── */
+.tray-quick-chat__pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The display:flex above would otherwise beat the `hidden` attribute —
+   background tabs must stay mounted (streams keep flowing) but invisible. */
+.tray-quick-chat__pane[hidden] {
+  display: none;
+}
+
+/* ── Glass over the shared quick-chat pieces ── */
+html[data-glass] .quick-chat-overlay__controls,
+html[data-glass] .quick-chat-select__trigger {
+  background: color-mix(in oklch, var(--bg-base) 45%, transparent);
+}
+
+html[data-glass] .quick-chat-overlay__composer {
+  background: color-mix(in oklch, var(--bg-panel) 40%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+}
+
+html[data-glass] .quick-chat-overlay__input {
+  background: color-mix(in oklch, var(--bg-base) 50%, transparent);
+}
+
+html[data-glass] .quick-chat-bubble--familiar {
+  background: color-mix(in oklch, var(--bg-elevated) 68%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+html[data-glass] .quick-chat-bubble--user {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ── Accessibility fallbacks ── */
+@media (prefers-reduced-transparency: reduce) {
+  html[data-glass],
+  html[data-glass] body,
+  html[data-glass] .tray-quick-chat {
+    background: var(--bg-base) !important;
+  }
+
+  html[data-glass] .tray-quick-chat__frame,
+  html[data-glass] .tray-quick-chat__header,
+  html[data-glass] .quick-chat-overlay__composer,
+  html[data-glass] .quick-chat-bubble--familiar,
+  html[data-glass] .quick-chat-bubble--user {
+    background: var(--bg-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quick-tab__pulse {
+    animation: none;
+  }
+}
