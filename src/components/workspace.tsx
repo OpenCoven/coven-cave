@@ -881,9 +881,18 @@ export function Workspace() {
         return;
       }
       if (e.type === "updated") {
-        setInboxItems((prev) =>
-          prev.map((it) => (it.id === e.item.id ? e.item : it)),
-        );
+        setInboxItems((prev) => {
+          // The SSE broadcast that follows an optimistic complete/dismiss/
+          // snooze delivers the same content back — bail on identity so every
+          // consumer of inboxItemsWithEphemeral skips one redundant re-render
+          // (cave-bzch).
+          const idx = prev.findIndex((it) => it.id === e.item.id);
+          if (idx === -1) return prev;
+          if (JSON.stringify(prev[idx]) === JSON.stringify(e.item)) return prev;
+          const next = prev.slice();
+          next[idx] = e.item;
+          return next;
+        });
         return;
       }
       if (e.type === "deleted") {
