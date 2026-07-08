@@ -51,7 +51,7 @@ assert.match(
 // a long undifferentiated form. Key facts are summarized first, editing is
 // grouped into named zones, and primary/destructive actions are separated.
 assert.match(codexDetailPanel, />\s*Cron details\s*</, "cron detail panel uses Cron-specific title copy");
-assert.match(codexDetailPanel, /className="[^"]*cron-detail-summary-grid/, "cron detail panel renders an at-a-glance summary grid");
+assert.match(codexDetailPanel, /cron-detail-summary-grid/, "cron detail panel renders an at-a-glance summary grid");
 assert.match(codexDetailPanel, /<CronDetailSection title="Identity"/, "cron detail groups identity fields");
 assert.match(codexDetailPanel, /<CronDetailSection title="Instructions"/, "cron detail groups prompt fields");
 assert.match(codexDetailPanel, /<CronDetailSection title="Schedule"/, "cron detail groups schedule fields");
@@ -61,8 +61,71 @@ assert.match(codexDetailPanel, /Save changes[\s\S]*Run now[\s\S]*Delete/, "cron 
 assert.match(codexDetailPanel, /leadingIcon="ph:floppy-disk-bold"/, "save action uses a recognizable icon");
 assert.match(codexDetailPanel, /variant="danger-ghost"[\s\S]*Delete/, "delete remains visually separated as a destructive action");
 assert.match(source, /const detailOpen = Boolean\(selectedItem \|\| selectedCodex\)/, "Schedules tracks whether a detail panel is open");
-assert.match(source, /detailOpen \? "hidden md:flex" : "flex"/, "Schedules hides the list on narrow screens while a detail panel is open");
+assert.match(source, /detailOpen \? \(cronDetailExpanded \? "hidden" : "hidden md:flex"\) : "flex"/, "Schedules hides the list on narrow screens while a detail panel is open, and entirely while the cron detail is expanded");
 assert.match(source, /w-full[\s\S]*md:w-\[380px\][\s\S]*md:max-w-\[42vw\]/, "detail panel becomes full-width on narrow screens and a side rail on desktop");
+
+// Cron detail expansion (cave-4p6k): the rail can grow into the full page
+// width — toggle in the panel header, side-rail classes swap for flex-1, the
+// summary tiles go 4-up and the sections reflow into a two-column canvas.
+assert.match(
+  source,
+  /const cronDetailExpanded = detailExpanded && Boolean\(selectedCodex\)/,
+  "expansion only applies while a cron (not a reminder) detail is open",
+);
+assert.match(
+  source,
+  /cronDetailExpanded\s*\n?\s*\? "w-full min-w-0 flex-1 overflow-hidden"/,
+  "the expanded detail wrapper fills the full page width",
+);
+assert.match(
+  codexDetailPanel,
+  /aria-label=\{expanded \? "Collapse to side panel" : "Expand to full width"\}/,
+  "the header toggle names both directions for AT",
+);
+assert.match(
+  codexDetailPanel,
+  /aria-pressed=\{expanded\}/,
+  "the expand control is a proper toggle",
+);
+assert.match(
+  codexDetailPanel,
+  /leadingIcon=\{expanded \? "ph:arrows-in-simple" : "ph:arrows-out-simple"\}/,
+  "the expand control's icon mirrors its direction",
+);
+assert.match(
+  codexDetailPanel,
+  /cron-detail-summary-grid grid grid-cols-2 gap-2\$\{expanded \? " lg:grid-cols-4" : ""\}/,
+  "summary tiles go 4-up on the expanded canvas",
+);
+assert.match(
+  codexDetailPanel,
+  /expanded \? "grid items-start gap-5 lg:grid-cols-2" : "space-y-5"/,
+  "sections reflow into a two-column grid when expanded",
+);
+assert.match(
+  source,
+  /onClose=\{\(\) => \{ setSelectedCodex\(null\); setDetailExpanded\(false\); \}\}/,
+  "closing the cron detail also resets the expansion so the next open starts as a rail",
+);
+
+// Beginner-friendly schedule copy: presets read as plain cadences, the
+// raw-RRULE escape hatch is labeled Advanced, and the cryptic RRULE string
+// only surfaces in Advanced mode or when the schedule is invalid.
+assert.match(
+  source,
+  /const SCHEDULE_MODE_LABEL[\s\S]{0,160}weekly: "Weekly",\s*\n\s*daily: "Daily",\s*\n\s*raw: "Advanced",/,
+  "schedule modes carry beginner-facing labels (raw reads as Advanced)",
+);
+assert.match(
+  codexDetailPanel,
+  /scheduleMode !== "raw" && !invalidSchedule \?[\s\S]{0,320}?Runs every day at[\s\S]{0,220}?Runs weekly on/,
+  "preset modes echo the cadence in plain language instead of an RRULE",
+);
+assert.match(
+  codexDetailPanel,
+  /\{nextRrule \|\| "RRULE required"\}/,
+  "the RRULE line still renders for Advanced mode and invalid schedules",
+);
 
 // List rows + detail-panel close buttons show a visible keyboard focus ring.
 assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");
