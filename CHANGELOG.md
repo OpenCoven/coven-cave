@@ -7,6 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.152] - 2026-07-08
+
+> 🪟 **Quick chat, multiplied** — the tray window holds several conversations at once behind a glassy new face: tabs that inherit your familiar, ⌘N to open another, and vibrancy shining through on macOS. The summoning circle learns to hold a full OpenClaw roster, and the calendar gets a proper accessibility pass.
+
+Feature release on top of v0.0.151.
+
+### Features
+- **Quick chat: multi-chat tabs + glassmorphic tray window** (#2666, cave-m80j). A tab strip holds several quick chats; the add button or ⌘/Ctrl+N opens a new chat on the familiar you're already talking to; ⌘/Ctrl+W or the pill's × closes one, and closing the last chat closes the quick chat itself. Background tabs keep streaming. On macOS the window goes transparent with OS vibrancy behind translucent, blurred surfaces (with a reduced-transparency fallback), and the window is resizable now.
+- **Chat: instant compose boot + board-aware starter pills on the landing** (#2664, cave-qvwu).
+
+### Fixes
+- **Summoning circle: long vessel lists scroll inside the panel** (#2669, cave-hpsz). A full OpenClaw roster no longer blows past the dialog or paints under the Cancel/Continue footer.
+- **Calendar accessibility pass** (#2663, #2665, #2668, #2670). The open event panel reconciles with live items, reschedules are announced with the owning familiar named on every chip, the now-line ticks on the wall-clock minute, and the month view is a real ARIA grid with 2-D roving day cells.
+- **Group chat** (#2662, #2667). IME-composition Enter is ignored in the composer, mention picker, and rename; a11y labels, keyboard-visible focus, and per-coven composer drafts.
+- **Chat: /skill picker renders one row per skill id** — no duplicate React keys (#2671, cave-rru2).
+- **Terminal: find-bar match counter is non-live** (#2655, cave-eatw).
+
+### Performance
+- **Group chat: throttled transcript persistence, capped stored tail, single-pass thread grouping** (#2661, cave-lh78).
+
 ## [0.0.151] - 2026-07-08
 
 > 🔁 **Updates that update themselves** — the native in-app updater finally works in packaged builds: check, download with progress, install, and relaunch without ever leaving the cave. Plus a rounder terminal: tabs you can drive from the keyboard, an SR mirror that follows visibility, and shells that end when their tab does.
