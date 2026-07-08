@@ -202,9 +202,17 @@ function PatSetupModal({
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+  // While a save is in flight, dismissal is deferred: closing mid-save would
+  // unmount under the pending setStates and leave the user unsure whether the
+  // PAT persisted (cave-b8ba).
+  const savingRef = useRef(false);
+  savingRef.current = saving;
+  const closeUnlessSaving = () => {
+    if (!savingRef.current) onClose();
+  };
   // Trap Tab/Shift+Tab inside the modal and close on Escape. focusFirst is off
   // so the username input's focus effect above keeps the initial focus.
-  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
+  useFocusTrap(true, dialogRef, { onEscape: closeUnlessSaving, focusFirst: false });
 
   async function save() {
     const trimmedPat = pat.trim();
@@ -244,7 +252,7 @@ function PatSetupModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
       role="presentation"
-      onClick={onClose}
+      onClick={closeUnlessSaving}
     >
       <div
         ref={dialogRef}
@@ -721,19 +729,22 @@ function useGitHubItemDetail(item: GitHubItem | null): DetailState {
       setState({ status: "idle" });
       return;
     }
-    let cancelled = false;
+    // AbortController (not a cancelled flag): arrowing through the list must
+    // actually cancel the left-behind request, not just ignore its response —
+    // uncancelled fetches burn the 60/hr unauthenticated rate limit (cave-b8ba).
+    const ctl = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+    fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) setState({ status: "ready", detail: data as ItemDetail });
         else setState({ status: "error" });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!ctl.signal.aborted) setState({ status: "error" });
       });
-    return () => { cancelled = true; };
+    return () => ctl.abort();
   }, [repo, number]);
 
   return state;
@@ -825,20 +836,20 @@ function UserProfileCard({
       setState({ status: "ready", profile: cached });
       return;
     }
-    let cancelled = false;
+    const ctl = new AbortController();
     setState({ status: "loading" });
-    fetch(`/api/github/user?login=${encodeURIComponent(login)}`)
+    fetch(`/api/github/user?login=${encodeURIComponent(login)}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) {
           const profile = data as UserProfile;
           profileCache.set(login, profile);
           setState({ status: "ready", profile });
         } else setState({ status: "error" });
       })
-      .catch(() => { if (!cancelled) setState({ status: "error" }); });
-    return () => { cancelled = true; };
+      .catch(() => { if (!ctl.signal.aborted) setState({ status: "error" }); });
+    return () => ctl.abort();
   }, [login]);
 
   // Outside-click dismissal (deferred one tick so the opening click doesn't
@@ -1226,6 +1237,10 @@ function GitHubComments({
   const [postError, setPostError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Optimistic thread-resolve flips awaiting API confirmation — applied over
+  // fetched data so a post-comment refetch during GitHub's read-after-write
+  // lag can't overwrite them (cave-b8ba). Confirmed entries drop out.
+  const pendingResolveRef = useRef(new Map<string, boolean>());
 
   const repo = item.repo;
   const number = item.number ?? null;
@@ -1242,24 +1257,42 @@ function GitHubComments({
       setState({ status: "idle" });
       return;
     }
-    let cancelled = false;
+    const ctl = new AbortController();
     setState({ status: "loading" });
     fetch(
       `/api/github/comments?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}${isPull ? "&isPull=1" : ""}`,
+      { signal: ctl.signal },
     )
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
-        if (data?.ok) setState({ status: "ready", data: data as CommentsResult });
-        else setState({ status: "error" });
+        if (ctl.signal.aborted) return;
+        if (data?.ok) {
+          const result = data as CommentsResult;
+          const pending = pendingResolveRef.current;
+          if (pending.size > 0) {
+            result.reviewThreads = result.reviewThreads.map((t) => {
+              const want = pending.get(t.id);
+              if (want === undefined) return t;
+              if (t.isResolved === want) {
+                pending.delete(t.id); // API caught up — stop overriding
+                return t;
+              }
+              return { ...t, isResolved: want };
+            });
+          }
+          setState({ status: "ready", data: result });
+        } else setState({ status: "error" });
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!ctl.signal.aborted) setState({ status: "error" });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => ctl.abort();
   }, [repo, number, isPull, tick]);
+
+  // A different PR's threads can't inherit stale overrides.
+  useEffect(() => {
+    pendingResolveRef.current.clear();
+  }, [repo, number]);
 
   const data = state.status === "ready" ? state.data : null;
   const canResolve = data?.canResolve ?? false;
@@ -1287,6 +1320,11 @@ function GitHubComments({
     if (!canResolve || state.status !== "ready") return;
     const next = !thread.isResolved;
     announce(next ? "Thread resolved." : "Thread unresolved.");
+    // Record the optimistic value: a post-comment refetch during GitHub's
+    // read-after-write lag would otherwise overwrite the flip with stale
+    // isResolved (cave-b8ba). The fetch handler applies pending overrides
+    // until the API confirms them.
+    pendingResolveRef.current.set(thread.id, next);
     // Optimistic flip — revert on failure.
     setState({
       status: "ready",
@@ -1306,7 +1344,8 @@ function GitHubComments({
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? "failed");
     } catch {
-      // Revert by refetching the authoritative state.
+      // Revert by refetching the authoritative state (and stop overriding).
+      pendingResolveRef.current.delete(thread.id);
       setTick((n) => n + 1);
     }
   }
@@ -1570,17 +1609,17 @@ function useGitHubChecks(item: GitHubItem | null, enabled: boolean): ChecksState
     const key = `${repo}#${number}`;
     const silent = keyRef.current === key;
     keyRef.current = key;
-    let cancelled = false;
+    const ctl = new AbortController();
     if (!silent) setState({ status: "loading" });
-    fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+    fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`, { signal: ctl.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
+        if (ctl.signal.aborted) return;
         if (data?.ok) setState({ status: "ready", data: data as ChecksResult });
         else if (!silent) setState({ status: "error" }); // a failed refresh keeps the last good list
       })
-      .catch(() => { if (!cancelled && !silent) setState({ status: "error" }); });
-    return () => { cancelled = true; };
+      .catch(() => { if (!ctl.signal.aborted && !silent) setState({ status: "error" }); });
+    return () => ctl.abort();
   }, [enabled, repo, number, tick]);
 
   // Live-refresh while CI is still running: poll every 30s until the rollup

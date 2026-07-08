@@ -512,4 +512,18 @@ assert.doesNotMatch(
   "fixed-width detail column is gone — the split is user-resizable",
 );
 
+// ── Fetch + optimistic-state hygiene (cave-b8ba) ─────────────────────────────
+// Detail/profile/comments/checks loads carry real AbortControllers (arrowing
+// through the list cancels the left-behind request instead of burning rate
+// limit); optimistic thread-resolves survive the post-comment refetch during
+// GitHub's read-after-write lag; the PAT modal can't be dismissed mid-save.
+{
+  const aborts = (source.match(/return \(\) => ctl\.abort\(\);/g) ?? []).length;
+  if (aborts < 4) throw new Error(`expected >=4 aborted fetch effects, found ${aborts}`);
+}
+assert.match(source, /const pendingResolveRef = useRef\(new Map<string, boolean>\(\)\)/, "optimistic resolves are tracked for override");
+assert.match(source, /pending\.delete\(t\.id\); \/\/ API caught up — stop overriding/, "overrides drop once the API confirms");
+assert.match(source, /const closeUnlessSaving = \(\) => \{\s*\n\s*if \(!savingRef\.current\) onClose\(\);/, "the PAT modal defers dismissal while saving");
+assert.match(source, /onClick=\{closeUnlessSaving\}/, "the backdrop uses the saving-aware close");
+
 console.log("github-view-polish.test.ts OK");
