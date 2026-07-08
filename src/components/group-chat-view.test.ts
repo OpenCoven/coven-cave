@@ -176,4 +176,46 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
       "both broadcast and retryReply guard their abort/busy cleanup on still owning the controller",
     );
   }
+
+  // cave-lh78: persistence is throttled (one localStorage write per interval,
+  // not one per streaming token), owner-guarded (the stale commit right after
+  // a coven switch must not write the old transcript under the new key), and
+  // flushed on switch/unmount so no settled tail is lost.
+  assert.match(
+    view,
+    /if \(!activeId \|\| transcriptOwnerRef\.current !== activeId\) return;/,
+    "the persist effect skips saves until the swap effect has loaded the active coven's transcript",
+  );
+  assert.match(
+    view,
+    /pendingSaveRef\.current = \{ groupId: activeId, turns: transcript \};[\s\S]{0,240}?window\.setTimeout\(/,
+    "persistence coalesces streaming updates behind a timer instead of writing per token",
+  );
+  assert.match(
+    view,
+    /flushPendingSave\(\);\s*\n\s*transcriptOwnerRef\.current = activeId;/,
+    "switching covens flushes the outgoing coven's pending save, then adopts ownership",
+  );
+  assert.match(
+    view,
+    /useEffect\(\(\) => \(\) => flushPendingSave\(\), \[flushPendingSave\]\);/,
+    "unmount flushes the pending transcript save",
+  );
+  assert.match(
+    view,
+    /if \(pendingSaveRef\.current\?\.groupId === id\) \{/,
+    "deleting a coven drops its queued save so a later flush cannot resurrect the transcript",
+  );
+  // Thread grouping is a single pass (a Map keyed by replyTo), not a nested
+  // filter per user turn — it recomputes on every streaming token.
+  assert.match(
+    view,
+    /const repliesByUser = new Map<string, GroupReply\[\]>\(\);/,
+    "threads are grouped in one pass over the transcript",
+  );
+  assert.doesNotMatch(
+    view,
+    /replies: transcript\.filter\(/,
+    "the O(userTurns × transcript) per-token grouping shape must not return",
+  );
 });
