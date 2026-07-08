@@ -48,8 +48,7 @@ import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { HomeContinueColumn } from "@/components/home/home-continue-column";
-import { HomeNewsColumn } from "@/components/home/home-news-column";
+import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
@@ -1249,16 +1248,15 @@ export function HomeComposer({
         onPick={insertPrompt}
       />
 
-      {/* Two-column footer — resume-first recent chats + freshest headlines.
-          Static lists (no marquee): scannable, unclipped, keyboard-friendly. */}
-      <div className="home-columns">
-        <HomeContinueColumn
-          sessions={sessions}
-          familiarNameById={familiarNameById}
-          onOpenSession={onOpenSession}
-        />
-        <HomeNewsColumn />
-      </div>
+      {/* Continue + News as an auto-scrolling digest carousel (restored): two
+          horizontal tracks — resume-first recent chats + freshest headlines —
+          that pause on hover and fall back to a manual scroll under
+          prefers-reduced-motion. Width matches the composer above it. */}
+      <HomeDigestCarousel
+        sessions={sessions}
+        familiarNameById={familiarNameById}
+        onOpenSession={onOpenSession}
+      />
     </div>
   );
 }

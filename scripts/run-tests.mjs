@@ -172,6 +172,7 @@ export const SUITES = {
     "src/lib/fuzzy-match.test.ts",
     "src/components/home-chat-handoff.test.ts",
     "src/components/home-composer.test.ts",
+    "src/components/home-digest-carousel.test.ts",
     "src/components/home-feed.test.ts",
     "src/components/home-columns.test.ts",
     "src/components/home-composer-centering.test.ts",
