@@ -110,6 +110,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Jump to tab"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl"
       >

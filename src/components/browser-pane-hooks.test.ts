@@ -86,4 +86,27 @@ assert.doesNotMatch(source, /forwardRef/, "BrowserPane no longer uses forwardRef
   assert.match(workspace, /handleRef=\{browserPaneRef\}/, "workspace passes the handle through the handleRef prop");
 }
 
+// ── Closing the active tab fully activates the replacement (cave-5hnh) ──────
+// Setting activeTabId alone left the address bar, loading flag, and history
+// pointing at the closed tab; removeTab must route through switchTab (which
+// syncs all three) and drop the closed tab's history entry.
+{
+  const removeTabBody = extractFunctionBody("removeTab");
+  assert.match(
+    removeTabBody,
+    /if \(activeTabId === id\) switchTab\(/,
+    "removeTab activates the replacement tab through switchTab, not bare setActiveTabId",
+  );
+  assert.doesNotMatch(
+    removeTabBody,
+    /setActiveTabId\(/,
+    "removeTab must not set the active id directly — switchTab owns activation sync",
+  );
+  assert.match(
+    removeTabBody,
+    /delete historyRef\.current\[id\]/,
+    "removeTab drops the closed tab's navigation history",
+  );
+}
+
 console.log("browser-pane-hooks.test.ts: ok");

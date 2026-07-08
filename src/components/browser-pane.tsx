@@ -564,7 +564,11 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     const next = tabs.filter((t) => t.id !== id);
     setTabs(next);
     savePinnedTabs(next);
-    if (activeTabId === id) setActiveTabId(next[0]?.id ?? "home");
+    delete historyRef.current[id];
+    // Closing the ACTIVE tab must fully activate the replacement: setting the
+    // id alone left the address bar, loading state, and history pointing at
+    // the closed tab until the user manually switched (cave-5hnh).
+    if (activeTabId === id) switchTab(next[0]?.id ?? "home");
   };
 
   // ── Per-tab navigation ────────────────────────────────────────────
