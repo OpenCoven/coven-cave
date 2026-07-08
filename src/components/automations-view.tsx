@@ -872,9 +872,11 @@ function CodexDetailPanel({
         </div>
       </div>
 
-      <div className={`flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
+      {/* Merge of main's expanded variant with the split-fit container: columns
+          key off the pane, not the viewport (cave-hivd). */}
+      <div className={`@container flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
         <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
-        <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " lg:grid-cols-4" : ""}`}>
+        <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " @min-[900px]:grid-cols-4" : ""}`}>
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
           <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
           <CronSummaryTile label="Model" value={model.trim() || "Default"} />
@@ -893,7 +895,7 @@ function CodexDetailPanel({
               style={fieldStyle}
             />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
             <div>
               <FieldLabel htmlFor={`cron-tags-${auto.id}`}>Tags</FieldLabel>
               <input
@@ -1022,7 +1024,7 @@ function CodexDetailPanel({
         </CronDetailSection>
 
         <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
             <div>
               <FieldLabel htmlFor={`cron-model-${auto.id}`}>Model</FieldLabel>
               <input

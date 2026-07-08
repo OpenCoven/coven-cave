@@ -85,3 +85,34 @@ test("the right companion (agent) panel is no longer mounted", () => {
   assert.doesNotMatch(src, /agent=\{/, "no agent panel is passed to Shell");
   assert.doesNotMatch(src, /<CompanionRail/, "CompanionRail is not rendered");
 });
+
+test("split tiles keep a usability floor (cave-hivd)", () => {
+  const host = read("./detail-split-host.tsx");
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  // Multi-tile panels floor at 300px — a 12% min let dividers crush a tile to
+  // ~110px letter soup on wide windows (tiles close via ✕, not drag-past-edge).
+  assert.match(host, /id=\{`split-tile-\$\{tile\.id\}`\}[\s\S]{0,500}minSize="300px"/, "multi-tile panels have a pixel min");
+  // The legacy two-pane path keeps its ratio min (the drag-to-close zone needs
+  // it) — its CONTENT floors instead: pane bodies scroll horizontally under 300px.
+  assert.match(host, /id="split-secondary"[\s\S]{0,300}minSize="10%"/, "legacy secondary keeps the ratio min for the close gesture");
+  assert.match(css, /\.split-host__pane-body \{[\s\S]{0,220}overflow-x: auto/, "pane bodies scroll instead of crushing");
+  assert.match(css, /\.split-host__pane-body > \* \{[\s\S]{0,400}min-width: 300px/, "pane content has the 300px floor");
+  // The legacy primary shares the same body treatment.
+  assert.match(host, /<div className="split-host__pane-body">\{primary\}<\/div>/, "legacy primary content uses the pane body class");
+});
+
+test("surfaces size their grids by PANE, not viewport (cave-hivd)", () => {
+  // In a split tile, a wide window must not force wide-viewport column counts.
+  const roster = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
+  assert.match(roster, /@container p-4/, "familiars roster declares its container");
+  assert.match(roster, /@min-\[700px\]:grid-cols-2 @min-\[1050px\]:grid-cols-3 @min-\[1400px\]:grid-cols-4/, "roster columns are container-keyed");
+  assert.doesNotMatch(roster, /xl:grid-cols-4/, "the viewport-keyed roster grid must not return");
+  const caps = readFileSync(new URL("./capabilities-view.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(caps, /lg:grid-cols-7/, "capability summary tiles are no longer viewport-keyed");
+  const card = readFileSync(new URL("./capability-card.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(card, /sm:grid-cols-2/, "capability cards are no longer viewport-keyed");
+  const autos = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(autos, /sm:grid-cols-2/, "cron detail grids are no longer viewport-keyed");
+  const subs = readFileSync(new URL("./opencoven-submission-panel.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(subs, /xl:grid-cols-\[/, "the submissions side-by-side layout is no longer viewport-keyed");
+});

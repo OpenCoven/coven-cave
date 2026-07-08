@@ -493,7 +493,7 @@ export function CapabilitiesViewSurface({
   );
 
   return (
-    <div className="capabilities-view flex h-full min-w-0 flex-col bg-background text-foreground">
+    <div className="capabilities-view @container flex h-full min-w-0 flex-col bg-background text-foreground">
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[1280px] px-4 pb-12 sm:px-8">
           <div className="pb-4 pt-5">
@@ -586,7 +586,7 @@ export function CapabilitiesViewSurface({
               </div>
 
               {/* Summary tiles double as the primary type/status filters. */}
-              <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-7">
+              <div className="mb-3 grid grid-cols-2 gap-2 @min-[560px]:grid-cols-4 @min-[1000px]:grid-cols-7">
                 <SummaryTile
                   icon="ph:heartbeat"
                   label="Readiness"
