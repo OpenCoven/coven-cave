@@ -68,7 +68,7 @@ import {
   type PromptOption,
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
@@ -124,6 +124,7 @@ import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-sta
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
@@ -2378,6 +2379,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       })();
     },
     [familiar.id, sessionId, refreshModelState],
+  );
+  // Switch the runtime from the composer chip. Familiar-level, like the home
+  // composer's selectRuntime (/api/config is the only channel that rebinds a
+  // harness) — and it applies from the next send, because the send route
+  // re-resolves the familiar's binding from current config on every turn.
+  const handleSelectRuntime = useCallback(
+    (runtime: string) => {
+      const nextModel = defaultModelForRuntime(runtime);
+      // Optimistic: the chip flips immediately; the refetch reconciles.
+      setModelState((current) =>
+        current
+          ? { ...current, harness: runtime, effectiveModel: nextModel, source: "familiar-default", reason: "Selected from the chat composer." }
+          : current,
+      );
+      void (async () => {
+        try {
+          await fetch("/api/config", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+            }),
+          });
+        } finally {
+          await refreshModelState();
+        }
+      })();
+    },
+    [familiar.id, refreshModelState],
   );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -5338,6 +5368,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onChange: (v: string) => setResponseSpeed(v as ComposerResponseSpeed),
                       } satisfies ComposerOptionSection,
                     ]}
+                  />
+                  <ComposerRuntimeChip
+                    runtime={modelHarness}
+                    modelValue={composerModelValue}
+                    modelOptions={composerModelOptions}
+                    onPickRuntime={handleSelectRuntime}
+                    onPickModel={handleSelectModel}
+                    disabled={busy}
                   />
                 </div>
                 <div className="cave-composer-submit-row">
