@@ -101,6 +101,27 @@ assert.doesNotMatch(
   /<div key=\{mode\} className="cave-mode-fade/,
   "Workspace detail must not force a full remount on every surface switch",
 );
+// ...but the mode-transition crossfade must STILL fire on every switch. The
+// `.cave-mode-fade` CSS animation only plays on the wrapper's initial mount, so
+// a mode change replays an opacity-only fade via WAAPI on the *persistent*
+// wrapper (no remount, no transform → no containing-block trap; cave-cco).
+// This has silently regressed twice (UX-004 added it via key={mode}; the
+// terminal-keepalive PR removed the key and killed the switch fade) — pin it.
+assert.match(
+  workspace,
+  /ref=\{detailFadeRef\}/,
+  "detail wrapper wires the mode-fade ref so switches can re-fire the fade",
+);
+assert.match(
+  workspace,
+  /el\.animate\(\s*\[\{ opacity: 0 \}, \{ opacity: 1 \}\],\s*\{ duration: 120, easing: "ease-out" \}/,
+  "a mode switch replays a 120ms opacity-only fade on the detail wrapper",
+);
+assert.match(
+  workspace,
+  /prefers-reduced-motion: reduce/,
+  "the mode-fade retrigger honors prefers-reduced-motion",
+);
 assert.match(
   source,
   /active = true[\s\S]*?if \(view !== "terminal" \|\| !active\) return;/,

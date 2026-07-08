@@ -69,7 +69,6 @@ function TabFavicon({ url, title, size = 20 }: { url: string; title: string; siz
 //
 // Tab design:
 // - Pinned tabs persisted in localStorage (user-customizable)
-// - Dynamic localhost tab auto-injected when a project dev server is detected
 // - Each tab uses a separate native webview label: `<paneLabel>-tab-<id>`
 
 type TauriBridge = {
@@ -87,7 +86,6 @@ async function loadTauri(): Promise<TauriBridge | null> {
 }
 
 const HOME_URL = "https://opencoven.ai";
-const LOCALHOST_PORTS = [3000, 3001, 5173, 8080, 4000, 4321];
 const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";
 const PINNED_STORAGE_KEY = "cave.browser.pinnedTabs.v1";
 const RAIL_PINNED_STORAGE_KEY = "cave.browser.railPinned.v1";
@@ -97,8 +95,7 @@ export type BrowserTab = {
   url: string;
   title: string;
   pinned: boolean;
-  /** "localhost" tabs are dynamic — auto-added/removed based on dev server detection */
-  kind: "pinned" | "localhost";
+  kind: "pinned";
 };
 
 function normalizeUrl(raw: string): string {
@@ -141,7 +138,9 @@ function loadPinnedTabs(): BrowserTab[] {
   if (typeof window === "undefined") return defaultPinnedTabs();
   try {
     const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as BrowserTab[];
+    // Filter out stale non-pinned entries persisted by older versions
+    // (e.g. the auto-injected localhost tab).
+    if (raw) return (JSON.parse(raw) as BrowserTab[]).filter((t) => t.kind === "pinned");
   } catch { /* ignore */ }
   return defaultPinnedTabs();
 }
@@ -179,24 +178,8 @@ function defaultPinnedTabs(): BrowserTab[] {
     // be a dedicated "Coven" sidebar surface — folded into the browser instead).
     { id: "opencoven-docs", url: "https://docs.opencoven.ai", title: "Docs", pinned: true, kind: "pinned" },
     { id: "opencoven-feedback", url: "https://feedback.opencoven.ai", title: "Feedback", pinned: true, kind: "pinned" },
-    { id: "opencvn-x", url: "https://x.com/OpenCvn", title: "OpenCvn", pinned: true, kind: "pinned" },
     { id: "github", url: "https://github.com/OpenCoven", title: "GitHub", pinned: true, kind: "pinned" },
   ];
-}
-
-async function probeLocalhost(port: number): Promise<boolean> {
-  try {
-    const res = await fetch(`http://localhost:${port}`, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(800),
-      mode: "no-cors",
-    });
-    // no-cors always returns opaque — if it didn't throw, something is there
-    void res;
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── Native-overlay occlusion ─────────────────────────────────────────
@@ -506,55 +489,6 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id]);
 
-  // ── Localhost probe ───────────────────────────────────────────────
-  // Each closed port logs an ERR_CONNECTION_REFUSED in the console (a no-cors
-  // fetch can't be silenced), so probe sparingly: only while the document is
-  // visible, and on a slow cadence — never poll a backgrounded window.
-  useEffect(() => {
-    let cancelled = false;
-    const probe = async () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      for (const port of LOCALHOST_PORTS) {
-        if (cancelled) break;
-        const live = await probeLocalhost(port);
-        if (live && !cancelled) {
-          const locUrl = `http://localhost:${port}`;
-          setTabs((prev) => {
-            const existing = prev.find((t) => t.kind === "localhost");
-            if (existing?.url === locUrl) return prev;
-            const filtered = prev.filter((t) => t.kind !== "localhost");
-            return [
-              ...filtered,
-              {
-                id: `localhost-${port}`,
-                url: locUrl,
-                title: `localhost:${port}`,
-                pinned: false,
-                kind: "localhost",
-              },
-            ];
-          });
-          return;
-        }
-      }
-      if (!cancelled) {
-        // No localhost found — remove stale localhost tab
-        setTabs((prev) => prev.filter((t) => t.kind !== "localhost"));
-      }
-    };
-    void probe();
-    const interval = setInterval(() => void probe(), 30000);
-    // Re-probe promptly when the user returns to the tab rather than waiting
-    // out the slow interval.
-    const onVisible = () => { if (document.visibilityState === "visible") void probe(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
   // ── Tab actions ───────────────────────────────────────────────────
   const switchTab = useCallback((id: string) => {
     setActiveTabId(id);
@@ -588,19 +522,19 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       pinned: true,
       kind: "pinned",
     };
-    const next = [...tabs.filter((t) => t.kind === "pinned"), newTab, ...tabs.filter((t) => t.kind === "localhost")];
+    const next = [...tabs, newTab];
     setTabs(next);
-    savePinnedTabs(next.filter((t) => t.kind === "pinned"));
+    savePinnedTabs(next);
   };
 
   const removeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const tab = tabs.find((t) => t.id === id);
-    if (!tab || tab.kind === "localhost") return; // localhost tabs aren't manually closeable
+    if (!tab) return;
     if (bridge) void bridge.invoke("browser_close", { label: tabLabel(id) });
     const next = tabs.filter((t) => t.id !== id);
     setTabs(next);
-    savePinnedTabs(next.filter((t) => t.kind === "pinned"));
+    savePinnedTabs(next);
     if (activeTabId === id) setActiveTabId(next[0]?.id ?? "home");
   };
 
@@ -622,8 +556,8 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     }
 
     const updatedActiveTab = nextTabs.find((t) => t.id === activeTabId);
-    if (updatedActiveTab?.kind === "pinned") {
-      savePinnedTabs(nextTabs.filter((t) => t.kind === "pinned"));
+    if (updatedActiveTab) {
+      savePinnedTabs(nextTabs);
     }
     // Reveal the page again now that the user has committed a destination.
     setToolbarOpen(false);
@@ -773,7 +707,6 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
-          const isLocalhost = tab.kind === "localhost";
           return (
             <div
               key={tab.id}
@@ -802,17 +735,14 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               )}
               {/* Favicon / indicator */}
               <span className="relative flex shrink-0 items-center justify-center">
-                {isLocalhost
-                  ? <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
-                  : <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
-                }
+                <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
               </span>
               {/* Label — only when rail is expanded; favicon-only when collapsed */}
               {railExpanded ? (
                 <span className="w-[44px] truncate text-center text-[10px] leading-tight">{title}</span>
               ) : null}
               {/* Close on hover */}
-              {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
+              {tabs.length > 1 && (
                 <button
                   onClick={(e) => removeTab(tab.id, e)}
                   className="touch-always-visible focus-ring absolute top-1 right-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 text-[var(--fg-muted)] transition-opacity"
