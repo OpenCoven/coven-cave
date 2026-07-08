@@ -39,6 +39,15 @@ function kindLabel(kind: MarketplacePlugin["kind"]) {
   return "Skill";
 }
 
+// What "Add" actually does differs by kind — the button says so on hover
+// instead of leaving the verb ambiguous.
+function addHelp(kind: MarketplacePlugin["kind"]) {
+  if (kind === "mcp") return "Add this MCP server to your Cave — familiars can call its tools";
+  if (kind === "api") return "Connect this API so your familiars can use it";
+  if (kind === "prompt") return "Add this prompt pack — its templates join the / menu";
+  return "Install this skill — familiars load it while they work";
+}
+
 function setupEffortLabel(plugin: MarketplacePlugin) {
   if (!plugin.available) return { icon: "ph:warning" as const, label: "Unavailable" };
   if (plugin.requiresSetup && !plugin.configured) {
@@ -110,7 +119,14 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             Set up
           </Button>
         ) : state === "added" ? (
-          <Button variant="secondary" size="sm" leadingIcon="ph:check" loading={busy} onClick={() => onRemove(plugin.id)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:check"
+            loading={busy}
+            onClick={() => onRemove(plugin.id)}
+            title="In your Cave — click to remove it"
+          >
             Added
           </Button>
         ) : state === "unavailable" ? (
@@ -118,7 +134,14 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             Unavailable
           </Button>
         ) : (
-          <Button variant="primary" size="sm" leadingIcon="ph:plus" loading={busy} onClick={() => onAdd(plugin.id)}>
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:plus"
+            loading={busy}
+            onClick={() => onAdd(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
             Add
           </Button>
         )}

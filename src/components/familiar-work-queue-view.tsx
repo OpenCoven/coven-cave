@@ -563,7 +563,14 @@ function WorkQueueCard({
           </Button>
         ) : null}
         {item.lane === "no-open-PR" && beadId ? (
-          <Button variant="secondary" size="xs" loading={busy} leadingIcon="ph:hand" onClick={onClaim}>
+          <Button
+            variant="secondary"
+            size="xs"
+            loading={busy}
+            leadingIcon="ph:hand"
+            onClick={onClaim}
+            title="Take this work item (bead) — marks it in progress under your name"
+          >
             Claim
           </Button>
         ) : null}
@@ -575,7 +582,11 @@ function WorkQueueCard({
             leadingIcon="ph:check"
             onClick={onClose}
             disabled={closeBlocked}
-            title={closeBlocked ? "Add a handoff note to record verification before closing" : undefined}
+            title={
+              closeBlocked
+                ? "Add a handoff note to record verification before closing"
+                : "Mark this work item (bead) complete — it leaves the queue"
+            }
           >
             Close bead
           </Button>

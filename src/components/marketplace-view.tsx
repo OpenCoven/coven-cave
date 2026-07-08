@@ -57,10 +57,10 @@ const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: Ico
 // One-line hint per section — surfaces as the tab tooltip (the old hero
 // subtitle, demoted so the header stays a single row).
 const SECTION_HINT: Record<MarketplaceSection, string> = {
-  browse: "Browse MCP servers and skills, then add them to give your familiars new capabilities.",
+  browse: "The catalog — add MCP servers, connected APIs, skills, and prompt packs to your Cave.",
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
-  skills: "Reusable SKILL.md procedures your familiars can load while they work.",
-  capabilities: "What each runtime supports — compare tools and features side by side.",
+  skills: "Skills already in your Cave — reusable SKILL.md procedures familiars load while they work.",
+  capabilities: "What each runtime you've installed can do — its instructions, skills, and plugins, side by side.",
 };
 
 const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> = {

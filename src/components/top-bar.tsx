@@ -161,7 +161,8 @@ export function TopBar(props: Props) {
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
           placeholder="Search or ask Salem..."
-          aria-label="Search anything or ask Salem"
+          aria-label="Search anything or ask Salem, the docs familiar"
+          title="Search everything — or ask Salem, the familiar trained on the OpenCoven docs"
           autoComplete="off"
           spellCheck={false}
         />

@@ -1007,8 +1007,9 @@ export function FlowView() {
                   <div className="flow-canvas-coach" role="note">
                     <p className="flow-canvas-coach-title">Start building</p>
                     <p className="flow-canvas-coach-sub">
-                      Drag from a node&apos;s port to wire the next step, press <kbd>N</kbd> to add a node,
-                      or double-click anywhere on the canvas.
+                      Each node is one step — a trigger, a familiar message, a skill, a delay, a rule —
+                      and the wires pass data between them. Drag from a node&apos;s port to wire the next
+                      step, press <kbd>N</kbd> to add a node, or double-click anywhere on the canvas.
                     </p>
                     <div className="flow-canvas-coach-actions">
                       <Button

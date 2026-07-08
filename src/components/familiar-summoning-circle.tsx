@@ -101,7 +101,7 @@ const NAME_POOL = [
 ] as const;
 
 const STAGES = [
-  { key: "vessel", numeral: "I", title: "The vessel", hint: "Choose where your familiar lives." },
+  { key: "vessel", numeral: "I", title: "The vessel", hint: "Choose where your familiar lives — the machine or agent its mind runs on." },
   { key: "name", numeral: "II", title: "The name", hint: "Every familiar answers to a name." },
   { key: "form", numeral: "III", title: "The form", hint: "Give it a sigil and an aura." },
   { key: "summon", numeral: "IV", title: "The summoning", hint: "Read the incantation, then call." },
@@ -987,7 +987,7 @@ function StageName({
           id="summon-role"
           value={role}
           onChange={(e) => setRole(e.target.value)}
-          placeholder="Familiar"
+          placeholder="e.g. Researcher, Code reviewer"
           className={inputClass}
         />
       </div>

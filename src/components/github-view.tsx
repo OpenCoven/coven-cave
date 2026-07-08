@@ -2539,7 +2539,10 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           )}
 
           {activity?.rateLimit && (
-            <span className="gh-compact-rate">
+            <span
+              className="gh-compact-rate"
+              title="GitHub API requests left this hour — public gets 60/h, a PAT gets 5,000/h"
+            >
               {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
             </span>
           )}
@@ -2673,7 +2676,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             <EmptyState
               icon="ph:github-logo"
               headline="Connect your GitHub account"
-              subtitle="Cave uses the public GitHub API (no auth needed) or your own PAT for private repos and reviews."
+              subtitle="Start with just a GitHub username to browse public repos — add a personal access token (PAT) later for private repos and reviews. Both stay on this machine."
               actions={
                 <Button variant="primary" leadingIcon="ph:github-logo" onClick={() => setShowPatModal(true)}>
                   Set up GitHub

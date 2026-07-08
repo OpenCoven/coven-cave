@@ -457,6 +457,7 @@ function RailSection({
   ariaLabel,
   icon,
   label,
+  description,
   count,
   collapsed,
   onToggle,
@@ -465,6 +466,9 @@ function RailSection({
   ariaLabel: string;
   icon: IconName;
   label: string;
+  /** One line saying what belongs in this source — the three sources read as
+   *  synonyms to a new user, so each header explains its own. */
+  description: string;
   count: number;
   collapsed: boolean;
   onToggle: () => void;
@@ -476,6 +480,7 @@ function RailSection({
         <button
           type="button"
           aria-expanded={!collapsed}
+          title={description}
           onClick={onToggle}
           className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
         >
@@ -560,7 +565,24 @@ function GrimoireDocLinks({
     return out;
   }, [markdown, docIndex]);
 
-  if (links.length === 0 && backlinks.length === 0) return null;
+  // A doc with no connections teaches the syntax instead of hiding the strip —
+  // [[wiki-links]] have no visible affordance in the editor, so this hint is
+  // where a user learns they exist. Waits for content to load (null) so it
+  // doesn't flash on every doc open.
+  if (links.length === 0 && backlinks.length === 0) {
+    const loaded =
+      selection.kind === "knowledge" ||
+      (selection.kind === "memory" ? memFile.text !== null : journalMd !== null);
+    if (!loaded || markdown.trim().length === 0) return null;
+    return (
+      <div className="grimoire-doc-links shrink-0 border-t border-[var(--border-hairline)] px-3 py-2">
+        <p className="text-[10px] text-[var(--text-muted)]">
+          Tip: type <code className="rounded bg-[var(--bg-elevated)] px-1">[[a doc&apos;s title]]</code> anywhere in
+          the text to link documents — links show up here and weave the graph.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="grimoire-doc-links shrink-0 space-y-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
@@ -1112,6 +1134,7 @@ export function GrimoireView() {
                 ariaLabel="Knowledge vault"
                 icon="ph:book-open"
                 label="Knowledge"
+                description="Curated reference entries you write and keep — the durable vault"
                 count={visibleKnowledge.length}
                 collapsed={!q && collapsedSections.knowledge}
                 onToggle={() => toggleSection("knowledge")}
@@ -1137,6 +1160,7 @@ export function GrimoireView() {
                 ariaLabel="Memory files"
                 icon="ph:brain"
                 label="Memory"
+                description="Files your familiars and runtimes write as they work — editable in place"
                 count={visibleMemory.length}
                 collapsed={!q && collapsedSections.memory}
                 onToggle={() => toggleSection("memory")}
@@ -1173,6 +1197,7 @@ export function GrimoireView() {
                 ariaLabel="Journal"
                 icon="ph:calendar-blank"
                 label="Journal"
+                description="One reflection per day, written by a familiar or by you"
                 count={visibleJournal.length}
                 collapsed={!q && collapsedSections.journal}
                 onToggle={() => toggleSection("journal")}

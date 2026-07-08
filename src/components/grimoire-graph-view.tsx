@@ -700,8 +700,12 @@ export function GrimoireGraphView({
     onChange: (next: boolean) => void,
     dotToken?: string,
     count?: number,
+    help?: string,
   ) => (
-    <label className="flex cursor-pointer items-center gap-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]">
+    <label
+      title={help}
+      className="flex cursor-pointer items-center gap-1.5 py-0.5 text-[11px] text-[var(--text-secondary)]"
+    >
       <input
         type="checkbox"
         checked={checked}
@@ -781,6 +785,7 @@ export function GrimoireGraphView({
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, knowledge: v } })),
                 NODE_KIND_TOKEN.knowledge,
                 counts.knowledge,
+                "Curated reference entries from the knowledge vault",
               )}
               {checkboxRow(
                 "Memory",
@@ -788,6 +793,7 @@ export function GrimoireGraphView({
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, memory: v } })),
                 NODE_KIND_TOKEN.memory,
                 counts.memory,
+                "Files your familiars and runtimes write as they work",
               )}
               {checkboxRow(
                 "Journal",
@@ -795,6 +801,7 @@ export function GrimoireGraphView({
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, journal: v } })),
                 NODE_KIND_TOKEN.journal,
                 counts.journal,
+                "Daily reflections, one per day",
               )}
               {checkboxRow(
                 "Tags",
@@ -802,22 +809,45 @@ export function GrimoireGraphView({
                 (v) => setPrefs((p) => ({ ...p, groups: { ...p.groups, tag: v } })),
                 NODE_KIND_TOKEN.tag,
                 counts.tag,
+                "Each tag is its own node, connected to the docs that carry it",
               )}
             </div>
             <div>
               <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                 Connections
               </p>
-              {checkboxRow("Links", prefs.edgeTypes.link, (v) =>
-                setPrefs((p) => ({ ...p, edgeTypes: { ...p.edgeTypes, link: v } })),
+              {checkboxRow(
+                "Links",
+                prefs.edgeTypes.link,
+                (v) => setPrefs((p) => ({ ...p, edgeTypes: { ...p.edgeTypes, link: v } })),
+                undefined,
+                undefined,
+                "Solid lines — explicit [[wiki-links]] written in a doc",
               )}
-              {checkboxRow("Mentions", prefs.edgeTypes.mention, (v) =>
-                setPrefs((p) => ({ ...p, edgeTypes: { ...p.edgeTypes, mention: v } })),
+              {checkboxRow(
+                "Mentions",
+                prefs.edgeTypes.mention,
+                (v) => setPrefs((p) => ({ ...p, edgeTypes: { ...p.edgeTypes, mention: v } })),
+                undefined,
+                undefined,
+                "Dashed lines — one doc's text mentions another's title, without a link",
               )}
-              {checkboxRow("Tag links", prefs.edgeTypes.tag, (v) =>
-                setPrefs((p) => ({ ...p, edgeTypes: { ...p.edgeTypes, tag: v } })),
+              {checkboxRow(
+                "Tag links",
+                prefs.edgeTypes.tag,
+                (v) => setPrefs((p) => ({ ...p, edgeTypes: { ...p.edgeTypes, tag: v } })),
+                undefined,
+                undefined,
+                "Faint lines — a doc connected to a tag it carries",
               )}
-              {checkboxRow("Orphans", prefs.orphans, (v) => setPrefs((p) => ({ ...p, orphans: v })))}
+              {checkboxRow(
+                "Orphans",
+                prefs.orphans,
+                (v) => setPrefs((p) => ({ ...p, orphans: v })),
+                undefined,
+                undefined,
+                "Docs with no connections at all — hide them to see only the web",
+              )}
             </div>
             <div>
               <p className="pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">

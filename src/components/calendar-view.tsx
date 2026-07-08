@@ -294,8 +294,9 @@ function EmptyScheduleState({
           leadingIcon="ph:plus"
           onClick={onAddEntry}
           className="calendar-empty-action"
+          title="Creates a scheduled reminder (an inbox item) — board tasks get due dates on the Tasks surface"
         >
-          Add task or event
+          Add reminder
         </Button>
       ) : null}
     </div>
@@ -375,8 +376,9 @@ function AgendaView({
             leadingIcon="ph:plus"
             onClick={() => onAddEntry({ fireAt: defaultEntryFireAt(anchor) })}
             className="calendar-empty-action"
+            title="Creates a scheduled reminder (an inbox item) — board tasks get due dates on the Tasks surface"
           >
-            Add task or event
+            Add reminder
           </Button>
         ) : null}
       </div>
@@ -560,7 +562,10 @@ function DeadlineStrip({
   return (
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
       <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
-        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+        <span
+          className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right"
+          title="Task due dates from the Board — separate from your scheduled reminders below"
+        >
           Due
         </span>
       </div>

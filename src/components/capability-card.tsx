@@ -81,7 +81,9 @@ export function CapabilitiesView({
   if (items.length === 0) {
     return (
       <p className="rounded-lg border border-border px-4 py-6 text-center text-[13px] text-muted-foreground">
-        No runtime capabilities found. Start the daemon or add a local runtime to see its instructions, skills, and plugins.
+        Nothing to show yet — this tab lists what each runtime on your machine can do (its global
+        instructions, installed skills, and plugins). Start the daemon or add a local runtime and it
+        fills in.
       </p>
     );
   }
@@ -178,8 +180,11 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
 
         {manifest.skills.length > 0 ? (
           <div className="px-4 py-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]">
-              Automations / skills · {manifest.skills.length}
+            <p
+              className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]"
+              title="SKILL.md procedures this runtime has installed"
+            >
+              Skills · {manifest.skills.length}
             </p>
             <ul className="space-y-1.5">
               {manifest.skills.map((skill) => (
@@ -196,17 +201,6 @@ function HarnessCapabilityCard({ manifest }: { manifest: HarnessCapabilityManife
             </ul>
           </div>
         ) : null}
-
-        {manifest.skills && manifest.skills.length > 0 && (
-          <div className="px-4 py-2">
-            <p className="text-[11px] text-muted-foreground">
-              Skills · {manifest.skills.length}
-              {" — "}
-              {manifest.skills.slice(0, 3).map((s) => s.name).join(", ")}
-              {manifest.skills.length > 3 ? ` +${manifest.skills.length - 3} more` : ""}
-            </p>
-          </div>
-        )}
 
         {manifest.warnings.length > 0 ? (
           <div className="px-4 py-3">
