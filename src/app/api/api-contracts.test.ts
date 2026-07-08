@@ -167,7 +167,6 @@ const contracts: RouteContract[] = [
   { route: "/workflows/save", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/workflows", methods: ["GET"], kind: "json" },
-  { route: "/youtube", methods: ["GET"], kind: "json" },
 ];
 
 function walkRoutes(dir: string): string[] {

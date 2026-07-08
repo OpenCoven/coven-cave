@@ -4990,22 +4990,8 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
 }
 
-.rail-memory {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
-}
-
-.rail-memory__scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
+/* .rail-memory / .rail-memory__scroll removed with the dead RailMemoryList
+   (cave-kdkg). __open-full survives: inspector-pane's memory tab uses it. */
 .rail-memory__open-full {
   flex-shrink: 0;
   padding: 8px 12px;

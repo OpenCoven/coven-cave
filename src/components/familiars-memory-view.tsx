@@ -721,52 +721,6 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Rail variant — most-recent memory writes, no graph.
-// The full view uses the same list/reader surface; the rail tab is a quick
-// "what changed" feed.
-// ────────────────────────────────────────────────────────────────────────────
-
-export function RailMemoryList({
-  familiar,
-  familiars = [],
-  onOpenFullView,
-}: {
-  familiar: Familiar | null;
-  familiars?: Familiar[];
-  onOpenFullView?: () => void;
-}) {
-  if (!familiar) {
-    return (
-      <div className="rail-empty">
-        <p>Pick a familiar.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rail-memory">
-      <div className="rail-memory__scroll">
-        <FamiliarsMemoryView
-          familiars={familiars}
-          activeFamiliar={familiar}
-          limit={20}
-          compact
-          lockToFamiliar
-        />
-      </div>
-      {onOpenFullView ? (
-        <button
-          type="button"
-          className="focus-ring rail-memory__open-full"
-          onClick={onOpenFullView}
-        >
-          Open full memory →
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // Standalone file-list — reusable by the Familiars detail panel without the
 // coven-memory half or the familiar picker.
 // ────────────────────────────────────────────────────────────────────────────
