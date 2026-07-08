@@ -192,9 +192,9 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   if (!hasLoaded) {
     return (
       <div className="fwq" aria-busy>
-        <div className="fwq-head">
-          <h2 className="fwq-title">Familiar Work Queue</h2>
-        </div>
+        <header className="surface-compact-header">
+          <h1 className="surface-compact-title">Work Queue</h1>
+        </header>
         <div className="fwq-body">
           <SkeletonRows count={6} />
         </div>
@@ -225,25 +225,28 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
 
   return (
     <div className="fwq">
-      <div className="fwq-head">
-        <div className="fwq-head-main">
-          <h2 className="fwq-title">Familiar Work Queue</h2>
-          <p className="fwq-sub">
-            {q.total === 0
-              ? "No open PRs or ready beads."
-              : `${q.actionable} actionable · ${q.total} total${q.stale ? ` · ${q.stale} stale` : ""}`}
-          </p>
+      {/* Compact header — the shared .surface-compact band (GitHub / Schedules /
+          Marketplace / Tasks / Grimoire): small title, live summary inline,
+          Refresh on the right. */}
+      <header className="surface-compact-header">
+        <h1 className="surface-compact-title">Work Queue</h1>
+        <p className="surface-compact-summary">
+          {q.total === 0
+            ? "No open PRs or ready beads."
+            : `${q.actionable} actionable · ${q.total} total${q.stale ? ` · ${q.stale} stale` : ""}`}
+        </p>
+        <div className="surface-compact-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:arrow-clockwise"
+            onClick={() => void load()}
+            aria-label="Refresh work queue"
+          >
+            Refresh
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          leadingIcon="ph:arrow-clockwise"
-          onClick={() => void load()}
-          aria-label="Refresh work queue"
-        >
-          Refresh
-        </Button>
-      </div>
+      </header>
 
       {q.byFamiliar.length > 0 ? (
         <div className="fwq-familiars" role="group" aria-label="Filter by familiar">

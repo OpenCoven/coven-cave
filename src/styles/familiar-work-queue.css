@@ -12,29 +12,8 @@
   container-type: inline-size; /* enables the narrow-surface @container rule */
 }
 
-.fwq-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.fwq-head-main {
-  min-width: 0;
-}
-
-.fwq-title {
-  font: 600 15px/1.2 var(--font-sans);
-  margin: 0;
-}
-
-.fwq-sub {
-  margin: 3px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
-}
+/* The head is now the shared .surface-compact-header band (globals.css) —
+   the old .fwq-head/.fwq-title/.fwq-sub chrome retired with it. */
 
 /* Per-familiar rollup: filter chips, roving via native buttons. */
 .fwq-familiars {
