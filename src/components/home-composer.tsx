@@ -43,6 +43,7 @@ import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { ProjectPicker } from "@/components/project-picker";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
+import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
@@ -906,6 +907,16 @@ export function HomeComposer({
                     onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
                   } satisfies ComposerOptionSection,
                 ]}
+              />
+              {/* Always-visible runtime mark + model, one click to switch —
+                  parity with the chat composer's chip (cave-yq5l). */}
+              <ComposerRuntimeChip
+                runtime={selectedRuntime}
+                modelValue={selectedModelId}
+                modelOptions={runtimeModelOptions}
+                onPickRuntime={handleSelectRuntime}
+                onPickModel={handleSelectModel}
+                disabled={sending}
               />
 
               <div

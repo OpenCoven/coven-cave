@@ -11,7 +11,36 @@ import { readFileSync } from "node:fs";
 const chip = readFileSync(new URL("./composer-runtime-chip.tsx", import.meta.url), "utf8");
 const logo = readFileSync(new URL("./runtime-logo.tsx", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const homeModelState = readFileSync(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/composer-runtime-chip.css", import.meta.url), "utf8");
+
+// ── Parity: the home composer carries the same chip (cave-v25g) ─────────────
+assert.match(
+  homeComposer,
+  /<ComposerRuntimeChip\s*\n\s*runtime=\{selectedRuntime\}\s*\n\s*modelValue=\{selectedModelId\}\s*\n\s*modelOptions=\{runtimeModelOptions\}\s*\n\s*onPickRuntime=\{handleSelectRuntime\}\s*\n\s*onPickModel=\{handleSelectModel\}/,
+  "the home composer renders the same runtime chip from its own model state",
+);
+
+// ── Runtime switches refresh the familiar roster immediately (cave-v25g) ────
+// The roster's familiar.harness feeds the chat empty-state identity line;
+// without this it lags a switch until the next natural reload.
+assert.match(
+  workspace,
+  /window\.addEventListener\("cave:familiars-refresh", onFamiliarsRefresh\)/,
+  "workspace reloads the familiar roster on cave:familiars-refresh",
+);
+assert.match(
+  chatView,
+  /if \(res\.ok\) window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
+  "a chat runtime switch fires the roster refresh (only on a successful PATCH)",
+);
+assert.match(
+  homeModelState,
+  /if \(json\.ok\) \{\s*\n[\s\S]{0,200}?window\.dispatchEvent\(new Event\("cave:familiars-refresh"\)\);/,
+  "a home runtime switch fires the roster refresh (only on a successful PATCH)",
+);
 
 // ── The chip is always in the composer control row, wired to live state ─────
 assert.match(
