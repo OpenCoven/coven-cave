@@ -81,6 +81,7 @@ const contracts: RouteContract[] = [
   { route: "/github/worktree", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/grimoire/graph", methods: ["GET"], kind: "json" },
   { route: "/harnesses", methods: ["GET"], kind: "json" },
   { route: "/home-tweets", methods: ["GET"], kind: "json" },
   { route: "/inbox/[id]/dismiss", methods: ["POST"], kind: "json", localOriginGuard: true },

@@ -18,8 +18,8 @@
  * Deep link: `#grimoire:<kind>:<id>` selects a document on entry.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Icon, type IconName } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { parseMdDocument, serializeMdDocument, type MdDocument } from "@/lib/md-frontmatter";
@@ -30,11 +30,13 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemoryFile } from "@/lib/use-memory-file";
-import { resolveOutgoingLinks, type WikiDocIndex } from "@/lib/wiki-link-resolve";
-import { buildDocGraph } from "@/lib/grimoire-graph";
+import { resolveOutgoingLinks, type WikiDocIndex, type WikiDocRef } from "@/lib/wiki-link-resolve";
+import { buildDocGraph, type DocGraph, type GraphEdgeType } from "@/lib/grimoire-graph";
+import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
 import dynamic from "next/dynamic";
 
-// @xyflow is heavy — lazy-load the graph so the dep only lands when it's opened.
+// The canvas graph is a chunk of physics + drawing code — lazy-load it so the
+// cost only lands when the graph is opened.
 const GrimoireGraphView = dynamic(
   () => import("@/components/grimoire-graph-view").then((m) => m.GrimoireGraphView),
   {
@@ -181,6 +183,61 @@ function writeStoredTabs(tabs: GrimoireSelection[], activeKey: string | null) {
   } catch {
     /* private mode — tabs stay session-only */
   }
+}
+
+// ── Full-corpus graph scan ───────────────────────────────────────────────────
+// GET /api/grimoire/graph builds the doc graph over EVERYTHING the Grimoire
+// lists (knowledge + memory + journal) server-side, so contents never cross
+// the wire — just nodes and edges. Until (or if) it lands, the client-built
+// knowledge graph stands in, so the graph and backlinks always have data.
+
+type GrimoireGraphScan = {
+  scan: { graph: DocGraph; meta: GrimoireGraphMeta } | null;
+  scanning: boolean;
+  scanError: string | null;
+  refreshGraph: () => void;
+};
+
+function useGrimoireGraphScan(): GrimoireGraphScan {
+  const [state, setState] = useState<Omit<GrimoireGraphScan, "refreshGraph">>({
+    scan: null,
+    scanning: true,
+    scanError: null,
+  });
+  const [scanTick, setScanTick] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setState((s) => ({ ...s, scanning: true }));
+    void (async () => {
+      try {
+        const res = await fetch("/api/grimoire/graph", { cache: "no-store", signal: controller.signal });
+        const json = await res.json();
+        if (controller.signal.aborted) return;
+        if (json.ok && Array.isArray(json.nodes) && Array.isArray(json.edges)) {
+          setState({
+            scan: { graph: { nodes: json.nodes, edges: json.edges }, meta: json.meta },
+            scanning: false,
+            scanError: null,
+          });
+        } else {
+          // A failed rescan keeps the previous scan on screen.
+          setState((s) => ({ ...s, scanning: false, scanError: json.error ?? "Graph scan failed" }));
+        }
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setState((s) => ({
+          ...s,
+          scanning: false,
+          scanError: err instanceof Error ? err.message : "Graph scan failed",
+        }));
+      }
+    })();
+    return () => controller.abort();
+  }, [scanTick]);
+
+  const refreshGraph = useCallback(() => setScanTick((t) => t + 1), []);
+  return { ...state, refreshGraph };
 }
 
 // ── Knowledge ↔ raw-markdown mapping ─────────────────────────────────────────
@@ -371,21 +428,87 @@ function NavRow({
   );
 }
 
+// ── Navigator section (collapsible) ──────────────────────────────────────────
+
+const RAIL_COLLAPSED_STORAGE_KEY = "cave:grimoire:rail-collapsed";
+
+type RailSectionId = "knowledge" | "memory" | "journal";
+
+function readCollapsedSections(): Record<RailSectionId, boolean> {
+  const none = { knowledge: false, memory: false, journal: false };
+  if (typeof window === "undefined") return none;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(RAIL_COLLAPSED_STORAGE_KEY) ?? "{}");
+    return {
+      knowledge: parsed?.knowledge === true,
+      memory: parsed?.memory === true,
+      journal: parsed?.journal === true,
+    };
+  } catch {
+    return none;
+  }
+}
+
+/** One navigator source group: a collapsible header (kind icon + count) over
+ *  its rows. An active search overrides collapse — matches must be reachable. */
+function RailSection({
+  ariaLabel,
+  icon,
+  label,
+  count,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  ariaLabel: string;
+  icon: IconName;
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={ariaLabel}>
+      <h3>
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+          className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+        >
+          <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={9} aria-hidden />
+          <Icon name={icon} width={11} aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+          <span className="shrink-0 font-normal">{count}</span>
+        </button>
+      </h3>
+      {collapsed ? null : children}
+    </section>
+  );
+}
+
 // ── Wiki-link chips ──────────────────────────────────────────────────────────
 
-/** The open doc's outgoing [[wiki-links]], resolved against the loaded docs and
- *  shown as a chip row below the editor. Resolved chips navigate; unresolved
- *  ones (no matching doc) render dashed + inert. Mounted only for the active
- *  doc, so exactly one doc's content is read at a time. */
+/** A doc referencing the open one — Obsidian's linked/unlinked mentions,
+ *  derived from the doc graph (full-corpus scan when available). */
+export type GrimoireBacklink = { ref: WikiDocRef; title: string; type: GraphEdgeType };
+
+/** The open doc's connections, shown as chip rows below the editor: its
+ *  outgoing [[wiki-links]] (resolved chips navigate; unresolved ones render
+ *  dashed + inert) and its incoming mentions from the doc graph. Mounted only
+ *  for the active doc, so exactly one doc's content is read at a time. */
 function GrimoireDocLinks({
   selection,
   knowledge,
   docIndex,
+  backlinks,
   onOpen,
 }: {
   selection: GrimoireSelection;
   knowledge: KnowledgeEntry[];
   docIndex: WikiDocIndex;
+  backlinks: GrimoireBacklink[];
   onOpen: (sel: GrimoireSelection) => void;
 }) {
   // useMemoryFile is a hook, so it's always called; a null path is a no-op.
@@ -435,35 +558,60 @@ function GrimoireDocLinks({
     return out;
   }, [markdown, docIndex]);
 
-  if (links.length === 0) return null;
+  if (links.length === 0 && backlinks.length === 0) return null;
 
   return (
-    <div className="grimoire-doc-links flex shrink-0 flex-wrap items-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
-      <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
-        <Icon name="ph:link" width={11} aria-hidden />
-        Links
-      </span>
-      {links.map((link, i) => {
-        const { ref, display } = link;
-        return ref ? (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onOpen(ref)}
-            className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
-          >
-            {display}
-          </button>
-        ) : (
-          <span
-            key={i}
-            title="No matching Grimoire doc"
-            className="rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]"
-          >
-            {display}
+    <div className="grimoire-doc-links shrink-0 space-y-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
+      {links.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            <Icon name="ph:link" width={11} aria-hidden />
+            Links
           </span>
-        );
-      })}
+          {links.map((link, i) => {
+            const { ref, display } = link;
+            return ref ? (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onOpen(ref)}
+                className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
+              >
+                {display}
+              </button>
+            ) : (
+              <span
+                key={i}
+                title="No matching Grimoire doc"
+                className="rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]"
+              >
+                {display}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+      {backlinks.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+            <Icon name="ph:graph" width={11} aria-hidden />
+            Mentions
+          </span>
+          {backlinks.map((b, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onOpen(b.ref)}
+              title={b.type === "mention" ? "Mentions this doc (unlinked)" : "Links to this doc"}
+              className={`focus-ring rounded-full border px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)] ${
+                b.type === "mention" ? "border-dashed border-[var(--border-hairline)]" : "border-[var(--border-hairline)]"
+              }`}
+            >
+              {b.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -477,6 +625,22 @@ export function GrimoireView() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showGraph, setShowGraph] = useState(false);
+  const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan();
+  const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
+    readCollapsedSections,
+  );
+  const firstLoadDoneRef = useRef(false);
+  const toggleSection = useCallback((id: RailSectionId) => {
+    setCollapsedSections((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try {
+        window.localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* private mode — collapse stays session-only */
+      }
+      return next;
+    });
+  }, []);
   const confirm = useConfirm();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -550,6 +714,11 @@ export function GrimoireView() {
 
   const load = useCallback(async () => {
     setLoadError(null);
+    // The doc graph is derived from the same corpus — refresh it whenever the
+    // lists refresh after a save/delete (the scan hook already fetched on
+    // mount; server-side content caching keeps rescans cheap).
+    if (firstLoadDoneRef.current) refreshGraph();
+    firstLoadDoneRef.current = true;
     try {
       const [kRes, mRes, jRes] = await Promise.all([
         fetch("/api/knowledge", { cache: "no-store" }),
@@ -563,7 +732,7 @@ export function GrimoireView() {
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Failed to load documents");
     }
-  }, []);
+  }, [refreshGraph]);
 
   useEffect(() => {
     void load();
@@ -661,22 +830,43 @@ export function GrimoireView() {
     [knowledge, memory, journal],
   );
 
-  // The link graph over the knowledge vault (bodies are already loaded, so no
-  // extra fetch/scan). Memory/journal-as-source edges are a follow-up (they need
-  // full server content); memory/journal referenced *from* knowledge still show
-  // up as leaf nodes.
-  const graph = useMemo(
+  // The client-built graph over the knowledge vault (bodies already loaded, no
+  // fetch) — the instant stand-in while the full-corpus scan is in flight, and
+  // the fallback if that scan fails.
+  const localGraph = useMemo(
     () =>
       buildDocGraph(
         (knowledge ?? []).map((k) => ({
           ref: { kind: "knowledge" as const, id: k.id },
           title: k.title,
           markdown: k.body,
+          tags: k.tags,
         })),
         docIndex,
       ),
     [knowledge, docIndex],
   );
+
+  // Graph generation is enforced: the server scan when it lands, the local
+  // knowledge graph until then — the graph is never blank while docs exist.
+  const graph = scan?.graph ?? localGraph;
+
+  // Incoming connections for the active doc (Obsidian's linked/unlinked
+  // mentions), straight off the graph — selectionKey matches docRefKey.
+  const backlinks = useMemo<GrimoireBacklink[]>(() => {
+    if (!selection || selection.kind === "knowledge-new") return [];
+    const activeKey = selectionKey(selection);
+    const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const out: GrimoireBacklink[] = [];
+    const seen = new Set<string>();
+    for (const e of graph.edges) {
+      if (e.target !== activeKey || e.type === "tag" || seen.has(e.source)) continue;
+      seen.add(e.source);
+      const source = nodesById.get(e.source);
+      if (source?.ref) out.push({ ref: source.ref, title: source.title, type: e.type });
+    }
+    return out;
+  }, [graph, selection]);
 
   /** Human tab label for a selection (falls back to ids/paths). */
   const tabTitle = useCallback(
@@ -793,6 +983,7 @@ export function GrimoireView() {
             selection={selection}
             knowledge={knowledge ?? []}
             docIndex={docIndex}
+            backlinks={backlinks}
             onOpen={openDoc}
           />
         ) : null}
@@ -807,16 +998,38 @@ export function GrimoireView() {
       <header className="surface-compact-header">
         <h1 className="surface-compact-title">Grimoire</h1>
         <div className="surface-compact-actions">
-          <button
-            type="button"
-            onClick={() => setShowGraph((v) => !v)}
-            aria-pressed={showGraph}
-            title={showGraph ? "Back to documents" : "View the [[wiki-link]] graph"}
-            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+          <div
+            role="group"
+            aria-label="Grimoire view"
+            className="inline-flex h-[26px] items-center gap-0.5 rounded-md border border-[var(--border-hairline)] p-0.5"
           >
-            <Icon name="ph:link" width={11} aria-hidden />
-            {showGraph ? "Docs" : "Graph"}
-          </button>
+            <button
+              type="button"
+              aria-pressed={!showGraph}
+              onClick={() => setShowGraph(false)}
+              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
+                !showGraph
+                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:book-open" width={11} aria-hidden />
+              Docs
+            </button>
+            <button
+              type="button"
+              aria-pressed={showGraph}
+              onClick={() => setShowGraph(true)}
+              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
+                showGraph
+                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:graph" width={11} aria-hidden />
+              Graph
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => openDoc({ kind: "knowledge-new" })}
@@ -859,10 +1072,16 @@ export function GrimoireView() {
             </div>
           ) : (
             <>
-              <section aria-label="Knowledge vault">
-                <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Knowledge · {visibleKnowledge.length}
-                </h3>
+              {/* An active search auto-expands every section — matches must be
+                  reachable regardless of collapse state. */}
+              <RailSection
+                ariaLabel="Knowledge vault"
+                icon="ph:book-open"
+                label="Knowledge"
+                count={visibleKnowledge.length}
+                collapsed={!q && collapsedSections.knowledge}
+                onToggle={() => toggleSection("knowledge")}
+              >
                 {visibleKnowledge.length === 0 ? (
                   <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
                     {q ? "No matches." : "No entries yet — curate durable reference knowledge here."}
@@ -879,11 +1098,15 @@ export function GrimoireView() {
                     />
                   ))
                 )}
-              </section>
-              <section aria-label="Memory files">
-                <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Memory · {visibleMemory.length}
-                </h3>
+              </RailSection>
+              <RailSection
+                ariaLabel="Memory files"
+                icon="ph:brain"
+                label="Memory"
+                count={visibleMemory.length}
+                collapsed={!q && collapsedSections.memory}
+                onToggle={() => toggleSection("memory")}
+              >
                 {visibleMemory.length === 0 ? (
                   <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
                     {q ? "No matches." : "No memory files found."}
@@ -911,11 +1134,15 @@ export function GrimoireView() {
                     ) : null}
                   </>
                 )}
-              </section>
-              <section aria-label="Journal">
-                <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-                  Journal · {visibleJournal.length}
-                </h3>
+              </RailSection>
+              <RailSection
+                ariaLabel="Journal"
+                icon="ph:calendar-blank"
+                label="Journal"
+                count={visibleJournal.length}
+                collapsed={!q && collapsedSections.journal}
+                onToggle={() => toggleSection("journal")}
+              >
                 {visibleJournal.length === 0 ? (
                   <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
                     {q ? "No matches." : "No journal entries yet."}
@@ -931,7 +1158,7 @@ export function GrimoireView() {
                     />
                   ))
                 )}
-              </section>
+              </RailSection>
             </>
           )}
         </div>
@@ -944,6 +1171,9 @@ export function GrimoireView() {
         {showGraph ? (
           <GrimoireGraphView
             graph={graph}
+            meta={scan?.meta ?? null}
+            scanning={scanning}
+            scanError={scan ? null : scanError}
             onOpen={(ref) => {
               openDoc(ref);
               setShowGraph(false);
