@@ -20,7 +20,7 @@ import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { CreateFamiliarDialog } from "@/components/create-familiar-dialog";
+import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
   buildFamiliarCardStats,
   type FamiliarCardStats,
@@ -81,6 +81,8 @@ export function FamiliarsView({
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [createOpen, setCreateOpen] = useState(false);
+  // When set, the summoning circle opens as the Enhancement Rite for this familiar.
+  const [enhanceTarget, setEnhanceTarget] = useState<ResolvedFamiliar | null>(null);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [memoryError, setMemoryError] = useState<string | null>(null);
@@ -207,11 +209,11 @@ export function FamiliarsView({
             <button
               type="button"
               onClick={() => setCreateOpen(true)}
-              title="Create a new familiar"
+              title="Open the summoning circle"
               className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-[var(--bg-base)] hover:opacity-90"
             >
-              <Icon name="ph:plus" width={12} />
-              New familiar
+              <Icon name="ph:magic-wand-fill" width={12} />
+              Summon familiar
             </button>
             <button
               type="button"
@@ -307,6 +309,7 @@ export function FamiliarsView({
               onClose={backToRoster}
               onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
+              onEnhance={() => setEnhanceTarget(selectedFamiliar)}
               onOpenSession={(sid) => onOpenSession(sid, selectedFamiliar.id)}
               onOpenMemoryFile={onOpenMemoryFile}
               onOpenUrl={onOpenUrl}
@@ -357,12 +360,19 @@ export function FamiliarsView({
           onClose={() => setPreviewFamiliar(null)}
         />
       ) : null}
-      <CreateFamiliarDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
+      <FamiliarSummoningCircle
+        open={createOpen || enhanceTarget !== null}
+        onClose={() => {
+          setCreateOpen(false);
+          setEnhanceTarget(null);
+        }}
         existingIds={familiars.map((f) => f.id)}
         defaultHarness={familiars.find((f) => f.defaultHarness)?.defaultHarness}
         onCreated={(id) => onFamiliarCreated?.(id)}
+        enhance={enhanceTarget}
+        onEnhanced={(id) => onFamiliarCreated?.(id)}
+        daemonRunning={daemonRunning}
+        onStartChat={onStartChat}
       />
     </div>
   );
@@ -389,12 +399,12 @@ function FamiliarsEmptyState({
     <EmptyState
       className="familiars-view__empty mx-auto my-16 max-w-md"
       icon="ph:sparkle"
-      headline="No familiars yet"
-      subtitle="Create your first familiar to populate the roster."
+      headline="The circle awaits"
+      subtitle="No familiars yet — summon your first from a local runtime, a remote host, or an OpenClaw agent."
       actions={
         <div className="flex items-center gap-2">
-          <Button variant="primary" leadingIcon="ph:plus" onClick={onCreate}>
-            Create a familiar
+          <Button variant="primary" leadingIcon="ph:magic-wand-fill" onClick={onCreate}>
+            Summon a familiar
           </Button>
           <Button variant="ghost" onClick={onOpenOnboarding}>
             Run full setup
@@ -633,6 +643,8 @@ type AgentDetailPanelProps = {
   onClose: () => void;
   onPreview: () => void;
   onStartChat: () => void;
+  /** Open the summoning circle in Enhancement Rite mode for this familiar. */
+  onEnhance: () => void;
   onOpenSession: (sessionId: string) => void;
   onOpenMemoryFile: (path: string) => void;
   onOpenUrl: (url: string) => void;
@@ -648,6 +660,7 @@ function FamiliarDetailPanel({
   onClose,
   onPreview,
   onStartChat,
+  onEnhance,
   onOpenSession,
   onOpenMemoryFile,
   onOpenUrl,
@@ -699,6 +712,15 @@ function FamiliarDetailPanel({
           >
             <Icon name="ph:chat-circle-dots" width={12} />
             Start
+          </button>
+          <button
+            type="button"
+            onClick={onEnhance}
+            title={`Enhance ${familiar.display_name} in the circle`}
+            className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2 text-[11px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
+          >
+            <Icon name="ph:magic-wand-fill" width={12} />
+            Enhance
           </button>
           <button
             type="button"

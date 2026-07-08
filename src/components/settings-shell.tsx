@@ -20,7 +20,7 @@ import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-pa
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode, type ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
-import { CreateFamiliarDialog } from "@/components/create-familiar-dialog";
+import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -831,11 +831,12 @@ function FamiliarsSection({
   }
 
   const createDialog = (
-    <CreateFamiliarDialog
+    <FamiliarSummoningCircle
       open={createOpen}
       onClose={() => setCreateOpen(false)}
       existingIds={rawFamiliars.map((f) => f.id)}
       defaultHarness={rawFamiliars.find((f) => f.defaultHarness)?.defaultHarness}
+      daemonRunning={!daemonDown}
       onCreated={(id) => {
         // Select the freshly created familiar (not the first in the roster);
         // the shared studio context drives the inline panel's detail pane.
@@ -881,15 +882,15 @@ function FamiliarsSection({
       <div className="settings-familiars-panel">
         <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
           <p className="text-[13px] text-[var(--text-secondary)]">
-            No familiars configured yet. Create one to get started.
+            No familiars configured yet. The circle awaits your first summoning.
           </p>
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
             className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90"
           >
-            <Icon name="ph:plus-bold" width={12} />
-            Create familiar
+            <Icon name="ph:magic-wand-fill" width={12} />
+            Summon familiar
           </button>
         </div>
         {createDialog}
@@ -905,8 +906,8 @@ function FamiliarsSection({
           onClick={() => setCreateOpen(true)}
           className="settings-touch-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
-          <Icon name="ph:plus-bold" width={12} />
-          New familiar
+          <Icon name="ph:magic-wand-fill" width={12} />
+          Summon familiar
         </button>
       </div>
       <FamiliarStudioInlinePanel
