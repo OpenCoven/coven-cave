@@ -53,18 +53,29 @@ assert.match(
 );
 
 // ───────── Command-bar hierarchy ─────────
-// The Chat/Task destination tabs sit ABOVE the input card; the footer keeps
-// the utility cluster (attach · voice · Options) and agent picker left,
-// enhance · send right.
+// Reference layout: the + attach trigger and Chat/Task pills sit bottom-left
+// INSIDE the card; the model runtime chip, voice, enhance, and send hug the
+// right; the darker footer band beneath carries project + agent (left) and
+// the Options menu (right).
 assert.match(
   source,
-  /className="hc-dest-pills hc-dest-pills--above"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
-  "destination tabs precede the card; the utility cluster keeps attach + voice + Options + warning-circle access chip",
+  /cave-composer-utility-row[\s\S]*?aria-label="Attach images, videos, or files"[\s\S]*?ph:plus[\s\S]*?hc-dest-pills hc-dest-pills--inline[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"/,
+  "the utility row leads with + attach, then the Chat/Task pill toggle",
 );
 assert.match(
   source,
-  /cave-composer-submit-row[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
-  "home composer submit cluster has enhance and send",
+  /cave-composer-submit-row[\s\S]*?<ComposerRuntimeChip[\s\S]*?aria-label="Voice input"[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
+  "the submit cluster runs model chip · voice · enhance · send",
+);
+assert.match(
+  source,
+  /className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?<ComposerOptionsMenu/,
+  "the footer band hosts project + agent pickers left and the Options menu right",
+);
+assert.match(
+  source,
+  /className=\{`home-composer-card cave-composer-panel[\s\S]*?className="hc-footer-band"/,
+  "the footer band renders inside the card so the panel chrome clips its corners",
 );
 assert.doesNotMatch(
   source,
