@@ -293,7 +293,9 @@ test("loopback app webviews can drive native window drag for the seamless titleb
     "the shell titlebar must be a deep Tauri drag region",
   );
   assert.ok(
-    trayQuickChat.includes('<header className="quick-chat-overlay__header" data-tauri-drag-region="deep">'),
+    trayQuickChat.includes(
+      '<header className="quick-chat-overlay__header tray-quick-chat__header" data-tauri-drag-region="deep">',
+    ),
     "the quick-chat tray header must be a deep Tauri drag region so the decoration-less window can be moved",
   );
 });
