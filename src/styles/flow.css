@@ -179,7 +179,23 @@
   color: var(--text-primary);
   border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border));
 }
-@media (prefers-reduced-motion: reduce) { .flow-edge-add { transition: none; } }
+/* Reduced-motion (design-language a11y non-negotiable): zero the mid-edge "+"
+   fade AND React Flow's own chrome motion — the Controls buttons' hover/press
+   transitions and the viewport pan/zoom transition that @xyflow/react runs
+   during fitView / zoomTo (it ships no reduced-motion flag of its own). The
+   `!important` on the viewport/pane beats the inline `transition` React Flow
+   sets while animating. Complements the .flow-run-step-spin guard below. */
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-add,
+  .flow-canvas .react-flow__controls-button {
+    transition: none;
+  }
+  .flow-canvas .react-flow__viewport,
+  .flow-canvas .react-flow__pane {
+    transition: none !important;
+    animation: none !important;
+  }
+}
 
 /* ---- Node card ---------------------------------------------------------- */
 .flow-node {
