@@ -49,7 +49,7 @@ import {
   type AutomationEntry,
 } from "@/lib/automations/automation-entry";
 import { listInput, commaInput, parseListInput } from "@/lib/automations/list-input";
-import { runStatusColor } from "@/lib/automations/run-status";
+import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -131,9 +131,9 @@ function relTime(iso: string | undefined | null): string {
 }
 
 
-function FieldLabel({ children }: { children: ReactNode }) {
+function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNode }) {
   return (
-    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
+    <label htmlFor={htmlFor} className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
       style={{ color: "var(--text-muted)" }}>
       {children}
     </label>
@@ -830,8 +830,9 @@ function CodexDetailPanel({
 
         <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
           <div>
-            <FieldLabel>Name</FieldLabel>
+            <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
             <input
+              id={`cron-name-${auto.id}`}
               value={name}
               onChange={(event) => setName(event.target.value)}
               className={automationInputClass}
@@ -840,8 +841,9 @@ function CodexDetailPanel({
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <FieldLabel>Tags</FieldLabel>
+              <FieldLabel htmlFor={`cron-tags-${auto.id}`}>Tags</FieldLabel>
               <input
+                id={`cron-tags-${auto.id}`}
                 value={tagsText}
                 onChange={(event) => setTagsText(event.target.value)}
                 className={automationInputClass}
@@ -857,8 +859,9 @@ function CodexDetailPanel({
 
         <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
           <div>
-            <FieldLabel>Goals</FieldLabel>
+            <FieldLabel htmlFor={`cron-goals-${auto.id}`}>Goals</FieldLabel>
             <textarea
+              id={`cron-goals-${auto.id}`}
               value={goals}
               onChange={(event) => setGoals(event.target.value)}
               rows={5}
@@ -867,8 +870,9 @@ function CodexDetailPanel({
             />
           </div>
           <div>
-            <FieldLabel>Deliverables</FieldLabel>
+            <FieldLabel htmlFor={`cron-deliverables-${auto.id}`}>Deliverables</FieldLabel>
             <textarea
+              id={`cron-deliverables-${auto.id}`}
               value={deliverables}
               onChange={(event) => setDeliverables(event.target.value)}
               rows={4}
@@ -904,6 +908,7 @@ function CodexDetailPanel({
 
           {scheduleMode === "raw" ? (
             <textarea
+              aria-label="Raw RRULE"
               value={rawRrule}
               onChange={(event) => setRawRrule(event.target.value)}
               rows={3}
@@ -938,6 +943,7 @@ function CodexDetailPanel({
               )}
               <input
                 type="time"
+                aria-label="Schedule time"
                 value={scheduleTime}
                 onChange={(event) => setScheduleTime(event.target.value)}
                 className={automationInputClass}
@@ -953,8 +959,9 @@ function CodexDetailPanel({
         <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <FieldLabel>Model</FieldLabel>
+              <FieldLabel htmlFor={`cron-model-${auto.id}`}>Model</FieldLabel>
               <input
+                id={`cron-model-${auto.id}`}
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
                 className={automationInputClass}
@@ -1023,7 +1030,12 @@ function CodexDetailPanel({
                     aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
                     className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
                   >
-                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: runStatusColor(r.status) }} />
+                    {/* Shape + color (WCAG 1.4.1): the icon form carries the
+                        status for color-blind users; AT reads it from the
+                        button's aria-label. */}
+                    <span aria-hidden className="shrink-0" style={{ color: runStatusColor(r.status), lineHeight: 0 }}>
+                      <Icon name={runStatusIcon(r.status)} width={12} />
+                    </span>
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
                     {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
                     <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
