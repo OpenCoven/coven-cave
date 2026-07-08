@@ -1114,9 +1114,10 @@ assert.match(
   "the first follow-up is marked as the recommended next step",
 );
 
-// Suggestion pills lay out in UNIFORM rows — 1, 2, or 3 per row, keyed off the
-// chip count: 2 and 4 chips pair into two columns (4 = 2×2, never a 3+1 orphan
-// wrap) and only an exactly-3 row spreads to three columns (cave-wrso).
+// Suggestion pills lay out in UNIFORM rows keyed off the chip count: 2 and 4
+// chips pair into two columns (4 = 2×2, never a 3+1 orphan wrap); every other
+// count — legacy 3-chip transcripts included — stacks full-width (cave-wrso,
+// cave-98bs).
 assert.match(
   source,
   /className="cave-next-paths" data-count=\{nextPaths\.length\}/,
@@ -1127,10 +1128,9 @@ assert.match(
   /\.cave-next-paths\[data-count="2"\],\s*\n\s*\.cave-next-paths\[data-count="4"\] \{ grid-template-columns: repeat\(2, 1fr\); \}/,
   "2 and 4 chips pair into two columns (4 renders 2×2)",
 );
-assert.match(
-  globalsSrc,
-  /\.cave-next-paths\[data-count="3"\] \{ grid-template-columns: repeat\(3, 1fr\); \}/,
-  "only an exactly-3 row spreads to three columns",
+assert.ok(
+  !/\.cave-next-paths\[data-count="3"\]/.test(globalsSrc),
+  "no exactly-3 column rule: the chatturn container (46rem reading column, ~672px inner) can never reach a width where three chips fit, so legacy 3-chip rows stack (cave-98bs)",
 );
 assert.ok(
   !/\.cave-next-paths \{ grid-template-columns: repeat\(/.test(globalsSrc),
