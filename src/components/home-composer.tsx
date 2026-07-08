@@ -880,7 +880,7 @@ export function HomeComposer({
             <div className="cave-composer-utility-row">
               <button
                 type="button"
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
                 title="Attach images, videos, or files"
                 aria-label="Attach images, videos, or files"
                 disabled={sending || attachments.length >= 10}
@@ -890,7 +890,7 @@ export function HomeComposer({
               </button>
               <button
                 type="button"
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
                 title="Voice input (coming soon)"
                 aria-label="Voice input"
                 disabled
@@ -978,7 +978,7 @@ export function HomeComposer({
             <div className="cave-composer-submit-row">
               <button
                 type="button"
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
                 title="Enhance prompt"
                 aria-label="Enhance prompt"
                 disabled={sending || enhanceStatus === "loading" || !text.trim()}
@@ -990,7 +990,7 @@ export function HomeComposer({
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={(!text.trim() && attachments.length === 0) || sending}
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                 title={`Send message (${keys.enter})`}
                 aria-label="Send"
               >

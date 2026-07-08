@@ -4093,7 +4093,9 @@ details[open] > .cave-tool-summary::before {
     height: var(--touch-target);
     min-width: var(--touch-target);
     min-height: var(--touch-target);
-    border-radius: 9px;
+    /* Match the capsule runtime/host chips — the utility row reads as one
+       family of controls at every breakpoint. */
+    border-radius: 999px;
     -webkit-tap-highlight-color: transparent;
   }
 
