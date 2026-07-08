@@ -269,6 +269,39 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     );
   }, [familiar?.id]);
 
+  // ── Chat-first IA (cave-hsa6): boot into a fresh compose view ──────────────
+  // Booting into chat mode should read like ChatGPT — an empty conversation with
+  // the composer ready and the thread list in the left sidebar — not the session
+  // list/hub. Fire once, from the initial list view, and only when there's no
+  // `#chat-<id>` deep link (workspace.tsx restores that session itself). No server
+  // session is created: the compose view holds sessionId=null until the first
+  // send. Returning to the list later sticks — the ref guards against re-entry.
+  const bootComposeRef = useRef(false);
+  useEffect(() => {
+    if (bootComposeRef.current) return;
+    if (sessionsLoaded === false) return;
+    if (typeof window !== "undefined") {
+      if (window.location.hash.startsWith("#chat-")) {
+        bootComposeRef.current = true; // a deep link owns the boot view
+        return;
+      }
+      // Compose-first boot is a desktop affordance. On mobile the thread list is
+      // the natural chat home (a messages-app pattern, and the full pane the
+      // narrow shell expects) — a new chat stays one tap away. Read matchMedia
+      // synchronously so this doesn't race useIsMobile's post-mount flip.
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        bootComposeRef.current = true;
+        return;
+      }
+    }
+    const bootFamiliarId = familiar?.id ?? fallbackFamiliar?.id ?? null;
+    if (!bootFamiliarId) return; // wait until a familiar is available
+    bootComposeRef.current = true;
+    setView((prev) =>
+      prev.kind === "list" ? { kind: "chat", sessionId: null, familiarId: bootFamiliarId } : prev,
+    );
+  }, [sessionsLoaded, familiar?.id, fallbackFamiliar?.id]);
+
   useImperativeHandle(
     ref,
     () => ({

@@ -1062,6 +1062,79 @@
   gap: 16px;
 }
 
+/* Chat-first landing eyebrow (cave-hsa6) — a quiet time-of-day greeting above
+   the familiar identity, carrying the warmth of the retired home hero. Fades in
+   once the local clock is sampled client-side, so SSR paints nothing that could
+   mismatch. */
+.cave-chat-empty-greeting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-muted);
+  font-family: "SF Mono", "JetBrains Mono", "Roboto Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+.cave-chat-empty-greeting.is-ready {
+  opacity: 1;
+}
+.cave-chat-empty-greeting-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent-presence);
+}
+
+/* "Context" disclosure (cave-hsa6) — the project picker, open-work rail, task
+   tile and recent-thread rail live here, collapsed by default, so the landing
+   first-paints calm (greeting + suggestions + composer). One tap opens the
+   working context; everything stays reachable. */
+.cave-chat-empty-context {
+  display: grid;
+  gap: 12px;
+}
+.cave-chat-empty-context-toggle {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-panel);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.cave-chat-empty-context-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+}
+.cave-chat-empty-context-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 42%, transparent);
+}
+.cave-chat-empty-context-body {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-empty-greeting {
+    transition: none;
+  }
+}
+
 .cave-chat-empty-familiar {
   display: flex;
   align-items: center;

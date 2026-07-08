@@ -24,6 +24,18 @@ assert.match(
   "workspace should provide exitChatMode so the sidebar back control returns to the prior surface",
 );
 
+// ── Chat-first IA (cave-hsa6): the app boots straight into the conversation. ──
+assert.match(
+  workspace,
+  /const \[mode, setModeRaw\] = useState<WorkspaceMode>\("chat"\)/,
+  "workspace should boot into chat mode, not home",
+);
+assert.match(
+  workspace,
+  /const \[lastNonChatMode, setLastNonChatMode\] = useState<WorkspaceMode>\("home"\)/,
+  "the chat back-control still falls back to home when no other surface was visited",
+);
+
 // ── Subpanel removal: the in-surface thread rail is dropped in chat mode, since
 //    the ChatSidebar now owns the project-grouped thread list. ────────────────
 assert.match(

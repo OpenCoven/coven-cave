@@ -48,6 +48,30 @@ assert.match(
   "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
 );
 
+// ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
+const bootComposeEffect =
+  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[sessionsLoaded, familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
+assert.match(
+  bootComposeEffect,
+  /if \(bootComposeRef\.current\) return;/,
+  "the boot-compose effect fires once, so returning to the list later sticks",
+);
+assert.match(
+  bootComposeEffect,
+  /window\.location\.hash\.startsWith\("#chat-"\)/,
+  "a #chat-<id> deep link is deferred to workspace restore, not overridden by the compose boot",
+);
+assert.match(
+  bootComposeEffect,
+  /matchMedia\("\(max-width: 1023px\)"\)\.matches/,
+  "compose-first boot is desktop-only — mobile keeps the thread list as the chat home",
+);
+assert.match(
+  bootComposeEffect,
+  /prev\.kind === "list" \? \{ kind: "chat", sessionId: null, familiarId: bootFamiliarId \} : prev/,
+  "booting into chat opens a zero-session compose view (ChatEmptyState + composer), no server session created",
+);
+
 // ── CHAT-D9-01: URL deep links (#chat-<sessionId>) ───────────────────────────
 
 const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");

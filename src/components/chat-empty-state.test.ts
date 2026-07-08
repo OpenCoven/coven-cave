@@ -87,6 +87,50 @@ test("continue row and identity polish", () => {
   assert.match(emptyState, /title=\{project\.root\}/, "the ellipsizing project path exposes its full value");
 });
 
+test("chat-first landing: time greeting eyebrow, calm first paint, disclosed context", () => {
+  // The retired home hero's time-of-day greeting now warms the chat landing,
+  // sampled client-side so SSR never paints a mismatch.
+  assert.match(
+    emptyState,
+    /greetingForHour\(new Date\(\)\.getHours\(\)\)/,
+    "the landing samples a time-of-day greeting after mount",
+  );
+  assert.match(emptyState, /className=\{`cave-chat-empty-greeting/, "greeting renders as the landing eyebrow");
+
+  // Project picker, open-work rail, task tile and recents collapse by default so
+  // first paint is just greeting + suggestions + composer (Phase 2.1).
+  assert.match(
+    emptyState,
+    /const \[showContext, setShowContext\] = useState\(false\)/,
+    "the working context is collapsed by default",
+  );
+  assert.match(
+    emptyState,
+    /className="cave-chat-empty-context-toggle"[\s\S]*?aria-expanded=\{showContext\}/,
+    "a labelled toggle discloses the working context with aria-expanded",
+  );
+  assert.match(
+    emptyState,
+    /\{showContext \? \([\s\S]*?className="cave-chat-empty-context-body"/,
+    "the project picker + rails render only once context is expanded",
+  );
+
+  // Ordering: greeting sits above the identity; suggestions paint before the
+  // collapsed context block.
+  assert.ok(
+    emptyState.indexOf("cave-chat-empty-greeting") < emptyState.indexOf("cave-chat-empty-familiar"),
+    "greeting eyebrow sits above the familiar identity",
+  );
+  assert.ok(
+    emptyState.indexOf("cave-chat-empty-prompts") < emptyState.indexOf('className="cave-chat-empty-context"'),
+    "starter suggestions are part of the always-visible first paint, ahead of the collapsed context",
+  );
+
+  // The greeting eyebrow + context toggle stay on semantic tokens.
+  assert.match(styles, /\.cave-chat-empty-greeting-dot \{[\s\S]*?background: var\(--accent-presence\)/, "greeting dot uses the presence accent token");
+  assert.match(styles, /\.cave-chat-empty-context-toggle \{[\s\S]*?border-radius: 999px/, "context toggle reads as a pill control");
+});
+
 test("task-aware styles use semantic tokens and respect reduced motion", () => {
   assert.match(
     styles,
