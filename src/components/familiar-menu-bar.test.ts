@@ -123,8 +123,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<Icon name="ph:calendar-check"[\s\S]{0,120}<span>Schedules<\/span>/,
-  "the Schedules button matches the sidebar's Schedules label + icon",
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Schedules<\/span>/,
+  "the Schedules button matches the sidebar's Schedules label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
 );
 assert.doesNotMatch(
   source,

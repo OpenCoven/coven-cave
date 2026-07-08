@@ -4835,11 +4835,13 @@ button:active > .edge-rail-chip {
   align-items: center;
   flex-wrap: nowrap;
   flex: 0 0 auto;
-  min-height: 44px;
+  min-height: 40px;
   gap: 8px;
   padding-inline: 12px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-hairline);
+  /* Seamless title bar: the strip shares the app canvas — no band color, no
+     border seam. Structure below it reads as one continuous surface. */
+  background: var(--bg-base);
+  border-bottom: 0;
   overflow: hidden;
 }
 
@@ -4884,7 +4886,7 @@ button:active > .edge-rail-chip {
   :root[data-tauri-titlebar] .shell-top {
     /* ~78px clears the three traffic lights + their left inset. */
     padding-left: 78px;
-    min-height: 52px;
+    min-height: 46px;
   }
 
   :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
@@ -4941,10 +4943,10 @@ button:active > .edge-rail-chip {
      of the bar rather than towering over it. */
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border-hairline);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: var(--bg-base);
-  color: color-mix(in oklch, var(--text-secondary) 86%, var(--text-primary));
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
 }
@@ -5165,9 +5167,9 @@ button:active > .edge-rail-chip {
   padding: 5px 12px;
   /* min-height (not a fixed height) so the bar grows with scaled-up content
      under screen magnification instead of clipping the search row. */
-  min-height: 38px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-hairline);
+  min-height: 36px;
+  background: var(--bg-base);
+  border-bottom: 0;
   font-size: var(--text-sm);
   user-select: none;
   overflow: hidden;
@@ -5203,17 +5205,21 @@ button:active > .edge-rail-chip {
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  border: 1px solid var(--border-hairline);
+  /* Ghost at rest — the pill materializes on hover/focus so the title bar
+     stays a quiet strip (ultra-minimal reference look). */
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: var(--bg-base);
+  background: transparent;
   color: var(--text-muted);
   transition: border-color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
 }
 
 .menu-bar__search:hover,
 .menu-bar__search:focus-within {
-  border-color: var(--border-strong);
+  border-color: var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
   color: var(--text-secondary);
 }
 
@@ -5259,7 +5265,13 @@ button:active > .edge-rail-chip {
   color: var(--text-muted);
   padding: 2px 5px;
   border-radius: 4px;
-  border: 1px solid var(--border-hairline);
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.menu-bar__search:hover kbd,
+.menu-bar__search:focus-within kbd {
+  border-color: var(--border-hairline);
   background: var(--bg-raised);
 }
 
@@ -5269,6 +5281,16 @@ button:active > .edge-rail-chip {
   flex: 0 0 auto;
   width: 28px;
   max-width: 200px;
+  /* Seamless bar: the switcher joins the quiet chrome — pill materializes on
+     hover/focus like the search and task chips. */
+  border-color: transparent;
+  background: transparent;
+}
+
+.menu-bar__group--chat .familiar-switcher__trigger:hover,
+.menu-bar__group--chat .familiar-switcher__trigger:focus-visible {
+  border-color: var(--border-hairline);
+  background: var(--bg-raised);
 }
 
 .menu-bar__group--chat .familiar-switcher__trigger--labeled {
@@ -5302,16 +5324,30 @@ button:active > .edge-rail-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 9px;
-  border: 1px solid var(--border-hairline);
+  padding: 4px 7px;
+  /* Quiet monochrome chips — no fill or border until hover, dimmed like the
+     rest of the seamless title bar. */
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: var(--bg-base);
-  color: var(--foreground);
+  background: transparent;
+  color: var(--text-muted);
   font-size: var(--text-base);
   white-space: nowrap;
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+/* Ultra-minimal: the bar shows icons only. Labels stay in the DOM for the
+   markup (aria-labels already name every button); the one exception is the
+   enrich label while a run is live — that's progress, not chrome. */
+.menu-bar__task-label {
+  display: none;
+}
+
+.menu-bar__task-label--live {
+  display: inline;
 }
 
 /* One compact standard across the top chrome (var(--icon-sm), 14px): the
@@ -5336,7 +5372,8 @@ button:active > .edge-rail-chip {
 
 .menu-bar__task:hover {
   background: var(--bg-raised);
-  border-color: var(--border-strong);
+  border-color: var(--border-hairline);
+  color: var(--text-primary);
 }
 
 .menu-bar__badge {
@@ -5446,8 +5483,9 @@ button:active > .edge-rail-chip {
   gap: 12px;
   padding: 0 14px;
   height: 40px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-hairline);
+  /* Seamless like the desktop .shell-top — no band, no border seam. */
+  background: var(--bg-base);
+  border-bottom: 0;
   font-size: var(--text-sm);
   user-select: none;
 }
