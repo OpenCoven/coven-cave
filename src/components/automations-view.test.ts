@@ -94,8 +94,8 @@ assert.match(
 );
 assert.match(
   codexDetailPanel,
-  /cron-detail-summary-grid grid grid-cols-2 gap-2\$\{expanded \? " lg:grid-cols-4" : ""\}/,
-  "summary tiles go 4-up on the expanded canvas",
+  /cron-detail-summary-grid grid grid-cols-2 gap-2\$\{expanded \? " @min-\[900px\]:grid-cols-4" : ""\}/,
+  "summary tiles go 4-up on the expanded canvas — container-keyed so a split pane never gets viewport columns (cave-hivd)",
 );
 assert.match(
   codexDetailPanel,

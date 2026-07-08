@@ -347,8 +347,10 @@ export function FamiliarsView({
             />
           </div>
         ) : (
-          <div className="p-4">
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="@container p-4">
+            {/* Columns follow the PANE (container), not the viewport — in a
+                split tile a 1680px window must not force xl's 4 columns. */}
+            <div className="grid gap-3 @min-[700px]:grid-cols-2 @min-[1050px]:grid-cols-3 @min-[1400px]:grid-cols-4">
               {visibleFamiliars.map((familiar) => (
                 <FamiliarRosterCard
                   key={familiar.id}

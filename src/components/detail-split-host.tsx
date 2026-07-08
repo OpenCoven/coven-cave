@@ -312,7 +312,7 @@ export function DetailSplitHost({
       // enough to enter the far-edge collapse zone (secondary → SPLIT_MAX_RATIO).
       minSize="10%"
     >
-      <div className="min-h-0 min-w-0 flex-1">{primary}</div>
+      <div className="split-host__pane-body">{primary}</div>
     </Panel>
   );
 
@@ -405,7 +405,16 @@ export function DetailSplitHost({
           // natively (no custom snap tracking — that's the 2-pane path above).
           <>
             {mobileSwitcher}
-            <Group className="split-host__group" data-variant={variant} orientation="horizontal">
+            <Group
+              // Remount on tile-set changes (cave-hivd): RRP squeezes a panel
+              // ADDED to a live group below its pixel min (only fresh mounts
+              // and drags respect it), which crushed late tiles to ~110px
+              // slivers. A fresh mount re-lays every tile out evenly.
+              key={tiles.map((tile) => tile.id).join("|")}
+              className="split-host__group"
+              data-variant={variant}
+              orientation="horizontal"
+            >
               {tiles.map((tile, i) => (
                 <React.Fragment key={tile.id}>
                   {i > 0 ? (
@@ -417,7 +426,11 @@ export function DetailSplitHost({
                     id={`split-tile-${tile.id}`}
                     className="split-host__pane-panel split-host__tile-panel flex min-h-0 min-w-0"
                     data-active={activeTileId === tile.id}
-                    minSize="12%"
+                    // Pixel floor (cave-hivd): a 12% min let dividers crush a
+                    // tile to ~110px letter soup on wide windows. Tiles on this
+                    // multi-tile path close via their ✕ (not the drag-past-edge
+                    // gesture), so a hard floor costs nothing.
+                    minSize="300px"
                   >
                     {renderGridTile(tile)}
                   </Panel>

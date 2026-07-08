@@ -305,7 +305,7 @@ export function OpenCovenSubmissionPanel() {
   }
 
   return (
-    <section className="mb-5 rounded-[var(--radius-control)] border border-border bg-card p-3 shadow-sm">
+    <section className="@container mb-5 rounded-[var(--radius-control)] border border-border bg-card p-3 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -337,7 +337,7 @@ export function OpenCovenSubmissionPanel() {
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="mt-3 grid gap-3 @min-[1100px]:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-background px-3 py-2 text-[12px] text-muted-foreground hover:border-[var(--border-strong)]">
             <span className="min-w-0 truncate">
