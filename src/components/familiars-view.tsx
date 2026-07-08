@@ -14,7 +14,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
-import type { FileMemoryEntry } from "@/components/familiars-memory-view";
+import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
@@ -87,6 +87,7 @@ export function FamiliarsView({
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [memoryLoaded, setMemoryLoaded] = useState(false);
+  const [memoryLoadedAt, setMemoryLoadedAt] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [previewFamiliar, setPreviewFamiliar] = useState<ResolvedFamiliar | null>(null);
@@ -145,6 +146,7 @@ export function FamiliarsView({
       setMemoryError(err instanceof Error ? err.message : "memory unavailable");
     } finally {
       setMemoryLoaded(true);
+      setMemoryLoadedAt(new Date().toISOString());
     }
   }, []);
 
@@ -153,6 +155,21 @@ export function FamiliarsView({
   }, [loadMemory]);
   // Pauses in a hidden tab; refreshes on return.
   usePausablePoll(() => void loadMemory(), 30_000);
+
+  // Single source of truth for the memory endpoints: the embedded
+  // FamiliarsMemoryView mounts consume this instead of running their own
+  // duplicate fetch + 30s poll of the same two APIs (cave-5dnw).
+  const memoryFeed = useMemo<MemoryFeed>(
+    () => ({
+      covenEntries,
+      fileEntries,
+      error: memoryError,
+      loaded: memoryLoaded,
+      lastLoadedAt: memoryLoadedAt,
+      reload: loadMemory,
+    }),
+    [covenEntries, fileEntries, memoryError, memoryLoaded, memoryLoadedAt, loadMemory],
+  );
 
   const stats = useMemo(
     () => buildFamiliarCardStats({ familiars, sessions, covenEntries }),
@@ -306,6 +323,7 @@ export function FamiliarsView({
               fileEntries={fileEntries}
               memoryError={memoryError}
               memoryLoaded={memoryLoaded}
+              memoryFeed={memoryFeed}
               onClose={backToRoster}
               onPreview={() => setPreviewFamiliar(selectedFamiliar)}
               onStartChat={() => onStartChat(selectedFamiliar.id)}
@@ -350,6 +368,7 @@ export function FamiliarsView({
         <FamiliarMemoryOverlay
           familiars={resolvedFamiliars}
           familiar={memoryFamiliar}
+          memoryFeed={memoryFeed}
           onClose={() => setViewMode(selectedFamiliarId ? "detail" : "roster")}
           onOpenMemoryFile={onOpenMemoryFile}
         />
@@ -521,11 +540,12 @@ function FamiliarRosterCard({
 type AgentMemoryOverlayProps = {
   familiars: ResolvedFamiliar[];
   familiar: ResolvedFamiliar;
+  memoryFeed: MemoryFeed;
   onClose: () => void;
   onOpenMemoryFile: (path: string) => void;
 };
 
-function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
+function FamiliarMemoryOverlay({ familiars, familiar, memoryFeed, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Trap focus inside the panel + Escape-to-close + restore focus to the opener.
   useFocusTrap(true, panelRef, { onEscape: onClose });
@@ -557,6 +577,7 @@ function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile 
           familiars={familiars}
           activeFamiliar={familiar}
           lockToFamiliar
+          feed={memoryFeed}
           onOpenMemoryFile={onOpenMemoryFile}
         />
       </div>
@@ -640,6 +661,7 @@ type AgentDetailPanelProps = {
   fileEntries: FileMemoryEntry[];
   memoryError: string | null;
   memoryLoaded: boolean;
+  memoryFeed: MemoryFeed;
   onClose: () => void;
   onPreview: () => void;
   onStartChat: () => void;
@@ -657,6 +679,7 @@ function FamiliarDetailPanel({
   fileEntries,
   memoryError,
   memoryLoaded,
+  memoryFeed,
   onClose,
   onPreview,
   onStartChat,
@@ -754,6 +777,7 @@ function FamiliarDetailPanel({
             familiars={familiars}
             activeFamiliar={familiar}
             lockToFamiliar
+            feed={memoryFeed}
             onOpenMemoryFile={onOpenMemoryFile}
           />
         ) : tab === "daily-notes" ? (

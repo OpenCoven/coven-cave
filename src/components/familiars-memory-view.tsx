@@ -50,6 +50,22 @@ export type FileMemoryEntry = {
   familiarId?: string;
 };
 
+/**
+ * Memory data supplied by a parent that already fetches /api/coven-memory +
+ * /api/memory (FamiliarsView polls them for its roster stats). Passing this
+ * makes the view a mirror of the parent's single 30s poll instead of running
+ * a duplicate fetch+poll of the same two endpoints. Standalone mounts
+ * (companion rail, studio tab) omit it and keep self-fetching.
+ */
+export type MemoryFeed = {
+  covenEntries: CovenMemoryEntry[];
+  fileEntries: FileMemoryEntry[];
+  error: string | null;
+  loaded: boolean;
+  lastLoadedAt: string | null;
+  reload: () => Promise<void>;
+};
+
 type Props = {
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
@@ -60,6 +76,8 @@ type Props = {
   lockToFamiliar?: boolean;
   /** Compact header for narrow surfaces like the companion rail. */
   compact?: boolean;
+  /** Parent-owned memory data; suppresses this view's own fetch + poll. */
+  feed?: MemoryFeed;
 };
 
 type CovenMemoryResponse =
@@ -124,7 +142,7 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
+export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact, feed }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
@@ -169,6 +187,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }, []);
 
   const load = useCallback(async () => {
+    // Parent-fed mode: the parent owns the fetch; its fresh data flows back
+    // in through the mirror effect below.
+    if (feed) {
+      await feed.reload();
+      return;
+    }
     try {
       const [covenRes, fileRes] = await Promise.all([
         fetch("/api/coven-memory", { cache: "no-store" }),
@@ -192,7 +216,21 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       setLoaded(true);
       setLastLoadedAt(new Date().toISOString());
     }
-  }, []);
+  }, [feed]);
+
+  // Mirror parent-fed data into the local state the rest of the view (and the
+  // optimistic-delete overlay) already works against. The pending-delete filter
+  // keeps a parent poll landing inside the 4s undo window from resurrecting the
+  // optimistically-removed row — same guard the self-fetching path applies.
+  useEffect(() => {
+    if (!feed) return;
+    const pendingDelete = pendingDeletePathRef.current;
+    setCovenEntries(feed.covenEntries.filter((e) => e.path !== pendingDelete));
+    setFileEntries(feed.fileEntries.filter((e) => e.fullPath !== pendingDelete));
+    setError(feed.error);
+    if (feed.loaded) setLoaded(true);
+    setLastLoadedAt(feed.lastLoadedAt);
+  }, [feed]);
 
   const handleDelete = useCallback(
     (path: string, key: string, source: "coven" | "file") => {
@@ -209,9 +247,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         // Delete committed server-side; stop filtering (unless a newer delete
         // has already claimed the slot).
         if (pendingDeletePathRef.current === path) pendingDeletePathRef.current = null;
+        // Parent-fed mode: refresh the parent's cache so its mirror (and the
+        // roster stats it derives) reflect the deletion promptly.
+        if (feed) void feed.reload();
       });
     },
-    [scheduleDelete],
+    [scheduleDelete, feed],
   );
 
   const handleUndoDelete = useCallback(() => {
@@ -222,10 +263,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }, [undoDelete, load]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-  // Pauses in a hidden tab; refreshes on return.
-  usePausablePoll(() => void load(), 30_000);
+    if (!feed) void load();
+  }, [load, feed]);
+  // Pauses in a hidden tab; refreshes on return. Disabled entirely in
+  // parent-fed mode — the parent's single poll covers both components
+  // (cave-5dnw: this used to double-fetch /api/coven-memory + /api/memory).
+  usePausablePoll(() => void load(), 30_000, { enabled: !feed });
 
   useEffect(() => {
     if (activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);

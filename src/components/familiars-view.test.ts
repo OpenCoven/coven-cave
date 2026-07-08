@@ -54,6 +54,50 @@ assert.match(
   "Memory data refreshes on a 30s pausable poll (pauses in a hidden tab)",
 );
 
+// (cave-5dnw) FamiliarsView's poll is the ONLY memory poll while the studio is
+// open: the embedded FamiliarsMemoryView mounts consume the parent's data via
+// the memoryFeed prop instead of running a duplicate fetch+poll of the same
+// two endpoints.
+assert.match(
+  source,
+  /const memoryFeed = useMemo<MemoryFeed>\(/,
+  "FamiliarsView builds a single memoized memory feed",
+);
+assert.match(
+  source,
+  /reload: loadMemory,/,
+  "the feed exposes the parent's loader as reload",
+);
+assert.ok(
+  (source.match(/feed=\{memoryFeed\}/g) ?? []).length >= 2,
+  "both embedded FamiliarsMemoryView mounts (overlay + detail tab) receive the feed",
+);
+{
+  const memView = readFileSync(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
+  assert.match(
+    memView,
+    /usePausablePoll\(\(\) => void load\(\), 30_000, \{ enabled: !feed \}\)/,
+    "FamiliarsMemoryView's own poll is disabled in parent-fed mode",
+  );
+  assert.match(
+    memView,
+    /if \(!feed\) void load\(\);/,
+    "FamiliarsMemoryView skips its initial self-fetch in parent-fed mode",
+  );
+  // The parent-fed mirror must keep the pending-delete filter, or a parent poll
+  // landing inside the 4s undo window resurrects the optimistically-removed row.
+  assert.match(
+    memView,
+    /setCovenEntries\(feed\.covenEntries\.filter\(\(e\) => e\.path !== pendingDelete\)\)/,
+    "the feed mirror filters the pending-delete path (coven entries)",
+  );
+  assert.match(
+    memView,
+    /setFileEntries\(feed\.fileEntries\.filter\(\(e\) => e\.fullPath !== pendingDelete\)\)/,
+    "the feed mirror filters the pending-delete path (file entries)",
+  );
+}
+
 assert.match(
   source,
   /buildFamiliarCardStats\(\{[\s\S]*familiars,[\s\S]*sessions,[\s\S]*covenEntries[\s\S]*\}\)/,
