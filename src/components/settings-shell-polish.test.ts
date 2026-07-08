@@ -319,4 +319,13 @@ assert.match(source, /connectionError && <span role="alert"/, "the daemon save e
   }
 }
 
+// (cave-9yll, user-requested) The On/Off switches match the shared button
+// shape — every other Settings control is a --radius-control rectangle
+// (.ui-btn), not a pill.
+assert.ok(
+  (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 2,
+  "both On/Off switches (News headlines, Mobile mode) use the shared control radius",
+);
+assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone");
+
 console.log("settings-shell-polish.test.ts OK");
