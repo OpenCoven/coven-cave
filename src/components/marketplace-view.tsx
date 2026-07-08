@@ -329,6 +329,8 @@ export function MarketplaceViewSurface({
   const add = useCallback(async (id: string) => {
     markBusy(id, true);
     setInstalled(id, true);
+    setError(null); // a fresh attempt clears any prior failure banner (it's only
+                    // set on error and was otherwise never cleared without a reload)
     try {
       const res = await fetch("/api/marketplace/install", {
         method: "POST",
@@ -351,6 +353,7 @@ export function MarketplaceViewSurface({
   const remove = useCallback(async (id: string) => {
     markBusy(id, true);
     setInstalled(id, false);
+    setError(null); // clear any prior failure banner on a fresh attempt
     try {
       const res = await fetch("/api/marketplace/uninstall", {
         method: "POST",
