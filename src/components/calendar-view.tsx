@@ -1543,6 +1543,22 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Week view needs ~7 usable columns; inside a narrow split tile (~360px)
+  // they floor at ~40px each. Below 560px of CONTAINER width, week renders
+  // with the day presentation instead — the user's stored week choice is
+  // untouched and returns the moment the pane widens (cave-87zv).
+  const [narrowPane, setNarrowPane] = useState(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.clientWidth;
+      setNarrowPane(w > 0 && w < 560);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const effectiveView: ViewMode = viewMode === "week" && narrowPane ? "day" : viewMode;
 
   // Keep the open event detail panel in sync with live updates. `selectedItem`
   // is a snapshot captured at click; without this, an SSE update/delete (or a
@@ -1674,13 +1690,15 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     return () => window.removeEventListener("keydown", handler);
     // re-bind when viewMode/anchor changes so navigate() and the new-entry
     // shortcut close over the current values.
-  }, [viewMode, anchor, onAddEntry]);
+    // effectiveView folds in narrowPane, so the handlers re-bind when the
+    // week→day fallback engages and navigate() steps by the visible unit.
+  }, [effectiveView, anchor, onAddEntry]);
 
   function navigate(dir: -1 | 1) {
     setAnchor((prev) => {
-      if (viewMode === "day") return addDays(prev, dir);
-      if (viewMode === "week") return addDays(prev, dir * 7);
-      if (viewMode === "month") {
+      if (effectiveView === "day") return addDays(prev, dir);
+      if (effectiveView === "week") return addDays(prev, dir * 7);
+      if (effectiveView === "month") {
         const d = new Date(prev);
         d.setMonth(d.getMonth() + dir);
         return d;
@@ -1691,8 +1709,8 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   }
 
   function headingLabel(): string {
-    if (viewMode === "day") return fmtDateHeading(anchor);
-    if (viewMode === "week") {
+    if (effectiveView === "day") return fmtDateHeading(anchor);
+    if (effectiveView === "week") {
       const ws = startOfWeek(anchor);
       const we = addDays(ws, 6);
       if (ws.getMonth() === we.getMonth()) {
@@ -1700,7 +1718,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       }
       return `${MONTHS[ws.getMonth()]} ${ws.getDate()} – ${MONTHS[we.getMonth()]} ${we.getDate()}, ${ws.getFullYear()}`;
     }
-    if (viewMode === "month") {
+    if (effectiveView === "month") {
       return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
     }
     return "Upcoming";
@@ -1719,11 +1737,11 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   const announcedRef = useRef(false);
   useEffect(() => {
     if (!announcedRef.current) { announcedRef.current = true; return; }
-    const label = VIEW_MODES.find((v) => v.id === viewMode)?.label ?? "";
+    const label = VIEW_MODES.find((v) => v.id === effectiveView)?.label ?? "";
     announce(`${label} view, ${headingLabel()}`);
     // headingLabel() reads viewMode + anchor; re-announce whenever either moves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, anchor, announce]);
+  }, [effectiveView, anchor, announce]);
 
   return (
     <FamiliarColorContext.Provider value={accentFor}>
@@ -1830,7 +1848,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
       {/* View body */}
       <div className="flex-1 overflow-hidden flex flex-col">
-        {viewMode === "agenda" && (
+        {effectiveView === "agenda" && (
           <AgendaView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1840,7 +1858,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenDeadline={onOpenDeadline}
           />
         )}
-        {viewMode === "day" && (
+        {effectiveView === "day" && (
           <DayView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1851,7 +1869,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenDeadline={onOpenDeadline}
           />
         )}
-        {viewMode === "week" && (
+        {effectiveView === "week" && (
           <WeekView
             items={scopedItems}
             deadlines={scopedDeadlines}
@@ -1863,7 +1881,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenDay={goToDay}
           />
         )}
-        {viewMode === "month" && (
+        {effectiveView === "month" && (
           <MonthView
             items={scopedItems}
             deadlines={scopedDeadlines}
