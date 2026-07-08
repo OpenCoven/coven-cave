@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useMinuteTick } from "@/lib/use-minute-tick";
+import { relativeTime } from "@/lib/relative-time";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   buildWorkQueue,
@@ -47,18 +49,43 @@ const LANE_TONE: Record<WorkQueueLaneKey, "urgent" | "ready" | "neutral" | "quie
   "post-merge-cleanup": "ready",
 };
 
-async function fetchQueue(signal: AbortSignal): Promise<WorkQueue> {
-  const [beadsRes, prsRes] = await Promise.all([
-    fetch("/api/beads?mode=ready", { cache: "no-store", signal }),
-    fetch("/api/beads/prs", { cache: "no-store", signal }),
+type FetchedQueue = {
+  queue: WorkQueue;
+  /** False when the beads adapter failed and the queue is PRs-only. */
+  beadsOk: boolean;
+};
+
+// The PR bridge is the queue's spine — its failure fails the load. The beads
+// adapter instead DEGRADES the queue to PRs-only (the no-open-PR and
+// post-merge-cleanup lanes need the ready set), but the degradation is
+// reported via `beadsOk` so the surface can say so rather than silently
+// rendering fewer lanes.
+async function fetchQueue(signal: AbortSignal): Promise<FetchedQueue> {
+  const [beadsSettled, prsSettled] = await Promise.allSettled([
+    fetch("/api/beads?mode=ready", { cache: "no-store", signal }).then((res) => res.json()),
+    fetch("/api/beads/prs", { cache: "no-store", signal }).then((res) => res.json()),
   ]);
-  const beadsJson = await beadsRes.json();
-  const prsJson = await prsRes.json();
+  if (prsSettled.status === "rejected") throw prsSettled.reason;
+  const prsJson = prsSettled.value;
   if (!prsJson.ok) throw new Error(prsJson.error || "PR bridge unavailable");
-  const readyBeads: ReadyBead[] = beadsJson.ok && Array.isArray(beadsJson.data) ? beadsJson.data : [];
+
+  let readyBeads: ReadyBead[] = [];
+  let beadsOk = false;
+  if (beadsSettled.status === "fulfilled" && beadsSettled.value.ok && Array.isArray(beadsSettled.value.data)) {
+    readyBeads = beadsSettled.value.data;
+    beadsOk = true;
+  }
   const open: PullRequestSummary[] = Array.isArray(prsJson.open) ? prsJson.open : [];
   const merged: MergedPrRef[] = Array.isArray(prsJson.merged) ? prsJson.merged : [];
-  return buildWorkQueue(readyBeads, open, merged, { nowMs: Date.now() });
+  return { queue: buildWorkQueue(readyBeads, open, merged, { nowMs: Date.now() }), beadsOk };
+}
+
+// Content equality for the poll: the queue is a plain, deterministically-built
+// object graph, so serialized comparison is exact. Keeping the previous state
+// identity on a no-change poll stops the 30s tick from re-rendering every
+// lane/card (and resetting nothing) for an identical picture.
+function sameQueue(a: WorkQueue, b: WorkQueue): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
@@ -66,6 +93,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   const [queue, setQueue] = useState<WorkQueue | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [beadsDegraded, setBeadsDegraded] = useState(false);
+  // ISO timestamp of the last successful load — the header's truthfulness
+  // signal. If quiet polls fail, this readout ages instead of lying "fresh".
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [familiarFilter, setFamiliarFilter] = useState<string | null>(null);
   // Beads that got a handoff note THIS session — Close unlocks immediately
@@ -73,28 +104,32 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
   const loadSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // Re-render ~once a minute so the header freshness and per-card ages stay
+  // truthful between polls (the equality guard below keeps queue state stable,
+  // so nothing else would tick them).
+  useMinuteTick();
 
-  const load = useCallback(
-    async (opts?: { quiet?: boolean }) => {
-      const quiet = opts?.quiet === true;
-      const seq = ++loadSeq.current;
-      abortRef.current?.abort();
-      const ctrl = new AbortController();
-      abortRef.current = ctrl;
-      try {
-        const next = await fetchQueue(ctrl.signal);
-        if (seq !== loadSeq.current) return; // a newer load won
-        setQueue(next);
-        setError(null);
-      } catch (err) {
-        if (ctrl.signal.aborted || seq !== loadSeq.current) return;
-        if (!quiet) setError(err instanceof Error ? err.message : "Failed to load the work queue");
-      } finally {
-        if (seq === loadSeq.current) setHasLoaded(true);
-      }
-    },
-    [],
-  );
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      const { queue: next, beadsOk } = await fetchQueue(ctrl.signal);
+      if (seq !== loadSeq.current) return; // a newer load won
+      setQueue((prev) => (prev && sameQueue(prev, next) ? prev : next));
+      setBeadsDegraded(!beadsOk);
+      setError(null);
+      setLastUpdated(new Date().toISOString());
+    } catch (err) {
+      if (ctrl.signal.aborted || seq !== loadSeq.current) return;
+      // Keep whatever data is on screen — the render picks between the
+      // full-surface empty state (no data yet) and the inline refresh banner.
+      setError(err instanceof Error ? err.message : "Failed to load the work queue");
+    } finally {
+      if (seq === loadSeq.current) setHasLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
     void load();
@@ -113,7 +148,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
     );
   }, [hasLoaded, queue, announce]);
 
-  usePausablePoll(() => void load({ quiet: true }), 30_000, { pauseWhileInputActive: true });
+  usePausablePoll(() => void load(), 30_000, { pauseWhileInputActive: true });
 
   const familiarName = useCallback(
     (key: string) => {
@@ -140,7 +175,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || `${action} failed`);
         announce(action === "claim" ? `Claimed ${id}.` : `Closed ${id}.`);
-        await load({ quiet: true });
+        await load();
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
       } finally {
@@ -169,7 +204,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         if (!json.ok) throw new Error(json.error || "comment failed");
         setEvidenceAdded((prev) => new Set(prev).add(id.toLowerCase()));
         announce(`Handoff note added to ${id}.`);
-        await load({ quiet: true });
+        await load();
         return true;
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not add a note to ${id}`, "assertive");
@@ -226,14 +261,15 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   return (
     <div className="fwq">
       {/* Compact header — the shared .surface-compact band (GitHub / Schedules /
-          Marketplace / Tasks / Grimoire): small title, live summary inline,
-          Refresh on the right. */}
+          Marketplace / Tasks / Grimoire): small title, live summary inline
+          (with a truthful "updated Xm ago" readout), Refresh on the right. */}
       <header className="surface-compact-header">
         <h1 className="surface-compact-title">Work Queue</h1>
         <p className="surface-compact-summary">
           {q.total === 0
             ? "No open PRs or ready beads."
             : `${q.actionable} actionable · ${q.total} total${q.stale ? ` · ${q.stale} stale` : ""}`}
+          {lastUpdated ? <span className="fwq-updated"> · updated {relativeTime(lastUpdated)}</span> : null}
         </p>
         <div className="surface-compact-actions">
           <Button
@@ -274,6 +310,26 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
         </div>
       ) : null}
 
+      {/* Truthful-degradation banners. Text is static (only the tooltip carries
+          the raw error) so role=alert doesn't re-announce every failing poll. */}
+      {error ? (
+        <div className="fwq-banner fwq-banner--danger" role="alert" title={error}>
+          <Icon name="ph:warning-circle" width={14} aria-hidden />
+          <span className="fwq-banner-text">Couldn&apos;t refresh the queue — showing earlier data.</span>
+          <Button variant="ghost" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+      {beadsDegraded ? (
+        <div className="fwq-banner fwq-banner--warn" role="status">
+          <Icon name="ph:plugs" width={14} aria-hidden />
+          <span className="fwq-banner-text">
+            Beads adapter unavailable — showing PRs only; ready beads and post-merge cleanup are hidden.
+          </span>
+        </div>
+      ) : null}
+
       {q.attention.length > 0 ? <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} /> : null}
 
       <div className="fwq-body">
@@ -281,7 +337,11 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
           <EmptyState
             icon="ph:check-circle"
             headline="Queue is clear"
-            subtitle="No open PRs need attention and no ready beads are waiting to ship."
+            subtitle={
+              beadsDegraded
+                ? "No open PRs need attention. Bead lanes are unavailable right now."
+                : "No open PRs need attention and no ready beads are waiting to ship."
+            }
           />
         ) : visibleLanes.length === 0 ? (
           <EmptyState
@@ -413,18 +473,30 @@ function WorkQueueCard({
   const url = item.pr?.url ?? item.merged?.url ?? null;
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const noteButtonRef = useRef<HTMLButtonElement | null>(null);
   const isCleanup = item.lane === "post-merge-cleanup";
   // Close is exposed on the cleanup lane, but only once verification evidence
   // (a handoff note) is on record — the operator adds one via the composer.
   const closeBlocked = isCleanup && !hasEvidence;
 
+  // Keyboard/AT flow for the inline composer: focus lands in the textarea when
+  // it opens, and returns to the Note toggle whenever it closes (submit,
+  // Cancel, Escape) — otherwise focus drops to <body> on unmount.
+  useEffect(() => {
+    if (composing) noteInputRef.current?.focus();
+  }, [composing]);
+
+  const closeComposer = (opts?: { clearDraft?: boolean }) => {
+    if (opts?.clearDraft) setDraft("");
+    setComposing(false);
+    noteButtonRef.current?.focus();
+  };
+
   const submitNote = async () => {
     if (!draft.trim()) return;
     const ok = await onComment(draft);
-    if (ok) {
-      setDraft("");
-      setComposing(false);
-    }
+    if (ok) closeComposer({ clearDraft: true });
   };
 
   return (
@@ -453,6 +525,16 @@ function WorkQueueCard({
             </>
           ) : null}
           {item.stale ? <span className="fwq-tag fwq-tag--stale">stale</span> : null}
+          {item.pr?.updatedAt ? (
+            <span className="fwq-card-time" title={new Date(item.pr.updatedAt).toLocaleString()}>
+              updated {relativeTime(item.pr.updatedAt)}
+            </span>
+          ) : null}
+          {item.merged?.mergedAt ? (
+            <span className="fwq-card-time" title={new Date(item.merged.mergedAt).toLocaleString()}>
+              merged {relativeTime(item.merged.mergedAt)}
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="fwq-card-actions">
@@ -469,6 +551,7 @@ function WorkQueueCard({
         ) : null}
         {beadId ? (
           <Button
+            ref={noteButtonRef}
             variant="ghost"
             size="xs"
             leadingIcon="ph:note-pencil"
@@ -504,6 +587,7 @@ function WorkQueueCard({
       {composing && beadId ? (
         <div className="fwq-note">
           <textarea
+            ref={noteInputRef}
             className="fwq-note-input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -516,18 +600,17 @@ function WorkQueueCard({
                 e.preventDefault();
                 void submitNote();
               }
+              // Escape closes but keeps the draft — an accidental Escape must
+              // not destroy typed verification text (Cancel is the clear).
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                closeComposer();
+              }
             }}
           />
           <div className="fwq-note-actions">
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => {
-                setDraft("");
-                setComposing(false);
-              }}
-              disabled={busy}
-            >
+            <Button variant="ghost" size="xs" onClick={() => closeComposer({ clearDraft: true })} disabled={busy}>
               Cancel
             </Button>
             <Button

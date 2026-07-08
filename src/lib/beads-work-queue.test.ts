@@ -109,6 +109,30 @@ function bead(id, { priority = 2, labels = [], type = "feature", assignee = null
   assert.equal(q.total, 1, "cave-open counted once, in cleanup only");
 }
 
+// ── post-merge-cleanup skips beads with an open follow-up PR, and dedups ─────
+{
+  // cave-seq landed in PR 60 but a follow-up PR 61 is still open: Close would
+  // be premature, so the bead shows only via the open PR's lane.
+  const beads = [bead("cave-seq", { labels: ["familiar:kitty"] }), bead("cave-dup", { labels: ["familiar:nova"] })];
+  const prs = [pr(61, "needs-review", { beads: ["cave-seq"] })];
+  const merged = [
+    { number: 60, title: "landed first half", url: "u/60", beadIds: ["cave-seq"], mergedAt: "2026-07-07T00:00:00Z" },
+    // cave-dup landed across TWO merged PRs → one cleanup item, freshest first.
+    { number: 72, title: "landed part 2", url: "u/72", beadIds: ["cave-dup"], mergedAt: "2026-07-07T02:00:00Z" },
+    { number: 71, title: "landed part 1", url: "u/71", beadIds: ["cave-dup"], mergedAt: "2026-07-07T01:00:00Z" },
+  ];
+  const q = buildWorkQueue(beads, prs, merged, { nowMs: NOW });
+  const cleanup = q.lanes.find((l) => l.key === "post-merge-cleanup");
+  assert.deepEqual(
+    cleanup.items.map((i) => i.merged.number),
+    [72],
+    "open-follow-up bead skipped; duplicate merged refs collapse to the first (freshest) PR",
+  );
+  const review = q.lanes.find((l) => l.key === "needs-review");
+  assert.deepEqual(review.items.map((i) => i.bead.id), ["cave-seq"], "cave-seq stays in its open PR's lane");
+  assert.equal(q.total, 2, "each bead counted exactly once");
+}
+
 // ── Stale flag + rollup by familiar ──────────────────────────────────────────
 {
   const beads = [

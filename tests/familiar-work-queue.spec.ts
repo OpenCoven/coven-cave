@@ -75,6 +75,8 @@ test.describe("familiar work queue (PR control tower)", () => {
 
     // Header actionable count: 101(fail) + 102(ready) + 103(review) + cave-bb2(no-PR) + 90(cleanup) = 5 actionable.
     await expect(fwq.getByText(/5 actionable/)).toBeVisible();
+    // Freshness readout is truthful from the first load.
+    await expect(fwq.getByText(/updated just now/)).toBeVisible();
 
     // Every acceptance lane the mock populates renders, in fix→land→review→bead order.
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
@@ -148,10 +150,20 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(cleanup.getByRole("button", { name: "Close bead" })).toBeDisabled();
     await expect(cleanup.getByText(/Add a handoff note to record verification/)).toBeVisible();
 
-    // Record a handoff note through the inline composer.
-    await cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ }).click();
+    // Record a handoff note through the inline composer. Focus lands in the
+    // textarea on open; Escape closes and hands focus back to the toggle
+    // (keeping the draft); submit does the same once the note posts.
+    const noteToggle = cleanup.getByRole("button", { name: /Add a handoff note to cave-open/ });
+    await noteToggle.click();
+    const noteBox = cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ });
+    await expect(noteBox).toBeFocused();
+    await noteBox.press("Escape");
+    await expect(noteBox).toHaveCount(0);
+    await expect(noteToggle).toBeFocused();
+    await noteToggle.click();
     await cleanup.getByRole("textbox", { name: /Handoff note for cave-open/ }).fill("Verified: lanes render, close gated.");
     await cleanup.getByRole("button", { name: "Add note" }).click();
+    await expect(noteToggle).toBeFocused();
 
     // The note posts as a comment on the bead…
     await expect.poll(() => commentBody).toEqual({
@@ -178,6 +190,79 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(strip.locator(".fwq-attention-item", { hasText: "#102" })).toHaveCount(0);
     // Each row can jump to the PR.
     await expect(stale.getByRole("button", { name: "Open PR" })).toBeVisible();
+  });
+
+  test("beads adapter failure degrades to PRs-only with a visible notice", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } }));
+    // The beads adapter is down (bd missing / not a beads workspace).
+    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "bd unavailable" } }));
+
+    await page.goto("/");
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const fwq = page.locator(".fwq");
+    // The degradation is SAID, not silent.
+    await expect(fwq.getByText(/Beads adapter unavailable/)).toBeVisible();
+    // PR lanes still render from the bridge…
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Needs review" })).toBeVisible();
+    // …but the bead-driven lanes are gone (no ready set to derive them from).
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toHaveCount(0);
+    await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toHaveCount(0);
+  });
+
+  test("failed refresh keeps earlier data and shows an inline retry banner", async ({ page }) => {
+    // Flip-switch rather than a call counter: dev-mode StrictMode double-mount
+    // (and focus refreshes) make the number of initial loads unpredictable.
+    let failPrs = false;
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.route(/\/api\/beads\/prs/, (r) => {
+      if (failPrs) return r.fulfill({ status: 502, json: { ok: false, error: "gh exploded" } });
+      return r.fulfill({ json: { ok: true, open: OPEN_PRS, merged: MERGED_PRS } });
+    });
+    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ json: { ok: true, data: READY_BEADS } }));
+
+    await page.goto("/");
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const fwq = page.locator(".fwq");
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+
+    failPrs = true;
+    await fwq.getByRole("button", { name: "Refresh work queue" }).click();
+    const banner = fwq.getByRole("alert");
+    await expect(banner).toContainText("Couldn't refresh the queue");
+    await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
+    // Earlier data stays on screen — the failure does not blank the queue.
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
+    await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
   });
 
   test("Attention strip is absent when no PR is stale or unlinked", async ({ page }) => {

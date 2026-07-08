@@ -211,7 +211,14 @@ export function buildWorkQueue(
   for (const merged of mergedPrs) {
     const bead = merged.beadIds.map((id) => beadById.get(id)).find(Boolean);
     if (!bead) continue;
-    beadIdsInCleanup.add(bead.id.toLowerCase());
+    const beadId = bead.id.toLowerCase();
+    // A bead whose follow-up PR is still open is not ready to close — it
+    // already appears in that PR's lane, and prompting Close while work is in
+    // flight would be premature. Likewise a bead landed across several merged
+    // PRs is ONE cleanup, not competing Close prompts (first ref wins — `gh`
+    // lists most-recently-merged first, so the freshest PR names the close).
+    if (beadIdsWithOpenPr.has(beadId) || beadIdsInCleanup.has(beadId)) continue;
+    beadIdsInCleanup.add(beadId);
     items.push({
       key: `merged:${merged.number}`,
       lane: "post-merge-cleanup",

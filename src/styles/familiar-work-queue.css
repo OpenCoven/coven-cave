@@ -147,6 +147,35 @@
   }
 }
 
+/* ── Truthful-degradation banners (refresh failed / beads adapter down) ──── */
+.fwq-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 20px 0;
+  padding: 7px 12px;
+  border-radius: var(--radius-panel, 12px);
+  font-size: 12px;
+}
+
+.fwq-banner--danger {
+  border: 1px solid color-mix(in oklch, var(--color-danger) 34%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 7%, transparent);
+  color: var(--color-danger);
+}
+
+.fwq-banner--warn {
+  border: 1px solid color-mix(in oklch, var(--color-warning) 34%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+  color: var(--color-warning);
+}
+
+.fwq-banner-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
 .fwq-body {
   flex: 1;
   min-height: 0;
@@ -310,6 +339,16 @@
   color: var(--color-warning);
   border-color: color-mix(in oklch, var(--color-warning) 40%, transparent);
   background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+}
+
+/* Quiet per-item age ("updated 2h ago" / "merged 1h ago") — plain muted text,
+   not a pill, so it reads as metadata rather than a status. */
+.fwq-card-time {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .fwq-card-actions {
