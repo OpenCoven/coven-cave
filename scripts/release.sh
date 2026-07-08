@@ -30,6 +30,23 @@ require_value() {
   local label="${2:-required value}"
   [ -n "$value" ] || { echo "Missing required value: $label" >&2; exit 1; }
 }
+# Retry transient-failure commands (Apple timestamp service, notary submit,
+# the Next build's Google Fonts fetch) — the Intel leg failed 3 of 4 cuts on
+# exactly these network-dependent steps (cave-1hha).
+retry() {
+  local attempts="$1"; shift
+  local delay="$1"; shift
+  local n=1
+  until "$@"; do
+    if [ "$n" -ge "$attempts" ]; then
+      echo "    ! giving up after $attempts attempts: $1" >&2
+      return 1
+    fi
+    echo "    retry $n/$((attempts - 1)) in ${delay}s: $1" >&2
+    sleep "$delay"
+    n=$((n + 1))
+  done
+}
 print_notary_log() {
   local submission_id="$1"
 
@@ -87,23 +104,47 @@ run_notary_submit() {
   set -e
 
   submission_id=$(awk '/^[[:space:]]*id:/ { print $2; exit }' "$output")
+  # Return codes: 0 accepted · 2 Apple REJECTED the submission (never retry) ·
+  # 1 transient/submit failure (the caller retries — cave-1hha).
   if [ "$submit_status" -ne 0 ]; then
     print_notary_log "$submission_id"
     rm -f "$output"
-    exit "$submit_status"
+    return 1
   fi
   if grep -Eq "Submission in terminal status: Invalid|Current status: Invalid|^[[:space:]]*status:[[:space:]]*Invalid" "$output"; then
     print_notary_log "$submission_id"
     rm -f "$output"
-    exit 1
+    return 2
   fi
   if ! grep -Eq "Submission in terminal status: Accepted|Received new status: Accepted|^[[:space:]]*status:[[:space:]]*Accepted" "$output"; then
     echo "Notary submission did not report Accepted; refusing to staple." >&2
     print_notary_log "$submission_id"
     rm -f "$output"
-    exit 1
+    return 1
   fi
   rm -f "$output"
+  return 0
+}
+notarize_with_retries() {
+  local attempt rc
+  for attempt in 1 2 3; do
+    set +e
+    run_notary_submit
+    rc=$?
+    set -e
+    case "$rc" in
+      0) return 0 ;;
+      2) echo "Apple rejected the submission (Invalid) — not retrying." >&2; exit 1 ;;
+      *)
+        if [ "$attempt" -eq 3 ]; then
+          echo "Notary submission failed after 3 attempts." >&2
+          exit 1
+        fi
+        echo "==> Notary submission attempt $attempt failed transiently; retrying in 60s" >&2
+        sleep 60
+        ;;
+    esac
+  done
 }
 cleanup_dmg_artifacts() {
   local mount
@@ -249,7 +290,7 @@ echo "==> Running pnpm tauri build"
 # mismatches between the generated script and the installed create-dmg.
 # Keep App Store Connect credentials out of this subprocess so Tauri does not
 # take its built-in notarization path before this script assembles the DMG.
-env \
+retry 2 30 env \
   -u APPLE_API_KEY \
   -u APPLE_API_KEY_PATH \
   -u APPLE_API_ISSUER \
@@ -294,13 +335,13 @@ NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"
 while IFS= read -r f; do
   if [ "$f" = "$APP_PATH/Contents/Resources/resources/node/bin/node" ]; then
-    codesign --force --options runtime --timestamp \
+    retry 3 10 codesign --force --options runtime --timestamp \
       --entitlements "$NODE_ENTITLEMENTS" \
       --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
         echo "    ! failed to sign bundled Node with entitlements: $f" >&2
       }
   else
-    codesign --force --options runtime --timestamp \
+    retry 3 10 codesign --force --options runtime --timestamp \
       --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
         echo "    ! failed to sign: $f" >&2
       }
@@ -309,7 +350,7 @@ done < "$NATIVE_FILES_TMP"
 rm "$NATIVE_FILES_TMP"
 
 echo "==> Sealing the .app envelope"
-codesign --force --options runtime --timestamp \
+retry 3 15 codesign --force --options runtime --timestamp \
   --sign "$SIGNING_IDENTITY" "$APP_PATH"
 
 echo "==> Verifying signature"
@@ -333,7 +374,7 @@ codesign --force --timestamp \
   --sign "$SIGNING_IDENTITY" "$DMG_PATH"
 
 echo "==> Submitting DMG for notarization"
-run_notary_submit
+notarize_with_retries
 
 echo "==> Stapling notarization ticket"
 xcrun stapler staple "$DMG_PATH"
