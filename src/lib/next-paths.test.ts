@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { buildNextPathsDirective, extractNextPaths, DEFAULT_NEXT_PATHS_COUNT } from "./next-paths.ts";
 
-// directive: respects count, empty when 0
+// directive: default asks for 2 or 4 (never 3), respects count, empty when 0
+assert.equal(DEFAULT_NEXT_PATHS_COUNT, 4);
+assert.match(buildNextPathsDirective(), /append 2 or 4 short/);
+assert.match(buildNextPathsDirective(), /never exactly 3/);
 assert.match(buildNextPathsDirective(3), /<coven:next-paths>/);
 assert.match(buildNextPathsDirective(2), /up to 2 short/);
 assert.equal(buildNextPathsDirective(0), "");
