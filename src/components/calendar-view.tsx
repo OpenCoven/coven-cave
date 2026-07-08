@@ -1460,6 +1460,22 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   const [pickerOpen, setPickerOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Keep the open event detail panel in sync with live updates. `selectedItem`
+  // is a snapshot captured at click; without this, an SSE update/delete (or a
+  // mutation from elsewhere) leaves the panel showing stale status/fireAt/body,
+  // and a deleted item's panel lingers over a dead id — acting on it (Done /
+  // Snooze / Dismiss) fires a mutation against nothing. Mirrors the reconciler
+  // in automations-view.tsx: adopt the fresh item when it differs, else close.
+  useEffect(() => {
+    if (!selectedItem) return;
+    const fresh = items.find((it) => it.id === selectedItem.id);
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedItem)) setSelectedItem(fresh);
+    } else {
+      setSelectedItem(null);
+    }
+  }, [items, selectedItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Force agenda on phone-class viewports: the day/week/month grids all
   // have a `min-w-[560px]` floor, which would overflow a 360px screen.
   // Lets the user swap back to a grid once they're on a tablet+.

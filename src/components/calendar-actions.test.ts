@@ -110,4 +110,25 @@ assert.ok((view.match(/aria-current=\{isToday \? "date" : undefined\}/g) ?? []).
 // Horizontal arrows don't page the period out from under a focused grid event.
 assert.match(view, /if \(target\.closest\('\[data-calendar-event="true"\]'\)\) break;/, "a focused event keeps its own Arrow handling");
 
+// ───────── Detail panel reconciles with live items (cave-latd) ─────────
+// `selectedItem` is a snapshot captured at click; an effect keyed on
+// [items, selectedItem?.id] adopts the fresh copy when it changes and closes
+// the panel when the item is gone — so it never shows stale status/fireAt and
+// never lingers over a deleted id (acting on which fires against nothing).
+assert.match(
+  view,
+  /const fresh = items\.find\(\(it\) => it\.id === selectedItem\.id\)/,
+  "the open detail panel looks up its fresh copy in the live items prop",
+);
+assert.match(
+  view,
+  /JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedItem\)\) setSelectedItem\(fresh\)/,
+  "the reconciler adopts the fresh item only when its content changed",
+);
+assert.match(
+  view,
+  /const fresh = items\.find[\s\S]{0,220}\} else \{\s*\n\s*setSelectedItem\(null\)/,
+  "a deleted item closes the panel instead of lingering over a dead id",
+);
+
 console.log("calendar-actions.test.ts: ok");
