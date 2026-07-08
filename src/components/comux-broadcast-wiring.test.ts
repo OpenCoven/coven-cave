@@ -42,4 +42,14 @@ assert.equal((term.match(/writerRef\.current = \(d\) =>/g) || []).length, 2, "ex
 assert.match(css, /\.comux-terminal-pane\[data-broadcast="true"\]/, "broadcast pane ring styled");
 assert.match(css, /\.comux-terminal-toolbar-button\[data-broadcast-active="true"\]/, "broadcast toggle styled");
 
+// ── Keepalive a11y invariant (cave-hnn5) ────────────────────────────────────
+// The keepalive wrapper hides inactive sessions' panes with visibility:hidden.
+// That's the load-bearing property: xterm's helper textarea only opacity-hides
+// itself, so it's the inherited visibility that keeps it unfocusable inside
+// the aria-hidden wrapper (WCAG 4.1.2). Swapping the hiding mechanism to
+// opacity/clip would strand focusable content in aria-hidden — if you change
+// it, add `inert` to the wrapper.
+assert.match(comux, /className="comux-terminal-keepalive" aria-hidden="true"/, "keepalive wrapper is aria-hidden");
+assert.match(css, /\.comux-terminal-keepalive \{[^}]*visibility: hidden/s, "keepalive hides via visibility, keeping descendants unfocusable");
+
 console.log("comux-broadcast-wiring.test.ts passed");
