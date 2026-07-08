@@ -91,4 +91,30 @@ const comux = readFileSync(new URL("./comux-view.tsx", import.meta.url), "utf8")
 assert.match(comux, /active=\{active && isActive\}\s*\n\s*visible=\{active\}/, "split panes are visible whenever the surface is, focused or not");
 assert.match(comux, /active=\{false\}\s*\n\s*visible=\{false\}/, "keepalive mounts are explicitly not visible");
 
+// ── Terminal a11y (cave-p767) ──
+// Per-pane labels: split panes must be distinguishable to AT — the region and
+// its SR mirror are both named after the pane when a label is threaded in.
+assert.match(
+  source,
+  /aria-label=\{label \? `Terminal: \$\{label\}` : "Terminal"\}/,
+  "the terminal region is named after its pane label",
+);
+assert.match(
+  source,
+  /aria-label=\{label \? `Terminal output: \$\{label\}` : "Terminal output"\}/,
+  "the SR mirror region is named after its pane label",
+);
+// Reduced motion: the blinking cursor is continuous motion — off under
+// prefers-reduced-motion, both at creation and reactively on change.
+assert.match(
+  source,
+  /cursorBlink: !handlers\.reducedMotion/,
+  "cursor blink is disabled at creation under prefers-reduced-motion",
+);
+assert.match(
+  source,
+  /term\.options\.cursorBlink = !reducedMotion/,
+  "cursor blink tracks prefers-reduced-motion changes without a remount",
+);
+
 console.log("bottom-terminal-sr-mirror.test.ts OK");
