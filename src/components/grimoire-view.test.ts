@@ -23,7 +23,24 @@ assert.match(view, /fetch\("\/api\/memory"/, "navigator lists memory files");
 assert.match(view, /fetch\("\/api\/journal"/, "navigator lists journal days");
 assert.match(view, /aria-label="Search grimoire documents"/, "navigator search is labelled");
 assert.match(view, /New entry/, "knowledge entries can be created here");
-assert.match(view, /aria-label="Knowledge vault"[\s\S]*aria-label="Memory files"[\s\S]*aria-label="Journal"/, "sections are labelled landmarks");
+assert.match(
+  view,
+  /ariaLabel="Knowledge vault"[\s\S]*ariaLabel="Memory files"[\s\S]*ariaLabel="Journal"/,
+  "sections are labelled landmarks (RailSection renders section[aria-label])",
+);
+assert.match(view, /<section aria-label=\{ariaLabel\}>/, "RailSection emits the section landmark");
+
+// ── Navigator sections collapse (persisted), search overrides collapse ──────
+assert.match(view, /"cave:grimoire:rail-collapsed"/, "section collapse persists to localStorage");
+assert.match(view, /aria-expanded=\{!collapsed\}/, "section headers expose their expanded state");
+assert.match(
+  view,
+  /collapsed=\{!q && collapsedSections\.knowledge\}/,
+  "an active search auto-expands sections so matches stay reachable",
+);
+assert.match(view, /ariaLabel="Knowledge vault"\s+icon="ph:book-open"/, "knowledge carries its kind icon");
+assert.match(view, /ariaLabel="Memory files"\s+icon="ph:brain"/, "memory carries its kind icon");
+assert.match(view, /ariaLabel="Journal"\s+icon="ph:calendar-blank"/, "journal carries its kind icon");
 
 // ── Detail: the right transport per source ───────────────────────────────────
 
@@ -82,22 +99,37 @@ assert.match(
 );
 assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
 assert.match(view, /title="No matching Grimoire doc"[\s\S]{0,160}border-dashed/, "an unresolved link renders dashed + inert with a hint");
-assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,160}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
 
-// ── cave-xr0 slice 3: the [[wiki-link]] graph view ──────────────────────────
-// A "Graph" toggle swaps the detail pane for a lazy-loaded @xyflow graph built
-// from the knowledge vault (bodies already loaded — no server scan); clicking a
-// node opens that doc.
-assert.match(view, /from "@\/lib\/grimoire-graph"/, "grimoire-view builds the link graph via the graph lib");
-assert.match(view, /import\("@\/components\/grimoire-graph-view"\)/, "the @xyflow graph is lazy-loaded (dynamic import)");
+// ── Backlinks: incoming mentions from the doc graph (cave-hand) ──────────────
+// The active doc's incoming link/mention edges surface as a second chip row
+// ("Mentions"); mention-sourced chips render dashed to read as inferred.
+assert.match(view, /backlinks = useMemo<GrimoireBacklink\[\]>/, "backlinks derive from the doc graph");
+assert.match(view, /e\.target !== activeKey \|\| e\.type === "tag"/, "backlinks keep link+mention edges targeting the active doc (tags excluded)");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}backlinks=\{backlinks\}/, "the chip row receives the backlinks");
+assert.match(view, /b\.type === "mention" \? "Mentions this doc \(unlinked\)" : "Links to this doc"/, "chips distinguish inferred mentions from explicit links");
+
+// ── The doc graph (cave-hand): full-corpus scan + Obsidian-style canvas ──────
+// GET /api/grimoire/graph scans knowledge+memory+journal server-side; until it
+// lands (or if it fails) the client-built knowledge graph stands in, so the
+// graph is never blank while docs exist. A segmented Docs|Graph header control
+// swaps the detail pane for the lazy-loaded canvas; clicking a node opens it.
+assert.match(view, /from "@\/lib\/grimoire-graph"/, "grimoire-view builds the fallback graph via the graph lib");
+assert.match(view, /import\("@\/components\/grimoire-graph-view"\)/, "the canvas graph is lazy-loaded (dynamic import)");
 assert.match(view, /ssr: false/, "the graph view is client-only (no SSR)");
-assert.match(view, /const graph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "the graph is memoized from buildDocGraph");
-assert.match(view, /markdown: k\.body/, "the knowledge graph reads each entry's body (already loaded)");
-assert.match(view, /setShowGraph\(\(v\) => !v\)/, "a header toggle flips between docs and the graph");
+assert.match(view, /fetch\("\/api\/grimoire\/graph"/, "the full-corpus graph comes from the server scan");
+assert.match(view, /const localGraph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "the fallback graph is memoized from buildDocGraph");
+assert.match(view, /markdown: k\.body/, "the fallback graph reads each knowledge body (already loaded)");
+assert.match(view, /const graph = scan\?\.graph \?\? localGraph/, "the server scan wins, the local graph stands in — never blank");
+assert.match(view, /if \(firstLoadDoneRef\.current\) refreshGraph\(\)/, "saves/deletes rescan the graph (mount already fetched)");
+assert.match(view, /aria-label="Grimoire view"/, "the Docs|Graph switch is a labelled control group");
+assert.match(view, /aria-pressed=\{!showGraph\}[\s\S]{0,1000}aria-pressed=\{showGraph\}/, "the segmented control exposes pressed state");
 assert.match(
   view,
-  /showGraph \? \([\s\S]{0,220}<GrimoireGraphView[\s\S]{0,200}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
+  /showGraph \? \([\s\S]{0,320}<GrimoireGraphView[\s\S]{0,400}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
   "the graph replaces the detail pane and opens the clicked doc",
 );
+assert.match(view, /scanning=\{scanning\}/, "the graph view knows a scan is in flight");
+assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is only surfaced when there is no scan to show");
 
 console.log("grimoire-view.test: ok");
