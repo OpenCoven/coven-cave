@@ -141,3 +141,17 @@ describe("preset seed stability (swatch values are deterministic)", () => {
 // vars the whole app reads — coalesce to one write per frame.
 assert.match(source, /requestAnimationFrame\(\(\) => \{[\s\S]*?applyColorsToDOM\(colors, mode\)/, "the live color apply is throttled to one write per animation frame");
 assert.match(source, /cancelAnimationFrame\(applyFrameRef\.current\)/, "a pending apply frame is cancelled before scheduling the next");
+
+// ── Reset clears persistence; saved-flash timer is owned (cave-fu1y) ────────
+// handleReset previously only reset local state + DOM vars, so a reload
+// resurrected the stale persisted custom theme (the Appearance-tab reset
+// already cleared persistence — the two paths must stay consistent).
+assert.match(
+  source,
+  /const handleReset = \(\) => \{[\s\S]*?localStorage\.removeItem\(COVEN_CUSTOM_THEME_KEY\);[\s\S]*?localStorage\.setItem\(COVEN_THEME_KEY, basePreset\);[\s\S]*?onReset\?\.\(\);/,
+  "reset clears the persisted custom theme and hands boot back to the base preset",
+);
+// The 2s "Saved" flash must not setState after unmount, and re-saving resets it.
+assert.match(source, /savedTimerRef\.current = setTimeout\(\(\) => setSaved\(false\), 2000\)/, "saved-flash timer is kept in a ref");
+assert.match(source, /if \(savedTimerRef\.current\) clearTimeout\(savedTimerRef\.current\);/, "a pending saved-flash timer is cleared before re-arming");
+assert.match(source, /useEffect\(\(\) => \(\) => \{\s*\n\s*if \(savedTimerRef\.current\) clearTimeout\(savedTimerRef\.current\);/, "the saved-flash timer is cleared on unmount");
