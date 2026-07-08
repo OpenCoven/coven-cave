@@ -1,0 +1,738 @@
+/* ── The Familiar Summoning Circle ──────────────────────────────────────────
+   Creation ("summoning rite") and alteration ("enhancement rite") overlay.
+   Tokens only — the circle's accent follows the chosen aura via --sc-accent
+   and falls back to the presence accent. All motion has a reduced-motion
+   story at the bottom of this file. */
+
+.summoning-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--backdrop-scrim);
+}
+
+.summoning-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(940px, 100%);
+  max-height: min(760px, calc(100vh - 2 * var(--space-4)));
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 24px 64px oklch(0 0 0 / 35%);
+}
+
+.summoning-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  container-type: inline-size;
+  container-name: summoning;
+}
+
+/* Header */
+.summoning-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.summoning-header__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-sm, 12px);
+  color: var(--text-secondary);
+}
+
+.summoning-header__crumb strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.summoning-header__sep {
+  color: var(--text-muted);
+}
+
+.summoning-header__close {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+}
+
+.summoning-header__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Layout: circle column + working panel */
+.summoning-layout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+
+.summoning-stagecol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4);
+  border-right: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  overflow-y: auto;
+}
+
+.summoning-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--space-4);
+  gap: var(--space-3);
+  overflow-y: auto;
+}
+
+.summoning-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summoning-panel__numeral {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--space-1);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--accent-presence);
+}
+
+.summoning-panel__hint {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.summoning-panel__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+/* Stepper */
+.summoning-progress {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.summoning-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  max-width: 220px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.summoning-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.summoning-step:not(:disabled):hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.summoning-step:disabled {
+  opacity: 0.55;
+}
+
+.summoning-step--active {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.summoning-step--done .summoning-step__numeral {
+  color: var(--accent-presence);
+}
+
+.summoning-step__numeral {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+/* Vessel cards — dashed hairline: the invitation idiom. */
+.summoning-vessels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.summoning-vessel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-elevated) 40%, transparent);
+  text-align: left;
+}
+
+.summoning-vessel:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-strong));
+}
+
+.summoning-vessel--active {
+  border-style: solid;
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+.summoning-vessel__icon {
+  color: var(--accent-presence);
+}
+
+.summoning-vessel__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summoning-vessel__hint {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+/* Chips (runtime picker) */
+.summoning-chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.summoning-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.summoning-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.summoning-chip--active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+
+/* Sub-cards (SSH form, OpenClaw agent list) */
+.summoning-subcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+}
+
+.summoning-agent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+}
+
+.summoning-agent:hover {
+  background: var(--bg-hover);
+}
+
+.summoning-agent--active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+
+/* SSH check result — the tint recipe. */
+.summoning-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.summoning-check--ok {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-success) 35%, var(--border-hairline));
+}
+
+.summoning-check--fail {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 35%, var(--border-hairline));
+}
+
+/* Glyph grid + auras */
+.summoning-glyphgrid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: var(--space-1);
+}
+
+.summoning-glyph {
+  display: grid;
+  place-items: center;
+  height: 32px;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+}
+
+.summoning-glyph:hover {
+  background: var(--bg-hover);
+}
+
+.summoning-glyph--active {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+  box-shadow: inset 0 0 0 1px var(--accent-presence);
+  color: var(--text-primary);
+}
+
+.summoning-auras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.summoning-aura {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+}
+
+.summoning-aura--active {
+  box-shadow:
+    0 0 0 2px var(--bg-raised),
+    0 0 0 4px var(--accent-presence);
+}
+
+.summoning-aura-reset {
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.summoning-aura-reset:not(:disabled):hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.summoning-aura-reset:disabled {
+  opacity: 0.5;
+}
+
+/* The incantation (summary) */
+.summoning-incantation {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.summoning-incantation__row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.summoning-incantation__row + .summoning-incantation__row {
+  border-top: 1px solid var(--border-hairline);
+}
+
+.summoning-incantation__row dt {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  align-self: center;
+}
+
+.summoning-incantation__row dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Notices + errors */
+.summoning-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-warning) 35%, var(--border-hairline));
+}
+
+.summoning-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: 11px;
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--color-danger) 35%, var(--border-hairline));
+}
+
+/* Footer */
+.summoning-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-hairline);
+}
+
+.summoning-footer__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Success */
+.summoning-success {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: auto 0;
+  padding: var(--space-4);
+}
+
+.summoning-success__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summoning-success__title svg {
+  color: var(--accent-presence);
+}
+
+.summoning-success__body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  max-width: 44ch;
+}
+
+.summoning-success__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Enhancement sections — the circle lights what you change. */
+.summoning-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+
+.summoning-section[data-dirty] {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+}
+
+.summoning-section__title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.summoning-section[data-dirty] .summoning-section__title {
+  color: var(--accent-presence);
+}
+
+/* Vitality — honest signals from the roster. */
+.summoning-vitality {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 220px;
+  text-align: center;
+}
+
+.summoning-vitality__embers {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.summoning-vitality__ember {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
+
+.summoning-vitality__ember--lit {
+  color: var(--color-warning);
+}
+
+.summoning-vitality__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summoning-vitality__hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── The circle itself ── */
+.summoning-circle {
+  --sc-accent: var(--accent-presence);
+  position: relative;
+  width: 240px;
+  aspect-ratio: 1;
+}
+
+.summoning-circle__svg {
+  width: 100%;
+  height: 100%;
+}
+
+.summoning-circle__ring-base {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 7;
+}
+
+.summoning-circle__arc {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transition: stroke var(--duration-slow, 260ms) ease;
+}
+
+.summoning-circle__arc--active {
+  stroke: color-mix(in oklch, var(--sc-accent) 40%, transparent);
+}
+
+.summoning-circle__arc--lit {
+  stroke: var(--sc-accent);
+}
+
+.summoning-circle__node {
+  fill: var(--bg-elevated);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  transition: fill var(--duration-slow, 260ms) ease;
+}
+
+.summoning-circle__node--lit {
+  fill: var(--sc-accent);
+  stroke: color-mix(in oklch, var(--sc-accent) 60%, var(--border-strong));
+}
+
+.summoning-circle__runes {
+  transform-origin: 50% 50%;
+  animation: summoning-orbit 90s linear infinite;
+}
+
+.summoning-circle[data-summoning] .summoning-circle__runes {
+  animation-duration: 6s;
+}
+
+.summoning-circle__rune {
+  fill: color-mix(in oklch, var(--sc-accent) 45%, transparent);
+}
+
+.summoning-circle__ring-inner {
+  fill: none;
+  stroke: var(--border-hairline);
+  stroke-width: 1;
+}
+
+.summoning-circle__flare {
+  fill: none;
+  stroke: var(--sc-accent);
+  stroke-width: 2;
+  opacity: 0;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+}
+
+.summoning-circle[data-flare] .summoning-circle__flare {
+  animation: summoning-flare 700ms cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+.summoning-circle__center {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--sc-accent) 12%, var(--bg-elevated));
+  border: 1px solid color-mix(in oklch, var(--sc-accent) 35%, var(--border-hairline));
+  color: var(--text-primary);
+  transition: box-shadow var(--duration-slow, 260ms) ease;
+}
+
+.summoning-circle[data-flare] .summoning-circle__center {
+  box-shadow: 0 0 42px color-mix(in oklch, var(--sc-accent) 45%, transparent);
+}
+
+.summoning-circle__portrait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@keyframes summoning-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes summoning-flare {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+
+/* Narrow panes: stack the circle above the panel. */
+@container summoning (max-width: 700px) {
+  .summoning-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summoning-stagecol {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    border-right: none;
+    border-bottom: 1px solid var(--border-hairline);
+    padding: var(--space-3);
+  }
+
+  .summoning-circle {
+    width: 148px;
+  }
+
+  .summoning-steps {
+    max-width: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .summoning-step {
+    width: auto;
+  }
+
+  .summoning-vessels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summoning-glyphgrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Reduced motion: the orbit stands still and the flare becomes a static glow. */
+@media (prefers-reduced-motion: reduce) {
+  .summoning-circle__runes {
+    animation: none;
+  }
+
+  .summoning-circle[data-flare] .summoning-circle__flare {
+    animation: none;
+    opacity: 0.35;
+  }
+}
