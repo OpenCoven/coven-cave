@@ -7,6 +7,21 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.151] - 2026-07-08
+
+> 🔁 **Updates that update themselves** — the native in-app updater finally works in packaged builds: check, download with progress, install, and relaunch without ever leaving the cave. Plus a rounder terminal: tabs you can drive from the keyboard, an SR mirror that follows visibility, and shells that end when their tab does.
+
+Patch release on top of v0.0.150.
+
+### Fixes
+- **Desktop: the native in-app updater is no longer ACL-denied** (#2654, cave-51yk). The updater/relaunch permissions only existed in the local-only capability, but the main window runs from the loopback origin — a remote ACL context — so every native check silently failed and update prompts fell back to browser downloads. A remote-scoped `loopback-updater` capability (trusted main webview only) restores one-click *Install & restart*, and the update banner now re-checks every 6 hours so long-running caves hear about new releases. Users on ≤ v0.0.150 make one final browser-download update to this release; every update after is fully in-app.
+- **Terminal: keyboard-operable tab strip + per-pane AT labels + reduced-motion cursor** (#2652, cave-p767).
+- **Terminal: the screen-reader mirror follows pane visibility instead of focus, and `pty_resize` is throttled** (#2651, cave-2956).
+- **Terminal: WS-transport shells are reaped on tab close** instead of lingering for a 5-minute grace (#2649, cave-wujw).
+
+### Internal
+- `src-tauri` test files (capability ACL pins, release-runtime pins) are now wired into the CI app suite — they previously ran nowhere, which is how the updater denial and a drifted terminal pin went unnoticed (#2654, #2653).
+
 ## [0.0.150] - 2026-07-08
 
 > 🔮 **The Summoning Circle** — familiar creation leaves the setup wizard for a gamified in-app rite: choose a vessel (this machine, SSH, or an OpenClaw agent), name it, give it form, and summon — then return to the circle to enhance. Chat becomes the front door, seven surfaces adopt the shared compact chrome, and Windows launching gets sturdier.
