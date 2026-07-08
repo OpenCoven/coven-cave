@@ -319,6 +319,11 @@ assert.match(
   /removeSession[\s\S]{0,900}pty_stop/,
   "closing a tab is the one place the desktop PTY is killed",
 );
+assert.match(
+  source,
+  /killPtyBridge\(`cave\.comux\.\$\{removedId\}`\)/,
+  "closing a tab also reaps the WS-transport shell (killPtyBridge, scoped to removedId) so it doesn't leak for the detach grace (cave-wujw)",
+);
 
 // Tab rename: Escape aborts (restores the label), and blank/whitespace names
 // are rejected so a cleared tab keeps its label.

@@ -240,6 +240,13 @@ function onWsMessage(threadId, data) {
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
     }
+  } else if (tag === 5) {
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+    }
   }
 }
 function adoptSession(session, ws, cols, rows) {

@@ -346,6 +346,18 @@ function onWsMessage(threadId: string, data: RawData): void {
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
     }
+  } else if (tag === 0x05) {
+    // Explicit tab-close (client sent a kill frame): reap the shell NOW rather
+    // than detaching with a grace window. Without this, a WS-transport tab close
+    // just drops the socket, which the close handler treats as a transient
+    // detach — leaking the shell (and its foreground job) for DETACH_GRACE_MS.
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
+    }
   }
 }
 

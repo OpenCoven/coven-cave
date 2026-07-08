@@ -51,3 +51,29 @@ assert.match(
   "a prior (possibly zombie) socket is torn down before re-dialing",
 );
 console.log("pty-ws-bridge iOS-resume assertions: ok");
+
+// ── Explicit tab-close reaps the shell (cave-wujw) ────────────────────────────
+// Closing a terminal tab on the WS transport used to just drop the socket, which
+// the server treats as a transient DETACH — leaking the shell (and its
+// foreground job) for the full detach grace (~5 min). The bridge now sends an
+// explicit kill frame (0x05); a threadId→bridge registry lets the out-of-tree
+// tab-close handler reach the bridge it doesn't own.
+assert.match(src, /const activeBridges = new Map<string, PtyWsBridge>/, "a threadId→bridge registry exists for out-of-tree kills");
+assert.match(
+  src,
+  /export function killPtyBridge\(threadId: string\): void \{\s*\n\s*activeBridges\.get\(threadId\)\?\.kill\(\);/,
+  "killPtyBridge reaps by threadId (no-op when no WS bridge is registered — e.g. desktop native IPC)",
+);
+assert.match(src, /activeBridges\.set\(target\.threadId, this\)/, "open() registers the bridge by threadId");
+assert.match(
+  src,
+  /activeBridges\.get\(threadId\) === this\)\s*\{\s*\n\s*activeBridges\.delete\(threadId\)/,
+  "dispose() unregisters only its own entry",
+);
+assert.match(
+  src,
+  /kill\(\): void \{[\s\S]{0,220}send\(new Uint8Array\(\[0x05\]\)\)/,
+  "kill() sends the 0x05 kill frame over the open socket",
+);
+assert.match(src, /kill\(\): void \{[\s\S]{0,320}this\.dispose\(\)/, "kill() tears down after sending the frame");
+console.log("pty-ws-bridge kill-frame assertions: ok");

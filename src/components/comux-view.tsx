@@ -5,6 +5,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal } from "@/components/bottom-terminal";
+import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
@@ -719,6 +720,14 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           )
           .catch(() => {});
       }
+      // WS transport (browser / iOS / Android): the desktop pty_stop above only
+      // reaps native-IPC shells. Without this, closing a tab merely drops the
+      // socket — which the server treats as a transient detach — so the shell
+      // (and its foreground job) leaks for the full detach grace (~5 min).
+      // killPtyBridge sends an explicit kill frame; it is a no-op when no WS
+      // bridge is registered for the threadId (i.e. the desktop transport), so
+      // running it unconditionally is safe.
+      killPtyBridge(`cave.comux.${removedId}`);
     },
     [sessions],
   );

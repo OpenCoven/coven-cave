@@ -79,6 +79,12 @@ assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
 assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
+assert.match(src, /tag === 0x05/, "server receives an explicit kill tag 0x05 (cave-wujw)");
+assert.match(
+  src,
+  /tag === 0x05[\s\S]{0,500}sessions\.delete\(threadId\)[\s\S]{0,200}session\.pty\.kill\(\)/,
+  "the 0x05 kill frame reaps the shell immediately (clear detach timer, delete, kill), bypassing the grace window",
+);
 // Always loopback by default (both dev and prod)
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
 assert.match(src, /isLoopbackHost\(host\)/, "server only accepts loopback WebSocket hosts by default");
