@@ -108,7 +108,7 @@ export function CapabilitiesView({
 
 function GridSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}

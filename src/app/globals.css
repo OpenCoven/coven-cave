@@ -11651,11 +11651,15 @@ details[open] > .cave-edit-card__summary::before {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  overflow-x: auto;
 }
 .split-host__pane-body > * {
   flex: 1 1 auto;
   min-height: 0;
-  min-width: 0;
+  /* Usability floor (cave-hivd): below ~300px every surface crushes into
+     letter soup — the pane scrolls horizontally instead. Pure CSS so the
+     divider's drag-to-close zones (ratio-based) stay reachable. */
+  min-width: 300px;
 }
 
 /* ── Split divider: a calm hairline that reveals a grip on hover/drag ──────── */

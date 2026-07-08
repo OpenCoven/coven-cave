@@ -619,7 +619,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           }}
           className="shrink-0 border-b border-[var(--border-hairline)] bg-[var(--bg-sunken)] px-4 py-3 sm:px-6"
         >
-          <div className="grid gap-2 lg:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
+          <div className="grid gap-2 @min-[900px]:grid-cols-[minmax(160px,0.7fr)_minmax(260px,1.3fr)_auto]">
             <input
               autoFocus
               value={nameDraft}

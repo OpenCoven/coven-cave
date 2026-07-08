@@ -848,7 +848,7 @@ function CodexDetailPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+      <div className="@container flex-1 overflow-y-auto px-5 py-5 space-y-5">
         <div className="cron-detail-summary-grid grid grid-cols-2 gap-2">
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
           <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
@@ -867,7 +867,7 @@ function CodexDetailPanel({
               style={fieldStyle}
             />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
             <div>
               <FieldLabel htmlFor={`cron-tags-${auto.id}`}>Tags</FieldLabel>
               <input
@@ -985,7 +985,7 @@ function CodexDetailPanel({
         </CronDetailSection>
 
         <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
             <div>
               <FieldLabel htmlFor={`cron-model-${auto.id}`}>Model</FieldLabel>
               <input
