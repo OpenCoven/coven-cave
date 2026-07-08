@@ -75,6 +75,11 @@ assert.match(
   /\.tray-quick-chat__pane\[hidden\] \{\s*\n\s*display: none;/,
   "the pane's display:flex must not defeat the hidden attribute",
 );
+assert.match(
+  glassCss,
+  /\.tray-quick-chat__pane \.quick-chat-thread \{[^}]*max-height: none;/,
+  "the thread fills the window height — globals' 46vh dropdown-era cap must stay overridden",
+);
 
 // ── Closing the quick chat ───────────────────────────────────────────────────
 assert.match(component, /aria-label="Close quick chat"/, "the header exposes a window close button");

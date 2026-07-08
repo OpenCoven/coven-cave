@@ -141,6 +141,15 @@ html[data-glass] .quick-tab--active {
   min-height: 0;
 }
 
+/* The thread fills whatever height the window has — globals' 46vh cap
+   belongs to the retired dropdown overlay, and inside a full window it left
+   a dead gap under the composer instead of pinning it to the bottom. */
+.tray-quick-chat__pane .quick-chat-thread {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
 /* The display:flex above would otherwise beat the `hidden` attribute —
    background tabs must stay mounted (streams keep flowing) but invisible. */
 .tray-quick-chat__pane[hidden] {
