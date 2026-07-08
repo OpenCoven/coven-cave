@@ -412,6 +412,7 @@ export const SUITES = {
     "src/components/home-composer-polish.test.ts",
     "src/components/inbox-calendar-familiar-scope.test.ts",
     "src/components/inspector-inbox.test.ts",
+    "src/components/snooze-menu.test.ts",
     "src/components/inspector-pane-polish.test.ts",
     "src/components/inspector-pane-load-guards.test.ts",
     "src/components/inspector-pane-surface.test.ts",

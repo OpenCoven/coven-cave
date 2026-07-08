@@ -30,6 +30,7 @@ import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { RailInspector } from "@/components/inspector-pane";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { FamiliarsView } from "@/components/familiars-view";
 import {
@@ -1130,15 +1131,20 @@ export function Workspace() {
 
   // Calendar item actions — optimistic local update + fire-and-forget POST;
   // the /api/inbox/stream SSE reconciles authoritative state (same pattern as
-  // dismissToast/snoozeToast).
+  // dismissToast/snoozeToast). The optimistic update is invisible to AT, so
+  // each action announces its outcome (generic on purpose: the callbacks are
+  // [] -deps'd and only carry the id — no stale-closure title lookups).
+  const { announce } = useAnnouncer();
   const completeInboxItem = useCallback((id: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "done" } : it)));
     void fetch(`/api/inbox/${id}/done`, { method: "POST" });
-  }, []);
+    announce("Marked done.");
+  }, [announce]);
   const dismissInboxItem = useCallback((id: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "dismissed" } : it)));
     void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
-  }, []);
+    announce("Dismissed.");
+  }, [announce]);
   const snoozeInboxItem = useCallback((id: string, untilIso: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "snoozed", snoozeUntil: untilIso } : it)));
     void fetch(`/api/inbox/${id}/snooze`, {
@@ -1146,7 +1152,8 @@ export function Workspace() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ untilIso }),
     });
-  }, []);
+    announce("Snoozed.");
+  }, [announce]);
   // Drag-to-reschedule from the calendar: move the item to a new fireAt and make
   // it pending there (clearing any snooze). Optimistic; the SSE stream reconciles.
   const rescheduleInboxItem = useCallback((id: string, fireAtIso: string) => {

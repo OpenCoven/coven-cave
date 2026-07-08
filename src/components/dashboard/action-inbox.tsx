@@ -1,31 +1,29 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
-import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/lib/daily-report";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { nextItemsAfterAction } from "@/lib/dashboard-model";
+import { SnoozeMenu, minutesUntilTomorrowMorning, type SnoozeOption } from "@/components/snooze-menu";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 type Action = "done" | "dismiss" | "snooze";
 
 /** Snooze durations offered in the per-row menu. `minutes` resolves at click. */
-const SNOOZE_OPTIONS: { label: string; minutes: () => number }[] = [
+const SNOOZE_OPTIONS: SnoozeOption[] = [
   { label: "1 hour", minutes: () => 60 },
   { label: "3 hours", minutes: () => 180 },
   { label: "Tomorrow morning", minutes: () => minutesUntilTomorrowMorning() },
 ];
 
-/** Whole minutes from now until 9am the next calendar day. */
-function minutesUntilTomorrowMorning(): number {
-  const now = new Date();
-  const target = new Date(now);
-  target.setDate(target.getDate() + 1);
-  target.setHours(9, 0, 0, 0);
-  return Math.max(1, Math.round((target.getTime() - now.getTime()) / 60_000));
-}
+const ACTION_PAST_TENSE: Record<Action, string> = {
+  done: "Marked done",
+  dismiss: "Dismissed",
+  snooze: "Snoozed",
+};
 
 export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
@@ -33,11 +31,10 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
                       // cockpit re-fetches the list itself every 30s.
   const [items, setItems] = useState<InboxItem[]>(initialItems);
   const [error, setError] = useState<string | null>(null);
-  const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
   // Bulk triage: select several items and done/dismiss/snooze them together.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [bulkSnoozeOpen, setBulkSnoozeOpen] = useState(false);
   const toggleSelect = (id: string) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -69,6 +66,9 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
     try {
       const res = await fetch(`/api/inbox/${item.id}/${action}`, requestInit(action, minutes));
       if (!res.ok) throw new Error(String(res.status));
+      // The row disappears optimistically, which is invisible to AT — say what
+      // happened (error feedback already has the role=alert banner).
+      announce(`${ACTION_PAST_TENSE[action]} '${item.title}'.`);
     } catch {
       setItems(prev); // revert
       setError("Couldn't update that item — try again.");
@@ -88,6 +88,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
         ids.map((id) => fetch(`/api/inbox/${id}/${action}`, requestInit(action, minutes)).then((r) => r.ok)),
       );
       if (results.some((ok) => !ok)) throw new Error("partial");
+      announce(`${ACTION_PAST_TENSE[action]} ${ids.length} ${ids.length === 1 ? "item" : "items"}.`);
     } catch {
       setItems(prev); // revert the whole batch
       setError("Couldn't update some items — try again.");
@@ -126,10 +127,12 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
           </div>
           <div className="dash-inbox__bulkbar-right">
             <SnoozeMenu
-              open={bulkSnoozeOpen}
-              onToggle={() => setBulkSnoozeOpen((v) => !v)}
-              onClose={() => setBulkSnoozeOpen(false)}
-              onPick={(minutes) => { setBulkSnoozeOpen(false); void bulkAct("snooze", minutes); }}
+              className="dash-snooze"
+              triggerClassName="dash-act"
+              menuClassName="dash-snooze__menu"
+              optionClassName="dash-snooze__opt"
+              options={SNOOZE_OPTIONS}
+              onSnooze={(_untilIso, minutes) => void bulkAct("snooze", minutes)}
               disabled={selectedCount === 0}
             />
             <button type="button" className="dash-act dash-act--primary" disabled={selectedCount === 0} onClick={() => void bulkAct("done")}>
@@ -186,13 +189,12 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
                 </a>
               ) : null}
               <SnoozeMenu
-                open={snoozeOpenId === item.id}
-                onToggle={() => setSnoozeOpenId(snoozeOpenId === item.id ? null : item.id)}
-                onClose={() => setSnoozeOpenId(null)}
-                onPick={(minutes) => {
-                  setSnoozeOpenId(null);
-                  void act(item, "snooze", minutes);
-                }}
+                className="dash-snooze"
+                triggerClassName="dash-act"
+                menuClassName="dash-snooze__menu"
+                optionClassName="dash-snooze__opt"
+                options={SNOOZE_OPTIONS}
+                onSnooze={(_untilIso, minutes) => void act(item, "snooze", minutes)}
               />
               <button type="button" className="dash-act dash-act--primary" onClick={() => act(item, "done")}>
                 Done
@@ -200,7 +202,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
               <button
                 type="button"
                 className="dash-act dash-act--ghost"
-                aria-label="Dismiss"
+                aria-label={`Dismiss '${item.title}'`}
                 onClick={() => act(item, "dismiss")}
               >
                 <Icon name="ph:x" aria-hidden />
@@ -215,63 +217,6 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   );
 }
 
-/**
- * Snooze split button + duration menu. Trapping focus inside the open menu
- * (via the shared useFocusTrap) gives it the keyboard behaviour the rest of
- * the app's popovers have: the first option is focused on open, Tab/Shift+Tab
- * cycle the options, Escape closes the menu and returns focus to the trigger.
- */
-function SnoozeMenu({
-  open,
-  onToggle,
-  onClose,
-  onPick,
-  disabled = false,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  onPick: (minutes: number) => void;
-  disabled?: boolean;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(open, menuRef, { onEscape: onClose });
-  return (
-    <div className="dash-snooze">
-      <button
-        type="button"
-        className="dash-act"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={onToggle}
-      >
-        Snooze
-        <Icon name="ph:caret-down" aria-hidden />
-      </button>
-      {open ? (
-        <>
-          <button
-            type="button"
-            className="dash-snooze__backdrop"
-            aria-label="Close snooze menu"
-            onClick={onClose}
-          />
-          <div ref={menuRef} className="dash-snooze__menu" role="menu" aria-label="Snooze for">
-            {SNOOZE_OPTIONS.map((opt) => (
-              <button
-                key={opt.label}
-                type="button"
-                role="menuitem"
-                className="dash-snooze__opt"
-                onClick={() => onPick(opt.minutes())}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
+// The snooze split button + duration menu lives in the shared
+// @/components/snooze-menu now (this file used to carry its own copy) — one
+// component owns the menu semantics + focus trap for every inbox surface.
