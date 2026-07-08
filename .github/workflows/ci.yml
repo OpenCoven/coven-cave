@@ -17,6 +17,8 @@ jobs:
   build:
     name: Frontend build
     runs-on: ubuntu-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~3-6min).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -64,6 +66,8 @@ jobs:
   cargo-check:
     name: Rust check
     runs-on: ubuntu-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~1-5min (cold cargo cache)).
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: src-tauri
@@ -106,6 +110,8 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~5-15min; the job this bead exists for).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -135,6 +141,8 @@ jobs:
   # others. Neutral defaults + per-OS deltas: docs/cross-environment.md.
   conformance:
     name: Cross-environment (${{ matrix.os }})
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (observed ~0.5-2min).
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -158,6 +166,8 @@ jobs:
   conformance-required:
     name: Cross-environment required
     runs-on: ubuntu-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
+    timeout-minutes: 5
     needs: conformance
     if: always()
     steps:
@@ -171,6 +181,8 @@ jobs:
 
   sidecar-runtime:
     name: Sidecar runtime (${{ matrix.os }})
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (windows runner is the flaky/slow one).
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -201,6 +213,8 @@ jobs:
   sidecar-runtime-required:
     name: Sidecar runtime required
     runs-on: ubuntu-latest
+    # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (aggregation no-op).
+    timeout-minutes: 5
     needs: sidecar-runtime
     if: always()
     steps:
