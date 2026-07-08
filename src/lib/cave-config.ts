@@ -22,7 +22,6 @@ const DEFAULT_CONFIG: CaveConfig = {
     code: false,
     browser: false,
     flow: false,
-    roles: false,
     journal: false,
     docs: false,
   },
@@ -159,7 +158,6 @@ export type CaveConfig = {
     code?: boolean;
     browser?: boolean;
     flow?: boolean;
-    roles?: boolean;
     journal?: boolean;
     docs?: boolean;
   };
@@ -202,7 +200,9 @@ export async function loadConfig(): Promise<CaveConfig> {
         code: parsed.addons?.code ?? false,
         browser: parsed.addons?.browser ?? false,
         flow: parsed.addons?.flow ?? false,
-        roles: parsed.addons?.roles ?? false,
+        // addons.roles was removed (cave-vp4h); stored configs that still
+        // carry it parse fine — unknown keys are ignored and dropped on the
+        // next write.
         journal: parsed.addons?.journal ?? false,
         docs: parsed.addons?.docs ?? false,
       },
