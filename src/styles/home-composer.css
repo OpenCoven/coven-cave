@@ -1095,6 +1095,9 @@
   }
 }
 
+/* ── Daily summary — an ambient, auto-scrolling digest of today's activity +
+   freshest headlines. A continuous marquee that pauses on hover/focus so a
+   card can be read or clicked, with soft fade edges. Under reduced-motion it
    degrades to a plain manual horizontal scroll (the duplicate row is hidden). */
 .home-digest {
   width: 100%;
