@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const rustBrowser = await readFile(new URL("../../src-tauri/src/browser.rs", import.meta.url), "utf8");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
@@ -34,7 +35,7 @@ assert.match(
 );
 assert.match(
   pane,
-  /function loadRailPinned\(\)[\s\S]*?if \(raw === "0"\) return false;[\s\S]*?return true;\n\}/,
+  /function loadRailPinned\(\)[\s\S]*?if \(raw === "0"\) return false;[\s\S]*?return true;\r?\n\}/,
   "loadRailPinned() must default to true (rail open) when no preference is stored",
 );
 assert.match(
@@ -156,8 +157,53 @@ assert.match(
 // surface. Unmount must CLOSE the pane's webviews, not hide them.
 assert.match(
   pane,
-  /useEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*void bridgeRef\.current\?\.invoke\("browser_close_all", \{ label \}\);/,
-  "unmount cleanup closes the pane's native webviews (browser_close_all), not just hides them",
+  /function invokeNativeBrowserCloseAll\(bridge: TauriBridge \| null, label: string\): void/,
+  "BrowserPane has a direct native-webview close helper",
+);
+assert.match(
+  pane,
+  /invokeNativeBrowserCloseAll\(bridgeRef\.current, label\);/,
+  "unmount cleanup closes the pane's native webviews through the fail-closed helper",
+);
+assert.match(
+  pane,
+  /__TAURI_INTERNALS__\?: TauriInternals/,
+  "cleanup can call browser_close_all through Tauri internals before the async bridge is ready",
+);
+assert.match(
+  pane,
+  /active\?: boolean/,
+  "BrowserPane accepts an explicit active flag",
+);
+assert.match(
+  pane,
+  /if \(active\) return;[\s\S]{0,120}invokeNativeBrowserCloseAll\(bridge, label\);/,
+  "inactive BrowserPane instances close their native webviews",
+);
+assert.match(
+  pane,
+  /if \(!active \|\| !bridge \|\| !nativeBrowserAvailable\)/,
+  "bounds sync cannot re-show a native browser layer while inactive",
+);
+assert.match(
+  pane,
+  /if \(!active \|\| !bridge \|\| !nativeBrowserAvailable \|\| !activeTab\) return;/,
+  "navigation cannot create or re-seat native browser layers while inactive",
+);
+assert.match(
+  workspace,
+  /function closeAllNativeBrowserWebviews\(\): void/,
+  "Workspace has a native browser cleanup helper",
+);
+assert.match(
+  workspace,
+  /mode === "browser" \|\|[\s\S]{0,180}target\.kind === "browser" \|\| \(target\.kind === "page" && target\.mode === "browser"\)/,
+  "Workspace tracks browser visibility across primary and split panes",
+);
+assert.match(
+  workspace,
+  /if \(browserVisible\) return;[\s\S]{0,80}closeAllNativeBrowserWebviews\(\);/,
+  "Workspace closes stale native browser webviews when Browser is no longer visible",
 );
 assert.match(
   rustBrowser,
@@ -200,14 +246,14 @@ assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| now - last
 
 // ───────── a11y: tab strip is a real tablist ─────────
 assert.match(pane, /role="tablist" aria-orientation="vertical"/, "tab strip is a tablist");
-assert.match(pane, /role="tab"\n\s*tabIndex=\{0\}/, "each tab uses role=tab");
+assert.match(pane, /role="tab"\r?\n\s*tabIndex=\{0\}/, "each tab uses role=tab");
 assert.match(pane, /aria-selected=\{isActive\}/, "the active tab is announced via aria-selected");
 assert.doesNotMatch(pane, /aria-pressed=\{isActive\}/, "tabs use aria-selected, not aria-pressed");
 assert.match(pane, /aria-label=\{`Close tab: \$\{title\}`\}/, "the close button names its tab");
 assert.match(pane, /aria-label="Address bar"/, "the address input is labeled");
 assert.match(pane, /inert=\{!toolbarOpen \|\| undefined\}/, "the collapsed toolbar is inert (its controls leave the tab order)");
 // quick-open palette is a focus-trapped dialog
-assert.match(qo, /role="dialog"\n\s*aria-modal="true"/, "quick-open palette is an aria-modal dialog");
+assert.match(qo, /role="dialog"\r?\n\s*aria-modal="true"/, "quick-open palette is an aria-modal dialog");
 assert.match(qo, /useFocusTrap\(true, cardRef, \{ onEscape: onClose/, "quick-open traps focus + restores it on close");
 
 console.log("browser-polish.test.ts: ok");

@@ -76,6 +76,10 @@ type TauriBridge = {
   listen: <T = unknown>(event: string, cb: (e: { payload: T }) => void) => Promise<() => void>;
 };
 
+type TauriInternals = {
+  invoke?: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+};
+
 async function loadTauri(): Promise<TauriBridge | null> {
   if (typeof window === "undefined") return null;
   // @ts-expect-error Tauri runtime
@@ -83,6 +87,17 @@ async function loadTauri(): Promise<TauriBridge | null> {
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
   return { invoke, listen };
+}
+
+function invokeNativeBrowserCloseAll(bridge: TauriBridge | null, label: string): void {
+  if (bridge) {
+    void bridge.invoke("browser_close_all", { label });
+    return;
+  }
+  const internals = typeof window === "undefined"
+    ? null
+    : (window as typeof window & { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
+  void internals?.invoke?.("browser_close_all", { label });
 }
 
 const HOME_URL = "https://opencoven.ai";
@@ -224,7 +239,7 @@ export type BrowserPaneHandle = {
   navigateTo: (url: string) => void;
 };
 
-export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activeFamiliarId?: string | null }>(function BrowserPane({ label = "default", activeFamiliarId = null }: { label?: string; activeFamiliarId?: string | null }, ref: React.Ref<BrowserPaneHandle>) {
+export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activeFamiliarId?: string | null; active?: boolean }>(function BrowserPane({ label = "default", activeFamiliarId = null, active = true }: { label?: string; activeFamiliarId?: string | null; active?: boolean }, ref: React.Ref<BrowserPaneHandle>) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBridge | null>(null);
@@ -311,10 +326,18 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   bridgeRef.current = bridge;
   useEffect(() => {
     return () => {
-      void bridgeRef.current?.invoke("browser_close_all", { label });
+      invokeNativeBrowserCloseAll(bridgeRef.current, label);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Native child webviews are OS-level layers above the React DOM. If this pane
+  // is kept mounted while inactive, fail closed so stale browser layers cannot
+  // cover visible controls elsewhere in the app.
+  useEffect(() => {
+    if (active) return;
+    invokeNativeBrowserCloseAll(bridge, label);
+  }, [active, bridge, label]);
 
   // ── Page-load + title events ──────────────────────────────────────
   useEffect(() => {
@@ -388,7 +411,10 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   // stale and overlapping the toolbar. Reconcile against the live rect
   // every frame instead, issuing IPC only when the rounded bounds change.
   useEffect(() => {
-    if (!bridge || !nativeBrowserAvailable) return;
+    if (!active || !bridge || !nativeBrowserAvailable) {
+      if (!active) invokeNativeBrowserCloseAll(bridge, label);
+      return;
+    }
     const surface = surfaceRef.current;
     if (!surface) return;
 
@@ -457,11 +483,11 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       hideAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, nativeBrowserAvailable, label, activeTabId, tabs.map((t) => t.id).join(",")]);
+  }, [active, bridge, nativeBrowserAvailable, label, activeTabId, tabs.map((t) => t.id).join(",")]);
 
   // ── Navigate active tab when URL changes ─────────────────────────
   useEffect(() => {
-    if (!bridge || !nativeBrowserAvailable || !activeTab) return;
+    if (!active || !bridge || !nativeBrowserAvailable || !activeTab) return;
     // Small delay to let panel layout fully settle before reading bounds
     const timer = setTimeout(() => {
       const surface = surfaceRef.current;
@@ -487,7 +513,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     }, 80);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id]);
+  }, [active, bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id]);
 
   // ── Tab actions ───────────────────────────────────────────────────
   const switchTab = useCallback((id: string) => {
