@@ -71,4 +71,26 @@ assert.ok(
   `popover portal (z ${portalZ}) must stack above the board drawer (z ${drawerZ})`,
 );
 
+// Non-modal dialog focus contract (cave-fu1y): the page behind stays
+// interactive (light dismiss), so instead of a focus trap the popover must
+// close when keyboard focus moves out — an open "dialog" must never float
+// astray while Tab walks the page behind it. The container carries
+// tabIndex={-1} so callers can seat focus on it programmatically.
+assert.match(
+  src,
+  /role="dialog"[\s\S]{0,600}tabIndex=\{-1\}/,
+  "dialog container is programmatically focusable (tabIndex={-1})",
+);
+assert.match(src, /onBlur=\{\(e\) => \{/, "popover watches for focus leaving");
+assert.match(
+  src,
+  /if \(!next\) return;[\s\S]{0,300}onOpenChange\(false\)/,
+  "focus-out closes the popover, but a null relatedTarget (window blur / native pickers) does not",
+);
+assert.match(
+  src,
+  /anchorRef\.current\?\.contains\(next\)/,
+  "focus moving back to the anchor doesn't close the popover",
+);
+
 console.log("popover.test.ts: ok");

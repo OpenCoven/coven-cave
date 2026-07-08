@@ -170,8 +170,22 @@ export function Popover({
         ref={popoverRef}
         className={["ui-popover", className ?? ""].filter(Boolean).join(" ")}
         style={style}
+        // Non-modal dialog: the page behind stays interactive (light dismiss on
+        // outside click/scroll), so no aria-modal and no focus trap — instead
+        // the popover closes when keyboard focus moves out of it, so an open
+        // "dialog" never floats astray while Tab walks the page behind it.
         role="dialog"
         aria-label={ariaLabel}
+        tabIndex={-1}
+        onBlur={(e) => {
+          const next = e.relatedTarget as Node | null;
+          // relatedTarget is null when focus leaves the document (window blur,
+          // native pickers) — don't treat that as Tab-out.
+          if (!next) return;
+          if (popoverRef.current?.contains(next)) return;
+          if (anchorRef.current?.contains(next)) return;
+          onOpenChange(false);
+        }}
       >
         {children}
       </div>

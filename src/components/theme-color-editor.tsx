@@ -233,6 +233,12 @@ export function ThemeColorEditor({
     border: swatches.border,
   });
   const [saved, setSaved] = useState(false);
+  // "Saved ✓" flash timer — cleared on re-save and on unmount so it can't
+  // setState after the editor unmounts.
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+  }, []);
 
   // When the base preset or mode changes, re-seed.
   useEffect(() => {
@@ -301,7 +307,8 @@ export function ThemeColorEditor({
     persistCustomTheme(basePreset, colors, mode);
     setSaved(true);
     onSave?.(colors);
-    setTimeout(() => setSaved(false), 2000);
+    if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = setTimeout(() => setSaved(false), 2000);
   };
 
   const handleReset = () => {
@@ -309,6 +316,14 @@ export function ThemeColorEditor({
     const reset = { bg: s.bg, accent: s.accent, border: s.border };
     setColors(reset);
     applyColorsToDOM(reset, mode);
+    // A reset must outlive the session: clear the persisted custom theme and
+    // hand the boot script back to the base preset, otherwise theme-script
+    // resurrects the stale custom colors on reload. Keeps this path consistent
+    // with the Appearance tab's reset (clearCustomTheme in settings-shell).
+    try {
+      localStorage.removeItem(COVEN_CUSTOM_THEME_KEY);
+      localStorage.setItem(COVEN_THEME_KEY, basePreset);
+    } catch { /* ignore */ }
     setSaved(false);
     onReset?.();
   };
