@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type ReactNode } from "react";
 import { SettingsOverview } from "@/components/settings-overview";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
 import { Icon } from "@/lib/icon";
@@ -274,23 +275,23 @@ export function ProfileSection() {
                 onChange={onAvatarFile}
                 className="sr-only"
               />
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 disabled={disabled || avatarBusy}
                 onClick={() => fileInputRef.current?.click()}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {avatarBusy ? "Updating…" : "Upload image"}
-              </button>
+              </Button>
               {snapshot?.avatar.present ? (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   disabled={avatarBusy}
                   onClick={() => void removeAvatar()}
-                  className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Remove
-                </button>
+                </Button>
               ) : null}
             </div>
             <p className="text-[11px] text-[var(--text-muted)]">PNG, JPEG, or WebP. Large files are downsized before upload.</p>
@@ -378,14 +379,14 @@ export function ProfileSection() {
                   />
                 </ProfileField>
                 <div className="flex items-end">
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     disabled={disabled}
                     onClick={() => void removeLink(index)}
-                    className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-2 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Remove
-                  </button>
+                  </Button>
                 </div>
                 {rowIncomplete ? (
                   <p className="text-[11px] text-[var(--danger)] md:col-span-3">Add both fields to save this link.</p>
@@ -395,14 +396,14 @@ export function ProfileSection() {
           })}
           {linkHint ? <p className="text-[11px] text-[var(--danger)]">{linkHint}</p> : null}
           <div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               disabled={disabled || links.length >= PROFILE_LIMITS.links}
               onClick={() => setLinks((current) => [...current, { label: "", url: "" }])}
-              className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-base)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               Add link
-            </button>
+            </Button>
             {saving === "links" ? <span className="ml-3 text-[11px] text-[var(--text-muted)]">Saving…</span> : null}
           </div>
         </div>

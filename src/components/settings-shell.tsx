@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
+import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
@@ -606,15 +607,16 @@ function DaemonSection() {
           />
         </SettingControlRow>
         <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="settings-touch-action"
             onClick={() => void saveConnection()}
             disabled={savingConnection}
-            className="settings-touch-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
+            leadingIcon="ph:floppy-disk-bold"
           >
-            <Icon name="ph:floppy-disk-bold" width={12} />
             {savingConnection ? "Saving..." : "Save connection"}
-          </button>
+          </Button>
           {connectionError && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
         </div>
       </SettingsGroup>
@@ -635,37 +637,38 @@ function DaemonSection() {
             </span>
           )}
           {!loading && !status?.running && mode === "local" && (
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
+              className="ml-auto"
               onClick={startDaemon}
               disabled={starting}
-              className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              leadingIcon="ph:rocket-launch-bold"
               title="coven daemon start"
             >
-              <Icon name="ph:rocket-launch-bold" width={12} />
               {starting ? "Starting..." : "Start daemon"}
-            </button>
+            </Button>
           )}
           {status?.running && (
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={restartDaemon}
               disabled={restarting}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              leadingIcon="ph:arrow-clockwise"
               title="coven daemon start"
             >
-              <Icon name="ph:arrow-clockwise" width={12} />
               {restarting ? "Restarting..." : "Restart daemon"}
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={refresh}
-            className="focus-ring flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            leadingIcon="ph:arrow-clockwise"
           >
-            <Icon name="ph:arrow-clockwise" width={11} />
             Refresh
-          </button>
+          </Button>
           {status?.target?.mode === "hub" && (
             <span className="font-mono text-[11px] text-[var(--text-muted)]">
               hub {status.target.url}
@@ -861,16 +864,16 @@ function FamiliarsSection({
             familiars.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => void startDaemon()}
               disabled={starting}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              leadingIcon="ph:rocket-launch-bold"
               title="coven daemon start"
             >
-              <Icon name="ph:rocket-launch-bold" width={12} />
               {starting ? "Starting..." : "Start daemon"}
-            </button>
+            </Button>
             {startError ? (
               <span role="alert" className="text-[11px] text-[var(--color-danger)]">
                 {startError}
@@ -889,14 +892,14 @@ function FamiliarsSection({
           <p className="text-[13px] text-[var(--text-secondary)]">
             No familiars configured yet. The circle awaits your first summoning.
           </p>
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="sm"
             onClick={() => setCreateOpen(true)}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90"
+            leadingIcon="ph:magic-wand-fill"
           >
-            <Icon name="ph:magic-wand-fill" width={12} />
             Summon familiar
-          </button>
+          </Button>
         </div>
         {createDialog}
       </div>
@@ -906,14 +909,15 @@ function FamiliarsSection({
   return (
     <>
       <div className="mb-3 flex justify-end">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          className="settings-touch-action"
           onClick={() => setCreateOpen(true)}
-          className="settings-touch-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          leadingIcon="ph:magic-wand-fill"
         >
-          <Icon name="ph:magic-wand-fill" width={12} />
           Summon familiar
-        </button>
+        </Button>
       </div>
       <FamiliarStudioInlinePanel
         familiars={rawFamiliars}
@@ -1559,14 +1563,14 @@ function AppearanceSection() {
             applies it, so this is the way into custom tweaking. */}
         {!colorEditorBase && (
           <div className="border-t border-[var(--border-hairline)] px-4 py-3">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => setColorEditorBase(activeTheme === "custom" ? "coven" : activeTheme)}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              leadingIcon="ph:paint-brush"
             >
-              <Icon name="ph:paint-brush" width={13} />
               Customize colors
-            </button>
+            </Button>
           </div>
         )}
 
@@ -1600,15 +1604,16 @@ function AppearanceSection() {
           onChange={reloadCustomData}
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => void handleResync()}
+            loading={syncing}
             disabled={syncing}
-            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            leadingIcon="ph:arrows-clockwise"
           >
-            <Icon name="ph:arrows-clockwise" width={13} className={syncing ? "animate-spin" : undefined} />
             {syncing ? "Syncing…" : "Resync to phone"}
-          </button>
+          </Button>
           <span className="text-[11px] text-[var(--text-muted)]">
             {syncResult
               ? syncResult.ok
@@ -1651,24 +1656,16 @@ function AppearanceSection() {
                 if (e.key === "Enter") void handleImport();
               }}
             />
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              className="shrink-0"
               onClick={() => void handleImport()}
+              loading={importing}
               disabled={importing || !importUrl.trim()}
-              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent-presence)] px-4 py-2 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+              leadingIcon="ph:arrow-down-bold"
             >
-              {importing ? (
-                <>
-                  <Icon name="ph:arrows-clockwise-bold" width={12} className="animate-spin" />
-                  Importing…
-                </>
-              ) : (
-                <>
-                  <Icon name="ph:arrow-down-bold" width={12} />
-                  Import
-                </>
-              )}
-            </button>
+              {importing ? "Importing…" : "Import"}
+            </Button>
           </div>
           {importError && (
             <p role="alert" className="flex items-start gap-1.5 text-[11px] text-[var(--color-danger)]">
