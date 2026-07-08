@@ -18,6 +18,9 @@ test("home composer files stage and display as chips with remove controls", asyn
 
   await page.goto("/");
   await page.waitForSelector(".shell-frame", { timeout: 60000 });
+  // The app boots into Chat (cave-hsa6); this spec exercises the HOME composer,
+  // so navigate there explicitly.
+  await page.keyboard.press("Meta+1");
   await page.waitForSelector(".hc-textarea", { timeout: 60000 });
 
   // ── Stage two files ──────────────────────────────────────────────────────────

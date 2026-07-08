@@ -14,9 +14,10 @@ async function gotoApp(page: Page) {
   });
   await page.goto("/");
   // Wait until the workspace has hydrated — the global keydown handler is
-  // attached in a useEffect, so a key pressed before hydration is lost. The
-  // home composer textbox is a reliable "interactive now" signal.
-  await page.getByRole("textbox").first().waitFor({ state: "visible", timeout: 30_000 });
+  // attached in a useEffect, so a key pressed before hydration is lost. The app
+  // boots into Chat (cave-hsa6); the always-present top-bar search input (role
+  // searchbox) is the reliable "interactive now" signal on every boot surface.
+  await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
   await page.waitForTimeout(500);
 }
 
@@ -54,9 +55,11 @@ test.describe("keyboard shortcuts sheet", () => {
 
   test("? does nothing while typing in a text field", async ({ page }) => {
     await gotoApp(page);
-    const composer = page.getByRole("textbox").first();
-    await composer.click();
-    await composer.pressSequentially("?");
+    // Any editable target exercises the guard; the top-bar search input is the
+    // one always present on the chat boot surface (cave-hsa6).
+    const editable = page.getByRole("searchbox").first();
+    await editable.click();
+    await editable.pressSequentially("?");
     // The guard (isEditableTarget) must suppress the sheet so "?" types normally.
     await expect(sheet(page)).toBeHidden();
   });

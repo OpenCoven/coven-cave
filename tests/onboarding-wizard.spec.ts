@@ -96,14 +96,14 @@ test.describe("onboarding wizard", () => {
 
   test("stays hidden once dismissed", async ({ page }) => {
     await gotoApp(page, FRESH_STATUS, { dismissed: true });
-    await page.getByRole("textbox").first().waitFor({ state: "visible", timeout: 30_000 });
+    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForTimeout(1_000);
     await expect(wizard(page)).toHaveCount(0);
   });
 
   test("does not relaunch for a set-up machine whose daemon is merely stopped", async ({ page }) => {
     await gotoApp(page, DAEMON_DOWN_VETERAN_STATUS);
-    await page.getByRole("textbox").first().waitFor({ state: "visible", timeout: 30_000 });
+    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForTimeout(1_000);
     await expect(wizard(page)).toHaveCount(0);
   });
