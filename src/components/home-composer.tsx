@@ -31,6 +31,8 @@ import {
 } from "@/lib/slash-prompt";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
+import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
@@ -311,6 +313,7 @@ export function HomeComposer({
   const insertPromptTemplate = useCallback(
     (p: PromptOption) => {
       const ins = promptInsertion(p);
+      recordPromptRecent(p.id);
       setText(ins.text);
       setSlashIdx(0);
       announce("Prompt inserted — edit and send.");
@@ -569,6 +572,11 @@ export function HomeComposer({
       // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
       // take priority over history/submit while one is open — shared hook.
       if (handleMenuKey(e)) return;
+      // Tab cycles {{placeholder}} tokens left in the draft (Shift+Tab
+      // reverses; Tab on a selected {{name|default}} accepts the default).
+      // After the menus — they own Tab-complete while open — and only when a
+      // token exists, so native focus-move survives (a11y).
+      if (handlePlaceholderTab(e, textareaRef.current, setText)) return;
       // plain Enter sends; Shift+Enter inserts newline. `isComposing` is true
       // for the Enter that confirms an IME candidate (CJK/pinyin/kana) —
       // treating it as "send" would fire a half-composed prompt and destroy

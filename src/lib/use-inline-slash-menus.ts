@@ -7,6 +7,7 @@ import type { RuntimeModelOption } from "@/lib/runtime-models";
 import { skillCommandMatches, skillSlashOptions, type SkillOption } from "@/lib/slash-skill";
 import { promptSlashOptions, type PromptOption } from "@/lib/slash-prompt";
 import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
+import { orderPrompts, readPromptFavorites, readPromptRecents } from "@/lib/prompt-prefs";
 
 /**
  * The composer's inline slash menus: the `/command` listbox (with its Skills
@@ -106,16 +107,23 @@ export function useInlineSlashMenus(opts: {
   const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
   useEffect(() => {
     let alive = true;
-    fetch("/api/prompts", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
-      })
-      .catch(() => {
-        /* offline → built-in templates only */
-      });
+    const load = () => {
+      fetch("/api/prompts", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j) => {
+          if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
+        })
+        .catch(() => {
+          /* offline → built-in templates only */
+        });
+    };
+    load();
+    // Saving/deleting a user template broadcasts this event so every mounted
+    // picker re-scans without a reload.
+    window.addEventListener("cave:prompts-refresh", load);
     return () => {
       alive = false;
+      window.removeEventListener("cave:prompts-refresh", load);
     };
   }, []);
 
@@ -132,11 +140,15 @@ export function useInlineSlashMenus(opts: {
     [text, skills, slashDismissed],
   );
   const skillMenuActive = (skillOptions?.length ?? 0) > 0;
-  // Inline `/prompt` / `/prompts` picker — null ⇒ not in a prompt-picker position.
-  const promptOptions = useMemo(
-    () => (slashDismissed ? null : promptSlashOptions(text, prompts)),
-    [text, prompts, slashDismissed],
-  );
+  // Inline `/prompt` / `/prompts` picker — null ⇒ not in a prompt-picker
+  // position. Options rank favorites > recent inserts > scan order; the prefs
+  // are re-read per keystroke (tiny localStorage arrays) so an insert reranks
+  // the very next open.
+  const promptOptions = useMemo(() => {
+    if (slashDismissed) return null;
+    const options = promptSlashOptions(text, prompts);
+    return options ? orderPrompts(options, readPromptFavorites(), readPromptRecents()) : null;
+  }, [text, prompts, slashDismissed]);
   const promptMenuActive = (promptOptions?.length ?? 0) > 0;
   // Skills surfaced directly in the command menu — typing `/revi` finds the
   // code-review skill without the /skill prefix. Same first-token-only rule as

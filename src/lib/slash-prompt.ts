@@ -6,6 +6,8 @@
 // deliberate difference: picking a prompt INSERTS its body into the composer
 // for editing — it never sends.
 
+import { nextPlaceholder } from "@/lib/prompt-placeholders";
+
 export type PromptOption = {
   id: string;
   name: string;
@@ -35,7 +37,8 @@ function filterPrompts(prompts: PromptOption[], partial: string): PromptOption[]
     (p) =>
       p.id.toLowerCase().includes(q) ||
       p.name.toLowerCase().includes(q) ||
-      (p.description?.toLowerCase().includes(q) ?? false),
+      (p.description?.toLowerCase().includes(q) ?? false) ||
+      (p.tags?.some((tag) => tag.toLowerCase().includes(q)) ?? false),
   );
 }
 
@@ -71,11 +74,13 @@ export type PromptInsertion = {
   selectEnd?: number;
 };
 
-/** The composer insertion for a picked template. Never a send. */
+/** The composer insertion for a picked template. Never a send. Selects the
+ *  first {{placeholder}} (shared engine grammar, incl. {{name|default}}) so
+ *  typing replaces it and Tab cycles onward from there. */
 export function promptInsertion(p: PromptOption): PromptInsertion {
-  const m = p.body.match(/\{\{[^{}]*\}\}/);
-  if (!m || m.index === undefined) return { text: p.body };
-  return { text: p.body, selectStart: m.index, selectEnd: m.index + m[0].length };
+  const first = nextPlaceholder(p.body, 0, 1);
+  if (!first) return { text: p.body };
+  return { text: p.body, selectStart: first.start, selectEnd: first.end };
 }
 
 /** One-line-per-prompt list for the bare `/prompt` / `/prompts` system message. */

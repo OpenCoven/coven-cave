@@ -114,6 +114,8 @@ import {
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
+import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { ProjectPicker, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
@@ -3542,6 +3544,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // replaces it; otherwise park the caret at the end.
   const insertPrompt = (p: PromptOption) => {
     const ins = promptInsertion(p);
+    recordPromptRecent(p.id);
     setInput(ins.text);
     setSlashIdx(0);
     announce("Prompt inserted — edit and send.");
@@ -4533,6 +4536,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // sees Esc once no menu is open, so a dismissed menu never costs a
     // live stream.
     if (handleMenuKey(e)) return;
+    // Tab cycles {{placeholder}} tokens left in the draft (Shift+Tab
+    // reverses; Tab on a selected {{name|default}} accepts the default).
+    // After the menus — they own Tab-complete while open — and only when a
+    // token exists, so native focus-move survives (a11y).
+    if (handlePlaceholderTab(e, inputRef.current, setInput)) return;
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
     if (handleArrowKey(e, input, setInput)) return;
     // `isComposing` is true for the Enter that confirms an IME candidate
