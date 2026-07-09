@@ -254,6 +254,7 @@ export const SUITES = {
     "src/components/board-link-browser.test.ts",
     "src/components/new-card-modal.test.ts",
     "src/components/calendar-view-polish.test.ts",
+    "src/components/calendar-agenda-redesign.test.ts",
     "src/lib/calendar-layout.test.ts",
     "src/lib/canvas-layout.test.ts",
     "src/lib/canvas-artifacts.test.ts",
