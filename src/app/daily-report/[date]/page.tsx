@@ -11,6 +11,7 @@ import {
   relativeTime,
   type DailyReportStats,
 } from "@/lib/daily-report";
+import { extractNextPaths } from "@/lib/next-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -415,7 +416,9 @@ export default async function DailyReportPage({ params }: Props) {
             {item.media?.narrative?.text ? (
               <>
                 <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
-                  {item.media.narrative.text}
+                  {/* Narratives stored before the pipeline stripped the
+                      piggybacked next-paths block are cleaned at render. */}
+                  {extractNextPaths(item.media.narrative.text).visible}
                 </p>
                 <p className="dr-narrative-byline">
                   <Icon name="ph:sparkle" aria-hidden />

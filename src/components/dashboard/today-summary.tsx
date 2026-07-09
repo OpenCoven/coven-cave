@@ -1,6 +1,7 @@
 import { Icon } from "@/lib/icon";
 import { SectionHead } from "@/components/daily-report-ui";
 import { relativeTime, type RecentReport } from "@/lib/daily-report";
+import { extractNextPaths } from "@/lib/next-paths";
 import type { TodaySummary } from "@/lib/dashboard-model";
 import { ReportCallout } from "./report-callout";
 
@@ -40,7 +41,9 @@ export function TodaySummary({
           {summary.narrative?.text ? (
             <>
               <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
-                {summary.narrative.text}
+                {/* Narratives stored before the pipeline stripped the
+                    piggybacked next-paths block are cleaned at render. */}
+                {extractNextPaths(summary.narrative.text).visible}
               </p>
               <p className="dr-narrative-byline">
                 <Icon name="ph:sparkle" aria-hidden />

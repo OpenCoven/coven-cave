@@ -9,6 +9,7 @@
 import type { InboxMedia } from "./cave-inbox";
 import type { DailyReportPayload } from "./daily-report-facts.ts";
 import type { DailyReportStats } from "./daily-report.ts";
+import { extractNextPaths } from "./next-paths.ts";
 import { streamFamiliarText } from "./familiar-stream";
 
 /** Don't regenerate for a facts change more often than this. */
@@ -92,9 +93,13 @@ export function shouldRegenerateNarrative({
   return now.getTime() - generatedMs >= minRegenMs;
 }
 
-/** Trim, collapse stray blank runs, and cap the generated narrative. */
+/** Trim, collapse stray blank runs, and cap the generated narrative. The
+ *  transport rides the chat pipeline, which appends a `<coven:next-paths>`
+ *  suggestions block to every reply — a report narrative has no chip row, so
+ *  the block is dropped entirely rather than surfaced. */
 export function normalizeNarrativeText(raw: string): string {
-  const text = raw.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  const withoutNextPaths = extractNextPaths(raw).visible;
+  const text = withoutNextPaths.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
   if (text.length <= NARRATIVE_MAX_CHARS) return text;
   return `${text.slice(0, NARRATIVE_MAX_CHARS - 1).trimEnd()}…`;
 }

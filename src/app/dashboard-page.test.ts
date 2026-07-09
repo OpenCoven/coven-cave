@@ -201,4 +201,19 @@ assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each g
   );
 }
 
+// The dashboard's inline today-summary renders the stored narrative; legacy
+// narratives may still carry the piggybacked <coven:next-paths> block, so the
+// render must exclude it.
+{
+  const todaySummary = readFileSync(
+    new URL("../components/dashboard/today-summary.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    todaySummary,
+    /extractNextPaths\(summary\.narrative\.text\)\.visible/,
+    "today-summary should exclude the next-paths suggestions block from the narrative",
+  );
+}
+
 console.log("dashboard-page.test.ts: ok");
