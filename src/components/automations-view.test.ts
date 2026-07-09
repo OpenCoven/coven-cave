@@ -155,6 +155,13 @@ assert.match(source, /if \(document\.hidden\) return;.*don't poll a backgrounded
 assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
 assert.match(source, /const runsReqRef = useRef\(0\)/, "refreshRuns tracks a request id");
 assert.match(source, /if \(reqId !== runsReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late runs fetch is dropped");
+// load() is sequence-guarded the same way: it runs from mount, the 15s poll,
+// and after every mutation (toggle/save/delete all await load()), so a stale
+// in-flight poll must not reapply pre-mutation data over a fresher reload.
+assert.match(source, /const loadReqRef = useRef\(0\)/, "load() tracks its own request id");
+assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load() bumps the request id");
+assert.match(source, /const live = \(\) => reqId === loadReqRef\.current && mountedRef\.current/, "load() writes only while it's the newest load and still mounted");
+assert.match(source, /if \(!live\(\)\) return;/, "a superseded load() drops its writes");
 
 // ── Per-row quick actions (run-now + pause/resume), always visible ──
 assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
