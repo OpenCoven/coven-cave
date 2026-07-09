@@ -115,14 +115,26 @@ const PREVIEW: Record<FontSlot, string> = {
   mono: "const x = 42; // 0123",
 };
 
+// Every row control in Settings shares one standard height (h-7 = 28px):
+// segmented groups reach it via 22px xs buttons + 2px wrapper padding + 1px
+// border, and select triggers pin it explicitly via `selectTrigger`.
+
 // Shared segmented-control styling, hoisted so each option group stays terse.
 const segWrap =
-  "flex w-fit shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+  "flex h-7 w-fit shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+
+// Shared select-trigger styling — same chrome and height as the segmented
+// groups so a row with a dropdown lines up with a row of segment buttons. The
+// border uses the strong token so the selection control reads clearly.
+const selectTrigger =
+  "h-7 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
 function segBtn(active: boolean, extra = ""): string {
+  // The selected option gets a visible border on top of the accent fill (the
+  // .ui-btn base already carries a 1px transparent border, so no layout shift).
   return `focus-ring ${extra} rounded-[var(--radius-control)] px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
     active
-      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+      ? "border-[color-mix(in_oklch,var(--accent-presence)_65%,var(--accent-presence-foreground))] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
   }`;
 }
@@ -320,7 +332,7 @@ export function FontSettings() {
         <ReadingRow label="Typography pair" hint="Approved interface + code pairing.">
           <StandardSelect
             label="Typography pair"
-            className="gh-select"
+            className={selectTrigger}
             style={{ width: "min(100%, 300px)", maxWidth: "100%" }}
             value={pairId}
             onChange={selectPair}
