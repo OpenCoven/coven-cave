@@ -486,10 +486,10 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
   };
 
   return (
-    <div className="flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
-      <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
+    <div className="projects-view flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
+      <header className="projects-toolbar shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
+        <div className="projects-toolbar__row flex items-center justify-between gap-3">
+          <div className="projects-toolbar__controls flex min-w-0 items-center gap-2.5">
             <span className="shrink-0 text-[12px] text-[var(--text-muted)]">
               {query.trim() && visibleProjects.length !== projects.length ? (
                 `${visibleProjects.length} of ${projects.length} projects`
@@ -562,7 +562,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
               </div>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="projects-toolbar__actions flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"

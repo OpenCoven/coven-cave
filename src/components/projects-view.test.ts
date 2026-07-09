@@ -81,6 +81,20 @@ assert.match(projectsCss, /\.projects-hub\[data-pane="detail"\] \.projects-hub__
 assert.match(projectDetailSource, /aria-label="Back to project list"/, "the narrow detail pane has a labeled back affordance");
 assert.match(projectsView, /onBack=\{\(\) => setPane\("list"\)\}/, "back returns to the list pane");
 
+// The Projects header must respond to its actual pane width: split tiles can
+// be phone-narrow even inside a desktop viewport. Compact panes stack the
+// summary/sort row above the actions instead of letting the two groups overlap.
+assert.match(projectsViewSource, /className="projects-view flex h-full min-w-0 flex-col/, "the full Projects surface owns a named size container");
+assert.match(projectsViewToolbar, /className="projects-toolbar__row flex items-center justify-between gap-3"/, "the toolbar row exposes a stable responsive hook");
+assert.match(projectsViewToolbar, /className="projects-toolbar__controls flex min-w-0 items-center gap-2\.5"/, "summary and sort controls expose a responsive group hook");
+assert.match(projectsViewToolbar, /className="projects-toolbar__actions flex items-center gap-2"/, "Refresh and New project expose a responsive action-group hook");
+assert.match(projectsCss, /\.projects-view\s*\{[^}]*container:\s*projects-view \/ inline-size;/, "the whole surface queries its pane width, not the viewport");
+assert.match(
+  projectsCss,
+  /@container projects-view \(max-width: 640px\)\s*\{[\s\S]*\.projects-toolbar__row\s*\{[^}]*flex-wrap:\s*wrap;[\s\S]*\.projects-toolbar__controls\s*\{[^}]*flex:\s*1 1 100%;[^}]*flex-wrap:\s*wrap;[\s\S]*\.projects-toolbar__actions\s*\{[^}]*flex:\s*1 1 100%;[^}]*justify-content:\s*flex-end;/,
+  "compact Projects panes stack toolbar groups while keeping actions trailing-aligned",
+);
+
 // ── List pane rows ───────────────────────────────────────────────────────────
 assert.match(projectListSource, /role="listbox" aria-label="Projects"/, "the list pane is a labeled listbox");
 assert.match(projectListSource, /role="option"[\s\S]{0,80}?aria-selected=\{selected\}/, "each project row is an option reporting selection");

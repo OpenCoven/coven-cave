@@ -104,6 +104,12 @@ assert.match(
 
 assert.match(
   globals,
+  /\.top-bar\s*\{(?=[^}]*display:\s*none;)[^}]*width:\s*100%;/,
+  "Adaptive top bar should fill its flex host so search can expand and actions stay pinned to the trailing edge",
+);
+
+assert.match(
+  globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__search\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile search button should meet the 44px touch target",
 );
@@ -135,6 +141,18 @@ assert.match(
   globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.notification-bell__trigger,[\s\S]*\.top-bar__account\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile top-bar notification and account buttons should meet the 44px touch target",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.top-bar__tasks > \.ui-icon-btn\s*\{[^}]*width:\s*var\(--touch-target\);[^}]*height:\s*var\(--touch-target\);/,
+  "Mobile top-bar task overflow should meet the same 44px touch target as adjacent actions",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 455px\) \{[\s\S]*\.top-bar__actions \[data-quick-chat-trigger\],[\s\S]*\.top-bar__actions \.top-bar__tasks\s*\{[^}]*display:\s*none;/,
+  "Compact phones should demote Quick Chat and task shortcuts so primary header controls preserve a usable search field",
 );
 
 assert.match(

@@ -23,6 +23,16 @@ assert.match(css, /\.top-bar \{[\s\S]*?background:\s*var\(--bg-base\)[\s\S]*?bor
 // Search is centered in the bar with its pill border always visible (user
 // override of the earlier ghost-at-rest treatment) — Codex-style landmark.
 assert.match(css, /\.menu-bar__search \{[\s\S]*?position:\s*absolute[\s\S]*?left:\s*50%[\s\S]*?translateX\(-50%\)/, "search is absolutely centered in the title bar");
+assert.match(
+  css,
+  /\.menu-bar__search \{[\s\S]*?width:\s*min\(480px, 42vw, calc\(100% - 432px\)\)/,
+  "centered search reserves symmetric room for the normal desktop action group",
+);
+assert.match(
+  css,
+  /\.menu-bar:has\(\.menu-bar__task-label--live\) \.menu-bar__search \{[^}]*width:\s*min\(480px, 42vw, calc\(100% - 564px\)\)/,
+  "centered search contracts further while live enrichment progress widens the desktop actions",
+);
 assert.match(css, /\.menu-bar__search \{[\s\S]*?border:\s*1px solid var\(--border-hairline\)/, "search border is always visible at rest");
 assert.match(css, /\.shell-top-history \{/, "history Back/Forward pair has its grouping styles");
 assert.match(css, /\.menu-bar__task-label \{\s*\n\s*display:\s*none/, "task labels are CSS-demoted — the bar shows icons only");
