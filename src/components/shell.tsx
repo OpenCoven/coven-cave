@@ -343,28 +343,55 @@ function ShellInner({
   // the panel fully closed (not even hover-peeked) they'd hover over page
   // content, so they follow the panel — hidden with it, back the moment it
   // opens or peeks. The root attribute lets globals.css release the 78px
-  // title-bar inset in the same breath; the native call is an app command
+  // title-bar inset; the native call is an app command
   // (set_traffic_lights_visible in lib.rs), so it needs no ACL entry. Mobile
   // layouts keep their drawer chrome and never hide the lights.
+  //
+  // Fit contract (title-bar overlap bug): the inset is released ONLY after
+  // the native hide is confirmed. Showing is marked optimistically (worst
+  // case: a roomy bar), but marking "hidden" before the buttons actually
+  // vanish — pre-update shell without the command, an AppKit hiccup — slid
+  // the nav toggle + history chevrons underneath still-visible lights.
   const trafficLightsVisible = navOpen || navPeeking || isMobile;
   useEffect(() => {
     const root = document.documentElement;
     // Only the macOS desktop Tauri shell overlays the title bar (the effect
     // above sets this marker); everywhere else there are no lights to manage.
     if (!("tauriTitlebar" in root.dataset)) return;
-    root.dataset.trafficLights = trafficLightsVisible ? "visible" : "hidden";
-    void import("@tauri-apps/api/core")
-      .then(({ invoke }) => invoke("set_traffic_lights_visible", { visible: trafficLightsVisible }))
-      .catch(() => {
-        // Pre-update shell without the command — the attribute above still
-        // frees the inset; the native buttons just stay put.
-      });
+    let cancelled = false;
+    const applyNative = (visible: boolean) =>
+      import("@tauri-apps/api/core").then(({ invoke }) =>
+        invoke("set_traffic_lights_visible", { visible }),
+      );
+    if (trafficLightsVisible) {
+      root.dataset.trafficLights = "visible";
+      void applyNative(true).catch(() => {});
+    } else {
+      void applyNative(false)
+        .then(() => {
+          if (!cancelled) root.dataset.trafficLights = "hidden";
+        })
+        .catch(() => {
+          // Pre-update shell without the command — the buttons stay put, so
+          // the bar must keep the 78px inset reserved for them.
+          if (!cancelled) root.dataset.trafficLights = "visible";
+        });
+    }
+    // macOS re-shows the standard buttons on its own after some window
+    // transitions (fullscreen round-trips, space changes). Re-assert the
+    // intended state whenever the window regains focus so the bar and the
+    // buttons can't drift apart mid-session.
+    const onFocus = () => {
+      if (trafficLightsVisible) return;
+      void applyNative(false).catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
     return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
       // If the shell ever unmounts mid-hide, leave the window usable.
       delete root.dataset.trafficLights;
-      void import("@tauri-apps/api/core")
-        .then(({ invoke }) => invoke("set_traffic_lights_visible", { visible: true }))
-        .catch(() => {});
+      void applyNative(true).catch(() => {});
     };
   }, [trafficLightsVisible]);
 
