@@ -49,8 +49,15 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => onTry\(p\.body\)\}>Try it/,
+  /onClick=\{\(\) => onTry\(p\.body\)\}\s*>\s*Try it/,
   "each preview card exposes a Try it action bound to its body",
+);
+// Visibility (user feedback): the Try it action is a bordered secondary button
+// with a directional icon — not the near-invisible ghost it started as.
+assert.match(
+  source,
+  /variant="secondary"[\s\S]{0,120}?trailingIcon="ph:arrow-right-bold"[\s\S]{0,160}?Try it/,
+  "Try it is a visible secondary button with a hand-off arrow (not a ghost)",
 );
 assert.match(
   source,
