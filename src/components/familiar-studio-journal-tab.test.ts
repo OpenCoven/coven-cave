@@ -91,10 +91,12 @@ const pageDrag = read("../lib/page-drag.ts");
 const slash = read("../lib/slash-commands.ts");
 
 // ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
+// It now opens the Grimoire surface on its Journal tab; per-familiar journals
+// still live in Settings → Familiars → Journal via FamiliarStudioJournalTab.
 assert.match(
   ws,
-  /if \(next === "journal"\) \{[\s\S]{0,400}?openFamiliarStudioSettingsTab\("journal"\)/,
-  "setMode redirects journal to Settings → Familiars → Journal",
+  /if \(next === "journal"\) \{[\s\S]{0,400}?setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\)/,
+  "setMode routes journal into the Grimoire Journal tab",
 );
 assert.doesNotMatch(ws, /import \{ JournalView \}/, "workspace no longer imports JournalView");
 assert.doesNotMatch(ws, /mode === "journal" \?/, "no journal surface branch remains");
