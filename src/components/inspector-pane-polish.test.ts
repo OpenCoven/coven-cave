@@ -7,10 +7,13 @@ import { dirname, resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(resolve(here, "./inspector-pane.tsx"), "utf8");
 
-test("outer tab nav uses the shared underline Tabs, labelled + filled", () => {
-  assert.match(src, /<Tabs[\s\S]{0,240}ariaLabel="Inspector sections"/, "outer nav uses shared Tabs");
+test("outer tab nav uses the shared underline Tabs, labelled, natural-width", () => {
+  assert.match(src, /<Tabs[\s\S]{0,420}ariaLabel="Inspector sections"/, "outer nav uses shared Tabs");
   assert.match(src, /variant="underline"/, "outer nav is underline");
-  assert.match(src, /\bfill\b/, "outer tabs stretch to fill the row");
+  // Natural-width sm tabs: `fill` split the 260px sidebar into equal thirds
+  // and shredded "Automations" — content-hugging tabs keep every label whole.
+  assert.match(src, /<Tabs[\s\S]{0,420}size="sm"/, "outer tabs use compact density");
+  assert.doesNotMatch(src, /<Tabs\s*\n\s*variant="underline"\s*\n\s*fill\b/, "outer tabs no longer stretch-fill the row");
 });
 
 test("inbox badge is softened from danger to warning tone", () => {
