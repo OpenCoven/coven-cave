@@ -32,5 +32,10 @@ assert.match(page, /Cards completed/, "report should list board cards finished d
 assert.match(page, /Recent sessions/, "pre-Phase-B reports should keep the flat recovered session list");
 assert.match(page, /media\?\.narrative\?\.text/, "report should lead with the familiar-written narrative when present");
 assert.match(page, /Written by/, "narrative should carry a familiar attribution byline");
+assert.match(
+  page,
+  /extractNextPaths\(item\.media\.narrative\.text\)\.visible/,
+  "narrative render should exclude the piggybacked next-paths suggestions block",
+);
 
 console.log("daily-report-page.test.ts: ok");

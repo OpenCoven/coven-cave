@@ -294,6 +294,11 @@ for (const contract of contracts) {
     /NARRATIVE_MAX_STORED_CHARS/,
     "/inbox/daily-summary must bound stored narrative length",
   );
+  assert.match(
+    dailySummarySource,
+    /extractNextPaths\(input\.text\)/,
+    "/inbox/daily-summary must strip the piggybacked next-paths block before storing a narrative",
+  );
 }
 
 // CHAT-D5-02 (amended by cave-id5): cancelling a streaming response is an
