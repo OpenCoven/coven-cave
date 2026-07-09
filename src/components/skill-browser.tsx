@@ -618,11 +618,11 @@ export function SkillBrowser({
               <span>{selected ? `Install ${selected.name}` : "Try it now"}</span>
               <code title={ecosystemCommand}>{ecosystemCommand}</code>
             </div>
-            <div className="skill-browser__agent-strip" aria-label="Available for these agents">
-              {FEATURED_AGENT_LABELS.map((name) => (
-                <span key={name}>{name}</span>
-              ))}
-            </div>
+            {/* One quiet summary line instead of a chip-per-agent strip that
+                forced a horizontal scrollbar in the narrow leaderboard. */}
+            <p className="skill-browser__agent-strip" aria-label="Available for these agents">
+              Works with {FEATURED_AGENT_LABELS.join(", ")}
+            </p>
             <nav className="skill-browser__directory-links" aria-label="Skills directory links">
               {SKILLS_DIRECTORY_LINKS.map((link) => (
                 <a key={link.href} href={link.href} target="_blank" rel="noreferrer">

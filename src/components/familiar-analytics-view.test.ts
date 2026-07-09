@@ -411,4 +411,43 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(block![0], /overflow-y:\s*auto/, ".fa-page must scroll its own content on the full-page route");
     assert.doesNotMatch(block![0], /min-height:\s*100%/, ".fa-page should fill (height:100%), not just min-height, so overflow can trigger");
   });
+
+  it("modernized chrome: sticky freshness topbar, drill flashes, actionable insight (cave UX audit)", () => {
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+    // Truthful freshness stamp + visible refresh progress in a sticky topbar.
+    assert.match(source, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "updatedAt is stamped by the load that actually landed");
+    assert.match(source, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "topbar renders the freshness stamp");
+    assert.match(source, /refreshing \? " is-refreshing" : ""/, "refresh button carries a refreshing state class");
+    assert.match(globals, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
+    assert.match(globals, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
+
+    // Empty response-confidence never takes the wide hero slot.
+    assert.match(
+      source,
+      /wide=\{model\.responseConfidenceRollup\.eventCount > 0\}/,
+      "the response-confidence section only widens when it has data",
+    );
+
+    // Drill-throughs glide and flash their landing section.
+    assert.match(globals, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
+    assert.match(globals, /\.fa-section\s*\{[^}]*scroll-margin-top/, "sections land clear of the sticky bar");
+    assert.match(globals, /\.fa-section:target\s*\{/, "the landing section flashes for orientation");
+
+    // KPI tiles carry a reveal-on-hover drill cue.
+    assert.match(source, /className="fa-kpi__go"/, "KPI tiles render the drill chevron");
+
+    // Actionable insight banners carry their own next step.
+    assert.match(source, /className="fa-insight__action focus-ring" href="#fa-heal"/, "attention insights link to the heal section");
+
+    // All decorative motion holds still under prefers-reduced-motion.
+    assert.match(
+      globals,
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[^}]*\.fa-page\s*\{\s*scroll-behavior:\s*auto/,
+      "smooth scrolling is disabled under reduced motion",
+    );
+
+    // Narrow-pane tier exists (inspector tab / phones).
+    assert.match(globals, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
+  });
 });

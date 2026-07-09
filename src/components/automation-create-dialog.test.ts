@@ -20,4 +20,13 @@ assert.match(source, /automation-create-dialog__footer/, "new automation editor 
 assert.match(styles, /\.workflow-dialog[\s\S]*height: 100dvh;[\s\S]*overflow: hidden;/, "drawer should own the viewport height without scrolling");
 assert.match(styles, /\.automation-create-dialog__body[\s\S]*min-height: 0;[\s\S]*overflow-y: auto;/, "dialog body should be the scroll container");
 
+// Prompt-to-generate: one sentence fills the form via CronPromptBar; parsed
+// updates land in field state only, so the user reviews before Create.
+assert.match(source, /<CronPromptBar\s[\s\S]{0,200}onApply=\{applyPromptUpdate\}/, "the create dialog hosts a prompt bar to generate the cron from a sentence");
+assert.match(
+  source,
+  /const applyPromptUpdate = \(update: CronPromptUpdate\)[\s\S]*?setScheduleMode\(update\.schedule\.mode\)[\s\S]*?setName\(update\.name\)/,
+  "prompt updates merge into the dialog's field state",
+);
+
 console.log("automation-create-dialog.test.ts: ok");
