@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.169] - 2026-07-09
+
+> Mobile Cave reconnects cleanly over Tailscale when a stale dev server is in the way, Queue gains Asana-linked task context, and runtime sync gets its second review hardening pass.
+
+Patch release on top of v0.0.168.
+
+### Changes
+- fix(runtimes): second review pass — build-metadata precedence, un-persisted checkout token (#2868)
+- feat(asana): integrate Asana tasks into the board, beads, and Queue (#2865)
+- fix(mobile): recover stale Cave app server (#2867)
+
+
 ## [0.0.168] - 2026-07-09
 
 > In-app updates work again on macOS — the updater tarball no longer breaks the app's code seal — plus a comprehensive title-bar fit and subtle titlebar glass.
