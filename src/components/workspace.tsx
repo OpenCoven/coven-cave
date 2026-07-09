@@ -281,7 +281,11 @@ export function Workspace() {
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
-  const loadSessionsInFlightRef = useRef<Promise<void> | null>(null);
+  // Monotonic sequence guard for loadSessions (see its definition): the list is
+  // scoped to the active familiar, and loadSessions re-fires on every scope
+  // change, so a stale in-flight load must not paint the previous familiar's
+  // sessions.
+  const loadSessionsReqRef = useRef(0);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
@@ -730,9 +734,19 @@ export function Workspace() {
   }, [selectFamiliarScope]);
 
   const loadSessions = useCallback(() => {
-    if (loadSessionsInFlightRef.current) return loadSessionsInFlightRef.current;
+    // Sequence guard. loadSessions runs from mount, the 4s poll, the
+    // familiars-refresh event, and — because `activeId` is a dep — re-fires
+    // whenever the active-familiar SCOPE changes. It scopes the fetch to that
+    // familiar's granted projects, so a load started under scope A that resolves
+    // *after* the user switches to scope B would paint A's sessions under B
+    // until the next poll healed it. A monotonic reqId (replacing the old
+    // in-flight-promise dedup, which additionally *skipped* the new-scope load
+    // while A was still in flight) drops every superseded load's writes, so only
+    // the newest scope ever reaches state.
+    const reqId = ++loadSessionsReqRef.current;
+    const isCurrent = () => reqId === loadSessionsReqRef.current;
 
-    const request = (async () => {
+    return (async () => {
       let baseSessionsApplied = false;
       const githubTasksPromise = fetch("/api/github/tasks", { cache: "no-store" })
         .then((res) => (res.ok ? res.json() : null))
@@ -744,6 +758,7 @@ export function Workspace() {
         const scope = activeId ? `?familiarId=${encodeURIComponent(activeId)}` : "";
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
+        if (!isCurrent()) return; // superseded by a newer load / scope change
         if (!json.ok) return;
 
         const baseSessions = (json.sessions ?? []) as SessionRow[];
@@ -755,7 +770,7 @@ export function Workspace() {
         baseSessionsApplied = true;
 
         const githubTasksJson = await githubTasksPromise;
-        if (githubTasksJson) {
+        if (githubTasksJson && isCurrent()) {
           setGithubAssignedCount(Array.isArray(githubTasksJson.tasks) ? githubTasksJson.tasks.length : 0);
           setSessions((currentSessions) => {
             const enriched = attachGitHubTaskContext(
@@ -768,13 +783,9 @@ export function Workspace() {
       } catch {
         /* transient */
       } finally {
-        if (!baseSessionsApplied) setSessionsLoaded(true);
-        loadSessionsInFlightRef.current = null;
+        if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
     })();
-
-    loadSessionsInFlightRef.current = request;
-    return request;
   }, [activeId]);
 
   useEffect(() => {

@@ -38,15 +38,23 @@ assert.match(
   /const \[sessionsLoaded, setSessionsLoaded\] = useState\(false\)/,
   "Workspace flips sessionsLoaded after the first /api/sessions/list fetch settles",
 );
+// The session list is scoped to the active familiar and reloads on every scope
+// change, so loadSessions is sequence-guarded by a monotonic request id: a stale
+// in-flight load must not paint the previous familiar's sessions (cave-jibj).
 assert.match(
   workspace,
-  /const loadSessionsInFlightRef = useRef<Promise<void> \| null>\(null\)/,
-  "Workspace deduplicates overlapping session-list refreshes",
+  /const loadSessionsReqRef = useRef\(0\)/,
+  "Workspace sequence-guards session-list loads with a request id",
 );
 assert.match(
   workspace,
-  /if \(loadSessionsInFlightRef\.current\) return loadSessionsInFlightRef\.current;/,
-  "Workspace reuses an in-flight session-list request instead of stacking pollers",
+  /const reqId = \+\+loadSessionsReqRef\.current;/,
+  "each session-list load bumps the request id",
+);
+assert.match(
+  workspace,
+  /if \(!isCurrent\(\)\) return; \/\/ superseded/,
+  "a superseded (scope-changed) session-list load drops its writes",
 );
 assert.doesNotMatch(
   workspace,
