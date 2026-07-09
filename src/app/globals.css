@@ -5582,6 +5582,37 @@ button:active > .edge-rail-chip {
   line-height: 1;
 }
 
+/* Dropdown affordance on labeled triggers — space-between layout: avatar +
+   name lead, the caret hugs the right edge. */
+.familiar-switcher__trigger-caret {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* Row checkbox — the multiselect zone. Clicking it toggles the familiar in
+   the scope (menu stays open); a plain row click still solo-switches. */
+.familiar-switcher__checkbox {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--accent-foreground);
+  background: transparent;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.familiar-switcher__checkbox.is-checked {
+  background: var(--accent-presence);
+  border-color: var(--accent-presence);
+}
+.familiar-switcher__option:hover .familiar-switcher__checkbox {
+  border-color: var(--accent-presence);
+}
+
 /* Avatar image fills the trigger square edge-to-edge. FamiliarAvatar renders a
    fixed 16px img, which sits centered in the 28px button and leaves a dark gap;
    stretch it to the button's inner box instead. The glyph fallback is a vector
