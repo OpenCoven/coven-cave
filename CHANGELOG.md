@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.166] - 2026-07-09
+
+> 📓 **Journal moves into the Grimoire** — daily reflections are now a tab beside Docs and Graph, so the whole knowledge surface lives in one room. Plus registry-driven runtime adapter scaffolds and an analytics contract-compliance pass.
+
+Patch release on top of v0.0.165.
+
+### Features
+- **Grimoire: Journal is now a tab** (#2854). The Docs/Graph switcher grows a third tab — Docs · Journal · Graph — rendering the full daily-reflection surface (day rail, generate, edit/delete with undo) in place. The Journal nav item opens it directly instead of routing to Settings; per-familiar journals still live in Settings → Familiars → Journal.
+
+### Improvements
+- **Runtimes: adapter scaffolds come straight from the registry** (#2853, cave-laxg).
+- **Analytics: contract compliance shown beside confidence, with one-click enable for self-reporting** (#2852, cave-ydv5).
+
+
 ## [0.0.165] - 2026-07-09
 
 > 🏛️ **Rooms for every vocation** — the Cave becomes role-aware: a registry-driven Role Surface system gives Familiars specialized workspaces (a Research Desk, a Comms operations center, an Archive) instead of generic tabs. Plus the Coven adopts its canonical typography, an "ultimate Enhance" streaming rewrite across every composer, and a full prompt-template + marketplace-pack workflow.
