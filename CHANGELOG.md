@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.167] - 2026-07-09
+
+> 🪄 **Polish + hardening pass** — the marketplace's prompt-pack "Try it" becomes an unmissable bordered pill with a hand-off arrow instead of near-invisible ghost text, and the desktop title-bar controls stop hiding under the macOS traffic lights. Under the hood: a ReDoS-prone path regex is replaced with a plain `trimEnd`, and the runtime-sync tooling gets spec-correct prerelease semver plus CI-triggering bot PRs.
+
+Patch release on top of v0.0.166.
+
+### Improvements
+- **Marketplace: "Try it" is finally visible** (#2857) — the prompt-pack hand-off is now a bordered secondary pill with an arrow instead of ghost text that blended into the card.
+- **Shell: title-bar controls never sit under the traffic lights** (#2856, cave-i7wf) — window controls reflow clear of the macOS traffic-light cluster.
+
+### Fixes
+- **Security: no more ReDoS-prone path regex** (#2845, CodeQL #99) — `next-paths.ts` uses `trimEnd` instead of a catastrophically-backtracking regex.
+- **Runtimes: review follow-ups** (#2858) — spec-correct prerelease semver handling and CI-triggering bot PRs in the runtime-sync workflow.
+- **Runtimes: drop a no-op identity newline replacement** in `sync-runtimes.mjs` (#2844).
+
+
 ## [0.0.166] - 2026-07-09
 
 > 📓 **Journal moves into the Grimoire** — daily reflections are now a tab beside Docs and Graph, so the whole knowledge surface lives in one room. Plus registry-driven runtime adapter scaffolds and an analytics contract-compliance pass.
