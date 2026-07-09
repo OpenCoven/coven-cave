@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.160] - 2026-07-08
+
+> 📖 **Responses worth reading** — the chat's Expand view becomes a real reading surface, tables read as rows instead of spreadsheets, inline code stops shouting, and mermaid diagrams finally wear the theme — on a drawing canvas, inline and fullscreen. Plus a backdrop vibe for Home + Chat and journal-run chats that tidy themselves away.
+
+Feature release on top of v0.0.159.
+
+### Features
+- **Chat: modern reading polish** (#2801, cave-po4f). The Expand reader gets a centered 72ch book measure on a larger reading scale; inline code chips go quiet-neutral; tables move to row separators with sticky headers, zebra + hover tints, and a roomier expanded lightbox; mermaid diagrams render token-native across all 19 themes on a dot-grid drawing canvas, with a glassy zoom/pan toolbar fullscreen; user bubbles and thinking blocks soften.
+- **Appearance: backdrop vibe** — an image behind Home + Chat with the accent derived from it (#2799, cave-bq7s).
+
+### Fixes
+- **Chat: journal-run chats auto-hide** — `origin:journal` provenance with a truncated-title legacy fallback (#2798, cave-buih).
+- **Journal: delete announces once** — UndoToast already speaks it (#2800, cave-6rhk).
+
 ## [0.0.159] - 2026-07-08
 
 > 🪟 **Frosted glass and a Copilot in the cave** — overlay chrome goes translucent with real backdrop depth, GitHub Copilot CLI joins as a first-class runtime, the Changes panel reviews your diff in one click, and mornings start with a "Needs you" triage strip.
