@@ -869,7 +869,10 @@ export function Workspace() {
         | { type: "updated"; item: InboxItem }
         | { type: "deleted"; id: string };
       if (e.type === "snapshot") {
-        setInboxItems(e.items);
+        // Reconnect snapshots usually carry what we already have — keep the
+        // reference so inboxItemsWithEphemeral consumers don't re-render
+        // (companion to #2762's content-equal guard on `updated` echoes).
+        setInboxItems((prev) => (arrayContentEqual(prev, e.items) ? prev : e.items));
         return;
       }
       if (e.type === "created") {

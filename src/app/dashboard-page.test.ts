@@ -192,6 +192,13 @@ assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each g
 {
   const ws = readFileSync(new URL("../components/workspace.tsx", import.meta.url), "utf8");
   assert.match(ws, /if \(JSON\.stringify\(prev\[idx\]\) === JSON\.stringify\(e\.item\)\) return prev;/, "SSE update echoes keep the array identity");
+  // Same guard for the reconnect path: a snapshot that matches current state
+  // must not re-render every inboxItemsWithEphemeral consumer.
+  assert.match(
+    ws,
+    /setInboxItems\(\(prev\) => \(arrayContentEqual\(prev, e\.items\) \? prev : e\.items\)\);/,
+    "SSE reconnect snapshots keep the array identity when content-identical",
+  );
 }
 
 console.log("dashboard-page.test.ts: ok");
