@@ -73,6 +73,10 @@ assert.ok(
   "copilot catalog should seed GPT-5.5",
 );
 assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-fable-5"),
+  "copilot catalog should seed Claude Fable 5 (parity with the claude catalog)",
+);
+assert.ok(
   catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-sonnet-5"),
   "copilot catalog should seed Claude Sonnet 5",
 );

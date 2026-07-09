@@ -63,6 +63,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
       { id: "github/auto", label: "Auto (Copilot picks)" },
       { id: "github/gpt-5.5", label: "GPT-5.5" },
       { id: "github/claude-opus-4-8", label: "Claude Opus 4.8" },
+      { id: "github/claude-fable-5", label: "Claude Fable 5" },
       { id: "github/claude-sonnet-5", label: "Claude Sonnet 5" },
       { id: "github/claude-haiku-4-5", label: "Claude Haiku 4.5" },
       { id: "github/gemini-3.1-pro", label: "Gemini 3.1 Pro" },
