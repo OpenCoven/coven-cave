@@ -5003,6 +5003,13 @@ button:active > .edge-rail-chip {
     min-height: 36px;
   }
 
+  /* Dia-style: with the side panel closed the shell hides the traffic lights
+     (set_traffic_lights_visible in lib.rs, driven by shell.tsx), so the bar
+     releases the room reserved for them and slides back to the window edge. */
+  :root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-top {
+    padding-left: 12px;
+  }
+
   :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
     position: absolute;
     inset: 0;

@@ -80,6 +80,7 @@ name = "app"
 version = "0.0.163"
 dependencies = [
  "log",
+ "objc2",
  "once_cell",
  "parking_lot",
  "portable-pty",

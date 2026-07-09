@@ -669,6 +669,41 @@ fn windows_system32_binary(binary: &str) -> std::path::PathBuf {
     system_root.join("System32").join(binary)
 }
 
+/// Show or hide the macOS traffic lights (close/minimize/zoom) on the
+/// invoking window. The main window's title bar is an Overlay (see the main
+/// window builder), so the buttons float over web content — when the app's
+/// side panel is closed the shell asks for them to disappear, Dia-style, and
+/// brings them back the moment the panel (or its hover-peek) opens. AppKit
+/// must be touched on the main thread; a no-op elsewhere.
+#[cfg(desktop)]
+#[tauri::command]
+fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let win = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            let Ok(ns_ptr) = win.ns_window() else { return };
+            unsafe {
+                use objc2::msg_send;
+                use objc2::runtime::AnyObject;
+                let ns_window = ns_ptr as *mut AnyObject;
+                // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
+                for kind in 0u64..=2u64 {
+                    let button: *mut AnyObject =
+                        msg_send![&*ns_window, standardWindowButton: kind];
+                    if !button.is_null() {
+                        let _: () = msg_send![&*button, setHidden: !visible];
+                    }
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, visible);
+    }
+}
+
 /// Open an http(s) URL in the system default browser.
 #[cfg(desktop)]
 #[tauri::command]
@@ -975,6 +1010,7 @@ pub fn run() {
             shell_open,
             shell_open_path,
             shell_pick_directory,
+            set_traffic_lights_visible,
         ])
         .manage(SidecarState(Mutex::new(None)))
         .setup(|app| {
