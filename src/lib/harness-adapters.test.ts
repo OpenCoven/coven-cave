@@ -47,10 +47,21 @@ assert.equal(
   "A substring like --model-context-protocol must not be mistaken for --model",
 );
 
-assert.deepEqual(
-  COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),
-  ["codex", "claude", "copilot", "hermes", "openclaw"],
-);
+const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
+{
+  const ids = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id);
+  assert.deepEqual(ids.slice(0, curatedIds.length), curatedIds, "curated adapters keep their seed order first");
+  const registryIds = ids.slice(curatedIds.length);
+  assert.ok(registryIds.length > 0, "registry-synced runtimes extend the curated seed");
+  assert.deepEqual(registryIds, [...registryIds].sort(), "registry additions are alphabetical");
+  assert.ok(!registryIds.some((id) => curatedIds.includes(id)), "curated ids never duplicate");
+  for (const adapter of COMPATIBILITY_ADAPTERS.slice(curatedIds.length)) {
+    assert.equal(adapter.source, "registry", `${adapter.id} carries the registry source tag`);
+    assert.equal(adapter.chatSupported, true, `registry-accepted ${adapter.id} is chat-trusted`);
+    assert.ok(isTrustedChatHarness(adapter.id), `${adapter.id} passes the chat trust gate`);
+    assert.ok(isTrustedOnboardingHarness(adapter.id), `${adapter.id} passes the onboarding trust gate`);
+  }
+}
 
 assert.deepEqual(openClawAdapterReport(2), {
   id: "openclaw",
@@ -179,7 +190,7 @@ assert.deepEqual(
   adapterSetupState(merged.filter((adapter) => !adapter.installed)),
   {
     ok: false,
-    hint: "Install Codex, Claude Code, Copilot, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install a supported runtime (Codex, Claude Code, Copilot, Hermes, a registry runtime, or an OpenClaw agent), then re-check. External adapters can also be added with Coven adapter manifests.",
   },
 );
 
@@ -216,7 +227,17 @@ assert.deepEqual(JSON.parse(hermesManifest?.contents ?? "{}"), {
     },
   ],
 });
-assert.equal(adapterManifestScaffoldForHarness("codex"), null);
+assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");
+
+// Registry-accepted runtimes scaffold their exact adapter manifest from the
+// synced registry module (opencode is in the canonical registry today).
+{
+  const opencodeManifest = adapterManifestScaffoldForHarness("opencode");
+  assert.equal(opencodeManifest?.filename, "opencode.json");
+  const parsed = JSON.parse(opencodeManifest?.contents ?? "{}");
+  assert.equal(parsed.adapters?.[0]?.id, "opencode", "registry scaffold embeds the accepted adapter document");
+}
+assert.equal(adapterManifestScaffoldForHarness("not-a-runtime"), null);
 
 // Copilot runs through a Coven adapter manifest (like Hermes): the prompt is
 // appended after the prefix args, so it lands as the -i/-p flag's value.

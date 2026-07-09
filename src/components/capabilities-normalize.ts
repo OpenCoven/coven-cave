@@ -1,4 +1,5 @@
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
+import { REGISTRY_RUNTIMES } from "../lib/runtime-registry.gen.ts";
 
 export type CovenSkill = {
   id: string;
@@ -73,7 +74,9 @@ const HARNESS_LABEL: Record<string, string> = {
 };
 
 export function harnessLabel(id: string): string {
-  return HARNESS_LABEL[id] ?? id;
+  if (HARNESS_LABEL[id]) return HARNESS_LABEL[id];
+  const registry = REGISTRY_RUNTIMES.find((entry) => entry.id === id);
+  return registry?.label ?? id;
 }
 
 function skillSourcePath(skillPath?: string): string | undefined {

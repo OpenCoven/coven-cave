@@ -1,3 +1,5 @@
+import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+
 export type CompatibilityAdapter = {
   id: string;
   label: string;
@@ -5,7 +7,7 @@ export type CompatibilityAdapter = {
   chatSupported: boolean;
   versionArgs?: string[];
   installHint: string;
-  source: "bundled";
+  source: "bundled" | "registry";
 };
 
 export type LocalAdapterReport = CompatibilityAdapter & {
@@ -47,7 +49,9 @@ export type AdapterManifestScaffold = {
   contents: string;
 };
 
-export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
+// The hand-curated seed: Cave-specific labels, install copy, and probe args.
+// Curated entries win over registry entries with the same id.
+const CURATED_ADAPTERS: CompatibilityAdapter[] = [
   {
     id: "codex",
     label: "Codex",
@@ -95,6 +99,28 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     installHint: "Install OpenClaw with `npm install -g openclaw@latest`, then connect or create an agent under ~/.openclaw/agents.",
     source: "bundled",
   },
+];
+
+// Registry-accepted runtimes (synced from OpenCoven/coven-runtimes by
+// `pnpm sync:runtimes`) extend the curated seed. Acceptance into the registry
+// carries conformance testing + review, so these are chat-trusted on par with
+// the bundled five. Curated entries keep their richer Cave-specific copy.
+const REGISTRY_ADAPTERS: CompatibilityAdapter[] = REGISTRY_RUNTIMES.filter(
+  (runtime) => !CURATED_ADAPTERS.some((adapter) => adapter.id === runtime.id),
+)
+  .map((runtime) => ({
+    id: runtime.id,
+    label: runtime.label,
+    binary: runtime.binary,
+    chatSupported: true,
+    installHint: runtime.installHint,
+    source: "registry" as const,
+  }))
+  .sort((a, b) => a.id.localeCompare(b.id));
+
+export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
+  ...CURATED_ADAPTERS,
+  ...REGISTRY_ADAPTERS,
 ];
 
 const TRUSTED_ONBOARDING_HARNESSES = new Set(
@@ -226,8 +252,10 @@ export function mergeAdapterReports(
   }
 
   return [...merged.values()].sort((a, b) => {
-    const rank = (id: string) =>
-      id === "codex" ? 0 : id === "claude" ? 1 : id === "copilot" ? 2 : id === "hermes" ? 3 : id === "openclaw" ? 4 : 5;
+    // Curated adapters keep their seed order; registry additions follow
+    // alphabetically (COMPATIBILITY_ADAPTERS already encodes both).
+    const rankById = new Map(COMPATIBILITY_ADAPTERS.map((adapter, index) => [adapter.id, index]));
+    const rank = (id: string) => rankById.get(id) ?? COMPATIBILITY_ADAPTERS.length;
     return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
   });
 }
@@ -242,7 +270,7 @@ export function adapterSetupState(reports: AdapterReport[]): AdapterSetupState {
   }
   return {
     ok: false,
-    hint: "Install Codex, Claude Code, Copilot, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install a supported runtime (Codex, Claude Code, Copilot, Hermes, a registry runtime, or an OpenClaw agent), then re-check. External adapters can also be added with Coven adapter manifests.",
   };
 }
 
@@ -296,7 +324,20 @@ export function adapterManifestScaffoldForHarness(
       )}\n`,
     };
   }
-  if (harnessId !== "hermes") return null;
+  if (harnessId !== "hermes") {
+    // Registry-accepted runtimes carry their exact $COVEN_HOME/adapters
+    // document in the synced manifest — scaffold straight from it.
+    const registry = REGISTRY_RUNTIMES.find(
+      (runtime) => runtime.id === canonicalHarnessId(harnessId),
+    );
+    if (registry) {
+      return {
+        filename: `${registry.id}.json`,
+        contents: `${JSON.stringify(registry.adapterManifest, null, 2)}\n`,
+      };
+    }
+    return null;
+  }
   return {
     filename: "hermes.json",
     contents: `${JSON.stringify(

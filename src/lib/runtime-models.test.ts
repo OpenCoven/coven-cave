@@ -110,6 +110,16 @@ assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.5", "OpenClaw sho
 // Unknown runtimes have no catalog.
 assert.equal(catalogForRuntime("nonexistent"), null);
 
+// Registry-synced runtimes without a curated list get the runtime-managed
+// treatment: free-text only, custom allowed (opencode is in the registry).
+{
+  const opencode = catalogForRuntime("opencode");
+  assert.ok(opencode, "registry runtimes always have a catalog");
+  assert.equal(opencode.provider, null);
+  assert.equal(opencode.models.length, 0, "no curated menu for registry runtimes");
+  assert.equal(opencode.allowCustom, true);
+}
+
 // isModelInCatalog only matches curated ids; allowCustom covers the rest.
 assert.equal(isModelInCatalog("claude", "anthropic/claude-opus-4-7"), true);
 assert.equal(isModelInCatalog("claude", "anthropic/not-listed-yet"), false);

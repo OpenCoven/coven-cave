@@ -14,6 +14,8 @@
 
 export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | null;
 
+import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+
 export type RuntimeModelOption = { id: string; label: string };
 
 export type RuntimeModelCatalog = {
@@ -89,7 +91,14 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
 const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.5";
 
 export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
-  return RUNTIME_MODEL_CATALOG[runtime] ?? null;
+  const curated = RUNTIME_MODEL_CATALOG[runtime];
+  if (curated) return curated;
+  // Registry-synced runtimes without a curated list get the runtime-managed
+  // treatment: no menu, free-text only (same branch as openclaw above).
+  if (REGISTRY_RUNTIMES.some((entry) => entry.id === runtime)) {
+    return { runtime, provider: null, models: [], allowCustom: true };
+  }
+  return null;
 }
 
 export function defaultModelForRuntime(runtime: string): string {

@@ -44,6 +44,7 @@
     "beads:prs:patrol:apply": "node --experimental-strip-types scripts/beads-pr-patrol.ts --repo OpenCoven/coven-cave --apply",
     "hfr:export": "node --experimental-strip-types scripts/coven-hfr-export.ts",
     "beads:sync": "bd dolt pull && bd dolt push",
+    "sync:runtimes": "node scripts/sync-runtimes.mjs",
     "beads:doctor": "bd doctor && bd lint",
     "test:sidecar-runtime": "node scripts/sidecar-runtime-smoke.mjs",
     "e2e:install": "playwright install chromium webkit",
