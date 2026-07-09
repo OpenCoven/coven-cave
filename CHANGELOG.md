@@ -7,6 +7,26 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.158] - 2026-07-08
+
+> 🗂️ **Nothing hides the folder browser** — the project directory picker escapes its host's stacking context and always renders on top. Stale polls stop clobbering fresh state on schedules and the board, the sidenav familiar switcher settles into its final chrome, and the inbox goes quieter over SSE.
+
+Patch release on top of v0.0.157.
+
+### Fixes
+- **Projects: the directory-picker modal portals to `<body>`** (#2773, cave-lj6j). A transformed/backdrop-filtered host (the home composer card) trapped the fixed scrim in its stacking context, letting composer chrome paint over the open folder browser. It now renders above everything from every mount.
+- **Schedules: sequence-guarded loads** — a stale poll can no longer revert a just-toggled or just-saved cron (#2771, cave-1303). **Board: same guard** for stale poll/focus GETs vs fresher optimistic moves (#2766, cave-vdvy).
+- **Chat: the sidebar's familiar switcher is restored** — the chat page's only familiar control (#2768, cave-l3ay); **runtime + host chips share the round icon buttons' pill radius** (#2769).
+
+### Features
+- **Sidenav: the familiar switcher is a full-width multiselector wearing the New-chat chrome** (#2761), aligned edge-to-edge with New chat, caret on the right edge (#2772).
+
+### Performance
+- **Inbox: SSE stays quiet when nothing changed** — content-equal updates drop, reconnect snapshots keep array identity, and ActionInbox follows the cockpit repoll (#2762, #2770, cave-bzch).
+
+### Internal
+- CI: the release workflow's Intel leg retries its network-dependent steps (#2767, cave-1hha).
+
 ## [0.0.157] - 2026-07-08
 
 > 🔔 **Heard, not just seen** — inbox triage speaks to assistive tech: one snooze menu with real menu semantics everywhere, actions that announce what they did, urgency-aware toasts, and capabilities that narrate their refreshes. Plus the familiar switcher in every page's sidenav and split tiles that fit every screen.
