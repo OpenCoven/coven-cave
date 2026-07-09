@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.171] - 2026-07-09
+
+> 🧹 **Tidier familiars, leaner chat header** — removing a familiar is now undo-safe (a distinct track from Archive), and the chat header slims to Find + a kebab with compact project selection.
+
+Patch release on top of v0.0.170.
+
+### Features
+- **Familiars: undo-safe Remove beside Archive** (#2873, cave-ykwk) — a dual-track lifecycle so Remove and Archive are distinct, and Remove can be undone.
+
+### Improvements
+- **Chat: the header slims to Find + a kebab menu** with compact project selection (#2874).
+
+
 ## [0.0.170] - 2026-07-09
 
 > 🧑‍🤝‍🧑 **Asana, assignable per familiar** — connect Asana once, then decide per agent whether (and in which workspace) it works with your tasks, right in Familiar Studio → Brain. The board and Queue show each agent only their scoped tasks.
