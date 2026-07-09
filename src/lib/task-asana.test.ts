@@ -65,8 +65,12 @@ assert.equal(norm.length, 1, "junk + non-Asana URLs are dropped");
 assert.equal(norm[0].gid, "1000000000000002");
 
 // ── links union ──────────────────────────────────────────────────────────────
-const links = mergeLinksWithAsana(["https://x.com"], [a]);
-assert.ok(links.includes("https://x.com"));
-assert.ok(links.includes(a.url));
+// Membership via a Set (exact equality) rather than String#includes so the
+// assertion can't be misread as URL substring sanitization (CodeQL
+// js/incomplete-url-substring-sanitization).
+const other = "https://example.test/board";
+const linkSet = new Set(mergeLinksWithAsana([other], [a]));
+assert.ok(linkSet.has(other), "existing links are preserved");
+assert.ok(linkSet.has(a.url), "asana link URL is folded into links");
 
 console.log("task-asana passed");
