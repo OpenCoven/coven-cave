@@ -14,6 +14,7 @@ import { CommandPalette, type PaletteIntent } from "@/components/command-palette
 import { GrimoireView } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import {
   COVEN_CODE_SKIP_KEY,
   shouldAutoOpenOnboarding,
@@ -2311,6 +2312,10 @@ export function Workspace() {
   // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
   return (
     <FamiliarStudioProvider redirectToSettings>
+      {/* Backdrop vibe: the user's image behind Home + Chat, painted under
+          the shell; the derived accent applies document-wide from the same
+          store (cave-backdrop.ts). */}
+      <CaveBackdropLayer active={mode === "home" || mode === "chat"} />
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}

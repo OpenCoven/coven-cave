@@ -47,6 +47,7 @@ import {
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { copyText } from "@/lib/clipboard";
+import { BackdropSettings } from "@/components/backdrop-settings";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1683,6 +1684,12 @@ function AppearanceSection() {
       </SettingsGroup>
 
       <FontSettings />
+
+      {/* ── Backdrop ── an image behind Home + Chat with the accent tinted to
+          match it (cave-backdrop.ts owns storage + the vibe derivation). */}
+      <SettingsGroup label="Backdrop">
+        <BackdropSettings />
+      </SettingsGroup>
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}
