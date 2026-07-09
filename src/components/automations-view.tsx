@@ -1853,19 +1853,29 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // runs fetch when a faster, later selection won.
   const mountedRef = useRef(true);
   const runsReqRef = useRef(0);
+  // Sequence guard for load(), mirroring runsReqRef: load() runs from mount, the
+  // 15s poll, AND after every mutation (toggle/save/delete all await load()), so
+  // an in-flight poll can resolve *after* a mutation's reload and reapply its
+  // pre-mutation data — a just-paused cron would flip back to Active for up to
+  // 15s. Dropping a superseded load's writes closes that revert-flash.
+  const loadReqRef = useRef(0);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
   const load = useCallback(async () => {
+    const reqId = ++loadReqRef.current;
+    // Live only while this is still the newest load AND the view is mounted; a
+    // superseded (or unmounted) load drops all its writes.
+    const live = () => reqId === loadReqRef.current && mountedRef.current;
     try {
       const [inboxRes, codexRes] = await Promise.all([
         fetch("/api/inbox", { cache: "no-store" }),
         fetch("/api/codex-automations", { cache: "no-store" }),
       ]);
       const inboxJson = await inboxRes.json();
-      if (!mountedRef.current) return;
+      if (!live()) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
       // Content-equality guards (codebase convention — see board-view/workspace):
       // an unchanged poll keeps the previous references, so derived memos,
@@ -1874,16 +1884,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const nextItems = inboxJson.items ?? [];
       setItems((prev) => (arrayContentEqual(prev, nextItems) ? prev : nextItems));
       const codexJson = await codexRes.json();
-      if (!mountedRef.current) return;
+      if (!live()) return;
       if (codexJson.ok) {
         const nextAutos = codexJson.automations ?? [];
         setCodexAutos((prev) => (arrayContentEqual(prev, nextAutos) ? prev : nextAutos));
       }
       setError(null);
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : "fetch failed");
+      if (live()) setError(err instanceof Error ? err.message : "fetch failed");
     } finally {
-      if (mountedRef.current) setInitialLoadDone(true);
+      if (live()) setInitialLoadDone(true);
     }
   }, []);
 
