@@ -28,8 +28,9 @@ type JournalDay = {
   exists: boolean;
   entry: { reflectedBy: string | null; generatedAt: string | null; reflection: string };
   modified: string | null;
-  stats: JournalStats;
-  context: string;
+  /** Inventory-derived block; null until the non-blocking ?stats=1 fetch lands. */
+  stats: JournalStats | null;
+  context: string | null;
 };
 
 type NoticeAction = { label: string; mode: string };
@@ -332,23 +333,43 @@ export function JournalEntries({
     }
   }, []);
 
+  // Scope the day's memory stats to the single active familiar; with 0 or
+  // ≥ 2 selected (activeFamiliarId null) the record + stats are unscoped.
+  const dayQuery = useCallback((slug: string) => (
+    activeFamiliarId
+      ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(activeFamiliarId)}`
+      : `date=${encodeURIComponent(slug)}`
+  ), [activeFamiliarId]);
+
+  const fetchDayStats = useCallback(async (slug: string): Promise<{ stats: JournalStats; context: string } | null> => {
+    try {
+      const res = await fetch(`/api/journal?${dayQuery(slug)}&stats=1`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      return json.ok ? { stats: json.stats as JournalStats, context: String(json.context ?? "") } : null;
+    } catch {
+      return null;
+    }
+  }, [dayQuery]);
+
   const loadDay = useCallback(async (slug: string) => {
     const reqId = ++loadDayReqRef.current;
     try {
-      // Scope the day's memory stats to the single active familiar; with 0 or
-      // ≥ 2 selected (activeFamiliarId null) the record + stats are unscoped.
-      const detailQuery = activeFamiliarId
-        ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(activeFamiliarId)}`
-        : `date=${encodeURIComponent(slug)}`;
-      const res = await fetch(`/api/journal?${detailQuery}`, { cache: "no-store" });
+      const res = await fetch(`/api/journal?${dayQuery(slug)}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       // Drop a stale response: a newer loadDay (different day) superseded it.
       if (reqId !== loadDayReqRef.current || !mountedRef.current) return;
-      if (json.ok) setDay(json as JournalDay);
+      if (json.ok) setDay({ ...(json as Omit<JournalDay, "stats" | "context">), stats: null, context: null });
     } catch {
       if (reqId === loadDayReqRef.current && mountedRef.current) setDay(null);
+      return;
     }
-  }, [activeFamiliarId]);
+    // The stats block rides a separate request AFTER the entry paints — it
+    // walks the whole memory inventory server-side (seconds when cold), and
+    // used to block every day selection.
+    const block = await fetchDayStats(slug);
+    if (!block || reqId !== loadDayReqRef.current || !mountedRef.current) return;
+    setDay((prev) => (prev && prev.date === slug ? { ...prev, ...block } : prev));
+  }, [dayQuery, fetchDayStats]);
 
   useEffect(() => {
     void loadDays();
@@ -387,7 +408,11 @@ export function JournalEntries({
     if (outOfScopeBy) return; // never overwrite another familiar's entry from a scoped surface
     setError(null);
     setGenerating(true);
-    const result = await generateReflection({ familiarId, context: day.context });
+    // Context normally arrives with the non-blocking stats fetch; if the user
+    // beats it (or it failed), fetch it inline — generation needs the scope note.
+    const context = day.context ?? (await fetchDayStats(day.date))?.context ?? "";
+    if (!mountedRef.current) return;
+    const result = await generateReflection({ familiarId, context });
     if (!mountedRef.current) return;
     if (result.error || !result.text) {
       setGenerating(false);
@@ -405,7 +430,7 @@ export function JournalEntries({
     await loadDays();
     // The reflection appearing is the only visual confirmation — say it too.
     announce("Reflection generated.");
-  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce]);
+  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce, fetchDayStats]);
 
   function startEdit() {
     if (!day) return;
@@ -605,9 +630,9 @@ export function JournalEntries({
               ) : null}
             </div>
             <div className="journal-entry__stats">
-              <div className="journal-entry__stat"><b>{day.stats.covenOrigin}</b><span>coven files</span></div>
-              <div className="journal-entry__stat"><b>{day.stats.externalRuntimes}</b><span>external runtime files</span></div>
-              <div className="journal-entry__stat"><b>{day.stats.runtimeMemory}</b><span>runtime files</span></div>
+              <div className="journal-entry__stat"><b>{day.stats ? day.stats.covenOrigin : "–"}</b><span>coven files</span></div>
+              <div className="journal-entry__stat"><b>{day.stats ? day.stats.externalRuntimes : "–"}</b><span>external runtime files</span></div>
+              <div className="journal-entry__stat"><b>{day.stats ? day.stats.runtimeMemory : "–"}</b><span>runtime files</span></div>
             </div>
             <div className="journal-entry__head">
               <h4 className="journal-entry__sec journal-entry__sec-heading">Reflection</h4>

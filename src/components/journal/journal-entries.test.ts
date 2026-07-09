@@ -51,7 +51,46 @@ assert.match(entries, /const selectedFamiliarId = activeFamiliarId \?\? familiar
 assert.match(entries, /await fetch\(`\/api\/journal`, \{ cache: "no-store" \}\)/, "JournalEntries fetches the full journal day list");
 assert.match(entries, /if \(!familiarInScope\(scope, d\.reflectedBy\)\) return false/, "JournalEntries filters the day list by the familiar multiselect scope");
 // The day detail scopes its memory stats to the single active familiar (null at 0/≥ 2).
-assert.match(entries, /const detailQuery = activeFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(activeFamiliarId\)\}`\s*:\s*`date=\$\{encodeURIComponent\(slug\)\}`/, "JournalEntries scopes day detail stats to the active familiar");
+assert.match(entries, /const dayQuery = useCallback\(\(slug: string\) => \(\s*activeFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(activeFamiliarId\)\}`\s*:\s*`date=\$\{encodeURIComponent\(slug\)\}`/, "JournalEntries scopes day detail stats to the active familiar");
+
+// ── Perf: the entry paints without waiting for the memory inventory (cave-tgx9)
+// The stats block needs a full memory-file inventory walk server-side (~1900
+// stats warm, a multi-second head-read scan cold). It used to ride the SAME
+// response as the entry, blocking every day selection — and Grimoire's/iOS's
+// day reads, which never use stats, paid for it too.
+const journalRoute = read("../../app/api/journal/route.ts");
+assert.doesNotMatch(
+  journalRoute,
+  /Promise\.all\(\[readJournalEntry[\s\S]*?listMemoryFileEntries/,
+  "Journal day GET must not block the entry read on the memory-inventory scan",
+);
+assert.match(
+  journalRoute,
+  /if \(searchParams\.has\("stats"\)\) \{[\s\S]*?listMemoryFileEntries\(\)[\s\S]*?buildJournalMemoryStats[\s\S]*?buildJournalMemoryContext/,
+  "Journal route serves the inventory-derived stats block on its own ?stats=1 branch",
+);
+assert.match(
+  entries,
+  /fetch\(`\/api\/journal\?\$\{dayQuery\(slug\)\}&stats=1`/,
+  "JournalEntries fetches the stats block on a separate non-blocking request",
+);
+assert.match(
+  entries,
+  /setDay\(\{ \.\.\.\(json as Omit<JournalDay, "stats" \| "context">\), stats: null, context: null \}\)/,
+  "JournalEntries paints the entry immediately with stats pending",
+);
+assert.match(
+  entries,
+  /prev && prev\.date === slug \? \{ \.\.\.prev, \.\.\.block \} : prev/,
+  "Late stats only merge into the same day they were requested for",
+);
+// If the user hits Generate before the stats fetch lands, the context is
+// fetched inline — generation must always carry the memory-scope note.
+assert.match(
+  entries,
+  /const context = day\.context \?\? \(await fetchDayStats\(day\.date\)\)\?\.context \?\? ""/,
+  "Generate falls back to an inline context fetch when stats have not arrived",
+);
 assert.match(entries, /day\.stats\.covenOrigin[\s\S]*?coven files/, "Journal stats include Coven-origin memory files");
 assert.match(entries, /day\.stats\.externalRuntimes[\s\S]*?external runtime files/, "Journal stats include external runtime memory files");
 assert.match(entries, /day\.stats\.runtimeMemory[\s\S]*?runtime files/, "Journal stats include runtime memory files");

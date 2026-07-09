@@ -19,12 +19,19 @@ export const runtime = "nodejs";
  * Personal Journal — one reflective entry per day.
  *
  *   GET    /api/journal                       → { ok, days: JournalSummary[] }
- *   GET    /api/journal?date=YYYY-MM-DD        → { ok, ...JournalRecord, stats, context }
+ *   GET    /api/journal?date=YYYY-MM-DD        → { ok, ...JournalRecord }
+ *   GET    /api/journal?date=YYYY-MM-DD&stats=1 → { ok, date, stats, context }
  *   POST   /api/journal  body { date, reflection, reflectedBy } → { ok, ...JournalRecord }
  *   DELETE /api/journal?date=YYYY-MM-DD        → { ok, date, deleted }
  *
  * `date` is the only user-controlled input and is gated on a strict
  * `YYYY-MM-DD` real-day guard before any fs access.
+ *
+ * Stats ride their own request: they need the full memory-file inventory
+ * (a stat of ~1900 files warm, a multi-second head-read scan cold), which
+ * used to block EVERY day read — including Grimoire's and iOS's, which
+ * never look at the stats block. The entry response is now a single file
+ * read; the journal surface fetches ?stats=1 after the entry paints.
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -34,7 +41,13 @@ export async function GET(req: Request) {
     if (!isValidNoteDate(date)) {
       return NextResponse.json({ ok: false, error: "invalid date" }, { status: 400 });
     }
-    const [rawRecord, memoryEntries] = await Promise.all([readJournalEntry(date), listMemoryFileEntries()]);
+    if (searchParams.has("stats")) {
+      const memoryEntries = await listMemoryFileEntries();
+      const stats = buildJournalMemoryStats(memoryEntries, familiarId);
+      const context = buildJournalMemoryContext(date, familiarId, stats);
+      return NextResponse.json({ ok: true, date, stats, context });
+    }
+    const rawRecord = await readJournalEntry(date);
     const record = familiarId && rawRecord.exists && rawRecord.entry.reflectedBy !== familiarId
       ? {
           date,
@@ -43,9 +56,7 @@ export async function GET(req: Request) {
           modified: null,
         }
       : rawRecord;
-    const stats = buildJournalMemoryStats(memoryEntries, familiarId);
-    const context = buildJournalMemoryContext(date, familiarId, stats);
-    return NextResponse.json({ ok: true, ...record, stats, context });
+    return NextResponse.json({ ok: true, ...record });
   }
   const allDays = await listJournalEntries();
   const days = familiarId ? allDays.filter((day) => day.reflectedBy === familiarId) : allDays;
