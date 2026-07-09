@@ -37,12 +37,25 @@ test("uses idOf to compare (so it works on derived DOM ids, not raw labels)", ()
   assert.equal(tabForScrollTarget(GROUPS, "Corners", slug), null); // raw label no longer matches
 });
 
-// Source guard: Settings now keeps all section options visible by default.
+// Source guard: Appearance routes through SettingsTabbed (Theme · Colors ·
+// Typography · Interface) so common controls are reachable without a long
+// scroll, while search/deep-link still switches to the owning tab.
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 
-test("Settings no longer hides Appearance or Add-ons groups behind tabs", () => {
-  assert.doesNotMatch(shell, /import \{ SettingsTabbed \} from "\.\/settings-section-tabs"/);
-  assert.doesNotMatch(shell, /tabs=\{APPEARANCE_TABS\}/, "Appearance groups are all visible by default");
+test("Appearance groups are tabbed through SettingsTabbed", () => {
+  assert.match(shell, /import \{ SettingsTabbed \} from "\.\/settings-section-tabs"/);
+  assert.match(shell, /tabs=\{APPEARANCE_TABS\}/, "Appearance routes through the shared tabbed wrapper");
+  assert.match(shell, /groupsByTab=\{APPEARANCE_TAB_GROUPS\}/, "tab ownership map is wired for search/deep-link");
+  assert.match(
+    shell,
+    /<AppearanceSection scrollTarget=\{scrollTarget\} \/>/,
+    "the shell forwards its scroll target so search can switch tabs",
+  );
+  assert.match(
+    shell,
+    /typography: \["Typography", "Reading text", "Date & time"\]/,
+    "the Typography tab owns every FontSettings group",
+  );
   assert.doesNotMatch(shell, /ADDONS_TABS|AddonsSection/, "Add-ons section is removed");
 });
 
