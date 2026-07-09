@@ -45,3 +45,16 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
     "modal controls should use radius tokens instead of hard-coded radii",
   );
 });
+
+// cave-lj6j: the modal mounts inside arbitrary hosts (home composer card,
+// projects form). A transformed/backdrop-filtered ancestor becomes the
+// containing block for position:fixed, trapping the z-[200] scrim in that
+// ancestor's stacking context — composer chrome painted OVER the open modal.
+// Portaling to <body> restores true-viewport fixed positioning.
+test("the modal portals to <body> so host stacking contexts can't bury it", () => {
+  const src = read("./directory-picker-modal.tsx");
+  assert.match(src, /import \{ createPortal \} from "react-dom"/, "imports createPortal");
+  assert.match(src, /return createPortal\(\s*<div\s*\n?\s*className="fixed inset-0 z-\[200\]/, "the fixed scrim renders through a portal");
+  assert.match(src, /document\.body,\s*\n\s*\);/, "the portal targets document.body");
+  assert.match(src, /if \(!open\) return null;[\s\S]*createPortal/, "closed modal renders nothing (portal only touches document.body when open)");
+});

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Button } from "@/components/ui/button";
 
@@ -80,7 +81,13 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       ? "~" + cwd.slice(home.length)
       : cwd ?? "…";
 
-  return (
+  // Portal to <body>: this modal mounts inside arbitrary hosts (the home
+  // composer card, the projects form), and a transformed/backdrop-filtered
+  // ancestor there becomes the containing block for position:fixed — trapping
+  // the scrim in that ancestor's stacking context, where sibling composer
+  // chrome paints on top of the "open" modal. Rendering from <body> restores
+  // true-viewport fixed positioning regardless of the host's styling.
+  return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
@@ -176,6 +183,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
