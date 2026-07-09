@@ -142,4 +142,15 @@ assert.match(
 assert.match(view, /scanning=\{scanning\}/, "the graph view knows a scan is in flight");
 assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is only surfaced when there is no scan to show");
 
+// ── Journal autosave conflict guard (cave-9f2e) ──────────────────────────────
+// The Grimoire journal editor sends the mtime it loaded as an optimistic-
+// concurrency baseline so its debounced autosave can't silently clobber a
+// concurrent generation/edit; it refreshes that baseline from each successful
+// save (so it never self-conflicts) and surfaces a 409 instead of overwriting.
+assert.match(view, /const modifiedRef = useRef<string \| null>\(null\)/, "the journal editor tracks the loaded mtime baseline");
+assert.match(view, /modifiedRef\.current = json\.modified \?\? null;/, "the baseline is captured on load");
+assert.match(view, /expectedModified: modifiedRef\.current,/, "the autosave sends the mtime baseline");
+assert.match(view, /if \(res\.status === 409\)/, "a journal write conflict is surfaced, not silently overwritten");
+assert.match(view, /modifiedRef\.current = json\.modified \?\? modifiedRef\.current;/, "the baseline advances after a successful save so autosave can't self-conflict");
+
 console.log("grimoire-view.test: ok");

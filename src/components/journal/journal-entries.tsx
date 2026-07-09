@@ -419,13 +419,25 @@ export function JournalEntries({
       setError(result.error ?? "No reflection was returned.");
       return;
     }
-    await fetch("/api/journal", {
+    // A real generation stamps generatedAt (only the generate flow does); the
+    // expectedModified baseline refuses to clobber a concurrent edit that landed
+    // since this day was loaded (the store is one entry per date).
+    const saveRes = await fetch("/api/journal", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ date: day.date, reflection: result.text, reflectedBy: familiarId }),
-    }).catch(() => undefined);
+      body: JSON.stringify({
+        date: day.date,
+        reflection: result.text,
+        reflectedBy: familiarId,
+        generatedAt: new Date().toISOString(),
+        expectedModified: day.modified,
+      }),
+    }).catch(() => null);
     if (!mountedRef.current) return;
     setGenerating(false);
+    if (saveRes && saveRes.status === 409) {
+      setError("This day's entry changed while the reflection was being written — reloaded the latest instead of overwriting it.");
+    }
     await loadDay(day.date);
     await loadDays();
     // The reflection appearing is the only visual confirmation — say it too.
@@ -459,7 +471,10 @@ export function JournalEntries({
       const res = await fetch("/api/journal", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ date: day.date, reflection: draft, reflectedBy: familiarId }),
+        // No generatedAt: a manual edit preserves the entry's existing
+        // generation stamp. expectedModified refuses to overwrite a concurrent
+        // change (409 surfaces via the throw below, keeping the draft intact).
+        body: JSON.stringify({ date: day.date, reflection: draft, reflectedBy: familiarId, expectedModified: day.modified }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not save journal entry.");
