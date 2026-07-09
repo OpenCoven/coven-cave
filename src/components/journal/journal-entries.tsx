@@ -506,7 +506,9 @@ export function JournalEntries({
     const date = day.date;
     cancelEdit();
     setError(null);
-    announce(`Deleting the entry for ${longDateLabel(parseDateSlug(date) ?? new Date())} — undo available.`);
+    // No announce() here: UndoToast is itself a live region (role=status,
+    // ui/undo-toast.tsx) and speaks the scheduled deletion + undo affordance —
+    // announcing too made AT hear every delete twice (cave-6rhk).
     scheduleDelete(date, `entry for ${longDateLabel(parseDateSlug(date) ?? new Date())}`, async () => {
       try {
         const res = await fetch(`/api/journal?date=${encodeURIComponent(date)}`, { method: "DELETE" });

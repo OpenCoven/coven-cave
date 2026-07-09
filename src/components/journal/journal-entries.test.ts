@@ -161,7 +161,14 @@ assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-ne
 assert.match(entries, /const \{ announce \} = useAnnouncer\(\)/, "the surface uses the shared announcer");
 assert.match(entries, /announce\("Reflection generated\."\)/, "generate success is announced");
 assert.match(entries, /announce\("Journal entry saved\."\)/, "save success is announced");
-assert.match(entries, /announce\(`Deleting the entry for [\s\S]{0,80}undo available\.`\)/, "delete scheduling is announced");
+// Delete deliberately does NOT announce(): UndoToast is itself role=status
+// (ui/undo-toast.tsx) and speaks the scheduled deletion — a second announce
+// made AT hear every delete twice (cave-6rhk).
+assert.doesNotMatch(
+  entries,
+  /announce\(`Deleting the entry/,
+  "delete must not announce — UndoToast's live region already speaks it (double-announce, cave-6rhk)",
+);
 assert.match(entries, /aria-busy=\{generating\}/, "the generate button reports busy state");
 assert.match(entries, /unavailable — select today to generate/, "the disabled reason reaches the accessible name (not just title=)");
 assert.match(entries, /<h3 className="journal-entry__sec-heading">What happened/, "the day section is a real heading");
