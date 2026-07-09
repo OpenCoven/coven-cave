@@ -37,6 +37,7 @@ import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
+import type { InboxItem } from "@/lib/cave-inbox";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
@@ -49,6 +50,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
+import { HomeNeedsYou } from "@/components/home/home-needs-you";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
@@ -107,6 +109,13 @@ type Props = {
   onSlash?: (command: string, args: string) => void;
   /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
+  /** "Needs you" attention tier (fired + response-needed) — the SAME
+   *  groupInboxFeed slice the Schedules nav badge counts (cave-925w). */
+  needsYou: InboxItem[];
+  /** Open one needs-you item's target — same handler the bell popover uses. */
+  onOpenInboxItem: (item: InboxItem) => void;
+  /** Jump to the Schedules surface for the full feed. */
+  onOpenSchedules: () => void;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
@@ -130,6 +139,9 @@ export function HomeComposer({
   onToast,
   onSlash,
   onOpenSession,
+  needsYou,
+  onOpenInboxItem,
+  onOpenSchedules,
 }: Props) {
   const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
   const [destination, setDestination] = useState<Destination>("chat");
@@ -1010,6 +1022,14 @@ export function HomeComposer({
         </div>
         </div>
       </div>
+
+      {/* Morning triage — the "needs you" tier + today's report link, fed by
+          the same grouping the Schedules nav badge counts (cave-925w). */}
+      <HomeNeedsYou
+        items={needsYou}
+        onOpenItem={onOpenInboxItem}
+        onOpenSchedules={onOpenSchedules}
+      />
 
       <HomeSuggestions
         projectName={selectedProject?.name ?? null}

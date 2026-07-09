@@ -1945,12 +1945,14 @@ export function Workspace() {
     return [...inboxItems, ...ephemeral];
   }, [inboxItems, responseNeeded, familiars, sessions]);
 
-  // Schedules nav badge: how many inbox items currently need you (fired or
-  // response-needed) - mirrors the Schedules > Inbox tab "needs you" group.
-  const scheduleNeedsCount = useMemo(
-    () => groupInboxFeed(inboxItemsWithEphemeral).needsYou.length,
+  // The "needs you" attention tier (fired or response-needed). ONE memo feeds
+  // both the Schedules nav badge and Home's "Needs you" strip so the two can
+  // never disagree (cave-925w).
+  const inboxNeedsYou = useMemo(
+    () => groupInboxFeed(inboxItemsWithEphemeral).needsYou,
     [inboxItemsWithEphemeral],
   );
+  const scheduleNeedsCount = inboxNeedsYou.length;
 
   // Mood C three-pane Shell:
   //   nav   = always present (mode switcher + command launchers)
@@ -2258,6 +2260,9 @@ export function Workspace() {
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
+        needsYou={inboxNeedsYou}
+        onOpenInboxItem={openInspectorInboxItem}
+        onOpenSchedules={() => setMode("inbox")}
       />
     );
 

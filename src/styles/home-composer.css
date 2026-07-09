@@ -897,6 +897,99 @@
   color: var(--text-muted);
 }
 
+/* ── Needs you — morning-triage strip under the composer (cave-925w). The
+   same "needs you" tier the Schedules nav badge counts; a quiet single line
+   when all clear so today's report stays one click away either way. Tint
+   recipe per the design language: solid warning text, 6→12% fill, 30% border. */
+.home-needs-you {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 860px;
+}
+
+.home-needs-you__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+}
+
+.home-needs-you__count {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.home-needs-you__count.is-live {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.home-needs-you__report {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: color 120ms ease;
+}
+
+.home-needs-you__report:hover {
+  color: var(--text-primary);
+}
+
+.home-needs-you__list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.home-needs-you__item,
+.home-needs-you__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 12px;
+  border: 1px solid color-mix(in oklch, var(--color-warning) 30%, var(--border-hairline));
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-warning) 6%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.home-needs-you__item svg {
+  color: var(--color-warning);
+  flex-shrink: 0;
+}
+
+.home-needs-you__item:hover,
+.home-needs-you__more:hover {
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.home-needs-you__item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.home-needs-you__item-time {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 /* ── Suggested prompts ───────────────────────────────────────────────────── */
 .home-suggestions {
   display: flex;
@@ -1121,6 +1214,7 @@
  *   entirely under prefers-reduced-motion. */
 @media (prefers-reduced-motion: no-preference) {
   .home-composer-hero,
+  .home-needs-you,
   .home-suggestions,
   .home-columns {
     animation: home-rise 460ms var(--ease-decelerate) backwards;
@@ -1128,6 +1222,7 @@
   .home-composer-card-wrap {
     animation: home-rise 460ms var(--ease-decelerate) 60ms backwards;
   }
+  .home-needs-you { animation-delay: 100ms; }
   .home-suggestions { animation-delay: 140ms; }
   .home-columns { animation-delay: 220ms; }
 }
