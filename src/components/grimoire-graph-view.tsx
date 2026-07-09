@@ -64,7 +64,12 @@ type GraphPrefs = {
 const DEFAULT_PREFS: GraphPrefs = {
   groups: { knowledge: true, memory: true, journal: true, tag: true },
   edgeTypes: { link: true, mention: true, tag: true },
-  orphans: true,
+  // Orphans (unconnected docs) are hidden by default: a real corpus is mostly
+  // unlinked (e.g. ~400 nodes / ~30 edges), so showing them renders a
+  // structureless dot cloud that buries the actual relationships. The graph is
+  // for *connections* — the "Orphans" toggle lets you bring the loose nodes
+  // back when you want them.
+  orphans: false,
   repel: 1,
   linkDistance: DEFAULT_FORCE_PARAMS.linkDistance,
   panelOpen: true,

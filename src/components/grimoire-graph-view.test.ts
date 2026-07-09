@@ -38,6 +38,10 @@ assert.match(view, /aria-label="Graph filters"/, "the filter card is a labelled 
 assert.match(view, /groups: \{ knowledge: true, memory: true, journal: true, tag: true \}/, "every group defaults on");
 assert.match(view, /edgeTypes: \{ link: true, mention: true, tag: true \}/, "every edge generator defaults on");
 assert.match(view, /prefs\.orphans \? nodesByKind : nodesByKind\.filter/, "orphans are a toggle, not a silent drop");
+// cave-jf2v: orphans default OFF — a mostly-unlinked corpus (e.g. ~400 nodes /
+// ~30 edges) otherwise renders a structureless dot cloud that buries the
+// relationships the graph exists to show.
+assert.match(view, /orphans: false,/, "orphans are hidden by default (connections-first, not a dot cloud)");
 assert.match(view, /aria-label="Repel force"/, "the repel force is a labelled live slider");
 assert.match(view, /aria-label="Link distance"/, "the link distance is a labelled live slider");
 assert.match(view, /aria-label="Highlight graph nodes"/, "graph search is labelled");
