@@ -8,8 +8,8 @@ const projectSidebar = await readFile(new URL("./chat-project-sidebar.tsx", impo
 
 assert.match(
   chatSurface,
-  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="230px"[\s\S]*minSize="200px"[\s\S]*maxSize="480px"/,
-  "ChatSurface right sidebar should default to 230px but be drag-resizable within a 200–480px band",
+  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="260px"[\s\S]*minSize="220px"[\s\S]*maxSize="480px"/,
+  "ChatSurface right sidebar should default to 260px (Inspector section tabs fit untruncated) but be drag-resizable within a 220–480px band",
 );
 
 // Drag-to-resize: an outer separator with a col handle sits before the right
@@ -38,7 +38,25 @@ assert.match(
 assert.match(
   projectSidebar,
   /chat-thread-rail[\s\S]*w-\[230px\]/,
-  "The internal left rail is 230px — the width the right sidebar mirrors",
+  "The internal left rail stays 230px (the right sidebar runs slightly wider at 260px so Inspector tabs fit)",
+);
+
+// The aside mirrors the left sidebar's glass chrome: translucent bg + blur,
+// with reduced-transparency and no-backdrop-filter fallbacks.
+assert.match(
+  globals,
+  /\.chat-right-aside\s*\{[\s\S]*?border-left:\s*1px solid var\(--border-hairline\)[\s\S]*?color-mix\(in oklch, var\(--bg-raised\) 88%, transparent\)[\s\S]*?backdrop-filter: blur/,
+  "The chat right aside should carry the left sidebar's glass chrome (hairline + translucent blur)",
+);
+assert.match(
+  globals,
+  /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)\s*\{\s*\.chat-right-aside \{ background: var\(--bg-raised\); \}/,
+  "The glass aside must fall back to a solid raised background without backdrop-filter support",
+);
+assert.match(
+  globals,
+  /@media \(prefers-reduced-transparency: reduce\)\s*\{\s*\.chat-right-aside \{[\s\S]*?background: var\(--bg-raised\);[\s\S]*?backdrop-filter: none;/,
+  "The glass aside must respect prefers-reduced-transparency",
 );
 
 assert.match(

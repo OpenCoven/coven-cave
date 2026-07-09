@@ -124,8 +124,9 @@ function RightPanel({
   return (
     // CHAT-D13-05: this panel renders inside the shell's <main>, where a
     // complementary landmark is invalid (axe landmark-complementary-is-top-level)
-    // — expose it as a named region instead.
-    <aside role="region" aria-label="Session panels" className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--border-hairline)]">
+    // — expose it as a named region instead. .chat-right-aside mirrors the left
+    // sidebar's glass (fit + translucency owned in globals.css).
+    <aside role="region" aria-label="Session panels" className="chat-right-aside relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <Group className="right-panel-split" orientation="vertical">
         <Panel id="right-panel-primary" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
           <div className="right-panel-tabs">
@@ -725,17 +726,18 @@ export function ChatSurface({
             </Panel>
             {showRightSidebar && (
               <>
-                {/* Defaults to 230px (mirrors the internal left rail, chat-thread-rail
-                    is w-[230px]) but is drag-resizable via the handle below, clamped
-                    to a sane band so the chat thread keeps its 45% minSize. */}
+                {/* Defaults to 260px — wide enough that the Inspector's three
+                    section tabs (Familiar/Analytics/Automations) fit without
+                    shredding, still drag-resizable via the handle below and
+                    clamped so the chat thread keeps its 45% minSize. */}
                 <Separator className="shell-separator hidden lg:flex">
                   <SeparatorHandle orientation="col" />
                 </Separator>
                 <Panel
                   id="right-sidebar"
                   className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="230px"
-                  minSize="200px"
+                  defaultSize="260px"
+                  minSize="220px"
                   maxSize="480px"
                 >
                   <RightPanel

@@ -156,14 +156,20 @@ export function InspectorPane({
 
   const shellClassName = compact
     ? "flex h-full min-h-0 flex-col bg-[var(--bg-base)]"
-    : "flex h-full min-h-0 flex-col border-l border-[var(--border-hairline)] bg-[var(--bg-raised)]/40";
+    : // Non-compact renders inside the chat right sidebar (.chat-right-aside),
+      // which owns the panel chrome — border + glass — so the pane itself stays
+      // transparent instead of double-tinting/double-bordering the glass.
+      "flex h-full min-h-0 flex-col";
 
   return (
     <aside className={shellClassName}>
       {!compact && (
         <Tabs
           variant="underline"
-          fill
+          // Natural-width tabs (no fill): the three section labels hug their
+          // content like the left rail's tabs instead of splitting the track
+          // into equal thirds and shredding "Automations" at narrow widths.
+          size="sm"
           idPrefix="inspector"
           ariaLabel="Inspector sections"
           value={tab}

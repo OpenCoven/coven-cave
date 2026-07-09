@@ -3829,7 +3829,8 @@ textarea.required-inputs-control {
   background: var(--bg-hover);
 }
 
-/* Open tab bar (sits at top of the open aside) */
+/* Open tab bar (sits at top of the open aside) — translucent so the aside's
+   glass shows through, mirroring the left sidebar's chrome. */
 .right-panel-tabs {
   display: flex;
   align-items: center;
@@ -3838,7 +3839,7 @@ textarea.required-inputs-control {
   flex-shrink: 0;
   min-width: 0;
   border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
+  background: transparent;
   padding: 0 4px;
 }
 
@@ -3890,6 +3891,28 @@ textarea.required-inputs-control {
   width: 100%;
 }
 
+/* Chat right sidebar (Inspector / Debug / Changes) — the mirrored twin of the
+   left .shell-nav: the same translucent glass and blur, with the hairline
+   flipped to its left edge, sitting flush against the window's right edge so
+   the backdrop never opens a dark gap at the far right. Inner panes stay
+   transparent; the aside owns the panel chrome. */
+.chat-right-aside {
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .chat-right-aside { background: var(--bg-raised); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .chat-right-aside {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .right-panel-pane {
   display: flex;
   flex-direction: column;
@@ -3908,7 +3931,8 @@ textarea.required-inputs-control {
   flex-shrink: 0;
   min-width: 0;
   border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
+  /* Translucent over the aside's glass, like .right-panel-tabs. */
+  background: transparent;
   padding: 0 10px;
 }
 
