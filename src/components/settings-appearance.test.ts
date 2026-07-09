@@ -427,3 +427,22 @@ assert.match(
   /case "--bg-base":[\s\S]{0,400}"--background": value/,
   "editing the background must mirror the legacy --background alias legacy-vocab surfaces read",
 );
+
+// The picker fires per pointer-move; the token apply must be rAF-coalesced and
+// the daemon sync (onChange → persistThemeTokens PUT) must wait for commit —
+// one network write per finished edit, not one per move.
+assert.match(
+  settings,
+  /frameRef\.current = requestAnimationFrame\(\(\) => \{[\s\S]{0,300}applyTokenOverride\(pending\.key, pending\.value/,
+  "live token applies are coalesced to one write per animation frame",
+);
+assert.match(
+  settings,
+  /const handleCommit = [\s\S]{0,300}flushPendingApply\(\);[\s\S]{0,300}onChange\(\);/,
+  "the daemon sync fires on commit (popover close), not per pointer-move",
+);
+assert.doesNotMatch(
+  settings,
+  /const handlePick = [\s\S]{0,600}onChange\(\);\n {2}\};/,
+  "handlePick must not trigger the per-move daemon sync",
+);

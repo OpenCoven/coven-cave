@@ -1468,11 +1468,46 @@ function ThemeTokenOverrides({
     setRecents(getRecentColors());
   }, []);
 
+  // The picker fires onChange per pointer-move, and each apply rewrites ~20
+  // root CSS vars + localStorage — coalesce to one apply per animation frame
+  // (mirrors the removed editor's rAF throttle). The daemon sync (onChange →
+  // reloadCustomData → persistThemeTokens PUT) waits for commit: one network
+  // write per finished edit instead of one per move.
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const frameRef = useRef<number | null>(null);
+  const pendingRef = useRef<{ key: string; value: string } | null>(null);
+  const flushPendingApply = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+  }, []);
+  // Flush on unmount so a drag-in-progress still persists.
+  useEffect(() => flushPendingApply, [flushPendingApply]);
+
   const handlePick = (key: (typeof THEME_SYNC_KEYS)[number], hex: string) => {
     // Preserve the token's original alpha byte (hairline borders are washes).
     const next = withAlphaFrom(valuesRef.current[key], hex);
-    applyTokenOverride(key, next, mode);
     setValues((v) => ({ ...v, [key]: next }));
+    pendingRef.current = { key, value: next };
+    if (frameRef.current === null) {
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
+        const pending = pendingRef.current;
+        pendingRef.current = null;
+        if (pending) applyTokenOverride(pending.key, pending.value, modeRef.current);
+      });
+    }
+  };
+
+  const handleCommit = (key: (typeof THEME_SYNC_KEYS)[number]) => {
+    flushPendingApply();
+    const committed = (valuesRef.current[key] ?? "").slice(0, 7);
+    if (committed) setRecents(addRecentColor(committed));
     onChange();
   };
 
@@ -1492,10 +1527,7 @@ function ThemeTokenOverrides({
             themeSwatches={themeSwatches}
             recents={recents}
             onChange={(hex) => handlePick(key, hex)}
-            onCommit={() => {
-              const committed = (valuesRef.current[key] ?? "").slice(0, 7);
-              if (committed) setRecents(addRecentColor(committed));
-            }}
+            onCommit={() => handleCommit(key)}
           />
         ))}
       </div>
