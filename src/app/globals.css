@@ -7854,6 +7854,29 @@ a.mobile-handoff__link:hover {
   .cal-agenda-row.is-overdue .cal-agenda-dot { animation: none; }
 }
 
+/* Cron (Codex automation) schedule cue — a quiet clock pill so the cadence reads
+   as a scheduled thing, matching the agenda's timeline language. */
+.cron-schedule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cron-schedule-chip__icon {
+  color: var(--text-muted);
+}
+.automation-list-row:hover .cron-schedule-chip,
+.automation-list-row[aria-current="true"] .cron-schedule-chip {
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+}
+
 /* Chat mobile command center refinements. These classes are intentionally
    plain CSS hooks around Tailwind-heavy components so phone-specific layout
    can be adjusted without threading conditional class strings through every
