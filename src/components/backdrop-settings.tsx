@@ -57,7 +57,18 @@ export function BackdropSettings() {
           : "Backdrop set. The image has no dominant color, so the theme accent stays.",
       );
     } catch (err) {
-      announce(err instanceof Error ? err.message : "Could not read that image.", "assertive");
+      // createImageBitmap rejects when the engine can't decode the format —
+      // most commonly HEIC photos outside the desktop app. Name the fix
+      // instead of surfacing the engine's opaque decode error.
+      const heicLike = /\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
+      announce(
+        heicLike
+          ? "Couldn't decode that HEIC photo here. It works in the desktop app — elsewhere, convert it to JPEG first."
+          : err instanceof Error && err.message
+            ? err.message
+            : "Could not read that image.",
+        "assertive",
+      );
     } finally {
       setBusy(false);
     }
@@ -93,7 +104,7 @@ export function BackdropSettings() {
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/avif"
+          accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif"
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0] ?? null;
