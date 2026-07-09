@@ -170,4 +170,22 @@ assert.match(entries, /aria-live="polite" aria-atomic="true"/, "the notice toast
 assert.match(css, /\.journal-day:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "day-rail rows have a visible focus ring");
 assert.match(css, /\.journal-entry__action:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "entry actions have a distinct focus ring");
 
+// ── Journal write conflict + generatedAt (cave-9f2e) ─────────────────────────
+// generate is the only real generation → it stamps generatedAt and sends the
+// day's mtime baseline so it can't clobber a concurrent edit; a conflict is
+// surfaced rather than silently overwriting.
+assert.match(
+  entries,
+  /generate = useCallback[\s\S]*?generatedAt: new Date\(\)\.toISOString\(\)[\s\S]*?expectedModified: day\.modified/,
+  "generate stamps generatedAt and sends the mtime baseline",
+);
+assert.match(entries, /saveRes && saveRes\.status === 409/, "generate surfaces a write conflict instead of overwriting");
+// saveEdit is a manual edit → no generatedAt (server preserves it), but it still
+// sends the baseline so it can't overwrite a concurrent change.
+assert.match(
+  entries,
+  /reflectedBy: familiarId, expectedModified: day\.modified \}\)/,
+  "saveEdit sends the mtime baseline and no generatedAt (preserved server-side)",
+);
+
 console.log("journal-entries.test.ts: ok");

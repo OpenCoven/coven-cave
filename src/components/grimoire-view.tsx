@@ -331,21 +331,30 @@ function KnowledgeMdEditor({
 function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void }) {
   const [state, setState] = useState<{ reflection: string; reflectedBy: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The `modified` (mtime) this editor last loaded/saved, sent as the
+  // optimistic-concurrency baseline so an autosave can't silently clobber a
+  // concurrent generation/edit of the same date. Refreshed from every
+  // successful save's response so our own saves never self-conflict.
+  const modifiedRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState(null);
     setError(null);
+    modifiedRef.current = null;
     void (async () => {
       try {
         const res = await fetch(`/api/journal?date=${encodeURIComponent(date)}`, { cache: "no-store" });
         const json = await res.json();
         if (cancelled) return;
         if (!json.ok) setError(json.error ?? "Failed to load journal entry");
-        else setState({
-          reflection: json.entry?.reflection ?? "",
-          reflectedBy: json.entry?.reflectedBy ?? null,
-        });
+        else {
+          modifiedRef.current = json.modified ?? null;
+          setState({
+            reflection: json.entry?.reflection ?? "",
+            reflectedBy: json.entry?.reflectedBy ?? null,
+          });
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load journal entry");
       }
@@ -360,10 +369,21 @@ function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void
         const res = await fetch("/api/journal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, reflection: raw, reflectedBy: state?.reflectedBy ?? null }),
+          body: JSON.stringify({
+            date,
+            reflection: raw,
+            reflectedBy: state?.reflectedBy ?? null,
+            expectedModified: modifiedRef.current,
+          }),
         });
         const json = await res.json();
+        if (res.status === 409) {
+          return { ok: false, error: json.error ?? "This entry changed elsewhere — reload before saving." };
+        }
         if (!json.ok) return { ok: false, error: json.error ?? "Save failed" };
+        // Advance the baseline so the next autosave compares against what we
+        // just wrote, not the now-stale load-time mtime.
+        modifiedRef.current = json.modified ?? modifiedRef.current;
         onSaved?.();
         return { ok: true };
       } catch (err) {

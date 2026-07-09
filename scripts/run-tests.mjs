@@ -267,6 +267,7 @@ export const SUITES = {
     "src/lib/slash-prompt.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-entries.test.ts",
+    "src/app/api/journal/route.test.ts",
     "src/lib/journal.test.ts",
     "src/lib/journal-memory-stats.test.ts",
     "src/lib/journal-generate.test.ts",

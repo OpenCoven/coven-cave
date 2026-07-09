@@ -64,7 +64,13 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  let body: { date?: unknown; reflection?: unknown; reflectedBy?: unknown };
+  let body: {
+    date?: unknown;
+    reflection?: unknown;
+    reflectedBy?: unknown;
+    generatedAt?: unknown;
+    expectedModified?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
@@ -76,11 +82,43 @@ export async function POST(req: Request) {
   }
   const reflection = typeof body.reflection === "string" ? body.reflection : "";
   const reflectedBy = typeof body.reflectedBy === "string" && body.reflectedBy ? body.reflectedBy : null;
-  const record = await writeJournalEntry(date, {
-    reflectedBy,
-    generatedAt: new Date().toISOString(),
-    reflection,
-  });
+  const expectedModified = typeof body.expectedModified === "string" ? body.expectedModified : null;
+
+  // Read the current entry once — it drives both the conflict guard and the
+  // generatedAt-preservation below.
+  const current = await readJournalEntry(date);
+
+  // Optimistic-concurrency guard (opt-in via expectedModified, mirroring the
+  // memory-file 409). The store is one file per date and two surfaces write it
+  // — Grimoire's debounced autosave and the generate/edit flow — so an
+  // unconditional write silently drops whichever landed first (a generation can
+  // vanish under an autosave mid-flight, and vice versa). If the entry changed
+  // on disk since the caller loaded it, refuse and hand back the current record
+  // so the UI can reload instead of clobbering.
+  if (expectedModified !== null && current.exists && current.modified !== expectedModified) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "This entry changed since you loaded it — reload before saving.",
+        conflict: true,
+        ...current,
+      },
+      { status: 409 },
+    );
+  }
+
+  // `generatedAt` marks an actual generation, so only the generate flow sends
+  // one. A manual save must preserve the existing stamp (or leave it null for a
+  // brand-new entry) rather than restamp `now` — otherwise every hand-edit reads
+  // as a fresh generation in the entry meta ("· 2m ago").
+  const generatedAt =
+    typeof body.generatedAt === "string"
+      ? body.generatedAt
+      : current.exists
+        ? current.entry.generatedAt
+        : null;
+
+  const record = await writeJournalEntry(date, { reflectedBy, generatedAt, reflection });
   return NextResponse.json({ ok: true, ...record });
 }
 
