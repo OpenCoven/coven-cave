@@ -215,4 +215,13 @@ assert.match(detail, /\} in this project`\}/, "the session count chip is titled"
 // Grants explain themselves where the chips are.
 assert.match(sections, /dashed means no access yet/, "the grants section says what a chip click does");
 
+// ── Hub round 2 (cave-dn9w): deep-links · reveal · demoted color row ─────────
+assert.match(sections, /window\.location\.hash = `card-\$\{card\.id\}`/, "task rows deep-link to their board card");
+assert.match(sections, /onOpenBoard\?\.\(\);\s*\n\s*window\.location\.hash/, "…after switching to the board surface");
+assert.match(shared, /export async function revealProjectFolder/, "the reveal helper lives in projects-shared");
+assert.match(shared, /invoke\("shell_open_path", \{ path: root \}\)/, "…and uses the app's absolute-path-validated command");
+assert.match(detail, /hasDesktopBridge\(\) \?[\s\S]{0,400}Reveal in Finder/, "the detail overflow reveals the folder, desktop only");
+assert.match(list, /hasDesktopBridge\(\) \?[\s\S]{0,500}Reveal in Finder/, "the list row context menu reveals too, desktop only");
+// The color swatches moved INTO the overflow — no always-visible header row.
+assert.match(detail, /PopoverSeparator \/>[\s\S]{0,1400}aria-label=\{`Tile color for \$\{project\.name\}`\}/, "the tile-color swatches live inside the overflow menu");
 console.log("projects-hub.test.ts: ok");

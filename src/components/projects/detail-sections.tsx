@@ -200,17 +200,27 @@ export function TasksSection({
         <>
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {open.slice(0, TASK_CAP).map((card) => (
-              <li key={card.id} className="flex items-center gap-2 px-1 py-1 text-[12px] text-[var(--text-secondary)]">
-                <span
-                  aria-hidden
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${CARD_STATUS_DOT[card.status] ?? "bg-[var(--text-muted)]"}`}
-                />
-                <span className="min-w-0 flex-1 truncate" title={card.title}>
-                  {card.title}
-                </span>
-                <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-                  {card.status}
-                </span>
+              <li key={card.id} className="m-0 list-none p-0">
+                {/* Deep-link: the board honors #card-<id> (same hash the
+                    notification bell and cockpit drill-throughs use). */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenBoard?.();
+                    window.location.hash = `card-${card.id}`;
+                  }}
+                  title={`Open "${card.title}" on the board`}
+                  className="focus-ring-inset flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                >
+                  <span
+                    aria-hidden
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${CARD_STATUS_DOT[card.status] ?? "bg-[var(--text-muted)]"}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{card.title}</span>
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                    {card.status}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>

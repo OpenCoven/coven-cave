@@ -32,6 +32,8 @@ import {
   CHAT_CAP,
   PROJECT_COLOR_SWATCHES,
   chatDotClass,
+  hasDesktopBridge,
+  revealProjectFolder,
   shortRoot,
   type MoveTarget,
 } from "./projects-shared";
@@ -399,6 +401,18 @@ export function ProjectDetail({
             <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => void copyRoot()}>
               Copy path
             </PopoverItem>
+            {hasDesktopBridge() ? (
+              <PopoverItem
+                icon="ph:folder-open-bold"
+                onSelect={() => {
+                  void revealProjectFolder(project.root).then((ok) =>
+                    announce(ok ? `Opened ${project.name} in the file manager.` : "Couldn't open the folder.", ok ? "polite" : "assertive"),
+                  );
+                }}
+              >
+                Reveal in Finder
+              </PopoverItem>
+            ) : null}
             <PopoverItem
               icon="ph:file-code"
               onSelect={() => {
@@ -413,6 +427,51 @@ export function ProjectDetail({
             >
               Browse files
             </PopoverItem>
+            <PopoverSeparator />
+            {/* Tile color moved out of the always-visible header (cave-dn9w):
+                a rarely-used preference doesn't earn a whole header line. Same
+                swatches + handlers, now a menu row. */}
+            <div className="px-2 py-1.5">
+      {/* Color: auto (root-hash tint) or a preset swatch. */}
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                Color
+              </span>
+              <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => void setColor(null)}
+                  disabled={busy === "color"}
+                  aria-pressed={!project.color}
+                  title="Auto — tinted from the project path"
+                  aria-label="Auto color"
+                  className={`h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] p-0 ${
+                    !project.color ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]" : ""
+                  }`}
+                  style={{ background: `color-mix(in oklch, ${projectTint(project.root)} 45%, transparent)` }}
+                />
+                {PROJECT_COLOR_SWATCHES.map((swatch) => (
+                  <Button
+                    key={swatch.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => void setColor(swatch.value)}
+                    disabled={busy === "color"}
+                    aria-pressed={project.color === swatch.value}
+                    title={swatch.name}
+                    aria-label={`${swatch.name} color`}
+                    className={`h-4 w-4 shrink-0 rounded-full p-0 ${
+                      project.color === swatch.value
+                        ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]"
+                        : ""
+                    }`}
+                    style={{ background: swatch.value }}
+                  />
+                ))}
+              </div>
+            </div>
+            </div>
             <PopoverSeparator />
             <PopoverItem icon="ph:trash-bold" danger onSelect={() => setConfirmDelete(true)}>
               Delete project…
@@ -539,45 +598,6 @@ export function ProjectDetail({
         </div>
       ) : null}
 
-      {/* Color: auto (root-hash tint) or a preset swatch. */}
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-          Color
-        </span>
-        <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => void setColor(null)}
-            disabled={busy === "color"}
-            aria-pressed={!project.color}
-            title="Auto — tinted from the project path"
-            aria-label="Auto color"
-            className={`h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] p-0 ${
-              !project.color ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]" : ""
-            }`}
-            style={{ background: `color-mix(in oklch, ${projectTint(project.root)} 45%, transparent)` }}
-          />
-          {PROJECT_COLOR_SWATCHES.map((swatch) => (
-            <Button
-              key={swatch.value}
-              variant="ghost"
-              size="xs"
-              onClick={() => void setColor(swatch.value)}
-              disabled={busy === "color"}
-              aria-pressed={project.color === swatch.value}
-              title={swatch.name}
-              aria-label={`${swatch.name} color`}
-              className={`h-4 w-4 shrink-0 rounded-full p-0 ${
-                project.color === swatch.value
-                  ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]"
-                  : ""
-              }`}
-              style={{ background: swatch.value }}
-            />
-          ))}
-        </div>
-      </div>
 
       {/* ── Sessions ─────────────────────────────────────────────────────────── */}
       <section className="projects-detail-section" aria-label={`Sessions in ${project.name}`}>
