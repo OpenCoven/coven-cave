@@ -65,7 +65,7 @@ type PreviewState = {
   text: string | null;
   error: string | null;
 };
-type BusyState = "reveal" | "delete" | "install" | "use" | "prompt" | null;
+type BusyState = "reveal" | "delete" | "use" | "prompt" | null;
 
 // The scan tags user skills by agent/root while installed entries get a
 // first-class Installed tab.
@@ -295,19 +295,16 @@ function skillDecisionItems(skill: SkillBrowserEntry) {
       icon: installed ? "ph:check-circle" as const : "ph:arrow-down" as const,
       label: "Install state",
       value: installed ? "Installed" : "Available",
-      detail: installed ? "Ready from your local skill roots." : "Install or use it from the directory.",
     },
     {
       icon: skill.trust?.official ? "ph:seal-check" as const : "ph:shield-warning" as const,
       label: "Trust signal",
       value: trustValue,
-      detail: skill.trust?.source ? `Sourced from ${skill.trust.source}.` : "Review source before installing.",
     },
     {
       icon: local ? "ph:folder-open" as const : "ph:cloud-bold" as const,
       label: "Source",
       value: local ? "Local skill" : "Directory",
-      detail: sourceTarget(skill),
     },
   ];
 }
@@ -504,31 +501,6 @@ export function SkillBrowser({
       setNotice("Install command copied");
     } catch {
       setNotice("Could not copy install command");
-    }
-  }
-
-  async function handleInstall() {
-    if (!selected || selected.local?.installed || selected.installed || busy) return;
-    setBusy("install");
-    setNotice(null);
-    try {
-      const res = await fetch("/api/skills/directory/install", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ id: selected.id, source: sourceTarget(selected), agents: ["claude-code", "codex"] }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; alreadyInstalled?: boolean };
-      if (!res.ok || !json.ok) {
-        setNotice(json.error ? `Install failed: ${json.error}` : "Install failed. Try again.");
-        return;
-      }
-      setNotice(json.alreadyInstalled ? "Skill already installed" : "Skill installed");
-      onChanged?.();
-    } catch (err) {
-      setNotice(err instanceof Error ? `Install failed: ${err.message}` : "Install failed");
-    } finally {
-      setBusy(null);
     }
   }
 
@@ -849,7 +821,7 @@ export function SkillBrowser({
                   <div className="skill-browser__actions">
                     <IconButton
                       icon="ph:folder-open"
-                      size="sm"
+                      size="xs"
                       className="skill-browser__action"
                       onClick={handleReveal}
                       disabled={busy != null}
@@ -875,34 +847,29 @@ export function SkillBrowser({
                 {selectedDecisionItems.map((item) => (
                   <div key={item.label} className="skill-browser__decision-card">
                     <span className="skill-browser__decision-label">
-                      <Icon name={item.icon} width={12} aria-hidden />
+                      <Icon name={item.icon} width={11} aria-hidden />
                       {item.label}
                     </span>
                     <strong>{item.value}</strong>
-                    <p>{item.detail}</p>
                   </div>
                 ))}
               </div>
               <div className="skill-browser__install">
-                <code title={installCommand(selected)}>{installCommand(selected)}</code>
-                <IconButton
-                  icon={copiedInstall ? "ph:check" : "ph:copy"}
-                  size="sm"
-                  className="skill-browser__action"
+                {/* The CLI line is itself the copy affordance: click sweeps a
+                    green fill across and flips to "Copied" (auto-resets). */}
+                <button
+                  type="button"
+                  className={`skill-browser__cli${copiedInstall ? " is-copied" : ""}`}
                   onClick={handleCopyInstall}
-                  title={copiedInstall ? "Copied" : "Copy install command"}
-                  aria-label="Copy install command"
-                />
-                <Button
-                  variant="primary"
-                  size="xs"
-                  leadingIcon={selected.installed || selected.local?.installed ? "ph:check-circle" : "ph:arrow-down"}
-                  className="skill-browser__install-button"
-                  onClick={handleInstall}
-                  disabled={busy != null || selected.installed || selected.local?.installed}
+                  title={copiedInstall ? "Copied!" : "Click to copy the install command"}
+                  aria-label={copiedInstall ? "Install command copied" : `Copy install command: ${installCommand(selected)}`}
                 >
-                  <span>{busy === "install" ? "Installing" : selected.installed || selected.local?.installed ? "Installed" : "Install"}</span>
-                </Button>
+                  <code>{installCommand(selected)}</code>
+                  <span className="skill-browser__cli-fill" aria-hidden />
+                  <span className="skill-browser__cli-copied" aria-hidden>
+                    <Icon name="ph:check-bold" width={12} aria-hidden /> Copied
+                  </span>
+                </button>
                 <Button
                   variant="secondary"
                   size="xs"

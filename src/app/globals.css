@@ -12773,26 +12773,24 @@ details[open] > .cave-edit-card__summary::before {
   gap: 8px;
   margin-top: 12px;
 }
+/* Minimalist stat: just the labelled value, no description paragraph. */
 .skill-browser__decision-card {
-  min-height: 92px;
   min-width: 0;
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
   border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
-  padding: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 60%, transparent);
+  padding: 8px 10px;
 }
 .skill-browser__decision-card strong {
   display: block;
-  margin-top: 7px;
-  color: var(--text-primary);
-  font-size: 12px;
-  line-height: 1.25;
-}
-.skill-browser__decision-card p {
   margin-top: 5px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.35;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .skill-browser__decision-label {
   display: inline-flex;
@@ -12814,20 +12812,73 @@ details[open] > .cave-edit-card__summary::before {
   margin-top: 10px;
   min-width: 0;
 }
-.skill-browser__install code {
+/* The install command is a clickable copy affordance: click sweeps a green fill
+   across the line and flips it to "Copied" (auto-resets after ~1.5s). */
+.skill-browser__cli {
+  position: relative;
   flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-base);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s ease;
+}
+.skill-browser__cli:hover { border-color: var(--border-strong, var(--text-muted)); }
+.skill-browser__cli.is-copied { border-color: color-mix(in oklch, var(--color-success) 55%, transparent); }
+.skill-browser__cli code {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  background: var(--bg-base);
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
-  padding: 6px 8px;
 }
+/* Green fill that sweeps left→right on copy. */
+.skill-browser__cli-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: color-mix(in oklch, var(--color-success) 20%, transparent);
+  pointer-events: none;
+}
+.skill-browser__cli.is-copied .skill-browser__cli-fill {
+  width: 100%;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.skill-browser__cli-copied {
+  position: absolute;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding-left: 8px;
+  background: linear-gradient(to right, transparent, var(--bg-base) 30%);
+  color: var(--color-success);
+  font-size: 11px;
+  font-weight: 650;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.1s;
+  pointer-events: none;
+}
+.skill-browser__cli.is-copied .skill-browser__cli-copied { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .skill-browser__cli.is-copied .skill-browser__cli-fill { transition: none; }
+  .skill-browser__cli-copied { transition: none; }
+}
+/* Folder + delete action icons share one glyph size regardless of button kind. */
+.skill-browser__action svg { width: 15px; height: 15px; }
 .skill-browser__install-button,
 .skill-browser__use-button,
 .skill-browser__prompt-button {
