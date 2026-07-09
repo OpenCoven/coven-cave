@@ -158,20 +158,9 @@ struct ChatView: View {
                     return n > 0 ? "Linked tasks, \(n)" : "Linked tasks"
                 }())
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showCommands = true } label: {
-                    Image(systemName: "command")
-                }
-                .accessibilityLabel("Commands")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: ThreadMarkdownExport(title: thread.title,
-                                                     markdown: app.exportMarkdown(thread)),
-                          preview: SharePreview(thread.title)) {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                .accessibilityLabel("Export as Markdown")
-            }
+            // The header stays lean (sim review, cave feedback): Commands lives
+            // in the composer's + menu (same sheet), and Markdown export stays
+            // on the thread list's flows — neither earns a toolbar slot here.
         }
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
