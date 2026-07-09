@@ -5,6 +5,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon, type IconName } from "@/lib/icon";
+import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
@@ -47,6 +48,9 @@ type Props = {
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Badge count for the Scheduled shortcut (from code-sidebar). */
   scheduledCount?: number;
+  /** Opens Settings — powers the shared footer so Chat keeps the same
+   *  Dashboard/Settings footer as every other surface. */
+  onOpenSettings: () => void;
 };
 
 const THREADS_PREVIEW = 6;
@@ -198,6 +202,7 @@ export function WorkspaceSidebar({
   onNewChat,
   onDeleteSession,
   scheduledCount,
+  onOpenSettings,
 }: Props) {
   const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
@@ -674,6 +679,10 @@ export function WorkspaceSidebar({
           )}
         </nav>
 
+        {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
+            side-panel footer as every other surface; it sits below the scrolling
+            thread list because .cnav__scroll flexes and this stays put. */}
+        <SidebarFooter onOpenSettings={onOpenSettings} />
       </div>
     </div>
   );
