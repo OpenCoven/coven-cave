@@ -191,7 +191,33 @@ assert.equal(deriveKind({ prompts: ["debug-this"] }), "prompt");
 assert.equal(deriveKind({ prompts: [] }), "skill"); // empty pack -> not a prompt kind
 // An MCP server wins over shipped prompts — the server defines the runtime shape.
 assert.equal(deriveKind({ prompts: ["a"], mcpServers: { x: { command: "npx" } } }), "mcp");
+assert.equal(
+  deriveKind({ kind: "craft", mcpServers: { x: { command: "npx" } } }),
+  "craft",
+  "an explicit Craft kind wins over its bundled runtime components",
+);
 assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifest -> skill
+
+const craftSpec = {
+  schemaVersion: "opencoven.craft.v1",
+  components: { required: ["fetch"], optional: ["exa"] },
+  bundled: { skills: [{ id: "brainstorming-research-ideas" }], prompts: [], workflows: [] },
+  requiredCapabilities: ["network.http"],
+  recommendedRoles: ["researcher"],
+  provenance: {
+    source: "https://github.com/orchestra-research/AI-Research-SKILLs",
+    commit: "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+    license: "MIT",
+    licensePath: "craft-sources/orchestra-research/LICENSE",
+  },
+};
+const craftMerged = mergeCatalog(
+  [{ name: "seekers-lens", displayName: "Seeker's Lens", kind: "craft", category: "Research Crafts", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
+  { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec, mcpServers: { local: { command: "research-search" } } } },
+  {},
+);
+assert.equal(craftMerged[0].kind, "craft");
+assert.deepEqual(craftMerged[0].craft, craftSpec, "Craft metadata is exposed through the marketplace model");
 
 // --- filterPlugins: kind + ids ---
 assert.deepEqual(filterPlugins(merged, { kind: "mcp" }).map((p) => p.id), ["fetch", "github"]);
@@ -201,14 +227,15 @@ assert.deepEqual(filterPlugins(merged, { ids: ["github", "legacy"] }).map((p) =>
 assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((p) => p.id), []);
 
 // --- countByKind ---
-assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0 });
+assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0, craft: 0 });
+assert.deepEqual(countByKind(craftMerged), { api: 0, mcp: 0, skill: 0, prompt: 0, craft: 1 });
 
 // --- groupPluginsByCategory ---
 const groups = groupPluginsByCategory(merged);
 assert.deepEqual(groups.map((g) => g.category), ["Developer Tools", "Other", "Web"]);
 assert.deepEqual(groups[0].plugins.map((p) => p.id), ["fetch", "github"]);
-assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0 });
-assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0 });
+assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0, craft: 0 });
+assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0, craft: 0 });
 
 // --- sortPlugins (returns a new array, never mutates) ---
 const before = merged.map((p) => p.id);
