@@ -939,6 +939,7 @@ function FamiliarsSection({
         familiars={rawFamiliars}
         resolved={familiars}
         onSummon={() => setCreateOpen(true)}
+        onRosterChanged={() => void load()}
       />
       {createDialog}
     </>

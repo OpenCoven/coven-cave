@@ -13,6 +13,7 @@ import {
 } from "@/lib/onboarding-familiars";
 import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
 import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
+import { removedFamiliarIds, takeTombstone } from "@/lib/server/familiar-tombstones";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +30,12 @@ export type DaemonFamiliar = {
 };
 
 export async function GET() {
-  const [res, config] = await Promise.all([
+  const [res, config, removedIds] = await Promise.all([
     callDaemon<(DaemonFamiliar & { emoji?: string; icon?: string })[]>({
       path: "/api/v1/familiars",
     }),
     loadConfig(),
+    removedFamiliarIds().catch(() => new Set<string>()),
   ]);
   if (!res.ok) {
     return NextResponse.json(
@@ -49,8 +51,14 @@ export async function GET() {
   // when one exists, cache-busted by file mtime plus renderer format so both
   // content changes and server-side encoding changes refetch in desktop
   // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
+  //
+  // A removed familiar (DELETE /api/familiars/[id]) can linger in the daemon's
+  // in-memory roster until it re-reads familiars.toml — hide tombstoned ids so
+  // Remove takes effect immediately in every client.
   const familiars = await Promise.all(
-    (res.data ?? []).map(async (f) => {
+    (res.data ?? [])
+      .filter((f) => !removedIds.has(f.id))
+      .map(async (f) => {
       const configEntry = config.familiars[f.id] ?? {};
       const binding = bindingFor(config, f.id);
       const avatar = await resolveFamiliarAvatar(f.id);
@@ -157,6 +165,10 @@ export async function POST(req: Request) {
   } else {
     await writeFile(familiarsToml, buildFamiliarsToml(draft), "utf8");
   }
+
+  // Re-creating a removed id must clear its tombstone: the roster GET hides
+  // tombstoned ids, so a stale entry would make the new familiar invisible.
+  await takeTombstone(draft.id).catch(() => {});
 
   // Scaffold the harness adapter manifest if it's missing (parity with
   // onboarding) so a familiar bound to a not-yet-configured harness still works.
