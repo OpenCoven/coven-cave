@@ -544,7 +544,13 @@ jobs:
     name: Publish updater manifest (latest.json)
     needs: build
     runs-on: ubuntu-24.04
-    if: success()
+    # cave-ef6f: `if: success()` skipped this job whenever ANY platform leg
+    # flaked (3 of 4 cuts on 2026-07-08), publishing a release with NO
+    # latest.json — the in-app updater then 404s for every install until
+    # someone reruns the failed leg. Run whenever the build ran at all and
+    # publish entries for the platforms that DID produce signed artifacts;
+    # zero platforms stays fatal (see the verify step below).
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -577,6 +583,7 @@ jobs:
           set -euo pipefail
           count=$(node -e "const m=require('./latest.json'); process.stdout.write(String(Object.keys(m.platforms||{}).length))")
           echo "latest.json platform count: $count"
+          echo "PLATFORM_COUNT=$count" >> "$GITHUB_ENV"
           if [ "$count" -eq 0 ]; then
             echo "::error::latest.json has 0 platforms — no signed updater artifacts were produced, so in-app auto-update would silently find nothing."
             echo "::error::Ensure the TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD) repo secrets are set so the build jobs emit signed *.sig artifacts."
@@ -591,3 +598,32 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: latest.json
+
+      # cave-ef6f: an honest release body — when the manifest ships partial,
+      # say so on the release itself (and remove the note when a rerun heals
+      # it to 4/4). Idempotent: the marker line is stripped before deciding.
+      - name: Flag partial updater coverage in the release body
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rel=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null) || {
+            echo "no release object for ${RELEASE_TAG} yet — skipping body note"
+            exit 0
+          }
+          id=$(jq -r .id <<<"$rel")
+          body=$(jq -r '.body // ""' <<<"$rel")
+          cleaned=$(printf '%s' "$body" | sed '/Partial updater coverage/d')
+          if [ "${PLATFORM_COUNT}" -lt 4 ]; then
+            note="> ⚠️ **Partial updater coverage**: latest.json carries ${PLATFORM_COUNT}/4 platforms — auto-update is unavailable on the missing ones until \`gh run rerun --failed\` heals this run."
+            new=$(printf '%s\n\n%s\n' "$cleaned" "$note")
+          else
+            new=$cleaned
+          fi
+          if [ "$new" != "$body" ]; then
+            jq -n --arg body "$new" '{body:$body}' | gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$id" --input - >/dev/null
+            echo "release body updated (${PLATFORM_COUNT}/4 platforms)"
+          else
+            echo "release body already accurate (${PLATFORM_COUNT}/4 platforms)"
+          fi

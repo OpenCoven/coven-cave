@@ -695,6 +695,7 @@ export const SUITES = {
     "src/lib/pty-ws-bridge.test.ts",
     "scripts/release-macos-signing.test.mjs",
     "scripts/generate-latest-json.test.mjs",
+    "scripts/stamp-release.test.mjs",
     "src/app/api/daemon/start/route.test.ts",
     "src/app/api/github/activity/route.test.ts",
     "src/app/api/github/assigned/route.test.ts",
