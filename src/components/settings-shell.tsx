@@ -46,6 +46,7 @@ import {
 } from "@/lib/appearance-corner-radius";
 import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
+import { copyText } from "@/lib/clipboard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1713,11 +1714,54 @@ function AppearanceSection() {
 
 // ─── Section: Phone (connect the native mobile app) ─────────────────────────────
 
+/** Plain-language framing for handoff failures. The raw error stays available
+ *  behind a disclosure; the headline tells a person what to actually do. */
+function describeMobileHandoffError(raw: string): { headline: string; hint: string } {
+  const text = raw.toLowerCase();
+  if (text.includes("pnpm dev") || text.includes("access token")) {
+    return {
+      headline: "Pairing runs in the packaged Cave app",
+      hint: "This dev server can’t mint pairing codes — open Coven Cave from Applications and pair from there.",
+    };
+  }
+  if (
+    text.includes("tailscale") &&
+    (text.includes("not connected") ||
+      text.includes("not running") ||
+      text.includes("stopped") ||
+      text.includes("unreachable") ||
+      text.includes("logged out"))
+  ) {
+    return {
+      headline: "Tailscale isn’t running",
+      hint: "Open Tailscale and sign in — pairing resumes here automatically.",
+    };
+  }
+  if (text.includes("serve")) {
+    return {
+      headline: "Tailscale Serve couldn’t start",
+      hint: "Retry below; if it keeps failing, quit and reopen Tailscale.",
+    };
+  }
+  return {
+    headline: "Phone pairing is unavailable",
+    hint: "Retry below — the technical details may help if it persists.",
+  };
+}
+
+type MobileHandoffCardState = {
+  nativeHost: string | null;
+  inviteUrl: string | null;
+  appInviteUrl: string | null;
+  qrSvg: string | null;
+};
+
 function MobileModeToggle() {
   const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
-  const [host, setHost] = useState<string | null>(null);
+  const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
 
   const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean }) => {
     if (options?.busy) setBusy(true);
@@ -1731,6 +1775,9 @@ function MobileModeToggle() {
       const json = (await res.json()) as {
         ok?: boolean;
         nativeHost?: string | null;
+        inviteUrl?: string | null;
+        appInviteUrl?: string | null;
+        qrSvg?: string | null;
         error?: string;
         stderr?: string;
       };
@@ -1738,7 +1785,16 @@ function MobileModeToggle() {
         setError(json.stderr || json.error || "Mobile mode unavailable.");
         return;
       }
-      setHost(enabled ? json.nativeHost ?? null : null);
+      setHandoff(
+        enabled
+          ? {
+              nativeHost: json.nativeHost ?? null,
+              inviteUrl: json.inviteUrl ?? null,
+              appInviteUrl: json.appInviteUrl ?? null,
+              qrSvg: json.qrSvg ?? null,
+            }
+          : null,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mobile mode unavailable.");
     } finally {
@@ -1760,12 +1816,47 @@ function MobileModeToggle() {
     enabled: mobileModeEnabled,
   });
 
+  const copy = (kind: "link" | "app" | "host", value: string) => {
+    void copyText(value).then((ok) => {
+      if (!ok) return;
+      setCopied(kind);
+      window.setTimeout(() => setCopied((current) => (current === kind ? null : current)), 1500);
+    });
+  };
+
+  const friendly = error ? describeMobileHandoffError(error) : null;
+  const statusLine = busy
+    ? "Updating…"
+    : !mobileModeEnabled
+      ? "Off — turn on to pair your iPhone."
+      : friendly
+        ? friendly.headline
+        : handoff?.qrSvg
+          ? "Ready — scan the code with your iPhone camera."
+          : "Starting the tailnet route…";
+
   return (
-    <SettingsRow
-      label="Mobile mode"
-      description="Default on. Cave keeps the native iOS Tailscale route alive until you turn this off."
-    >
-      <div className="flex min-w-[220px] flex-col items-end gap-1">
+    <div className="flex flex-col gap-4 px-4 py-4">
+      {/* Status header + the one switch */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            aria-hidden
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+              !mobileModeEnabled
+                ? "bg-[var(--text-muted)]"
+                : friendly
+                  ? "bg-[var(--color-warning)]"
+                  : handoff?.qrSvg
+                    ? "bg-[var(--color-success)]"
+                    : "bg-[var(--text-muted)]"
+            }`}
+          />
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-[var(--text-primary)]">Mobile mode</p>
+            <p className="truncate text-[11px] text-[var(--text-muted)]">{statusLine}</p>
+          </div>
+        </div>
         <button
           type="button"
           role="switch"
@@ -1780,10 +1871,105 @@ function MobileModeToggle() {
         >
           {busy ? "Updating..." : mobileModeEnabled ? "On" : "Off"}
         </button>
-        {host ? <code className="max-w-[220px] truncate text-[11px] text-[var(--text-muted)]">{host}</code> : null}
-        {error ? <span className="max-w-[220px] text-right text-[11px] text-[var(--color-danger)]">{error}</span> : null}
       </div>
-    </SettingsRow>
+
+      {/* Humanized failure — the jargon lives behind a disclosure now. */}
+      {mobileModeEnabled && friendly && error ? (
+        <div
+          role="status"
+          className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-[color-mix(in_oklch,var(--color-warning)_35%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3.5 py-3"
+        >
+          <p className="text-[12px] font-medium text-[var(--color-warning)]">{friendly.headline}</p>
+          <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">{friendly.hint}</p>
+          <div className="flex items-center gap-2">
+            <Button
+              size="xs"
+              variant="secondary"
+              leadingIcon="ph:arrows-clockwise"
+              onClick={() => void reconcileMobileMode(true, { busy: true })}
+              disabled={busy}
+            >
+              Retry
+            </Button>
+          </div>
+          <details className="text-[11px] text-[var(--text-muted)]">
+            <summary className="cursor-pointer">Technical details</summary>
+            <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[10px]">{error}</code>
+          </details>
+        </div>
+      ) : null}
+
+      {/* The pairing code — one scan, no typing. */}
+      {mobileModeEnabled && !friendly && handoff?.qrSvg ? (
+        <div className="flex flex-col items-center gap-2.5">
+          <div
+            className="mobile-handoff-qr__svg overflow-hidden rounded-[var(--radius-card)] border border-[var(--border-hairline)] bg-white p-2"
+            role="img"
+            aria-label="Pairing code for your iPhone camera"
+            dangerouslySetInnerHTML={{ __html: handoff.qrSvg }}
+          />
+          <p className="text-[12px] text-[var(--text-secondary)]">
+            Scan with your iPhone camera — Cave opens on your phone already paired.
+          </p>
+          <p className="text-[10px] text-[var(--text-muted)]">
+            Works in Safari or the Cave app · the code refreshes itself while this switch is on.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {handoff.inviteUrl ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                leadingIcon={copied === "link" ? "ph:check" : "ph:copy"}
+                onClick={() => copy("link", handoff.inviteUrl ?? "")}
+              >
+                {copied === "link" ? "Copied" : "Copy link"}
+              </Button>
+            ) : null}
+            {handoff.appInviteUrl ? (
+              <Button
+                size="xs"
+                variant="ghost"
+                leadingIcon={copied === "app" ? "ph:check" : "ph:copy"}
+                onClick={() => copy("app", handoff.appInviteUrl ?? "")}
+              >
+                {copied === "app" ? "Copied" : "Copy app link"}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Everything that used to be four loud steps lives here, folded away. */}
+      {mobileModeEnabled ? (
+        <details className="rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-2.5">
+          <summary className="cursor-pointer text-[12px] font-medium text-[var(--text-secondary)]">
+            Manual setup
+          </summary>
+          <div className="mt-2 flex flex-col gap-2 text-[12px] text-[var(--text-secondary)]">
+            {handoff?.nativeHost ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[var(--text-muted)]">Desktop address:</span>
+                <code className="rounded bg-[var(--bg-base)] px-1.5 py-0.5 font-mono text-[11px] text-[var(--text-primary)]">
+                  {handoff.nativeHost}
+                </code>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  leadingIcon={copied === "host" ? "ph:check" : "ph:copy"}
+                  onClick={() => copy("host", handoff.nativeHost ?? "")}
+                >
+                  {copied === "host" ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            ) : null}
+            <p>
+              Sign your iPhone and this Mac into the same Tailscale network, open the Cave app, and enter the
+              desktop address on its connect screen. Pasting the copied link works too.
+            </p>
+          </div>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
@@ -1791,21 +1977,11 @@ function MobileSection() {
   return (
     <SettingsPage
       section="mobile"
-      title="Connect on your phone"
-      description="Run the native Coven Cave app on your iPhone or iPad and reach this desktop over your Tailscale network — no token, no password."
+      title="Connect your iPhone"
+      description="One scan pairs your phone over your private Tailscale network — no typing, no password."
     >
-      <SettingsGroup label="Mobile mode">
+      <SettingsGroup label="Pair">
         <MobileModeToggle />
-      </SettingsGroup>
-
-      <SettingsGroup label="Steps">
-        <SettingsRow label="1 · Same Tailscale network" description="Sign your phone and this Mac into the same tailnet." />
-        <SettingsRow label="2 · Mobile mode stays on" description="Cave reconciles Tailscale Serve automatically while the switch is on." />
-        <SettingsRow
-          label="3 · Enter the address in the app"
-          description="On the app’s connect screen, type the host shown by mobile mode (your Mac’s Tailscale name)."
-        />
-        <SettingsRow label="4 · Tap Connect" description="Your familiars and board load over Tailscale. Switch tabs for Chats and Tasks." />
       </SettingsGroup>
 
       <SettingsGroup label="Why there’s no password">
