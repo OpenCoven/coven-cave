@@ -27,4 +27,5 @@ assert.match(css, /\.menu-bar__search \{[\s\S]*?border:\s*1px solid var\(--borde
 assert.match(css, /\.shell-top-history \{/, "history Back/Forward pair has its grouping styles");
 assert.match(css, /\.menu-bar__task-label \{\s*\n\s*display:\s*none/, "task labels are CSS-demoted — the bar shows icons only");
 assert.match(css, /\.menu-bar__task-label--live \{\s*\n\s*display:\s*inline/, "…except live enrich progress, which is information, not chrome");
+assert.match(css, /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,300}?min-height: 36px/, "the desktop bar is 36px — 28px controls center on the macOS traffic lights (~18px center)");
 console.log("menu-bar-icon-size.test.ts passed");

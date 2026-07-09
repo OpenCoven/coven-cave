@@ -104,8 +104,8 @@ assert.doesNotMatch(
 // icon buttons matching the other controls in the row.
 assert.match(
   css,
-  /\.shell-top\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?min-height:\s*44px;[\s\S]*?border-bottom:\s*1px solid var\(--border-hairline\);/,
-  "the top bar row owns the shared band background and centers its controls",
+  /\.shell-top\s*\{[\s\S]{0,600}?display:\s*flex;[\s\S]{0,200}?align-items:\s*center;[\s\S]{0,300}?min-height:\s*34px;[\s\S]{0,400}?border-bottom:\s*0;/,
+  "the top bar row is the slim seamless band (34px, borderless) and centers its controls",
 );
 assert.match(
   css,

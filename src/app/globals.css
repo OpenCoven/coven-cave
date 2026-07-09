@@ -4847,7 +4847,9 @@ button:active > .edge-rail-chip {
   align-items: center;
   flex-wrap: nowrap;
   flex: 0 0 auto;
-  min-height: 40px;
+  /* Slim band (cave-p78p): hugs the 28px controls — and on the desktop shell,
+     the macOS traffic lights (~18px center) sit dead-center of the 36px bar. */
+  min-height: 34px;
   gap: 8px;
   padding-inline: 12px;
   /* Seamless title bar: the strip shares the app canvas — no band color, no
@@ -4871,7 +4873,7 @@ button:active > .edge-rail-chip {
 
 .shell-top .menu-bar {
   width: 100%;
-  min-height: 44px;
+  min-height: 34px;
   padding-inline: 0;
   border-bottom: 0;
   background: transparent;
@@ -4896,9 +4898,10 @@ button:active > .edge-rail-chip {
    ──────────────────────────────────────────────── */
 @media (min-width: 1024px) {
   :root[data-tauri-titlebar] .shell-top {
-    /* ~78px clears the three traffic lights + their left inset. */
+    /* ~78px clears the three traffic lights + their left inset; 36px centers
+       the bar's 28px controls on the lights (overlay default: ~18px center). */
     padding-left: 78px;
-    min-height: 46px;
+    min-height: 36px;
   }
 
   :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
