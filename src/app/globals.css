@@ -339,7 +339,13 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-accent-presence: var(--accent-presence);
-  --font-sans: var(--font-geist-sans);
+  /* Coven canonical type system (DESIGN.md §4):
+     --font-serif: EB Garamond   — display / hero / identity moments
+     --font-sans:  Inter          — everything you read (body, chat, UI, prose)
+     --font-mono:  JetBrains Mono — everything you inspect (code, terminal, labels)
+     These map to the preloaded next/font/google instances in src/app/fonts.ts. */
+  --font-serif: var(--font-eb-garamond);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
 }
 

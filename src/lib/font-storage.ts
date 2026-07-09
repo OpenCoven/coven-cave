@@ -2,8 +2,14 @@
  * Persistence + application for the font picker.
  *
  * Stores a catalog id per slot in localStorage and applies the selection by
- * overriding the canonical --font-sans / --font-mono vars on <html>. The
- * default id removes the override so the :root alias (Geist) takes over.
+ * overriding the canonical --font-serif / --font-sans / --font-mono vars on
+ * <html>. The default id removes the override so the :root alias (per
+ * DEFAULT_FONT_ID) takes over.
+ *
+ * The catalog now has three slots (see font-catalog.ts):
+ *   - "serif" (--font-serif) — canonical: EB Garamond
+ *   - "sans"  (--font-sans)  — canonical: Inter
+ *   - "mono"  (--font-mono)  — canonical: JetBrains Mono
  *
  * NOTE: the no-FOUC boot script in src/components/theme-script.tsx applies the
  * same vars before paint. It cannot import this module (it runs as an inline
@@ -21,15 +27,20 @@ import {
   type FontSlot,
 } from "./font-catalog.ts";
 
+export const FONT_SERIF_KEY = "cave:font:serif";
 export const FONT_SANS_KEY = "cave:font:sans";
 export const FONT_MONO_KEY = "cave:font:mono";
 
 function keyFor(slot: FontSlot): string {
-  return slot === "sans" ? FONT_SANS_KEY : FONT_MONO_KEY;
+  if (slot === "serif") return FONT_SERIF_KEY;
+  if (slot === "sans") return FONT_SANS_KEY;
+  return FONT_MONO_KEY;
 }
 
 function varFor(slot: FontSlot): string {
-  return slot === "sans" ? "--font-sans" : "--font-mono";
+  if (slot === "serif") return "--font-serif";
+  if (slot === "sans") return "--font-sans";
+  return "--font-mono";
 }
 
 /** Stored id for the slot, validated against the catalog. Missing, unknown, or
@@ -59,18 +70,23 @@ export function writeFontPref(slot: FontSlot, id: string): void {
 }
 
 export function readFontPairPref(): FontPair {
-  const pair = fontPairForFonts(readFontPref("sans"), readFontPref("mono"));
+  const pair = fontPairForFonts(
+    readFontPref("serif"),
+    readFontPref("sans"),
+    readFontPref("mono"),
+  );
   return pair ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
 }
 
 export function writeFontPairPref(id: string): void {
   const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+  writeFontPref("serif", pair.serifId);
   writeFontPref("sans", pair.sansId);
   writeFontPref("mono", pair.monoId);
 }
 
 /** Point the slot's CSS var at the chosen family's stack. The default id (or an
- *  unknown id) removes the override so the :root Geist alias applies. */
+ *  unknown id) removes the override so the :root default alias applies. */
 export function applyFont(slot: FontSlot, id: string): void {
   if (typeof document === "undefined") return;
   const cssVar = varFor(slot);
@@ -85,6 +101,7 @@ export function applyFont(slot: FontSlot, id: string): void {
 
 export function applyFontPair(id: string): void {
   const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+  applyFont("serif", pair.serifId);
   applyFont("sans", pair.sansId);
   applyFont("mono", pair.monoId);
 }
