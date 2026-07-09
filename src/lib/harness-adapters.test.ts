@@ -49,7 +49,7 @@ assert.equal(
 
 assert.deepEqual(
   COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),
-  ["codex", "claude", "hermes", "openclaw"],
+  ["codex", "claude", "copilot", "hermes", "openclaw"],
 );
 
 assert.deepEqual(openClawAdapterReport(2), {
@@ -148,6 +148,7 @@ const mergedExternal = mergeAdapterReports(
 assert.equal(mergedExternal[0]?.chatSupported, false);
 assert.equal(mergedExternal[0]?.installed, true);
 assert.equal(isTrustedChatHarness("codex"), true);
+assert.equal(isTrustedChatHarness("copilot"), true);
 assert.equal(isTrustedChatHarness("hermes"), true);
 assert.equal(isTrustedChatHarness("openclaw"), true);
 assert.equal(isTrustedChatHarness("attacker-adapter"), false);
@@ -160,6 +161,9 @@ assert.equal(isTrustedOnboardingHarness("attacker-adapter"), false);
 assert.equal(canonicalHarnessId("hermes-agent"), "hermes");
 assert.equal(canonicalHarnessId("Hermes-Agent"), "hermes", "alias match is case-insensitive");
 assert.equal(canonicalHarnessId("claude-code"), "claude");
+assert.equal(canonicalHarnessId("github-copilot"), "copilot");
+assert.equal(canonicalHarnessId("copilot-cli"), "copilot");
+assert.equal(isTrustedChatHarness("github-copilot"), true, "the Copilot package alias must clear the chat trust gate");
 assert.equal(canonicalHarnessId("hermes"), "hermes", "canonical id passes through");
 assert.equal(canonicalHarnessId("HERMES"), "hermes", "id match is case-insensitive");
 assert.equal(canonicalHarnessId("attacker-adapter"), "attacker-adapter", "unknown ids are unchanged (still untrusted)");
@@ -175,7 +179,7 @@ assert.deepEqual(
   adapterSetupState(merged.filter((adapter) => !adapter.installed)),
   {
     ok: false,
-    hint: "Install Codex, Claude Code, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install Codex, Claude Code, Copilot, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
   },
 );
 
@@ -213,6 +217,29 @@ assert.deepEqual(JSON.parse(hermesManifest?.contents ?? "{}"), {
   ],
 });
 assert.equal(adapterManifestScaffoldForHarness("codex"), null);
+
+// Copilot runs through a Coven adapter manifest (like Hermes): the prompt is
+// appended after the prefix args, so it lands as the -i/-p flag's value.
+const copilotManifest = adapterManifestScaffoldForHarness("copilot");
+assert.equal(copilotManifest?.filename, "copilot.json");
+assert.deepEqual(JSON.parse(copilotManifest?.contents ?? "{}"), {
+  adapters: [
+    {
+      id: "copilot",
+      label: "Copilot",
+      executable: "copilot",
+      interactive_prompt_prefix_args: ["--interactive"],
+      non_interactive_prompt_prefix_args: [
+        "--allow-all-tools",
+        "--no-color",
+        "--prompt",
+      ],
+      install_hint:
+        "Install GitHub Copilot CLI with `npm install -g @github/copilot`, run `copilot` once and sign in with `/login` (or set GH_TOKEN), and make sure `copilot` is on PATH before using this adapter.",
+      system_prompt_flag: null,
+    },
+  ],
+});
 
 assert.deepEqual(
   runtimeSourceSetupState(

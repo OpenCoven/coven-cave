@@ -59,6 +59,13 @@ const INSTALL_TARGETS = {
     binary: "claude",
     timeoutMs: 240_000,
   },
+  copilot: {
+    kind: "npm",
+    label: "Copilot",
+    packageName: "@github/copilot@latest",
+    binary: "copilot",
+    timeoutMs: 240_000,
+  },
   openclaw: {
     kind: "npm",
     label: "OpenClaw",

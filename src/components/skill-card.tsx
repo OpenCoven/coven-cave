@@ -11,12 +11,12 @@ type IconRule = { pattern: RegExp; icon: IconName };
 
 const NAME_RULES: IconRule[] = [
   { pattern: /xurl|twitter|x.com/i,          icon: "ph:x-logo-bold" },
+  { pattern: /copilot/i,                       icon: "ph:github-logo" },
   { pattern: /github/i,                        icon: "ph:github-logo" },
   { pattern: /git/i,                         icon: "ph:git-branch-bold" },
   { pattern: /codex/i,                         icon: "ph:terminal-window-bold" },
   { pattern: /claude/i,                        icon: "ph:brain-bold" },
   { pattern: /openclaw|opencoven|coven/i,      icon: "ph:paw-print-bold" },
-  { pattern: /copilot/i,                       icon: "ph:git-branch-bold" },
   { pattern: /figma|design/i,                  icon: "ph:pen-nib-bold" },
   { pattern: /linear/i,                        icon: "ph:arrow-clockwise-bold" },
   { pattern: /notion/i,                        icon: "ph:note-bold" },

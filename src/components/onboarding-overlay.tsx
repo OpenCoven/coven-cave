@@ -82,6 +82,7 @@ type InstallTarget =
   | "coven-code"
   | "codex"
   | "claude"
+  | "copilot"
   | "openclaw"
   | "hermes";
 
@@ -120,6 +121,7 @@ const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
   "coven-code": "npm",
   codex: "npm",
   claude: "npm",
+  copilot: "npm",
   openclaw: "npm",
   hermes: "script",
 };
@@ -163,6 +165,12 @@ const HARNESS_ONE_CLICK: Partial<
     target: "claude",
     command: "npm install -g @anthropic-ai/claude-code",
     afterInstall: "then run `claude doctor` in a terminal to finish setup",
+  },
+  copilot: {
+    target: "copilot",
+    command: "npm install -g @github/copilot",
+    afterInstall:
+      "then run `copilot` in a terminal and sign in with `/login` (or set GH_TOKEN)",
   },
   openclaw: {
     target: "openclaw",

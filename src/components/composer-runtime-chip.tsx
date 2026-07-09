@@ -28,7 +28,7 @@ export function ComposerRuntimeChip({
   onPickModel,
   disabled,
 }: {
-  /** Active runtime (harness id): codex | claude | hermes | openclaw. */
+  /** Active runtime (harness id): codex | claude | copilot | hermes | openclaw. */
   runtime: string;
   /** Effective model id ("" when the runtime has no curated models). */
   modelValue: string;

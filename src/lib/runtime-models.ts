@@ -12,12 +12,12 @@
 // runtime's CLI" branch. That includes Hermes: Cave's Hermes mode means the
 // installed Hermes Agent runtime, not a bundled Nous/Hermes model selection.
 
-export type RuntimeProvider = "openai" | "anthropic" | "nous" | null;
+export type RuntimeProvider = "openai" | "anthropic" | "github" | "nous" | null;
 
 export type RuntimeModelOption = { id: string; label: string };
 
 export type RuntimeModelCatalog = {
-  /** Harness id: codex | claude | hermes | openclaw. */
+  /** Harness id: codex | claude | copilot | hermes | openclaw. */
   runtime: string;
   provider: RuntimeProvider;
   /** Curated seed; empty ⇒ no menu, free-text only. */
@@ -50,6 +50,22 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
       { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
       { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
       { id: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5" },
+    ],
+    allowCustom: true,
+  },
+  // Copilot serves multiple providers' models through one GitHub subscription;
+  // ids are namespaced under `github/` and forwarded bare to `copilot --model`.
+  // `github/auto` stays first: Copilot's own default is letting it pick.
+  copilot: {
+    runtime: "copilot",
+    provider: "github",
+    models: [
+      { id: "github/auto", label: "Auto (Copilot picks)" },
+      { id: "github/gpt-5.5", label: "GPT-5.5" },
+      { id: "github/claude-opus-4-8", label: "Claude Opus 4.8" },
+      { id: "github/claude-sonnet-5", label: "Claude Sonnet 5" },
+      { id: "github/claude-haiku-4-5", label: "Claude Haiku 4.5" },
+      { id: "github/gemini-3.1-pro", label: "Gemini 3.1 Pro" },
     ],
     allowCustom: true,
   },

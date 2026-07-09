@@ -68,6 +68,16 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     source: "bundled",
   },
   {
+    id: "copilot",
+    label: "Copilot",
+    binary: "copilot",
+    chatSupported: true,
+    versionArgs: ["--version"],
+    installHint:
+      "Install GitHub Copilot CLI with `npm install -g @github/copilot`, then run `copilot` and sign in with `/login`. Cave creates its Coven adapter manifest.",
+    source: "bundled",
+  },
+  {
     id: "hermes",
     label: "Hermes",
     binary: "hermes",
@@ -111,6 +121,8 @@ const HARNESS_ALIASES: Record<string, string> = {
   "hermes-agent": "hermes",
   "claude-code": "claude",
   "openai-codex": "codex",
+  "github-copilot": "copilot",
+  "copilot-cli": "copilot",
 };
 
 export function canonicalHarnessId(harness: string): string {
@@ -215,7 +227,7 @@ export function mergeAdapterReports(
 
   return [...merged.values()].sort((a, b) => {
     const rank = (id: string) =>
-      id === "codex" ? 0 : id === "claude" ? 1 : id === "hermes" ? 2 : id === "openclaw" ? 3 : 4;
+      id === "codex" ? 0 : id === "claude" ? 1 : id === "copilot" ? 2 : id === "hermes" ? 3 : id === "openclaw" ? 4 : 5;
     return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
   });
 }
@@ -230,7 +242,7 @@ export function adapterSetupState(reports: AdapterReport[]): AdapterSetupState {
   }
   return {
     ok: false,
-    hint: "Install Codex, Claude Code, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install Codex, Claude Code, Copilot, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
   };
 }
 
@@ -252,6 +264,38 @@ export function runtimeSourceSetupState(
 export function adapterManifestScaffoldForHarness(
   harnessId: string,
 ): AdapterManifestScaffold | null {
+  if (harnessId === "copilot") {
+    return {
+      filename: "copilot.json",
+      contents: `${JSON.stringify(
+        {
+          adapters: [
+            {
+              id: "copilot",
+              label: "Copilot",
+              executable: "copilot",
+              // The prompt is appended after the prefix args, so it lands as
+              // the flag's value: `copilot --interactive <prompt>` /
+              // `copilot … --prompt <prompt>`. Non-interactive runs need
+              // --allow-all-tools (Copilot exits otherwise) and --no-color so
+              // the captured transcript stays ANSI-free.
+              interactive_prompt_prefix_args: ["--interactive"],
+              non_interactive_prompt_prefix_args: [
+                "--allow-all-tools",
+                "--no-color",
+                "--prompt",
+              ],
+              install_hint:
+                "Install GitHub Copilot CLI with `npm install -g @github/copilot`, run `copilot` once and sign in with `/login` (or set GH_TOKEN), and make sure `copilot` is on PATH before using this adapter.",
+              system_prompt_flag: null,
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    };
+  }
   if (harnessId !== "hermes") return null;
   return {
     filename: "hermes.json",
