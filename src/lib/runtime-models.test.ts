@@ -29,8 +29,13 @@ assert.ok(
   "claude catalog should seed Claude Sonnet 5",
 );
 assert.ok(
-  !catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
-  "claude catalog should not offer Claude Fable 5",
+  catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
+  "claude catalog should offer Claude Fable 5 (re-enabled: Coven Code ships full Fable support)",
+);
+assert.equal(
+  catalogForRuntime("claude").models[0].id,
+  "anthropic/claude-opus-4-8",
+  "Opus 4.8 must stay first so it remains the claude default",
 );
 assert.ok(catalogForRuntime("codex").models.length > 1, "codex should seed a multi-model menu, not just the default");
 assert.ok(
