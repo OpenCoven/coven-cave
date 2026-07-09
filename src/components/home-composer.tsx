@@ -34,7 +34,7 @@ import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
-import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
+import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
@@ -120,7 +120,6 @@ type Props = {
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
 // typing on the home screen (mirrors the chat composer's draft persistence).
-const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
 const HOME_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the home composer.
 const HOME_HISTORY_KEY = "cave:home-composer-history:v1";

@@ -1775,6 +1775,21 @@
       },
       "trust": "official-local",
       "roleAffinity": []
+    },
+    {
+      "name": "prompt-pack-shipping",
+      "displayName": "Prompt Pack: Shipping",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-pack-shipping"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
     }
   ]
 }

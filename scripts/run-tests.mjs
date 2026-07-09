@@ -178,6 +178,7 @@ export const SUITES = {
     "src/components/home-composer.test.ts",
     "src/components/composer-enhance.test.ts",
     "src/components/prompt-snippets-modal.test.ts",
+    "src/components/marketplace/marketplace-detail.test.ts",
     "src/components/home-digest-carousel.test.ts",
     "src/components/home-needs-you.test.ts",
     "src/components/home-feed.test.ts",
@@ -633,6 +634,7 @@ export const SUITES = {
     "src/app/api/chat/model-state/route.test.ts",
     "src/app/api/prompt/enhance/route.test.ts",
     "src/app/api/prompts/route.test.ts",
+    "src/app/api/marketplace/pack-prompts-route.test.ts",
     "src/app/api/app/latest-release/route.test.ts",
     "src/app/api/opencoven-tools/status/route.test.ts",
     "src/app/api/daemon/status/route.test.ts",
@@ -836,6 +838,7 @@ const STRIP_TYPES_MJS = new Set([
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
   "src/app/api/prompts/route.test.ts",
+  "src/app/api/marketplace/pack-prompts-route.test.ts",
   "src/lib/cave-backdrop.test.ts",
   "src/lib/wiki-link-parser.test.ts",
   "src/lib/wiki-link-resolve.test.ts",
