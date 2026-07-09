@@ -116,6 +116,7 @@ import { useProjects } from "@/lib/use-projects";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
 import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
+import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { ProjectPicker, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
@@ -2873,6 +2874,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     },
   });
   const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
+  // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
+  const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete above, which is null outside `/model <arg>` position).
   const composerModelOptions = useMemo(
@@ -5456,6 +5459,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onHostPick={setRuntimeHost}
                     disabled={busy}
                     onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
+                    onSaveAsTemplate={() => setSaveTemplateSeed(input)}
+                    saveAsTemplateDisabled={!input.trim()}
                     indicator={
                       permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
@@ -5553,6 +5558,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setPromptSnippetsOpen(false);
           insertPrompt(p);
         }}
+      />
+      <SaveTemplateModal
+        open={saveTemplateSeed !== null}
+        onClose={() => setSaveTemplateSeed(null)}
+        initialBody={saveTemplateSeed ?? ""}
       />
       <Modal
         open={debugModalOpen}

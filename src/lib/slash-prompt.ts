@@ -6,7 +6,7 @@
 // deliberate difference: picking a prompt INSERTS its body into the composer
 // for editing — it never sends.
 
-import { nextPlaceholder } from "@/lib/prompt-placeholders";
+import { nextPlaceholder } from "./prompt-placeholders.ts";
 
 export type PromptOption = {
   id: string;

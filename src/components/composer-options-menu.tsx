@@ -87,6 +87,8 @@ export function ComposerOptionsMenu({
   indicator,
   disabled,
   onOpenPromptSnippets,
+  onSaveAsTemplate,
+  saveAsTemplateDisabled,
 }: {
   hostValue: string;
   onHostPick: (id: string) => void;
@@ -99,6 +101,10 @@ export function ComposerOptionsMenu({
    *  composer's utility row folds its dedicated snippets button in here so the
    *  resting row is just attach · voice · this overflow (cave-xsq.4). */
   onOpenPromptSnippets?: () => void;
+  /** When set, a "Save draft as template…" action follows the snippets one
+   *  (cave-jg6k). Callers disable it while the draft is empty. */
+  onSaveAsTemplate?: () => void;
+  saveAsTemplateDisabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -147,6 +153,20 @@ export function ComposerOptionsMenu({
             >
               <Icon name="ph:chat-centered-text" width={14} aria-hidden />
               Prompt snippets…
+            </button>
+          ) : null}
+          {onSaveAsTemplate ? (
+            <button
+              type="button"
+              className="composer-options__action focus-ring disabled:opacity-40"
+              disabled={saveAsTemplateDisabled}
+              onClick={() => {
+                setOpen(false);
+                onSaveAsTemplate();
+              }}
+            >
+              <Icon name="ph:floppy-disk-bold" width={14} aria-hidden />
+              Save draft as template…
             </button>
           ) : null}
           <div className="composer-options__section">

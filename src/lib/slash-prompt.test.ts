@@ -41,6 +41,19 @@ assert.equal(plain.text, "Review the current change.", "insertion carries the bo
 assert.equal(plain.selectStart, undefined, "no placeholder → no selection range");
 const templated = promptInsertion(PROMPTS[1]);
 assert.equal(templated.text.slice(templated.selectStart, templated.selectEnd), "{{what to build}}", "first placeholder is selected");
+// Defaulted tokens ({{name|default}}) use the shared placeholder grammar —
+// the old inline regex missed them (cave-jg6k).
+const defaulted = promptInsertion({ id: "d", name: "D", body: "Ship {{env|production}} today.", source: "user" });
+assert.equal(
+  defaulted.text.slice(defaulted.selectStart, defaulted.selectEnd),
+  "{{env|production}}",
+  "a defaulted first token is selected whole (Tab can then accept the default)",
+);
+
+// Tags participate in the picker filter.
+const TAGGED = [...PROMPTS, { id: "retro", name: "Retro notes", body: "x", source: "user", tags: ["meeting", "team"] }];
+assert.equal(promptSlashOptions("/prompt meeting", TAGGED).length, 1, "a tag matches the /prompt filter");
+assert.equal(promptSlashOptions("/prompt meeting", TAGGED)[0].id, "retro", "the tag match is the tagged template");
 
 // ── formatPromptList ─────────────────────────────────────────────────────────
 const list = formatPromptList(PROMPTS);
@@ -86,7 +99,7 @@ assert.match(chatView, /onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(tr
 
 // ── Prompt snippets modal ────────────────────────────────────────────────────
 const modal = await readFile(new URL("../components/prompt-snippets-modal.tsx", import.meta.url), "utf8");
-assert.match(modal, /Pick a starter prompt to drop into the composer\./, "modal keeps the insert-not-send subtitle");
+assert.match(modal, /Pick a starter prompt to drop into the composer/, "modal keeps the insert-not-send subtitle");
 assert.match(modal, /export function promptIconName/, "icon names from data are validated against the curated set");
 assert.match(modal, /breadcrumb=\{\["Chat", "Prompt snippets"\]\}/, "modal is built on the shared Modal primitive");
 
@@ -102,5 +115,34 @@ assert.match(homeComposer, /onInsertPrompt: \(p\) => insertPromptTemplate\(p\)/,
 assert.match(homeComposer, /command === "\/prompt" \|\| command === "\/prompts"/, "home dispatches /prompt and /prompts");
 assert.match(homeComposer, /const insertPromptTemplate = useCallback/, "home has the template-insert helper");
 assert.doesNotMatch(homeComposer, /onStartChat\([^)]*promptInsertion/, "a template body never starts a chat directly");
+
+// ── Placeholder Tab-cycling wiring (cave-jg6k) ───────────────────────────────
+// Order is load-bearing in both composers: the inline menus own Tab-complete
+// while open, so the placeholder branch sits AFTER handleMenuKey and only
+// consumes Tab when the draft carries a token (native focus-move survives).
+assert.match(
+  homeComposer,
+  /if \(handleMenuKey\(e\)\) return;[\s\S]{0,400}?if \(handlePlaceholderTab\(e, textareaRef\.current, setText\)\) return;/,
+  "home: placeholder Tab runs after the inline menus",
+);
+assert.match(
+  chatView,
+  /if \(handleMenuKey\(e\)\) return;[\s\S]{0,400}?if \(handlePlaceholderTab\(e, inputRef\.current, setInput\)\) return;/,
+  "chat: placeholder Tab runs after the inline menus",
+);
+
+// ── Recents + refresh + ordering (cave-jg6k) ─────────────────────────────────
+assert.match(homeComposer, /recordPromptRecent\(p\.id\);/, "home records an insert as a recent");
+assert.match(chatView, /recordPromptRecent\(p\.id\);/, "chat records an insert as a recent");
+assert.match(
+  menusHook,
+  /window\.addEventListener\("cave:prompts-refresh", load\)/,
+  "the picker hook re-scans on cave:prompts-refresh (save/delete broadcast)",
+);
+assert.match(
+  menusHook,
+  /orderPrompts\(options, readPromptFavorites\(\), readPromptRecents\(\)\)/,
+  "picker options rank favorites > recents > scan order",
+);
 
 console.log("slash-prompt.test.ts: ok");
