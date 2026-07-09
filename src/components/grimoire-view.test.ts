@@ -136,11 +136,27 @@ assert.match(view, /aria-label="Grimoire view"/, "the Docs|Graph switch is a lab
 assert.match(view, /aria-pressed=\{!showGraph\}[\s\S]{0,1000}aria-pressed=\{showGraph\}/, "the segmented control exposes pressed state");
 assert.match(
   view,
-  /showGraph \? \([\s\S]{0,320}<GrimoireGraphView[\s\S]{0,400}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
+  /showGraph \? \([\s\S]{0,1200}<GrimoireGraphView[\s\S]{0,400}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
   "the graph replaces the detail pane and opens the clicked doc",
 );
 assert.match(view, /scanning=\{scanning\}/, "the graph view knows a scan is in flight");
 assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is only surfaced when there is no scan to show");
+
+// ── Graph reachable on narrow / mobile (cave-quct) ───────────────────────────
+// On a narrow container the rail and main pane both go full-width, so the rail
+// must hide when the graph is up (not only when a doc is selected) or the graph
+// is pushed off-screen; and the graph gets a narrow-only back affordance since
+// the rail is then hidden.
+assert.match(
+  view,
+  /selection \|\| showGraph \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  "the rail hides on narrow when a doc is open OR the graph is up",
+);
+assert.match(
+  view,
+  /onClick=\{\(\) => setShowGraph\(false\)\}[\s\S]{0,120}aria-label="Back to document list"/,
+  "the graph view offers a back-to-documents affordance (rail is hidden on narrow)",
+);
 
 // ── Journal autosave conflict guard (cave-9f2e) ──────────────────────────────
 // The Grimoire journal editor sends the mtime it loaded as an optimistic-

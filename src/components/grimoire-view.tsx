@@ -1119,7 +1119,11 @@ export function GrimoireView() {
       <div className="flex min-h-0 flex-1 gap-3 p-3">
       <aside
         className={`flex h-full min-h-0 w-full flex-col rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 @min-[880px]/grimoire:w-[300px] @min-[880px]/grimoire:shrink-0 ${
-          selection ? "hidden @min-[880px]/grimoire:flex" : ""
+          // On a narrow container the rail and the main pane both go full-width,
+          // so only one may show. Hide the rail when a doc is open OR the graph
+          // is up — otherwise the rail wins the width and the graph is pushed
+          // off-screen (Graph mode was dead on phones). Wide keeps both.
+          selection || showGraph ? "hidden @min-[880px]/grimoire:flex" : ""
         }`}
       >
         {/* Title + surface verbs moved to the compact band above; the rail
@@ -1248,16 +1252,34 @@ export function GrimoireView() {
         }`}
       >
         {showGraph ? (
-          <GrimoireGraphView
-            graph={graph}
-            meta={scan?.meta ?? null}
-            scanning={scanning}
-            scanError={scan ? null : scanError}
-            onOpen={(ref) => {
-              openDoc(ref);
-              setShowGraph(false);
-            }}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            {/* Narrow-only: the rail is hidden while the graph is up (see the
+                aside condition above), so give an explicit way back to the list
+                — mirrors the document view's back header. */}
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 @min-[880px]/grimoire:hidden">
+              <button
+                type="button"
+                onClick={() => setShowGraph(false)}
+                aria-label="Back to document list"
+                className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:arrow-left" width={13} aria-hidden />
+              </button>
+              <span className="text-[11px] text-[var(--text-secondary)]">Documents</span>
+            </div>
+            <div className="min-h-0 flex-1">
+              <GrimoireGraphView
+                graph={graph}
+                meta={scan?.meta ?? null}
+                scanning={scanning}
+                scanError={scan ? null : scanError}
+                onOpen={(ref) => {
+                  openDoc(ref);
+                  setShowGraph(false);
+                }}
+              />
+            </div>
+          </div>
         ) : selection ? (
           <div className="flex h-full min-h-0 flex-col">
             <div
