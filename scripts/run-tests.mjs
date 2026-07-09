@@ -366,6 +366,7 @@ export const SUITES = {
     "src/app/api/familiar-self-report-route.test.ts",
     "src/components/familiar-analytics-view.test.ts",
     "src/components/familiar-analytics-navigation.test.ts",
+    "src/components/analytics-page-shell.test.ts",
     "src/lib/server/familiar-self-reports.test.ts",
     "src/components/thread-signal-card.test.ts",
     "src/components/thread-signals-section.test.ts",
