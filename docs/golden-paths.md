@@ -110,32 +110,31 @@ every element of the answer is one click from acting on it.
 **Story:** As a developer, I want to hand my familiar a change, review the
 diff, and keep the result — without leaving the app for git plumbing.
 
-**The path today:** chat binds a project (`chat-projects.ts`,
-`activeProjectRoot`; per-familiar project grants in the Studio); the code
-rail browses and edits files (`rail-files-panel.tsx`,
-`rail-file-preview.tsx` → `POST /api/project-file`); a unified diff renderer
-exists (`gh-diff-view.tsx`) but is GitHub-review-scoped. **There is no
-working-tree diff view, no review gate, and no commit affordance** — a
-familiar's edits sit in the working directory until the user opens a
-terminal.
+**The path today** (corrected 2026-07-09 — the original assessment here was
+written against a stale snapshot and understated the codebase): chat binds a
+project (`chat-projects.ts`, `activeProjectRoot`; per-familiar grants in the
+Studio); the code rail's **Changes** tab renders the working-tree diff per
+project root (`session-changes-panel.tsx` over `GET /api/changes`,
+double-allowlisted to registered project roots + daemon session roots);
+per-file **revert** with auto-checkpoint, patch-based **checkpoints**, a
+signed **Commit** action (`git add -A` + feature-branch-on-default +
+`git commit -S`) and **Create PR** all live on the same route; chat edit
+cards carry per-file Review/Undo wired through `cave:open-file-diff` /
+`cave:changes-refresh`.
 
-**Where it breaks:** review-and-keep exits the app exactly at the moment of
-highest trust-sensitivity.
+**Where it broke** (the remaining sliver): a turn that edited *several*
+files offered only per-card Review buttons — no single aggregate entry into
+the review at the turn level.
 
-**Enablement plan** (bead `cave-qva4`):
-1. The code rail gains a **Changes** tab: read-only working-tree diff per
-   project root via a new `GET /api/project/changes` (`git status` +
-   `git diff`, allowlisted to registered project roots), rendered with the
-   existing `gh-diff-view` hunks.
-2. A **Checkpoint** action commits the working tree on that root
-   (`git add -A` + signed commit with a generated message) through a server
-   route with the same root allowlisting. No push — publishing stays a
-   deliberate, external act.
-3. Chat linking: when a familiar's turn edited files, the turn footer offers
-   "N files changed — review", opening the Changes tab.
+**Enablement** (bead `cave-qva4`, delivered): phases 1–2 of the original
+plan pre-existed as `/api/changes`, richer than specced (commit *and* PR —
+note the existing Create PR affordance does push, deliberately, on click).
+Phase 3 shipped as an aggregate chip: a settled turn whose edit cards
+touched more than one distinct file renders "N files changed · Review all",
+opening the Changes tab through the cards' existing event contract.
 
-**Done means:** delegate → review the actual diff → checkpoint, all in-app;
-nothing is auto-pushed anywhere.
+**Done means:** delegate → review the actual diff → checkpoint/commit, all
+in-app; nothing is pushed without a deliberate click.
 
 ## 5 · Take Cave with you
 

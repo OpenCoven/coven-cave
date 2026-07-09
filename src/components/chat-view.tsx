@@ -5843,10 +5843,43 @@ function TurnRowImpl({
                     toolInputAsDiff(t.name, t.input) != null;
                   const editCards = turn.tools.filter(isEditCard);
                   const otherTools = turn.tools.filter((t) => !isEditCard(t));
+                  // Golden path 4 (cave-qva4): a multi-file turn gets ONE
+                  // aggregate entry into the working-tree review — the
+                  // per-card Review buttons remain, but "which of these five
+                  // cards do I click" shouldn't be the first question. The
+                  // chip rides the cards' existing cave:open-file-diff
+                  // contract (the Changes panel suffix-matches the path and
+                  // shows every changed file once open).
+                  const editedFiles = Array.from(
+                    new Set(
+                      editCards
+                        .map((t) => toolTargetFile(t.name, t.input))
+                        .filter((p): p is string => Boolean(p)),
+                    ),
+                  );
                   return (
                     <>
                       {editCards.length ? (
                         <div className="cave-edit-cards mt-3 space-y-2">
+                          {editedFiles.length > 1 ? (
+                            <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
+                              <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                                {editedFiles.length} files changed
+                              </span>
+                              <button
+                                type="button"
+                                className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                                aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
+                                onClick={() =>
+                                  window.dispatchEvent(
+                                    new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                                  )
+                                }
+                              >
+                                Review all
+                              </button>
+                            </div>
+                          ) : null}
                           {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
                         </div>
                       ) : null}

@@ -185,6 +185,23 @@ assert.match(
   /const isEditCard = \(t: ToolEvent\) =>\s*toolInputAsDiff\(t\.name, t\.input\) != null;/,
   "any structured file mutation diff stays visible inline, even when the tool input only has a relative path",
 );
+// Golden path 4 (cave-qva4): a multi-file turn gets ONE aggregate entry into
+// the working-tree review, riding the per-card cave:open-file-diff contract.
+assert.match(
+  turnRow,
+  /const editedFiles = Array\.from\(\s*\n\s*new Set\(\s*\n\s*editCards\s*\n\s*\.map\(\(t\) => toolTargetFile\(t\.name, t\.input\)\)/,
+  "the aggregate counts DISTINCT edited files (the same file edited twice is one change)",
+);
+assert.match(
+  turnRow,
+  /\{editedFiles\.length > 1 \? \([\s\S]{0,400}?\{editedFiles\.length\} files changed/,
+  "turns that edited more than one distinct file render the 'N files changed' chip (single-file turns keep just the card's own Review)",
+);
+assert.match(
+  turnRow,
+  /aria-label=\{`Review all \$\{editedFiles\.length\} changed files in the Changes tab`\}[\s\S]{0,300}?cave:open-file-diff/,
+  "Review all opens the Changes tab through the cards' existing event contract",
+);
 assert.match(
   turnRow,
   /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
