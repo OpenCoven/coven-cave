@@ -8,6 +8,14 @@
 #   - weekly schedule — safety net for missed dispatches.
 #
 # The PR is never auto-merged: required CI gates it and a human clicks merge.
+#
+# Setup (one-time): the bot branch/PR must be pushed with SYNC_RUNTIMES_TOKEN —
+# a fine-grained PAT for this repo with "Contents: read & write" and
+# "Pull requests: read & write". Events created with the workflow's own
+# GITHUB_TOKEN never trigger other workflows (GitHub's recursion guard), so a
+# PR pushed with it would sit with zero required checks and could never merge.
+# The job fails loudly when the secret is missing rather than opening an
+# ungated PR.
 
 name: Sync runtimes registry
 
@@ -19,8 +27,7 @@ on:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 concurrency:
   group: sync-runtimes
@@ -64,10 +71,20 @@ jobs:
           node --experimental-strip-types src/lib/harness-adapters.test.ts
           node --experimental-strip-types src/lib/runtime-models.test.ts
 
+      - name: Require the bot token
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_RUNTIMES_TOKEN }}
+        run: |
+          if [ -z "$SYNC_TOKEN" ]; then
+            echo "::error::SYNC_RUNTIMES_TOKEN is not set. A PR pushed with GITHUB_TOKEN would trigger no required checks (GitHub skips workflows for events created by the workflow token) and could never merge. Create a fine-grained PAT (Contents + Pull requests: read & write on this repo) and add it as the SYNC_RUNTIMES_TOKEN secret."
+            exit 1
+          fi
+
       - name: Create or refresh the sync PR
         if: steps.diff.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_RUNTIMES_TOKEN }}
         run: |
           set -euo pipefail
           BRANCH=bot/sync-runtimes
@@ -88,6 +105,9 @@ jobs:
           '
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Push with the PAT (not the checkout-persisted GITHUB_TOKEN) so the
+          # push event triggers the required CI workflows on the PR.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git checkout -B "$BRANCH"
           git add src/lib/runtime-registry.gen.ts
           git commit -m "chore(runtimes): sync accepted registry from coven-runtimes"

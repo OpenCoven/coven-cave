@@ -33,7 +33,11 @@ const OUTPUT_PATH = path.join(scriptDir, "..", "src", "lib", "runtime-registry.g
 
 const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
 
-/** Compare two `major.minor.patch[-pre]` strings; release > prerelease. */
+/** Compare two `major.minor.patch[-pre]` strings; release > prerelease.
+ *  Prerelease precedence follows semver §11.4: dot-separated identifiers
+ *  compare numerically when both are all-digits (so rc.10 > rc.9), lexically
+ *  otherwise; numeric identifiers rank below alphanumeric; fewer identifiers
+ *  lose the tie. */
 export function compareSemver(a, b) {
   const parse = (v) => {
     const [core, ...pre] = String(v).split("-");
@@ -49,7 +53,20 @@ export function compareSemver(a, b) {
   if (pa.pre === pb.pre) return 0;
   if (!pa.pre) return 1; // release beats prerelease
   if (!pb.pre) return -1;
-  return pa.pre < pb.pre ? -1 : 1;
+  const idsA = pa.pre.split(".");
+  const idsB = pb.pre.split(".");
+  const NUM_RE = /^\d+$/;
+  for (let i = 0; i < Math.min(idsA.length, idsB.length); i++) {
+    const ia = idsA[i];
+    const ib = idsB[i];
+    if (ia === ib) continue;
+    const na = NUM_RE.test(ia);
+    const nb = NUM_RE.test(ib);
+    if (na && nb) return Number(ia) - Number(ib);
+    if (na !== nb) return na ? -1 : 1; // numeric < alphanumeric
+    return ia < ib ? -1 : 1;
+  }
+  return idsA.length - idsB.length;
 }
 
 /**

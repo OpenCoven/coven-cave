@@ -18,6 +18,13 @@ assert.ok(compareSemver("1.2.0", "1.1.9") > 0, "minor bump wins");
 assert.ok(compareSemver("0.10.0", "0.9.1") > 0, "numeric (not lexical) compare");
 assert.ok(compareSemver("1.0.0", "1.0.0-rc.1") > 0, "release beats prerelease");
 assert.equal(compareSemver("2.0.0", "2.0.0"), 0, "equal versions compare equal");
+// Semver §11.4 prerelease precedence (review finding: plain string compare
+// ranked rc.10 below rc.9).
+assert.ok(compareSemver("1.0.0-rc.10", "1.0.0-rc.9") > 0, "numeric prerelease identifiers compare numerically");
+assert.ok(compareSemver("1.0.0-beta.11", "1.0.0-beta.2") > 0, "beta.11 > beta.2");
+assert.ok(compareSemver("1.0.0-alpha", "1.0.0-alpha.1") < 0, "fewer identifiers lose the tie");
+assert.ok(compareSemver("1.0.0-alpha.1", "1.0.0-alpha.beta") < 0, "numeric identifiers rank below alphanumeric");
+assert.ok(compareSemver("1.0.0-beta", "1.0.0-alpha") > 0, "alphanumeric identifiers compare lexically");
 
 // ── latest non-yanked pick ───────────────────────────────────────────────────
 {
