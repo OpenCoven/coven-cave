@@ -255,9 +255,14 @@ assert.match(
 );
 assert.match(
   source,
-  /mermaidPlugin\(\{[\s\S]{0,180}theme: "dark"[\s\S]{0,180}securityLevel: "strict", suppressErrorRendering: true/,
-  "mermaid is initialized with the dark theme, strict security, and syntax-error SVG rendering disabled",
+  /mermaidPlugin\(\{[\s\S]{0,320}theme: "base"[\s\S]{0,320}securityLevel: "strict", suppressErrorRendering: true/,
+  "mermaid initializes on the base theme (the only one honoring themeVariables) with strict security and syntax-error SVG rendering disabled",
 );
+// cave-po4f: theme tokens reach mermaid as canvas-resolved hex (khroma cannot
+// parse oklch/color-mix), and the inline-SVG CSS overrides in cave-chat.css
+// keep diagrams tracking the live theme regardless.
+assert.match(source, /function themeToken\(name: string, fallback: string\): string/, "theme tokens resolve through the canvas hex helper");
+assert.match(source, /darkMode: true,/, "base theme derives shades on the dark ramp");
 assert.match(
   source,
   /function isMermaidCodeBlock[\s\S]{0,360}=== "mermaid"/,
