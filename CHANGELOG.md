@@ -7,6 +7,40 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.159] - 2026-07-08
+
+> 🪟 **Frosted glass and a Copilot in the cave** — overlay chrome goes translucent with real backdrop depth, GitHub Copilot CLI joins as a first-class runtime, the Changes panel reviews your diff in one click, and mornings start with a "Needs you" triage strip.
+
+Patch release on top of v0.0.158.
+
+### Features
+- **Harness: GitHub Copilot CLI is a first-class runtime** (#2791) — bundled `copilot` adapter with install hints and aliases, a `github/`-provider model menu (Auto, GPT-5.5, Claude Opus 4.8 / Sonnet 5 / Haiku 4.5, Gemini 3.1 Pro), onboarding, logos, and analytics awareness.
+- **Chrome: glassmorphic overlays** (#2790, cave-6u0j) — popovers, modals, the ⌘K palette, and the notification bell pair translucent theme-derived fills with backdrop blur, with opaque fallbacks for `prefers-reduced-transparency` and no-`backdrop-filter` environments.
+- **Code: a Review button in the Changes panel** (#2785, cave-nqoy) starts a new session that reviews the uncommitted working-tree changes like a commit review — verdict first, then bugs, security, test gaps, nits.
+- **Home: a "Needs you" morning-triage strip** (#2793, cave-925w) — one glance, one source, with today's report a click away.
+- **Projects: hub round 2** (#2789, cave-dn9w) — task deep-links, Reveal in Finder, and the color row demoted to the overflow.
+- **Settings: the summon chip rides the familiar roster** — picker wraps, project filter, capped decisions (#2782).
+- **Dashboard: the recent daily-reports list scrolls** (#2794).
+
+### Fixes
+- **Appearance: theme-token edits layer on the selected theme** and the redundant color editor is gone (#2792, cave-qz3m).
+- **Composer: visible input text and icons** — icons take the primary tier, placeholders 85% foreground (#2778, cave-tjcx).
+
+### Accessibility
+- **Journal: audible mutations, real headings, visible focus, and a spoken disabled reason** (#2780, cave-t1ou).
+
+### Performance
+- **Journal: day reads no longer block on the memory-inventory scan** (#2784, cave-tgx9).
+- **Sidebar: the recent-activity poll is guarded** with content equality + a sequence id (#2779, cave-lb4e).
+
+### Polish
+- **Chrome: the title bar slims to the traffic-light height** (#2781, cave-p78p).
+- **Marketplace: the skill-browser rail slims from five labeled groups to three** (#2786, cave-99k1).
+- **Home: the news lane drops its newspaper chrome marker** (#2788, cave-e2zx).
+
+### Docs
+- **Golden paths** — eight journeys with grounded current state and conservative enablement plans (#2787, cave-60fu).
+
 ## [0.0.158] - 2026-07-08
 
 > 🗂️ **Nothing hides the folder browser** — the project directory picker escapes its host's stacking context and always renders on top. Stale polls stop clobbering fresh state on schedules and the board, the sidenav familiar switcher settles into its final chrome, and the inbox goes quieter over SSE.
