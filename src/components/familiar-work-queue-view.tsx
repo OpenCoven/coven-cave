@@ -56,21 +56,22 @@ type FetchedQueue = {
   queue: WorkQueue;
   /** False when the beads adapter failed and the queue is PRs-only. */
   beadsOk: boolean;
+  /** False when the PR bridge failed and the queue is beads-only. */
+  prsOk: boolean;
+  /** The PR bridge's error, kept for the degradation banner's tooltip. */
+  prsError: string | null;
 };
 
-// The PR bridge is the queue's spine — its failure fails the load. The beads
-// adapter instead DEGRADES the queue to PRs-only (the no-open-PR and
-// post-merge-cleanup lanes need the ready set), but the degradation is
-// reported via `beadsOk` so the surface can say so rather than silently
-// rendering fewer lanes.
+// Either source alone still renders a useful queue, so a single failing
+// adapter DEGRADES the surface (with a truthful banner) instead of failing the
+// whole load: beads-only when the gh PR bridge is down, PRs-only when the
+// beads adapter is down. Only both failing rejects — then there is genuinely
+// nothing to show.
 async function fetchQueue(signal: AbortSignal): Promise<FetchedQueue> {
   const [beadsSettled, prsSettled] = await Promise.allSettled([
     fetch("/api/beads?mode=ready", { cache: "no-store", signal }).then((res) => res.json()),
     fetch("/api/beads/prs", { cache: "no-store", signal }).then((res) => res.json()),
   ]);
-  if (prsSettled.status === "rejected") throw prsSettled.reason;
-  const prsJson = prsSettled.value;
-  if (!prsJson.ok) throw new Error(prsJson.error || "PR bridge unavailable");
 
   let readyBeads: ReadyBead[] = [];
   let beadsOk = false;
@@ -78,9 +79,27 @@ async function fetchQueue(signal: AbortSignal): Promise<FetchedQueue> {
     readyBeads = beadsSettled.value.data;
     beadsOk = true;
   }
-  const open: PullRequestSummary[] = Array.isArray(prsJson.open) ? prsJson.open : [];
-  const merged: MergedPrRef[] = Array.isArray(prsJson.merged) ? prsJson.merged : [];
-  return { queue: buildWorkQueue(readyBeads, open, merged, { nowMs: Date.now() }), beadsOk };
+
+  let open: PullRequestSummary[] = [];
+  let merged: MergedPrRef[] = [];
+  let prsOk = false;
+  let prsError: string | null = null;
+  if (prsSettled.status === "fulfilled" && prsSettled.value.ok) {
+    open = Array.isArray(prsSettled.value.open) ? prsSettled.value.open : [];
+    merged = Array.isArray(prsSettled.value.merged) ? prsSettled.value.merged : [];
+    prsOk = true;
+  } else {
+    prsError =
+      prsSettled.status === "rejected"
+        ? prsSettled.reason instanceof Error
+          ? prsSettled.reason.message
+          : String(prsSettled.reason)
+        : prsSettled.value.error || "PR bridge unavailable";
+  }
+
+  if (!beadsOk && !prsOk) throw new Error(prsError || "queue sources unavailable");
+
+  return { queue: buildWorkQueue(readyBeads, open, merged, { nowMs: Date.now() }), beadsOk, prsOk, prsError };
 }
 
 // Content equality for the poll: the queue is a plain, deterministically-built
@@ -97,6 +116,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [beadsDegraded, setBeadsDegraded] = useState(false);
+  const [prsDegraded, setPrsDegraded] = useState<string | null>(null);
   // ISO timestamp of the last successful load — the header's truthfulness
   // signal. If quiet polls fail, this readout ages instead of lying "fresh".
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -118,17 +138,18 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      const { queue: next, beadsOk } = await fetchQueue(ctrl.signal);
+      const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal);
       if (seq !== loadSeq.current) return; // a newer load won
       setQueue((prev) => (prev && sameQueue(prev, next) ? prev : next));
       setBeadsDegraded(!beadsOk);
+      setPrsDegraded(prsOk ? null : prsError || "PR bridge unavailable");
       setError(null);
       setLastUpdated(new Date().toISOString());
     } catch (err) {
       if (ctrl.signal.aborted || seq !== loadSeq.current) return;
       // Keep whatever data is on screen — the render picks between the
       // full-surface empty state (no data yet) and the inline refresh banner.
-      setError(err instanceof Error ? err.message : "Failed to load the work queue");
+      setError(err instanceof Error ? err.message : "Failed to load the queue");
     } finally {
       if (seq === loadSeq.current) setHasLoaded(true);
     }
@@ -146,8 +167,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     announcedRef.current = true;
     announce(
       queue.total === 0
-        ? "Work queue is clear — no open PRs or ready beads."
-        : `Work queue loaded: ${queue.actionable} actionable of ${queue.total}.`,
+        ? "Queue is clear — no open PRs or ready beads."
+        : `Queue loaded: ${queue.actionable} actionable of ${queue.total}.`,
     );
   }, [hasLoaded, queue, announce]);
 
@@ -231,7 +252,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     return (
       <div className="fwq" aria-busy>
         <header className="surface-compact-header">
-          {embedded ? null : <h1 className="surface-compact-title">Work Queue</h1>}
+          {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
         </header>
         <div className="fwq-body">
           <SkeletonRows count={6} />
@@ -246,7 +267,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
         <div className="fwq-body">
           <EmptyState
             icon="ph:warning-circle"
-            headline="Couldn't load the work queue"
+            headline="Couldn't load the queue"
             subtitle={error}
             actions={
               <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
@@ -267,7 +288,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           Marketplace / Tasks / Grimoire): small title, live summary inline
           (with a truthful "updated Xm ago" readout), Refresh on the right. */}
       <header className="surface-compact-header">
-        {embedded ? null : <h1 className="surface-compact-title">Work Queue</h1>}
+        {embedded ? null : <h1 className="surface-compact-title">Queue</h1>}
         <p className="surface-compact-summary">
           {q.total === 0
             ? "No open PRs or ready beads."
@@ -280,7 +301,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             size="sm"
             leadingIcon="ph:arrow-clockwise"
             onClick={() => void load()}
-            aria-label="Refresh work queue"
+            aria-label="Refresh queue"
           >
             Refresh
           </Button>
@@ -329,6 +350,14 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
           <Icon name="ph:plugs" width={14} aria-hidden />
           <span className="fwq-banner-text">
             Beads adapter unavailable — showing PRs only; ready beads and post-merge cleanup are hidden.
+          </span>
+        </div>
+      ) : null}
+      {prsDegraded ? (
+        <div className="fwq-banner fwq-banner--warn" role="status" title={prsDegraded}>
+          <Icon name="ph:plugs" width={14} aria-hidden />
+          <span className="fwq-banner-text">
+            GitHub PR bridge unavailable — showing ready beads only; PR lanes are hidden.
           </span>
         </div>
       ) : null}
