@@ -725,7 +725,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             onChange={setActiveTab}
             items={[
               { id: "tasks" as const, label: "Tasks" },
-              { id: "queue" as const, label: "Work queue" },
+              { id: "queue" as const, label: "Queue" },
             ]}
           />
         ) : null}

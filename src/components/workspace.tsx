@@ -169,7 +169,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   submissions: "Submissions",
   capabilities: "Capabilities",
-  "familiar-work-queue": "Work Queue",
+  "familiar-work-queue": "Queue",
   journal: "Journal",
   grimoire: "Grimoire",
 };
