@@ -338,6 +338,36 @@ function ShellInner({
     if (navOpen || isMobile) setNavPeeking(false);
   }, [navOpen, isMobile]);
 
+  // Dia-style traffic lights: on the macOS desktop shell the native
+  // close/minimize/zoom buttons float over the side panel's top edge. With
+  // the panel fully closed (not even hover-peeked) they'd hover over page
+  // content, so they follow the panel — hidden with it, back the moment it
+  // opens or peeks. The root attribute lets globals.css release the 78px
+  // title-bar inset in the same breath; the native call is an app command
+  // (set_traffic_lights_visible in lib.rs), so it needs no ACL entry. Mobile
+  // layouts keep their drawer chrome and never hide the lights.
+  const trafficLightsVisible = navOpen || navPeeking || isMobile;
+  useEffect(() => {
+    const root = document.documentElement;
+    // Only the macOS desktop Tauri shell overlays the title bar (the effect
+    // above sets this marker); everywhere else there are no lights to manage.
+    if (!("tauriTitlebar" in root.dataset)) return;
+    root.dataset.trafficLights = trafficLightsVisible ? "visible" : "hidden";
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("set_traffic_lights_visible", { visible: trafficLightsVisible }))
+      .catch(() => {
+        // Pre-update shell without the command — the attribute above still
+        // frees the inset; the native buttons just stay put.
+      });
+    return () => {
+      // If the shell ever unmounts mid-hide, leave the window usable.
+      delete root.dataset.trafficLights;
+      void import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("set_traffic_lights_visible", { visible: true }))
+        .catch(() => {});
+    };
+  }, [trafficLightsVisible]);
+
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
   // viewport edges) so child surfaces (e.g. the Home composer) can visually

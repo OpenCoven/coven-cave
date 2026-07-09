@@ -235,4 +235,45 @@ assert.doesNotMatch(
   "Shell no longer wires the retired in-panel collapse event",
 );
 
+
+// ── Dia-style traffic lights follow the side panel (cave-9ja2) ──────────────
+{
+  const librs = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+  assert.match(
+    shell,
+    /const trafficLightsVisible = navOpen \|\| navPeeking \|\| isMobile;/,
+    "lights show whenever the panel is open, hover-peeked, or the layout is mobile",
+  );
+  assert.match(
+    shell,
+    /invoke\("set_traffic_lights_visible", \{ visible: trafficLightsVisible \}\)/,
+    "the shell drives the native buttons through the app command",
+  );
+  assert.match(
+    shell,
+    /root\.dataset\.trafficLights = trafficLightsVisible \? "visible" : "hidden";/,
+    "the root attribute mirrors the native state for CSS",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: 12px;/,
+    "hiding the lights releases the 78px title-bar inset",
+  );
+  assert.match(
+    librs,
+    /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
+    "the Rust command exists",
+  );
+  assert.match(
+    librs,
+    /standardWindowButton: kind/,
+    "the command toggles NSWindow's standard buttons",
+  );
+  assert.match(
+    librs,
+    /shell_pick_directory,\s*set_traffic_lights_visible,/,
+    "the command is registered with the invoke handler",
+  );
+}
+
 console.log("shell-edge-rails.test.ts OK");
