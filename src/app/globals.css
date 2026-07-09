@@ -5677,6 +5677,10 @@ button:active > .edge-rail-chip {
 
 /* Row checkbox — the multiselect zone. Clicking it toggles the familiar in
    the scope (menu stays open); a plain row click still solo-switches. */
+/* The checkbox is the multi-select click zone, but rows should read as a clean
+   dropdown by default — the empty box only fades in on hover/focus, when the
+   row is checked, or while a ≥2 multiselect scope is live (data-multi on the
+   list). Its 14px slot is always reserved so rows never shift. */
 .familiar-switcher__checkbox {
   display: grid;
   place-items: center;
@@ -5687,8 +5691,16 @@ button:active > .edge-rail-chip {
   border: 1px solid var(--border-strong);
   color: var(--accent-foreground);
   background: transparent;
+  opacity: 0;
   transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
+    border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard);
+}
+.familiar-switcher__checkbox.is-checked,
+.familiar-switcher__option:hover .familiar-switcher__checkbox,
+.familiar-switcher__option:focus-visible .familiar-switcher__checkbox,
+.familiar-switcher__list[data-multi] .familiar-switcher__checkbox {
+  opacity: 1;
 }
 .familiar-switcher__checkbox.is-checked {
   background: var(--accent-presence);
@@ -6172,9 +6184,39 @@ button:active > .edge-rail-chip {
 /* Footer actions. */
 .familiar-switcher__foot {
   display: flex;
+  flex-direction: column;
   gap: 4px;
   padding: 6px;
   border-top: 1px solid var(--border-hairline);
+}
+
+/* Summoning is the invitation here — dashed border per the design language,
+   tinted with presence, full width so it cannot be missed. */
+.familiar-switcher__summon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 8%, transparent);
+  color: var(--accent-presence);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+.familiar-switcher__summon:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
+}
+
+.familiar-switcher__foot-row {
+  display: flex;
+  gap: 4px;
 }
 
 .familiar-switcher__foot-btn {

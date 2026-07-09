@@ -231,7 +231,13 @@ export function FamiliarSwitcher({
               </SortableContext>
             </DndContext>
           ) : (
-            <ul className="familiar-switcher__list" role="listbox" aria-label="Switch familiar" aria-multiselectable="true">
+            <ul
+              className="familiar-switcher__list"
+              role="listbox"
+              aria-label="Switch familiar"
+              aria-multiselectable="true"
+              data-multi={multiScope ? "true" : undefined}
+            >
               <li>
                 <button
                   type="button"
@@ -307,27 +313,31 @@ export function FamiliarSwitcher({
               </button>
             ) : (
               <>
+                {/* Summoning gets top billing — the dashed invitation opens the
+                    summoning circle; roster housekeeping sits quieter below. */}
                 <button
                   type="button"
-                  className="familiar-switcher__foot-btn familiar-switcher__foot-btn--pri"
+                  className="familiar-switcher__summon focus-ring"
                   onClick={() => { fireCreateFamiliar(); setOpen(false); }}
                 >
-                  <Icon name="ph:plus-bold" width={11} aria-hidden /> New
+                  <Icon name="ph:magic-wand-fill" width={13} aria-hidden /> Summon familiar
                 </button>
-                <button
-                  type="button"
-                  className="familiar-switcher__foot-btn"
-                  onClick={() => { openFamiliarStudioListView(); setOpen(false); }}
-                >
-                  <Icon name="ph:list-bullets" width={11} aria-hidden /> Manage
-                </button>
-                <button
-                  type="button"
-                  className="familiar-switcher__foot-btn"
-                  onClick={() => setReordering(true)}
-                >
-                  <Icon name="ph:dots-six-vertical" width={11} aria-hidden /> Reorder
-                </button>
+                <div className="familiar-switcher__foot-row">
+                  <button
+                    type="button"
+                    className="familiar-switcher__foot-btn"
+                    onClick={() => { openFamiliarStudioListView(); setOpen(false); }}
+                  >
+                    <Icon name="ph:list-bullets" width={11} aria-hidden /> Manage
+                  </button>
+                  <button
+                    type="button"
+                    className="familiar-switcher__foot-btn"
+                    onClick={() => setReordering(true)}
+                  >
+                    <Icon name="ph:dots-six-vertical" width={11} aria-hidden /> Reorder
+                  </button>
+                </div>
               </>
             )}
           </div>

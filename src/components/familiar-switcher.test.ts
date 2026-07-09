@@ -99,15 +99,44 @@ assert.match(
 // per-row pin toggle.
 assert.doesNotMatch(source, /togglePin|familiar-switcher__pin|useFamiliarPins/, "the dropdown has no per-row pin toggle (pinning moved to Settings)");
 
-// Footer: create (onboarding), manage (Studio list view), reorder.
+// Footer: a prominent full-width Summon invitation, with manage (Studio list
+// view) and reorder as quieter actions beneath it (cave-6p5l).
 assert.match(
   source,
   /new CustomEvent\("cave:onboarding-open"\)/,
-  "New routes to the onboarding create flow (familiars are daemon-owned)",
+  "Summon routes to the summoning circle (familiars are daemon-owned)",
+);
+assert.match(
+  source,
+  /className="familiar-switcher__summon focus-ring"[\s\S]{0,200}ph:magic-wand-fill[\s\S]{0,100}Summon familiar/,
+  "the footer leads with a full-width Summon familiar button wearing the circle's wand",
 );
 assert.match(source, /openFamiliarStudioListView\(\)/, "Manage opens the Studio list view");
 assert.match(source, /setReordering\(true\)/, "Reorder enables drag mode");
 assert.match(source, /setFamiliarOrder\(arrayMove\(/, "reorder persists the new familiar order");
+
+// Rows read as a clean dropdown: the checkbox zone keeps its slot but only
+// fades in on hover/focus, when checked, or while a multiselect scope is live.
+assert.match(
+  source,
+  /data-multi=\{multiScope \? "true" : undefined\}/,
+  "the list flags a live multiselect scope so CSS can keep all checkboxes visible",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__checkbox \{[\s\S]*?opacity: 0;/,
+  "checkbox zones rest invisible so rows read as a plain dropdown",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__checkbox\.is-checked,[\s\S]*?\.familiar-switcher__list\[data-multi\] \.familiar-switcher__checkbox \{[\s\S]*?opacity: 1;/,
+  "checked rows, hovered rows, and a live multiselect reveal the checkbox",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__summon \{[\s\S]*?width: 100%;[\s\S]*?border: 1px dashed color-mix\(in oklch, var\(--accent-presence\)/,
+  "the Summon button is a full-width dashed invitation tinted with presence",
+);
 
 // Styling hooks exist.
 assert.match(globals, /\.familiar-switcher__trigger \{/, "trigger has dedicated styling");
