@@ -8998,6 +8998,13 @@ a.dr-metric--link:hover .dr-metric__go {
 
 /* Item rows ----------------------------------------------------------------- */
 .dr-list { display: flex; flex-direction: column; gap: 8px; }
+.dr-list--scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
 .dr-row {
   display: flex;
   align-items: flex-start;
