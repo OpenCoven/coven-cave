@@ -11209,30 +11209,49 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   /* Reflow by the panel's own width, not the viewport — the analytics surface also
      renders in the narrow inspector sidepanel, where a fixed 5-column grid crushed
      each cell and broke labels mid-word. auto-fit collapses empty tracks so the
-     items still stretch edge-to-edge on the wide full-page view. */
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
+     items still stretch edge-to-edge on the wide full-page view. A 140px floor
+     keeps the two-word property names ("Bounded Authority", "Persistent
+     Memory") on one or two clean lines instead of ragged three-line wraps. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  align-items: stretch;
 }
 .fa-contract-item {
   display: flex;
-  align-items: center;
-  gap: 7px;
+  /* Top-align the badge with the label's first line — with centered
+     alignment, two-line labels floated the icon into the seam between lines. */
+  align-items: flex-start;
+  gap: 8px;
   min-width: 0;
-  padding: 9px;
+  padding: 9px 11px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
+  /* Filled tile, matching the score-tile language of the neighboring panels
+     (.fa-thread-score) instead of a hollow outline. */
+  background: var(--bg-base);
   color: var(--text-secondary);
   font-size: 12px;
+}
+.fa-contract-item svg {
+  flex: 0 0 auto;
+  /* Optically center the 1em glyph against the first text line (1.35lh). */
+  margin-top: 1.5px;
 }
 .fa-contract-item span {
   min-width: 0;
   /* Wrap at word boundaries; only break a single over-long word as a last resort
      (avoids the "Name / d / Identit / y" character shredding in tight columns). */
   overflow-wrap: break-word;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 .fa-contract-item.is-pass svg { color: var(--color-success); }
 .fa-contract-item.is-fail svg { color: var(--color-danger); }
+/* Failing properties tint their hairline so the needs-review items pop before
+   the icon color resolves at a glance. */
+.fa-contract-item.is-fail {
+  border-color: color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
+  color: var(--text-primary);
+}
 
 /* Pane-width responsiveness — the analytics view also renders in the narrow
    inspector tab, where viewport media queries never fire. */
