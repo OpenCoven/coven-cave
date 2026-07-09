@@ -686,6 +686,9 @@ export function FamiliarAnalyticsContent({
         <FaSection
           id="fa-thread-signals"
           title="Thread signals"
+          // The signals data table earns full width only when there are
+          // reports — an empty state shouldn't claim both columns.
+          wide={model.threadReports.length > 0}
           count={`${model.threadReports.length} ${model.threadReports.length === 1 ? "report" : "reports"}`}
         >
           <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
