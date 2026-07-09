@@ -2256,6 +2256,21 @@ textarea.required-inputs-control {
   color: var(--text-primary);
 }
 
+/* Settings segmented options (Text size, Reading text, Date & time rows).
+   Same cascade problem + cure as .mode-toggle__option below: these render
+   through Button/ghost, whose unlayered transparent background beats the
+   Tailwind accent utilities the rows pass in — so the selected segment showed
+   no selection (cave-q42g). Unlayered + !important wins the state back;
+   parity with the shared Segmented control (Corner radius). */
+.settings-segment[aria-pressed="true"] {
+  background: var(--accent-presence) !important;
+  color: var(--accent-presence-foreground) !important;
+}
+.settings-segment[aria-pressed="true"]:hover {
+  background: var(--accent-presence) !important;
+  color: var(--accent-presence-foreground) !important;
+}
+
 .mode-toggle__option[aria-pressed="true"] {
   background: color-mix(in oklch, var(--accent-presence) 20%, var(--bg-raised)) !important;
   border-color: color-mix(in oklch, var(--accent-presence) 44%, var(--border-strong)) !important;

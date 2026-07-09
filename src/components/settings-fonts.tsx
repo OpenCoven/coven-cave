@@ -137,8 +137,16 @@ function SegmentButton({
   extra?: string;
   children: ReactNode;
 }) {
+  // The `settings-segment` class exists for the pressed-state CSS in
+  // globals.css: .ui-btn--ghost is UNLAYERED (background: transparent + its
+  // own :hover) and unlayered rules beat Tailwind's layered utilities
+  // unconditionally — so the Tailwind accent classes below never painted and
+  // the selected option was indistinguishable (Corner radius, on the shared
+  // Segmented's plain button element, never had this fight). Same cure as
+  // .mode-toggle__option[aria-pressed="true"]: scoped unlayered CSS wins back
+  // the pressed state.
   return (
-    <Button variant="ghost" size="xs" className={segBtn(active, extra)} {...props}>
+    <Button variant="ghost" size="xs" className={`settings-segment ${segBtn(active, extra)}`} {...props}>
       {children}
     </Button>
   );

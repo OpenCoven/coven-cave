@@ -37,6 +37,33 @@ assert.match(src, /Code &amp; terminal/, "keeps the code and terminal preview");
 assert.match(shell, /import \{ FontSettings \} from "\.\/settings-fonts"/, "shell imports FontSettings");
 assert.match(shell, /<FontSettings\s*\/>/, "AppearanceSection renders <FontSettings />");
 
+// ── The selected segment must actually LOOK selected (cave-q42g) ─────────────
+// SegmentButton renders through Button variant="ghost"; .ui-btn--ghost is
+// UNLAYERED CSS (background: transparent + its own :hover), and unlayered rules
+// beat Tailwind's layered utilities unconditionally — so the active accent
+// classes never painted and Reading text / Date & time selections were
+// invisible (Corner radius, on the shared Segmented's plain <button>, was
+// fine). The cure is the mode-toggle precedent: a scoped unlayered pressed-
+// state rule that wins the background back.
+assert.match(
+  src,
+  /className=\{`settings-segment \$\{segBtn\(active, extra\)\}`\}/,
+  "SegmentButton carries the settings-segment class the pressed-state CSS keys on",
+);
+{
+  const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(
+    globals,
+    /\.settings-segment\[aria-pressed="true"\] \{\s*\n\s*background: var\(--accent-presence\) !important;\s*\n\s*color: var\(--accent-presence-foreground\) !important;/,
+    "the pressed segment's accent fill is unlayered CSS — Button/ghost's unlayered transparent background beats Tailwind utilities, so utilities alone cannot express the selected state",
+  );
+  assert.match(
+    globals,
+    /\.settings-segment\[aria-pressed="true"\]:hover \{/,
+    "hover on the selected segment keeps the accent fill (ghost's own hover would repaint it)",
+  );
+}
+
 // The component must apply the saved fonts on mount (the boot script that would
 // otherwise do it pre-paint is not mounted), so the rendered font matches the
 // persisted selection after a reload — not just after a user change.
