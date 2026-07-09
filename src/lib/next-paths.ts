@@ -56,6 +56,6 @@ export function extractNextPaths(text: string): { visible: string; suggestions: 
     // At most 4 pills ever render — the chip row's product cap (an over-eager
     // agent that lists more gets trimmed, not a fifth row).
     .slice(0, DEFAULT_NEXT_PATHS_COUNT);
-  const visible = (text.slice(0, open) + text.slice(blockEnd)).replace(/\s+$/, "");
+  const visible = (text.slice(0, open) + text.slice(blockEnd)).trimEnd();
   return { visible, suggestions };
 }
