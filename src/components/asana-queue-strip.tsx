@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
@@ -42,6 +43,8 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
   const { announce } = useAnnouncer();
   const [items, setItems] = useState<AsanaItem[]>([]);
   const [configured, setConfigured] = useState(false);
+  const [patInvalid, setPatInvalid] = useState(false);
+  const [reconnectOpen, setReconnectOpen] = useState(false);
   const [busyGid, setBusyGid] = useState<string | null>(null);
   const [filed, setFiled] = useState<Set<string>>(() => new Set());
   const abortRef = useRef<AbortController | null>(null);
@@ -59,14 +62,18 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
       if (ctrl.signal.aborted) return;
       // A failed fetch, unconfigured Asana, or an agent opted out (assigned ===
       // false) leaves the strip hidden — never an error banner; the Queue's
-      // beads/PR sources carry the surface on their own.
+      // beads/PR sources carry the surface on their own. The one exception is a
+      // REJECTED token (patInvalid): that's permanent-until-fixed, and hiding it
+      // made the strip vanish with no cue or way back (cave-d6zq).
       if (data.ok && data.configured && data.assigned !== false) {
         const next = Array.isArray(data.items) ? data.items : [];
         setItems((prev) => (sameItems(prev, next) ? prev : next));
         setConfigured(true);
+        setPatInvalid(false);
       } else {
         setItems((prev) => (prev.length === 0 ? prev : []));
         setConfigured(false);
+        setPatInvalid(data.patInvalid === true);
       }
     } catch {
       if (!ctrl.signal.aborted) {
@@ -118,6 +125,36 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
     },
     [announce, onFiledBead],
   );
+
+  if (patInvalid) {
+    return (
+      <section className="fwq-asana" aria-label="Asana connection">
+        <header className="fwq-asana-head">
+          <Icon name="ph:check-circle" width={14} aria-hidden />
+          <span className="fwq-asana-title">Asana</span>
+          <span className="fwq-asana-summary">token expired — assigned tasks are hidden</span>
+          <Button
+            variant="ghost"
+            size="xs"
+            leadingIcon="ph:plugs"
+            onClick={() => setReconnectOpen((v) => !v)}
+          >
+            {reconnectOpen ? "Cancel" : "Reconnect"}
+          </Button>
+        </header>
+        {reconnectOpen && (
+          <InlineAsanaPATSetup
+            onSaved={() => {
+              setReconnectOpen(false);
+              setPatInvalid(false);
+              announce("Asana reconnected.");
+              void load();
+            }}
+          />
+        )}
+      </section>
+    );
+  }
 
   if (!configured || items.length === 0) return null;
 

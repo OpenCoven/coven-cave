@@ -35,6 +35,7 @@ import { parseHarnessFailure } from "@/lib/harness-failure";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
+import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 import type { CardPatch } from "@/lib/board-card-ops";
 import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
@@ -49,7 +50,6 @@ function formatAttachmentSize(size?: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
-const ASANA_PAT_URL = "https://app.asana.com/0/my-apps";
 
 type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
 const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
@@ -208,6 +208,7 @@ function GitHubAttachSection({
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [patRejected, setPatRejected] = useState(false);
   const [fetchKey, setFetchKey] = useState(0);
   const coarse = useIsCoarsePointer();
 
@@ -218,12 +219,19 @@ function GitHubAttachSection({
     setErr(null);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string }) => {
+      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
         // Drop a superseded/post-close response (open toggled or PAT re-saved).
         if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
+          setPatRejected(false);
+        } else if (d.patInvalid) {
+          // Rejected token: reopen the connect form (it was gated on
+          // configured===false, unreachable with a stored-but-dead PAT).
+          setItems([]);
+          setConfigured(false);
+          setPatRejected(true);
         } else {
           setErr(d.error ?? "failed");
         }
@@ -361,7 +369,14 @@ function GitHubAttachSection({
               <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
             )}
             {!loading && !err && configured === false && (
-              <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setFetchKey((k) => k + 1); }} />
+              <>
+                {patRejected && (
+                  <div style={{ padding: "10px 10px 0", fontSize: 11, color: "var(--color-danger)" }}>
+                    GitHub rejected the stored token (revoked or expired) — reconnect below.
+                  </div>
+                )}
+                <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
+              </>
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
@@ -438,57 +453,6 @@ function GitHubAttachSection({
 // tasks (via /api/asana/assigned, populated once the Asana PAT is stored) so a
 // card can be linked to the work it tracks. When no PAT is configured the
 // inline connect form appears — the in-app "enable Asana" on-ramp.
-function InlineAsanaPATSetup({ onSaved }: { onSaved: () => void }) {
-  const [pat, setPat] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function save() {
-    const trimmed = pat.trim();
-    if (!trimmed) { setError("Enter an Asana personal access token."); return; }
-    setSaving(true); setError(null);
-    try {
-      const res = await fetch("/api/asana/pat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pat: trimmed }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) { setError(data?.error ?? "Failed to save."); return; }
-      onSaved();
-    } catch { setError("Network error — please try again."); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div style={{ padding: "10px 10px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-        <Icon name="ph:check-circle" width={14} className="text-[var(--text-muted)]" />
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Connect Asana</span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>Personal Access Token</label>
-        <input type="password" value={pat} onChange={(e) => setPat(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="1/1234…:abcd…"
-          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
-            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
-      </div>
-      {error && <p style={{ fontSize: 10, color: "var(--color-danger)", margin: 0 }}>{error}</p>}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
-        <button type="button" onClick={() => void openExternalUrl(ASANA_PAT_URL)}
-          style={{ background: "transparent", border: 0, padding: 0, fontSize: 10, color: "var(--accent-presence)", textDecoration: "none", cursor: "pointer" }}>
-          Generate token →
-        </button>
-        <button type="button" disabled={!pat.trim() || saving} onClick={() => void save()}
-          style={{ background: "var(--accent-presence)", color: "var(--text-primary)", border: "none", borderRadius: 6,
-            padding: "4px 12px", fontSize: 11, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
-          {saving ? "Verifying…" : "Save"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function AsanaAttachSection({
   card,
   onPatch,
@@ -504,6 +468,7 @@ function AsanaAttachSection({
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [patRejected, setPatRejected] = useState(false);
   const [fetchKey, setFetchKey] = useState(0);
   const coarse = useIsCoarsePointer();
 
@@ -519,11 +484,20 @@ function AsanaAttachSection({
       : "/api/asana/assigned";
     fetch(url, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; items?: AsanaItem[]; configured?: boolean; error?: string }) => {
+      .then((d: { ok: boolean; items?: AsanaItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
         if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
+          setPatRejected(false);
+        } else if (d.patInvalid) {
+          // Rejected token: reopen the connect form with an explanation. The
+          // raw 401 used to render here forever — and the form was gated on
+          // configured===false, which a stored-but-dead PAT never satisfies
+          // (cave-d6zq).
+          setItems([]);
+          setConfigured(false);
+          setPatRejected(true);
         } else {
           setErr(d.error ?? "failed");
         }
@@ -643,7 +617,14 @@ function AsanaAttachSection({
               <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
             )}
             {!loading && !err && configured === false && (
-              <InlineAsanaPATSetup onSaved={() => { setItems([]); setConfigured(null); setFetchKey((k) => k + 1); }} />
+              <>
+                {patRejected && (
+                  <div style={{ padding: "10px 10px 0", fontSize: 11, color: "var(--color-danger)" }}>
+                    Asana rejected the stored token (revoked or expired) — reconnect below.
+                  </div>
+                )}
+                <InlineAsanaPATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
+              </>
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>

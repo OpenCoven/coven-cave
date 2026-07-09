@@ -71,8 +71,8 @@ assert.doesNotMatch(
 
 assert.match(
   chatRouter,
-  /Choose a familiar from the sidebar selector/,
-  "ChatRouter should explain the new familiar selection path",
+  /Summon your first familiar/,
+  "ChatRouter's zero-roster empty state summons instead of pointing at a selector that lists nothing (cave-3em5)",
 );
 
 assert.match(
