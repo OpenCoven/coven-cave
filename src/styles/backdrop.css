@@ -1,0 +1,61 @@
+/* ── Backdrop vibe ───────────────────────────────────────────────────────────
+   A user-chosen image behind the Chat and Home surfaces. The fixed layer
+   sits under the workspace content; `--cave-backdrop-opacity` (0–1, from the
+   Settings intensity slider) controls how much shows through, and a
+   bg-base-derived scrim keeps text areas readable in every theme. The
+   derived accent rides `--accent-presence` (set inline by cave-backdrop.ts),
+   so the glass tokens and tint recipes above this layer pick up the image's
+   vibe for free. */
+
+html[data-backdrop] .cave-backdrop-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--cave-backdrop-image);
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity var(--duration-slow, 260ms) ease;
+}
+
+/* Visible only while a backdrop-bearing surface (home/chat) is frontmost —
+   crossfades on mode switches instead of popping. */
+html[data-backdrop] .cave-backdrop-layer[data-on="true"] {
+  opacity: var(--cave-backdrop-opacity, 0.35);
+}
+
+/* Readability floor: bg-base gradient scrim, heavier toward the bottom where
+   composers and transcripts live. Sits inside the layer so the intensity
+   slider scales image and scrim together. */
+html[data-backdrop] .cave-backdrop-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--bg-base) 18%, transparent),
+    color-mix(in oklch, var(--bg-base) 42%, transparent)
+  );
+}
+
+/* The big opaque paints over the layer go translucent while a backdrop
+   surface (home/chat) is frontmost — the layer component flips
+   html[data-backdrop-on]. Side panes (nav, list) keep their own solid
+   backgrounds, so the image shows through the content area only. The shared
+   glass tokens (PR 2790) give floating chrome above the image a real blur. */
+html[data-backdrop-on] .shell-root,
+html[data-backdrop-on] .shell-detail {
+  background: transparent;
+}
+
+html[data-backdrop-on] .chat-surface,
+html[data-backdrop-on] .cave-chat-linear {
+  background: color-mix(in oklch, var(--bg-base) 16%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-backdrop] .cave-backdrop-layer {
+    display: none;
+  }
+}

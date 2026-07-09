@@ -466,6 +466,7 @@ export const SUITES = {
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
+    "src/lib/cave-backdrop.test.ts",
     "src/lib/url-safety.test.ts",
     "src/lib/use-focus-trap.test.ts",
     "src/lib/use-prefers-reduced-motion.test.ts",
@@ -817,6 +818,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/cave-backdrop.test.ts",
   "src/lib/wiki-link-parser.test.ts",
   "src/lib/wiki-link-resolve.test.ts",
   "src/lib/grimoire-graph.test.ts",
