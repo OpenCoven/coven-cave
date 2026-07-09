@@ -7,6 +7,29 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.163] - 2026-07-09
+
+> 📱 **Hand off THIS chat to your phone** — the QR pairing carries the current conversation across and finally confirms it took. The Work Queue rides the Tasks page as a tab, the familiar switcher reads as a clean dropdown with a prominent Summon button, multi-file turns collapse into one "Review all" entry, and the chat header slims down for narrow panels. Plus a readable transcript over custom backdrops, mid-save file-switch no longer bleeds content, and Grimoire graph nodes are keyboard-traversable.
+
+Patch release on top of v0.0.162.
+
+### Features
+- **Mobile: Continue on phone hands off the current chat** (#2827, cave-i74f). The QR code carries THIS conversation to the phone, and pairing now reports success instead of leaving you guessing.
+- **Tasks: the Work Queue rides the Tasks page as a tab** (#2830, cave-oa1z) — queue and task views live together instead of split across surfaces.
+- **Familiars: the switcher reads as a clean dropdown with a prominent Summon button** (#2825, cave-6p5l).
+- **Chat: multi-file turns get one "Review all" entry into the Changes tab** (#2823, cave-qva4) instead of a row per file.
+- **Chat: slim header + narrow-panel-aware sidebar rows** (#2831, cave-bmv0) — the header trims down and sidebar rows adapt when the panel is narrow.
+- **Inbox: toast vibe pass** (#2828, cave-18nk) — glass surface, kind-tinted chip, and pill actions.
+
+### Fixes
+- **Chat: readable transcript over a custom backdrop** (#2829, cave-5oeu) — a frosted reading column plus quiet-text lift keeps the transcript legible over any wallpaper.
+- **Grimoire: shell/nav batch** (#2820, cave-quct, cave-eg6f, cave-v1j0) — the graph reaches mobile layouts, the rail supports keyboard nav, and memory groups by source root.
+- **Grimoire: quick wins** (#2822) — preference-aware journal dates, eviction announce, an editor skeleton, tappable chips, and search screen-reader counts.
+- **Code: mid-save file switch no longer paints the saved file's content over the file you moved to** (#2824, cave-uv0t).
+
+### Accessibility
+- **Grimoire: keyboard traversal for graph nodes** (#2821, cave-2cx8) — Tab cycles nodes, Enter opens.
+
 ## [0.0.162] - 2026-07-09
 
 > 🖼️ **Your wallpapers, straight from the camera roll** — the backdrop picker now takes HEIC photos directly, no conversion detour. Plus the side-panel footer stays put on chat pages, familiar switching can't flash another familiar's sessions, Grimoire's graph reaches narrow screens, and daily narratives drop their stowaway next-paths block.
