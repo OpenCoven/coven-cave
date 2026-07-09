@@ -462,6 +462,7 @@ export const SUITES = {
     "src/lib/daemon-sync-status.test.ts",
     "src/lib/familiar-glyph.test.ts",
     "src/lib/familiar-memory.test.ts",
+    "src/lib/familiar-removal.test.ts",
     "src/lib/familiar-resolve.test.ts",
     "src/lib/familiar-studio-context.test.ts",
     "src/lib/html-sanitize.test.ts",

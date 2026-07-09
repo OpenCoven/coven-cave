@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -20,6 +20,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useAnnouncer } from "@/components/ui/live-region";
 import {
   archiveFamiliar,
   unarchiveFamiliar,
@@ -29,25 +31,50 @@ import { clearAllFamiliarOverrides } from "@/lib/cave-familiar-overrides";
 import { clearGlyphOverride } from "@/lib/cave-glyph-overrides";
 import { clearFamiliarImage } from "@/lib/cave-familiar-images";
 import { setFamiliarOrder } from "@/lib/cave-familiar-order";
+import { relativeTime } from "@/lib/relative-time";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
   familiar: ResolvedFamiliar | null;
   allResolved: ResolvedFamiliar[];
+  /** Re-fetch the roster after a remove/restore lands server-side. */
+  onRosterChanged?: () => void;
 };
 
-export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
+type RemovedFamiliarSummary = { id: string; displayName: string; removedAt: string };
+
+export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChanged }: Props) {
   const archived = useArchivedFamiliars();
   const { openFamiliarStudio } = useFamiliarStudio();
+  const { announce } = useAnnouncer();
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<ResolvedFamiliar | null>(null);
+  const [removedEntries, setRemovedEntries] = useState<RemovedFamiliarSummary[]>([]);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  // Ids whose DELETE has committed but whose roster refresh hasn't landed yet —
+  // keeps the row from flashing back between commit and re-fetch.
+  const [removedLocally, setRemovedLocally] = useState<Set<string>>(new Set());
+  const {
+    pending: pendingRemove,
+    scheduleDelete,
+    undo: undoRemove,
+    commit: commitRemove,
+  } = useUndoDelete<ResolvedFamiliar>();
 
   // The full roster (active + archived) with reorder + archive — this is the
   // manager that used to live in the standalone "Manage familiars" page. It now
   // renders here so Settings → Familiars is the single source of truth, with the
   // selected familiar's per-familiar controls (reset) below it.
-  const active = allResolved.filter((f) => !(f.id in archived));
-  const archivedList = allResolved.filter((f) => f.id in archived);
+  //
+  // A familiar pending removal hides from BOTH lists during the undo window —
+  // the UndoToast is its only handle until the delete commits or is undone
+  // (same optimistic pattern as board/vault/journal).
+  const pendingRemoveId = pendingRemove?.item.id ?? null;
+  const hidden = (f: ResolvedFamiliar) => f.id === pendingRemoveId || removedLocally.has(f.id);
+  const active = allResolved.filter((f) => !(f.id in archived) && !hidden(f));
+  const archivedList = allResolved.filter((f) => f.id in archived && !hidden(f));
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -103,8 +130,95 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
     setConfirmReset(false);
   }
 
+  const removedCtlRef = useRef<AbortController | null>(null);
+  const loadRemoved = useCallback(async () => {
+    removedCtlRef.current?.abort();
+    const ctl = new AbortController();
+    removedCtlRef.current = ctl;
+    try {
+      const res = await fetch("/api/familiars/removed", { cache: "no-store", signal: ctl.signal });
+      const json = await res.json().catch(() => null);
+      if (ctl.signal.aborted) return;
+      if (json?.ok) setRemovedEntries((json.removed ?? []) as RemovedFamiliarSummary[]);
+    } catch {
+      /* transient (or aborted) — keep the last list */
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRemoved();
+    return () => removedCtlRef.current?.abort();
+  }, [loadRemoved]);
+
+  // Remove ≠ Archive: it detaches the familiar server-side (roster entry +
+  // agent binding), while chats, memory, and workspace files stay on disk.
+  // The DELETE is deferred through useUndoDelete, so Undo/⌘Z during the toast
+  // window means nothing was ever sent.
+  function performRemove(f: ResolvedFamiliar) {
+    setConfirmRemove(null);
+    scheduleDelete(f, f.display_name, async () => {
+      setRemovedLocally((prev) => new Set(prev).add(f.id));
+      try {
+        const res = await fetch(`/api/familiars/${encodeURIComponent(f.id)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || json?.ok === false) {
+          throw new Error(typeof json?.error === "string" ? json.error : `remove failed (${res.status})`);
+        }
+        announce(`Removed ${f.display_name}. Restore it from Recently removed.`);
+      } catch (err) {
+        setRemovedLocally((prev) => {
+          const next = new Set(prev);
+          next.delete(f.id);
+          return next;
+        });
+        announce(
+          `Could not remove ${f.display_name}: ${err instanceof Error ? err.message : "unknown error"}`,
+          "assertive",
+        );
+      } finally {
+        void loadRemoved();
+        onRosterChanged?.();
+      }
+    });
+  }
+
+  async function restoreRemoved(entry: RemovedFamiliarSummary) {
+    setRestoringId(entry.id);
+    try {
+      const res = await fetch("/api/familiars/removed", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: entry.id }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        throw new Error(typeof json?.error === "string" ? json.error : `restore failed (${res.status})`);
+      }
+      setRemovedLocally((prev) => {
+        const next = new Set(prev);
+        next.delete(entry.id);
+        return next;
+      });
+      announce(`Restored ${entry.displayName}.`);
+      onRosterChanged?.();
+    } catch (err) {
+      announce(
+        `Could not restore ${entry.displayName}: ${err instanceof Error ? err.message : "unknown error"}`,
+        "assertive",
+      );
+    } finally {
+      setRestoringId(null);
+      void loadRemoved();
+    }
+  }
+
   return (
     <div className="familiar-studio-lifecycle">
+      <p className="familiar-studio-lifecycle__hint">
+        Archive hides a familiar from switchers but keeps it bound — unarchive anytime. Remove
+        detaches it from your Cave; chats, memory, and workspace files stay on disk, and a removal
+        can be undone from Recently removed.
+      </p>
       <section>
         <h3 className="familiar-studio-lifecycle__heading">Active</h3>
         <p className="familiar-studio-lifecycle__hint">
@@ -129,17 +243,26 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
         >
           <SortableContext items={active.map((f) => f.id)} strategy={verticalListSortingStrategy}>
             {active.map((f, i) => (
-              <SortableFamiliarRow
-                key={f.id}
-                familiar={f}
-                canMoveUp={i > 0}
-                canMoveDown={i < active.length - 1}
-                onSelect={() => openFamiliarStudio(f.id, "identity")}
-                onArchive={() => archiveFamiliar(f.id)}
-                onUnarchive={() => unarchiveFamiliar(f.id)}
-                onMoveUp={() => move(f.id, "up")}
-                onMoveDown={() => move(f.id, "down")}
-              />
+              <Fragment key={f.id}>
+                <SortableFamiliarRow
+                  familiar={f}
+                  canMoveUp={i > 0}
+                  canMoveDown={i < active.length - 1}
+                  onSelect={() => openFamiliarStudio(f.id, "identity")}
+                  onArchive={() => archiveFamiliar(f.id)}
+                  onUnarchive={() => unarchiveFamiliar(f.id)}
+                  onRemove={() => setConfirmRemove(f)}
+                  onMoveUp={() => move(f.id, "up")}
+                  onMoveDown={() => move(f.id, "down")}
+                />
+                {confirmRemove?.id === f.id ? (
+                  <RemoveConfirm
+                    familiar={f}
+                    onConfirm={() => performRemove(f)}
+                    onCancel={() => setConfirmRemove(null)}
+                  />
+                ) : null}
+              </Fragment>
             ))}
           </SortableContext>
         </DndContext>
@@ -147,19 +270,58 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
       {archivedList.length > 0 ? (
         <section>
           <h3 className="familiar-studio-lifecycle__heading">Archived</h3>
+          <p className="familiar-studio-lifecycle__hint">
+            Hidden from switchers, still bound to their runtimes and memory.
+          </p>
           {archivedList.map((f) => (
-            <FamiliarRow
-              key={f.id}
-              familiar={f}
-              isArchived={true}
-              canMoveUp={false}
-              canMoveDown={false}
-              onSelect={() => openFamiliarStudio(f.id, "identity")}
-              onArchive={() => archiveFamiliar(f.id)}
-              onUnarchive={() => unarchiveFamiliar(f.id)}
-              onMoveUp={() => { /* no-op */ }}
-              onMoveDown={() => { /* no-op */ }}
-            />
+            <Fragment key={f.id}>
+              <FamiliarRow
+                familiar={f}
+                isArchived={true}
+                canMoveUp={false}
+                canMoveDown={false}
+                onSelect={() => openFamiliarStudio(f.id, "identity")}
+                onArchive={() => archiveFamiliar(f.id)}
+                onUnarchive={() => unarchiveFamiliar(f.id)}
+                onRemove={() => setConfirmRemove(f)}
+                onMoveUp={() => { /* no-op */ }}
+                onMoveDown={() => { /* no-op */ }}
+              />
+              {confirmRemove?.id === f.id ? (
+                <RemoveConfirm
+                  familiar={f}
+                  onConfirm={() => performRemove(f)}
+                  onCancel={() => setConfirmRemove(null)}
+                />
+              ) : null}
+            </Fragment>
+          ))}
+        </section>
+      ) : null}
+
+      {removedEntries.length > 0 ? (
+        <section className="familiar-studio-lifecycle__section">
+          <h3 className="familiar-studio-lifecycle__heading">Recently removed</h3>
+          <p className="familiar-studio-lifecycle__hint">
+            Removed familiars keep their chats, memory, and files on disk. Restore re-registers one
+            exactly as it was — kept for 30 days.
+          </p>
+          {removedEntries.map((entry) => (
+            <div key={entry.id} className="familiar-studio-lifecycle__removed-row">
+              <span className="familiar-studio-lifecycle__removed-name">{entry.displayName}</span>
+              <span className="familiar-studio-lifecycle__removed-when">
+                removed {relativeTime(entry.removedAt)}
+              </span>
+              <button
+                type="button"
+                onClick={() => void restoreRemoved(entry)}
+                disabled={restoringId !== null}
+                className="familiar-studio-lifecycle__btn"
+              >
+                <Icon name="ph:arrow-counter-clockwise" width={12} />
+                {restoringId === entry.id ? "Restoring…" : "Restore"}
+              </button>
+            </div>
           ))}
         </section>
       ) : null}
@@ -180,6 +342,64 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
           </button>
         </section>
       ) : null}
+
+      {pendingRemove ? (
+        <UndoToast
+          key={pendingRemove.id}
+          message={<>Removed <strong>{pendingRemove.label}</strong></>}
+          undoAriaLabel={`Undo removing ${pendingRemove.label}`}
+          onUndo={undoRemove}
+          onDismiss={commitRemove}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// The destructive half of the remove flow: an inline confirm strip that spells
+// out detach semantics (what is cleared vs. what survives) before anything is
+// scheduled — required in-product copy for the safety constraints of removal.
+function RemoveConfirm({
+  familiar,
+  onConfirm,
+  onCancel,
+}: {
+  familiar: ResolvedFamiliar;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const sessions = familiar.active_sessions ?? 0;
+  return (
+    <div
+      className="familiar-studio-lifecycle__confirm"
+      role="group"
+      aria-label={`Confirm removing ${familiar.display_name}`}
+    >
+      <p className="familiar-studio-lifecycle__confirm-title">Remove {familiar.display_name}?</p>
+      <p className="familiar-studio-lifecycle__confirm-copy">
+        This detaches {familiar.display_name} from your Cave — its roster entry and agent binding
+        are cleared. The agent itself, past chats, and memory files stay on
+        your disk, and you can restore it from Recently removed.
+      </p>
+      {sessions > 0 ? (
+        <p className="familiar-studio-lifecycle__confirm-copy familiar-studio-lifecycle__confirm-warn">
+          {familiar.display_name} has {sessions} active session{sessions === 1 ? "" : "s"} — they keep
+          running until they finish.
+        </p>
+      ) : null}
+      <div className="familiar-studio-lifecycle__confirm-actions">
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="familiar-studio-lifecycle__btn familiar-studio-lifecycle__btn--danger familiar-studio-lifecycle__btn--confirm"
+        >
+          <Icon name="ph:trash" width={14} />
+          Remove familiar
+        </button>
+        <button type="button" onClick={onCancel} className="familiar-studio-lifecycle__btn">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -193,6 +413,7 @@ function SortableFamiliarRow(props: {
   onSelect: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
+  onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
 }) {
@@ -223,6 +444,7 @@ function FamiliarRow({
   onSelect,
   onArchive,
   onUnarchive,
+  onRemove,
   onMoveUp,
   onMoveDown,
   dragRef,
@@ -237,6 +459,7 @@ function FamiliarRow({
   onSelect: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
+  onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
   dragRef?: (node: HTMLElement | null) => void;
@@ -286,14 +509,32 @@ function FamiliarRow({
         </>
       ) : null}
       {isArchived ? (
-        <button onClick={onUnarchive} aria-label="Unarchive" className="familiar-studio-lifecycle__row-action">
+        <button
+          onClick={onUnarchive}
+          aria-label={`Unarchive ${familiar.display_name}`}
+          title="Unarchive — return to the active roster"
+          className="familiar-studio-lifecycle__row-action"
+        >
           <Icon name="ph:arrow-counter-clockwise" width={12} />
         </button>
       ) : (
-        <button onClick={onArchive} aria-label="Archive" className="familiar-studio-lifecycle__row-action">
+        <button
+          onClick={onArchive}
+          aria-label={`Archive ${familiar.display_name}`}
+          title="Archive — hide from switchers; stays bound, unarchive anytime"
+          className="familiar-studio-lifecycle__row-action"
+        >
           <Icon name="ph:archive" width={12} />
         </button>
       )}
+      <button
+        onClick={onRemove}
+        aria-label={`Remove ${familiar.display_name}`}
+        title="Remove — detach from your Cave (undo-safe); chats and memory stay on disk"
+        className="familiar-studio-lifecycle__row-action familiar-studio-lifecycle__row-action--danger"
+      >
+        <Icon name="ph:trash" width={12} />
+      </button>
     </div>
   );
 }

@@ -26,6 +26,8 @@ type Props = {
    *  end of the familiar picker — the create action lives with the roster it
    *  extends instead of floating above the panel. */
   onSummon?: () => void;
+  /** Re-fetch the roster after the Lifecycle tab removes/restores a familiar. */
+  onRosterChanged?: () => void;
 };
 
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
@@ -54,7 +56,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
  * tab-body components as the drawer. The Settings provider instance is isolated
  * from the Workspace one, so selecting here never auto-opens the drawer there.
  */
-export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon }: Props) {
+export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon, onRosterChanged }: Props) {
   const { activeFamiliarId, activeTab, setActiveTab, openFamiliarStudio } = useFamiliarStudio();
   const daemonSync = useDaemonSyncStatus();
 
@@ -189,7 +191,11 @@ export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon }: Pro
               ) : null}
               {activeTab === "brain" ? <FamiliarStudioBrainTab familiar={familiar} /> : null}
               {activeTab === "lifecycle" ? (
-                <FamiliarStudioLifecycleTab familiar={familiar} allResolved={resolved} />
+                <FamiliarStudioLifecycleTab
+                  familiar={familiar}
+                  allResolved={resolved}
+                  onRosterChanged={onRosterChanged}
+                />
               ) : null}
               {activeTab === "memory" ? (
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />

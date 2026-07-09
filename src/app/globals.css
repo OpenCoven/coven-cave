@@ -7153,6 +7153,21 @@ a.mobile-handoff__link:hover {
 .familiar-studio-lifecycle__row-action { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 4px; background: transparent; border: none; color: var(--text-secondary); cursor: pointer; }
 .familiar-studio-lifecycle__row-action:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-base); }
 .familiar-studio-lifecycle__row-action:disabled { opacity: 0.25; cursor: not-allowed; }
+.familiar-studio-lifecycle__row-action--danger:hover:not(:disabled) { color: var(--color-danger); background: color-mix(in oklch, var(--color-danger) 12%, transparent); }
+
+/* Remove-confirm strip: detach semantics spelled out inline before scheduling
+   the undo-safe delete (danger tint recipe: solid text / 6% fill / 35% border). */
+.familiar-studio-lifecycle__confirm { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 6px 28px; padding: 10px 12px; border: 1px solid color-mix(in oklch, var(--color-danger) 35%, transparent); border-radius: 8px; background: color-mix(in oklch, var(--color-danger) 6%, var(--bg-raised)); }
+.familiar-studio-lifecycle__confirm-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.familiar-studio-lifecycle__confirm-copy { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.familiar-studio-lifecycle__confirm-warn { color: var(--color-warning); }
+.familiar-studio-lifecycle__confirm-actions { display: flex; gap: 8px; }
+
+/* Recently removed shelf (restore from tombstones). */
+.familiar-studio-lifecycle__removed-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; }
+.familiar-studio-lifecycle__removed-row:hover { background: var(--bg-raised); }
+.familiar-studio-lifecycle__removed-name { flex: 1; font-size: 13px; color: var(--text-primary); }
+.familiar-studio-lifecycle__removed-when { font-size: 11px; color: var(--text-muted); }
 
 /* Familiar Contract adherence tab. */
 .familiar-studio-contract { display: flex; flex-direction: column; gap: 18px; }
