@@ -233,8 +233,8 @@ assert.equal(
   }
 
   const board = read("../components/board-view.tsx");
-  if (!/idPrefix="tasks"/.test(board) || !/label: "Work queue"/.test(board)) {
-    throw new Error("BoardView hosts the Tasks | Work queue segment tabs");
+  if (!/idPrefix="tasks"/.test(board) || !/label: "Queue"/.test(board)) {
+    throw new Error("BoardView hosts the Tasks | Queue segment tabs");
   }
   if (!/activeTab === "queue" && queueSlot/.test(board)) {
     throw new Error("the queue tabpanel renders the slot");
@@ -246,8 +246,16 @@ assert.equal(
   }
 
   const fwq = read("../components/familiar-work-queue-view.tsx");
-  if (!/embedded \? null : <h1 className="surface-compact-title">Work Queue<\/h1>/.test(fwq)) {
+  if (!/embedded \? null : <h1 className="surface-compact-title">Queue<\/h1>/.test(fwq)) {
     throw new Error("embedded queue suppresses its own h1 (the tab band names the surface)");
+  }
+  // Resilient load (user-requested "ensure it loads"): one failing source
+  // degrades with a banner; only BOTH failing rejects the load.
+  if (!/if \(!beadsOk && !prsOk\) throw new Error/.test(fwq)) {
+    throw new Error("the queue must load when either source (beads OR PR bridge) is available");
+  }
+  if (!/GitHub PR bridge unavailable — showing ready beads only/.test(fwq)) {
+    throw new Error("a PR-bridge failure surfaces as a truthful degradation banner, not a dead surface");
   }
 }
 
