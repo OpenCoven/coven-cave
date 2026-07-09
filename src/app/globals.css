@@ -6605,16 +6605,21 @@ a.mobile-handoff__link:hover {
   text-transform: uppercase;
   color: var(--text-muted);
 }
-/* Horizontal avatar-chip picker — scrollable on overflow so it scales to a
-   large roster without stealing a left rail from the detail pane. */
+/* Avatar-chip picker — WRAPS so every familiar stays visible (the old
+   horizontal scroll silently clipped the roster's tail); the Summon
+   invitation chip rides the end of the flow. */
+.familiar-studio-inline__picker-row {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
 .familiar-studio-inline__picker {
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: 2px;
-  scrollbar-width: thin;
-  scroll-snap-type: x proximity;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .familiar-studio-inline__chip {
   display: flex;
@@ -6645,6 +6650,30 @@ a.mobile-handoff__link:hover {
   color: var(--text-primary);
 }
 .familiar-studio-inline__chip:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring-focus); }
+/* Summon — the dashed invitation chip (design language: dashed = invitation).
+   It matches the roster chips' shape so the create action reads as "the next
+   member of this row", quiet until hovered. */
+.familiar-studio-inline__chip--summon {
+  border-style: dashed;
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  background: transparent;
+  color: var(--text-secondary);
+}
+.familiar-studio-inline__chip--summon:hover {
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
+  color: var(--text-primary);
+}
+.familiar-studio-inline__summon-glyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
 .familiar-studio-inline__chip-text { display: flex; flex-direction: column; gap: 0; min-width: 0; text-align: left; }
 .familiar-studio-inline__chip-name {
   font-size: var(--text-sm); font-weight: 550; color: var(--text-primary);

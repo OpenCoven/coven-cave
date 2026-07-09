@@ -195,6 +195,25 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
     [projects, granted, familiar.id],
   );
 
+  // Grant-list filter — rosters run to dozens of projects, so the list is
+  // searchable by name or path once it's big enough to need it.
+  const [projectQuery, setProjectQuery] = useState("");
+  const q = projectQuery.trim().toLowerCase();
+  const visibleProjects = useMemo(
+    () =>
+      q
+        ? projects.filter(
+            (p) => p.name.toLowerCase().includes(q) || (p.root ?? "").toLowerCase().includes(q),
+          )
+        : projects,
+    [projects, q],
+  );
+
+  // Decision history is an audit log — it grows unbounded, so it renders a
+  // recent window with the rest one click away.
+  const AUDIT_PREVIEW = 6;
+  const [showAllAudit, setShowAllAudit] = useState(false);
+
   // Everything below is scoped to THIS familiar — the protocol relocated from a
   // cross-familiar console into each familiar's own tab.
   const famProposals = useMemo(
@@ -255,7 +274,37 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
           label="Project access"
           description={`${grantedCount} of ${projects.length} granted`}
         >
-          {projects.map((project) => {
+          {projects.length > 6 ? (
+            <div className="border-b border-[var(--border-hairline)] px-4 py-2">
+              <label className="flex items-center gap-2">
+                <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                <input
+                  type="search"
+                  value={projectQuery}
+                  onChange={(e) => setProjectQuery(e.target.value)}
+                  placeholder="Filter projects…"
+                  aria-label="Filter projects by name or path"
+                  className="w-full bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
+                />
+                {projectQuery ? (
+                  <button
+                    type="button"
+                    aria-label="Clear project filter"
+                    onClick={() => setProjectQuery("")}
+                    className="focus-ring shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:x-bold" width={10} aria-hidden />
+                  </button>
+                ) : null}
+              </label>
+            </div>
+          ) : null}
+          {q && visibleProjects.length === 0 ? (
+            <p className="px-4 py-3 text-[12px] text-[var(--text-muted)]">
+              No projects match “{projectQuery.trim()}”.
+            </p>
+          ) : null}
+          {visibleProjects.map((project) => {
             const key = grantKey(familiar.id, project.id);
             const on = granted.has(key);
             const busy = pending.has(key);
@@ -379,7 +428,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
       {/* ── Recent access decisions for this familiar ── */}
       {famAudit.length > 0 && (
         <SettingsGroup label={`Recent decisions (${famAudit.length})`}>
-          {famAudit.map((e) => {
+          {(showAllAudit ? famAudit : famAudit.slice(0, AUDIT_PREVIEW)).map((e) => {
             const meta = auditDecisionMeta(e.decision);
             return (
               <div key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
@@ -401,6 +450,16 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
               </div>
             );
           })}
+          {famAudit.length > AUDIT_PREVIEW ? (
+            <button
+              type="button"
+              onClick={() => setShowAllAudit((v) => !v)}
+              aria-expanded={showAllAudit}
+              className="focus-ring w-full border-t border-[var(--border-hairline)] px-4 py-2 text-left text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            >
+              {showAllAudit ? "Show recent only" : `Show all ${famAudit.length} decisions`}
+            </button>
+          ) : null}
         </SettingsGroup>
       )}
     </div>

@@ -22,6 +22,10 @@ type Props = {
   familiars: Familiar[];
   /** Resolved roster (cave overrides applied) — drives the master list + tab bodies. */
   resolved: ResolvedFamiliar[];
+  /** Opens the summoning circle. Renders as a dashed invitation chip riding the
+   *  end of the familiar picker — the create action lives with the roster it
+   *  extends instead of floating above the panel. */
+  onSummon?: () => void;
 };
 
 const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
@@ -50,7 +54,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
  * tab-body components as the drawer. The Settings provider instance is isolated
  * from the Workspace one, so selecting here never auto-opens the drawer there.
  */
-export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
+export function FamiliarStudioInlinePanel({ familiars, resolved, onSummon }: Props) {
   const { activeFamiliarId, activeTab, setActiveTab, openFamiliarStudio } = useFamiliarStudio();
   const daemonSync = useDaemonSyncStatus();
 
@@ -99,34 +103,55 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
         <span className="familiar-studio-inline__selector-label" id="settings-familiar-picker-label">
           Familiar
         </span>
-        <div
-          className="familiar-studio-inline__picker"
-          role="radiogroup"
-          aria-label="Choose familiar to edit"
-          aria-labelledby="settings-familiar-picker-label"
-        >
-          {resolved.map((f) => {
-            const active = f.id === familiar?.id;
-            return (
+        <div className="familiar-studio-inline__picker-row">
+          <div
+            className="familiar-studio-inline__picker"
+            role="radiogroup"
+            aria-label="Choose familiar to edit"
+            aria-labelledby="settings-familiar-picker-label"
+          >
+            {resolved.map((f) => {
+              const active = f.id === familiar?.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => openFamiliarStudio(f.id, activeTab)}
+                  className="familiar-studio-inline__chip"
+                  data-active={active ? "true" : undefined}
+                  style={{ ["--chip-accent"]: f.color } as CSSProperties}
+                  title={f.role ? `${f.display_name} — ${f.role}` : f.display_name}
+                >
+                  <FamiliarAvatar familiar={f} size="md" />
+                  <span className="familiar-studio-inline__chip-text">
+                    <span className="familiar-studio-inline__chip-name">{f.display_name}</span>
+                    {f.role ? <span className="familiar-studio-inline__chip-role">{f.role}</span> : null}
+                  </span>
+                </button>
+              );
+            })}
+            {/* Summon rides the roster it extends — a dashed invitation chip
+                (outside the radiogroup semantics: it creates, not selects). */}
+            {onSummon ? (
               <button
-                key={f.id}
                 type="button"
-                role="radio"
-                aria-checked={active}
-                onClick={() => openFamiliarStudio(f.id, activeTab)}
-                className="familiar-studio-inline__chip"
-                data-active={active ? "true" : undefined}
-                style={{ ["--chip-accent"]: f.color } as CSSProperties}
-                title={f.role ? `${f.display_name} — ${f.role}` : f.display_name}
+                onClick={onSummon}
+                className="familiar-studio-inline__chip familiar-studio-inline__chip--summon"
+                title="Summon a new familiar"
+                aria-label="Summon a new familiar"
               >
-                <FamiliarAvatar familiar={f} size="md" />
+                <span className="familiar-studio-inline__summon-glyph" aria-hidden>
+                  <Icon name="ph:magic-wand-fill" width={14} />
+                </span>
                 <span className="familiar-studio-inline__chip-text">
-                  <span className="familiar-studio-inline__chip-name">{f.display_name}</span>
-                  {f.role ? <span className="familiar-studio-inline__chip-role">{f.role}</span> : null}
+                  <span className="familiar-studio-inline__chip-name">Summon</span>
+                  <span className="familiar-studio-inline__chip-role">New familiar</span>
                 </span>
               </button>
-            );
-          })}
+            ) : null}
+          </div>
         </div>
       </div>
 
