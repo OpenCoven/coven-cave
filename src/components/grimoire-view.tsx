@@ -433,6 +433,7 @@ function NavRow({
   return (
     <button
       type="button"
+      data-rail-item
       onClick={onClick}
       aria-current={selected ? "true" : undefined}
       className={`focus-ring-inset w-full rounded-md px-2 py-1.5 text-left transition-colors ${
@@ -455,6 +456,19 @@ function NavRow({
 const RAIL_COLLAPSED_STORAGE_KEY = "cave:grimoire:rail-collapsed";
 
 type RailSectionId = "knowledge" | "memory" | "journal";
+
+const MEMORY_GROUPS_STORAGE_KEY = "cave:grimoire:memory-groups-collapsed";
+
+/** Per-root collapse overrides for the Memory section's source groups. */
+function readCollapsedMemoryGroups(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MEMORY_GROUPS_STORAGE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 function readCollapsedSections(): Record<RailSectionId, boolean> {
   const none = { knowledge: false, memory: false, journal: false };
@@ -499,6 +513,7 @@ function RailSection({
       <h3>
         <button
           type="button"
+          data-rail-item
           aria-expanded={!collapsed}
           title={description}
           onClick={onToggle}
@@ -861,10 +876,40 @@ export function GrimoireView() {
     () => (memory ?? []).filter((e) => matches(e.relPath, e.fullPath, e.rootLabel, e.familiarId)),
     [memory, matches],
   );
-  // Big memory inventories (1000s of runtime files) would swamp the DOM —
-  // render in pages of 100 with an explicit "show more".
-  const [memoryLimit, setMemoryLimit] = useState(100);
-  const pagedMemory = useMemo(() => visibleMemory.slice(0, memoryLimit), [visibleMemory, memoryLimit]);
+  // Runtime roots write thousands of timestamp-named session files; rendered
+  // flat they drown Knowledge and Journal. Group memory by its source root —
+  // big groups start collapsed, and an active search expands everything so
+  // matches stay reachable.
+  const memoryGroups = useMemo(() => {
+    const order: string[] = [];
+    const byRoot = new Map<string, MemoryEntry[]>();
+    for (const entry of visibleMemory) {
+      let group = byRoot.get(entry.rootLabel);
+      if (!group) {
+        group = [];
+        byRoot.set(entry.rootLabel, group);
+        order.push(entry.rootLabel);
+      }
+      group.push(entry);
+    }
+    return order.map((label) => ({ label, entries: byRoot.get(label)! }));
+  }, [visibleMemory]);
+  const [collapsedMemoryGroups, setCollapsedMemoryGroups] =
+    useState<Record<string, boolean>>(readCollapsedMemoryGroups);
+  const toggleMemoryGroup = useCallback((label: string, defaultCollapsed: boolean) => {
+    setCollapsedMemoryGroups((prev) => {
+      const next = { ...prev, [label]: !(prev[label] ?? defaultCollapsed) };
+      try {
+        window.localStorage.setItem(MEMORY_GROUPS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        /* private mode — session-only */
+      }
+      return next;
+    });
+  }, []);
+  // Big groups (1000s of runtime files) would swamp the DOM — render each in
+  // pages of 100 with an explicit "show more".
+  const [memoryGroupLimits, setMemoryGroupLimits] = useState<Record<string, number>>({});
   const visibleJournal = useMemo(
     () => (journal ?? []).filter((d) => matches(d.date, d.preview)),
     [journal, matches],
@@ -886,6 +931,16 @@ export function GrimoireView() {
   useEffect(() => {
     if (selectedTabIndex >= 0) setTabStopIndex(selectedTabIndex);
   }, [selectedTabIndex, setTabStopIndex]);
+
+  // Roving focus for the navigator rail (↑/↓ across section headers, memory
+  // group toggles, and document rows — one tab stop), so reaching Journal
+  // never means tabbing through hundreds of memory rows.
+  const railListRef = useRef<HTMLDivElement | null>(null);
+  useRovingTabIndex({
+    containerRef: railListRef,
+    itemSelector: "[data-rail-item]",
+    orientation: "vertical",
+  });
 
   // Index of every loaded doc, used to resolve a doc's outgoing [[wiki-links]].
   const docIndex = useMemo<WikiDocIndex>(
@@ -1141,7 +1196,7 @@ export function GrimoireView() {
             className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
           />
         </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+        <div ref={railListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
           {loadError ? (
             <ErrorState compact headline="Couldn't load documents" subtitle={loadError} />
           ) : loading ? (
@@ -1194,27 +1249,68 @@ export function GrimoireView() {
                     {q ? "No matches." : "No memory files found."}
                   </p>
                 ) : (
-                  <>
-                    {pagedMemory.map((entry) => (
-                      <NavRow
-                        key={entry.fullPath}
-                        selected={selectedKey === `memory:${entry.fullPath}`}
-                        title={entry.relPath.split("/").pop() ?? entry.relPath}
-                        subtitle={entry.rootLabel}
-                        meta={entry.modified ? relativeTime(entry.modified) : undefined}
-                        onClick={() => openDoc({ kind: "memory", path: entry.fullPath })}
-                      />
-                    ))}
-                    {visibleMemory.length > memoryLimit ? (
-                      <button
-                        type="button"
-                        onClick={() => setMemoryLimit((n) => n + 200)}
-                        className="focus-ring-inset w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]"
-                      >
-                        Show more ({visibleMemory.length - memoryLimit} remaining)
-                      </button>
-                    ) : null}
-                  </>
+                  memoryGroups.map((group) => {
+                    // A lone group renders flat — its header would only echo
+                    // the row subtitles. Multiple roots get disclosures, and
+                    // big groups start closed so runtime logs stay tamed.
+                    const grouped = memoryGroups.length > 1;
+                    const defaultCollapsed = grouped && group.entries.length > 20;
+                    const collapsed =
+                      grouped && !q && (collapsedMemoryGroups[group.label] ?? defaultCollapsed);
+                    const limit = memoryGroupLimits[group.label] ?? 100;
+                    const paged = group.entries.slice(0, limit);
+                    return (
+                      <div key={group.label}>
+                        {grouped ? (
+                          <button
+                            type="button"
+                            data-rail-item
+                            aria-expanded={!collapsed}
+                            onClick={() => toggleMemoryGroup(group.label, defaultCollapsed)}
+                            className="focus-ring-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                          >
+                            <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={9} aria-hidden />
+                            <span className="min-w-0 flex-1 truncate text-left">{group.label}</span>
+                            <span className="shrink-0 font-normal text-[var(--text-muted)]">
+                              {group.entries.length}
+                            </span>
+                          </button>
+                        ) : null}
+                        {collapsed ? null : (
+                          <>
+                            {paged.map((entry) => (
+                              <NavRow
+                                key={entry.fullPath}
+                                selected={selectedKey === `memory:${entry.fullPath}`}
+                                title={entry.relPath.split("/").pop() ?? entry.relPath}
+                                subtitle={
+                                  grouped
+                                    ? entry.relPath.includes("/")
+                                      ? entry.relPath.slice(0, entry.relPath.lastIndexOf("/"))
+                                      : undefined
+                                    : entry.rootLabel
+                                }
+                                meta={entry.modified ? relativeTime(entry.modified) : undefined}
+                                onClick={() => openDoc({ kind: "memory", path: entry.fullPath })}
+                              />
+                            ))}
+                            {group.entries.length > limit ? (
+                              <button
+                                type="button"
+                                data-rail-item
+                                onClick={() =>
+                                  setMemoryGroupLimits((prev) => ({ ...prev, [group.label]: limit + 200 }))
+                                }
+                                className="focus-ring-inset w-full rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]"
+                              >
+                                Show more ({group.entries.length - limit} remaining)
+                              </button>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </RailSection>
               <RailSection

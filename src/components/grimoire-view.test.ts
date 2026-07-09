@@ -57,6 +57,44 @@ assert.match(view, /GRIMOIRE_HASH_PREFIX/, "hash prefix is shared with cross-sur
 assert.match(view, /decodeURIComponent/, "hash ids are URL-decoded");
 assert.match(view, /aria-label="Back to document list"/, "compact widths get a back affordance");
 assert.match(view, /@container\/grimoire/, "layout adapts via container queries");
+// (grimoire-audit cave-quct) Graph mode must own the narrow viewport: the rail
+// hides when the graph is showing, and the graph pane gets its own back row.
+assert.match(
+  view,
+  /selection \|\| showGraph \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  "the rail yields to the graph on narrow widths",
+);
+assert.match(
+  view,
+  /onClick=\{\(\) => setShowGraph\(false\)\}\s*\n\s*aria-label="Back to document list"/,
+  "the graph pane has its own narrow-width back affordance",
+);
+
+// ── (grimoire-audit cave-eg6f) rail keyboard navigation ─────────────────────
+// One roving tab stop across the whole navigator: section headers, memory
+// group toggles, rows, and show-more — reaching Journal never means tabbing
+// through hundreds of memory rows.
+assert.match(
+  view,
+  /useRovingTabIndex\(\{\s*\n\s*containerRef: railListRef,\s*\n\s*itemSelector: "\[data-rail-item\]",\s*\n\s*orientation: "vertical",/,
+  "the rail roves focus vertically",
+);
+assert.match(view, /ref=\{railListRef\}/, "the rail scroll container carries the roving scope");
+const railItemCount = (view.match(/data-rail-item/g) ?? []).length;
+assert.ok(railItemCount >= 4, `NavRow, section headers, group toggles, and show-more are all roving items (found ${railItemCount})`);
+
+// ── (grimoire-audit cave-v1j0) memory grouped by source root ────────────────
+// Runtime roots write thousands of timestamp-named files; grouping by
+// rootLabel with big groups collapsed keeps Knowledge and Journal visible.
+assert.match(view, /"cave:grimoire:memory-groups-collapsed"/, "memory group collapse overrides persist");
+assert.match(view, /const grouped = memoryGroups\.length > 1/, "a lone memory root renders flat (no redundant header)");
+assert.match(view, /defaultCollapsed = grouped && group\.entries\.length > 20/, "big memory groups start collapsed");
+assert.match(
+  view,
+  /grouped && !q && \(collapsedMemoryGroups\[group\.label\] \?\? defaultCollapsed\)/,
+  "an active search expands memory groups so matches stay reachable",
+);
+assert.match(view, /Show more \(\{group\.entries\.length - limit\} remaining\)/, "each group pages independently");
 
 // ── Delete/trash actions (cave-kv3) ──────────────────────────────────────────
 
