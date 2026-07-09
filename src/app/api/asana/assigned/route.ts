@@ -106,9 +106,18 @@ export async function GET(req: NextRequest) {
       headers,
       cache: "no-store",
     });
+    if (meRes.status === 401) {
+      // The stored PAT was revoked/expired. Distinct from "not configured":
+      // the UI must offer reconnect, not silently hide or show a raw 401
+      // forever (cave-d6zq).
+      return NextResponse.json(
+        { ok: false, error: "Asana rejected the stored token (revoked or expired).", items: [], configured: true, patInvalid: true },
+        { status: 200 },
+      );
+    }
     if (!meRes.ok) {
       return NextResponse.json(
-        { ok: false, error: `Asana API error: HTTP ${meRes.status}`, items: [] },
+        { ok: false, error: `Asana API error: HTTP ${meRes.status}`, items: [], configured: true },
         { status: 502 },
       );
     }

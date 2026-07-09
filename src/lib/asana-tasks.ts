@@ -42,6 +42,9 @@ export type AsanaAssignedResponse = {
   /** When a familiarId was passed: false means this agent is opted out of Asana
    *  (asanaEnabled === false). Absent/true otherwise. */
   assigned?: boolean;
+  /** The stored PAT was rejected by Asana (revoked/expired) — the UI must
+   *  offer reconnect, not silently hide (cave-d6zq). */
+  patInvalid?: boolean;
   error?: string;
 };
 

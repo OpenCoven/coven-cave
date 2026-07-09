@@ -27,6 +27,7 @@ import {
   type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }
@@ -53,6 +54,12 @@ type AgentsViewProps = {
   onOpenUrl: (url: string) => void;
   /** Refresh the roster after a familiar is created and focus the new one. */
   onFamiliarCreated?: (id: string) => void;
+  /** Last roster-load failure. When set with an empty roster the surface must
+   *  NOT show first-run copy — the familiars may exist but be unreadable
+   *  (daemon flap, auth) (cave-atzv). */
+  familiarsError?: string | null;
+  /** Retry a failed roster load. */
+  onRetryFamiliars?: () => void;
 };
 
 function familiarMatches(familiar: Familiar, query: string): boolean {
@@ -78,9 +85,20 @@ export function FamiliarsView({
   onOpenOnboarding,
   onOpenUrl,
   onFamiliarCreated,
+  familiarsError,
+  onRetryFamiliars,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [createOpen, setCreateOpen] = useState(false);
+  // Other surfaces request the Summoning Circle through summon-events: the
+  // retained latch covers the fresh-mount race (mode flip → this view mounts
+  // after the event fired); the event covers the already-mounted case.
+  useEffect(() => {
+    if (consumeSummonPending()) setCreateOpen(true);
+    const open = () => setCreateOpen(true);
+    window.addEventListener(SUMMON_FAMILIAR_EVENT, open);
+    return () => window.removeEventListener(SUMMON_FAMILIAR_EVENT, open);
+  }, []);
   // When set, the summoning circle opens as the Enhancement Rite for this familiar.
   const [enhanceTarget, setEnhanceTarget] = useState<ResolvedFamiliar | null>(null);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
@@ -302,10 +320,33 @@ export function FamiliarsView({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {familiars.length === 0 ? (
           <div className="p-4">
-            <FamiliarsEmptyState
-              onCreate={() => setCreateOpen(true)}
-              onOpenOnboarding={onOpenOnboarding}
-            />
+            {familiarsError ? (
+              // The roster failed to load — familiars may exist but be
+              // unreadable right now. First-run "summon your first" copy here
+              // would read as "your familiars were deleted" (cave-atzv).
+              <EmptyState
+                className="familiars-view__empty mx-auto my-16 max-w-md"
+                icon="ph:plugs"
+                headline="Can't reach your familiars"
+                subtitle={
+                  daemonRunning
+                    ? "The roster didn't load. Your familiars are safe — retry in a moment."
+                    : "The daemon is offline, so the roster can't be read. Your familiars are safe — start the daemon, then retry."
+                }
+                actions={
+                  onRetryFamiliars ? (
+                    <Button variant="primary" leadingIcon="ph:arrow-clockwise" onClick={onRetryFamiliars}>
+                      Retry
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <FamiliarsEmptyState
+                onCreate={() => setCreateOpen(true)}
+                onOpenOnboarding={onOpenOnboarding}
+              />
+            )}
           </div>
         ) : viewMode === "detail" && selectedFamiliar ? (
           <div className="familiars-view__detail flex h-full min-h-0">

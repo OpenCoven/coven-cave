@@ -31,6 +31,7 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
   // Inline connect form (shown only when the app has no PAT yet).
   const [pat, setPat] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,6 +112,27 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
       setError((err as Error).message);
     } finally {
       setConnecting(false);
+    }
+  }
+
+  async function disconnect() {
+    if (disconnecting) return;
+    setDisconnecting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/asana/pat", { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || json?.ok === false) {
+        setError(json?.error ?? "Couldn't disconnect Asana");
+      } else {
+        setConfigured(false);
+        setLogin(null);
+        setWorkspaces([]);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDisconnecting(false);
     }
   }
 
@@ -215,6 +237,23 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
               : `${familiar.display_name} is opted out of Asana. Other familiars keep their access.`}
             {login ? ` · Connected as ${login}.` : ""}
           </p>
+
+          {/* App-wide disconnect: removes the stored PAT (revoked tokens had
+              no in-app way out — only a hidden vault-key delete; cave-d6zq).
+              The connect form reappears for a fresh token. */}
+          <div className="familiar-studio-brain__row">
+            <span className="familiar-studio-brain__label">Connection</span>
+            <div className="familiar-studio-brain__control">
+              <button
+                type="button"
+                onClick={() => void disconnect()}
+                disabled={disconnecting}
+                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:text-[var(--color-danger)]"
+              >
+                {disconnecting ? "Disconnecting…" : "Disconnect Asana"}
+              </button>
+            </div>
+          </div>
         </>
       )}
 

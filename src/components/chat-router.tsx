@@ -19,6 +19,7 @@ import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   normalizeSelection,
   projectSelectionKeys,
@@ -44,6 +45,12 @@ type Props = {
   onSessionsChanged?: () => void;
   sessionsLoaded?: boolean;
   familiarsLoaded?: boolean;
+  /** Last roster-load failure. With an empty roster this swaps the "summon
+   *  your first familiar" empty state for a can't-reach + Retry state — the
+   *  familiars may exist but be unreadable right now (cave-atzv). */
+  familiarsError?: string | null;
+  /** Retry a failed roster load. */
+  onRetryFamiliars?: () => void;
   onSlashFromChat?: (command: string, args: string) => boolean;
   onOpenOnboarding?: () => void;
   pendingProjectRoot?: string | null;
@@ -95,6 +102,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSessionsChanged,
     sessionsLoaded,
     familiarsLoaded,
+    familiarsError,
+    onRetryFamiliars,
     onSlashFromChat,
     onOpenOnboarding,
     pendingProjectRoot,
@@ -351,36 +360,66 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         />
       );
     }
-    // Empty-state copy is mode-aware: on phones the nav/sidebar/agent panels
-    // are drawers behind a toggle, so "from the sidebar selector" / "left
-    // panel" reads as broken. Point users at the drawer or the setup CTA
-    // instead.
-    const heading = isMobile
-      ? "Choose a familiar to start chatting"
-      : "Choose a familiar from the sidebar selector";
+    // Roster failed to load: the familiars may exist but be unreadable right
+    // now (daemon flap, auth). First-run "summon" copy here would read as
+    // "your familiars were deleted" — offer Retry instead (cave-atzv).
+    if (familiarsError) {
+      return (
+        <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
+          <div>
+            <p className="text-[15px] font-medium text-[var(--text-secondary)]">
+              Can&apos;t reach your familiars
+            </p>
+            <p className="mt-1 text-[12px]">
+              {daemonRunning === false
+                ? "The daemon is offline, so the roster can't be read. Your familiars are safe."
+                : "The roster didn't load. Your familiars are safe — retry in a moment."}
+            </p>
+          </div>
+          {onRetryFamiliars ? (
+            <button
+              onClick={onRetryFamiliars}
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+            >
+              Retry
+            </button>
+          ) : null}
+        </section>
+      );
+    }
+    // Loaded-and-empty: there is nothing to "choose" yet — the first familiar
+    // has to be summoned. Lead with the Summoning Circle (the wizard stops at
+    // infrastructure and cannot create familiars, cave-3em5); keep setup as
+    // the quieter escape hatch for genuinely unconfigured machines.
     const subline = pendingProjectRoot
-      ? "Selecting one will start this chat in the pending project."
-      : isMobile
-        ? "Open the menu to pick a familiar, or set one up below."
-        : "Pick who should handle the conversation from the left panel.";
+      ? "Summoning one will let this chat start in the pending project."
+      : "A familiar is an AI agent with its own identity and memory. Summon your first to start chatting.";
     return (
       <section className="flex h-full flex-col items-center justify-center gap-4 bg-[var(--bg-base)] px-6 text-center text-sm text-[var(--text-muted)]">
         <div>
           <p className="text-[15px] font-medium text-[var(--text-secondary)]">
-            {heading}
+            Summon your first familiar
           </p>
           <p className="mt-1 text-[12px]">
             {subline}
           </p>
         </div>
-        {onOpenOnboarding ? (
+        <div className="flex items-center gap-2">
           <button
-            onClick={onOpenOnboarding}
-            className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+            onClick={() => requestSummonFamiliar()}
+            className="rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--bg-base)] hover:opacity-90"
           >
-            Open setup
+            Summon a familiar
           </button>
-        ) : null}
+          {onOpenOnboarding ? (
+            <button
+              onClick={onOpenOnboarding}
+              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+            >
+              Open setup
+            </button>
+          ) : null}
+        </div>
       </section>
     );
   }

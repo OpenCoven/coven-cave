@@ -103,8 +103,13 @@ assert.doesNotMatch(source, /togglePin|familiar-switcher__pin|useFamiliarPins/, 
 // view) and reorder as quieter actions beneath it (cave-6p5l).
 assert.match(
   source,
-  /new CustomEvent\("cave:onboarding-open"\)/,
-  "Summon routes to the summoning circle (familiars are daemon-owned)",
+  /requestSummonFamiliar\(\)/,
+  "Summon routes to the Summoning Circle on the Familiars surface (cave-3em5)",
+);
+assert.doesNotMatch(
+  source,
+  /cave:onboarding-open/,
+  "Summon must NOT open the onboarding wizard — it stops at infrastructure and cannot create familiars (cave-3em5)",
 );
 assert.match(
   source,

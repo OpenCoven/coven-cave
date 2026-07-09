@@ -602,6 +602,13 @@
   background:color-mix(in oklab,var(--color-success) 10%,transparent);
   color:var(--color-success);
 }
+/* Rejected/expired PAT: a clickable chip (opens the PAT modal) in danger tint. */
+.gh-compact-auth--invalid {
+  border-color:color-mix(in oklab,var(--color-danger) 42%,transparent);
+  background:color-mix(in oklab,var(--color-danger) 10%,transparent);
+  color:var(--color-danger);
+  cursor:pointer;
+}
 .gh-compact-rate {
   color:var(--text-muted);
   font-size:10px;

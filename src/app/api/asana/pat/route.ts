@@ -37,7 +37,7 @@ function applyEnvUpdates(updates: Record<string, string | null>): void {
   writeFileSync(envPath, upsertEnvContent(existing, updates), "utf8");
 }
 
-async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null }> {
+async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null; network?: boolean }> {
   try {
     const res = await fetch("https://app.asana.com/api/1.0/users/me", {
       headers: { Authorization: `Bearer ${pat}`, Accept: "application/json" },
@@ -48,7 +48,8 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
     const me = data?.data as { name?: string; email?: string } | undefined;
     return { valid: true, login: me?.name ?? me?.email ?? null };
   } catch {
-    return { valid: false, login: null };
+    // Asana unreachable — not evidence the token is bad (cave-d6zq).
+    return { valid: false, login: null, network: true };
   }
 }
 
@@ -84,6 +85,12 @@ export async function POST(req: NextRequest) {
 
   const result = await validatePat(pat);
   if (!result.valid) {
+    if (result.network) {
+      return NextResponse.json(
+        { ok: false, error: "Couldn't reach Asana to verify the token — check your connection and try again." },
+        { status: 503 },
+      );
+    }
     return NextResponse.json(
       { ok: false, error: "Asana PAT is invalid or expired" },
       { status: 422 },

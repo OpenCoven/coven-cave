@@ -62,6 +62,9 @@ import { openExternalUrl } from "@/lib/open-external";
 type ActivityResult = {
   ok: true;
   authed: boolean;
+  /** GitHub rejected the stored PAT (revoked/expired) — surface it, don't
+   *  render an authed-looking empty state over a dead token (cave-cjgg). */
+  patInvalid?: boolean;
   login: string | null;
   items: GitHubItem[];
   rateLimit: { remaining: number; limit: number } | null;
@@ -189,14 +192,19 @@ function PatSetupModal({
   onSaved,
   onClose,
   username,
+  hasPat = false,
 }: {
   onSaved: (login: string, hasPat: boolean) => void;
   onClose: () => void;
   username: string | null;
+  /** A PAT is currently stored — offers the remove path (the DELETE route
+   *  had no caller anywhere; cave-cjgg). */
+  hasPat?: boolean;
 }) {
   const [pat, setPat] = useState("");
   const [usernameInput, setUsernameInput] = useState(username ?? "");
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -346,6 +354,41 @@ function PatSetupModal({
             </Button>
           </div>
         </form>
+
+        {hasPat && (
+          <div className="mt-3 border-t border-[var(--border-hairline)] pt-3">
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={removing || saving}
+              onClick={() => {
+                if (removing) return;
+                setRemoving(true);
+                setError(null);
+                void (async () => {
+                  try {
+                    const res = await fetch("/api/github/pat", { method: "DELETE" });
+                    const data = await res.json().catch(() => null);
+                    if (!res.ok || data?.ok === false) {
+                      setError(data?.error ?? "Couldn't remove the token.");
+                      return;
+                    }
+                    onSaved(usernameInput.trim() || username || "", false);
+                  } catch {
+                    setError("Network error — please try again.");
+                  } finally {
+                    setRemoving(false);
+                  }
+                })();
+              }}
+            >
+              {removing ? "Removing…" : "Remove stored token"}
+            </Button>
+            <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+              Drops back to public data for @{usernameInput.trim() || username || "…"}.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2302,7 +2345,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
 
       const nextActivity = data as ActivityResult;
       setActivity((prev) =>
-        prev && prev.authed === nextActivity.authed && arrayContentEqual(prev.items, nextActivity.items)
+        prev && prev.authed === nextActivity.authed && prev.patInvalid === nextActivity.patInvalid && arrayContentEqual(prev.items, nextActivity.items)
           ? prev
           : nextActivity);
       setError(null);
@@ -2544,6 +2587,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       {showPatModal && (
         <PatSetupModal
           username={patStatus?.login ?? null}
+          hasPat={patStatus?.hasPat ?? false}
           onSaved={(login, hasPat) => {
             setPatStatus({ hasPat, login });
             setShowPatModal(false);
@@ -2560,7 +2604,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             <span className="gh-compact-login">@{activity.login}</span>
           )}
 
-          {activity?.authed === false && (
+          {activity?.patInvalid && (
+            <button
+              type="button"
+              onClick={() => setShowPatModal(true)}
+              className="gh-compact-auth gh-compact-auth--invalid focus-ring"
+              title="GitHub rejected the stored token (revoked or expired) — update your PAT"
+            >
+              token rejected — update PAT
+            </button>
+          )}
+          {!activity?.patInvalid && activity?.authed === false && (
             <span
               className="gh-compact-auth gh-compact-auth--public"
               title="Public API — add a PAT for private repos + review requests"
@@ -2745,6 +2799,19 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                 icon="ph:magnifying-glass"
                 headline={`No items match “${query.trim()}”`}
                 subtitle="Try a shorter query, or clear the search to see everything."
+              />
+            ) : activity?.patInvalid ? (
+              // A dead PAT means this emptiness is unverifiable — an all-clear
+              // check mark here would be a lie (cave-cjgg).
+              <EmptyState
+                icon="ph:key"
+                headline="GitHub token rejected"
+                subtitle="The stored token was revoked or expired, so private repos and reviews can't be read. Update the PAT to restore the full view."
+                actions={
+                  <Button variant="primary" leadingIcon="ph:key" onClick={() => setShowPatModal(true)}>
+                    Update PAT
+                  </Button>
+                }
               />
             ) : (
               <EmptyState

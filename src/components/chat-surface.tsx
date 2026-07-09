@@ -19,6 +19,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
@@ -68,6 +69,9 @@ type Props = {
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
   familiarsLoaded?: boolean;
+  /** Roster-load failure + retry, forwarded to ChatRouter's empty state (cave-atzv). */
+  familiarsError?: string | null;
+  onRetryFamiliars?: () => void;
   inboxItems: InboxItem[];
   inspectorOpen: boolean;
   rightPanel?: RightPanelKind | null;
@@ -195,6 +199,8 @@ export function ChatSurface({
   routerRef,
   sessionsLoaded,
   familiarsLoaded,
+  familiarsError,
+  onRetryFamiliars,
   inboxItems,
   inspectorOpen,
   rightPanel: rightPanelProp,
@@ -683,8 +689,9 @@ export function ChatSurface({
             activeFamiliar={activeFamiliar}
             lockToFamiliar
             onOpenMemoryFile={(path) => {
-              setRightPanel("inspector");
-              window.location.hash = `memory:${encodeURIComponent(path)}`;
+              // Land on the Grimoire editor — the app's memory-file reader.
+              // (The old `#memory:` hash had no consumer anywhere; cave-ce7y.)
+              openGrimoireDoc("memory", path);
             }}
           />
         ) : scope === "projects" ? (
@@ -717,6 +724,8 @@ export function ChatSurface({
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
                   familiarsLoaded={familiarsLoaded}
+                  familiarsError={familiarsError}
+                  onRetryFamiliars={onRetryFamiliars}
                   compact={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}

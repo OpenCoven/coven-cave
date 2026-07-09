@@ -7,6 +7,7 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { Popover } from "@/components/ui/popover";
 import { setFamiliarOrder } from "@/lib/cave-familiar-order";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent,
@@ -83,13 +84,10 @@ export function FamiliarSwitcher({
     if (!multi) setOpen(false);
   };
 
-  // Familiars are daemon-owned — there is no cave-side create. "New familiar"
-  // routes to onboarding (the canonical create flow) via the window-event bus
-  // the Workspace listens on (see `cave:onboarding-open`).
+  // Creation lives in the Summoning Circle on the Familiars surface — the
+  // onboarding wizard stops at infrastructure and cannot summon (cave-3em5).
   const fireCreateFamiliar = () => {
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("cave:onboarding-open"));
-    }
+    requestSummonFamiliar();
   };
 
   const anyNeedsReply = useMemo(() => {

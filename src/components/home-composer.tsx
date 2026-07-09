@@ -19,6 +19,7 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { resolveModelArg } from "@/lib/slash-model";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   resolveSkillInvocation,
   buildSkillPrompt,
@@ -492,7 +493,13 @@ export function HomeComposer({
     try {
       switch (destination) {
         case "chat": {
-          if (!selectedFamiliarId) { onToast("No familiar selected — add one in Settings."); break; }
+          if (!selectedFamiliarId) {
+            // Walk them to the Summoning Circle instead of naming a two-hop
+            // Settings destination; the draft persists for their return (cave-3em5).
+            onToast("No familiar yet — summon one to send this. Your draft is saved.");
+            requestSummonFamiliar();
+            break;
+          }
           // Hand the prompt to ChatView, which owns the streaming send. Doing
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the

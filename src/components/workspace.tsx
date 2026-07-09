@@ -30,6 +30,7 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
+import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { RailInspector } from "@/components/inspector-pane";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -355,6 +356,10 @@ export function Workspace() {
   // "running" doesn't flicker it away — it shows on the first failed poll and
   // only clears after the daemon is *consistently* healthy (see the streak ref).
   const [daemonOffline, setDaemonOffline] = useState(false);
+  // The access-token gate rejected our credential (401 on the status poll).
+  // Distinct from daemonOffline: the daemon may be fine — WE can't see it, and
+  // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
+  const [authExpired, setAuthExpired] = useState(false);
   const daemonHealthyStreakRef = useRef(0);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
 
@@ -534,33 +539,50 @@ export function Workspace() {
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
     let running = false;
+    let authRejected = false;
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      const json = (await res.json()) as { running?: boolean };
-      running = json.running === true;
-      setDaemonRunning(running);
-    } catch {
-      setDaemonRunning(false);
-    } finally {
-      // Drive the sticky offline signal: any failed poll marks the daemon
-      // offline immediately, but a background poll takes two *consecutive*
-      // healthy polls to clear — otherwise a flapping zombie daemon keeps
-      // dismissing the banner.
-      if (running) {
-        daemonHealthyStreakRef.current += 1;
-        // A `trusted` refresh follows an explicit user-initiated start, so a
-        // healthy answer is enough to clear the banner immediately — without it
-        // the "Start daemon" banner lingered for a poll cycle (~5s) after the
-        // daemon was already up.
-        if (opts?.trusted) daemonHealthyStreakRef.current = 2;
-        if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
+      if (res.status === 401) {
+        // The access-token gate rejected US — the daemon may be perfectly
+        // healthy; we just can't see it. Attributing this to the daemon put
+        // users in front of a "Daemon offline" banner whose "Start daemon"
+        // CTA also 401s (cave-wkp5). Surface re-auth instead, and leave the
+        // daemon state untouched.
+        authRejected = true;
       } else {
-        daemonHealthyStreakRef.current = 0;
-        setDaemonOffline(true);
+        const json = (await res.json()) as { running?: boolean };
+        running = json.running === true;
+        setDaemonRunning(running);
+        // A real (non-401) answer proves the credential is accepted again.
+        setAuthExpired(false);
       }
-      // The first poll has now produced a real answer — only after this may the
-      // offline banner appear, so a fresh load doesn't flash it before we know.
-      setDaemonStatusResolved(true);
+    } catch {
+      if (!authRejected) setDaemonRunning(false);
+    } finally {
+      if (authRejected) {
+        setAuthExpired(true);
+        setDaemonStatusResolved(true);
+      } else {
+        // Drive the sticky offline signal: any failed poll marks the daemon
+        // offline immediately, but a background poll takes two *consecutive*
+        // healthy polls to clear — otherwise a flapping zombie daemon keeps
+        // dismissing the banner.
+        if (running) {
+          daemonHealthyStreakRef.current += 1;
+          // A `trusted` refresh follows an explicit user-initiated start, so a
+          // healthy answer is enough to clear the banner immediately — without it
+          // the "Start daemon" banner lingered for a poll cycle (~5s) after the
+          // daemon was already up.
+          if (opts?.trusted) daemonHealthyStreakRef.current = 2;
+          if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
+        } else {
+          daemonHealthyStreakRef.current = 0;
+          setDaemonOffline(true);
+        }
+        // The first poll has now produced a real answer — only after this may the
+        // offline banner appear, so a fresh load doesn't flash it before we know.
+        setDaemonStatusResolved(true);
+      }
     }
   }, []);
 
@@ -691,9 +713,11 @@ export function Workspace() {
   });
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
-  // it appears at the top of every surface, not just Chat.
+  // it appears at the top of every surface, not just Chat. While the access
+  // token is rejected the daemon state is unknowable — suppress this banner
+  // in favour of the re-auth one (cave-wkp5).
   useEffect(() => {
-    if (!daemonOffline) {
+    if (!daemonOffline || authExpired) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
@@ -711,26 +735,55 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonOffline, daemonStatusResolved, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, authExpired, pushBanner, dismissBanner, startDaemon]);
+
+  // Re-auth banner: the access-token gate is rejecting every request, so all
+  // surfaces are degrading at once. A reload lands on the gate page, which
+  // explains how to sign back in (paste a token / open the pairing link).
+  useEffect(() => {
+    if (!authExpired) {
+      dismissBanner("auth-expired");
+      return;
+    }
+    pushBanner({
+      id: "auth-expired",
+      severity: "error",
+      title: "Access expired — this session's token is no longer valid. Reload to sign in again.",
+      cta: {
+        label: "Reload",
+        onClick: () => {
+          window.location.reload();
+        },
+      },
+    });
+  }, [authExpired, pushBanner, dismissBanner]);
 
   const loadFamiliars = useCallback(async () => {
     try {
       const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) {
-        setFamiliars([]);
+        // Keep the last-known-good roster: a failed load means "can't see the
+        // familiars right now", not "there are none". Clearing here made three
+        // surfaces show first-run copy over an intact roster (cave-atzv).
         setFamiliarsError(json.error ?? "daemon offline");
         return;
       }
       setFamiliarsError(null);
       setFamiliars((json.familiars ?? []) as Familiar[]);
     } catch (err) {
-      setFamiliars([]);
       setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
     } finally {
       setFamiliarsLoaded(true);
     }
   }, []);
+
+  // A roster load that failed (or raced the daemon's boot) self-heals once the
+  // daemon is reachable again — without this, one transient failure left the
+  // empty state up until an unrelated refresh event (cave-atzv).
+  useEffect(() => {
+    if (daemonRunning) void loadFamiliars();
+  }, [daemonRunning, loadFamiliars]);
 
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
@@ -1835,8 +1888,10 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "open-memory-file") {
-      setMode("agents");
-      window.location.hash = `memory:${encodeURIComponent(intent.path)}`;
+      // Land on the Grimoire editor with the file selected. (The old
+      // `#memory:` hash had no consumer anywhere — picking a memory result
+      // jumped to Familiars with nothing opened; cave-ce7y.)
+      openGrimoireDoc("memory", intent.path);
       return;
     }
     if (intent.kind === "slash") {
@@ -2209,7 +2264,9 @@ export function Workspace() {
         onStartChat={(familiarId) => startFamiliarChat(familiarId)}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
         onOpenMemoryFile={(path) => {
-          window.location.hash = `memory:${encodeURIComponent(path)}`;
+          // Grimoire editor is the memory-file reader — the old `#memory:`
+          // hash had no consumer (cave-ce7y).
+          openGrimoireDoc("memory", path);
         }}
         onOpenOnboarding={openOnboarding}
         onOpenUrl={openUrlInAppBrowser}
@@ -2217,6 +2274,8 @@ export function Workspace() {
           void loadFamiliars();
           selectFamiliar(id);
         }}
+        familiarsError={familiarsError}
+        onRetryFamiliars={() => void loadFamiliars()}
       />
     ) : mode === "chat" ? (
       <ChatSurface
@@ -2229,6 +2288,8 @@ export function Workspace() {
         hideThreadRail
         sessionsLoaded={sessionsLoaded}
         familiarsLoaded={familiarsLoaded}
+        familiarsError={familiarsError}
+        onRetryFamiliars={() => void loadFamiliars()}
         inboxItems={inboxItemsWithEphemeral}
         inspectorOpen={inspectorOpen}
         rightPanel={rightPanel}
