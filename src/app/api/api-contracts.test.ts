@@ -131,7 +131,7 @@ const contracts: RouteContract[] = [
   { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/prompts", methods: ["GET"], kind: "json" },
+  { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
