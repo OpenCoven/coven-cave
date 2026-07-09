@@ -11,6 +11,8 @@ import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { IconButton } from "@/components/ui/icon-button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
@@ -220,6 +222,22 @@ export function QuickChatComposer({
   /** Left slot of the actions row — a hint in the tray, Open-in-full-chat in the overlay. */
   leading?: React.ReactNode;
 }) {
+  // Prompt enhancement (cave-b6c2): the shared model-backed hook, mounted
+  // internally so every quick-chat surface (dropdown, tray tab, standalone
+  // window) gets Enhance with zero consumer wiring.
+  const promptEnhance = usePromptEnhance({
+    draft,
+    setDraft: onDraftChange,
+    familiarId: familiar?.id ?? null,
+    mode: "chat",
+    disabled: sending,
+  });
+  const send = useCallback(() => {
+    // The strip belongs to the draft being sent — don't leave it hanging
+    // over the emptied composer.
+    promptEnhance.reset();
+    onSend();
+  }, [onSend, promptEnhance.reset]);
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const cmdEnter = (event.metaKey || event.ctrlKey) && event.key === "Enter";
@@ -227,10 +245,10 @@ export function QuickChatComposer({
         event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing;
       if (cmdEnter || plainEnter) {
         event.preventDefault();
-        if (!sending && draft.trim()) onSend();
+        if (!sending && draft.trim()) send();
       }
     },
-    [draft, onSend, sending],
+    [draft, send, sending],
   );
 
   return (
@@ -251,9 +269,22 @@ export function QuickChatComposer({
         placeholder={familiar ? `Message @${familiar.id}…` : "@sage summarize what needs attention"}
         className="quick-chat-overlay__input"
       />
+      <EnhanceStrip
+        state={promptEnhance.state}
+        onApply={promptEnhance.apply}
+        onDismiss={promptEnhance.dismiss}
+        onRevert={promptEnhance.revert}
+        onCancel={promptEnhance.cancel}
+      />
       <div className="quick-chat-overlay__actions">
         {leading}
         <div className="flex items-center gap-2">
+          <EnhanceControl
+            state={promptEnhance.state}
+            onEnhance={promptEnhance.enhance}
+            onCancel={promptEnhance.cancel}
+            disabled={sending || !draft.trim()}
+          />
           {sending ? (
             <Button variant="secondary" size="sm" onClick={onCancel}>
               Stop
@@ -263,7 +294,7 @@ export function QuickChatComposer({
             variant="primary"
             size="sm"
             leadingIcon="ph:sparkle"
-            onClick={onSend}
+            onClick={send}
             disabled={sending || disabled || !draft.trim()}
           >
             Send

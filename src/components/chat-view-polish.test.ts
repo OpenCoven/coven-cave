@@ -358,8 +358,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /<div className="cave-composer-submit-row">[\s\S]*aria-label="Enhance prompt"[\s\S]*<Icon name="ph:sparkle"[\s\S]*aria-label="Send message"/,
-  "Enhance should be an icon-only sparkle action immediately next to Send",
+  /<div className="cave-composer-submit-row">[\s\S]*<EnhanceControl[\s\S]*aria-label="Send message"/,
+  "Enhance should be the shared sparkle control immediately next to Send",
 );
 assert.doesNotMatch(
   source,
@@ -1244,7 +1244,7 @@ assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists")
 assert.match(source, /setInput\(""\);\s*\n\s*\/\/[\s\S]*?clearDraft\(\);/, "send clears the persisted composer draft synchronously");
 // (2) send() resets the enhance strip so it doesn't linger over an empty
 //     composer and let Revert repopulate the already-sent message.
-assert.match(source, /clearDraft\(\);[\s\S]{0,400}?setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/, "send resets the enhance (Prompt improved / Revert) state");
+assert.match(source, /clearDraft\(\);[\s\S]{0,400}?promptEnhance\.reset\(\);/, "send resets the enhance strip state");
 // (1) the slash, /model, /skill and /prompt pickers all dismiss on Escape
 //     (their footers advertise "esc cancel"); previously Esc fell through and
 //     cancelled a live stream. The shared hook guards ONE Escape branch on

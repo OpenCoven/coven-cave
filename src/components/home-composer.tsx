@@ -64,7 +64,8 @@ import {
   type CommandResponseSpeed,
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
-import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -169,10 +170,6 @@ export function HomeComposer({
     focus: () => setTimeout(() => textareaRef.current?.focus(), 0),
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Prompt enhancement (mirrors the chat composer's Enhance): the pre-enhance
-  // text is kept so the user can revert in one tap.
-  const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [enhanceOriginal, setEnhanceOriginal] = useState<string | null>(null);
   const archivedFamiliars = useArchivedFamiliars();
   // Hide archived familiars from the "new session" picker. Starting a new
   // chat against an archived agent is a footgun — the user can't tell from
@@ -360,50 +357,31 @@ export function HomeComposer({
     fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,
   });
 
-  // ── Enhance ──────────────────────────────────────────────────────────────
-  // Rewrite the draft through the shared pure enhancer (mirrors the chat
-  // composer), stashing the original for a one-tap revert.
-  const enhancePrompt = useCallback(() => {
-    const draft = text.trim();
-    if (!draft || sending || enhanceStatus === "loading") return;
-    setEnhanceStatus("loading");
-    const result = buildPromptEnhancement({
-      draft,
-      mode: destination === "board" ? "task" : "chat",
-      context: {
-        activeProject: selectedProject
-          ? { name: selectedProject.name, root: selectedProject.root }
-          : null,
-        selectedFiles: attachments.map((attachment) => attachment.name),
-      },
-    });
-    if (!result.ok || !result.enhanced.trim()) {
-      setEnhanceStatus("error");
-      onToast("Couldn't enhance the prompt.");
-      return;
-    }
-    setEnhanceOriginal(text);
-    setText(result.enhanced);
-    announce("Prompt enhanced", "polite");
-    setEnhanceStatus("idle");
-    setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
-  }, [text, destination, selectedProject, attachments, sending, enhanceStatus, onToast, autoGrow, announce]);
-  const revertEnhance = useCallback(() => {
-    setEnhanceOriginal((original) => {
-      if (original == null) return null;
-      setText(original);
-      setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
-      return null;
-    });
-  }, [autoGrow]);
+
+  // Prompt enhancement (cave-b6c2): the shared model-backed hook — streaming
+  // rewrite via the selected familiar with the rule engine as fallback, plus
+  // the race-safe apply/suggest/revert state machine.
+  const promptEnhance = usePromptEnhance({
+    draft: text,
+    setDraft: setText,
+    familiarId: selectedFamiliarId || null,
+    mode: destination === "board" ? "task" : "chat",
+    context: {
+      activeProject: selectedProject
+        ? { name: selectedProject.name, root: selectedProject.root }
+        : null,
+      selectedFiles: attachments.map((attachment) => attachment.name),
+    },
+    disabled: sending,
+  });
 
   // A suggestion pill inserts its prompt (never auto-sends) and returns focus
   // so the user can edit before sending.
   const insertPrompt = useCallback((prompt: string) => {
     setText(prompt);
-    setEnhanceOriginal(null);
+    promptEnhance.reset();
     setTimeout(() => textareaRef.current?.focus(), 0);
-  }, []);
+  }, [promptEnhance.reset]);
 
   // Destination pills behave as a single-select radiogroup: arrow/Home/End
   // move the selection and the roving focus, matching the ARIA radio pattern.
@@ -429,6 +407,7 @@ export function HomeComposer({
     },
     [destination],
   );
+
 
   const handleSubmit = useCallback(async () => {
     const prompt = text.trim();
@@ -524,7 +503,7 @@ export function HomeComposer({
           // the next Home visit.
           clearDraft();
           clearAttachments();
-          setEnhanceOriginal(null);
+          promptEnhance.reset();
           onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
             initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
             initialAttachments: outgoing,
@@ -551,7 +530,7 @@ export function HomeComposer({
             }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
-          if (json.ok) { setText(""); clearDraft(); clearAttachments(); setEnhanceOriginal(null); onNavigateToBoard(); }
+          if (json.ok) { setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard(); }
           else onToast("Board card creation failed.");
           break;
         }
@@ -582,6 +561,7 @@ export function HomeComposer({
     invokeSkill,
     prompts,
     insertPromptTemplate,
+    promptEnhance.reset,
   ]);
 
   const handleKeyDown = useCallback(
@@ -779,7 +759,7 @@ export function HomeComposer({
           placeholder={PLACEHOLDERS[destination]}
           rows={1}
           value={text}
-          onChange={(e) => { setText(e.target.value); if (enhanceOriginal != null) setEnhanceOriginal(null); }}
+          onChange={(e) => setText(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           disabled={sending}
@@ -795,23 +775,15 @@ export function HomeComposer({
           enterKeyHint="send"
         />
 
-        {/* Enhance revert strip — mirrors the chat composer's post-enhance
-            status row: confirms the swap and offers a one-tap revert. */}
-        {enhanceOriginal !== null ? (
-          <div className="flex items-center gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-1.5 text-[11px] text-[var(--text-muted)]" role="status">
-            <Icon name="ph:check" width={12} aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Prompt improved</span>
-            <button
-              type="button"
-              onClick={revertEnhance}
-              className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              aria-label="Revert prompt enhancement"
-              title="Revert prompt enhancement"
-            >
-              Revert
-            </button>
-          </div>
-        ) : null}
+        {/* Enhance status strip (shared): streaming preview, apply/dismiss
+            for late arrivals, one-tap revert after an in-place apply. */}
+        <EnhanceStrip
+          state={promptEnhance.state}
+          onApply={promptEnhance.apply}
+          onDismiss={promptEnhance.dismiss}
+          onRevert={promptEnhance.revert}
+          onCancel={promptEnhance.cancel}
+        />
 
         {/* Controls — reference layout: `+` attach and the Chat/Task pills sit
             bottom-left inside the card; the model chip, voice, enhance, and
@@ -872,16 +844,12 @@ export function HomeComposer({
               >
                 <Icon name="ph:microphone" width={15} aria-hidden />
               </button>
-              <button
-                type="button"
-                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                title="Enhance prompt"
-                aria-label="Enhance prompt"
-                disabled={sending || enhanceStatus === "loading" || !text.trim()}
-                onClick={() => enhancePrompt()}
-              >
-                <Icon name="ph:sparkle" width={13} aria-hidden />
-              </button>
+              <EnhanceControl
+                state={promptEnhance.state}
+                onEnhance={promptEnhance.enhance}
+                onCancel={promptEnhance.cancel}
+                disabled={sending || !text.trim()}
+              />
               <button
                 type="button"
                 onClick={() => void handleSubmit()}

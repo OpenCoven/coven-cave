@@ -124,7 +124,7 @@ function projectNameWithParent(projectRoot: string): string {
 // heartbeat automations — not because someone opened a chat. They stay
 // reachable from their origination surfaces (Canvas, Schedules, Work Queue);
 // listing them here is just noise between real conversations.
-const CHAT_HIDDEN_ORIGINS: ReadonlySet<string> = new Set(["cron", "heartbeat", "canvas", "journal"]);
+const CHAT_HIDDEN_ORIGINS: ReadonlySet<string> = new Set(["cron", "heartbeat", "canvas", "journal", "enhance"]);
 
 /** Legacy fallback for journal runs created before origin:"journal" existed:
  *  their titles are the exact machine prompts (daily-narrative.ts and
