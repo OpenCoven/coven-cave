@@ -135,6 +135,78 @@
   flex-shrink: 0;
 }
 
+/* Asana source strip — assigned tasks pulled into the Queue when Asana is
+   connected. Presence-toned so it reads as informational, visually distinct
+   from the warning-toned "needs attention" strip above it. */
+.fwq-asana {
+  margin: 12px 20px 0;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  border-radius: var(--radius-panel, 12px);
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+  overflow: hidden;
+}
+
+.fwq-asana-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-presence);
+  border-bottom: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+.fwq-asana-title {
+  flex-shrink: 0;
+}
+
+.fwq-asana-summary {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fwq-asana-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fwq-asana-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.fwq-asana-item:last-child {
+  border-bottom: 0;
+}
+
+.fwq-asana-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fwq-asana-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-asana-tags {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
 /* Unlinked (no bead) reads as informational, distinct from the warning stale. */
 .fwq-tag--unlinked {
   color: var(--text-secondary);

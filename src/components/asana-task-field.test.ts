@@ -70,5 +70,9 @@ assert.match(
   /if \(!configured \|\| items\.length === 0\) return null/,
   "Queue Asana strip renders nothing when Asana is unconnected or empty",
 );
+// Distinct class from the warning-toned attention strip — never collides with
+// the .fwq-attention count assertions in familiar-work-queue.spec.ts.
+assert.doesNotMatch(queueStrip, /className="fwq-attention/, "Queue Asana strip uses its own fwq-asana classes");
+assert.match(queueStrip, /className="fwq-asana"/, "Queue Asana strip uses the fwq-asana container class");
 
 console.log("asana task field guard passed");

@@ -99,22 +99,22 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead }: Props) {
   if (!configured || items.length === 0) return null;
 
   return (
-    <section className="fwq-attention" aria-label="Asana tasks assigned to you">
-      <header className="fwq-attention-head">
+    <section className="fwq-asana" aria-label="Asana tasks assigned to you">
+      <header className="fwq-asana-head">
         <Icon name="ph:check-circle" width={14} aria-hidden />
-        <span className="fwq-attention-title">Asana</span>
-        <span className="fwq-attention-summary">{items.length} assigned</span>
+        <span className="fwq-asana-title">Asana</span>
+        <span className="fwq-asana-summary">{items.length} assigned</span>
       </header>
-      <ul className="fwq-attention-list">
+      <ul className="fwq-asana-list">
         {items.map((item) => {
           const busy = busyGid === item.gid;
           const meta = [item.projectName, item.dueOn ? `due ${item.dueOn}` : null].filter(Boolean).join(" · ");
           return (
-            <li key={item.gid} className="fwq-attention-item">
-              <div className="fwq-attention-main">
-                <span className="fwq-attention-name">{item.title}</span>
+            <li key={item.gid} className="fwq-asana-item">
+              <div className="fwq-asana-main">
+                <span className="fwq-asana-name">{item.title}</span>
               </div>
-              <div className="fwq-attention-tags">
+              <div className="fwq-asana-tags">
                 {meta ? <span className="fwq-tag">{meta}</span> : null}
                 {filed.has(item.gid) ? <span className="fwq-tag fwq-tag--ready">filed</span> : null}
               </div>
