@@ -246,13 +246,26 @@ assert.doesNotMatch(
   );
   assert.match(
     shell,
-    /invoke\("set_traffic_lights_visible", \{ visible: trafficLightsVisible \}\)/,
+    /invoke\("set_traffic_lights_visible", \{ visible \}\)/,
     "the shell drives the native buttons through the app command",
+  );
+  // Title-bar fit contract: the 78px inset is released only AFTER the native
+  // hide is confirmed — marking "hidden" optimistically slid the nav toggle +
+  // history chevrons under still-visible lights when the command failed.
+  assert.match(
+    shell,
+    /applyNative\(false\)\s*\.then\(\(\) => \{\s*if \(!cancelled\) root\.dataset\.trafficLights = "hidden";/,
+    "the root attribute flips to hidden only once the native hide resolves",
   );
   assert.match(
     shell,
-    /root\.dataset\.trafficLights = trafficLightsVisible \? "visible" : "hidden";/,
-    "the root attribute mirrors the native state for CSS",
+    /\.catch\(\(\) => \{[\s\S]{0,220}?if \(!cancelled\) root\.dataset\.trafficLights = "visible";/,
+    "a failed native hide keeps the inset reserved for the still-visible lights",
+  );
+  assert.match(
+    shell,
+    /window\.addEventListener\("focus", onFocus\)/,
+    "focus re-asserts the hidden state after AppKit re-shows the buttons",
   );
   assert.match(
     css,
