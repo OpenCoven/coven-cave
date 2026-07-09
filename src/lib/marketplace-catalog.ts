@@ -82,7 +82,7 @@ export type PluginManifest = {
   keywords?: string[];
   capabilities?: string[];
   userConfig?: Record<string, PluginUserConfigField>;
-  mcpServers?: Record<string, { url?: string; type?: string; command?: string }>;
+  mcpServers?: Record<string, { url?: string; type?: string; command?: string; args?: string[] }>;
   craft?: CraftSpecification;
   /** Prompt-template ids shipped by this plugin (a prompt pack). The files
    *  live at marketplace/plugins/<id>/prompts/<pid>.md and are resolved by

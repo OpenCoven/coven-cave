@@ -201,7 +201,17 @@ assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifes
 const craftSpec = {
   schemaVersion: "opencoven.craft.v1",
   components: { required: ["fetch"], optional: ["exa"] },
-  bundled: { skills: [{ id: "brainstorming-research-ideas" }], prompts: [], workflows: [] },
+  bundled: {
+    skills: [{
+      id: "brainstorming-research-ideas",
+      sourcePath: "craft-sources/seekers-lens/brainstorming-research-ideas/SKILL.md",
+      upstreamPath: "21-research-ideation/brainstorming-research-ideas/SKILL.md",
+      contentHash: "sha256:8422a1a6dc0a88d05f02b9fbe0f8c2ae06a77024856d18125efa13d19d855d46",
+      modifications: ["Normalized frontmatter for Codex."],
+    }],
+    prompts: [],
+    workflows: [],
+  },
   requiredCapabilities: ["network.http"],
   recommendedRoles: ["researcher"],
   provenance: {
@@ -213,7 +223,7 @@ const craftSpec = {
 };
 const craftMerged = mergeCatalog(
   [{ name: "seekers-lens", displayName: "Seeker's Lens", kind: "craft", category: "Research Crafts", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
-  { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec, mcpServers: { local: { command: "research-search" } } } },
+  { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec, mcpServers: { local: { command: "research-search", args: ["--stdio"] } } } },
   {},
 );
 assert.equal(craftMerged[0].kind, "craft");

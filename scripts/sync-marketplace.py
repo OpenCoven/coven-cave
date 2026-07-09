@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import re
 import sys
@@ -533,12 +534,16 @@ def remove_unexpected_managed_files(files: dict[Path, str], managed_roots: set[P
         for directory in sorted(directories, key=lambda value: len(value.parts), reverse=True):
             try:
                 directory.rmdir()
-            except OSError:
-                pass
+            except OSError as exc:
+                # Cleanup is best-effort for non-empty or concurrently removed directories.
+                if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT}:
+                    raise
         try:
             root.rmdir()
-        except OSError:
-            pass
+        except OSError as exc:
+            # A managed root can remain when it still contains expected generated files.
+            if exc.errno not in {errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT}:
+                raise
 
 
 def write_files(files: dict[Path, str], managed_roots: set[Path] | None = None) -> None:
