@@ -85,8 +85,28 @@ assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mo
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
 assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings should keep reconciling mobile mode while enabled (pausable poll, paused in a hidden tab)");
 assert.match(settings, /Mobile mode/, "Settings should label the one-click native iOS route switch");
-assert.match(settings, /Default on/, "Settings should communicate that mobile mode is on by default");
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");
+
+// ── The pairing card (cave-rkiw): one scan, plain language, jargon demoted ──
+assert.match(settings, /describeMobileHandoffError/, "Settings translates handoff failures into plain language");
+assert.match(
+  settings,
+  /Pairing runs in the packaged Cave app/,
+  "the plain-dev failure tells users to open the packaged app instead of quoting pnpm incantations",
+);
+assert.match(settings, /Technical details/, "the raw handoff error stays available behind a disclosure");
+assert.match(
+  settings,
+  /aria-label="Pairing code for your iPhone camera"[\s\S]{0,80}dangerouslySetInnerHTML=\{\{ __html: handoff\.qrSvg \}\}/,
+  "Settings renders the pairing QR right in the phone section",
+);
+assert.match(settings, /Scan with your iPhone camera/, "the pairing card leads with the one-scan instruction");
+assert.match(settings, /Manual setup/, "typing the address is demoted to a collapsed manual-setup path");
+assert.doesNotMatch(
+  settings,
+  /Enter the address in the app/,
+  "the four-step type-the-host walkthrough is retired from the section body",
+);
 assert.match(css, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
 assert.match(css, /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/, "Phone handoff button should hide on mobile/tablet chrome");
 assert.match(mobileStub, /Invite link or Tailscale URL/, "Mobile connection screen should label the real accepted input");
