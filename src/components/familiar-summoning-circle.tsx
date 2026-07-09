@@ -794,7 +794,7 @@ function StageVessel({
             <p className="text-[11px] text-[var(--text-muted)]">Looking for installed runtimes…</p>
           ) : installedHarnesses.length === 0 ? (
             <p className="text-[11px] text-[var(--color-warning)]">
-              No chat-capable runtime found. Install one (Codex, Claude Code, Hermes…) from Settings, then return to the circle.
+              No chat-capable runtime found. Install one (Codex, Claude Code, Copilot, Hermes…) from Settings, then return to the circle.
             </p>
           ) : (
             <div role="radiogroup" aria-label="Runtime" className="summoning-chiprow">

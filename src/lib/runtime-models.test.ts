@@ -8,7 +8,7 @@ import {
 } from "./runtime-models.ts";
 
 // Every bundled chat runtime has a catalog entry.
-for (const runtime of ["codex", "claude", "hermes", "openclaw"]) {
+for (const runtime of ["codex", "claude", "copilot", "hermes", "openclaw"]) {
   const catalog = catalogForRuntime(runtime);
   assert.ok(catalog, `${runtime} should have a catalog entry`);
   assert.equal(catalog.runtime, runtime);
@@ -59,6 +59,25 @@ assert.equal(
   "openai/gpt-5.5",
   "GPT-5.5 must stay first so it remains the codex default",
 );
+
+// Copilot serves multiple providers' models through one GitHub subscription.
+assert.equal(catalogForRuntime("copilot").provider, "github");
+assert.ok(catalogForRuntime("copilot").models.length > 1, "copilot should seed a multi-model menu");
+assert.equal(
+  catalogForRuntime("copilot").models[0].id,
+  "github/auto",
+  "Auto must stay first so Copilot's own default model selection remains the default",
+);
+assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.5"),
+  "copilot catalog should seed GPT-5.5",
+);
+assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/claude-sonnet-5"),
+  "copilot catalog should seed Claude Sonnet 5",
+);
+assert.equal(catalogForRuntime("copilot").allowCustom, true, "copilot accepts unlisted model ids");
+assert.equal(defaultModelForRuntime("copilot"), "github/auto");
 
 // Namespaced model id convention (`provider/model`) holds across the seed.
 for (const catalog of Object.values(RUNTIME_MODEL_CATALOG)) {

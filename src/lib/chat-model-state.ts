@@ -47,6 +47,7 @@ const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.5";
 const SYNTHETIC_LOCAL_MODELS = new Set([
   "codex-local",
   "claude-local",
+  "copilot-local",
   "hermes-local",
   "openclaw-local",
 ]);

@@ -47,6 +47,10 @@ export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   "anthropic/claude-sonnet-5": 1_000_000,
   "anthropic/claude-sonnet-4-6": 1_000_000,
   "anthropic/claude-haiku-4-5": 200_000,
+  // GitHub Copilot (copilot runtime) — cross-provider ids resolve through the
+  // bare-name fallback (gpt-5.5, claude-*); the Copilot-only ids live here.
+  "github/auto": 200_000,
+  "github/gemini-3.1-pro": 1_000_000,
   // Nous (hermes runtime) — estimate.
   "nous/hermes-4": 128_000,
 };
