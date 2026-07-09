@@ -10,6 +10,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
@@ -623,6 +624,20 @@ export function SkillBrowser({
           <div>
             <p className="skill-browser__leaderboard-kicker">Skills Leaderboard</p>
             <p className="skill-browser__leaderboard-title">{formatCount(skills.reduce((sum, skill) => sum + (skill.installsAllTime ?? 0), 0))} installs tracked</p>
+            <div className="skill-browser__modes" role="group" aria-label="Rank skills">
+              {LEADERBOARD_MODES.map((item) => (
+                <Button
+                  key={item.id}
+                  variant="ghost"
+                  size="xs"
+                  className={`skill-browser__mode${mode === item.id ? " is-active" : ""}`}
+                  aria-pressed={mode === item.id}
+                  onClick={() => setMode(item.id)}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </div>
           </div>
           <div className="skill-browser__ecosystem">
             <div className="skill-browser__ecosystem-command">
@@ -646,9 +661,14 @@ export function SkillBrowser({
           </div>
         </div>
         <nav className="skill-browser__rail" aria-label="Skill filters">
-        <div className="skill-browser__rail-group" role="group" aria-label="Skill categories">
-          <p className="skill-browser__rail-label">Categories</p>
-          {RAIL.map((cat) => {
+        {/* One Filter group replaces the old Categories + Browse pair, which
+            duplicated All and Installed across two labeled rows and kept
+            zero-count categories (Claude Code 0) on screen. Categories stay
+            exclusive; the two badge toggles (Official / Security audits)
+            compose with them and click off back to everything. */}
+        <div className="skill-browser__rail-group" role="group" aria-label="Filter skills">
+          <p className="skill-browser__rail-label">Filter</p>
+          {RAIL.filter((cat) => cat.id === "all" || cat.id === "installed" || counts[cat.id] > 0).map((cat) => {
             const count = counts[cat.id === "all" ? "all" : cat.id];
             const active = category === cat.id;
             return (
@@ -665,26 +685,23 @@ export function SkillBrowser({
               </Button>
             );
           })}
-        </div>
-        <div className="skill-browser__rail-group" role="group" aria-label="Browse skills">
-          <p className="skill-browser__rail-label">Browse</p>
-          <div className="skill-browser__browse">
-            {BROWSE_FILTERS.map((item) => (
-              <Button
-                key={item.id}
-                variant="ghost"
-                size="xs"
-                className={`skill-browser__browse-btn${browse === item.id ? " is-active" : ""}`}
-                aria-pressed={browse === item.id}
-                onClick={() => {
-                  setBrowse(item.id);
-                  if (item.id === "all") setTopic("all");
-                }}
-              >
-                <Icon name={item.icon} width={13} aria-hidden />
-                <span>{item.label}</span>
-              </Button>
-            ))}
+          <div className="skill-browser__browse" role="group" aria-label="Badge filters">
+            {BROWSE_FILTERS.filter((item) => item.id === "official" || item.id === "audited").map((item) => {
+              const active = browse === item.id;
+              return (
+                <Button
+                  key={item.id}
+                  variant="ghost"
+                  size="xs"
+                  className={`skill-browser__browse-btn${active ? " is-active" : ""}`}
+                  aria-pressed={active}
+                  onClick={() => setBrowse(active ? "all" : item.id)}
+                >
+                  <Icon name={item.icon} width={13} aria-hidden />
+                  <span>{item.label}</span>
+                </Button>
+              );
+            })}
           </div>
         </div>
         <div className="skill-browser__rail-group" role="group" aria-label="Browse by topic">
@@ -714,40 +731,21 @@ export function SkillBrowser({
             ))}
           </div>
         </div>
-        <div className="skill-browser__rail-group" role="group" aria-label="Rank skills">
-          <p className="skill-browser__rail-label">Rank</p>
-          <div className="skill-browser__modes">
-            {LEADERBOARD_MODES.map((item) => (
-              <Button
-                key={item.id}
-                variant="ghost"
-                size="xs"
-                className={`skill-browser__mode${mode === item.id ? " is-active" : ""}`}
-                aria-pressed={mode === item.id}
-                onClick={() => setMode(item.id)}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </div>
-        </div>
+        {/* Rank moved into the leaderboard header (it ranks the leaderboard);
+            the eight agent chips collapse into one compact select. */}
         {agents.length > 1 ? (
-          <div className="skill-browser__rail-group" role="group" aria-label="Filter by agent">
-            <p className="skill-browser__rail-label">Agents</p>
-            <div className="skill-browser__agents">
-              {agents.slice(0, 8).map((name) => (
-                <Button
-                  key={name}
-                  variant="ghost"
-                  size="xs"
-                  className={`skill-browser__agent${agent === name ? " is-active" : ""}`}
-                  aria-pressed={agent === name}
-                  onClick={() => setAgent(name)}
-                >
-                  {name === "all" ? "All agents" : name}
-                </Button>
-              ))}
-            </div>
+          <div className="skill-browser__rail-group skill-browser__rail-group--inline" role="group" aria-label="Filter by agent">
+            <p className="skill-browser__rail-label">Agent</p>
+            <StandardSelect
+              label="Filter by agent"
+              value={agent}
+              onChange={(next) => setAgent(next)}
+              className="skill-browser__agent-select"
+              options={agents.map((name) => ({
+                value: name,
+                label: name === "all" ? "All agents" : name,
+              }))}
+            />
           </div>
         ) : null}
         </nav>

@@ -12082,6 +12082,35 @@ details[open] > .cave-edit-card__summary::before {
   flex-wrap: wrap;
   gap: 5px;
 }
+/* Badge toggles ride inside the merged Filter group, set off from the
+   category buttons by a hairline. */
+.skill-browser__rail-group .skill-browser__browse {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-hairline);
+}
+/* Rank lives in the leaderboard header now. */
+.skill-browser__leaderboard .skill-browser__modes {
+  margin-top: 8px;
+}
+.skill-browser__rail-group--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.skill-browser__rail-group--inline .skill-browser__rail-label {
+  margin: 0;
+}
+.skill-browser__agent-select {
+  min-width: 0;
+  flex: 1;
+  max-width: 220px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  padding: 4px 8px;
+  font-size: 11px;
+}
 .skill-browser__topics {
   gap: 4px;
 }

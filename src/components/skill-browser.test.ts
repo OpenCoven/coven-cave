@@ -67,9 +67,27 @@ assert.match(src, /function matchesBrowseFilter\(skill: SkillBrowserEntry, filte
 assert.match(src, /function matchesTopic\(skill: SkillBrowserEntry, topicId: string\)/, "topic filters are applied by helper");
 assert.match(src, /matchesBrowseFilter\(s, browse\)/, "visible skills are filtered by browse state");
 assert.match(src, /matchesTopic\(s, topic\)/, "visible skills are filtered by topic state");
-assert.match(src, /className="skill-browser__browse"/, "renders the Browse chip row");
+assert.match(src, /className="skill-browser__browse"/, "renders the badge-toggle chip row");
 assert.match(src, /className="skill-browser__topics"/, "renders the Topics chip row");
-assert.match(src, /className="skill-browser__agents"/, "renders the agent compatibility filter row");
+// cave-99k1 simplification: the rail collapsed from five labeled groups to
+// two. Categories + Browse merged into one Filter group (badge toggles click
+// off back to "all"; zero-count claude/generic categories hide), Rank rides
+// the leaderboard header, and the agent chips became one compact select.
+assert.match(src, /aria-label="Filter skills"/, "one merged Filter group replaces Categories + Browse");
+assert.doesNotMatch(src, /aria-label="Browse skills"/, "the separate Browse group stays deleted");
+assert.match(src, /setBrowse\(active \? "all" : item\.id\)/, "badge toggles deselect back to the full list");
+assert.match(
+  src,
+  /RAIL\.filter\(\(cat\) => cat\.id === "all" \|\| cat\.id === "installed" \|\| counts\[cat\.id\] > 0\)/,
+  "zero-count claude/generic categories stay hidden",
+);
+assert.match(
+  src,
+  /skill-browser__leaderboard-title[\s\S]{0,400}skill-browser__modes/,
+  "Rank lives in the leaderboard header, not its own rail group",
+);
+assert.match(src, /className="skill-browser__agent-select"/, "agents collapse into one compact select");
+assert.match(src, /label="Filter by agent"/, "the agent select stays labeled for AT");
 assert.match(src, /function installCommand\(skill: SkillBrowserEntry\)/, "builds a skills CLI install command");
 assert.match(src, /function useCommand\(skill: SkillBrowserEntry\)/, "builds a skills CLI use command");
 assert.match(src, /function sourceTarget\(skill: SkillBrowserEntry\)/, "derives the skills CLI source from owner/repo or package");
