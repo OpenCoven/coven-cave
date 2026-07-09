@@ -66,6 +66,7 @@ export const SUITES = {
     "src/lib/gh-diff.test.ts",
     "src/lib/gh-review-html.test.ts",
     "src/lib/chat-projects.test.ts",
+    "src/lib/changes-review.test.ts",
     "src/lib/chat-hosts.test.ts",
     "src/lib/chat-recency.test.ts",
     "src/lib/chat-open-tasks.test.ts",

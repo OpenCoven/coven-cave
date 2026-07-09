@@ -11,6 +11,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { buildChangesReviewPrompt } from "@/lib/changes-review";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -782,6 +783,23 @@ export function SessionChangesInner({
 
   const canCommit = loaded && !notARepo && !error && files.length > 0;
 
+  // Commit review — start a NEW chat session whose opening prompt reviews the
+  // working-tree changes. Dispatched through the cave:agents-new-chat bridge:
+  // the Workspace opens the chat when this panel lives on a non-chat surface
+  // (the Code view), and ChatSurface handles it directly when already in chat.
+  const startReviewSession = useCallback(() => {
+    const root = repoRoot ?? projectRoot;
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: {
+          projectRoot: root,
+          initialPrompt: buildChangesReviewPrompt({ repoRoot: root, files }),
+        },
+      }),
+    );
+    announce("Review session started on the working-tree changes.");
+  }, [repoRoot, projectRoot, files, announce]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header: honest scope copy + refresh */}
@@ -811,6 +829,18 @@ export function SessionChangesInner({
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-1">
+            <Button
+              size="xs"
+              variant="secondary"
+              leadingIcon="ph:git-diff"
+              className="shrink-0"
+              onClick={startReviewSession}
+              disabled={!canCommit}
+              title="Start a new session that reviews these changes like a commit review"
+              aria-label="Review changes in a new session"
+            >
+              Review
+            </Button>
             <IconButton
               icon="ph:archive"
               size="sm"

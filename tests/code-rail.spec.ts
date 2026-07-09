@@ -245,4 +245,47 @@ test.describe("code rail beside chat", () => {
     await expect(rail.locator(".workspace-rail__terminal")).toBeVisible({ timeout: 15_000 });
     await expect(rail.locator(".workspace-rail__soon")).toHaveCount(0);
   });
+
+  test("(g) Changes tab Review button starts a new session carrying the commit-review prompt", async ({ page }) => {
+    const filesRef = { count: 2 };
+    await routeChanges(page, filesRef);
+
+    // Capture the auto-sent opening prompt of the review session. The button
+    // dispatches cave:agents-new-chat; ChatSurface opens a NEW chat whose
+    // initialPrompt auto-sends through /api/chat/send — the honest end of the
+    // wire. Reply with a minimal SSE stream so the chat settles.
+    const sends: Array<{ prompt?: string }> = [];
+    await page.route("**/api/chat/send", (route) => {
+      sends.push(JSON.parse(route.request().postData() ?? "{}"));
+      route.fulfill({
+        contentType: "text/event-stream",
+        body: 'data: {"type":"done"}\n\n',
+      });
+    });
+
+    await base(page, [REPO_SESSION]);
+    await openSession(page, "Refactor auth flow");
+
+    await page.locator(".workspace-rail-reopen").click({ timeout: 30_000 });
+    const rail = page.locator(".workspace-rail");
+    await expect(rail).toBeVisible({ timeout: 15_000 });
+
+    await rail.getByRole("button", { name: "Changes" }).click();
+    const review = rail.getByRole("button", { name: "Review changes in a new session" });
+    await expect(review).toBeVisible({ timeout: 15_000 });
+    await expect(review).toBeEnabled();
+
+    await review.click();
+
+    // The new session fires exactly one opening send with the review prompt,
+    // anchored to the repo root and the changed-file inventory.
+    await expect
+      .poll(() => sends.length, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    const prompt = sends[0]?.prompt ?? "";
+    expect(prompt).toContain("Review the uncommitted changes in /repo/alpha");
+    expect(prompt).toContain("Changed files (2):");
+    expect(prompt).toContain("src/file-0.ts");
+    expect(prompt).toContain("git diff");
+  });
 });
