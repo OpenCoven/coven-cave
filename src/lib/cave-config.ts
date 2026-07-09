@@ -84,6 +84,13 @@ export type FamiliarBinding = {
   voiceModel?: string;
   voiceName?: string;
   autoSelfReport?: boolean;
+  /** Per-agent Asana assignment. The PAT is app-wide (one connection); this
+   *  decides whether THIS familiar works with Asana tasks. Undefined = on when
+   *  the app is connected (the seamless default); false opts the agent out. */
+  asanaEnabled?: boolean;
+  /** Optional Asana workspace gid this familiar is scoped to (empty = all of
+   *  the connected user's workspaces). */
+  asanaWorkspaceGid?: string;
   runtime?: FamiliarRuntime;
 };
 
@@ -451,6 +458,8 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     voiceModel: f.voiceModel,
     voiceName: f.voiceName,
     autoSelfReport: f.autoSelfReport ?? false,
+    asanaEnabled: f.asanaEnabled,
+    asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
   };
 }

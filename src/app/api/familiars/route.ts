@@ -70,6 +70,8 @@ export async function GET() {
         voiceModel: binding.voiceModel,
         voiceName: binding.voiceName,
         autoSelfReport: configEntry.autoSelfReport ?? false,
+        asanaEnabled: configEntry.asanaEnabled,
+        asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
         avatarUrl: avatar
           ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
           : undefined,

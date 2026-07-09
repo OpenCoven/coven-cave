@@ -30,6 +30,10 @@ type Props = {
   embedded?: boolean;
   familiars?: ResolvedFamiliar[];
   onOpenUrl?: (url: string) => void;
+  /** The workspace's active familiar scope. When set, the Asana strip shows
+   *  only that agent's assigned tasks; null/undefined = the whole connected
+   *  user (the "All familiars" scope). */
+  activeFamiliarId?: string | null;
 };
 
 const LANE_ICON: Record<WorkQueueLaneKey, IconName> = {
@@ -111,7 +115,7 @@ function sameQueue(a: WorkQueue, b: WorkQueue): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = false }: Props) {
+export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = false, activeFamiliarId }: Props) {
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -377,7 +381,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
 
       {q.attention.length > 0 ? <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} /> : null}
 
-      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load()} />
+      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load()} familiarId={activeFamiliarId} />
 
       <div className="fwq-body">
         {q.total === 0 ? (

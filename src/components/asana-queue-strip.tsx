@@ -25,6 +25,9 @@ type Props = {
   /** Nudge the parent Queue to reload after a task is filed as a bead so it
    *  appears in the ready lanes without waiting for the next poll. */
   onFiledBead?: () => void;
+  /** Scope the strip to one agent: shows only the Asana tasks that familiar is
+   *  assigned to work with, and hides entirely when the agent is opted out. */
+  familiarId?: string | null;
 };
 
 /**
@@ -35,7 +38,7 @@ type Props = {
  * task can be opened in Asana, added to the board, or filed as a bead (entering
  * the ready queue via --external-ref).
  */
-export function AsanaQueueStrip({ onOpenUrl, onFiledBead }: Props) {
+export function AsanaQueueStrip({ onOpenUrl, onFiledBead, familiarId }: Props) {
   const { announce } = useAnnouncer();
   const [items, setItems] = useState<AsanaItem[]>([]);
   const [configured, setConfigured] = useState(false);
@@ -48,12 +51,16 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead }: Props) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
-      const res = await fetch("/api/asana/assigned", { cache: "no-store", signal: ctrl.signal });
+      const url = familiarId
+        ? `/api/asana/assigned?familiarId=${encodeURIComponent(familiarId)}`
+        : "/api/asana/assigned";
+      const res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
       const data = (await res.json()) as AsanaAssignedResponse;
       if (ctrl.signal.aborted) return;
-      // A failed fetch or unconfigured Asana leaves the strip hidden — never an
-      // error banner; the Queue's beads/PR sources carry the surface on their own.
-      if (data.ok && data.configured) {
+      // A failed fetch, unconfigured Asana, or an agent opted out (assigned ===
+      // false) leaves the strip hidden — never an error banner; the Queue's
+      // beads/PR sources carry the surface on their own.
+      if (data.ok && data.configured && data.assigned !== false) {
         const next = Array.isArray(data.items) ? data.items : [];
         setItems((prev) => (sameItems(prev, next) ? prev : next));
         setConfigured(true);
@@ -67,7 +74,7 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead }: Props) {
         setConfigured(false);
       }
     }
-  }, []);
+  }, [familiarId]);
 
   useEffect(() => {
     void load();

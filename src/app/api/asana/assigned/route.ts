@@ -7,9 +7,10 @@
  * is false when no PAT is stored — the "Asana connected" signal the UI gates on.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type { AsanaItem } from "@/lib/asana-tasks";
 import { resolveSecret } from "@/lib/vault";
+import { bindingFor, loadConfig } from "@/lib/cave-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -74,10 +75,28 @@ function toItem(task: RawAsanaTask, workspaceGid: string): AsanaItem {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const token = resolveAsanaToken();
   if (!token) {
     return NextResponse.json({ ok: true, items: [], configured: false });
+  }
+
+  // Per-agent assignment: when a familiarId is passed, the caller wants only
+  // the tasks THIS agent is assigned to work with. `asanaEnabled === false`
+  // opts the agent out (returns `assigned:false`); `asanaWorkspaceGid` scopes
+  // the fan-out to one workspace. No familiarId = the whole connected user.
+  const familiarId = req.nextUrl.searchParams.get("familiarId")?.trim() || null;
+  let scopeWorkspaceGid: string | null = null;
+  if (familiarId) {
+    try {
+      const binding = bindingFor(await loadConfig(), familiarId);
+      if (binding.asanaEnabled === false) {
+        return NextResponse.json({ ok: true, items: [], configured: true, assigned: false });
+      }
+      scopeWorkspaceGid = binding.asanaWorkspaceGid?.trim() || null;
+    } catch {
+      /* config unreadable — fall through to the unscoped (connected-user) view */
+    }
   }
 
   const headers = authHeaders(token);
@@ -95,9 +114,15 @@ export async function GET() {
     }
     const meData = (await meRes.json().catch(() => null)) as { data?: AsanaMe } | null;
     const me = meData?.data;
-    const workspaces = (me?.workspaces ?? []).slice(0, MAX_WORKSPACES);
+    let workspaces = (me?.workspaces ?? []).slice(0, MAX_WORKSPACES);
+    // Scope to the familiar's chosen workspace when set (and it's one the user
+    // actually belongs to — otherwise fall back to all, never an empty view).
+    if (scopeWorkspaceGid) {
+      const scoped = workspaces.filter((ws) => ws.gid === scopeWorkspaceGid);
+      if (scoped.length) workspaces = scoped;
+    }
     if (workspaces.length === 0) {
-      return NextResponse.json({ ok: true, items: [], configured: true });
+      return NextResponse.json({ ok: true, items: [], configured: true, assigned: true });
     }
 
     const perWorkspace = await Promise.all(
@@ -122,7 +147,7 @@ export async function GET() {
     }
     items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
-    return NextResponse.json({ ok: true, items, configured: true });
+    return NextResponse.json({ ok: true, items, configured: true, assigned: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ ok: false, error: message, items: [] }, { status: 502 });

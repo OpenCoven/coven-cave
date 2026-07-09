@@ -9,6 +9,7 @@ import {
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
+import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -338,6 +339,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               Writes a self-report to memory when a chat closes or is archived.
             </p>
           </section>
+
+          <FamiliarAsanaSection familiar={familiar} />
 
           {harnessId ? (
             <details

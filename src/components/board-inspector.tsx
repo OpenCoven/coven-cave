@@ -512,7 +512,12 @@ function AsanaAttachSection({
     let cancelled = false;
     setLoading(true);
     setErr(null);
-    fetch("/api/asana/assigned", { cache: "no-store" })
+    // Scope to the card's familiar: the picker offers the Asana tasks THIS
+    // agent is assigned to work with (per-agent enablement + workspace scope).
+    const url = card.familiarId
+      ? `/api/asana/assigned?familiarId=${encodeURIComponent(card.familiarId)}`
+      : "/api/asana/assigned";
+    fetch(url, { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { ok: boolean; items?: AsanaItem[]; configured?: boolean; error?: string }) => {
         if (cancelled) return;
@@ -526,7 +531,7 @@ function AsanaAttachSection({
       .catch(() => { if (!cancelled) setErr("fetch failed"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, fetchKey]); // fetchKey bumped to refetch after PAT save
+  }, [open, fetchKey, card.familiarId]); // fetchKey bumped to refetch after PAT save
 
   const attachedUrls = new Set([...(card.links ?? []), ...(card.asana ?? []).map((item) => item.url)]);
 
