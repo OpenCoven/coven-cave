@@ -21,6 +21,9 @@ import {
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
 import { Button } from "@/components/ui/button";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -594,6 +597,32 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     [busy, byId, updateReply, streamOne, announce, operatorDisplayName],
   );
 
+  // Recovery for a harness/runtime failure on one reply: rebind that familiar
+  // to the chosen adapter via /api/config, then re-run just their reply.
+  const useHarnessForReply = useCallback(
+    async (reply: GroupReply, runtime: string) => {
+      if (busy) return;
+      try {
+        const res = await fetch("/api/config", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            familiars: { [reply.familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+          }),
+        });
+        if (!res.ok) {
+          announce(`Could not switch harness (${res.status}).`, "assertive");
+          return;
+        }
+        window.dispatchEvent(new Event("cave:familiars-refresh"));
+        await retryReply(reply);
+      } catch {
+        announce("Could not switch harness.", "assertive");
+      }
+    },
+    [busy, retryReply, announce],
+  );
+
   // --- @mention autocomplete ----------------------------------------------
   const mentionable = useMemo<MentionableFamiliar[]>(() => {
     if (!activeGroup) return [];
@@ -935,7 +964,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   showTimestamp={false}
                                 />
                                 {r.status === "error" ? (
-                                  <div className="mt-1.5">
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                     <Button
                                       size="xs"
                                       variant="secondary"
@@ -945,6 +974,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                     >
                                       Retry
                                     </Button>
+                                    {(() => {
+                                      const failure = parseHarnessFailure(r.error);
+                                      return failure ? (
+                                        <HarnessFixActions
+                                          failure={failure}
+                                          busy={busy}
+                                          onUseHarness={(runtime) => void useHarnessForReply(r, runtime)}
+                                        />
+                                      ) : null;
+                                    })()}
                                   </div>
                                 ) : null}
                                 {r.status === "done" && suggestions.length > 0 ? (

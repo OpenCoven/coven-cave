@@ -32,6 +32,9 @@ import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
 import { chatProjectById } from "@/lib/chat-projects";
 import { useProjects } from "@/lib/use-projects";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
 
 type ViewMode = "kanban" | "table" | "gantt";
 
@@ -112,6 +115,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
   const [chatLinkingId, setChatLinkingId] = useState<string | null>(null);
   const [chatLinkError, setChatLinkError] = useState<string | null>(null);
+  // The card whose chat start failed — the harness fix row needs it to know
+  // which familiar to rebind and which task chat to re-run.
+  const [chatLinkErrorCardId, setChatLinkErrorCardId] = useState<string | null>(null);
   const { projects } = useProjects();
 
   // "Clear done" flow: an inline confirm gate, and a transient undo banner that
@@ -626,6 +632,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const fallbackFamiliarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
     setChatLinkingId(id);
     setChatLinkError(null);
+    setChatLinkErrorCardId(null);
     try {
       const res = await fetch(`/api/board/${id}/chat`, {
         method: "POST",
@@ -643,6 +650,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       onJumpToSession?.(json.sessionId, json.familiarId);
     } catch (err) {
       setChatLinkError(err instanceof Error ? err.message : "failed to open task chat");
+      setChatLinkErrorCardId(id);
     } finally {
       setChatLinkingId(null);
     }
@@ -661,6 +669,35 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     }
     await startTaskChat(id);
   };
+
+  // Recovery for a harness/runtime failure while starting a task chat: rebind
+  // the card's familiar to the chosen adapter via /api/config, then re-run the
+  // same task-chat start.
+  const useHarnessForTaskChat = async (runtime: string) => {
+    const id = chatLinkErrorCardId;
+    if (!id || chatLinkingId !== null) return;
+    const card = cards.find((candidate) => candidate.id === id);
+    const familiarId = card?.familiarId ?? activeFamiliarId ?? familiars[0]?.id ?? null;
+    if (!familiarId) return;
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiars: { [familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+        }),
+      });
+      if (!res.ok) {
+        setChatLinkError(`Could not switch harness (${res.status}).`);
+        return;
+      }
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
+      await onOpenTaskChat(id);
+    } catch {
+      setChatLinkError("Could not switch harness.");
+    }
+  };
+  const chatLinkFailure = chatLinkError ? parseHarnessFailure(chatLinkError) : null;
 
   return (
     <section className="board-shell">
@@ -859,10 +896,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       {chatLinkError && (
         <div
           role="alert"
-          className="flex items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+          className="flex flex-wrap items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
         >
           <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
-          <span className="min-w-0 truncate">{chatLinkError}</span>
+          <span className="min-w-0 flex-1 truncate">{chatLinkError}</span>
+          {chatLinkFailure && chatLinkErrorCardId ? (
+            <HarnessFixActions
+              failure={chatLinkFailure}
+              busy={chatLinkingId !== null}
+              onUseHarness={useHarnessForTaskChat}
+            />
+          ) : null}
         </div>
       )}
       {clearedBanner && (
@@ -1122,6 +1166,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           onOpenUrl={onOpenUrl}
           chatLinking={chatLinkingId === selectedCard.id}
           chatLinkError={chatLinkingId === null && !selectedCard.sessionId ? chatLinkError : null}
+          onUseHarnessFix={
+            chatLinkErrorCardId === selectedCard.id ? useHarnessForTaskChat : undefined
+          }
         />
       )}
 

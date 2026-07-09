@@ -24,6 +24,8 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
@@ -78,6 +80,9 @@ type Props = {
    *  daemon offline → 502). Without this the failure only appears as a
    *  small banner at the top of the board, hidden behind the open drawer. */
   chatLinkError?: string | null;
+  /** Harness-failure recovery: rebind the card's familiar to this adapter and
+   *  re-run the task-chat start (provided only when chatLinkError is this card's). */
+  onUseHarnessFix?: (harnessId: string) => void | Promise<void>;
 };
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
@@ -1046,7 +1051,7 @@ function DebugSection({ card }: { card: Card }) {
   );
 }
 
-export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError }: Props) {
+export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
   const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1310,6 +1315,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       ? chatLinkError
                       : "Start a conversation with this card's familiar."}
                   </span>
+                  {(() => {
+                    const failure =
+                      chatLinkError && onUseHarnessFix ? parseHarnessFailure(chatLinkError) : null;
+                    return failure ? (
+                      <HarnessFixActions
+                        failure={failure}
+                        busy={chatLinking}
+                        onUseHarness={onUseHarnessFix}
+                        className="mt-1"
+                      />
+                    ) : null;
+                  })()}
                 </span>
                 <button
                   type="button"

@@ -16,6 +16,8 @@ import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/ch
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
@@ -505,6 +507,7 @@ function ChatErrorStrip({
   addProjectLabel,
   addingProject,
   onAddProject,
+  onUseHarness,
 }: {
   message: string;
   code?: string;
@@ -520,6 +523,8 @@ function ChatErrorStrip({
   addProjectLabel?: string;
   addingProject?: boolean;
   onAddProject?: () => void;
+  /** Switch the familiar to this harness and retry (harness-failure fix row). */
+  onUseHarness?: (harnessId: string) => void | Promise<void>;
 }) {
   const { copied, copy } = useCopy();
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
@@ -546,6 +551,10 @@ function ChatErrorStrip({
     }
     return lines.join("\n");
   }, [message, code, erroredTools, erroredSteps]);
+
+  // Harness/runtime failures get an inline fix row (switch adapter / copy the
+  // quoted `coven adapter …` commands) instead of ending at the message.
+  const harnessFailure = useMemo(() => parseHarnessFailure(detailText), [detailText]);
 
   const btn =
     "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
@@ -602,6 +611,15 @@ function ChatErrorStrip({
           </button>
         </div>
       </div>
+      {harnessFailure ? (
+        <HarnessFixActions
+          failure={harnessFailure}
+          busy={busy}
+          onUseHarness={onUseHarness}
+          buttonClassName={btn}
+          className="px-5 pb-2"
+        />
+      ) : null}
       {hasDetail && open ? (
         <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
           {erroredTools.map((t) => (
@@ -3918,6 +3936,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     );
   }
 
+  // Recovery for a harness/runtime failure: rebind the familiar to the chosen
+  // adapter via /api/config (the only channel that rebinds a harness — the
+  // send route re-resolves the binding on every turn), then retry the send.
+  const switchingHarnessRef = useRef(false);
+  async function handleUseHarnessFix(runtime: string) {
+    if (busy || switchingHarnessRef.current) return;
+    switchingHarnessRef.current = true;
+    try {
+      const nextModel = defaultModelForRuntime(runtime);
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+        }),
+      });
+      if (!res.ok) {
+        setError(`Could not switch harness (${res.status}). Try again from the composer's runtime picker.`);
+        return;
+      }
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
+      void refreshModelState();
+      retryLastSend();
+    } catch {
+      setError("Could not switch harness. Try again from the composer's runtime picker.");
+    } finally {
+      switchingHarnessRef.current = false;
+    }
+  }
+
   // Recovery for a 403 project-access failure: register the chat's cwd as a
   // Cave project and grant it to this familiar (both user-initiated writes the
   // server accepts), then retry the send. The daemon re-reads projects/grants
@@ -4996,6 +5044,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           busy={busy}
           onRetry={retryLastSend}
           onOpenDebug={openDebug}
+          onUseHarness={lastFailedSend ? handleUseHarnessFix : undefined}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
           }
