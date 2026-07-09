@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.170] - 2026-07-09
+
+> 🧑‍🤝‍🧑 **Asana, assignable per familiar** — connect Asana once, then decide per agent whether (and in which workspace) it works with your tasks, right in Familiar Studio → Brain. The board and Queue show each agent only their scoped tasks.
+
+Patch release on top of v0.0.169.
+
+### Features
+- **Asana: seamless connect + per-agent assignment** (#2871, cave-vn19). One app-wide connection, then a per-familiar "Work with Asana tasks" toggle + optional workspace scope in the Brain tab. `/api/asana/assigned` honors each agent's assignment; the board inspector scopes to the card's familiar and the Queue strip to the active one (hidden for opted-out agents).
+
+### Improvements
+- **Asana: the Queue strip refreshes on the 30s poll** (#2870, cave-m4h9) with an equality guard against re-render churn.
+
+
 ## [0.0.169] - 2026-07-09
 
 > Mobile Cave reconnects cleanly over Tailscale when a stale dev server is in the way, Queue gains Asana-linked task context, and runtime sync gets its second review hardening pass.
