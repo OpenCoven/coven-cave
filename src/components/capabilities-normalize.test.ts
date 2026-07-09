@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   filterCapabilityItems,
+  harnessLabel,
   normalizeCapabilities,
 } from "./capabilities-normalize.ts";
 
@@ -125,5 +126,17 @@ assert.deepEqual(
   filterCapabilityItems(view.items, { harnessId: "codex", status: "disabled" }).map((item) => item.id),
   ["codex:mcp:filesystem"],
 );
+
+// harnessLabel delegates to the shared runtime label authority — every Coven
+// adapter id resolves to real display copy (openclaw/hermes used to fall
+// through to the raw lowercase id / a drifted registry label), while
+// non-adapter editor harnesses keep their local labels.
+assert.equal(harnessLabel("openclaw"), "OpenClaw");
+assert.equal(harnessLabel("hermes"), "Hermes");
+assert.equal(harnessLabel("copilot"), "Copilot");
+assert.equal(harnessLabel("opencode"), "OpenCode");
+assert.equal(harnessLabel("cursor"), "Cursor");
+assert.equal(harnessLabel("gemini"), "Gemini CLI");
+assert.equal(harnessLabel("unknown-thing"), "unknown-thing");
 
 console.log("capabilities-normalize.test.ts: ok");

@@ -12,6 +12,7 @@ import {
   isTrustedOnboardingHarness,
   openClawAdapterReport,
   canonicalHarnessId,
+  runtimeDisplayLabel,
 } from "./harness-adapters.ts";
 
 // Model-parity gating probe: forwarding `--model` must stay off until the
@@ -133,6 +134,27 @@ assert.equal(
   merged.find((adapter) => adapter.id === "hermes")?.source,
   "manifest",
 );
+// A daemon manifest label ("Hermes Agent") only applies when Cave has no
+// local report for that id; a local (curated) label always wins so a
+// registry-scaffolded manifest can't flip the adapters list copy.
+assert.equal(merged.find((adapter) => adapter.id === "hermes")?.label, "Hermes Agent", "daemon label used when no local report exists");
+assert.equal(merged.find((adapter) => adapter.id === "codex")?.label, "Codex");
+{
+  const labelMerge = mergeAdapterReports(
+    [{ id: "copilot", label: "Copilot", binary: "copilot", installed: true, path: null, version: null }],
+    [{ id: "copilot", label: "GitHub Copilot CLI", executable: "copilot", available: true, install_hint: "", source: "manifest" }],
+  );
+  assert.equal(labelMerge[0].label, "Copilot", "curated label survives a registry-manifest daemon report");
+}
+
+// Single label authority: curated copy → registry label → raw id; aliases
+// canonicalize first.
+assert.equal(runtimeDisplayLabel("copilot"), "Copilot");
+assert.equal(runtimeDisplayLabel("opencode"), "OpenCode", "registry runtimes use their accepted label");
+assert.equal(runtimeDisplayLabel("opencode-ai"), "OpenCode", "npm package alias canonicalizes (chat trust gate parity)");
+assert.equal(runtimeDisplayLabel("openclaw"), "OpenClaw");
+assert.equal(runtimeDisplayLabel("mystery"), "mystery", "unknown ids label as themselves");
+assert.ok(isTrustedChatHarness("opencode-ai"), "package alias passes the chat trust gate");
 assert.equal(
   merged.find((adapter) => adapter.id === "hermes")?.manifestPath,
   "/tmp/adapters.json",

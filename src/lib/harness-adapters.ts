@@ -149,6 +149,8 @@ const HARNESS_ALIASES: Record<string, string> = {
   "openai-codex": "codex",
   "github-copilot": "copilot",
   "copilot-cli": "copilot",
+  // OpenCode's npm package is `opencode-ai` (its binary is `opencode`).
+  "opencode-ai": "opencode",
 };
 
 export function canonicalHarnessId(harness: string): string {
@@ -167,18 +169,34 @@ export function isTrustedChatHarness(harness: string): boolean {
   return TRUSTED_CHAT_HARNESSES.has(canonicalHarnessId(harness));
 }
 
+// The single display-label authority for runtime/harness ids: curated Cave
+// copy wins, then the synced registry's accepted label, then the raw id.
+// UI surfaces (runtime logo, capabilities map, adapter rows) should delegate
+// here instead of keeping their own label tables, which have drifted before
+// ("Copilot" vs "GitHub Copilot" vs the registry's "GitHub Copilot CLI").
+export function runtimeDisplayLabel(runtime: string): string {
+  const id = canonicalHarnessId(runtime);
+  const curated = COMPATIBILITY_ADAPTERS.find((adapter) => adapter.id === id);
+  if (curated) return curated.label;
+  const registry = REGISTRY_RUNTIMES.find((entry) => entry.id === id);
+  return registry?.label ?? runtime;
+}
+
 export function openClawAdapterReport(openclawAgentCount: number): AdapterReport {
+  // Identity/copy comes from the curated entry — the two used to be
+  // copy-pasted twins and drifted one edit at a time.
+  const curated = CURATED_ADAPTERS.find((adapter) => adapter.id === "openclaw")!;
   return {
-    id: "openclaw",
-    label: "OpenClaw",
-    binary: "openclaw",
-    chatSupported: true,
+    id: curated.id,
+    label: curated.label,
+    binary: curated.binary,
+    chatSupported: curated.chatSupported,
     installed: openclawAgentCount > 0,
     path: null,
     version: openclawAgentCount > 0
       ? `${openclawAgentCount} agent${openclawAgentCount === 1 ? "" : "s"}`
       : null,
-    installHint: "Install OpenClaw with `npm install -g openclaw@latest`, then connect or create an agent under ~/.openclaw/agents.",
+    installHint: curated.installHint,
     source: "openclaw",
     manifestPath: null,
   };
@@ -239,7 +257,10 @@ export function mergeAdapterReports(
     const existing = merged.get(coven.id);
     merged.set(coven.id, {
       id: coven.id,
-      label: coven.label,
+      // Cave's curated label wins over the daemon manifest's — otherwise a
+      // registry-scaffolded manifest ("GitHub Copilot CLI") silently flips
+      // the adapters list away from Cave's copy ("Copilot").
+      label: existing?.label ?? coven.label,
       binary: coven.executable,
       chatSupported: existing?.chatSupported ?? isTrustedChatHarness(coven.id),
       installed: coven.available || existing?.installed === true,
@@ -251,13 +272,14 @@ export function mergeAdapterReports(
     });
   }
 
-  return [...merged.values()].sort((a, b) => {
-    // Curated adapters keep their seed order; registry additions follow
-    // alphabetically (COMPATIBILITY_ADAPTERS already encodes both).
-    const rankById = new Map(COMPATIBILITY_ADAPTERS.map((adapter, index) => [adapter.id, index]));
-    const rank = (id: string) => rankById.get(id) ?? COMPATIBILITY_ADAPTERS.length;
-    return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
-  });
+  // Curated adapters keep their seed order; registry additions follow
+  // alphabetically (COMPATIBILITY_ADAPTERS already encodes both). Built once
+  // per merge — not inside the comparator, which runs O(n log n) times.
+  const rankById = new Map(COMPATIBILITY_ADAPTERS.map((adapter, index) => [adapter.id, index]));
+  const rank = (id: string) => rankById.get(id) ?? COMPATIBILITY_ADAPTERS.length;
+  return [...merged.values()].sort(
+    (a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label),
+  );
 }
 
 export function adapterSetupState(reports: AdapterReport[]): AdapterSetupState {

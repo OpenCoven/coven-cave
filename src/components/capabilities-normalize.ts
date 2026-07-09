@@ -1,5 +1,5 @@
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
-import { REGISTRY_RUNTIMES } from "../lib/runtime-registry.gen.ts";
+import { runtimeDisplayLabel } from "../lib/harness-adapters.ts";
 
 export type CovenSkill = {
   id: string;
@@ -63,20 +63,16 @@ export type CapabilityFilters = {
   status?: CapabilityStatus | "all" | null;
 };
 
-const HARNESS_LABEL: Record<string, string> = {
-  codex: "Codex",
-  claude: "Claude Code",
+// Labels for harness ids that appear in capability manifests but are NOT
+// Coven runtime adapters (editor agents etc.) — everything else delegates to
+// the shared runtime label authority in harness-adapters.
+const NON_ADAPTER_HARNESS_LABEL: Record<string, string> = {
   cursor: "Cursor",
   gemini: "Gemini CLI",
-  opencode: "OpenCode",
-  "coven-code": "Coven Code",
-  copilot: "GitHub Copilot",
 };
 
 export function harnessLabel(id: string): string {
-  if (HARNESS_LABEL[id]) return HARNESS_LABEL[id];
-  const registry = REGISTRY_RUNTIMES.find((entry) => entry.id === id);
-  return registry?.label ?? id;
+  return NON_ADAPTER_HARNESS_LABEL[id] ?? runtimeDisplayLabel(id);
 }
 
 function skillSourcePath(skillPath?: string): string | undefined {
