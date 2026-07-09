@@ -44,6 +44,8 @@ Feature release on top of v0.0.159.
 ### Features
 - **Chat: modern reading polish** (#2801, cave-po4f). The Expand reader gets a centered 72ch book measure on a larger reading scale; inline code chips go quiet-neutral; tables move to row separators with sticky headers, zebra + hover tints, and a roomier expanded lightbox; mermaid diagrams render token-native across all 19 themes on a dot-grid drawing canvas, with a glassy zoom/pan toolbar fullscreen; user bubbles and thinking blocks soften.
 - **Appearance: backdrop vibe** — an image behind Home + Chat with the accent derived from it (#2799, cave-bq7s).
+- **Calendar: the agenda is a scannable timeline** (#2803, cave-cal-agenda) — date badges with sticky day headers, a connecting spine, relative cues ("in 2h", "now"), and cron cadence chips; today wears the presence accent.
+- **Onboarding: first-run golden path** (#2802, cave-fy1q) — daemon auto-start, summoning-circle draft survival, and a time-to-first-reply funnel.
 
 ### Fixes
 - **Chat: journal-run chats auto-hide** — `origin:journal` provenance with a truncated-title legacy fallback (#2798, cave-buih).
