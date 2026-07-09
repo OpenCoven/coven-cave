@@ -65,14 +65,21 @@ export function greeting(date: Date): string {
   return "Good night";
 }
 
+// Intl.DateTimeFormat construction is the expensive part of these labels
+// (fresh locale-data resolution per call), and day rails call them per row
+// per render — share one instance per shape instead.
+const longDateFormat = new Intl.DateTimeFormat([], {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+});
+const weekdayFormat = new Intl.DateTimeFormat([], { weekday: "long" });
+const monthDayFormat = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
+
 /** Long human label, e.g. "Thursday, June 18, 2026". */
 export function longDateLabel(date: Date): string {
-  return new Intl.DateTimeFormat([], {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  return longDateFormat.format(date);
 }
 
 /** "Today" / "Yesterday" / weekday for dates inside the last week, else short date. */
@@ -83,9 +90,9 @@ export function relativeDayLabel(date: Date, now = new Date()): string {
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
   if (days > 1 && days < 7) {
-    return new Intl.DateTimeFormat([], { weekday: "long" }).format(date);
+    return weekdayFormat.format(date);
   }
-  return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(date);
+  return monthDayFormat.format(date);
 }
 
 // The compact "3h ago" / "2d ago" / short-date phrase now lives in the shared
