@@ -1243,8 +1243,9 @@ function AutomationScheduleRow({
             Run {relTime(lastRun.startedAt)}
           </span>
         )}
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-          {auto.scheduleHuman}
+        <span className="cron-schedule-chip shrink-0" title={`Runs ${auto.scheduleHuman}`}>
+          <Icon name="ph:clock" width={11} aria-hidden className="cron-schedule-chip__icon" />
+          <span className="tabular-nums">{auto.scheduleHuman}</span>
         </span>
       </button>
       {actions && (

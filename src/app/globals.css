@@ -7643,6 +7643,322 @@ a.mobile-handoff__link:hover {
   }
 }
 
+/* ── Calendar agenda (timeline) ──────────────────────────────────────────────
+   The agenda reads as one vertical thread per day: a date badge, then rows laid
+   out on a [time · spine · body · cue] grid with a connecting rail behind the
+   dots. Semantic tokens only, so it tracks every theme. */
+.cal-agenda-group {
+  padding-bottom: 14px;
+}
+.cal-agenda-group + .cal-agenda-group {
+  padding-top: 6px;
+}
+
+/* Sticky day header — the date context stays put as the list scrolls. */
+.cal-agenda-dayhead {
+  position: sticky;
+  top: -12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px 10px;
+  background: linear-gradient(
+    to bottom,
+    var(--bg-base) 62%,
+    color-mix(in oklch, var(--bg-base) 40%, transparent)
+  );
+}
+.cal-agenda-datebadge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  line-height: 1;
+}
+.cal-agenda-dow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.cal-agenda-dnum {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+.cal-agenda-group.is-today .cal-agenda-datebadge {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-raised));
+}
+.cal-agenda-group.is-today .cal-agenda-dow,
+.cal-agenda-group.is-today .cal-agenda-dnum {
+  color: var(--accent-presence);
+}
+.cal-agenda-daylabel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.cal-agenda-daylabel-main {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-agenda-group.is-today .cal-agenda-daylabel-main {
+  color: var(--accent-presence);
+}
+.cal-agenda-daylabel-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.cal-agenda-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.cal-agenda-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Row: fixed clock column, a spine that draws the connecting rail, the body,
+   and an optional right-hand relative cue. */
+.cal-agenda-row {
+  display: grid;
+  grid-template-columns: 62px 22px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 9px;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+.cal-agenda-row:hover {
+  background: var(--bg-raised);
+}
+.cal-agenda-time {
+  justify-self: end;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.cal-agenda-time.is-next {
+  color: var(--accent-presence);
+  font-weight: 600;
+}
+.cal-agenda-time.is-overdue {
+  color: var(--color-warning);
+}
+.cal-agenda-time.is-due {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--color-warning) 88%, var(--text-muted));
+}
+
+/* Spine: the connecting rail is a pseudo-element that runs the row's full
+   height; the dot sits on top so consecutive rows read as one thread. */
+.cal-agenda-spine {
+  position: relative;
+  justify-self: center;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-agenda-spine::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: color-mix(in oklch, var(--text-muted) 30%, transparent);
+}
+.cal-agenda-group.is-today .cal-agenda-spine::before {
+  background: color-mix(in oklch, var(--accent-presence) 32%, transparent);
+}
+.cal-agenda-list > .cal-agenda-row:first-child .cal-agenda-spine::before {
+  top: 50%;
+}
+.cal-agenda-list > .cal-agenda-row:last-child .cal-agenda-spine::before {
+  bottom: 50%;
+}
+.cal-agenda-dot {
+  position: relative;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  outline: 3px solid var(--bg-base);
+}
+.cal-agenda-row:hover .cal-agenda-dot {
+  outline-color: var(--bg-raised);
+}
+.cal-agenda-dot-check {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: var(--bg-base);
+  border-radius: 999px;
+}
+.cal-agenda-row:hover .cal-agenda-dot-check {
+  background: var(--bg-raised);
+}
+.cal-agenda-dot--task {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 16%, var(--bg-base));
+}
+
+.cal-agenda-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cal-agenda-platform {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.cal-agenda-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.cal-agenda-row.is-done .cal-agenda-title {
+  color: var(--text-muted);
+}
+
+/* Right-hand cues. */
+.cal-agenda-rel {
+  justify-self: end;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.cal-agenda-rel.is-next {
+  color: var(--accent-presence);
+  font-weight: 600;
+}
+.cal-agenda-rel.is-overdue {
+  color: var(--color-warning);
+}
+.cal-agenda-next {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cal-agenda-tag {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in oklch, var(--color-warning) 35%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 12%, transparent);
+  color: color-mix(in oklch, var(--color-warning) 90%, var(--text-secondary));
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Next-up row: a quiet accent wash + edge so the soonest item is obvious. */
+.cal-agenda-row.is-next {
+  background: color-mix(in oklch, var(--accent-presence) 9%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+.cal-agenda-row.is-next:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+.cal-agenda-row.is-done {
+  opacity: 0.6;
+}
+.cal-agenda-row.is-overdue .cal-agenda-dot {
+  animation: cal-agenda-pulse 2.4s ease-in-out infinite;
+}
+@keyframes cal-agenda-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cal-agenda-row.is-overdue .cal-agenda-dot { animation: none; }
+}
+
+/* Cron (Codex automation) schedule cue — a quiet clock pill so the cadence reads
+   as a scheduled thing, matching the agenda's timeline language. */
+.cron-schedule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cron-schedule-chip__icon {
+  color: var(--text-muted);
+}
+.automation-list-row:hover .cron-schedule-chip,
+.automation-list-row[aria-current="true"] .cron-schedule-chip {
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+}
+
 /* Chat mobile command center refinements. These classes are intentionally
    plain CSS hooks around Tailwind-heavy components so phone-specific layout
    can be adjusted without threading conditional class strings through every

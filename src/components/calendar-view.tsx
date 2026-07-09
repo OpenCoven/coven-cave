@@ -138,6 +138,22 @@ function agendaDayLabel(date: Date, now: Date = new Date()): string {
   return relDayWord(date, now) ?? fmtDateHeading(date);
 }
 
+// Compact "time until / since" for agenda rows — the affordance that answers
+// "what's next" at a glance ("now", "in 25m", "in 3h", "40m ago"). Only
+// meaningful inside a ~12h window; beyond that the day header already carries
+// the date, so we return null and the row shows just its clock time.
+function relTimeShort(target: Date, now: Date): string | null {
+  const mins = Math.round((target.getTime() - now.getTime()) / 60_000);
+  const abs = Math.abs(mins);
+  if (abs < 1) return "now";
+  if (abs < 60) return mins > 0 ? `in ${abs}m` : `${abs}m ago`;
+  if (abs < 60 * 12) {
+    const hrs = Math.round(abs / 60);
+    return mins > 0 ? `in ${hrs}h` : `${hrs}h ago`;
+  }
+  return null;
+}
+
 // A hydration-safe, live-ticking "now". Null on the server / first client
 // render (so today-highlights and the now-line aren't painted into SSR markup,
 // which would mismatch the client clock), then resolves on mount and re-ticks
@@ -240,37 +256,96 @@ function platformIcon(item: InboxItem): IconName {
 
 // ─── Item chip (shared across views) ──────────────────────────────────────────
 
+// A single agenda row, laid out as a timeline entry: a fixed left clock column,
+// a spine dot threaded by the day's vertical rail, the title, and a right-hand
+// "in 2h" relative cue. `isNext` marks the soonest upcoming item so the agenda
+// answers "what's next" without the user hunting for it.
 function ItemChip({
   item,
   onClick,
+  isNext = false,
+  now = null,
 }: {
   item: InboxItem;
   onClick?: () => void;
+  isNext?: boolean;
+  now?: Date | null;
 }) {
   const done = item.status === "done";
+  const overdue = isOverdueReminder(item);
   const accent = useFamiliarAccent(item.familiarId);
   const familiarName = useFamiliarName(item.familiarId);
+  const iso = item.fireAt ?? item.firedAt ?? null;
+  const rel = iso && now && !done ? relTimeShort(new Date(iso), now) : null;
   return (
     <button
       onClick={onClick}
       title={familiarName ? `${item.title} — ${familiarName}` : item.title}
-      style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
-      className={`focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-2.5 text-left text-[13px] transition-colors md:py-1 md:text-[11px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
+      className={`cal-agenda-row focus-ring group${done ? " is-done" : ""}${isNext ? " is-next" : ""}${overdue ? " is-overdue" : ""}`}
     >
-      {done
-        ? <Icon name="ph:check-circle" className="shrink-0 text-[var(--text-muted)] text-[12px]" />
-        : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />}
-      <Icon
-        name={platformIcon(item)}
-        className="shrink-0 text-[var(--text-muted)] text-[12px]"
-      />
-      <span className={`flex-1 truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
-      {familiarName && <span className="sr-only">, {familiarName}</span>}
-      {(item.fireAt ?? item.firedAt) && (
-        <span className="shrink-0 text-[var(--text-muted)]">
-          {fmtTime((item.fireAt ?? item.firedAt)!)}
+      <span className={`cal-agenda-time${overdue ? " is-overdue" : ""}${isNext ? " is-next" : ""}`}>
+        {iso ? fmtTime(iso) : "—"}
+      </span>
+      <span className="cal-agenda-spine" aria-hidden>
+        {done ? (
+          <Icon name="ph:check-circle" className="cal-agenda-dot-check" />
+        ) : (
+          <span
+            role="img"
+            aria-label={urgencyLabel(item)}
+            title={urgencyLabel(item)}
+            className={`cal-agenda-dot ${urgencyColor(item)}`}
+            style={accent ? { boxShadow: `0 0 0 2.5px color-mix(in oklch, ${accent} 60%, transparent)` } : undefined}
+          />
+        )}
+      </span>
+      <span className="cal-agenda-body">
+        <Icon name={platformIcon(item)} className="cal-agenda-platform" aria-hidden />
+        <span className={`cal-agenda-title${done ? " line-through" : ""}`}>{item.title}</span>
+        {familiarName && <span className="sr-only">, {familiarName}</span>}
+      </span>
+      {isNext ? <span className="cal-agenda-next">Next</span> : null}
+      {rel ? <span className={`cal-agenda-rel${overdue ? " is-overdue" : ""}${isNext ? " is-next" : ""}`}>{rel}</span> : null}
+    </button>
+  );
+}
+
+// A board task's due date, rendered in the same timeline grid as reminders so
+// the agenda reads as one thread — but tinted "task" (warning) and tagged, so a
+// deadline is never mistaken for a scheduled reminder.
+function AgendaDeadlineRow({
+  deadline,
+  onOpen,
+}: {
+  deadline: CalendarDeadline;
+  onOpen?: (id: string) => void;
+}) {
+  const done = deadline.status === "done";
+  const accent = useFamiliarAccent(deadline.familiarId);
+  const familiarName = useFamiliarName(deadline.familiarId);
+  return (
+    <button
+      type="button"
+      data-calendar-deadline="true"
+      onClick={(e) => { e.stopPropagation(); onOpen?.(deadline.id); }}
+      title={`${deadline.title} — task deadline${familiarName ? ` — ${familiarName}` : ""}`}
+      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}${familiarName ? `, ${familiarName}` : ""}`}
+      className={`cal-agenda-row cal-agenda-row--task focus-ring group${done ? " is-done" : ""}`}
+    >
+      <span className="cal-agenda-time is-due">Due</span>
+      <span className="cal-agenda-spine" aria-hidden>
+        <span
+          className="cal-agenda-dot cal-agenda-dot--task"
+          style={accent ? { boxShadow: `0 0 0 2.5px color-mix(in oklch, ${accent} 60%, transparent)` } : undefined}
+        >
+          <Icon name="ph:clock-countdown" width={9} aria-hidden />
         </span>
-      )}
+      </span>
+      <span className="cal-agenda-body">
+        <span className={`cal-agenda-title${done ? " line-through opacity-70" : ""}`}>{deadline.title}</span>
+        {familiarName && <span className="sr-only">, {familiarName}</span>}
+      </span>
+      <span className="cal-agenda-tag">Task</span>
     </button>
   );
 }
@@ -356,6 +431,21 @@ function AgendaView({
         : a.date.getTime() - b.date.getTime());
   }, [items, deadlines, anchor, showPast]);
 
+  // The single soonest still-pending item — highlighted as "Next" so the agenda
+  // answers "what's up next" without the user scanning for it.
+  const nextId = useMemo(() => {
+    if (!now) return null;
+    const t = now.getTime();
+    let best: { id: string; ms: number } | null = null;
+    for (const it of items) {
+      if (it.status === "done" || it.status === "dismissed") continue;
+      const d = itemDate(it);
+      if (!d || d.getTime() < t) continue;
+      if (!best || d.getTime() < best.ms) best = { id: it.id, ms: d.getTime() };
+    }
+    return best?.id ?? null;
+  }, [items, now]);
+
   if (groups.length === 0) {
     return (
       <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm text-[var(--text-muted)]">
@@ -386,9 +476,9 @@ function AgendaView({
   }
 
   return (
-    <div className="flex flex-col gap-6 overflow-y-auto px-3 py-4 sm:px-6">
+    <div className="cal-agenda-scroll flex flex-col overflow-y-auto px-3 py-3 sm:px-5">
       {showPast ? (
-        <div className="-mb-2 flex justify-end">
+        <div className="mb-1 flex justify-end">
           <Button
             variant="ghost"
             size="xs"
@@ -401,25 +491,28 @@ function AgendaView({
       ) : null}
       {groups.map(({ date, items: groupItems, deadlines: groupDeadlines }) => {
         const total = groupItems.length + groupDeadlines.length;
+        const isToday = !!now && isSameDay(date, now);
+        const relWord = now ? relDayWord(date, now) : null;
         return (
-        <div key={date.toISOString()}>
-          <div className="mb-2 flex items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
-            <span
-              className={`text-[12px] font-bold uppercase tracking-wider ${
-                now && isSameDay(date, now)
-                  ? "text-[var(--accent-presence)]"
-                  : "text-[var(--text-primary)]"
-              }`}
-            >
-              {now ? agendaDayLabel(date, now) : fmtDateHeading(date)}
+        <div key={date.toISOString()} className={`cal-agenda-group${isToday ? " is-today" : ""}`}>
+          <div className="cal-agenda-dayhead">
+            <span className="cal-agenda-datebadge" aria-hidden>
+              <span className="cal-agenda-dow">{WEEKDAYS[date.getDay()]}</span>
+              <span className="cal-agenda-dnum">{date.getDate()}</span>
             </span>
-            <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
-              {total} item{total !== 1 ? "s" : ""}
+            <span className="cal-agenda-daylabel">
+              <span className="cal-agenda-daylabel-main">
+                {now ? agendaDayLabel(date, now) : fmtDateHeading(date)}
+              </span>
+              {relWord ? (
+                <span className="cal-agenda-daylabel-sub">{MONTHS[date.getMonth()]} {date.getDate()}, {date.getFullYear()}</span>
+              ) : null}
             </span>
+            <span className="cal-agenda-count" title={`${total} item${total !== 1 ? "s" : ""}`}>{total}</span>
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="cal-agenda-list">
             {groupDeadlines.map((d) => (
-              <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} />
+              <AgendaDeadlineRow key={d.id} deadline={d} onOpen={onOpenDeadline} />
             ))}
             {[...groupItems]
               // Order by the same key the day bucket uses (itemDate: fireAt ??
@@ -430,6 +523,8 @@ function AgendaView({
                 <ItemChip
                   key={item.id}
                   item={item}
+                  isNext={item.id === nextId}
+                  now={now}
                   onClick={() => onOpenItem?.(item)}
                 />
               ))}
