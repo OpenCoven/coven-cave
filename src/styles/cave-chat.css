@@ -58,8 +58,24 @@
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.cave-md > * + * { margin-top: 0.7em; }
+.cave-md > * + * { margin-top: 0.8em; }
 .cave-md > *:first-child { margin-top: 0; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   READER SCALE — the full-screen Expand view. The transcript's 14px density
+   is right in the stream; a dedicated reading surface earns a book measure
+   (72ch cap set by the modal) and a calmer, larger scale.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md--reader {
+  font-size: 15.5px;
+  line-height: var(--cave-reading-leading, 1.75);
+}
+.cave-md--reader > * + * { margin-top: 0.95em; }
+.cave-md--reader h1 { font-size: 1.45em; }
+.cave-md--reader h2 { font-size: 1.22em; }
+.cave-md--reader h3 { font-size: 1.05em; }
+.cave-md--reader table { font-size: 13.5px; }
+.cave-md--reader .cave-code-wrap pre code { font-size: 13px; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    HEADINGS
@@ -109,16 +125,18 @@
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   INLINE CODE — soft lavender pill
+   INLINE CODE — quiet neutral chip. Responses are dense with identifiers, and
+   the old accent-lavender pill turned every one into decoration; accent is
+   presence, not punctuation (design language). Neutral chips read as text.
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md :not(pre) > code {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  padding: 0.18em 0.48em;
+  font-size: 0.82em;
+  padding: 0.14em 0.42em;
   border-radius: 5px;
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  color: color-mix(in oklch, var(--accent-presence) 85%, var(--text-primary));
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklch, var(--foreground) 9%, transparent);
   /* Wrap long inline code gracefully instead of overflowing the bubble.
      break-word keeps short snippets intact but lets oversized tokens break. */
   white-space: normal;
@@ -292,8 +310,8 @@
   max-width: min(96vw, 1280px);
   max-height: 90vh;
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--bg-raised);
+  border-radius: 16px;
+  background: var(--bg-panel);
   box-shadow: 0 24px 70px color-mix(in oklch, black 45%, transparent);
   overflow: hidden;
 }
@@ -314,9 +332,9 @@
   color: var(--text-muted);
 }
 .cave-table-lightbox__close {
-  padding: 3px 12px;
+  padding: 4px 14px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 12px;
@@ -335,10 +353,10 @@
 .cave-table-lightbox__body {
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px;
+  padding: 20px 24px;
 }
 .cave-table-lightbox__body table {
-  font-size: 13px;
+  font-size: 13.5px;
 }
 @media (prefers-reduced-motion: reduce) {
   .cave-table-lightbox { animation: none; }
@@ -352,15 +370,71 @@
   display: flex;
   justify-content: center;
   margin: 8px 0 16px;
-  padding: 12px;
-  background: var(--bg-raised);
+  padding: 20px 16px;
+  /* Diagram canvas: a faint dot grid on the panel layer, the same visual
+     language as node editors — diagrams read as a drawing surface, not a
+     quote box. Dots come from the hairline scale so all 19 themes hold. */
+  background:
+    radial-gradient(color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1px),
+    color-mix(in oklch, var(--bg-panel) 72%, transparent);
+  background-size: 18px 18px;
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow-x: auto;
 }
 .cave-md .cm-mermaid-diagram svg {
   max-width: 100%;
   height: auto;
+}
+/* Token-theme the diagram itself. Mermaid bakes its palette into an inline
+   <style> per SVG (and initialize()-level theming has proven unreliable
+   through the preview plugin), so the surface's own tokens win here — which
+   also keeps diagrams correct across every theme, live. Scoped to the two
+   places a diagram can live: the transcript card and the fullscreen viewer. */
+.cave-md .cm-mermaid-diagram svg .node rect,
+.cave-md .cm-mermaid-diagram svg .node circle,
+.cave-md .cm-mermaid-diagram svg .node ellipse,
+.cave-md .cm-mermaid-diagram svg .node polygon,
+.cave-md .cm-mermaid-diagram svg .node path,
+.cm-mermaid-viewer__canvas svg .node rect,
+.cm-mermaid-viewer__canvas svg .node circle,
+.cm-mermaid-viewer__canvas svg .node ellipse,
+.cm-mermaid-viewer__canvas svg .node polygon,
+.cm-mermaid-viewer__canvas svg .node path {
+  fill: var(--bg-raised) !important;
+  stroke: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline)) !important;
+}
+.cave-md .cm-mermaid-diagram svg .nodeLabel,
+.cave-md .cm-mermaid-diagram svg .edgeLabel,
+.cave-md .cm-mermaid-diagram svg .label,
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .edgeLabel,
+.cm-mermaid-viewer__canvas svg .label {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgePath path,
+.cave-md .cm-mermaid-diagram svg path.flowchart-link,
+.cm-mermaid-viewer__canvas svg .edgePath path,
+.cm-mermaid-viewer__canvas svg path.flowchart-link {
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .marker,
+.cm-mermaid-viewer__canvas svg .marker {
+  fill: var(--text-muted) !important;
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgeLabel rect,
+.cave-md .cm-mermaid-diagram svg .labelBkg,
+.cm-mermaid-viewer__canvas svg .edgeLabel rect,
+.cm-mermaid-viewer__canvas svg .labelBkg {
+  fill: var(--bg-panel) !important;
+  background-color: var(--bg-panel) !important;
+}
+.cave-md .cm-mermaid-diagram svg .cluster rect,
+.cm-mermaid-viewer__canvas svg .cluster rect {
+  fill: color-mix(in oklch, var(--bg-panel) 60%, transparent) !important;
+  stroke: var(--border-hairline) !important;
 }
 /* Rendered diagrams are click-to-expand into the fullscreen zoom/pan viewer. */
 .cave-md .cm-mermaid-diagram--interactive {
@@ -411,6 +485,13 @@
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  /* The same dot-grid canvas as the inline frame, so expanding feels like
+     zooming into the drawing surface rather than teleporting to a void. */
+  background-image: radial-gradient(
+    color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
 }
 .cm-mermaid-viewer__stage--grabbing {
   cursor: grabbing;
@@ -445,8 +526,10 @@
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-panel) 78%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 .cm-mermaid-viewer__btn {
@@ -457,7 +540,7 @@
   height: 30px;
   padding: 0;
   border: none;
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -509,19 +592,24 @@
   white-space: pre;
 }
 
+/* Tables read as rows, not a spreadsheet grid: the frame + radius live on the
+   scroll wrapper (border-radius can't clip a collapsed table), separators are
+   horizontal-only, and the header pins while the wrapper scrolls. */
+.cave-md .cave-table-scroll {
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 40%, transparent);
+}
 .cave-md table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12.5px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--border-hairline);
 }
 .cave-md th,
 .cave-md td {
-  padding: 0.38em 0.75em;
+  padding: 0.52em 0.9em;
   border-bottom: 1px solid var(--border-hairline);
-  border-right: 1px solid var(--border-hairline);
   text-align: left;
   vertical-align: top;
   /* CHAT-D7-08: undo .cave-md's break-anywhere inside cells — auto table
@@ -530,21 +618,26 @@
   word-break: normal;
   overflow-wrap: normal;
 }
+.cave-md th:first-child,
+.cave-md td:first-child { padding-left: 1.1em; }
 .cave-md th:last-child,
-.cave-md td:last-child { border-right: none; }
+.cave-md td:last-child { padding-right: 1.1em; }
 .cave-md tr:last-child td { border-bottom: none; }
 
 .cave-md th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  letter-spacing: 0.06em;
+  background: var(--bg-raised);
   color: var(--text-secondary);
 }
-.cave-md tr:nth-child(even) td { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
-.cave-md tr:hover td {
-  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+.cave-md tbody tr:nth-child(even) td { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
+.cave-md tbody tr:hover td {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
   transition: background 0.1s;
 }
 
@@ -1776,8 +1869,8 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
   color: var(--text-primary);
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  padding: 10px 13px;
+  border-radius: 14px;
+  padding: 11px 15px;
   /* Full-width user turn: the message fills the chat pane (matching the
      assistant prose) instead of a right-aligned narrow bubble. The left accent
      stripe + border still mark it as the operator's turn; the action row and
@@ -2010,9 +2103,9 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 .cave-progress-group,
 .cave-tool-group {
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   background: color-mix(in oklch, var(--bg-panel) 36%, transparent);
-  padding: 9px 10px;
+  padding: 10px 12px;
 }
 
 .cave-tool-summary {

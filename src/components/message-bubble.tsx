@@ -544,16 +544,93 @@ async function renderTableBlock(block: TableBlock, renderAsync: RenderAsyncFn): 
 // imported lazily and only when a message actually contains a mermaid fence. The
 // instance is a module singleton so init() (which loads mermaid) runs once.
 let mermaidPluginPromise: Promise<PreviewPlugin | null> | null = null;
+
+/** Resolve a CSS custom property to a HEX color for mermaid's theme
+ *  variables. Mermaid bakes colors into SVG attributes and derives shades via
+ *  khroma, which cannot parse the app's oklch()/color-mix() token values —
+ *  fed those raw it produces broken near-white fills. Painting the token onto
+ *  a 1×1 canvas lets the browser resolve ANY CSS color, then we read back
+ *  plain rgb and emit hex. Falls back when the token is missing/unpaintable. */
+function themeToken(name: string, fallback: string): string {
+  try {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    if (!value) return fallback;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return fallback;
+    // Composite over black first so semi-transparent tokens (the border
+    // scale is color-mix ...% transparent) resolve to their on-dark look
+    // instead of reading back a premultiplied near-white.
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = value; // unparseable values leave the previous fillStyle
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+  } catch {
+    return fallback;
+  }
+}
+
 async function getMermaidPlugin(): Promise<PreviewPlugin | null> {
   if (!mermaidPluginPromise) {
     mermaidPluginPromise = import("@create-markdown/preview-mermaid")
       .then(async ({ mermaidPlugin }) => {
-        // theme "dark" matches the Cave UI; securityLevel "strict" overrides the
-        // plugin's default "loose" so diagrams from untrusted chat content can't
-        // smuggle scripts/click handlers (postProcess output bypasses our sanitizer).
+        // Base "dark" + the app's live theme tokens, so diagrams stop shipping
+        // stock mermaid purple and read as part of the surface: node fills sit
+        // on the raised layer, strokes on the hairline scale, and the accent
+        // appears only where mermaid marks emphasis. securityLevel "strict"
+        // overrides the plugin's default "loose" so diagrams from untrusted
+        // chat content can't smuggle scripts/click handlers (postProcess
+        // output bypasses our sanitizer).
+        const accent = themeToken("--accent-presence", "#9a8ecd");
+        const raised = themeToken("--bg-raised", "#1c1a24");
+        const panel = themeToken("--bg-panel", "#14121b");
+        const textPrimary = themeToken("--text-primary", "#e6e6f0");
+        const textSecondary = themeToken("--text-secondary", "#a5a1b6");
+        const hairline = themeToken("--border-strong", "#3a3648");
         const plugin = mermaidPlugin({
-          theme: "dark",
-          config: { securityLevel: "strict", suppressErrorRendering: true },
+          // "base" is the only mermaid theme that honors themeVariables;
+          // darkMode below keeps its derived shades on the dark ramp.
+          theme: "base",
+          config: {
+            securityLevel: "strict", suppressErrorRendering: true,
+            fontFamily:
+              'var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+            themeVariables: {
+              darkMode: true,
+              background: panel,
+              primaryColor: raised,
+              primaryTextColor: textPrimary,
+              primaryBorderColor: hairline,
+              secondaryColor: panel,
+              secondaryTextColor: textSecondary,
+              secondaryBorderColor: hairline,
+              tertiaryColor: panel,
+              tertiaryTextColor: textSecondary,
+              tertiaryBorderColor: hairline,
+              lineColor: textSecondary,
+              textColor: textPrimary,
+              mainBkg: raised,
+              nodeBorder: hairline,
+              clusterBkg: panel,
+              clusterBorder: hairline,
+              titleColor: textPrimary,
+              edgeLabelBackground: panel,
+              actorBkg: raised,
+              actorBorder: hairline,
+              actorTextColor: textPrimary,
+              activationBkgColor: raised,
+              labelBoxBkgColor: raised,
+              labelBoxBorderColor: hairline,
+              noteBkgColor: panel,
+              noteBorderColor: hairline,
+              noteTextColor: textSecondary,
+              pie1: accent,
+              cScale0: accent,
+            },
+          },
         });
         await plugin.init?.();
         return plugin;
@@ -1402,36 +1479,39 @@ function MarkdownExpandModal({
     >
       <div
         ref={dialogRef}
-        className="relative flex h-[90vh] w-[92vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`Expanded ${label}`}
         tabIndex={-1}
       >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
-          <Icon name="ph:arrows-out-simple" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-          <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]">{label}</span>
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-5 py-3">
+          <Icon name="ph:book-open" width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <span className="flex-1 truncate text-[13px] font-medium text-[var(--text-secondary)]">{label}</span>
           <button
             type="button"
             onClick={() => void copy()}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
           >
-            <Icon name="ph:copy" width={11} aria-hidden />
+            <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
             {copied ? "Copied" : "Copy"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
             aria-label="Close expanded view"
           >
             <Icon name="ph:x-bold" width={11} aria-hidden />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
-          <div className="mx-auto w-full max-w-[820px]">
-            <MarkdownBlock text={text} className="cave-md--expanded" />
+        {/* Reader body: a centered book measure with its own reading scale
+            (.cave-md--reader in cave-chat.css) — the transcript's dense 14px
+            is right in the stream, wrong for a full-screen reading surface. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-12">
+          <div className="mx-auto w-full max-w-[72ch]">
+            <MarkdownBlock text={text} className="cave-md--expanded cave-md--reader" />
           </div>
         </div>
       </div>
