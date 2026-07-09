@@ -40,7 +40,9 @@ const ID_RE = /^[a-z0-9][a-z0-9-]*$/;
  *  lose the tie. */
 export function compareSemver(a, b) {
   const parse = (v) => {
-    const [core, ...pre] = String(v).split("-");
+    // Build metadata is ignored for precedence (semver §10).
+    const [bare] = String(v).split("+");
+    const [core, ...pre] = bare.split("-");
     const nums = core.split(".").map((n) => Number.parseInt(n, 10) || 0);
     while (nums.length < 3) nums.push(0);
     return { nums, pre: pre.join("-") };
