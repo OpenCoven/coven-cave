@@ -18,10 +18,6 @@ const globals = await readFile(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
-const themeColorEditor = await readFile(
-  new URL("./theme-color-editor.tsx", import.meta.url),
-  "utf8",
-);
 const fontSettings = await readFile(
   new URL("./settings-fonts.tsx", import.meta.url),
   "utf8",
@@ -177,10 +173,20 @@ assert.match(
   "Global themes must define a filled-accent foreground token",
 );
 
+// The Theme tokens editor is the single color-customization surface: editing
+// the accent must persist a readable foreground for filled accent UI.
 assert.match(
-  themeColorEditor,
-  /"--accent-presence-foreground":\s*readableTextColor\(accent\)/,
-  "Custom color editor must persist a readable foreground for custom accent colors",
+  settings,
+  /"--accent-presence-foreground":\s*readableTextColor\(value\)/,
+  "Token overrides must persist a readable foreground for custom accent colors",
+);
+
+// The old three-color "Customize colors" editor was redundant with the Theme
+// tokens editor and has been removed.
+assert.doesNotMatch(
+  settings,
+  /ThemeColorEditor|theme-color-editor|Customize colors/,
+  "the redundant Customize-colors editor must not come back — the Theme tokens editor owns color customization",
 );
 
 assert.doesNotMatch(
@@ -382,11 +388,42 @@ assert.match(
 assert.match(settings, /function ThemeTokenOverrides\(/, "a per-token override panel exists");
 assert.match(
   settings,
-  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}type="color"/,
-  "the override panel renders a colour input for each core token",
+  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}<TokenColorRow/,
+  "the override panel renders an editable color row for each core token",
 );
 assert.match(
   settings,
   /function applyTokenOverride\(key: string, hex: string, mode: Mode\)/,
   "editing a token forks the active theme to a custom theme and re-syncs",
+);
+
+// ── Token edits must layer on the SELECTED theme (regression) ────────────────
+// Flipping data-theme to "custom" un-applies the preset's whole CSS block, so
+// the fork must (a) snapshot the full preset look before mutating the DOM and
+// (b) live-apply the whole group — not just the edited key — or editing one
+// token visually resets every other token to the default theme.
+assert.match(
+  settings,
+  /const THEME_FORK_SNAPSHOT_KEYS = \[\s*\.\.\.THEME_SYNC_KEYS,[\s\S]*"--bg-panel",[\s\S]*"--background",[\s\S]*"--border",/,
+  "forking a preset must snapshot the hardcoded per-theme tokens AND the legacy-vocab aliases",
+);
+assert.match(
+  settings,
+  /if \(Object\.keys\(group\)\.length === 0\) Object\.assign\(group, resolveTokens\(THEME_FORK_SNAPSHOT_KEYS\)\)/,
+  "an empty mode group is seeded from the current computed look before the DOM mutates",
+);
+assert.match(
+  settings,
+  /for \(const \[name, value\] of Object\.entries\(group\)\) \{\s*\n\s*html\.style\.setProperty\(name, value\);[\s\S]{0,200}html\.setAttribute\("data-theme", "custom"\)/,
+  "the whole group is applied live before the data-theme flip so the selected theme's look survives",
+);
+assert.match(
+  settings,
+  /function deriveTokenCompanions\(/,
+  "core-token edits update their companion tokens (legacy aliases, accent tints)",
+);
+assert.match(
+  settings,
+  /case "--bg-base":[\s\S]{0,400}"--background": value/,
+  "editing the background must mirror the legacy --background alias legacy-vocab surfaces read",
 );

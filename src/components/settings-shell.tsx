@@ -25,7 +25,9 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
-import { ThemeColorEditor } from "@/components/theme-color-editor";
+import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
+import { Popover } from "@/components/ui/popover";
+import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import { ProfileSection } from "./settings-profile";
@@ -1020,19 +1022,24 @@ function resolveTokenToHex(ctx: CanvasRenderingContext2D | null, raw: string): s
   }
 }
 
-/** Read the active theme's 8 synced tokens, resolved to hex. */
-function resolveSyncTokens(): Record<string, string> {
+/** Resolve a set of the active theme's tokens from computed style to hex. */
+function resolveTokens(keys: readonly string[]): Record<string, string> {
   const html = document.documentElement;
   const cs = getComputedStyle(html);
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const tokens: Record<string, string> = {};
-  for (const key of THEME_SYNC_KEYS) {
+  for (const key of keys) {
     const value = cs.getPropertyValue(key).trim();
     if (value) tokens[key] = resolveTokenToHex(ctx, value);
   }
   return tokens;
+}
+
+/** Read the active theme's 8 synced tokens, resolved to hex. */
+function resolveSyncTokens(): Record<string, string> {
+  return resolveTokens(THEME_SYNC_KEYS);
 }
 
 /** Push the active theme + resolved tokens to the daemon for cross-device sync.
@@ -1263,12 +1270,80 @@ const TOKEN_LABELS: Record<(typeof THEME_SYNC_KEYS)[number], string> = {
   "--accent-presence": "Accent",
 };
 
-/** Override a single core token. Forks the active theme to a custom theme so the
- *  edit sticks (and re-syncs); when leaving a preset, the whole 8-token group is
- *  seeded from the current look so only the edited token changes. */
+// Snapshot keys captured when a token edit forks a preset into a custom theme.
+// Flipping data-theme to "custom" un-applies the preset's whole CSS block, so
+// beyond the 8 editable tokens the fork must pin every per-theme hardcoded
+// colour (panel / hover / accent derivatives) plus the legacy shadcn-vocab
+// aliases some surfaces still read (bg-background / bg-card / border-border /
+// text-foreground) — otherwise editing one token silently resets the rest of
+// the look to the default theme instead of layering on the selected one.
+const THEME_FORK_SNAPSHOT_KEYS = [
+  ...THEME_SYNC_KEYS,
+  "--bg-panel",
+  "--bg-hover",
+  "--border-strong",
+  "--accent-presence-foreground",
+  "--accent-presence-soft",
+  "--accent-faint",
+  "--background",
+  "--card",
+  "--popover",
+  "--muted",
+  "--border",
+  "--foreground",
+  "--muted-foreground",
+] as const;
+
+/** Companion tokens that must follow an edited core token so the theme stays
+ *  coherent: the legacy shadcn-vocab aliases each core token maps onto, the
+ *  bg-base surface ramp, and the accent-derived tints (readable foreground,
+ *  faint/soft washes — same derivations as the tweakcn import path). */
+function deriveTokenCompanions(key: string, value: string, mode: Mode): Record<string, string> {
+  switch (key) {
+    case "--bg-base": {
+      const deepen = mode === "light" ? "white" : "black";
+      const lift = mode === "light" ? "black" : "white";
+      return {
+        "--background": value,
+        "--bg-panel": `color-mix(in oklch, ${value} 92%, ${deepen})`,
+        "--bg-hover": `color-mix(in oklch, ${value} 84%, ${lift})`,
+      };
+    }
+    case "--bg-raised":
+      return { "--card": value, "--popover": value };
+    case "--bg-elevated":
+      return { "--muted": value };
+    case "--text-primary":
+      return { "--foreground": value };
+    case "--text-secondary":
+      return { "--muted-foreground": value };
+    case "--border-hairline":
+      return { "--border": value };
+    case "--accent-presence":
+      return {
+        "--accent-presence-foreground": readableTextColor(value),
+        "--accent-presence-soft": `color-mix(in oklch, ${value} 78%, transparent)`,
+        "--accent-faint": `color-mix(in oklch, ${value} 14%, transparent)`,
+      };
+    default:
+      return {};
+  }
+}
+
+/** Keep the original value's alpha byte when replacing a translucent token
+ *  (hairline borders are 12–40% washes; an opaque replacement reads heavy). */
+function withAlphaFrom(prev: string | undefined, hex: string): string {
+  const m = prev ? /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})$/.exec(prev.trim()) : null;
+  return m ? `${hex}${m[1]}` : hex;
+}
+
+/** Override a single core token. Forks the active theme to a custom theme so
+ *  the edit sticks (and re-syncs). Leaving a preset snapshots the preset's
+ *  WHOLE look (THEME_FORK_SNAPSHOT_KEYS) — resolved BEFORE any DOM mutation —
+ *  and the whole group is applied live, so only the edited token (plus its
+ *  companions) changes on the selected theme. */
 function applyTokenOverride(key: string, hex: string, mode: Mode) {
   const html = document.documentElement;
-  html.style.setProperty(key, hex); // live preview
   let existing: CustomThemeData | null = null;
   try {
     const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
@@ -1278,19 +1353,92 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
   }
   const groupKey: "light" | "dark" = mode === "light" ? "light" : "dark";
   const group: Record<string, string> = { ...(existing?.cssVars?.[groupKey] ?? {}) };
-  if (!existing) Object.assign(group, resolveSyncTokens()); // seed from current look
+  // Seed from the current computed look while the preset CSS is still applied
+  // (also fills a missing mode group when a dark-only custom theme is edited
+  // in light mode, or vice versa).
+  if (Object.keys(group).length === 0) Object.assign(group, resolveTokens(THEME_FORK_SNAPSHOT_KEYS));
   group[key] = hex;
+  Object.assign(group, deriveTokenCompanions(key, hex, mode));
+  const baseTheme = html.getAttribute("data-theme");
+  const forkName =
+    baseTheme && baseTheme !== "custom" && (THEME_IDS as readonly string[]).includes(baseTheme)
+      ? `${THEME_META[baseTheme as ThemeId].name} (custom)`
+      : "Custom";
   const data: CustomThemeData = {
-    name: existing?.name ?? "Custom",
+    name: existing?.name ?? forkName,
     cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
   };
   localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
   localStorage.setItem(COVEN_THEME_KEY, "custom");
+  // Live-apply the whole group — not just the edited key — so the selected
+  // theme's look survives the data-theme flip. Boot (theme-init.js) replays
+  // this exact group, so what you see now is what a reload restores.
+  for (const [name, value] of Object.entries(group)) {
+    html.style.setProperty(name, value);
+  }
   html.setAttribute("data-theme", "custom");
 }
 
+/** One editable token row — swatch button opening the in-app ColorPicker
+ *  (spectrum + hex field + theme/recent swatches) in a popover. */
+function TokenColorRow({
+  token,
+  label,
+  value,
+  themeSwatches,
+  recents,
+  onChange,
+  onCommit,
+}: {
+  token: string;
+  label: string;
+  value: string;
+  themeSwatches: ColorSwatch[];
+  recents: string[];
+  onChange: (hex: string) => void;
+  onCommit: () => void;
+}) {
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const hex = value.slice(0, 7) || "#000000";
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <button
+        ref={anchorRef}
+        type="button"
+        aria-label={`Pick ${label} color`}
+        title={`Pick ${label} color`}
+        onClick={() => setOpen((o) => !o)}
+        className="focus-ring h-6 w-6 shrink-0 cursor-pointer rounded-md border border-[var(--border-strong)] transition-transform hover:scale-110"
+        style={{ background: value }}
+      />
+      <span className="flex-1 text-[12px] text-[var(--text-primary)]">{label}</span>
+      <code className="font-mono text-[11px] text-[var(--text-muted)]">{token}</code>
+      <span className="w-[72px] shrink-0 text-right font-mono text-[11px] uppercase text-[var(--text-secondary)]" title={value}>
+        {hex}
+      </span>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) onCommit();
+        }}
+        anchorRef={anchorRef}
+        placement="bottom-start"
+        offset={8}
+        ariaLabel={`${label} color picker`}
+      >
+        <div className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-xl">
+          <ColorPicker value={hex} onChange={onChange} themeSwatches={themeSwatches} recents={recents} />
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
 /** Per-token override list — every core theme token with a colour swatch you can
- *  edit. Editing applies live, forks to a custom theme, and re-syncs. */
+ *  edit. Editing applies live on the selected theme, forks it to a custom theme,
+ *  and re-syncs. */
 function ThemeTokenOverrides({
   mode,
   reloadKey,
@@ -1304,35 +1452,52 @@ function ThemeTokenOverrides({
   useEffect(() => {
     setValues(resolveSyncTokens());
   }, [reloadKey]);
+  const valuesRef = useRef(values);
+  valuesRef.current = values;
+
+  const themeSwatches: ColorSwatch[] = useMemo(
+    () =>
+      THEME_IDS.map((id) => ({
+        hex: mode === "light" ? THEME_META[id].accentLight : THEME_META[id].accentDark,
+        label: THEME_META[id].name,
+      })),
+    [mode],
+  );
+  const [recents, setRecents] = useState<string[]>([]);
+  useEffect(() => {
+    setRecents(getRecentColors());
+  }, []);
+
+  const handlePick = (key: (typeof THEME_SYNC_KEYS)[number], hex: string) => {
+    // Preserve the token's original alpha byte (hairline borders are washes).
+    const next = withAlphaFrom(valuesRef.current[key], hex);
+    applyTokenOverride(key, next, mode);
+    setValues((v) => ({ ...v, [key]: next }));
+    onChange();
+  };
 
   return (
     <div className="flex flex-col gap-2 px-4 py-3">
       <p className="text-[11px] text-[var(--text-muted)]">
-        Override any of the theme&apos;s core tokens. Editing one forks the active
-        theme to a custom theme and applies + syncs immediately.
+        Override any of the theme&apos;s core tokens. Edits apply live to the
+        selected theme, fork it into a custom theme, and sync immediately.
       </p>
       <div className="flex flex-col divide-y divide-[var(--border-hairline)] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
-        {THEME_SYNC_KEYS.map((key) => {
-          const hex = (values[key] ?? "#000000").slice(0, 7);
-          return (
-            <label key={key} className="flex items-center gap-3 px-3 py-2">
-              <input
-                type="color"
-                value={hex}
-                onChange={(e) => {
-                  applyTokenOverride(key, e.target.value, mode);
-                  setValues((v) => ({ ...v, [key]: e.target.value }));
-                  onChange();
-                }}
-                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-[var(--border-hairline)] bg-transparent p-0"
-                aria-label={TOKEN_LABELS[key]}
-              />
-              <span className="flex-1 text-[12px] text-[var(--text-primary)]">{TOKEN_LABELS[key]}</span>
-              <code className="font-mono text-[11px] text-[var(--text-muted)]">{key}</code>
-              <span className="font-mono text-[11px] text-[var(--text-secondary)]">{hex}</span>
-            </label>
-          );
-        })}
+        {THEME_SYNC_KEYS.map((key) => (
+          <TokenColorRow
+            key={key}
+            token={key}
+            label={TOKEN_LABELS[key]}
+            value={values[key] ?? "#000000"}
+            themeSwatches={themeSwatches}
+            recents={recents}
+            onChange={(hex) => handlePick(key, hex)}
+            onCommit={() => {
+              const committed = (valuesRef.current[key] ?? "").slice(0, 7);
+              if (committed) setRecents(addRecentColor(committed));
+            }}
+          />
+        ))}
       </div>
     </div>
   );
@@ -1358,8 +1523,6 @@ function AppearanceSection() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const { announce } = useAnnouncer();
-  // colorEditorBase: the preset that seeds the color editor; null = editor hidden.
-  const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; at: string } | null>(null);
 
@@ -1404,10 +1567,6 @@ function AppearanceSection() {
     setActiveTheme(id);
     setCustomData(null);
     applyPreset(id);
-    // Selecting a preset just applies it. The color editor is opened explicitly
-    // via "Customize colors" so a plain pick doesn't drop into edit mode (which
-    // would flip data-theme to "custom").
-    setColorEditorBase(null);
   };
 
   const handleSetCornerRadius = (next: CornerRadius) => {
@@ -1440,7 +1599,6 @@ function AppearanceSection() {
     clearCustomTheme();
     setActiveTheme("coven");
     setCustomData(null);
-    setColorEditorBase(null);
   };
 
   function normalizeTweakcnUrl(raw: string): string | null {
@@ -1559,50 +1717,16 @@ function AppearanceSection() {
               key={preset.id}
               preset={preset}
               mode={resolveMode(mode)}
-              active={activeTheme === preset.id || colorEditorBase === preset.id}
+              active={activeTheme === preset.id}
               onSelect={handleSelectPreset}
             />
           ))}
         </div>
-
-        {/* Open the color editor explicitly — selecting a preset above only
-            applies it, so this is the way into custom tweaking. */}
-        {!colorEditorBase && (
-          <div className="border-t border-[var(--border-hairline)] px-4 py-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setColorEditorBase(activeTheme === "custom" ? "coven" : activeTheme)}
-              leadingIcon="ph:paint-brush"
-            >
-              Customize colors
-            </Button>
-          </div>
-        )}
-
-        {/* ── Color editor: shown when "Customize colors" is opened ── */}
-        {colorEditorBase && (
-          <div className="border-t border-[var(--border-hairline)] p-4">
-            <ThemeColorEditor
-              basePreset={colorEditorBase}
-              mode={resolveMode(mode)}
-              onSave={() => {
-                setActiveTheme("custom");
-                try {
-                  const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
-                  if (raw) setCustomData(JSON.parse(raw) as CustomThemeData);
-                } catch { /* ignore */ }
-              }}
-              onReset={() => {
-                setActiveTheme(colorEditorBase);
-                setCustomData(null);
-              }}
-            />
-          </div>
-        )}
       </SettingsGroup>
 
-      {/* ── Per-token overrides + manual resync ── */}
+      {/* ── Per-token overrides + manual resync ── the single place to customize
+          the selected theme's colors (the old three-color editor was redundant
+          with this panel and has been removed). */}
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}

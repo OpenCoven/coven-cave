@@ -164,7 +164,6 @@ export const SUITES = {
     "src/components/settings-daemon-multihost.test.ts",
     "src/components/settings-familiars-section.test.ts",
     "src/components/familiar-studio-projects-tab.test.ts",
-    "src/components/theme-color-editor.test.ts",
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",
     "src/components/terminal-scope.test.ts",

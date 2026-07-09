@@ -70,7 +70,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
   { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
   { section: "appearance", group: "Theme", keywords: "theme color palette swatch preset" },
-  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom background accent border" },
+  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom customize picker swatch background accent border" },
   { section: "appearance", group: "Import from tweakcn", keywords: "import tweakcn css variables theme" },
   { section: "appearance", group: "Familiar switcher", keywords: "familiar switcher style strip scope" },
   { section: "appearance", group: "Corners", keywords: "corners radius rounded sharp square" },
