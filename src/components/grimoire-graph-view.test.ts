@@ -57,6 +57,18 @@ assert.match(view, /usePrefersReducedMotion\(\)/, "reduced motion is honored");
 assert.match(view, /settleForceSim\(sim, paramsRef\.current\)/, "reduced motion settles synchronously and renders still");
 assert.match(view, /announcer\.announce\(`Opening \$\{node\.title\}`/, "opening a node is announced to AT");
 
+// ── Keyboard node traversal (cave-2cx8) ──────────────────────────────────────
+// Tab/Shift+Tab cycle the most-connected visible nodes, announce + centre each,
+// Enter opens; the cursor releases at the ends so Tab still leaves the graph.
+assert.match(view, /const keyboardNodes = useMemo\([\s\S]{0,220}visible\.degree\.get\(b\.id\)[\s\S]{0,60}\.slice\(0, 40\)/, "the keyboard list is the top-N most-connected visible nodes");
+assert.match(view, /const kbdIdxRef = useRef\(-1\)/, "a keyboard cursor index is tracked");
+assert.match(view, /if \(e\.key === "Tab"\) \{/, "Tab drives keyboard node traversal");
+assert.match(view, /if \(next < 0 \|\| next >= list\.length\) \{[\s\S]{0,120}return; \/\/ release focus out of the canvas/, "the cursor releases at the ends (no focus trap)");
+assert.match(view, /centerOnNode\(node\.id\)/, "the focused node is centred in view");
+assert.match(view, /if \(e\.key === "Enter" && kbdIdxRef\.current >= 0\)/, "Enter opens the keyboard-focused node");
+assert.match(view, /const centerOnNode = useCallback\(\(id: string\) => \{[\s\S]{0,260}panX = -sim\.x\[i\] \* view\.k/, "centerOnNode pans so the node sits at the viewport centre");
+assert.match(view, /Tab and Shift\+Tab step through the most-connected documents, Enter opens/, "the canvas label advertises the keyboard node controls");
+
 // ── Wheel zoom must be non-passive (preventDefault) ─────────────────────────
 assert.match(
   view,

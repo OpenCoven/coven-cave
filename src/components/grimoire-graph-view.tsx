@@ -233,6 +233,24 @@ export function GrimoireGraphView({
   const hoverRef = useRef<string | null>(null);
   const stickyRef = useRef<string | null>(null);
   stickyRef.current = stickyId;
+
+  // Keyboard node traversal (cave-2cx8): the canvas was pointer-only — panning
+  // with the arrows but never letting focus reach a node. Tab / Shift+Tab now
+  // cycle the most-connected visible nodes (hubs first), announcing each and
+  // centering it, with Enter to open. Capped so Tab-cycling stays tractable; the
+  // search box still reaches any node by name. Cursor released (index -1) at the
+  // ends so Tab can still leave the graph.
+  const keyboardNodes = useMemo(
+    () =>
+      [...visible.nodes]
+        .sort((a, b) => (visible.degree.get(b.id) ?? 0) - (visible.degree.get(a.id) ?? 0))
+        .slice(0, 40),
+    [visible],
+  );
+  const keyboardNodesRef = useRef(keyboardNodes);
+  keyboardNodesRef.current = keyboardNodes;
+  const kbdIdxRef = useRef(-1);
+  useEffect(() => { kbdIdxRef.current = -1; }, [keyboardNodes]);
   const paletteRef = useRef<Palette | null>(null);
   const frameRef = useRef<number | null>(null);
   const needsFitRef = useRef(savedView === null);
@@ -408,6 +426,20 @@ export function GrimoireGraphView({
       panY: -((minY + maxY) / 2) * k,
     };
     savedView = { ...viewRef.current };
+    scheduleFrame();
+  }, [scheduleFrame]);
+
+  /** Pan (keeping zoom) so a node sits at the viewport centre — used by the
+   *  keyboard traversal to bring the focused node into view. */
+  const centerOnNode = useCallback((id: string) => {
+    const sim = simRef.current;
+    if (!sim) return;
+    const i = sim.indexOf.get(id);
+    if (i === undefined) return;
+    const view = viewRef.current;
+    view.panX = -sim.x[i] * view.k;
+    view.panY = -sim.y[i] * view.k;
+    savedView = { ...view };
     scheduleFrame();
   }, [scheduleFrame]);
 
@@ -651,6 +683,39 @@ export function GrimoireGraphView({
 
   const onKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLCanvasElement>) => {
+      // Tab / Shift+Tab cycle the keyboard node list (hubs first): highlight,
+      // centre, and announce each. At either end the cursor is released (no
+      // preventDefault) so Tab still leaves the graph — no focus trap.
+      if (e.key === "Tab") {
+        const list = keyboardNodesRef.current;
+        if (list.length === 0) return;
+        const next = e.shiftKey ? kbdIdxRef.current - 1 : kbdIdxRef.current + 1;
+        if (next < 0 || next >= list.length) {
+          kbdIdxRef.current = -1;
+          if (stickyRef.current) { setStickyId(null); scheduleFrame(); }
+          return; // release focus out of the canvas
+        }
+        kbdIdxRef.current = next;
+        const node = list[next];
+        setStickyId(node.id);
+        centerOnNode(node.id);
+        announcer.announce(
+          `${node.title}, ${next + 1} of ${list.length}${node.ref ? ", press Enter to open" : ""}`,
+          "polite",
+        );
+        e.preventDefault();
+        return;
+      }
+      // Enter opens the keyboard-focused node.
+      if (e.key === "Enter" && kbdIdxRef.current >= 0) {
+        const node = keyboardNodesRef.current[kbdIdxRef.current];
+        if (node?.ref) {
+          announcer.announce(`Opening ${node.title}`, "polite");
+          onOpen(node.ref);
+        }
+        e.preventDefault();
+        return;
+      }
       const pan = (dx: number, dy: number) => {
         viewRef.current.panX += dx;
         viewRef.current.panY += dy;
@@ -664,14 +729,15 @@ export function GrimoireGraphView({
       else if (e.key === "+" || e.key === "=") zoomBy(1.25);
       else if (e.key === "-" || e.key === "_") zoomBy(0.8);
       else if (e.key === "0") fitView();
-      else if (e.key === "Escape" && (stickyRef.current || hoverRef.current)) {
+      else if (e.key === "Escape" && (stickyRef.current || hoverRef.current || kbdIdxRef.current >= 0)) {
         hoverRef.current = null;
+        kbdIdxRef.current = -1;
         setStickyId(null);
         scheduleFrame();
       } else return;
       e.preventDefault();
     },
-    [fitView, scheduleFrame, zoomBy],
+    [announcer, centerOnNode, fitView, onOpen, scheduleFrame, zoomBy],
   );
 
   // ── Empty state — only when there is genuinely nothing to draw ─────────────
@@ -725,7 +791,7 @@ export function GrimoireGraphView({
       <canvas
         ref={canvasRef}
         role="img"
-        aria-label={`Document graph: ${summary}. Drag nodes to rearrange; arrow keys pan, plus and minus zoom, 0 fits the view.`}
+        aria-label={`Document graph: ${summary}. Tab and Shift+Tab step through the most-connected documents, Enter opens the focused one; arrow keys pan, plus and minus zoom, 0 fits the view.`}
         tabIndex={0}
         className="focus-ring absolute inset-0 h-full w-full cursor-grab touch-none"
         onPointerDown={onPointerDown}
