@@ -134,6 +134,12 @@
     transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .journal-day:hover { border-color: var(--border-strong); transform: translateX(2px); }
+/* Keyboard parity (cave-t1ou): the rail rows and entry actions had no visible
+   focus state — hover styling alone is invisible to keyboard users. */
+.journal-day:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 2px;
+}
 .journal-day:active { transform: translateX(2px) scale(0.99); }
 .journal-day.is-selected {
   border-color: var(--accent-presence);
@@ -198,6 +204,10 @@
   cursor: pointer;
   transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease,
     transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.journal-entry__action:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 .journal-entry__action:hover:not(:disabled),
 .journal-entry__action:focus-visible {
@@ -467,3 +477,13 @@
    detail pane scroll internally instead of growing the settings page. */
 .familiar-studio-journal { display: flex; min-width: 0; }
 .familiar-studio-journal .journal-list { height: min(65vh, 720px); }
+
+/* The section labels are real headings now (cave-t1ou) — inherit the label
+   styling instead of UA heading defaults. */
+.journal-entry__sec-heading {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}

@@ -7,6 +7,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { MdEditor } from "@/components/md-editor/md-editor";
 import { extractNextPaths } from "@/lib/next-paths";
@@ -256,6 +257,7 @@ export function JournalEntries({
   // Deferred + undoable delete: the day reads as empty immediately, the DELETE
   // fires only after the undo window, and Undo restores the reflection.
   const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string>();
+  const { announce } = useAnnouncer();
   const [error, setError] = useState<string | null>(null);
   // Transient confirmation toast for one-click "automate" actions on the
   // suggested next steps (Add task / Remind me / Run now).
@@ -401,7 +403,9 @@ export function JournalEntries({
     setGenerating(false);
     await loadDay(day.date);
     await loadDays();
-  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy]);
+    // The reflection appearing is the only visual confirmation — say it too.
+    announce("Reflection generated.");
+  }, [selectedFamiliarId, day, loadDay, loadDays, outOfScopeBy, announce]);
 
   function startEdit() {
     if (!day) return;
@@ -438,6 +442,7 @@ export function JournalEntries({
       cancelEdit();
       await loadDay(day.date);
       await loadDays();
+      announce("Journal entry saved.");
       // The reload's setState re-renders the detail AFTER this point and steals
       // focus from the Edit button the editing→false effect restored. Re-assert
       // it on the next frame, once that re-render has committed and painted, so
@@ -461,6 +466,7 @@ export function JournalEntries({
     const date = day.date;
     cancelEdit();
     setError(null);
+    announce(`Deleting the entry for ${longDateLabel(parseDateSlug(date) ?? new Date())} — undo available.`);
     scheduleDelete(date, `entry for ${longDateLabel(parseDateSlug(date) ?? new Date())}`, async () => {
       try {
         const res = await fetch(`/api/journal?date=${encodeURIComponent(date)}`, { method: "DELETE" });
@@ -508,12 +514,20 @@ export function JournalEntries({
         <button
           type="button"
           className={`journal-entry-gen${generating ? " is-generating" : ""}`}
+          aria-busy={generating}
           disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
           onClick={generate}
           title={Boolean(outOfScopeBy) ? `Today's entry was written by ${outOfScopeBy}` : selected !== today ? "Select today to generate" : undefined}
         >
           <Icon name="ph:sparkle" aria-hidden />
           {generating ? "Reflecting…" : "Generate today's entry"}
+          {/* The disabled reason lived only in title= (hover-only) — AT and
+              keyboard users get it in the accessible name too (cave-t1ou). */}
+          {!generating && Boolean(outOfScopeBy) ? (
+            <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
+          ) : !generating && selected !== today ? (
+            <span className="sr-only">, unavailable — select today to generate</span>
+          ) : null}
         </button>
         {error ? (
           <div className="journal-list__error" role="alert">
@@ -564,7 +578,7 @@ export function JournalEntries({
         {day ? (
           <>
             <div className="journal-entry__sec journal-entry__sec--nav">
-              <span>What happened · {longDateLabel(parseDateSlug(day.date) ?? now)}</span>
+              <h3 className="journal-entry__sec-heading">What happened · {longDateLabel(parseDateSlug(day.date) ?? now)}</h3>
               {filteredDays.length > 1 ? (
                 <span className="journal-entry__daynav">
                   <button
@@ -596,7 +610,7 @@ export function JournalEntries({
               <div className="journal-entry__stat"><b>{day.stats.runtimeMemory}</b><span>runtime files</span></div>
             </div>
             <div className="journal-entry__head">
-              <div className="journal-entry__sec">Reflection</div>
+              <h4 className="journal-entry__sec journal-entry__sec-heading">Reflection</h4>
               {hasEntry ? (
                 <div className="journal-entry__actions">
                   {editing ? (
@@ -697,6 +711,13 @@ export function JournalEntries({
                       disabled={!canGenerate || generating}
                     >
                       {generating ? "Reflecting…" : "Generate today's entry"}
+          {/* The disabled reason lived only in title= (hover-only) — AT and
+              keyboard users get it in the accessible name too (cave-t1ou). */}
+          {!generating && Boolean(outOfScopeBy) ? (
+            <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
+          ) : !generating && selected !== today ? (
+            <span className="sr-only">, unavailable — select today to generate</span>
+          ) : null}
                     </Button>
                   ) : undefined
                 }
@@ -708,7 +729,7 @@ export function JournalEntries({
         )}
       </section>
       {notice ? (
-        <div className="journal-notice" role="status" aria-live="polite">
+        <div className="journal-notice" role="status" aria-live="polite" aria-atomic="true">
           <Icon name="ph:check-circle" width={16} aria-hidden className="journal-notice__icon" />
           <span className="journal-notice__text">{notice.text}</span>
           {notice.action ? (

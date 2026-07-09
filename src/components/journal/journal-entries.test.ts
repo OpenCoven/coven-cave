@@ -118,4 +118,17 @@ assert.match(css, /\.journal-day:active \{ transform:/, "day rows have a tactile
 assert.match(css, /\.journal-entry__action:active:not\(:disabled\) \{ transform: scale/, "entry action icons have a tactile press");
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-next__chip,/, "the new interactions respect prefers-reduced-motion");
 
+// ── a11y: audible mutations, real headings, visible focus (cave-t1ou) ────────
+assert.match(entries, /const \{ announce \} = useAnnouncer\(\)/, "the surface uses the shared announcer");
+assert.match(entries, /announce\("Reflection generated\."\)/, "generate success is announced");
+assert.match(entries, /announce\("Journal entry saved\."\)/, "save success is announced");
+assert.match(entries, /announce\(`Deleting the entry for [\s\S]{0,80}undo available\.`\)/, "delete scheduling is announced");
+assert.match(entries, /aria-busy=\{generating\}/, "the generate button reports busy state");
+assert.match(entries, /unavailable — select today to generate/, "the disabled reason reaches the accessible name (not just title=)");
+assert.match(entries, /<h3 className="journal-entry__sec-heading">What happened/, "the day section is a real heading");
+assert.match(entries, /<h4 className="journal-entry__sec journal-entry__sec-heading">Reflection<\/h4>/, "the reflection section is a real heading");
+assert.match(entries, /aria-live="polite" aria-atomic="true"/, "the notice toast announces atomically");
+assert.match(css, /\.journal-day:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "day-rail rows have a visible focus ring");
+assert.match(css, /\.journal-entry__action:focus-visible \{\n  outline: var\(--ring-width, 2px\) solid var\(--ring-focus\)/, "entry actions have a distinct focus ring");
+
 console.log("journal-entries.test.ts: ok");
