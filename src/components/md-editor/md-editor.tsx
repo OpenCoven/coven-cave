@@ -22,6 +22,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Trailing debounce before an autosave fires once typing pauses. */
 const AUTOSAVE_DEBOUNCE_MS = 1200;
@@ -38,8 +39,11 @@ import { diffLines, mergeThreeWay, type LineDiffOp } from "@/lib/line-diff";
 const MdEditorVisual = dynamic(() => import("./md-editor-visual"), {
   ssr: false,
   loading: () => (
-    <div className="grid h-full place-items-center text-[11px] text-[var(--text-muted)]">
-      Loading editor…
+    // Skeleton lines instead of a bare text flash while the editor chunk loads.
+    <div className="space-y-2.5 p-4" aria-label="Loading editor" aria-busy="true">
+      {["92%", "85%", "97%", "70%"].map((w, i) => (
+        <Skeleton key={i} variant="text" width={w} />
+      ))}
     </div>
   ),
 });

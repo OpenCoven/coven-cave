@@ -24,6 +24,12 @@ import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-edi
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
 import { parseMdDocument, serializeMdDocument, type MdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
+import {
+  formatDate,
+  readDateTimePrefs,
+  useDateTimePrefs,
+  type DateTimePrefs,
+} from "@/lib/datetime-format";
 import { GRIMOIRE_HASH_PREFIX } from "@/lib/grimoire-link";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -329,6 +335,7 @@ function KnowledgeMdEditor({
 }
 
 function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void }) {
+  const dateTimePrefs = useDateTimePrefs();
   const [state, setState] = useState<{ reflection: string; reflectedBy: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The `modified` (mtime) this editor last loaded/saved, sent as the
@@ -408,7 +415,7 @@ function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void
       key={date}
       value={state.reflection}
       showHeader={false}
-      sourceLabel={`Journal · ${date}`}
+      sourceLabel={`Journal · ${journalDayLabel(date, dateTimePrefs)}`}
       onSave={save}
       autoSave
     />
@@ -416,6 +423,17 @@ function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void
 }
 
 // ── Navigator row ────────────────────────────────────────────────────────────
+
+// ── Journal date labels ──────────────────────────────────────────────────────
+
+/** "2026-07-08" → "Jul 8" / "8 Jul" per the user's datetime prefs (+ year when
+ *  it isn't the current one). Date-only ISO strings parse as UTC midnight —
+ *  anchor to local midnight so the label never shifts a day. */
+function journalDayLabel(date: string, prefs: DateTimePrefs): string {
+  const d = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return date;
+  return formatDate(d, prefs, { year: d.getFullYear() !== new Date().getFullYear() });
+}
 
 function NavRow({
   selected,
@@ -556,6 +574,11 @@ function GrimoireDocLinks({
   // useMemoryFile is a hook, so it's always called; a null path is a no-op.
   const memoryPath = selection.kind === "memory" ? selection.path : null;
   const memFile = useMemoryFile(memoryPath, { reveal: true });
+  const { announce } = useAnnouncer();
+  // (grimoire-audit cave-bkpj) Unresolved chips explained themselves via
+  // title= only — inert on touch. Tapping one now shows (and announces) why.
+  const [unresolvedHint, setUnresolvedHint] = useState<string | null>(null);
+  useEffect(() => setUnresolvedHint(null), [selection]);
 
   const [journalMd, setJournalMd] = useState<string | null>(null);
   useEffect(() => {
@@ -639,16 +662,29 @@ function GrimoireDocLinks({
                 {display}
               </button>
             ) : (
-              <span
+              <button
                 key={i}
+                type="button"
                 title="No matching Grimoire doc"
-                className="rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]"
+                aria-expanded={unresolvedHint === display}
+                onClick={() => {
+                  const hint = `“${display}” has no matching doc yet — create a knowledge entry with that title to link it.`;
+                  setUnresolvedHint((prev) => (prev === display ? null : display));
+                  if (unresolvedHint !== display) announce(hint, "polite");
+                }}
+                className="focus-ring rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-secondary)]"
               >
                 {display}
-              </span>
+              </button>
             );
           })}
         </div>
+      ) : null}
+      {unresolvedHint ? (
+        <p className="text-[11px] text-[var(--text-muted)]" role="status">
+          “{unresolvedHint}” has no matching doc yet — create a knowledge entry with that title to
+          link it.
+        </p>
       ) : null}
       {backlinks.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -702,6 +738,9 @@ export function GrimoireView() {
   }, []);
   const confirm = useConfirm();
   const { announce } = useAnnouncer();
+  const dateTimePrefs = useDateTimePrefs();
+  // Selection evicted by an over-cap openDoc, announced post-commit.
+  const evictedRef = useRef<GrimoireSelection | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Open tabs + the active one. A #grimoire: deep link wins over the restored
@@ -737,6 +776,7 @@ export function GrimoireView() {
         // Evict the oldest non-active tab to stay within the mount budget.
         const activeKey = prev.selection ? selectionKey(prev.selection) : null;
         const evictIndex = tabs.findIndex((t) => selectionKey(t) !== activeKey);
+        evictedRef.current = tabs[evictIndex] ?? null;
         tabs = tabs.filter((_, i) => i !== evictIndex);
       }
       return { openTabs: tabs, selection: sel };
@@ -817,7 +857,7 @@ export function GrimoireView() {
         ? "Move this memory file to the trash?"
         : selection.kind === "knowledge"
           ? "Delete this knowledge entry?"
-          : `Delete the journal reflection for ${selection.date}?`;
+          : `Delete the journal reflection for ${journalDayLabel(selection.date, readDateTimePrefs())}?`;
     const body =
       selection.kind === "memory"
         ? "The file moves to the Cave's memory trash and can be restored from there."
@@ -915,6 +955,23 @@ export function GrimoireView() {
     [journal, matches],
   );
 
+  // (grimoire-audit cave-gsvf) The only search feedback was the visual section
+  // counters — announce result counts to screen readers, debounced past the
+  // keystroke burst.
+  useEffect(() => {
+    if (!q) return;
+    const t = window.setTimeout(() => {
+      const total = visibleKnowledge.length + visibleMemory.length + visibleJournal.length;
+      announce(
+        total === 0
+          ? "No documents match"
+          : `${total} ${total === 1 ? "match" : "matches"} — ${visibleKnowledge.length} knowledge, ${visibleMemory.length} memory, ${visibleJournal.length} journal`,
+        "polite",
+      );
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [q, visibleKnowledge.length, visibleMemory.length, visibleJournal.length, announce]);
+
   const loading = knowledge === null || memory === null || journal === null;
   const selectedKey = selection ? selectionKey(selection) : null;
 
@@ -998,10 +1055,18 @@ export function GrimoireView() {
         return (knowledge ?? []).find((e) => e.id === sel.id)?.title ?? sel.id;
       }
       if (sel.kind === "memory") return sel.path.split("/").pop() ?? sel.path;
-      return sel.date;
+      return journalDayLabel(sel.date, dateTimePrefs);
     },
-    [knowledge],
+    [knowledge, dateTimePrefs],
   );
+
+  // (grimoire-audit cave-ezxb) The over-cap eviction in openDoc was silent — a
+  // doc you had open just vanished. Announce it after the commit lands.
+  useEffect(() => {
+    if (!evictedRef.current) return;
+    announce(`Closed ${tabTitle(evictedRef.current)} — ${MAX_OPEN_TABS}-tab limit reached`, "polite");
+    evictedRef.current = null;
+  }, [openTabs, announce, tabTitle]);
 
   /** Detail editor for one tab. Every open tab stays mounted (hidden when
    *  inactive) so unsaved drafts survive switching tabs. */
@@ -1331,7 +1396,7 @@ export function GrimoireView() {
                     <NavRow
                       key={day.date}
                       selected={selectedKey === `journal:${day.date}`}
-                      title={day.date}
+                      title={journalDayLabel(day.date, dateTimePrefs)}
                       subtitle={day.preview}
                       onClick={() => openDoc({ kind: "journal", date: day.date })}
                     />

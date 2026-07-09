@@ -141,3 +141,11 @@ const codeEditor = await readFile(new URL("../code-editor.tsx", import.meta.url)
 assert.match(codeEditor, /from "@\/components\/code-editor-theme"/, "code-editor consumes the shared theme");
 
 console.log("md-editor.test: ok");
+
+// ── (grimoire-audit cave-say6) editor lazy-load skeleton ─────────────────────
+// The visual editor chunk used to flash a bare "Loading editor…" line while
+// Milkdown loaded — it now renders skeleton text lines like the other panes.
+assert.match(shell, /loading: \(\) => \(\s*\n\s*\/\/ Skeleton lines/, "the dynamic import has a skeleton fallback");
+assert.match(shell, /<Skeleton key=\{i\} variant="text" width=\{w\} \/>/, "the fallback uses the shared Skeleton primitive");
+assert.match(shell, /aria-label="Loading editor" aria-busy="true"/, "the fallback is announced as busy");
+assert.ok(!shell.includes("Loading editor…"), "the bare text flash is gone");

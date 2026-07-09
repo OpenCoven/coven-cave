@@ -96,6 +96,27 @@ assert.match(
 );
 assert.match(view, /Show more \(\{group\.entries\.length - limit\} remaining\)/, "each group pages independently");
 
+// ── (grimoire-audit Batch A quick wins) ──────────────────────────────────────
+// cave-0rx0: journal dates honor the user's datetime prefs everywhere (rail
+// rows, tab labels, editor footer, delete confirm) instead of raw ISO.
+assert.match(view, /function journalDayLabel\(date: string, prefs: DateTimePrefs\)/, "there is a shared journal date label helper");
+assert.match(view, /new Date\(`\$\{date\}T00:00:00`\)/, "date-only strings anchor to local midnight (no UTC day shift)");
+assert.match(view, /title=\{journalDayLabel\(day\.date, dateTimePrefs\)\}/, "rail journal rows format through prefs");
+assert.match(view, /return journalDayLabel\(sel\.date, dateTimePrefs\)/, "journal tab labels format through prefs");
+assert.match(view, /Journal · \$\{journalDayLabel\(date, dateTimePrefs\)\}/, "the editor footer source label formats through prefs");
+assert.match(view, /journalDayLabel\(selection\.date, readDateTimePrefs\(\)\)/, "the delete confirm formats through prefs");
+// cave-ezxb: the over-cap tab eviction announces instead of silently closing.
+assert.match(view, /evictedRef\.current = tabs\[evictIndex\] \?\? null/, "openDoc records what it evicted");
+assert.match(view, /announce\(`Closed \$\{tabTitle\(evictedRef\.current\)\} — \$\{MAX_OPEN_TABS\}-tab limit reached`/, "evictions are announced post-commit");
+// cave-gsvf: search results are announced to screen readers (debounced).
+assert.match(view, /No documents match/, "an empty result set announces");
+assert.match(view, /knowledge, \$\{visibleMemory\.length\} memory, \$\{visibleJournal\.length\} journal/, "match counts announce per section");
+// cave-bkpj: unresolved wiki-link chips are actionable on touch — tapping
+// shows a visible hint (and announces it) instead of a hover-only title.
+assert.match(view, /const \[unresolvedHint, setUnresolvedHint\] = useState<string \| null>/, "unresolved chips have a tap-visible hint");
+assert.match(view, /has no matching doc yet — create a knowledge entry/, "the hint says how to resolve the link");
+assert.match(view, /aria-expanded=\{unresolvedHint === display\}/, "the unresolved chip exposes its hint state");
+
 // ── Delete/trash actions (cave-kv3) ──────────────────────────────────────────
 
 assert.match(view, /useConfirm\(\)/, "destructive actions confirm through the shared dialog");
@@ -146,7 +167,7 @@ assert.match(
   "the doc index maps memory entries by fullPath (the same path openDoc navigates to)",
 );
 assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
-assert.match(view, /title="No matching Grimoire doc"[\s\S]{0,160}border-dashed/, "an unresolved link renders dashed + inert with a hint");
+assert.match(view, /title="No matching Grimoire doc"[\s\S]{0,600}border-dashed/, "an unresolved link renders dashed with a hint (tap shows why — cave-bkpj)");
 assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
 
 // ── Backlinks: incoming mentions from the doc graph (cave-hand) ──────────────
