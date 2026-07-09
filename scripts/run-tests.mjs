@@ -365,6 +365,7 @@ export const SUITES = {
     "src/components/chat-view.test.ts",
     "src/components/familiars-view-stats.test.ts",
     "src/components/automations-detail-inputs.test.ts",
+    "src/lib/cron-prompt.test.ts",
     "src/components/automation-create-dialog.test.ts",
     "src/components/automation-familiar-select.test.ts",
     "src/components/automations-view.test.ts",

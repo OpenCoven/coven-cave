@@ -125,6 +125,10 @@ assert.match(gantt, /if \(!\(e\.ctrlKey \|\| e\.metaKey\)\) return;[\s\S]{0,80}e
 assert.match(gantt, /clampDayW\(prev \* Math\.exp\(-e\.deltaY \* 0\.0025\)\)/, "zoom scales multiplicatively from the wheel delta");
 assert.match(gantt, /el\.scrollLeft = dayUnderCursor \* next - \(cursorX - LEFT_W\)/, "zoom re-anchors so the day under the cursor stays put");
 assert.match(gantt, /addEventListener\("wheel", onWheel, \{ passive: false \}\)/, "the wheel listener is non-passive so preventDefault works");
+// The wheel effect must re-run when rows first arrive: the empty state renders
+// no scroller, so a mount-only ([]) effect grabbed a null ref and ⌘-scroll zoom
+// never attached once data loaded.
+assert.match(gantt, /return \(\) => el\.removeEventListener\("wheel", onWheel\);\s*\}, \[allRows\.length === 0\]\)/, "the wheel-zoom effect re-attaches when the gantt goes from empty to populated");
 assert.match(gantt, /onClick=\{\(\) => \{\s*setDayW\(ZOOM_DAY_W\[z\]\)/, "the D/W/M buttons snap to preset scales");
 assert.match(styles, /\.board-group-toggle \.cg-zoom-cell/, "the zoom glyph cell is styled to match the segmented control");
 

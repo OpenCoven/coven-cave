@@ -35,6 +35,8 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Truthful freshness stamp — set when a load actually lands, never faked.
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -43,6 +45,7 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
     setError(null);
     try {
       setData(await loadFamiliarAnalyticsData(familiarId));
+      setUpdatedAt(new Date().toISOString());
       if (quiet) announce("Analytics refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "analytics data unavailable");
@@ -76,7 +79,7 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
           <span>{error}</span>
         </div>
       ) : null}
-      {model ? <FamiliarAnalyticsContent model={model} onRefresh={() => void load({ quiet: true })} refreshing={refreshing} /> : (
+      {model ? <FamiliarAnalyticsContent model={model} onRefresh={() => void load({ quiet: true })} refreshing={refreshing} updatedAt={updatedAt} /> : (
         <EmptyState
           compact
           icon="ph:users-three-bold"
@@ -402,7 +405,9 @@ const INSIGHT_ICON: Record<"good" | "warn" | "bad", Parameters<typeof Icon>[0]["
   bad: "ph:warning-circle",
 };
 
-/** One-line plain-language read of the familiar's state — turns numbers into meaning. */
+/** One-line plain-language read of the familiar's state — turns numbers into meaning.
+ *  When the read is actionable (attention tones with open heal requests), the
+ *  banner carries its own drill-through so the next step is one click. */
 const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   model,
   healRequestCount,
@@ -411,10 +416,17 @@ const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   healRequestCount: number;
 }) {
   const insight = deriveAnalyticsInsight(model, healRequestCount);
+  const actionable = insight.tone !== "good" && healRequestCount > 0;
   return (
     <p className={`fa-insight fa-insight--${insight.tone}`} role="note">
       <Icon name={INSIGHT_ICON[insight.tone]} aria-hidden />
       <span>{insight.text}</span>
+      {actionable ? (
+        <a className="fa-insight__action focus-ring" href="#fa-heal">
+          Review
+          <Icon name="ph:caret-right" aria-hidden />
+        </a>
+      ) : null}
     </p>
   );
 });
@@ -436,6 +448,8 @@ const FamiliarKpis = memo(function FamiliarKpis({
             <span className="fa-kpi__head">
               <Icon name={kpi.icon} aria-hidden />
               <span className="fa-kpi__label">{kpi.label}</span>
+              {/* Drill cue — reveals on hover/focus so tiles read as links. */}
+              <Icon name="ph:caret-right" className="fa-kpi__go" aria-hidden />
             </span>
             <strong className="fa-kpi__value">{kpi.value}</strong>
             <span className="fa-kpi__sub">{kpi.sub}</span>
@@ -450,10 +464,13 @@ export function FamiliarAnalyticsContent({
   model,
   onRefresh,
   refreshing = false,
+  updatedAt = null,
 }: {
   model: FamiliarAnalyticsModel;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /** Truthful last-load stamp for the topbar freshness readout. */
+  updatedAt?: string | null;
 }) {
   const familiarName = model.familiar?.display_name ?? model.familiarId;
   const familiarRole = model.familiar?.role || model.familiar?.harness || "Familiar";
@@ -483,10 +500,15 @@ export function FamiliarAnalyticsContent({
         <a href="/dashboard/familiars/growth">Familiars</a>
         <span>/</span>
         <b>Analytics</b>
+        {updatedAt ? (
+          <span className="fa-topbar__updated">
+            Updated <RelativeTime iso={updatedAt} />
+          </span>
+        ) : null}
         {onRefresh ? (
           <button
             type="button"
-            className="retro-icon-btn"
+            className={`retro-icon-btn${refreshing ? " is-refreshing" : ""}`}
             aria-label="Refresh familiar analytics"
             title="Refresh familiar analytics"
             disabled={refreshing}
@@ -544,7 +566,10 @@ export function FamiliarAnalyticsContent({
         <FaSection
           id="fa-response-confidence"
           title="Response confidence"
-          wide
+          // An empty rollup renders a one-line empty state — spanning the full
+          // width would give the page's hero slot to a placeholder and push
+          // real signal below the fold, so the section only widens with data.
+          wide={model.responseConfidenceRollup.eventCount > 0}
           count={`${model.responseConfidenceRollup.eventCount} ${model.responseConfidenceRollup.eventCount === 1 ? "event" : "events"}`}
         >
           <ResponseConfidenceSection rollup={model.responseConfidenceRollup} events={model.responseConfidenceEvents} />

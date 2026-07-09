@@ -21,14 +21,17 @@
  */
 import {
   DM_Sans,
+  EB_Garamond,
   Figtree,
   Fira_Code,
+  Fraunces,
   Fredoka,
   Geist,
   Geist_Mono,
   IBM_Plex_Mono,
   IBM_Plex_Sans,
   Inconsolata,
+  Instrument_Serif,
   Inter,
   JetBrains_Mono,
   Lato,
@@ -57,6 +60,26 @@ export const fredoka = Fredoka({
   variable: "--font-fredoka",
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
+});
+
+
+// ── Classic Coven serifs (preview candidates, preload: false) ──
+export const ebGaramond = EB_Garamond({
+  variable: "--font-eb-garamond",
+  subsets: ["latin"],
+  preload: false,
+});
+export const instrumentSerif = Instrument_Serif({
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  weight: ["400"],
+  style: ["normal", "italic"],
+  preload: false,
+});
+export const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  preload: false,
 });
 
 // ── Sans catalog (preload: false) ──
@@ -107,6 +130,9 @@ const ALL_FONTS = [
   robotoMono,
   spaceMono,
   inconsolata,
+  ebGaramond,
+  instrumentSerif,
+  fraunces,
 ];
 
 /** Space-joined `.variable` classes for the root <html> element. */

@@ -4947,7 +4947,8 @@ button:active > .edge-rail-chip {
   flex-wrap: nowrap;
   flex: 0 0 auto;
   /* Slim band (cave-p78p): hugs the 28px controls — and on the desktop shell,
-     the macOS traffic lights (~18px center) sit dead-center of the 36px bar. */
+     the Tauri titlebar override below keeps the band slim next to the macOS
+     traffic lights. */
   min-height: 34px;
   gap: 8px;
   padding-inline: 12px;
@@ -4997,10 +4998,16 @@ button:active > .edge-rail-chip {
    ──────────────────────────────────────────────── */
 @media (min-width: 1024px) {
   :root[data-tauri-titlebar] .shell-top {
-    /* ~78px clears the three traffic lights + their left inset; 36px centers
-       the bar's 28px controls on the lights (overlay default: ~18px center). */
+    /* ~78px clears the three traffic lights + their left inset; the slim 29px
+       band hugs the 28px controls so the bar doesn't tower over the lights
+       (was 36px — user asked for ~20% shorter). */
     padding-left: 78px;
-    min-height: 36px;
+    min-height: 29px;
+  }
+
+  /* The inner menu-bar would otherwise prop the band back open at 34px. */
+  :root[data-tauri-titlebar] .shell-top .menu-bar {
+    min-height: 28px;
   }
 
   /* Dia-style: with the side panel closed the shell hides the traffic lights
@@ -10409,6 +10416,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
      inspector tab panel. */
   height: 100%;
   overflow-y: auto;
+  /* KPI drill-throughs glide to their section instead of teleporting. */
+  scroll-behavior: smooth;
   padding: 24px;
   background: var(--bg-base);
   color: var(--text-primary);
@@ -10417,13 +10426,25 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   container-type: inline-size;
   container-name: fa;
 }
+/* Sticky glass breadcrumb — negative margins cancel the page padding so the
+   bar spans edge-to-edge and pins at the true scrollport top; refresh and the
+   freshness stamp stay reachable however deep the page scrolls. */
 .fa-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 34px;
+  margin: -24px -24px 0;
+  padding: 10px 24px;
   color: var(--text-muted);
   font-size: 12px;
+  background: color-mix(in oklch, var(--bg-base) 84%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .fa-topbar a {
   color: var(--text-secondary);
@@ -10434,7 +10455,24 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-primary);
   font-weight: 620;
 }
-.fa-topbar .retro-icon-btn { margin-left: auto; }
+.fa-topbar__updated {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* The stamp owns the right-push; the refresh button rides after it. (The
+   stamp renders whenever content does — updatedAt is set by the same load.) */
+.fa-topbar .retro-icon-btn { flex: 0 0 auto; }
+.fa-topbar > .retro-icon-btn:first-of-type:last-child { margin-left: auto; }
+/* Refresh spins while a quiet reload is in flight — visible progress, not
+   just a disabled button. */
+.fa-topbar .retro-icon-btn.is-refreshing svg {
+  animation: fa-refresh-spin 900ms linear infinite;
+}
+@keyframes fa-refresh-spin {
+  to { transform: rotate(360deg); }
+}
 .fa-header {
   display: flex;
   align-items: center;
@@ -10509,7 +10547,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-ring--developing { --fa-ring-color: var(--color-warning); }
 .fa-ring--reliable { --fa-ring-color: var(--accent-presence); }
 .fa-ring--trusted { --fa-ring-color: var(--color-success); }
-.fa-ring svg { width: 100%; height: 100%; display: block; }
+.fa-ring svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* Tier-colored halo — the hero metric glows softly in its own state color. */
+  filter: drop-shadow(0 0 7px color-mix(in oklch, var(--fa-ring-color) 32%, transparent));
+}
 .fa-ring__track {
   fill: none;
   stroke: var(--border-hairline);
@@ -10565,6 +10609,22 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-insight--good { --fa-insight-accent: var(--color-success); }
 .fa-insight--warn { --fa-insight-accent: var(--color-warning); }
 .fa-insight--bad { --fa-insight-accent: var(--color-danger); }
+/* Actionable insights carry their own next step. */
+.fa-insight__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--radius-control);
+  padding: 2px 6px;
+}
+.fa-insight__action:hover { color: var(--text-primary); background: var(--bg-hover); }
+.fa-insight__action svg { width: 12px; height: 12px; color: currentColor; }
 
 .fa-kpis {
   display: grid;
@@ -10595,6 +10655,21 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-kpi:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
   background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+/* Drill cue — the chevron reveals on hover/focus so tiles read as links.
+   (Element+class selector: .fa-kpi__head svg would otherwise out-specify the
+   bare class and pin opacity at 0.85.) */
+.fa-kpi__head svg.fa-kpi__go {
+  margin-left: auto;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity var(--duration-fast, 120ms) ease, transform var(--duration-fast, 120ms) ease;
+}
+.fa-kpi:hover .fa-kpi__head svg.fa-kpi__go,
+.fa-kpi:focus-visible .fa-kpi__head svg.fa-kpi__go {
+  opacity: 0.9;
+  transform: translateX(0);
 }
 .fa-kpi--good:hover { border-left-color: var(--color-success); }
 .fa-kpi--warn:hover { border-left-color: var(--color-warning); }
@@ -10638,6 +10713,17 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   background: var(--bg-surface);
+  /* KPI drill-throughs land clear of the sticky breadcrumb. */
+  scroll-margin-top: 64px;
+}
+/* Arriving via a drill-through flashes the section border once, so the eye
+   lands where the jump did. */
+.fa-section:target {
+  animation: fa-target-flash 1100ms var(--ease-standard, ease) 1;
+}
+@keyframes fa-target-flash {
+  0% { border-color: var(--accent-presence); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 25%, transparent); }
+  100% { border-color: var(--border-hairline); box-shadow: 0 0 0 0 transparent; }
 }
 .fa-section__head {
   display: flex;
@@ -10645,11 +10731,19 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   justify-content: space-between;
   gap: 12px;
 }
+/* Counts read as quiet pill chips, matching the app's chip language. */
 .fa-section__head > span {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 .fa-section__title {
   margin: 0;
@@ -10843,13 +10937,18 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-review-list li {
   min-width: 0;
 }
-/* Each review item is a button — selecting it opens a discussion on the topic. */
+/* Each review item is a button — selecting it opens a discussion on the topic.
+   The shared .ui-btn base sets white-space: nowrap (single-line buttons), which
+   made these multi-line items unwrappable: one long title propped the page's
+   scrollWidth open ~1200px at every pane width. Review copy must wrap. */
 .fa-thread-review-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   width: 100%;
   min-width: 0;
+  height: auto;
+  white-space: normal;
   text-align: left;
   padding: 9px;
   border: 1px solid var(--border-hairline);
@@ -11133,7 +11232,10 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 /* Pane-width responsiveness — the analytics view also renders in the narrow
    inspector tab, where viewport media queries never fire. */
 @container fa (max-width: 880px) {
-  .fa-grid { grid-template-columns: 1fr; }
+  /* minmax(0, …), NOT bare 1fr: a grid track's min defaults to the content's
+     min width, so one rigid child (a chart, a long token) props the whole
+     column open and the pane scrolls sideways at every narrow width. */
+  .fa-grid { grid-template-columns: minmax(0, 1fr); }
   .fa-response-factor-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container fa (max-width: 620px) {
@@ -11144,6 +11246,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-header__pulse {
     flex-basis: auto;
     width: 100%;
+    max-width: none;
   }
   .fa-ring {
     width: 86px;
@@ -11164,6 +11267,22 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tsc-head { align-items: flex-start; flex-direction: column; }
   .tsc-scores { grid-template-columns: 1fr; }
+  /* Heal cards stack their action chip under the copy instead of squeezing it. */
+  .fa-heal-card { flex-wrap: wrap; }
+  .fa-heal-card > b { align-self: flex-start; }
+  /* Actionable insight keeps its Review link on its own line when tight. */
+  .fa-insight { flex-wrap: wrap; }
+}
+/* Phone-width pane — the narrowest tier (inspector tab / small handsets). */
+@container fa (max-width: 420px) {
+  .fa-header h1 { font-size: 22px; }
+  .fa-avatar { width: 46px; height: 46px; font-size: 18px; }
+  .fa-kpis { gap: 8px; }
+  .fa-kpi { padding: 10px 12px; }
+  .fa-kpi__value { font-size: 19px; }
+  .fa-response-factor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fa-contract-grid { grid-template-columns: 1fr; }
+  .fa-topbar__updated { display: none; }
 }
 
 /* ── Thread Signal Card ──────────────────────────────────────────────────── */
@@ -11285,6 +11404,20 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .retro-pill { width: max-content; }
   .growth-surface { padding: 16px; }
   .fa-page { padding: 16px; }
+  /* Sticky topbar's edge-to-edge negative margins track the tighter padding. */
+  .fa-topbar { margin: -16px -16px 0; padding: 8px 16px; }
+}
+
+/* Analytics motion is decorative — all of it holds still on request. */
+@media (prefers-reduced-motion: reduce) {
+  .fa-page { scroll-behavior: auto; }
+  .fa-topbar .retro-icon-btn.is-refreshing svg { animation: none; opacity: 0.6; }
+  .fa-section:target {
+    animation: none;
+    border-color: var(--accent-presence);
+  }
+  .fa-kpi:hover { transform: none; }
+  .fa-kpi__head svg.fa-kpi__go { transition: none; }
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top
@@ -12555,19 +12688,19 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 11px;
   padding: 5px 7px;
 }
+/* Single summary line — the old chip strip overflowed sideways. */
 .skill-browser__agent-strip {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  padding-bottom: 1px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.4;
 }
 .skill-browser__directory-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  overflow-x: auto;
-  padding-bottom: 1px;
 }
-.skill-browser__agent-strip span,
 .skill-browser__directory-links a {
   flex: 0 0 auto;
   border: 1px solid var(--border-hairline);
