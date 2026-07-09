@@ -121,7 +121,10 @@ async function typeInEditor(page: Page, text: string) {
 test.describe("grimoire autosave (desktop)", () => {
   test("journal reflections autosave after the debounce — no Save click", async ({ page }) => {
     await gotoGrimoire(page);
-    await page.getByRole("button", { name: /2026-07-01/ }).click();
+    // The rail formats journal dates through datetime prefs ("Jul 1" /
+    // "1 Jul", + year when not current) — match the row by its preview text,
+    // which is stable across pref and clock-year changes.
+    await page.getByRole("button", { name: /Shipped the grimoire\./ }).click();
 
     const posted = page.waitForRequest(
       (req) => req.method() === "POST" && req.url().includes("/api/journal"),
