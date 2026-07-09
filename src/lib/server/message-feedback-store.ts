@@ -20,6 +20,10 @@ export type MessageFeedback = {
   vote: MessageFeedbackVote;
   cleared: boolean; // true when the user toggled the vote back off
   familiarId?: string;
+  /** Effective model id at vote time — seeds per-model quality analytics. */
+  model?: string;
+  /** Runtime/harness id at vote time — seeds per-runtime quality analytics. */
+  runtime?: string;
   at: string;
 };
 
@@ -29,6 +33,8 @@ export type MessageFeedbackInput = {
   vote?: string;
   cleared?: boolean;
   familiarId?: string;
+  model?: string;
+  runtime?: string;
 };
 
 type FeedbackFile = { entries: MessageFeedback[] };
@@ -48,6 +54,12 @@ export function sanitizeMessageFeedback(input: MessageFeedbackInput, at: string)
   };
   if (typeof input.familiarId === "string" && input.familiarId.trim()) {
     fb.familiarId = input.familiarId.trim().slice(0, 120);
+  }
+  if (typeof input.model === "string" && input.model.trim()) {
+    fb.model = input.model.trim().slice(0, 120);
+  }
+  if (typeof input.runtime === "string" && input.runtime.trim()) {
+    fb.runtime = input.runtime.trim().slice(0, 60);
   }
   return fb;
 }

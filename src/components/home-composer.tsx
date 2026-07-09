@@ -51,8 +51,6 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
-import { HomeNeedsYou } from "@/components/home/home-needs-you";
-import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -766,7 +764,7 @@ export function HomeComposer({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_85%,transparent)] md:text-sm"
+          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
           placeholder={PLACEHOLDERS[destination]}
           rows={1}
           value={text}
@@ -846,15 +844,8 @@ export function HomeComposer({
               </div>
             </div>
             <div className="cave-composer-submit-row">
-              <button
-                type="button"
-                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                title="Voice input (coming soon)"
-                aria-label="Voice input"
-                disabled
-              >
-                <Icon name="ph:microphone" width={15} aria-hidden />
-              </button>
+              {/* Voice input is hidden until it actually works — a permanently
+                  disabled mic reads as broken, not "coming soon". */}
               <EnhanceControl
                 state={promptEnhance.state}
                 onEnhance={promptEnhance.enhance}
@@ -957,27 +948,21 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Morning triage — the "needs you" tier + today's report link, fed by
-          the same grouping the Schedules nav badge counts (cave-925w). */}
-      <HomeNeedsYou
-        items={needsYou}
-        onOpenItem={onOpenInboxItem}
-        onOpenSchedules={onOpenSchedules}
-      />
-
-      <HomeSuggestions
-        projectName={selectedProject?.name ?? null}
-        onPick={insertPrompt}
-      />
-
-      {/* Continue + News as an auto-scrolling digest carousel (restored): two
-          horizontal tracks — resume-first recent chats + freshest headlines —
-          that pause on hover and fall back to a manual scroll under
-          prefers-reduced-motion. Width matches the composer above it. */}
+      {/* Continue + News as an auto-scrolling digest carousel: two horizontal
+          tracks only — the chats row folds in the "needs you" attention tier
+          (warning-tinted, leading) and the suggested-prompt quick actions
+          (accent-tinted, trailing) around today's recent chats; the media row
+          keeps the freshest headlines. Both pause on hover and fall back to a
+          manual scroll under prefers-reduced-motion. */}
       <HomeDigestCarousel
         sessions={sessions}
         familiarNameById={familiarNameById}
         onOpenSession={onOpenSession}
+        needsYou={needsYou}
+        onOpenInboxItem={onOpenInboxItem}
+        onOpenSchedules={onOpenSchedules}
+        projectName={selectedProject?.name ?? null}
+        onPickSuggestion={insertPrompt}
       />
       <SaveTemplateModal
         open={saveTemplateSeed !== null}

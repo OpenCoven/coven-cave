@@ -449,8 +449,15 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?ph:microphone[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
-  "Control row: + attach and Chat/Task pills left, voice · enhance · send right; the footer band beneath carries project + runtime/model chip + Options",
+  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
+  "Control row: + attach and Chat/Task pills left, enhance · send right; the footer band beneath carries project + runtime/model chip + Options",
+);
+// Voice input is hidden until it actually works — a permanently disabled mic
+// read as broken chrome (user-reported).
+assert.doesNotMatch(
+  source,
+  /aria-label="Voice input"/,
+  "the non-functional voice input button stays hidden",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────
@@ -700,15 +707,16 @@ assert.match(
   "adding attachments is announced (there is no toast on the success path)",
 );
 
-// ── Composer input visibility (cave-tjcx, user-reported) ────────────────────
+// ── Composer input visibility (cave-tjcx, then user-revised) ────────────────
 // The icon buttons inherited the dim muted cascade while the runtime/host
-// chip labels beside them are --text-primary; the placeholder sat at the 72%
-// muted tier. Icons now carry the primary tier explicitly (in cave-chat.css)
-// and both composers' placeholders render at 85% foreground.
+// chip labels beside them are --text-primary. Icons carry the primary tier
+// explicitly (in cave-chat.css); the placeholders render at 45% foreground so
+// hint text reads as a placeholder, not typed content (user-reported: 85%
+// looked like actual text).
 {
   const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
   assert.match(css, /\.cave-composer-icon-button \{[\s\S]{0,600}?color: var\(--text-primary\);\n\}/, "composer icon buttons carry the primary text tier");
-  assert.match(source, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_85%,transparent\)\]/, "the home placeholder renders at 85% foreground");
+  assert.match(source, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the home placeholder renders at 45% foreground (reads as a hint)");
   const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
-  assert.match(chat, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_85%,transparent\)\]/, "the chat placeholder matches (one composer family)");
+  assert.match(chat, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the chat placeholder matches (one composer family)");
 }

@@ -7,6 +7,7 @@ import {
   type FamiliarAnalyticsData,
   type FamiliarAnalyticsModel,
 } from "@/components/familiar-analytics-data";
+import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PulseBars } from "@/components/ui/pulse-bars";
@@ -632,6 +633,7 @@ export function FamiliarAnalyticsContent({
           <PulseBars
             pulse={model.sessionPulse}
             label={`14-day activity: ${pulseSessions} session${pulseSessions === 1 ? "" : "s"}`}
+            size="lg"
             showTips
           />
           <span className="fa-pulse__meta">
@@ -688,7 +690,83 @@ export function FamiliarAnalyticsContent({
         >
           <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
         </FaSection>
+
+        {/* Model performance — thumbs votes on chat replies, netted per message
+            (last vote wins, toggles withdraw) and bucketed by the model and
+            runtime that produced them. Fed by /api/feedback/message GET via
+            message-feedback-rollup.ts. */}
+        <FaSection
+          id="fa-model-performance"
+          title="Model performance"
+          count={`${model.modelFeedback.total} ${model.modelFeedback.total === 1 ? "vote" : "votes"}`}
+        >
+          <ModelFeedbackSection rollup={model.modelFeedback} />
+        </FaSection>
       </div>
     </>
+  );
+}
+
+// ─── Model performance (thumbs feedback) ─────────────────────────────────────
+
+function FeedbackSliceList({ label, slices }: { label: string; slices: FeedbackSliceStat[] }) {
+  return (
+    <div className="fa-feedback-group">
+      <h3 className="fa-feedback-group__label">{label}</h3>
+      <ul className="fa-feedback-list">
+        {slices.map((slice) => {
+          const pct = Math.round(slice.approval * 100);
+          return (
+            <li key={slice.key} className="fa-feedback-row">
+              <span className="fa-feedback-row__name" title={slice.key}>{slice.key}</span>
+              <span className="fa-feedback-row__bar" aria-hidden>
+                <i style={{ width: `${pct}%` }} />
+              </span>
+              <span className="fa-feedback-row__counts" aria-hidden>
+                <span className="fa-feedback-row__up">
+                  <Icon name="ph:thumbs-up" width={11} aria-hidden />
+                  {slice.up}
+                </span>
+                <span className="fa-feedback-row__down">
+                  <Icon name="ph:thumbs-down" width={11} aria-hidden />
+                  {slice.down}
+                </span>
+              </span>
+              <span className="sr-only">
+                {`${slice.key}: ${slice.up} up, ${slice.down} down — ${pct}% positive`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function ModelFeedbackSection({ rollup }: { rollup: MessageFeedbackRollup }) {
+  if (rollup.total === 0) {
+    return (
+      <EmptyState
+        compact
+        icon="ph:thumbs-up"
+        headline="No votes yet."
+        subtitle="Thumbs a reply in chat to grade its model and runtime here."
+      />
+    );
+  }
+  return (
+    <div className="fa-feedback">
+      {rollup.models.length > 0 ? (
+        <FeedbackSliceList label="Models" slices={rollup.models} />
+      ) : null}
+      {rollup.runtimes.length > 0 ? (
+        <FeedbackSliceList label="Runtimes" slices={rollup.runtimes} />
+      ) : null}
+      {rollup.models.length === 0 && rollup.runtimes.length === 0 ? (
+        <p className="fa-feedback__unstamped">
+          {rollup.up} up · {rollup.down} down — older votes carry no model stamp; new votes bucket automatically.
+        </p>
+      ) : null}
+    </div>
   );
 }

@@ -782,18 +782,22 @@ export function ChatSurface({
           </Group>
         )}
       </div>
-      {/* Collapsed code rail: a slim reopen strip on the right edge. Shown when
-          the rail is available for the active repo session but has been
-          collapsed (or auto-hidden between edit batches). Same desktop-only /
-          wide-enough gate as the mounted rail. */}
+      {/* Collapsed code rail: a full-height reopen rail on the right edge that
+          mirrors the left nav's collapsed "Chats" rail (same width, icon over a
+          vertical label — here "Code"). Shown when the rail is available for
+          the active repo session but has been collapsed (or auto-hidden
+          between edit batches). Same desktop-only / wide-enough gate as the
+          mounted rail. */}
       {rail.available && !rail.open && !isMobile && !paneNarrow && (
         <button
           type="button"
           aria-label="Show code rail"
-          className="workspace-rail-reopen"
+          title="Show code rail"
+          className="workspace-rail-reopen focus-ring"
           onClick={rail.reopen}
         >
-          <Icon name="ph:caret-left" width={13} aria-hidden />
+          <Icon name="ph:sidebar-simple" width={15} aria-hidden />
+          <span className="workspace-rail-reopen__label">Code</span>
         </button>
       )}
       {/* Narrow: the inline 230px right sidebar can't fit beside the chat thread

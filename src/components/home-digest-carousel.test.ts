@@ -23,9 +23,10 @@ assert.match(view, /tabIndex={tabIndex}/, "duplicated cards are removed from the
 // ── Empty/loading: nothing renders until ready, and nothing when no cards ──────
 assert.match(view, /if \(!ready \|\| cards\.length === 0\) return null/, "hidden until there's something to show");
 
-// ── Two rows: media (headlines) is split out onto its own track, away from chats
+// ── Two rows: media (headlines) is split out onto its own track, away from the
+//    chats track (needs-you + summary + sessions + suggestions).
 assert.match(view, /home-digest__track--media/, "media headlines render on their own separate track");
-assert.match(view, /c\.kind === "summary" \|\| c\.kind === "session"/, "chats row = summary + session cards");
+assert.match(view, /c\.kind !== "rss"/, "chats row = every non-rss card (needs + summary + sessions + suggestions)");
 assert.match(view, /c\.kind === "rss"/, "media row = the rss headline cards");
 
 // ── News is opt-out in Settings → General — no inline dismiss on the row ──────

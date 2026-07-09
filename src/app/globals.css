@@ -10494,15 +10494,16 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   gap: 14px;
   min-width: 0;
 }
-/* Hero pulse — 14 days of session activity between identity and the ring. */
+/* Hero pulse — 14 days of session activity between identity and the ring.
+   Grows to soak up the header's slack width; the cap keeps each day
+   bar-shaped rather than slab-shaped on very wide panes. */
 .fa-header__pulse {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  flex: 0 1 300px;
-  min-width: 150px;
-  /* Bars stay bar-shaped: cap how wide each day can stretch. */
-  max-width: 320px;
+  gap: 6px;
+  flex: 1 1 380px;
+  min-width: 200px;
+  max-width: 640px;
 }
 .fa-pulse__label {
   color: var(--text-muted);
@@ -10735,6 +10736,77 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+/* ── Model performance — thumbs-vote rollups per model/runtime. Each row is
+   name · approval bar (success fill over danger track) · up/down counts. */
+.fa-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fa-feedback-group__label {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fa-feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fa-feedback-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(60px, 1.2fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.fa-feedback-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+.fa-feedback-row__bar {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-danger) 28%, var(--bg-base));
+  overflow: hidden;
+}
+.fa-feedback-row__bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--color-success);
+}
+.fa-feedback-row__counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.fa-feedback-row__up,
+.fa-feedback-row__down {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.fa-feedback-row__up { color: var(--color-success); }
+.fa-feedback-row__down { color: var(--color-danger); }
+.fa-feedback__unstamped {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 /* Counts read as quiet pill chips, matching the app's chip language. */
 .fa-section__head > span {
@@ -11270,7 +11342,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-header__pulse {
     flex-basis: auto;
     width: 100%;
+    min-width: 0;
     max-width: none;
+  }
+  /* Full-width stacked layout — trim the hero bars so they stay proportional. */
+  .fa-header__pulse .pulse-bars--lg {
+    height: 48px;
+    gap: 4px;
   }
   .fa-ring {
     width: 86px;

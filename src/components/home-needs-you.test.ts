@@ -1,12 +1,15 @@
 // @ts-nocheck
-// cave-925w — morning triage: Home's "Needs you" strip. Pins the three phases:
-// (1) the strip surfaces the needs-you tier with each row one click from its
-// target, (2) the header links today's /daily-report, (3) the strip and the
-// Schedules nav badge share ONE groupInboxFeed memo so they can never disagree.
+// cave-925w — morning triage, folded into the digest carousel. Pins:
+// (1) the needs-you tier surfaces as warning-tinted cards leading the chats
+// track, each one click from its target, (2) overflow collapses into a
+// "+N more" card that jumps to Schedules, (3) the carousel and the Schedules
+// nav badge share ONE groupInboxFeed memo so they can never disagree, and
+// (4) the quick-action suggestions ride the same track (two carousels total).
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const strip = await readFile(new URL("./home/home-needs-you.tsx", import.meta.url), "utf8");
+const carousel = await readFile(new URL("./home/home-digest-carousel.tsx", import.meta.url), "utf8");
+const digest = await readFile(new URL("../lib/home-digest.ts", import.meta.url), "utf8");
 const composer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
@@ -24,52 +27,51 @@ assert.match(
 );
 assert.match(workspace, /needsYou=\{inboxNeedsYou\}/, "Home receives the same group, not a copy");
 
-// ── Rows reuse existing plumbing, no new stores/APIs ──────────────────────────
+// ── Rows reuse existing plumbing ──────────────────────────────────────────────
 assert.match(
   workspace,
   /needsYou=\{inboxNeedsYou\}\s*onOpenInboxItem=\{openInspectorInboxItem\}/,
-  "strip rows open items through the same handler the bell popover uses",
+  "needs-you cards open items through the same handler the bell popover uses",
 );
 assert.match(
   workspace,
   /onOpenSchedules=\{\(\) => setMode\("inbox"\)\}/,
   "the overflow affordance jumps to the Schedules surface",
 );
-assert.doesNotMatch(strip, /fetch\(/, "the strip fetches nothing — data arrives via props");
 
-// ── Strip behavior ────────────────────────────────────────────────────────────
-assert.match(strip, /const MAX_ROWS = 3/, "at most three rows inline");
-assert.match(strip, /\+\{overflow\} more/, "overflow collapses into a +N more chip");
-assert.match(strip, /onClick=\{onOpenSchedules\}/, "+N more opens Schedules");
-assert.match(strip, /"Waiting on you"/, "response-needed rows say so instead of a timestamp");
-assert.match(strip, /"All clear"/, "an empty tier still answers the question");
-assert.match(strip, /aria-label="Needs you"/, "the strip is a named region for AT");
-assert.match(strip, /useMinuteTick\(\)/, "persistently mounted strip keeps its times honest");
-
-// ── Phase 2: today's report link ──────────────────────────────────────────────
+// ── Folded into the digest carousel (two carousels only) ─────────────────────
 assert.match(
-  strip,
-  /const reportSlug = mounted \? dateSlug\(new Date\(\)\) : null/,
-  "report date sampled after mount (deterministic SSR, same pattern as the greeting)",
+  composer,
+  /<HomeDigestCarousel[\s\S]*?needsYou=\{needsYou\}[\s\S]*?onOpenInboxItem=\{onOpenInboxItem\}[\s\S]*?onOpenSchedules=\{onOpenSchedules\}[\s\S]*?onPickSuggestion=\{insertPrompt\}/,
+  "home forwards the needs-you tier and suggestion insertion into the carousel",
 );
-assert.match(strip, /\/daily-report\/\$\{reportSlug\}/, "header links today's daily report");
+assert.doesNotMatch(composer, /HomeNeedsYou|HomeSuggestions/, "the standalone strips are gone (two carousels only)");
+assert.match(digest, /kind: "needs"/, "the digest builder emits needs-you cards");
+assert.match(digest, /kind: "suggestion"/, "the digest builder emits quick-action suggestion cards");
+assert.match(digest, /"Waiting on you"/, "response-needed cards say so instead of a timestamp");
+assert.match(carousel, /home-digest__card--needs/, "needs-you cards render with their own tint class");
+assert.match(carousel, /home-digest__card--suggestion/, "suggestion cards render with their own tint class");
+assert.match(carousel, /onOpenSchedules\?\.\(\)/, "the +N more card opens Schedules");
+assert.match(carousel, /\+\{card\.count\} more/, "overflow collapses into a +N more card");
+assert.match(carousel, /onOpenInboxItem\?\.\(card\.item\)/, "a needs card opens its inbox item's target");
+assert.match(carousel, /onPickSuggestion\?\.\(card\.prompt\)/, "a suggestion card inserts its prompt (never auto-sends)");
 
-// ── Placement + chrome ────────────────────────────────────────────────────────
-assert.ok(
-  composer.indexOf("<HomeNeedsYou") > composer.indexOf("home-composer-card-wrap") &&
-    composer.indexOf("<HomeNeedsYou") < composer.indexOf("<HomeSuggestions"),
-  "strip sits between the composer card and the suggestion pills",
-);
-assert.match(css, /\.home-needs-you \{/, "strip styles live in the home stylesheet");
+// ── Colors — attention reads warning, quick actions read presence ────────────
 assert.match(
   css,
-  /\.home-needs-you \{ animation-delay: 100ms; \}/,
-  "strip joins the page-load choreography between card and pills",
+  /\.home-digest__card--needs \{[\s\S]{0,300}?--color-warning\) 30%, var\(--border-hairline\)/,
+  "needs tint follows the design-language recipe (30% warning border)",
 );
 assert.match(
   css,
-  /--color-warning\) 30%, var\(--border-hairline\)/,
-  "attention tint follows the design-language recipe (30% border)",
+  /\.home-digest__card--needs \.home-digest__icon \{\s*color: var\(--color-warning\);/,
+  "needs card icon carries the solid warning tint",
 );
+assert.match(
+  css,
+  /\.home-digest__card--suggestion \{[\s\S]{0,300}?--accent-presence\)/,
+  "suggestion cards carry the presence tint",
+);
+assert.doesNotMatch(css, /\.home-needs-you|\.home-suggestion-pill/, "the dead strip CSS is removed");
 
 console.log("home-needs-you.test.ts: ok");

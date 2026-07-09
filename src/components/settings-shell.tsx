@@ -380,7 +380,9 @@ function GeneralSection() {
 
 // News on Home is opt-out here rather than dismissible inline — the carousel
 // row carries no X, so this switch is the one place the choice lives (and it
-// persists across visits, unlike the old per-mount dismiss).
+// persists across visits, unlike the old per-mount dismiss). Rendered as a
+// minimal track/knob switch (user-requested): the row label carries the
+// meaning, so the control itself needs no On/Off text.
 function HomeNewsToggle() {
   const newsEnabled = useHomeNewsEnabled();
   return (
@@ -392,14 +394,11 @@ function HomeNewsToggle() {
         type="button"
         role="switch"
         aria-checked={newsEnabled}
+        aria-label="News headlines"
         onClick={() => writeHomeNewsEnabled(!newsEnabled)}
-        className={`settings-mobile-switch rounded-[var(--radius-control)] border px-3 py-1.5 text-[12px] transition-colors ${
-          newsEnabled
-            ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-            : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
-        }`}
+        className={`settings-switch focus-ring${newsEnabled ? " is-on" : ""}`}
       >
-        {newsEnabled ? "On" : "Off"}
+        <span className="settings-switch__knob" aria-hidden />
       </button>
     </SettingsRow>
   );
@@ -1827,7 +1826,16 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       <SettingsGroup label="Import from tweakcn">
         <div className="flex flex-col gap-2 px-4 py-3">
           <p className="text-[12px] text-[var(--text-muted)]">
-            Paste a tweakcn URL to apply a community theme. Supports{" "}
+            Browse{" "}
+            <button
+              type="button"
+              className="focus-ring rounded underline decoration-dotted underline-offset-2 text-[var(--accent-presence)] hover:text-[var(--text-primary)] transition-colors"
+              onClick={() => openExternalUrl("https://tweakcn.com/editor/theme")}
+              title="Open tweakcn in the in-app browser"
+            >
+              tweakcn.com
+            </button>{" "}
+            in the in-app browser, then paste a theme URL to apply it. Supports{" "}
             <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
               /themes/&#123;id&#125;
             </code>
@@ -1842,6 +1850,15 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
             .
           </p>
           <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => openExternalUrl("https://tweakcn.com/editor/theme")}
+              leadingIcon="ph:globe"
+              title="Browse tweakcn themes in the in-app browser"
+            >
+              Browse
+            </Button>
             <input
               type="url"
               value={importUrl}

@@ -5370,20 +5370,23 @@ details[open] > .cave-tool-summary::before {
 /* Collapsed code rail — a slim clickable strip on the surface's right edge
    that reopens the rail. Absolutely positioned so it overlays the chat gutter
    without reserving layout width. */
+/* Full-height reopen rail on the chat surface's right edge — mirrors the left
+   nav's collapsed rail (.chat-sidebar__rail): same 56px thickness, icon over a
+   vertical uppercase label ("Code"), transparent until hover. */
 .workspace-rail-reopen {
   position: absolute;
-  top: 50%;
+  top: 0;
   right: 0;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 72px;
-  padding: 0;
-  border: 1px solid var(--border-hairline);
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-  background: var(--bg-raised);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 56px;
+  padding: 12px 0;
+  border: 0;
+  border-left: 1px solid var(--border-hairline);
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   z-index: 40;
@@ -5393,5 +5396,12 @@ details[open] > .cave-tool-summary::before {
 }
 .workspace-rail-reopen:hover {
   color: var(--text-primary);
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
+}
+.workspace-rail-reopen__label {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }

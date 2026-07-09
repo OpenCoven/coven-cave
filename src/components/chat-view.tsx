@@ -3,6 +3,7 @@
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
+import type { FeedbackContext } from "@/lib/message-feedback";
 import { RichText } from "@/components/rich-text";
 import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
@@ -2887,6 +2888,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ? modelState.effectiveModel
       : composerModelOptions[0]?.id ?? "";
 
+  // Thumbs votes are stamped with what produced the response (user-requested)
+  // so the familiar analytics can aggregate per-model / per-runtime quality —
+  // see /api/feedback/message GET + message-feedback-rollup.ts.
+  const feedbackContext = useMemo<FeedbackContext>(
+    () => ({
+      familiarId: familiar.id,
+      model:
+        modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : visibleModelId(session?.model ?? familiar.model ?? undefined, familiar.harness ?? undefined) ?? undefined,
+      runtime: modelHarness,
+    }),
+    [familiar.harness, familiar.id, familiar.model, modelHarness, modelState?.effectiveModel, session?.model],
+  );
+
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
   // per root from /api/project/files and fuzzy-filtered client-side. Mentions
@@ -4934,6 +4950,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onReply={replyFor(t)}
                     onOpenUrl={onOpenUrl}
                     onSuggestion={(sug) => void send(sug)}
+                    feedbackContext={feedbackContext}
                     expanded={expandedAvatarTurnId === t.id}
                     onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
                     branchNav={singleBranchNav}
@@ -4981,6 +4998,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onReply={replyFor(t)}
                         onOpenUrl={onOpenUrl}
                         onSuggestion={(sug) => void send(sug)}
+                        feedbackContext={feedbackContext}
                         expanded={expandedAvatarTurnId === t.id}
                         onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
                         branchNav={groupBranchNav}
@@ -5392,7 +5410,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               rows={1}
               inputMode="text"
               enterKeyHint="send"
-              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_85%,transparent)] md:text-sm"
+              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
               aria-label="Message"
               aria-autocomplete="list"
               aria-haspopup="listbox"
@@ -5637,6 +5655,7 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onSuggestion,
+  feedbackContext,
   branchNav,
 }: {
   turn: Turn;
@@ -5656,6 +5675,8 @@ function TurnRowImpl({
   onOpenUrl?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
+  /** Model/runtime stamp for thumbs votes (per-model analytics). */
+  feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
 }) {
@@ -5918,7 +5939,7 @@ function TurnRowImpl({
                   isError={turn.error}
                   label={familiar.display_name}
                   messageId={turn.id}
-                  feedbackContext={{ familiarId: familiar.id }}
+                  feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
                   onRegenerate={onRegenerate}
                   onReply={onReply}
                   onOpenUrl={onOpenUrl}
@@ -6526,7 +6547,12 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     // branches are added); skip closure identity — callbacks are recreated on
     // every parent render and would defeat memoization.
     prev.branchNav?.index === next.branchNav?.index &&
-    prev.branchNav?.total === next.branchNav?.total
+    prev.branchNav?.total === next.branchNav?.total &&
+    // Feedback stamp: compare by value — the memoized context object gets a
+    // fresh identity when the model/runtime actually changes.
+    prev.feedbackContext?.familiarId === next.feedbackContext?.familiarId &&
+    prev.feedbackContext?.model === next.feedbackContext?.model &&
+    prev.feedbackContext?.runtime === next.feedbackContext?.runtime
   );
 }
 

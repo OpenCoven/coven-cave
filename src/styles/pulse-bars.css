@@ -38,3 +38,8 @@
 .pulse-bars__day.is-empty i {
   background: color-mix(in oklch, var(--foreground) 16%, transparent);
 }
+/* Tips variant — each day carries a native title tooltip, so give the hover
+   target a visible affordance instead of leaving the tip undiscoverable. */
+.pulse-bars--tips .pulse-bars__day:hover {
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+}
