@@ -7,6 +7,21 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.161] - 2026-07-09
+
+> 📱 **Threads that stay yours** — the iOS app stops flooding its Threads list with journal-generated runs, matching the web. The task loop closes on the board with live status chips and one-click Mark done, harness failures grow inline fix actions, and Claude Fable 5 joins the Copilot model menu.
+
+Patch release on top of v0.0.160.
+
+### Fixes
+- **iOS: journal/generated runs stay out of familiar thread lists** (#2806, cave-48aa). The Swift session model now carries `origin`/`generated` and filters with the same rule as the web (#2798) — generated flag, hidden origins including `journal`, and the legacy truncated-title fallback.
+- **Settings: typography controls pin to one standard 28px height** (#2809).
+
+### Features
+- **Board + chat: the task loop closes** — live session status on card chips and one-click Mark done from a settled chat (#2805, cave-32ks).
+- **Chat + board: inline fix actions for harness/runtime failures** (#2807, cave-noox).
+- **Models: Claude Fable 5 joins the Copilot model menu** (#2808, cave-ufvy).
+
 ## [0.0.160] - 2026-07-08
 
 > 📖 **Responses worth reading** — the chat's Expand view becomes a real reading surface, tables read as rows instead of spreadsheets, inline code stops shouting, and mermaid diagrams finally wear the theme — on a drawing canvas, inline and fullscreen. Plus a backdrop vibe for Home + Chat and journal-run chats that tidy themselves away.
