@@ -108,4 +108,12 @@ assert.match(logo, /fill="currentColor"[\s\S]{0,80}?aria-hidden/, "brand SVGs in
 assert.match(css, /\.cave-runtime-chip__logo \{[\s\S]*?color: var\(--accent-presence\);/, "the runtime mark uses the presence accent token");
 assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "chip styles stay on semantic tokens — no hardcoded hex");
 
+// ── Standardized radius ──────────────────────────────────────────────────────
+// The chip sits between fully round icon buttons (attach/voice/options/send
+// are rounded-full circles), so it must be a pill — the squarer
+// --radius-control made it read as a different control family.
+assert.match(css, /\.cave-composer-runtime-chip \{[\s\S]*?border-radius: 999px;/, "the runtime chip is a pill, matching the round composer icon buttons");
+const hostCss = readFileSync(new URL("../styles/composer-host-chip.css", import.meta.url), "utf8");
+assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: 999px;/, "the host chip matches the same pill radius");
+
 console.log("composer-runtime-chip.test.ts: ok");
