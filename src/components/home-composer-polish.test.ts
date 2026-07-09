@@ -63,7 +63,7 @@ assert.match(
 );
 assert.match(
   source,
-  /cave-composer-submit-row[\s\S]*?aria-label="Voice input"[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
+  /cave-composer-submit-row[\s\S]*?aria-label="Voice input"[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"/,
   "the submit cluster runs voice · enhance · send",
 );
 assert.match(
@@ -113,16 +113,18 @@ assert.match(
   /\.hc-drop-overlay\s*\{[\s\S]*?border-radius:\s*inherit/,
   "drop overlay inherits the panel radius",
 );
-// Enhance is a chat-parity icon button (shared .focus-ring focus treatment).
+// Enhance is the shared control + strip (cave-b6c2) — the icon-button/focus
+// treatment and the role="status" revert strip are pinned once in
+// composer-enhance.test.ts; here we hold that home mounts both.
 assert.match(
   source,
-  /className="cave-composer-icon-button focus-ring[\s\S]{0,300}?aria-label="Enhance prompt"/,
-  "enhance is a chat-style icon button with the shared focus ring",
+  /<EnhanceControl[\s\S]{0,200}?state=\{promptEnhance\.state\}/,
+  "enhance is the shared sparkle control (chat parity by construction)",
 );
 assert.match(
   source,
-  /role="status"[\s\S]*?Prompt improved[\s\S]*?aria-label="Revert prompt enhancement"/,
-  "a post-enhance status strip offers a one-tap revert (chat parity)",
+  /<EnhanceStrip[\s\S]{0,200}?state=\{promptEnhance\.state\}/,
+  "the shared status strip offers apply/revert (chat parity by construction)",
 );
 assert.match(
   css,

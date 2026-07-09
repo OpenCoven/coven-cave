@@ -137,7 +137,8 @@ import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
-import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 
 type ToolEvent = {
   id: string;
@@ -2893,8 +2894,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Paths the user picked this draft — sent alongside the prompt so the
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
-  const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [enhanceOriginal, setEnhanceOriginal] = useState<string | null>(null);
+  // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
+  // rewrite from this thread's familiar (rule engine as offline fallback) and
+  // owns the race-safe apply/suggest/revert lifecycle.
+  const promptEnhance = usePromptEnhance({
+    draft: input,
+    setDraft: setInput,
+    familiarId: familiar.id,
+    mode: activeProjectRoot ? "code" : "chat",
+    context: {
+      activeProject: activeProjectRoot
+        ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
+        : null,
+      selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
+      recentThreadTitle: session?.title ?? null,
+    },
+    disabled: busy,
+  });
   const [mentionIndex, setMentionIndex] = useState<{ root: string; repo: boolean; files: string[] } | null>(null);
   const mentionListboxId = useId();
   const activeMentionOptionRef = useRef<HTMLButtonElement | null>(null);
@@ -4012,31 +4028,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }
 
-  function enhancePrompt() {
-    const draft = input.trim();
-    if (!draft || busy || enhanceStatus === "loading") return;
-    setEnhanceOriginal(input);
-    setEnhanceStatus("loading");
-    const result = buildPromptEnhancement({
-      draft: input,
-      mode: activeProjectRoot ? "code" : "chat",
-      context: {
-        activeProject: activeProjectRoot
-          ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
-          : null,
-        selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
-        recentThreadTitle: session?.title ?? null,
-      },
-    });
-    if (!result.ok || !result.enhanced.trim()) {
-      setEnhanceStatus("error");
-      return;
-    }
-    setInput(result.enhanced);
-    setEnhanceStatus("success");
-    window.setTimeout(() => inputRef.current?.focus(), 0);
-  }
-
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
   // the user can revise and send it as a NEW message — append semantics, no
   // truncation/forking (that's D6-03: the harness session keeps its own
@@ -4166,11 +4157,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     clearDraft();
     clearAttachments();
     setMentionedFiles([]);
-    // The enhance "Prompt improved / Revert" strip belongs to the draft just
-    // sent — reset it so it doesn't linger over the now-empty composer and let
-    // Revert repopulate the composer with the message the user already sent.
-    setEnhanceStatus("idle");
-    setEnhanceOriginal(null);
+    // The enhance strip belongs to the draft just sent — reset it so it
+    // doesn't linger over the now-empty composer and let Revert repopulate
+    // the composer with the message the user already sent.
+    promptEnhance.reset();
     // Branching: consume a pending branch parent set by editTurnInComposer.
     // Read-and-clear atomically so it only applies to THIS send.
     const branchParent = pendingBranchParent;
@@ -4599,8 +4589,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setReplyTarget(null);
     clearAttachments();
     setPendingBranchParent(undefined);
-    setEnhanceStatus("idle");
-    setEnhanceOriginal(null);
+    promptEnhance.reset();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
@@ -5403,39 +5392,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
-            {enhanceStatus !== "idle" ? (
-              <div className="flex items-center gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-1.5 text-[11px] text-[var(--text-muted)]" role="status">
-                <Icon
-                  name={enhanceStatus === "loading" ? "ph:arrow-clockwise" : enhanceStatus === "success" ? "ph:check" : "ph:warning-circle"}
-                  width={12}
-                  className={enhanceStatus === "loading" ? "animate-spin" : ""}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  {enhanceStatus === "loading"
-                    ? "Enhancing prompt..."
-                    : enhanceStatus === "success"
-                      ? "Prompt improved"
-                      : "Prompt enhancement failed"}
-                </span>
-                {enhanceStatus === "success" && enhanceOriginal !== null ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInput(enhanceOriginal);
-                      setEnhanceOriginal(null);
-                      setEnhanceStatus("idle");
-                      inputRef.current?.focus();
-                    }}
-                    className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                    aria-label="Revert prompt enhancement"
-                    title="Revert prompt enhancement"
-                  >
-                    Revert
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+            {/* Enhance status strip (shared): streaming preview, apply/dismiss
+                for late arrivals, one-tap revert after an in-place apply. */}
+            <EnhanceStrip
+              state={promptEnhance.state}
+              onApply={promptEnhance.apply}
+              onDismiss={promptEnhance.dismiss}
+              onRevert={promptEnhance.revert}
+              onCancel={promptEnhance.cancel}
+            />
             <div className="cave-composer-controls">
               <input
                 ref={fileInputRef}
@@ -5531,16 +5496,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   />
                 </div>
                 <div className="cave-composer-submit-row">
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                    title="Enhance prompt"
-                    aria-label="Enhance prompt"
-                    disabled={busy || enhanceStatus === "loading" || !input.trim()}
-                    onClick={() => void enhancePrompt()}
-                  >
-                    <Icon name="ph:sparkle" width={13} aria-hidden />
-                  </button>
+                  <EnhanceControl
+                    state={promptEnhance.state}
+                    onEnhance={promptEnhance.enhance}
+                    onCancel={promptEnhance.cancel}
+                    disabled={busy || !input.trim()}
+                  />
                   {busy ? (
                     <button
                       type="button"

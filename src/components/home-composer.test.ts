@@ -185,7 +185,7 @@ assert.match(
 
 assert.match(
   source,
-  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); clearAttachments\(\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
+  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); clearAttachments\(\); promptEnhance\.reset\(\); onNavigateToBoard\(\); \}/,
   "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
 );
 
@@ -449,7 +449,7 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?ph:microphone[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
+  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?ph:microphone[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
   "Control row: + attach and Chat/Task pills left, voice · enhance · send right; the footer band beneath carries project + runtime/model chip + Options",
 );
 
@@ -559,11 +559,18 @@ assert.match(
   /initialAttachments: outgoing/,
   "staged attachments are threaded into the started chat",
 );
-// Enhance button removed from toolbar; logic stays for potential future use.
+// Enhance is the shared model-backed hook (cave-b6c2) — home mounts it with
+// destination-aware mode + attachment context; the local rule engine survives
+// only as the hook's offline fallback.
 assert.match(
   source,
-  /import \{ buildPromptEnhancement \} from "@\/lib\/prompt-enhancer"/,
-  "Enhance uses the shared pure prompt enhancer",
+  /import \{ usePromptEnhance \} from "@\/lib\/use-prompt-enhance"/,
+  "Enhance uses the shared model-backed enhance hook",
+);
+assert.match(
+  source,
+  /familiarId: selectedFamiliarId \|\| null/,
+  "Enhance streams through the familiar the selector actually shows",
 );
 assert.doesNotMatch(
   source,
@@ -580,7 +587,11 @@ assert.match(
   /selectedFiles: attachments\.map\(\(attachment\) => attachment\.name\)/,
   "Enhance should include staged attachment names as file context",
 );
-// Enhance undo UI removed from toolbar; revertEnhance callback remains in code.
+assert.match(
+  source,
+  /<EnhanceStrip[\s\S]*?state=\{promptEnhance\.state\}/,
+  "the shared enhance strip renders the loading/suggested/applied/error states",
+);
 
 // ── Drag-and-drop attachments ───────────────────────────────────────────────
 // The staging state machine (cap, dragDepth-counted overlay, files-win paste)
@@ -681,11 +692,8 @@ assert.match(
   /const \{ announce \} = useAnnouncer\(\)/,
   "HomeComposer wires the shared live-region announcer",
 );
-assert.match(
-  source,
-  /setText\(result\.enhanced\);\s*announce\("Prompt enhanced", "polite"\)/,
-  "a successful enhance is announced (the textarea swap is otherwise silent to AT)",
-);
+// Enhance announcements live in the shared hook now — use-prompt-enhance.test.ts
+// pins them (apply, suggest, offline, revert).
 assert.match(
   source,
   /onAdded: \(count\) => announce\(`Attached \$\{count\} file/,

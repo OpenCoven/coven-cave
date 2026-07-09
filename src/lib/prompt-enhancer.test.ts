@@ -1,8 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  ENHANCE_INTENTS,
+  buildEnhanceInstruction,
   buildPromptEnhancement,
+  extractEnhancedPrompt,
   normalizeEnhanceMode,
+  settleEnhance,
 } from "./prompt-enhancer.ts";
 
 const code = buildPromptEnhancement({
@@ -68,5 +72,63 @@ const empty = buildPromptEnhancement({ draft: "   ", mode: "chat" });
 assert.equal(empty.ok, false, "empty drafts are rejected");
 assert.equal(normalizeEnhanceMode("task"), "task", "task mode should normalize explicitly");
 assert.equal(normalizeEnhanceMode("made-up"), "chat", "unknown modes fall back to chat");
+
+// ── Model-backed protocol (cave-b6c2) ────────────────────────────────────────
+
+// Instruction builder: a rewrite directive, never an answer request.
+const instruction = buildEnhanceInstruction({
+  draft: "fix login bug",
+  mode: "code",
+  intent: "criteria",
+  context: { activeProject: { name: "Cave", root: "/repo/cave" }, selectedFiles: ["src/auth/login.ts"] },
+});
+assert.match(instruction, /Rewrite the user's draft prompt/, "instruction frames the model as a prompt rewriter");
+assert.match(instruction, /Do not answer the prompt/, "instruction forbids answering instead of rewriting");
+assert.match(instruction, /Acceptance criteria/, "the picked intent's goal rides into the instruction");
+assert.match(instruction, /Code request:/, "the composer mode shapes the rewrite expectations");
+assert.match(instruction, /Current project: Cave \(\/repo\/cave\)/, "composer context reuses the shared contextLines block");
+assert.match(instruction, /<enhanced><\/enhanced>/, "output contract demands the tag frame");
+assert.match(instruction, /fix login bug/, "the draft itself is embedded verbatim");
+
+const autoInstruction = buildEnhanceInstruction({ draft: "x", mode: "chat", intent: "auto" });
+assert.match(autoInstruction, /Improve the prompt however helps most/, "auto intent uses the smart-enhance goal");
+assert.equal(ENHANCE_INTENTS[0].id, "auto", "smart enhance leads the intent menu");
+assert.equal(new Set(ENHANCE_INTENTS.map((i) => i.id)).size, ENHANCE_INTENTS.length, "intent ids are unique");
+
+// Extractor: streaming-safe framing.
+assert.deepEqual(
+  extractEnhancedPrompt("<enhanced>Do the thing.</enhanced>"),
+  { partial: "Do the thing.", complete: true },
+  "a closed tag pair extracts the body and marks completion",
+);
+assert.deepEqual(
+  extractEnhancedPrompt("<enhanced>Do the thing"),
+  { partial: "Do the thing", complete: false },
+  "an unclosed tag streams the body so far",
+);
+assert.deepEqual(
+  extractEnhancedPrompt("<enhanced>Do the thing.</enha"),
+  { partial: "Do the thing.", complete: false },
+  "a trailing partial closing tag is trimmed so tag noise never renders",
+);
+assert.deepEqual(
+  extractEnhancedPrompt("<enh"),
+  { partial: "", complete: false },
+  "a leading partial opening tag renders nothing until it resolves",
+);
+assert.deepEqual(
+  extractEnhancedPrompt("Do the thing."),
+  { partial: "Do the thing.", complete: false },
+  "a tagless response is used as-is (models occasionally ignore the wrapping)",
+);
+assert.deepEqual(
+  extractEnhancedPrompt("```\nDo the thing.\n```"),
+  { partial: "Do the thing.", complete: false },
+  "stray code fences around a tagless response are stripped",
+);
+
+// Race rule: only a byte-identical draft applies in place.
+assert.equal(settleEnhance("draft", "draft"), "apply", "an unchanged draft applies in place");
+assert.equal(settleEnhance("draft", "draft edited"), "suggest", "a changed draft downgrades to a suggestion");
 
 console.log("prompt-enhancer.test.ts: ok");
