@@ -194,3 +194,12 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => discussReviewItem\(familiarId, item\)\}/, "each review item is a clickable button");
   });
 });
+
+describe("thread-signals metric labeling", () => {
+  it("uses plain labels + units for the score bars and context pills", () => {
+    assert.match(source, /label="Avg file-finding"/, "jargon 'file locatability' is renamed to plain 'file-finding'");
+    assert.doesNotMatch(source, /file locatability/, "the 'locatability' jargon is gone from the UI label");
+    assert.match(source, /CONTEXT_PRESSURE_HINT/, "context-pressure pills carry a plain-language legend tooltip");
+    assert.match(source, /<span className="fa-metric-unit">\/100<\/span>/, "score bars show their /100 unit");
+  });
+});

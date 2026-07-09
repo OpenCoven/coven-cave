@@ -17,7 +17,7 @@ import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
-import type { ConfidenceScore } from "@/lib/familiar-confidence";
+import type { ConfidenceFactor, ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
@@ -120,22 +120,80 @@ function FaSection({
   );
 }
 
+// Plain-language name + one-sentence meaning for each confidence factor, keyed by
+// the raw `label` from familiar-confidence.ts. Presentation-only — the score math
+// is unchanged. Falls back to a de-underscored label for any unknown factor.
+const CONFIDENCE_FACTOR_COPY: Record<string, { name: string; desc: string }> = {
+  contract_score: {
+    name: "Identity contract",
+    desc: "Share of this familiar's identity-contract checks currently passing.",
+  },
+  accept_rate: {
+    name: "Retro acceptance",
+    desc: "Share of self-improvement (retro) runs you accepted. Needs at least 3 runs to count.",
+  },
+  freshness_score: {
+    name: "Memory freshness",
+    desc: "How current this familiar's memory is — fresh, aging, or stale.",
+  },
+  activity_score: {
+    name: "Recent activity",
+    desc: "Sessions in the last 7 days (capped at 10).",
+  },
+};
+
+function confidenceFactorCopy(label: string): { name: string; desc: string } {
+  return CONFIDENCE_FACTOR_COPY[label] ?? { name: label.replaceAll("_", " "), desc: "" };
+}
+
+/** The most points a factor can add to the 0–100 score = its weight × 100. */
+function maxContribution(factor: ConfidenceFactor): number {
+  return Math.round(factor.weight * 100);
+}
+
 const ConfidenceBreakdown = memo(function ConfidenceBreakdown({ confidence }: { confidence: ConfidenceScore }) {
+  // Scale each factor's bar TRACK to its weight (relative to the heaviest factor),
+  // so the filled length ∝ contribution (value × weight) — i.e. the factor's real
+  // influence on the score, not its raw value. A long half-full bar (high weight)
+  // clearly outweighs a short full bar (low weight).
+  const maxWeight = Math.max(0.0001, ...confidence.factors.map((factor) => factor.weight));
   return (
     <FaSection id="fa-confidence" title="Confidence breakdown" count={`${confidence.factors.length} factors`}>
       <div className="fa-factor-list">
-        {confidence.factors.map((factor) => (
-          <div key={factor.label} className="fa-factor">
-            <div className="fa-factor__meta">
-              <b>{factor.label.replaceAll("_", " ")}</b>
-              <span>{Math.round(factor.value)} × {factor.weight.toFixed(2)}</span>
+        {confidence.factors.map((factor) => {
+          const copy = confidenceFactorCopy(factor.label);
+          const max = maxContribution(factor);
+          const trackPct = Math.round((factor.weight / maxWeight) * 100);
+          const tip = `${copy.desc} Worth up to ${max} of 100 points.`.trim();
+          return (
+            <div key={factor.label} className="fa-factor">
+              <div className="fa-factor__meta">
+                <b>
+                  {copy.name}
+                  {copy.desc ? (
+                    <button type="button" className="fa-factor-info" title={tip} aria-label={`${copy.name}: ${tip}`}>
+                      <Icon name="ph:info" width={12} aria-hidden />
+                    </button>
+                  ) : null}
+                </b>
+                <span>
+                  {Math.round(factor.value)}<span className="fa-metric-unit">/100</span>
+                </span>
+              </div>
+              <div
+                className="fa-factor-bar"
+                style={{ width: `${trackPct}%` }}
+                aria-label={`${copy.name}: earned ${factor.contribution.toFixed(1)} of ${max} points`}
+              >
+                <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, factor.value))}%` }} />
+              </div>
+              <small className="fa-factor-earned">
+                <b>{factor.contribution.toFixed(1)}</b>
+                <span className="fa-metric-unit"> / {max} pts</span>
+              </small>
             </div>
-            <div className="fa-factor-bar" aria-label={`${factor.label} contributes ${factor.contribution.toFixed(1)}`}>
-              <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, factor.value))}%` }} />
-            </div>
-            <small>{factor.contribution.toFixed(1)} points</small>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </FaSection>
   );
@@ -282,17 +340,21 @@ const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
         </figure>
       ) : null}
       <div className="fa-thread-score-grid">
-        <ScoreTile label="Avg confidence" value={rollup.averageConfidence} />
-        <ScoreTile label="Low confidence" value={rollup.lowConfidenceCount} />
-        <ScoreTile label="Events" value={rollup.eventCount} />
-        <ScoreTile label="Latest" value={rollup.newestEvent?.overallConfidence ?? 0} />
+        <ScoreTile label="Avg confidence" value={rollup.averageConfidence} unit="/100" hint="Average self-reported confidence across responses, out of 100." />
+        <ScoreTile label="Low-confidence responses" value={rollup.lowConfidenceCount} hint="Responses that scored below 60 / 100." />
+        <ScoreTile label="Events" value={rollup.eventCount} hint="Self-report events in this range." />
+        <ScoreTile label="Latest" value={rollup.newestEvent?.overallConfidence ?? 0} unit="/100" hint="The most recent response's confidence, out of 100." />
       </div>
-      <div className="fa-response-factor-grid" aria-label="Response confidence factor averages">
+      <div className="fa-response-factor-grid" aria-label="Response confidence factor averages, each out of 100">
         {RESPONSE_CONFIDENCE_FACTOR_KEYS.map((key) => (
-          <div key={key} className="fa-response-factor">
+          <div
+            key={key}
+            className="fa-response-factor"
+            title={`${RESPONSE_CONFIDENCE_LABELS[key]} — weighted average across responses, out of 100.`}
+          >
             <span>{RESPONSE_CONFIDENCE_LABELS[key]}</span>
-            <b>{rollup.factorAverages[key]}</b>
-            <div className="fa-factor-bar" aria-label={`${RESPONSE_CONFIDENCE_LABELS[key]} ${rollup.factorAverages[key]}`}>
+            <b>{rollup.factorAverages[key]}<span className="fa-metric-unit">/100</span></b>
+            <div className="fa-factor-bar" aria-label={`${RESPONSE_CONFIDENCE_LABELS[key]} ${rollup.factorAverages[key]} of 100`}>
               <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, rollup.factorAverages[key]))}%` }} />
             </div>
           </div>
@@ -309,12 +371,15 @@ const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
   );
 });
 
-function ScoreTile({ label, value }: { label: string; value: number }) {
+function ScoreTile({ label, value, unit, hint }: { label: string; value: number; unit?: string; hint?: string }) {
   return (
-    <div className="fa-thread-score">
+    <div className="fa-thread-score" title={hint}>
       <div>
         <span>{label}</span>
-        <b>{value}</b>
+        <b>
+          {value}
+          {unit ? <span className="fa-metric-unit">{unit}</span> : null}
+        </b>
       </div>
     </div>
   );

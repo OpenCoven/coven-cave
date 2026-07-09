@@ -10967,7 +10967,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-factor__meta b {
   display: block;
   font-size: 13px;
-  text-transform: capitalize;
+  /* Names are curated (see CONFIDENCE_FACTOR_COPY) — no title-casing. */
+  text-transform: none;
 }
 .fa-factor__meta span,
 .fa-factor small {
@@ -10978,6 +10979,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   position: relative;
   overflow: hidden;
   height: 10px;
+  /* Confidence-breakdown bars set an inline width to scale the track to the
+     factor's weight; this floor keeps a low-weight (e.g. 10%) track visible. */
+  min-width: 44px;
   border-radius: 999px;
   background: var(--bg-raised);
 }
@@ -10986,6 +10990,39 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   inset: 0 auto 0 0;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent-presence), var(--color-success));
+}
+/* Inline info affordance (native title tooltip) beside a factor name. */
+.fa-factor-info {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: help;
+  vertical-align: middle;
+}
+.fa-factor-info:hover,
+.fa-factor-info:focus-visible {
+  color: var(--text-secondary);
+}
+/* Muted unit suffix ("/100", "/ N pts") reused across tiles, factor grid, bars. */
+.fa-metric-unit {
+  margin-left: 1px;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+/* Earned-points column of a confidence factor row. */
+.fa-factor-earned {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fa-factor-earned b {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 .fa-heal-card {
   display: flex;

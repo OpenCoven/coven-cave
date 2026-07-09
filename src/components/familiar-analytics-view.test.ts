@@ -478,3 +478,31 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(globals, /@container fa \(max-width: 420px\)/, "a phone-width container tier hardens the narrowest panes");
   });
 });
+
+describe("confidence breakdown + metric labeling", () => {
+  it("represents each confidence factor by its influence, with plain labels + units", () => {
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    // Human names + descriptions replace the raw snake_case factor keys.
+    assert.match(source, /CONFIDENCE_FACTOR_COPY/, "factors get plain-language names + descriptions");
+    assert.match(source, /name: "Identity contract"/, "contract_score reads as 'Identity contract'");
+    assert.match(source, /name: "Retro acceptance"/, "accept_rate reads as 'Retro acceptance'");
+    // Bar TRACK scales to weight → filled length reflects contribution (influence), not raw value.
+    assert.match(source, /factor\.weight \/ maxWeight/, "the factor bar track scales to the factor's weight");
+    assert.match(source, /function maxContribution/, "max contribution (weight×100) is derived per factor");
+    assert.match(source, /of \$\{max\} points/, "the bar aria-label states earned-of-max points");
+    assert.match(source, /fa-factor-earned/, "each row shows earned points of its max");
+    // Native tooltip carries the plain-language meaning.
+    assert.match(source, /className="fa-factor-info"/, "an info affordance explains each factor");
+    // Muted '/100' unit marks 0–100 scores; min-width keeps low-weight tracks visible.
+    assert.match(source, /className="fa-metric-unit"/, "0–100 scores carry a muted unit suffix");
+    assert.match(globals, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
+    assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the factor bar has a min-width floor for low-weight tracks");
+  });
+
+  it("labels the response-confidence tiles + factor grid clearly", () => {
+    // 'Low confidence' was a COUNT mislabeled as a score → now unambiguous.
+    assert.match(source, /label="Low-confidence responses"/, "the low-confidence COUNT is labeled as responses, not a score");
+    assert.match(source, /label="Avg confidence" value=\{rollup\.averageConfidence\} unit="\/100"/, "avg confidence shows its /100 unit");
+    assert.match(source, /factorAverages\[key\]\}<span className="fa-metric-unit">\/100<\/span>/, "response factor averages show /100");
+  });
+});

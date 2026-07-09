@@ -48,14 +48,25 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
     <div className="fa-thread-score">
       <div>
         <span>{label}</span>
-        <b>{value}</b>
+        <b>
+          {value}
+          <span className="fa-metric-unit">/100</span>
+        </b>
       </div>
-      <div className="fa-factor-bar" aria-label={`${label} ${value}`}>
+      <div className="fa-factor-bar" aria-label={`${label} ${value} of 100`}>
         <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
       </div>
     </div>
   );
 }
+
+// Plain-language explanation of each context-pressure bucket, for the pill tooltip.
+const CONTEXT_PRESSURE_HINT: Record<(typeof CONTEXTS)[number], string> = {
+  adequate: "Comfortable context headroom.",
+  tight: "Context was near the limit.",
+  excess: "More context than needed — wasted budget.",
+  critical: "Ran out of context.",
+};
 
 function latestReportDate(reports: ThreadSelfReport[]): string {
   const latest = [...reports].sort((a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime())[0];
@@ -494,11 +505,15 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
         <ScoreBar label="Avg confidence" value={aggregate.averageConfidence} />
         <ScoreBar label="Avg tool reliability" value={aggregate.averageToolReliability} />
         <ScoreBar label="Avg memory recall" value={aggregate.averageMemoryRecall} />
-        <ScoreBar label="Avg file locatability" value={aggregate.averageFileLocatability} />
+        <ScoreBar label="Avg file-finding" value={aggregate.averageFileLocatability} />
       </div>
       <div className="fa-thread-contexts" aria-label="Context pressure distribution">
         {CONTEXTS.map((pressure) => (
-          <span key={pressure} className={`fa-thread-pill fa-thread-pill--${pressure}`}>
+          <span
+            key={pressure}
+            className={`fa-thread-pill fa-thread-pill--${pressure}`}
+            title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
+          >
             {pressure} <b>{aggregate.contextCounts[pressure]}</b>
           </span>
         ))}
