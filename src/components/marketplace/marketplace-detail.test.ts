@@ -74,7 +74,7 @@ assert.match(route, /pluginDir\(name\)/, "the scan path is built from the resolv
 const install = await readFile(new URL("../../app/api/marketplace/install/route.ts", import.meta.url), "utf8");
 assert.match(
   install,
-  /import \{ resolveCatalogName \} from "@\/lib\/server\/marketplace-catalog-resolve"/,
+  /import \{ resolveCatalogPlugin \} from "@\/lib\/server\/marketplace-catalog-resolve"/,
   "install route reuses the extracted resolver (single allowlist source)",
 );
 assert.doesNotMatch(install, /async function resolveCatalogName/, "install route no longer defines its own resolver copy");

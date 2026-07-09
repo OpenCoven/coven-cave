@@ -131,7 +131,16 @@ export function remoteUrlFromManifest(manifest: PluginManifest): string | undefi
   return undefined;
 }
 
-export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
+export type MarketplaceInstallationState = {
+  version: string;
+  source: string;
+  installedAt: string;
+  runtime?: string;
+  verifiedAt?: string;
+  craftVersion?: string;
+};
+
+export type InstalledMap = Record<string, MarketplaceInstallationState>;
 
 export type PluginKind = "api" | "mcp" | "skill" | "prompt" | "craft";
 
@@ -151,6 +160,9 @@ export type MarketplacePlugin = {
   kind: PluginKind;
   version: string;
   installed: boolean;
+  /** Persisted install/verification metadata. Legacy records omit Craft fields. */
+  installation?: MarketplaceInstallationState;
+  updateAvailable: boolean;
   requiresSetup: boolean;
   available: boolean;
   requiredConfig: RequiredConfigField[];
@@ -226,6 +238,7 @@ export function mergeCatalog(
     .map((p) => {
       const manifest = manifests[p.name] ?? {};
       const installation = p.policy?.installation ?? "AVAILABLE";
+      const installedState = installed[p.name];
       const requiredConfig = requiredConfigFromManifest(manifest);
       return {
         id: p.name,
@@ -245,7 +258,12 @@ export function mergeCatalog(
         roleAffinity: p.roleAffinity ?? [],
         kind: p.kind === "craft" ? "craft" : deriveKind(manifest),
         version: manifest.version ?? "0.0.0",
-        installed: Boolean(installed[p.name]),
+        installed: Boolean(installedState),
+        ...(installedState ? { installation: { ...installedState } } : {}),
+        updateAvailable: Boolean(
+          installedState
+          && (installedState.craftVersion ?? installedState.version) !== (manifest.version ?? "0.0.0"),
+        ),
         requiresSetup: requiredConfig.length > 0,
         available: installation === "AVAILABLE",
         requiredConfig,
