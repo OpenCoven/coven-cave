@@ -357,106 +357,8 @@
 }
 .hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* ── Familiar selector ───────────────────────────────────────────────────── */
-.hc-familiar-selector {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  box-sizing: border-box;
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  padding: 3px 7px 3px 6px;
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.hc-home-select-trigger {
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.hc-home-select-trigger:hover:not(:disabled),
-.home-composer-card .cave-project-picker__trigger.hc-project-selector:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
-}
-
-.hc-home-select-trigger:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.hc-familiar-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-/* Avatar image variant of the selector glyph: passing a className to
-   FamiliarAvatar overrides its default img styling, so restore the rounded,
-   cover-fit avatar look at the selector's icon size. */
-.hc-familiar-avatar {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  object-fit: cover;
-}
-
-.hc-home-select-value {
-  min-width: 0;
-  max-width: 132px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  padding-right: 14px;
-}
-
-.hc-home-select-popover {
-  min-width: 220px;
-}
-
-.hc-home-select-group + .hc-home-select-group {
-  border-top: 1px solid var(--border-hairline);
-  margin-top: 4px;
-  padding-top: 4px;
-}
-
-.hc-home-select-popover .ui-popover-item > span {
-  min-width: 0;
-}
-
-.hc-home-select-option {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  text-align: left;
-}
-
-.hc-home-select-option__label,
-.hc-home-select-option__detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hc-home-select-option__detail {
-  font-size: 10.5px;
-  color: var(--text-secondary);
-}
-
-/* The picker's caret is INLINE (unlike the familiar chip's absolute
- * .hc-select-caret), so no phantom right padding — the chip hugs its
- * avatar + name + caret and only ever truncates on long names. */
+/* The picker's caret is INLINE, so no phantom right padding — the chip hugs
+ * its name + caret and only ever truncates on long names. */
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
   min-height: 30px;
   max-width: 178px;
@@ -466,16 +368,13 @@
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
 }
 
-.home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
-  max-width: 132px;
+.home-composer-card .cave-project-picker__trigger.hc-project-selector:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
 }
 
-.hc-select-caret {
-  position: absolute;
-  right: 5px;
-  pointer-events: none;
-  color: var(--text-muted);
-  flex-shrink: 0;
+.home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
+  max-width: 132px;
 }
 
 /* Destination pills — a segmented toggle for Chat vs Task. */
@@ -548,51 +447,15 @@
 
 /* ── Phone-width composer (container query on the card wrap) ─────────────────
  * The shared cave-composer footer rules (cave-chat.css) already adapt the icon
- * buttons on small screens; the home-only controls (destination pills and the
- * agent picker) also need thumb-sized touch targets. */
+ * buttons on small screens; the home-only destination pills also need
+ * thumb-sized touch targets. */
 @container (max-width: 620px) {
-  .hc-familiar-selector {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: var(--touch-target);
-    padding: 0 30px 0 10px;
-  }
-
-  .hc-home-select-value {
-    max-width: none;
-    min-width: 0;
-    min-height: var(--touch-target);
-    font-size: 13px;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .hc-select-caret {
-    right: 10px;
-  }
-
   .hc-dest-pill {
     min-height: var(--touch-target);
     justify-content: center;
     border-color: var(--border-hairline);
     background: color-mix(in oklch, var(--bg-base) 72%, transparent);
   }
-}
-
-/* ── Access chip — familiar selector in warning/amber ───────────────────── */
-.hc-access-chip.hc-familiar-selector,
-.hc-access-chip.hc-home-select-trigger {
-  background: color-mix(in oklch, var(--color-warning) 10%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--color-warning) 28%, transparent);
-}
-.hc-access-chip.hc-familiar-selector:hover:not(:disabled),
-.hc-access-chip.hc-home-select-trigger:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--color-warning) 16%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
-}
-.hc-access-chip .hc-familiar-glyph,
-.hc-access-chip .hc-home-select-value {
-  color: var(--color-warning);
 }
 
 /* Spinner — shown inside the send button while a submit is in flight. */
@@ -800,7 +663,6 @@
 .home-feed__row,
 .home-feed__refresh,
 .home-feed__retry,
-.hc-home-select-trigger,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
   outline: none;
 }
@@ -809,13 +671,7 @@
 .home-feed__row:focus-visible,
 .home-feed__refresh:focus-visible,
 .home-feed__retry:focus-visible,
-.hc-home-select-trigger:focus-visible,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: var(--ring-offset);
-}
-/* Ring the whole selector pill when a custom trigger is focused. */
-.hc-familiar-selector:focus-within {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
 }

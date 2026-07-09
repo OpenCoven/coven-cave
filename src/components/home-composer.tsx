@@ -38,8 +38,6 @@ import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { canonicalize } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import type { InboxItem } from "@/lib/cave-inbox";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { ProjectPicker } from "@/components/project-picker";
@@ -52,7 +50,6 @@ import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import { HomeNeedsYou } from "@/components/home/home-needs-you";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
-import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -88,7 +85,6 @@ type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
   sessions: SessionRow[];
-  onSetActiveFamiliar: (id: string) => void;
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
    *  aborts the request, which kills the harness before the transcript saves. */
@@ -133,7 +129,6 @@ export function HomeComposer({
   familiars,
   activeFamiliarId,
   sessions,
-  onSetActiveFamiliar,
   onStartChat,
   onNavigateToBoard,
   onToast,
@@ -202,13 +197,6 @@ export function HomeComposer({
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
     [familiars, selectedFamiliarId],
   );
-  // Resolve avatars so the selector chip shows the selected familiar's actual
-  // avatar image (falling back to its glyph) instead of a static sparkle icon.
-  const resolvedFamiliars = useResolvedFamiliars(familiars);
-  const resolvedFamiliarById = useMemo(
-    () => new Map(resolvedFamiliars.map((familiar) => [familiar.id, familiar])),
-    [resolvedFamiliars],
-  );
   const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
     useHomeModelState(selectedFamiliarId);
   const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
@@ -243,32 +231,6 @@ export function HomeComposer({
         ? modelState!.effectiveModel
         : runtimeModelOptions[0]?.id ?? "";
   const keys = useKeySymbols();
-  const familiarSelectGroups = useMemo<HomeSelectGroup[]>(
-    () => [
-      {
-        options:
-          visibleFamiliars.length === 0
-            ? [{ value: "", label: "No agents", icon: "ph:sparkle", disabled: true }]
-            : visibleFamiliars.map((familiar) => {
-                const resolved = resolvedFamiliarById.get(familiar.id);
-                return {
-                  value: familiar.id,
-                  label: familiar.display_name,
-                  leading: resolved ? (
-                    <FamiliarAvatar
-                      familiar={resolved}
-                      size="sm"
-                      className="hc-familiar-glyph hc-familiar-avatar"
-                    />
-                  ) : (
-                    <Icon name="ph:sparkle" width={13} aria-hidden />
-                  ),
-                };
-              }),
-      },
-    ],
-    [resolvedFamiliarById, visibleFamiliars],
-  );
   const runtimeSectionOptions = useMemo(
     () =>
       COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => ({
@@ -901,16 +863,6 @@ export function HomeComposer({
               </div>
             </div>
             <div className="cave-composer-submit-row">
-              {/* Always-visible runtime mark + model, one click to switch —
-                  parity with the chat composer's chip (cave-yq5l). */}
-              <ComposerRuntimeChip
-                runtime={selectedRuntime}
-                modelValue={selectedModelId}
-                modelOptions={runtimeModelOptions}
-                onPickRuntime={handleSelectRuntime}
-                onPickModel={handleSelectModel}
-                disabled={sending}
-              />
               <button
                 type="button"
                 className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
@@ -949,8 +901,10 @@ export function HomeComposer({
         </div>
 
         {/* Footer band — the darker strip attached to the card's underside
-            (reference layout): where the message runs (project) and who runs
-            it (agent) on the left, run settings (Options) on the right. */}
+            (reference layout): where the message runs (project) and what runs
+            it (runtime + model) on the left, run settings (Options) on the
+            right. The familiar is chosen in the side panel — home no longer
+            duplicates that selector here. */}
         <div className="hc-footer-band">
           <div className="hc-footer-band-left">
             {/* Project selector — picks which project the new chat runs in
@@ -966,16 +920,15 @@ export function HomeComposer({
               ariaLabel="Choose project"
               className="hc-project-selector"
             />
-            <HomeSelect
-              icon="ph:warning-circle"
-              value={selectedFamiliarId}
-              onChange={(value) => {
-                if (value) onSetActiveFamiliar(value);
-              }}
-              groups={familiarSelectGroups}
-              ariaLabel="Choose chat agent"
-              disabled={visibleFamiliars.length === 0 || sending}
-              className="hc-access-chip"
+            {/* Always-visible runtime mark + model, one click to switch —
+                parity with the chat composer's chip (cave-yq5l). */}
+            <ComposerRuntimeChip
+              runtime={selectedRuntime}
+              modelValue={selectedModelId}
+              modelOptions={runtimeModelOptions}
+              onPickRuntime={handleSelectRuntime}
+              onPickModel={handleSelectModel}
+              disabled={sending}
             />
           </div>
           <ComposerOptionsMenu

@@ -6,7 +6,6 @@ const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "
 const draftHook = await readFile(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
 const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
 const menusHook = await readFile(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
-const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
@@ -190,16 +189,18 @@ assert.match(
   "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
 );
 
-assert.match(
+// ── Familiar selector removed from home ──────────────────────────────────────
+// The active familiar is chosen in the side panel; home must not duplicate the
+// selector. The footer band's second chip is the runtime + model picker.
+assert.doesNotMatch(
   source,
-  /onSetActiveFamiliar: \(id: string\) => void/,
-  "HomeComposer should accept an active familiar setter for its home-screen agent selector",
+  /onSetActiveFamiliar/,
+  "HomeComposer no longer takes an active-familiar setter (selection lives in the side panel)",
 );
-
-assert.match(
+assert.doesNotMatch(
   source,
-  /<HomeSelect[\s\S]*?value=\{selectedFamiliarId\}[\s\S]*?ariaLabel="Choose chat agent"/,
-  "HomeComposer should include a custom agent selector when starting chat from home",
+  /HomeSelect|Choose chat agent|hc-access-chip/,
+  "HomeComposer no longer renders the home familiar selector chip",
 );
 
 assert.doesNotMatch(
@@ -224,12 +225,6 @@ assert.match(
   source,
   /const \[responseSpeed, setResponseSpeed\] = useState<CommandResponseSpeed>\(\s*COMMAND_CONTROL_DEFAULTS\.responseSpeed,\s*\)/,
   "HomeComposer should initialise response speed from shared command control defaults",
-);
-
-assert.match(
-  homeSelect,
-  /function HomeSelect\([\s\S]*?<StandardSelect[\s\S]*?label=\{ariaLabel\}[\s\S]*?popoverClassName="hc-home-select-popover"[\s\S]*?groupClassName="hc-home-select-group"[\s\S]*?renderValue=/,
-  "HomeComposer compact command select should delegate option rendering to StandardSelect with the supplied aria label and selected value",
 );
 
 assert.match(
@@ -440,8 +435,8 @@ assert.match(
 
 // ── Single-row toolbar replaces mode strip + run rail ───────────────────────
 // The top mode strip and the separate run rail were removed. The footer is the
-// chat composer's: attach/voice/Options + agent chip on the left (Chat/Task
-// moved above the card), enhance + send on the right.
+// chat composer's: attach + Chat/Task pills left, voice/enhance/send right; the
+// footer band beneath carries the project picker and the runtime + model chip.
 assert.doesNotMatch(
   source,
   /className="hc-mode-strip"/,
@@ -454,8 +449,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?<ComposerRuntimeChip[\s\S]*?ph:microphone[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?hc-access-chip[\s\S]*?<ComposerOptionsMenu/,
-  "Control row: + attach and Chat/Task pills left, model chip · voice · enhance · send right; the footer band beneath carries project + agent + Options",
+  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?ph:microphone[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
+  "Control row: + attach and Chat/Task pills left, voice · enhance · send right; the footer band beneath carries project + runtime/model chip + Options",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────

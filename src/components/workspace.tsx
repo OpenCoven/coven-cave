@@ -2276,7 +2276,6 @@ export function Workspace() {
         familiars={familiars}
         activeFamiliarId={activeId}
         sessions={sessions}
-        onSetActiveFamiliar={setActiveId}
         onStartChat={(prompt, fid, projectRoot, opts) =>
           startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
