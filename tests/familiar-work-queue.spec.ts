@@ -256,13 +256,46 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
 
     failPrs = true;
-    await fwq.getByRole("button", { name: "Refresh work queue" }).click();
+    await fwq.getByRole("button", { name: "Refresh queue" }).click();
     const banner = fwq.getByRole("alert");
     await expect(banner).toContainText("Couldn't refresh the queue");
     await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
     // Earlier data stays on screen — the failure does not blank the queue.
     await expect(fwq.getByRole("region", { name: "Checks failing" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
+  });
+
+  test("PR bridge down at first load degrades to beads-only instead of a dead surface", async ({ page }) => {
+    // gh missing/unauthenticated on a fresh open: the queue must still load
+    // from the beads adapter (user-reported "ensure it loads").
+    await page.addInitScript(() => {
+      window.localStorage.setItem("cave:onboarding:dismissed", "1");
+      window.localStorage.setItem("cave:active-familiar", "kitty");
+    });
+    await page.route("**/api/familiars**", (r) =>
+      r.fulfill({ json: { ok: true, familiars: [{ id: "kitty", display_name: "Kitty", role: "B", status: "active", icon: "ph:sparkle-fill" }] } }),
+    );
+    await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
+    await page.route(/\/api\/beads\/prs/, (r) => r.fulfill({ status: 500, json: { ok: false, error: "gh unavailable" } }));
+    await page.route(/\/api\/beads\?/, (r) => r.fulfill({ json: { ok: true, data: READY_BEADS } }));
+
+    await page.goto("/");
+    await page.getByRole("navigation").first().waitFor({ timeout: 30_000 });
+    await expect(async () => {
+      await page.evaluate(() =>
+        window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "familiar-work-queue" } })),
+      );
+      await expect(page.locator(".fwq")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const fwq = page.locator(".fwq");
+    // The degradation is SAID, not silent — and it is not the dead retry state.
+    await expect(fwq.getByText(/GitHub PR bridge unavailable/)).toBeVisible();
+    await expect(fwq.getByText("Couldn't load the queue")).toHaveCount(0);
+    // Bead-driven lane renders from the ready set alone.
+    await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
+    // PR-truth lanes are honestly absent.
+    await expect(fwq.getByRole("region", { name: "Checks failing" })).toHaveCount(0);
   });
 
   test("Attention strip is absent when no PR is stale or unlinked", async ({ page }) => {

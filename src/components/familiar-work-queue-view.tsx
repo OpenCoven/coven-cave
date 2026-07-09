@@ -127,6 +127,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
   const [evidenceAdded, setEvidenceAdded] = useState<Set<string>>(() => new Set());
   const loadSeq = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // True once a load has landed WITH PR-bridge data. A later bridge failure is
+  // then a refresh failure (keep the richer on-screen picture + inline retry
+  // banner) rather than a degradation (which would silently drop PR lanes).
+  const hadPrDataRef = useRef(false);
   // Re-render ~once a minute so the header freshness and per-card ages stay
   // truthful between polls (the equality guard below keeps queue state stable,
   // so nothing else would tick them).
@@ -140,9 +144,17 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
     try {
       const { queue: next, beadsOk, prsOk, prsError } = await fetchQueue(ctrl.signal);
       if (seq !== loadSeq.current) return; // a newer load won
+      if (!prsOk && hadPrDataRef.current) {
+        // The bridge worked before and just failed — keep earlier data on
+        // screen with the retry banner instead of swapping in a poorer,
+        // beads-only queue.
+        setError(prsError || "PR bridge unavailable");
+        return;
+      }
       setQueue((prev) => (prev && sameQueue(prev, next) ? prev : next));
       setBeadsDegraded(!beadsOk);
       setPrsDegraded(prsOk ? null : prsError || "PR bridge unavailable");
+      if (prsOk) hadPrDataRef.current = true;
       setError(null);
       setLastUpdated(new Date().toISOString());
     } catch (err) {
