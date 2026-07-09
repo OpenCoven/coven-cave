@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.168] - 2026-07-09
+
+> _One-line teaser — edit before merge._
+
+Patch release on top of v0.0.167.
+
+### Changes
+- fix(release): updater tarball ships no AppleDouble entries — kills the macOS 'app is damaged' update error (cave-csl8) (#2864)
+- fix(shell): comprehensive title-bar fit + subtle titlebar glass (cave-y894) (#2862)
+- feat(cave): analytics model-performance votes, settings polish, composer/home refinements (#2860)
+
+
 ## [0.0.167] - 2026-07-09
 
 > 🪄 **Polish + hardening pass** — the marketplace's prompt-pack "Try it" becomes an unmissable bordered pill with a hand-off arrow instead of near-invisible ghost text, and the desktop title-bar controls stop hiding under the macOS traffic lights. Under the hood: a ReDoS-prone path regex is replaced with a plain `trimEnd`, and the runtime-sync tooling gets spec-correct prerelease semver plus CI-triggering bot PRs.
