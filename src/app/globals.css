@@ -8018,6 +8018,16 @@ a.mobile-handoff__link:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
 }
 
+/* The cron detail's expand-to-full-width toggle is meaningless below md — the
+   detail already owns the whole viewport there. A plain Tailwind `hidden`
+   loses to `.ui-btn { display:inline-flex }` on stylesheet order, so gate it
+   with matching-or-higher specificity here. */
+@media (max-width: 767px) {
+  .ui-btn.cron-detail-expand-toggle {
+    display: none;
+  }
+}
+
 /* Chat mobile command center refinements. These classes are intentionally
    plain CSS hooks around Tailwind-heavy components so phone-specific layout
    can be adjusted without threading conditional class strings through every

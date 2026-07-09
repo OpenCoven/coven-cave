@@ -99,8 +99,18 @@ assert.match(
 );
 assert.match(
   codexDetailPanel,
-  /expanded \? "grid items-start gap-5 lg:grid-cols-2" : "space-y-5"/,
-  "sections reflow into a two-column grid when expanded",
+  /expanded \? \(\s*\n?\s*<div className="grid items-start gap-5 lg:grid-cols-2">/,
+  "sections reflow into a two-column canvas when expanded",
+);
+assert.match(
+  codexDetailPanel,
+  /\{identitySection\}\s*\{scheduleSection\}[\s\S]*\{instructionsSection\}\s*\{runtimeSection\}/,
+  "the expanded canvas pairs sections into two independent column stacks so a short section never leaves a row-aligned hole beside a tall one",
+);
+assert.match(
+  codexDetailPanel,
+  /<div className="space-y-5">\s*\{identitySection\}\s*\{instructionsSection\}\s*\{scheduleSection\}\s*\{runtimeSection\}\s*\{runsSection\}/,
+  "the side rail keeps the priority stack: identity, instructions, schedule, runtime, runs",
 );
 assert.match(
   source,

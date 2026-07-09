@@ -465,7 +465,9 @@ function RowActionButton({ icon, label, text, onClick, disabled }: { icon: IconN
       style={{ color: "var(--text-secondary)" }}
       leadingIcon={icon}
     >
-      {text}
+      {/* Icon-only when the hosting pane runs narrow (e.g. the md split while a
+          detail rail is open) — the aria-label keeps the full action name. */}
+      <span className="@max-[520px]:hidden">{text}</span>
     </Button>
   );
 }
@@ -823,6 +825,255 @@ function CodexDetailPanel({
     ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
     : "No runs yet";
 
+
+  // Each section is built once; the layout arranges them per mode. The rail
+  // stacks them in priority order (identity, instructions, schedule, runtime),
+  // while the expanded canvas pairs them into two independent column stacks so
+  // a short section never leaves a row-aligned hole beside a tall one.
+  const identitySection = (
+    <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
+      <div>
+        <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
+        <input
+          id={`cron-name-${auto.id}`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className={automationInputClass}
+          style={fieldStyle}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
+        <div>
+          <FieldLabel htmlFor={`cron-tags-${auto.id}`}>Tags</FieldLabel>
+          <input
+            id={`cron-tags-${auto.id}`}
+            value={tagsText}
+            onChange={(event) => setTagsText(event.target.value)}
+            className={automationInputClass}
+            style={fieldStyle}
+          />
+        </div>
+        <div>
+          <FieldLabel>Skill</FieldLabel>
+          <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+        </div>
+      </div>
+    </CronDetailSection>
+  );
+  const instructionsSection = (
+    <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
+      <div>
+        <FieldLabel htmlFor={`cron-goals-${auto.id}`}>Goals</FieldLabel>
+        <textarea
+          id={`cron-goals-${auto.id}`}
+          value={goals}
+          onChange={(event) => setGoals(event.target.value)}
+          rows={5}
+          className={automationTextareaClass}
+          style={fieldStyle}
+        />
+      </div>
+      <div>
+        <FieldLabel htmlFor={`cron-deliverables-${auto.id}`}>Deliverables</FieldLabel>
+        <textarea
+          id={`cron-deliverables-${auto.id}`}
+          value={deliverables}
+          onChange={(event) => setDeliverables(event.target.value)}
+          rows={4}
+          className={automationTextareaClass}
+          style={fieldStyle}
+        />
+      </div>
+    </CronDetailSection>
+  );
+  const scheduleSection = (
+    <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
+      <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
+        style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
+        role="group"
+        aria-label="Schedule mode"
+      >
+        {(["weekly", "daily", "raw"] as const).map((mode) => (
+          <Button
+            key={mode}
+            variant="ghost"
+            size="xs"
+            onClick={() => setScheduleMode(mode)}
+            aria-pressed={scheduleMode === mode}
+            className="rounded-[var(--radius-control)] px-2 py-1 text-[11px]"
+            style={{
+              background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
+              color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
+            }}
+          >
+            {SCHEDULE_MODE_LABEL[mode]}
+          </Button>
+        ))}
+      </div>
+
+      {scheduleMode === "raw" ? (
+        <textarea
+          aria-label="Raw RRULE"
+          value={rawRrule}
+          onChange={(event) => setRawRrule(event.target.value)}
+          rows={3}
+          className={automationMonoTextareaClass}
+          style={fieldStyle}
+        />
+      ) : (
+        <div className="space-y-3">
+          {scheduleMode === "weekly" && (
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days of week">
+              {RRULE_DAY_ORDER.map((day) => {
+                const selected = scheduleDays.includes(day);
+                return (
+                  <Button
+                    key={day}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => toggleDay(day)}
+                    aria-pressed={selected}
+                    className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
+                    style={{
+                      background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
+                      borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
+                      color: selected ? "var(--text-primary)" : "var(--text-muted)",
+                    }}
+                  >
+                    {RRULE_DAY_LABEL[day]}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+          <input
+            type="time"
+            aria-label="Schedule time"
+            value={scheduleTime}
+            onChange={(event) => setScheduleTime(event.target.value)}
+            className={automationInputClass}
+            style={fieldStyle}
+          />
+        </div>
+      )}
+      {/* Plain-language echo of the chosen cadence for preset modes; the
+          cryptic RRULE line only surfaces in Advanced mode or when the
+          schedule is invalid — beginners never have to read iCalendar. */}
+      {scheduleMode !== "raw" && !invalidSchedule ? (
+        <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {scheduleMode === "daily"
+            ? `Runs every day at ${scheduleTime}`
+            : `Runs weekly on ${scheduleDays.map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
+        </p>
+      ) : (
+        <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
+          {nextRrule || "RRULE required"}
+        </p>
+      )}
+    </CronDetailSection>
+  );
+  const runtimeSection = (
+    <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
+      <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
+        <div>
+          <FieldLabel htmlFor={`cron-model-${auto.id}`}>Model</FieldLabel>
+          <input
+            id={`cron-model-${auto.id}`}
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            className={automationInputClass}
+            style={fieldStyle}
+          />
+        </div>
+        <div>
+          <FieldLabel>Reasoning</FieldLabel>
+          <StandardSelect
+            label="Reasoning"
+            value={reasoningEffort}
+            onChange={setReasoningEffort}
+            className={automationSelectClass}
+            style={fieldStyle}
+            options={[
+              ...(!["low", "medium", "high"].includes(reasoningEffort)
+                ? [{ value: reasoningEffort, label: reasoningEffort }]
+                : []),
+              { value: "low", label: "low" },
+              { value: "medium", label: "medium" },
+              { value: "high", label: "high" },
+            ]}
+          />
+        </div>
+        <div>
+          <FieldLabel>Environment</FieldLabel>
+          <StandardSelect
+            label="Environment"
+            value={executionEnvironment}
+            onChange={setExecutionEnvironment}
+            className={automationSelectClass}
+            style={fieldStyle}
+            options={[
+              ...(!["worktree", "repo"].includes(executionEnvironment)
+                ? [{ value: executionEnvironment, label: executionEnvironment }]
+                : []),
+              { value: "worktree", label: "worktree" },
+              { value: "repo", label: "repo" },
+            ]}
+          />
+        </div>
+      </div>
+      <div>
+        <FieldLabel>Working directories</FieldLabel>
+        <CwdPickerField
+          value={cwdsText}
+          onChange={setCwdsText}
+          familiarId={auto.familiars[0] ?? ""}
+          textareaClass={automationMonoTextareaClass}
+          fieldStyle={fieldStyle}
+        />
+      </div>
+    </CronDetailSection>
+  );
+  const runsSection = runs.length > 0 ? (
+    <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
+      <ul className="mt-1 space-y-1">
+        {runs.slice(0, 10).map((r) => (
+          <li key={r.id}>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void toggleRunLog(r.id)}
+              aria-expanded={openRunId === r.id}
+              aria-controls={`automation-run-log-${r.id}`}
+              aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
+              className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
+            >
+              {/* Shape + color (WCAG 1.4.1): the icon form carries the
+                  status for color-blind users; AT reads it from the
+                  button's aria-label. */}
+              <span aria-hidden className="shrink-0" style={{ color: runStatusColor(r.status), lineHeight: 0 }}>
+                <Icon name={runStatusIcon(r.status)} width={12} />
+              </span>
+              <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
+              {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
+              <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
+                <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
+              </span>
+            </Button>
+            {openRunId === r.id && (
+              <pre
+                id={`automation-run-log-${r.id}`}
+                className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
+                style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+              >
+                {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
+              </pre>
+            )}
+          </li>
+        ))}
+      </ul>
+    </CronDetailSection>
+  ) : null;
+
   return (
     <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
       className="flex h-full flex-col focus:outline-none"
@@ -857,7 +1108,7 @@ function CodexDetailPanel({
               aria-pressed={expanded}
               aria-label={expanded ? "Collapse to side panel" : "Expand to full width"}
               title={expanded ? "Collapse to side panel" : "Expand to full width"}
-              className="hidden rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] md:inline-flex"
+              className="cron-detail-expand-toggle rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
               leadingIcon={expanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"}
             />
             <Button
@@ -883,247 +1134,27 @@ function CodexDetailPanel({
           <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
         </div>
 
-        <div className={expanded ? "grid items-start gap-5 lg:grid-cols-2" : "space-y-5"}>
-        <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
-          <div>
-            <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
-            <input
-              id={`cron-name-${auto.id}`}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
-            <div>
-              <FieldLabel htmlFor={`cron-tags-${auto.id}`}>Tags</FieldLabel>
-              <input
-                id={`cron-tags-${auto.id}`}
-                value={tagsText}
-                onChange={(event) => setTagsText(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
+        {expanded ? (
+          <div className="grid items-start gap-5 lg:grid-cols-2">
+            <div className="min-w-0 space-y-5">
+              {identitySection}
+              {scheduleSection}
             </div>
-            <div>
-              <FieldLabel>Skill</FieldLabel>
-              <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+            <div className="min-w-0 space-y-5">
+              {instructionsSection}
+              {runtimeSection}
             </div>
+            {runsSection && <div className="min-w-0 lg:col-span-2">{runsSection}</div>}
           </div>
-        </CronDetailSection>
-
-        <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
-          <div>
-            <FieldLabel htmlFor={`cron-goals-${auto.id}`}>Goals</FieldLabel>
-            <textarea
-              id={`cron-goals-${auto.id}`}
-              value={goals}
-              onChange={(event) => setGoals(event.target.value)}
-              rows={5}
-              className={automationTextareaClass}
-              style={fieldStyle}
-            />
+        ) : (
+          <div className="space-y-5">
+            {identitySection}
+            {instructionsSection}
+            {scheduleSection}
+            {runtimeSection}
+            {runsSection}
           </div>
-          <div>
-            <FieldLabel htmlFor={`cron-deliverables-${auto.id}`}>Deliverables</FieldLabel>
-            <textarea
-              id={`cron-deliverables-${auto.id}`}
-              value={deliverables}
-              onChange={(event) => setDeliverables(event.target.value)}
-              rows={4}
-              className={automationTextareaClass}
-              style={fieldStyle}
-            />
-          </div>
-        </CronDetailSection>
-
-        <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
-          <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
-            role="group"
-            aria-label="Schedule mode"
-          >
-            {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <Button
-                key={mode}
-                variant="ghost"
-                size="xs"
-                onClick={() => setScheduleMode(mode)}
-                aria-pressed={scheduleMode === mode}
-                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px]"
-                style={{
-                  background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
-                }}
-              >
-                {SCHEDULE_MODE_LABEL[mode]}
-              </Button>
-            ))}
-          </div>
-
-          {scheduleMode === "raw" ? (
-            <textarea
-              aria-label="Raw RRULE"
-              value={rawRrule}
-              onChange={(event) => setRawRrule(event.target.value)}
-              rows={3}
-              className={automationMonoTextareaClass}
-              style={fieldStyle}
-            />
-          ) : (
-            <div className="space-y-3">
-              {scheduleMode === "weekly" && (
-                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days of week">
-                  {RRULE_DAY_ORDER.map((day) => {
-                    const selected = scheduleDays.includes(day);
-                    return (
-                      <Button
-                        key={day}
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => toggleDay(day)}
-                        aria-pressed={selected}
-                        className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
-                        style={{
-                          background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
-                          borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
-                          color: selected ? "var(--text-primary)" : "var(--text-muted)",
-                        }}
-                      >
-                        {RRULE_DAY_LABEL[day]}
-                      </Button>
-                    );
-                  })}
-                </div>
-              )}
-              <input
-                type="time"
-                aria-label="Schedule time"
-                value={scheduleTime}
-                onChange={(event) => setScheduleTime(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
-            </div>
-          )}
-          {/* Plain-language echo of the chosen cadence for preset modes; the
-              cryptic RRULE line only surfaces in Advanced mode or when the
-              schedule is invalid — beginners never have to read iCalendar. */}
-          {scheduleMode !== "raw" && !invalidSchedule ? (
-            <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {scheduleMode === "daily"
-                ? `Runs every day at ${scheduleTime}`
-                : `Runs weekly on ${scheduleDays.map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
-            </p>
-          ) : (
-            <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
-              {nextRrule || "RRULE required"}
-            </p>
-          )}
-        </CronDetailSection>
-
-        <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
-          <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
-            <div>
-              <FieldLabel htmlFor={`cron-model-${auto.id}`}>Model</FieldLabel>
-              <input
-                id={`cron-model-${auto.id}`}
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
-            </div>
-            <div>
-              <FieldLabel>Reasoning</FieldLabel>
-              <StandardSelect
-                label="Reasoning"
-                value={reasoningEffort}
-                onChange={setReasoningEffort}
-                className={automationSelectClass}
-                style={fieldStyle}
-                options={[
-                  ...(!["low", "medium", "high"].includes(reasoningEffort)
-                    ? [{ value: reasoningEffort, label: reasoningEffort }]
-                    : []),
-                  { value: "low", label: "low" },
-                  { value: "medium", label: "medium" },
-                  { value: "high", label: "high" },
-                ]}
-              />
-            </div>
-            <div>
-              <FieldLabel>Environment</FieldLabel>
-              <StandardSelect
-                label="Environment"
-                value={executionEnvironment}
-                onChange={setExecutionEnvironment}
-                className={automationSelectClass}
-                style={fieldStyle}
-                options={[
-                  ...(!["worktree", "repo"].includes(executionEnvironment)
-                    ? [{ value: executionEnvironment, label: executionEnvironment }]
-                    : []),
-                  { value: "worktree", label: "worktree" },
-                  { value: "repo", label: "repo" },
-                ]}
-              />
-            </div>
-          </div>
-          <div>
-            <FieldLabel>Working directories</FieldLabel>
-            <CwdPickerField
-              value={cwdsText}
-              onChange={setCwdsText}
-              familiarId={auto.familiars[0] ?? ""}
-              textareaClass={automationMonoTextareaClass}
-              fieldStyle={fieldStyle}
-            />
-          </div>
-        </CronDetailSection>
-
-        {runs.length > 0 && (
-          <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron." className={expanded ? "lg:col-span-2" : undefined}>
-            <ul className="mt-1 space-y-1">
-              {runs.slice(0, 10).map((r) => (
-                <li key={r.id}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => void toggleRunLog(r.id)}
-                    aria-expanded={openRunId === r.id}
-                    aria-controls={`automation-run-log-${r.id}`}
-                    aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
-                    className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
-                  >
-                    {/* Shape + color (WCAG 1.4.1): the icon form carries the
-                        status for color-blind users; AT reads it from the
-                        button's aria-label. */}
-                    <span aria-hidden className="shrink-0" style={{ color: runStatusColor(r.status), lineHeight: 0 }}>
-                      <Icon name={runStatusIcon(r.status)} width={12} />
-                    </span>
-                    <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
-                    {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
-                    <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
-                      <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
-                    </span>
-                  </Button>
-                  {openRunId === r.id && (
-                    <pre
-                      id={`automation-run-log-${r.id}`}
-                      className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
-                      style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                    >
-                      {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
-                    </pre>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </CronDetailSection>
         )}
-        </div>
         </div>
       </div>
 
@@ -1239,11 +1270,11 @@ function AutomationScheduleRow({
           </span>
         )}
         {lastRun && (
-          <span className="shrink-0 text-[11px]" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
+          <span className="shrink-0 text-[11px] @max-[600px]:hidden" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
             Run {relTime(lastRun.startedAt)}
           </span>
         )}
-        <span className="cron-schedule-chip shrink-0" title={`Runs ${auto.scheduleHuman}`}>
+        <span className="cron-schedule-chip shrink-0 @max-[440px]:hidden" title={`Runs ${auto.scheduleHuman}`}>
           <Icon name="ph:clock" width={11} aria-hidden className="cron-schedule-chip__icon" />
           <span className="tabular-nums">{auto.scheduleHuman}</span>
         </span>
@@ -2475,7 +2506,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           role="tabpanel"
           id={`automations-panel-${activeTab}`}
           aria-labelledby={`automations-tab-${activeTab}`}
-          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pt-4 pb-8"}>
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
           ) : !initialLoadDone ? (
