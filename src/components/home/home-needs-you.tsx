@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -23,7 +23,7 @@ const MAX_ROWS = 3;
 
 // Same kind → glyph mapping the bell popover uses, so an item reads the same
 // wherever it surfaces.
-function kindIcon(kind: InboxItem["kind"]): string {
+function kindIcon(kind: InboxItem["kind"]): IconName {
   switch (kind) {
     case "response-needed":
       return "ph:chat-circle-dots-fill";
