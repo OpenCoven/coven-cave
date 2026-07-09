@@ -111,6 +111,27 @@ assert.match(
 );
 assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "backdrop.css is tokens-only");
 
+// Readability over the image (cave-5oeu): the transcript flattens bubbles to
+// bare text, so the reading column (and the group-chat shell) gets real glass
+// — scrim + blur — and the quiet text lifts one contrast step. Engines
+// without backdrop-filter fall back to a near-opaque fill instead of
+// see-through text.
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.cave-chat-linear \.cave-chat-thread,\s*html\[data-backdrop-on\] \.cave-group-chat-shell \{[^}]*backdrop-filter: blur\(var\(--glass-blur\)\)/,
+  "the chat reading column sits on glass while the image is frontmost",
+);
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.cave-chat-linear,\s*html\[data-backdrop-on\] \.cave-group-chat-shell \{[^}]*--text-muted: var\(--text-secondary\)/,
+  "quiet transcript text lifts to secondary strength over the image",
+);
+assert.match(
+  css,
+  /@supports not \(\(backdrop-filter: blur\(1px\)\)[\s\S]*?92%, transparent\)/,
+  "no-blur engines get a near-opaque fill instead of see-through text",
+);
+
 // Settings wiring: the Appearance section owns the controls.
 assert.match(settings, /<BackdropSettings \/>/, "Appearance renders the backdrop controls");
 assert.match(backdropSettings, /prepareBackdropImage\(file\)/, "picking an image downscales + derives the seed");
