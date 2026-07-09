@@ -89,4 +89,60 @@ assert.match(
   "ChatSurface right sidebar should default to a 50/50 vertical split",
 );
 
+// ── Collapsed right rail — the reflection of the left nav's collapsed rail ──
+const caveChat = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+
+// A closed panel leaves an in-flow rail at the right edge (desktop, wide,
+// conversation tab) that reopens the LAST-used panel — not nothing.
+assert.match(
+  chatSurface,
+  /scope === "conversation" && rightPanel === null && !isMobile && !paneNarrow && \([\s\S]{0,600}?className="workspace-rail-reopen chat-right-rail focus-ring"[\s\S]{0,300}?onClick=\{\(\) => setRightPanel\(lastPanel\)\}/,
+  "closing the right panel must leave a reopen rail (conversation tab, wide desktop panes) that restores the last-used panel",
+);
+assert.match(
+  chatSurface,
+  /const \[lastPanel, setLastPanel\] = useState<Exclude<RightPanelKind, "changes">>\("inspector"\)/,
+  "the rail remembers the last-opened panel, defaulting to the Inspector",
+);
+
+// The rail participates in layout (content beside it, never underneath): it
+// must NOT be absolutely positioned, and it reserves its own flex width.
+assert.match(
+  caveChat,
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 44px;/,
+  "the reopen rail reserves in-flow layout width",
+);
+assert.doesNotMatch(
+  caveChat,
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?position: absolute;/,
+  "the reopen rail must not overlay content (no absolute positioning)",
+);
+
+// Label orientation: reads top→bottom with the glyph face to the
+// right/outside (vertical-rl) — mirroring the left rail's vocabulary.
+assert.match(
+  caveChat,
+  /\.workspace-rail-reopen__label \{\s*writing-mode: vertical-rl;/,
+  "the rail label reads downward with its face to the right/outside",
+);
+
+// The rail carries the left panel's glass (with honest fallbacks).
+assert.match(
+  caveChat,
+  /\.workspace-rail-reopen \{[\s\S]{0,900}?color-mix\(in oklch, var\(--bg-raised\) 88%, transparent\)[\s\S]{0,200}?backdrop-filter: blur\(14px\) saturate\(140%\)/,
+  "the rail wears the same glass as the left sidebar",
+);
+assert.match(
+  caveChat,
+  /@media \(prefers-reduced-transparency: reduce\) \{\s*\.workspace-rail-reopen \{/,
+  "rail glass respects reduced transparency",
+);
+
+// The dead two-icon closed strip is gone — the rail is the one closed state.
+assert.doesNotMatch(
+  globals,
+  /right-panel-strip--closed\s*\{/,
+  "the unused right-panel-strip CSS fossil stays deleted",
+);
+
 console.log("right-sidebar-fit.test.ts OK");

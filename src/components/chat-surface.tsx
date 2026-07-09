@@ -251,6 +251,13 @@ export function ChatSurface({
   const rightPanel: RightPanelKind | null =
     rightPanelProp !== undefined ? (rightPanelProp ?? null) : inspectorOpen ? "inspector" : null;
 
+  // The collapsed right rail reopens whatever the user last had — a fresh
+  // session lands on the Inspector.
+  const [lastPanel, setLastPanel] = useState<Exclude<RightPanelKind, "changes">>("inspector");
+  useEffect(() => {
+    if (rightPanel === "inspector" || rightPanel === "debug") setLastPanel(rightPanel);
+  }, [rightPanel]);
+
   function setRightPanel(next: RightPanelKind | null) {
     if (onSetRightPanel) { onSetRightPanel(next); return; }
     onSetInspectorOpen(next === "inspector");
@@ -784,6 +791,24 @@ export function ChatSurface({
           </Group>
         )}
       </div>
+      {/* Collapsed right-panel rail: the reflection of the left nav's collapsed
+          "Chats" rail. When the Inspector/Debug/Changes sidebar is closed on a
+          wide conversation pane, a slim in-flow rail stays at the right edge —
+          content flows BESIDE it, never underneath — and clicking it reopens
+          the last-used panel. Label reads top→bottom with the glyph face to
+          the right/outside (vertical-rl), mirroring the left rail. */}
+      {scope === "conversation" && rightPanel === null && !isMobile && !paneNarrow && (
+        <button
+          type="button"
+          aria-label="Show session panels"
+          title="Show session panels (Inspector · Debug · Changes)"
+          className="workspace-rail-reopen chat-right-rail focus-ring"
+          onClick={() => setRightPanel(lastPanel)}
+        >
+          <Icon name="ph:sidebar-simple" width={15} aria-hidden />
+          <span className="workspace-rail-reopen__label">Inspector</span>
+        </button>
+      )}
       {/* Collapsed code rail: a full-height reopen rail on the right edge that
           mirrors the left nav's collapsed "Chats" rail (same width, icon over a
           vertical label — here "Code"). Shown when the rail is available for
