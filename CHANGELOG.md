@@ -7,6 +7,25 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.164] - 2026-07-09
+
+> 🚦 **Chrome that knows when to leave** — the macOS traffic lights hide with the side panel and glide back when it opens, Dia-style. iOS gets real split layouts on wide windows and a decluttered chat header, cron details fit every screen, and releases now stamp themselves with one command.
+
+Patch release on top of v0.0.163.
+
+### Features
+- **Shell: traffic lights follow the side panel, Dia-style** (#2837, cave-9ja2). Closed panel → the native buttons hide and the title bar reclaims their inset; open or hover-peek → they glide back.
+- **iOS: wide windows engage the split layouts** — no more sparse full-width columns (#2838, cave-bgmg).
+- **Marketplace: skills-leaderboard detail** — click-to-copy CLI, minimalist stats, tidy actions (#2834).
+- **Release tooling: one-command stamp script + partial updater-manifest resilience** (#2833, cave-ef6f).
+
+### Fixes
+- **Crons: cron detail fits every screen** — balanced expanded columns, adaptive list rows, honest mobile chrome (#2839).
+- **Grimoire: editor batch** — dirty-tab dot + close confirm, next-paths stripped from journal (#2836, cave-vv2h/cave-onp8).
+- **iOS: chat header sheds the Commands and Share toolbar buttons** (#2835, cave-yey7).
+- **Release tooling: stamp script survives the gitignored-but-tracked generated iOS plist** (`git add -f`; found on this stamp's first real run).
+
+
 ## [0.0.163] - 2026-07-09
 
 > 📱 **Hand off THIS chat to your phone** — the QR pairing carries the current conversation across and finally confirms it took. The Work Queue rides the Tasks page as a tab, the familiar switcher reads as a clean dropdown with a prominent Summon button, multi-file turns collapse into one "Review all" entry, and the chat header slims down for narrow panels. Plus a readable transcript over custom backdrops, mid-save file-switch no longer bleeds content, and Grimoire graph nodes are keyboard-traversable.
