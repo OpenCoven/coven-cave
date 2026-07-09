@@ -30,6 +30,8 @@ import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
+import { SettingsTabbed } from "./settings-section-tabs";
+import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
 import { SettingsOverview } from "./settings-overview";
 import {
@@ -342,7 +344,7 @@ export function SettingsShell() {
             />
           )}
           {section === "mobile"   && <MobileSection />}
-          {section === "appearance" && <AppearanceSection />}
+          {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>
       </div>
@@ -1538,7 +1540,25 @@ function ThemeTokenOverrides({
 
 // ─── Section: Appearance ───────────────────────────────────────────────────────────────────────
 
-function AppearanceSection() {
+// Appearance stacks many groups — tab them so the common controls don't require
+// a long scroll. Labels in APPEARANCE_TAB_GROUPS must match each SettingsGroup
+// label so search/deep-link can switch to the right tab. Module-level (stable
+// ref) so the tab effect doesn't re-run every render.
+type AppearanceTab = "theme" | "colors" | "typography" | "interface";
+const APPEARANCE_TABS: ReadonlyArray<TabItem<AppearanceTab>> = [
+  { id: "theme", label: "Theme" },
+  { id: "colors", label: "Colors" },
+  { id: "typography", label: "Typography" },
+  { id: "interface", label: "Interface" },
+];
+const APPEARANCE_TAB_GROUPS: Record<AppearanceTab, readonly string[]> = {
+  theme: ["Mode", "Theme", "Import from tweakcn"],
+  colors: ["Theme tokens"],
+  typography: ["Typography", "Reading text", "Date & time"],
+  interface: ["Corners"],
+};
+
+function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
@@ -1713,14 +1733,25 @@ function AppearanceSection() {
 
   return (
     <SettingsPage section="appearance" title="Appearance" description="Colors and visual style.">
+      <SettingsTabbed
+        ariaLabel="Appearance settings"
+        tabs={APPEARANCE_TABS}
+        groupsByTab={APPEARANCE_TAB_GROUPS}
+        scrollTarget={scrollTarget}
+      >
+        {(tab) => (
+          <>
       {/* ── Mode toggle ── */}
+      {tab === "theme" && (
       <SettingsGroup label="Mode">
         <div className="px-4 py-3">
           <ModeToggle value={mode} onChange={handleSetMode} />
         </div>
       </SettingsGroup>
+      )}
 
       {/* ── Preset themes ── */}
+      {tab === "theme" && (
       <SettingsGroup label="Theme">
         {/* Custom theme chip */}
         {activeTheme === "custom" && customData && (
@@ -1756,10 +1787,12 @@ function AppearanceSection() {
           ))}
         </div>
       </SettingsGroup>
+      )}
 
       {/* ── Per-token overrides + manual resync ── the single place to customize
           the selected theme's colors (the old three-color editor was redundant
           with this panel and has been removed). */}
+      {tab === "colors" && (
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
@@ -1786,8 +1819,10 @@ function AppearanceSection() {
           </span>
         </div>
       </SettingsGroup>
+      )}
 
       {/* ── tweakcn import ── */}
+      {tab === "theme" && (
       <SettingsGroup label="Import from tweakcn">
         <div className="flex flex-col gap-2 px-4 py-3">
           <p className="text-[12px] text-[var(--text-muted)]">
@@ -1838,8 +1873,9 @@ function AppearanceSection() {
           )}
         </div>
       </SettingsGroup>
+      )}
 
-      <FontSettings />
+      {tab === "typography" && <FontSettings />}
 
       {/* ── Backdrop ── an image behind Home + Chat with the accent tinted to
           match it (cave-backdrop.ts owns storage + the vibe derivation). */}
@@ -1849,6 +1885,7 @@ function AppearanceSection() {
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}
+      {tab === "interface" && (
       <SettingsGroup label="Corners">
         <SettingControlRow
           label="Corner radius"
@@ -1863,6 +1900,10 @@ function AppearanceSection() {
           />
         </SettingControlRow>
       </SettingsGroup>
+      )}
+          </>
+        )}
+      </SettingsTabbed>
     </SettingsPage>
   );
 }
