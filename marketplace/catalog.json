@@ -5355,6 +5355,84 @@
           "body": "Draft release notes from the merges since {{last release}}. Group by user-facing area, lead each item with the benefit, and keep internal-only changes in a short footnote section."
         }
       ]
+    },
+    {
+      "name": "prompt-pack-shipping",
+      "displayName": "Prompt Pack: Shipping",
+      "version": "0.1.0",
+      "description": "Release, review, and team-ritual prompts — launch notes, detailed PRs, bug repros, standups, retros. Showcases multi-placeholder templates with defaults. Installed templates appear under /prompts and the Prompt snippets picker.",
+      "category": "Productivity",
+      "keywords": [
+        "prompts",
+        "templates",
+        "release",
+        "team",
+        "review"
+      ],
+      "capabilities": [
+        "prompts"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "prompts": [
+        {
+          "id": "release-notes-launch",
+          "name": "Launch release notes",
+          "description": "Turn merges into benefit-led, user-facing launch notes.",
+          "icon": "ph:megaphone-bold",
+          "tags": [
+            "release",
+            "writing"
+          ],
+          "body": "Write launch release notes for {{product|the app}} covering the changes since {{last release|the last tag}}. Group items by user-facing area, lead each with the benefit (not the implementation), and keep internal-only changes in a short footnote. Audience: {{audience|end users}}."
+        },
+        {
+          "id": "pr-description-detailed",
+          "name": "Detailed PR description",
+          "description": "A thorough, reviewer-ready PR writeup with verification and risk.",
+          "icon": "ph:note-pencil",
+          "tags": [
+            "git",
+            "review"
+          ],
+          "body": "Draft a detailed pull request description for {{branch|the current branch}}.\n\n## What changed\n{{summary}}\n\n## Why\n{{motivation}}\n\n## How it was verified\n{{verification|tests + manual check}}\n\n## Risk & follow-ups\nCall out anything reviewers should look at closely and anything deliberately left out."
+        },
+        {
+          "id": "bug-repro",
+          "name": "Bug repro report",
+          "description": "Turn a vague bug into a crisp, reproducible report.",
+          "icon": "ph:list-checks-bold",
+          "tags": [
+            "debugging",
+            "quality"
+          ],
+          "body": "Write a reproducible bug report for {{the bug}}.\n\n- Steps to reproduce (numbered, from a clean state)\n- Expected vs actual\n- Environment: {{environment|latest build}}\n- Evidence: logs, screenshots, or a failing test\n- Suspected area: {{suspected area|unknown}}"
+        },
+        {
+          "id": "standup-update",
+          "name": "Standup update",
+          "description": "A tight daily standup: done, next, blockers.",
+          "icon": "ph:chat-centered-text",
+          "tags": [
+            "team",
+            "meeting"
+          ],
+          "body": "Write my standup update for {{team|the team}}.\n\n- Yesterday: {{done}}\n- Today: {{plan}}\n- Blockers: {{blockers|none}}\n\nKeep it to a few lines and lead with anything that needs someone else."
+        },
+        {
+          "id": "retro-notes",
+          "name": "Retro notes",
+          "description": "Structure a retrospective into keep / drop / try actions.",
+          "icon": "ph:book-open",
+          "tags": [
+            "team",
+            "meeting"
+          ],
+          "body": "Summarize the retro for {{sprint or period}} into clear sections:\n\n- What went well (keep)\n- What didn't (drop)\n- What to try next (with an owner each)\n\nSource material: {{notes|the discussion above}}. End with the top 3 action items."
+        }
+      ]
     }
   ]
 }

@@ -81,6 +81,10 @@ The Marketplace surface lives as a **Marketplace** tab on the Roles page. Beyond
 
 All package-id → filesystem-path lookups go through the path-injection-safe `resolveCatalogName` in `src/app/api/marketplace/config/catalog-config.ts` — any new route that reads a manifest by id must reuse it.
 
+## Prompt packs
+
+Packs whose capability is `prompts` ship reusable composer templates. The detail pane previews each template (icon, description, body snippet, tags) via `GET /api/marketplace/pack-prompts?id=<pack>` — which works pre-install — and offers a **Try it** that hands the body to the Home composer. See [`prompt-packs.md`](prompt-packs.md) for the file format, the `{{placeholder|default}}` grammar and Tab flow, precedence rules, and how to author a pack.
+
 ## Deferred / future work
 
 Captured for later (not yet built):

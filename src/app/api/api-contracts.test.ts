@@ -101,6 +101,7 @@ const contracts: RouteContract[] = [
   { route: "/mcp", methods: ["GET"], kind: "json" },
   { route: "/marketplace", methods: ["GET"], kind: "json" },
   { route: "/marketplace/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/marketplace/pack-prompts", methods: ["GET"], kind: "json" },
   { route: "/marketplace/uninstall", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },

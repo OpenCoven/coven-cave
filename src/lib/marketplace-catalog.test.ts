@@ -278,12 +278,19 @@ for (const plugin of sanitizedProductionCards) {
 }
 for (const [label, source] of [
   ["/api/marketplace", marketplaceRoute],
-  ["/api/marketplace/install", marketplaceInstallRoute],
   ["/api/marketplace/uninstall", marketplaceUninstallRoute],
   ["marketplace catalog-config", marketplaceCatalogConfig],
 ]) {
   assert.match(source, /sanitizeMarketplacePlugins/, `${label} should resolve ids through the familiar-safe marketplace catalog`);
 }
+// The install route delegates id-resolution to the shared, path-injection-safe
+// resolveCatalogName helper (which itself sanitizes the catalog), so it no
+// longer names sanitizeMarketplacePlugins directly (cave-1f9h).
+assert.match(
+  marketplaceInstallRoute,
+  /resolveCatalogName/,
+  "/api/marketplace/install should resolve ids through the shared catalog resolver",
+);
 
 // --- production prompt pack: card derives kind "prompt", template files exist ---
 const packCard = sanitizedProductionCards.find((p) => p.id === "prompt-pack-essentials");
