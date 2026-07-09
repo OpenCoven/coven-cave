@@ -116,5 +116,15 @@ assert.match(settings, /<BackdropSettings \/>/, "Appearance renders the backdrop
 assert.match(backdropSettings, /prepareBackdropImage\(file\)/, "picking an image downscales + derives the seed");
 assert.match(backdropSettings, /accent matched to the image/i, "the pick announces the vibe match to AT");
 assert.match(backdropSettings, /writeBackdropImage\(null\)/, "Clear removes the stored image");
+assert.match(
+  backdropSettings,
+  /accept="image\/png,image\/jpeg,image\/webp,image\/avif,image\/heic,image\/heif"/,
+  "the picker accepts HEIC/HEIF photos (cave-cjpb)",
+);
+assert.match(
+  backdropSettings,
+  /convert it to JPEG first/,
+  "an undecodable HEIC gets an actionable announce, not the engine's decode error",
+);
 
 console.log("cave-backdrop.test.ts: ok");
