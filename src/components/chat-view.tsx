@@ -1697,6 +1697,7 @@ function LinkedContextRow({
   sessionId,
   onLinkedContextChange,
   handoff,
+  sessionSettled = false,
 }: {
   linkedContext: ChatLinkedContext | null;
   onOpenTask?: (cardId: string) => void;
@@ -1705,8 +1706,14 @@ function LinkedContextRow({
   /** Recent turns + familiar/project for the picker's "New task from this chat"
    *  handoff (cave-px7). Absent → the picker only links existing tasks. */
   handoff?: ChatHandoffContext | null;
+  /** True once the latest assistant turn settled cleanly — gates the
+   *  one-click "Mark done" on linked tasks (cave-32ks phase 3): finished
+   *  familiar work is the moment the card can flip without leaving chat. */
+  sessionSettled?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
   const task = linkedContext?.task ?? null;
   const tasks = linkedContext?.tasks ?? (task ? [task] : []);
   const github = linkedContext?.github ?? [];
@@ -1714,6 +1721,39 @@ function LinkedContextRow({
   if (!task && github.length === 0 && !canLink) return null;
 
   const linkedIds = new Set(tasks.map((t) => t.id));
+
+  // cave-32ks phase 3: flip the card through its lifecycle machine —
+  // "completed" derives status "done" server-side, and lifecycleReason is the
+  // card's audit note for where the flip came from.
+  const markDone = async (t: (typeof tasks)[number]) => {
+    setMarkingId(t.id);
+    try {
+      const res = await fetch(`/api/board/${encodeURIComponent(t.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          lifecycle: "completed",
+          lifecycleReason: sessionId
+            ? `Marked done from chat (session ${sessionId})`
+            : "Marked done from chat",
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(String(json.error ?? res.status));
+      const done = (x: NonNullable<ChatLinkedContext["task"]>) =>
+        x.id === t.id ? { ...x, status: "done" as const, lifecycle: "completed" as const } : x;
+      onLinkedContextChange?.((prev) =>
+        prev
+          ? { ...prev, task: prev.task ? done(prev.task) : prev.task, tasks: prev.tasks?.map(done) ?? prev.tasks }
+          : prev,
+      );
+      announce(`Task "${t.title}" marked done.`);
+    } catch {
+      announce(`Couldn't mark "${t.title}" done — check your connection.`, "assertive");
+    } finally {
+      setMarkingId(null);
+    }
+  };
 
   const onAssigned = (card: Card) => {
     const linked = {
@@ -1739,7 +1779,22 @@ function LinkedContextRow({
   return (
     <div className="cave-chat-linked-context">
       {tasks.map((t) => (
-        <TaskChip key={t.id} task={t} onOpenTask={onOpenTask} />
+        <span key={t.id} className="inline-flex min-w-0 items-center gap-1">
+          <TaskChip task={t} onOpenTask={onOpenTask} />
+          {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
+            <button
+              type="button"
+              onClick={() => void markDone(t)}
+              disabled={markingId === t.id}
+              title={`Mark task done: ${t.title}`}
+              aria-label={`Mark task done: ${t.title}`}
+              className="cave-chat-linked-chip cave-chat-linked-chip--mark-done focus-ring inline-flex items-center gap-1 border border-[color-mix(in_oklch,var(--color-success)_32%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_9%,transparent)] text-[var(--color-success)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] disabled:opacity-60"
+            >
+              <Icon name="ph:check-bold" width={10} className="shrink-0" />
+              {markingId === t.id ? "Marking…" : "Mark done"}
+            </button>
+          ) : null}
+        </span>
       ))}
       {canLink ? (
         <span className="relative inline-flex">
@@ -4682,6 +4737,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           sessionId={sessionId}
           onLinkedContextChange={setLinkedContext}
           handoff={{ turns, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
+          sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
         />
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />

@@ -17,6 +17,7 @@ import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-reso
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Popover } from "@/components/ui/popover";
 import { type WipLimits, wipState } from "@/lib/board-wip";
+import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },
@@ -797,12 +798,15 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
       {hasChips && (
         <div className="board-kanban-card-chips">
           {session && (
+            // cave-32ks: the chip carries the linked session's LIVE state
+            // (status-dot + word) so "is my familiar on it?" reads from the
+            // board without opening the chat.
             <span
-              className="board-kanban-card-chip board-kanban-card-chip--chat"
-              title={`Linked chat: ${session.title || "(untitled)"}`}
+              className={`board-kanban-card-chip board-kanban-card-chip--chat board-kanban-card-chip--chat-${sessionStatusTone(session.status)}`}
+              title={`Linked chat (${sessionStatusWord(session.status)}): ${session.title || "(untitled)"}`}
             >
-              <Icon name="ph:chat-circle-dots" width={9} />
-              Chat
+              <span className="board-kanban-card-chip-dot" aria-hidden />
+              Chat · {sessionStatusWord(session.status)}
             </span>
           )}
           {schedule && (
