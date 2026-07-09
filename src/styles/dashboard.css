@@ -158,9 +158,35 @@
 }
 
 .settings-shell__header {
+  /* Subtle titlebar glass, matching the workspace shell's native band: a
+     translucent panel-to-base wash with blur+saturate instead of the old
+     opaque gradient, so the header reads as window chrome floating over the
+     settings canvas. Fallbacks below restore the opaque wash. */
   background:
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--bg-panel) 62%, transparent),
+      color-mix(in oklch, var(--bg-base) 44%, transparent)
+    );
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-app-region: drag;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .settings-shell__header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .settings-shell__header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .settings-shell__header :is(button, a, input, select, textarea) {

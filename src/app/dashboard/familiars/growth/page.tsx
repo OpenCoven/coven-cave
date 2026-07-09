@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export default function FamiliarGrowthDashboardPage() {
   return (
     <main className="dr-page">
-      <div className="dr-topbar">
+      <div className="dr-topbar" data-tauri-drag-region="deep">
         <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
           <a className="dr-back" href="/dashboard">
             <Icon name="ph:arrow-left" aria-hidden />

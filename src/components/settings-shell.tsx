@@ -238,6 +238,10 @@ export function SettingsShell() {
       <header
         className="settings-shell__header surface-compact-header shrink-0"
         style={{ paddingTop: "calc(5px + var(--sai-top))" }}
+        // Real window drag on the loopback webview (the CSS app-region hint is
+        // inert on external URLs — see the titlebar notes in shell.tsx). The
+        // Back button and other controls opt out automatically as clickables.
+        data-tauri-drag-region="deep"
       >
         <button
           type="button"

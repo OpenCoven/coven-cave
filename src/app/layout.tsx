@@ -12,6 +12,7 @@ import { ReadingWeightController } from "@/components/reading-weight-controller"
 import { ReadingHyphensController } from "@/components/reading-hyphens-controller";
 import { CornerRadiusController } from "@/components/corner-radius-controller";
 import { RemoteThemeController } from "@/components/remote-theme-controller";
+import { TauriTitlebarMarker } from "@/components/tauri-titlebar-marker";
 import { ThemeScript } from "@/components/theme-script";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
@@ -87,6 +88,7 @@ export default function RootLayout({
             <ReadingHyphensController />
             <CornerRadiusController />
             <RemoteThemeController />
+            <TauriTitlebarMarker />
             <PwaRegister />
             <WebVitalsReporter />
             <PerfOverlay />

@@ -16,6 +16,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { useIsMobile } from "@/lib/use-viewport";
+import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
 import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import {
@@ -212,10 +213,12 @@ function ShellInner({
   }, [isMobile]);
 
   // Seamless macOS title bar: only the macOS desktop Tauri shell overlays the
-  // native title bar (lib.rs sets TitleBarStyle::Overlay), so only there do we
-  // mark <html> to reserve room for the traffic lights (see
-  // [data-tauri-titlebar] in globals.css). Browser, Windows, Linux, and
-  // Tauri-mobile keep their normal chrome.
+  // native title bar (lib.rs sets TitleBarStyle::Overlay). The root
+  // `data-tauri-titlebar` marker that reserves room for the traffic lights is
+  // owned globally by <TauriTitlebarMarker> in the root layout — the lights
+  // float over EVERY route of the window (Settings, Dashboard, reports…),
+  // not just this shell. Browser, Windows, Linux, and Tauri-mobile never set
+  // it.
   //
   // The drag itself is handled by Tauri's injected drag.js via the
   // `data-tauri-drag-region="deep"` attributes on the titlebar below: a press
@@ -233,26 +236,6 @@ function ShellInner({
   // only bridges it into a real NSWindow drag on the native `tauri://`
   // scheme) — which is why the titlebar historically never dragged. The CSS
   // stays as a progressive-enhancement fallback for any bundled-scheme build.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const isTauri = "__TAURI_INTERNALS__" in window;
-    // navigator.platform is deprecated and empty on newer WebKit, which made
-    // isMac fall through to false and skip the titlebar mode entirely. Prefer
-    // the modern userAgentData.platform, then fall back to the UA string.
-    const platform =
-      (navigator as unknown as { userAgentData?: { platform?: string } })
-        .userAgentData?.platform ||
-      navigator.userAgent ||
-      navigator.platform ||
-      "";
-    const isMac = /Mac/i.test(platform);
-    if (!isTauri || !isMac) return;
-    const root = document.documentElement;
-    root.dataset.tauriTitlebar = "";
-    return () => {
-      delete root.dataset.tauriTitlebar;
-    };
-  }, []);
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",
@@ -355,9 +338,10 @@ function ShellInner({
   const trafficLightsVisible = navOpen || navPeeking || isMobile;
   useEffect(() => {
     const root = document.documentElement;
-    // Only the macOS desktop Tauri shell overlays the title bar (the effect
-    // above sets this marker); everywhere else there are no lights to manage.
-    if (!("tauriTitlebar" in root.dataset)) return;
+    // Only the macOS desktop Tauri shell overlays the title bar; everywhere
+    // else there are no lights to manage. Detected directly (not via the
+    // root marker) so this effect can't race <TauriTitlebarMarker />'s mount.
+    if (!isMacDesktopShell()) return;
     let cancelled = false;
     const applyNative = (visible: boolean) =>
       import("@tauri-apps/api/core").then(({ invoke }) =>

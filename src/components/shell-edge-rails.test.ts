@@ -289,4 +289,76 @@ assert.doesNotMatch(
   );
 }
 
+// ── Title-bar fit is comprehensive (cave-i7wf follow-up) ────────────────────
+// The overlay title bar is a property of the WINDOW, not of the workspace
+// shell: the traffic lights float over every route (/settings, /dashboard,
+// reports, analytics) and at every window width. The root marker is owned
+// globally and each full-window title band reserves the lights inset.
+{
+  const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const marker = readFileSync(new URL("./tauri-titlebar-marker.tsx", import.meta.url), "utf8");
+  assert.match(layout, /<TauriTitlebarMarker \/>/, "the root layout owns the titlebar marker");
+  assert.match(
+    marker,
+    /isMacDesktopShell\(\)/,
+    "the marker uses the shared macOS-desktop-shell detection",
+  );
+  assert.doesNotMatch(
+    shell,
+    /dataset\.tauriTitlebar =/,
+    "the workspace shell no longer sets the marker — it must survive shell unmount",
+  );
+  assert.match(
+    shell,
+    /if \(!isMacDesktopShell\(\)\) return;/,
+    "the lights effect detects the platform directly instead of racing the marker mount",
+  );
+  // The shell-top reserve applies at every width (a sub-1024 window put the
+  // mobile top-bar's controls under the lights when it was media-gated).
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{\s*padding-left: var\(--titlebar-lights-inset\);\s*\}/,
+    "the shell-top lights inset is not desktop-media-gated",
+  );
+  // Full-window route bands reserve the same inset…
+  for (const band of ["settings-shell__header", "dr-topbar", "fa-topbar"]) {
+    assert.match(
+      css,
+      new RegExp(`:root\\[data-tauri-titlebar\\] \\.${band} \\{\\s*padding-left: (?:var\\(--titlebar-lights-inset\\)|max\\(var\\(--titlebar-lights-inset\\))`),
+      `${band} reserves the traffic-light inset on macOS`,
+    );
+  }
+  // …but the analytics band embedded in the workspace shell (inspector tab)
+  // sits mid-window and must NOT.
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-frame \.fa-topbar \{\s*padding-left: 24px;/,
+    "the inspector-embedded analytics breadcrumb keeps its own padding",
+  );
+  // Titlebar glass stays honest: blur is paired with the reduced-transparency
+  // and no-backdrop-filter fallbacks.
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the native shell titlebar carries subtle glass",
+  );
+  const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
+  assert.match(
+    dashboardCss,
+    /\.settings-shell__header \{[\s\S]{0,600}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the settings header is glass",
+  );
+  assert.match(
+    dashboardCss,
+    /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]{0,400}?\.settings-shell__header/,
+    "settings header glass respects reduced transparency",
+  );
+  const settingsShell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+  assert.match(
+    settingsShell,
+    /surface-compact-header shrink-0"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
+    "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
+  );
+}
+
 console.log("shell-edge-rails.test.ts OK");

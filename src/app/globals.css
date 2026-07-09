@@ -4998,28 +4998,82 @@ button:active > .edge-rail-chip {
    app-region rules stay only as a progressive-enhancement fallback for any
    bundled-scheme build.
    `[data-tauri-titlebar]` is set on <html> only in the macOS desktop shell
-   (see shell.tsx), so browser/Windows/Linux are untouched. Scoped to the
-   desktop layout (≥1024px) to match where `.menu-bar` renders.
+   (see tauri-titlebar-marker.tsx, mounted in the root layout), so
+   browser/Windows/Linux are untouched.
    ──────────────────────────────────────────────── */
+
+/* Shared traffic-light reserve — ~78px clears the three lights + their left
+   inset at standard macOS metrics. */
+:root[data-tauri-titlebar] {
+  --titlebar-lights-inset: 78px;
+}
+
+/* Fit at EVERY window width: the lights float over the webview no matter how
+   narrow the window is, so the reserve can't be desktop-media-gated — in a
+   sub-1024 window the mobile top-bar's controls sat underneath the buttons. */
+:root[data-tauri-titlebar] .shell-top {
+  padding-left: var(--titlebar-lights-inset);
+}
+
+/* Dia-style: with the side panel closed the shell hides the traffic lights
+   (set_traffic_lights_visible in lib.rs, driven by shell.tsx — the attribute
+   flips to "hidden" only AFTER the native hide is confirmed), so the bar
+   releases the room reserved for them and slides back to the window edge. */
+:root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-top {
+  padding-left: 12px;
+}
+
+/* Subtle titlebar glass (native shell only — the browser tab keeps the fully
+   seamless canvas): a whisper of translucent fill + blur so the band reads
+   as window chrome floating over the backdrop, macOS-native, not a painted
+   strip. Falls back to the seamless transparent band where glass can't
+   render legibly. */
+:root[data-tauri-titlebar] .shell-top {
+  background: color-mix(in oklch, var(--bg-base) 46%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-tauri-titlebar] .shell-top { background: transparent; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-tauri-titlebar] .shell-top {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Full-window route bands: Settings, Dashboard/Reports, and the analytics
+   page render in the same overlay-titlebar window once the app navigates
+   away from the workspace shell — their leading controls (Back, breadcrumbs)
+   need the same reserve. The shell restores the native lights on unmount, so
+   these never need a hidden-state variant. */
+:root[data-tauri-titlebar] .settings-shell__header {
+  padding-left: var(--titlebar-lights-inset);
+}
+:root[data-tauri-titlebar] .dr-topbar {
+  padding-left: max(var(--titlebar-lights-inset), clamp(20px, 5vw, 64px));
+}
+:root[data-tauri-titlebar] .fa-topbar {
+  padding-left: var(--titlebar-lights-inset);
+}
+/* …but NOT when the analytics view is embedded inside the workspace shell
+   (the inspector tab) — there the band sits mid-window, under shell chrome. */
+:root[data-tauri-titlebar] .shell-frame .fa-topbar {
+  padding-left: 24px;
+}
+
 @media (min-width: 1024px) {
   :root[data-tauri-titlebar] .shell-top {
-    /* ~78px clears the three traffic lights + their left inset; the slim 29px
-       band hugs the 28px controls so the bar doesn't tower over the lights
-       (was 36px — user asked for ~20% shorter). */
-    padding-left: 78px;
+    /* The slim 29px band hugs the 28px controls so the bar doesn't tower
+       over the lights (was 36px — user asked for ~20% shorter). */
     min-height: 29px;
   }
 
   /* The inner menu-bar would otherwise prop the band back open at 34px. */
   :root[data-tauri-titlebar] .shell-top .menu-bar {
     min-height: 28px;
-  }
-
-  /* Dia-style: with the side panel closed the shell hides the traffic lights
-     (set_traffic_lights_visible in lib.rs, driven by shell.tsx), so the bar
-     releases the room reserved for them and slides back to the window edge. */
-  :root[data-tauri-titlebar][data-traffic-lights="hidden"] .shell-top {
-    padding-left: 12px;
   }
 
   :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
@@ -9206,9 +9260,11 @@ a.mobile-handoff__link:hover {
   justify-content: space-between;
   gap: 16px;
   padding: 12px clamp(20px, 5vw, 64px);
-  background: color-mix(in oklch, var(--bg-base) 96%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  /* Subtly more glass than the old near-opaque wash: content scrolling under
+     the sticky band shows through as a saturated blur, macOS-chrome style. */
+  background: color-mix(in oklch, var(--bg-base) 86%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-bottom: 1px solid var(--border-hairline);
 }
 .dr-back {
@@ -10448,8 +10504,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-muted);
   font-size: 12px;
   background: color-mix(in oklch, var(--bg-base) 84%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 .fa-topbar a {
   color: var(--text-secondary);
