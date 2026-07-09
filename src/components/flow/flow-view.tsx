@@ -134,6 +134,11 @@ export function FlowView() {
   // handle, or splice it into an edge.
   const catalogIntentRef = useRef<CatalogIntent>({ kind: "add", position: { x: 160, y: 160 } });
   const mountedRef = useRef(true);
+  // Sequence guard for loadRuns: it fires on every selectedId change, so
+  // switching flows fast can leave an older flow's runs fetch to resolve last
+  // and overwrite the selected flow's history. A monotonic id drops a
+  // superseded response before it touches state.
+  const runsReqRef = useRef(0);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doc = draftState?.doc ?? null;
@@ -193,10 +198,14 @@ export function FlowView() {
   }, [dispatchDraft, selectedId]);
 
   const loadRuns = useCallback(async (flowId: string) => {
+    const reqId = ++runsReqRef.current;
+    // Live only while this is still the newest runs fetch AND the view is
+    // mounted; a flow switched away from mid-flight drops all its writes.
+    const live = () => reqId === runsReqRef.current && mountedRef.current;
     setRunsLoading(true);
     try {
       const result = await listFlowRuns(flowId);
-      if (!mountedRef.current) return;
+      if (!live()) return;
       const list = result.ok ? result.runs : [];
       setRuns(list);
       // Resume the live overlay if the newest run is still running and we aren't
@@ -206,7 +215,7 @@ export function FlowView() {
         setActiveRun((current) => current ?? top);
       }
     } finally {
-      if (mountedRef.current) setRunsLoading(false);
+      if (live()) setRunsLoading(false);
     }
   }, []);
 

@@ -51,6 +51,14 @@ assert.match(styles, /\.flow-exec-custom-input/, "Custom execution data filters 
 assert.match(styles, /\.flow-exec-filter\.is-active/, "Active execution filter should be styled");
 assert.match(styles, /\.flow-exec-mode-production/, "Production execution mode badge should be styled");
 assert.match(styles, /\.flow-exec-custom-data/, "Custom execution data chips should be styled");
+// loadRuns is sequence-guarded: it fires on every selectedId change, so
+// switching flows fast must not let an older flow's runs fetch resolve last and
+// overwrite the selected flow's history.
+assert.match(view, /const runsReqRef = useRef\(0\)/, "loadRuns tracks a request id");
+assert.match(view, /const reqId = \+\+runsReqRef\.current;/, "each loadRuns bumps the request id");
+assert.match(view, /const live = \(\) => reqId === runsReqRef\.current && mountedRef\.current/, "loadRuns writes only while it's the newest runs fetch and still mounted");
+assert.match(view, /if \(!live\(\)\) return;\s*\n\s*const list = result\.ok/, "a superseded loadRuns drops its writes before setRuns");
+
 assert.match(view, /activeRun \? progress\.phases : null/, "Flow view should paint seeded progress before transcript markers arrive");
 assert.match(view, /progress\.markersFound \? progress\.steps : activeRun\.steps/, "Flow view should inspect persisted node data when transcript markers are unavailable");
 assert.match(runSteps, /progress\.phases\[id\] \?\? persisted/, "Run steps should use seeded progress before transcript markers arrive");
