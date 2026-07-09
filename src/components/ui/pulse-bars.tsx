@@ -23,7 +23,7 @@ export function PulseBars({
   const max = Math.max(1, ...pulse.map((day) => day.count));
   return (
     <div
-      className={`pulse-bars pulse-bars--${size}`}
+      className={`pulse-bars pulse-bars--${size}${showTips ? " pulse-bars--tips" : ""}`}
       {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
     >
       {pulse.map((day) => (

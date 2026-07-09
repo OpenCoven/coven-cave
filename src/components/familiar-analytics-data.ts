@@ -15,6 +15,10 @@ import {
   type ResponseConfidenceRollup,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
+import {
+  EMPTY_FEEDBACK_ROLLUP,
+  type MessageFeedbackRollup,
+} from "@/lib/message-feedback-rollup";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -45,6 +49,10 @@ type ResponseConfidenceResponse =
   | { ok: true; events: ResponseConfidenceEvent[]; total: number }
   | { ok: false; events?: ResponseConfidenceEvent[]; total?: number; error?: string };
 
+type MessageFeedbackResponse =
+  | { ok: true; rollup: MessageFeedbackRollup }
+  | { ok: false; rollup?: MessageFeedbackRollup; error?: string };
+
 export type FamiliarAnalyticsData = {
   familiarId: string;
   familiars: Familiar[];
@@ -54,6 +62,8 @@ export type FamiliarAnalyticsData = {
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
   responseConfidenceEvents: ResponseConfidenceEvent[];
+  /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
+  modelFeedback: MessageFeedbackRollup;
   errors: string[];
 };
 
@@ -67,6 +77,8 @@ export type FamiliarAnalyticsModel = {
   threadReports: ThreadSelfReport[];
   responseConfidenceEvents: ResponseConfidenceEvent[];
   responseConfidenceRollup: ResponseConfidenceRollup;
+  /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
+  modelFeedback: MessageFeedbackRollup;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
   errors: string[];
@@ -111,7 +123,8 @@ async function fetchResource<T extends ApiEnvelope>(url: string, fallback: T): P
     if (!res.ok) {
       return { ...fallback, error: `HTTP ${res.status}` } as T;
     }
-    return (await res.json()) as T;
+    // A null/undefined body degrades like a failed endpoint, not a crash.
+    return ((await res.json()) ?? { ...fallback, error: "empty response" }) as T;
   } catch (err) {
     return { ...fallback, error: err instanceof Error ? err.message : "request failed" } as T;
   }
@@ -135,6 +148,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     retroJson,
     selfReportsJson,
     responseConfidenceJson,
+    feedbackJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
@@ -143,6 +157,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
     fetchResource<ResponseConfidenceResponse>(`/api/familiars/${encodedId}/response-confidence?limit=100`, { ok: false, events: [], total: 0 }),
+    fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
   ]);
 
   const errors = [
@@ -152,6 +167,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(memoryJson, "memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
     responseError(responseConfidenceJson, "response confidence unavailable"),
+    responseError(feedbackJson, "message feedback unavailable"),
   ].filter((error): error is string => Boolean(error));
 
   return {
@@ -163,6 +179,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
     responseConfidenceEvents: responseConfidenceJson.ok ? responseConfidenceJson.events : [],
+    modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
   };
 }
@@ -210,6 +227,7 @@ export function buildFamiliarAnalyticsModel(
     threadReports: data.threadReports,
     responseConfidenceEvents: data.responseConfidenceEvents,
     responseConfidenceRollup: aggregateResponseConfidenceEvents(data.responseConfidenceEvents),
+    modelFeedback: data.modelFeedback,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
     errors: data.errors,
   };

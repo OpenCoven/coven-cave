@@ -1,36 +1,79 @@
 "use client";
 
 /**
- * HomeDigestCarousel — the home surface's "Daily summary" strip.
+ * HomeDigestCarousel — the home surface's two-row digest strip.
  *
- * Two stacked, subtle horizontal marquees: a CHATS row (today's summary +
- * session cards) and, separated out beneath it, a MEDIA row of the freshest
- * merged RSS headlines with image thumbnails. Both auto-scroll slowly and pause
- * on hover/focus so a card can be read or clicked; they fall back to manual
+ * Two stacked, subtle horizontal marquees: a CHATS row (needs-you attention
+ * cards + today's summary + session cards + quick-action suggestion cards)
+ * and, separated out beneath it, a MEDIA row of the freshest merged RSS
+ * headlines with image thumbnails. Both auto-scroll slowly and pause on
+ * hover/focus so a card can be read or clicked; they fall back to manual
  * horizontal scroll under `prefers-reduced-motion` (handled in CSS). Data is
- * assembled client-side from the existing /api/inbox and /api/rss endpoints —
- * no new server route.
+ * assembled client-side from the existing /api/inbox, /api/board, and /api/rss
+ * endpoints — no new server route. The needs-you tier itself arrives via props
+ * (the SAME groupInboxFeed slice the Schedules nav badge counts, cave-925w).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { FeedItem } from "@/lib/rss";
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useHomeNewsEnabled } from "@/lib/home-news-pref";
-import { buildDigestCards, type DigestCard, type DigestRssCard } from "@/lib/home-digest";
+import { inboxKindLabel } from "@/lib/inbox-feed";
+import { buildHomeSuggestions, type SuggestionCard } from "@/lib/home-suggestions";
+import {
+  buildDigestCards,
+  type DigestCard,
+  type DigestRssCard,
+} from "@/lib/home-digest";
+
+// Same kind → glyph mapping the bell popover uses, so an item reads the same
+// wherever it surfaces.
+function needsIcon(kind: InboxItem["kind"]): IconName {
+  switch (kind) {
+    case "response-needed":
+      return "ph:chat-circle-dots-fill";
+    case "daily-summary":
+      return "ph:newspaper";
+    case "agent":
+      return "ph:magic-wand-fill";
+    default:
+      return "ph:alarm-fill";
+  }
+}
 
 type Props = {
   sessions: SessionRow[];
   familiarNameById: Map<string, string>;
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
+  /** The "needs you" tier from groupInboxFeed — most-recent first. */
+  needsYou: InboxItem[];
+  /** Open one item's target (session/card) — same handler the bell uses. */
+  onOpenInboxItem: (item: InboxItem) => void;
+  /** See the full feed on the Schedules surface (the "+N more" card). */
+  onOpenSchedules: () => void;
+  /** Active project name — seasons the suggested prompts. */
+  projectName: string | null;
+  /** Insert a suggestion's prompt into the composer (never auto-sends). */
+  onPickSuggestion: (prompt: string) => void;
 };
 
-export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }: Props) {
+export function HomeDigestCarousel({
+  sessions,
+  familiarNameById,
+  onOpenSession,
+  needsYou,
+  onOpenInboxItem,
+  onOpenSchedules,
+  projectName,
+  onPickSuggestion,
+}: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [rss, setRss] = useState<FeedItem[]>([]);
+  const [boardCards, setBoardCards] = useState<SuggestionCard[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
   // News is opt-out in Settings → General (no inline dismiss on the row).
@@ -60,30 +103,83 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
     return () => { alive = false; };
   }, [loadDigest]);
 
+  // Board tasks feed the suggestion heuristic (moved here from the old
+  // HomeSuggestions pill row); a failed fetch simply leaves the curated
+  // starters, so the suggestion cards never error and never go missing.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/board", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive || !j?.ok || !Array.isArray(j.cards)) return;
+        setBoardCards(
+          j.cards.map((c: SuggestionCard) => ({
+            id: c.id,
+            title: c.title,
+            status: c.status,
+            updatedAt: c.updatedAt,
+          })),
+        );
+      })
+      .catch(() => {
+        /* starters-only fallback */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Ambient "Daily summary" — refresh once a minute so reminder/session counts
   // and relative ages advance. Suspends on hidden tabs and refreshes on focus,
   // and pauses while the user is typing so this ambient refresh (+ its re-render)
   // doesn't compete with composition in the Home composer just below.
   usePausablePoll(() => { void loadDigest(); }, 60_000, { pauseWhileInputActive: true });
 
+  const suggestions = useMemo(
+    () => buildHomeSuggestions({ cards: boardCards, projectName }),
+    [boardCards, projectName],
+  );
+
   const cards = useMemo(
-    () => buildDigestCards({ items, sessions, rssItems: rss, familiarNameById, nowMs }),
-    [items, sessions, rss, familiarNameById, nowMs],
+    () =>
+      buildDigestCards({
+        items,
+        sessions,
+        rssItems: rss,
+        needsYou,
+        suggestions,
+        familiarNameById,
+        nowMs,
+      }),
+    [items, sessions, rss, needsYou, suggestions, familiarNameById, nowMs],
   );
 
   if (!ready || cards.length === 0) return null;
 
-  // Keep chats (summary + sessions) and media (headlines) on separate rows so
-  // the media drifts alone, away from the chats.
-  const chatCards = cards.filter((c) => c.kind === "summary" || c.kind === "session");
+  // Keep chats (needs-you + summary + sessions + suggestions) and media
+  // (headlines) on separate rows so the media drifts alone, away from the chats.
+  const chatCards = cards.filter((c) => c.kind !== "rss");
   const mediaCards = cards.filter((c): c is DigestRssCard => c.kind === "rss");
 
   return (
     <section className="home-digest" aria-label="Daily summary">
       {chatCards.length > 0 ? (
         <div className="home-digest__track" aria-label="Today's chats">
-          <DigestRow cards={chatCards} onOpenSession={onOpenSession} />
-          <DigestRow cards={chatCards} onOpenSession={onOpenSession} duplicate />
+          <DigestRow
+            cards={chatCards}
+            onOpenSession={onOpenSession}
+            onOpenInboxItem={onOpenInboxItem}
+            onOpenSchedules={onOpenSchedules}
+            onPickSuggestion={onPickSuggestion}
+          />
+          <DigestRow
+            cards={chatCards}
+            onOpenSession={onOpenSession}
+            onOpenInboxItem={onOpenInboxItem}
+            onOpenSchedules={onOpenSchedules}
+            onPickSuggestion={onPickSuggestion}
+            duplicate
+          />
         </div>
       ) : null}
       {mediaCards.length > 0 && newsEnabled ? (
@@ -101,13 +197,19 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
   );
 }
 
+type CardHandlers = {
+  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
+  onOpenInboxItem?: (item: InboxItem) => void;
+  onOpenSchedules?: () => void;
+  onPickSuggestion?: (prompt: string) => void;
+};
+
 function DigestRow({
   cards,
-  onOpenSession,
   duplicate,
-}: {
+  ...handlers
+}: CardHandlers & {
   cards: DigestCard[];
-  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   duplicate?: boolean;
 }) {
   return (
@@ -118,7 +220,7 @@ function DigestRow({
     >
       {cards.map((card) => (
         <li key={(duplicate ? "dup:" : "") + card.id} className="home-digest__cell">
-          <DigestCardView card={card} onOpenSession={onOpenSession} focusable={!duplicate} />
+          <DigestCardView card={card} focusable={!duplicate} {...handlers} />
         </li>
       ))}
     </ul>
@@ -128,13 +230,52 @@ function DigestRow({
 function DigestCardView({
   card,
   onOpenSession,
+  onOpenInboxItem,
+  onOpenSchedules,
+  onPickSuggestion,
   focusable,
-}: {
+}: CardHandlers & {
   card: DigestCard;
-  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   focusable: boolean;
 }) {
   const tabIndex = focusable ? undefined : -1;
+
+  if (card.kind === "needs") {
+    return (
+      <button
+        type="button"
+        className="home-digest__card home-digest__card--needs"
+        tabIndex={tabIndex}
+        onClick={() => onOpenInboxItem?.(card.item)}
+        title={card.title}
+      >
+        <Icon name={needsIcon(card.item.kind)} width={13} className="home-digest__icon" aria-hidden />
+        <span className="home-digest__body">
+          <span className="home-digest__title">{card.title}</span>
+          <span className="home-digest__meta">Needs you · {card.meta}</span>
+        </span>
+        <span className="sr-only">{inboxKindLabel(card.item.kind)}</span>
+      </button>
+    );
+  }
+
+  if (card.kind === "needs-more") {
+    return (
+      <button
+        type="button"
+        className="home-digest__card home-digest__card--needs"
+        tabIndex={tabIndex}
+        onClick={() => onOpenSchedules?.()}
+        title="Open Schedules"
+      >
+        <Icon name="ph:alarm-fill" width={13} className="home-digest__icon" aria-hidden />
+        <span className="home-digest__body">
+          <span className="home-digest__title">+{card.count} more need you</span>
+          <span className="home-digest__meta">Open Schedules</span>
+        </span>
+      </button>
+    );
+  }
 
   if (card.kind === "summary") {
     return (
@@ -163,6 +304,26 @@ function DigestCardView({
         <span className="home-digest__body">
           <span className="home-digest__title">{card.title}</span>
           {card.subtitle ? <span className="home-digest__meta">{card.subtitle}</span> : null}
+        </span>
+      </button>
+    );
+  }
+
+  if (card.kind === "suggestion") {
+    // "task:" cards resume real board work; starters are fresh prompts. The
+    // icon + meta encode the difference so the track scans at a glance.
+    return (
+      <button
+        type="button"
+        className="home-digest__card home-digest__card--suggestion"
+        tabIndex={tabIndex}
+        onClick={() => onPickSuggestion?.(card.prompt)}
+        title={card.prompt}
+      >
+        <Icon name={card.isTask ? "ph:kanban" : "ph:sparkle"} width={13} className="home-digest__icon" aria-hidden />
+        <span className="home-digest__body">
+          <span className="home-digest__title">{card.prompt}</span>
+          <span className="home-digest__meta">{card.isTask ? "Resume task" : "Suggested"}</span>
         </span>
       </button>
     );

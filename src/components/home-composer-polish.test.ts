@@ -63,8 +63,13 @@ assert.match(
 );
 assert.match(
   source,
-  /cave-composer-submit-row[\s\S]*?aria-label="Voice input"[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"/,
-  "the submit cluster runs voice · enhance · send",
+  /cave-composer-submit-row[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"/,
+  "the submit cluster runs enhance · send (voice is hidden until it works)",
+);
+assert.doesNotMatch(
+  source,
+  /aria-label="Voice input"/,
+  "no permanently disabled voice button in the submit cluster",
 );
 assert.match(
   source,

@@ -280,6 +280,19 @@ function mockFetchFor(score: "low" | "trusted") {
         ],
       },
     ],
+    [
+      "/api/feedback/message?familiarId=cody",
+      {
+        ok: true,
+        rollup: {
+          up: 2,
+          down: 1,
+          total: 3,
+          models: [{ key: "claude-sonnet-4", up: 2, down: 1, total: 3, approval: 2 / 3 }],
+          runtimes: [{ key: "claude", up: 2, down: 1, total: 3, approval: 2 / 3 }],
+        },
+      },
+    ],
   ]);
 
   globalThis.fetch = (async (url: RequestInfo | URL) => ({
@@ -377,6 +390,20 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.sessionPulse[13].key, "2026-06-25");
     assert.match(source, /<PulseBars/, "hero renders the pulse bars");
     assert.match(source, /model\.sessionPulse/, "pulse is wired to the model");
+  });
+
+  it("surfaces thumbs-vote model/runtime performance from the feedback rollup", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    assert.equal(model.modelFeedback.total, 3, "the rollup rides the model");
+    assert.equal(model.modelFeedback.models[0].key, "claude-sonnet-4");
+    assert.equal(model.modelFeedback.runtimes[0].up, 2);
+    assert.match(source, /id="fa-model-performance"/, "the view renders a Model performance section");
+    assert.match(source, /<ModelFeedbackSection rollup=\{model\.modelFeedback\}/, "section is wired to the rollup");
+    assert.match(source, /ph:thumbs-up/, "rows show up-vote counts");
+    assert.match(source, /ph:thumbs-down/, "rows show down-vote counts");
   });
 
   it("makes each KPI tile a drill-through link to the section it summarizes", () => {

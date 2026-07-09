@@ -319,13 +319,29 @@ assert.match(source, /connectionError && <span role="alert"/, "the daemon save e
   }
 }
 
-// (cave-9yll, user-requested) The On/Off switches match the shared button
-// shape — every other Settings control is a --radius-control rectangle
-// (.ui-btn), not a pill.
+// (cave-9yll, then user-revised) The Mobile-mode On/Off switch matches the
+// shared button shape — a --radius-control rectangle (.ui-btn), not a pill.
+// The News-headlines toggle was later slimmed to a minimal track/knob switch
+// (user-requested): no On/Off text, the row label carries the meaning.
 assert.ok(
-  (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 2,
-  "both On/Off switches (News headlines, Mobile mode) use the shared control radius",
+  (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 1,
+  "the Mobile mode On/Off switch uses the shared control radius",
 );
-assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone");
+assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone from the labeled switch");
+assert.match(
+  source,
+  /aria-label="News headlines"[\s\S]{0,200}settings-switch focus-ring/,
+  "News headlines renders the minimal track/knob switch",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-switch \{[\s\S]{0,400}?border-radius: 999px/,
+  "the minimal switch is a pill track",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-switch::after \{[\s\S]{0,120}?inset: -12px/,
+  "the small switch keeps a generous hit area",
+);
 
 console.log("settings-shell-polish.test.ts OK");
