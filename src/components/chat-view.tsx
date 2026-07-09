@@ -797,6 +797,7 @@ function SessionOverflowMenu({
   onProjectChange,
   onAddProject,
   familiar,
+  sessionId,
   voiceActive,
   onOpenVoice,
   onOpenDebug,
@@ -807,6 +808,8 @@ function SessionOverflowMenu({
   /** Opens the shared add-project flow (register + grant) — proactive, not 403-recovery-only. */
   onAddProject?: () => void;
   familiar: Familiar;
+  /** Active conversation id — powers "Continue on phone" (cave-i74f). */
+  sessionId?: string | null;
   voiceActive: boolean;
   onOpenVoice: () => void;
   onOpenDebug: () => void;
@@ -844,6 +847,21 @@ function SessionOverflowMenu({
         ariaLabel="Chat options"
       >
         <PopoverBody>
+          {sessionId ? (
+            <PopoverItem
+              icon="ph:device-mobile"
+              onSelect={() => {
+                close();
+                // Golden path 5: hand off the MOMENT — the pairing modal's QR
+                // carries #chat-<id> so one scan opens this conversation.
+                window.dispatchEvent(
+                  new CustomEvent("cave:continue-on-phone", { detail: { chatId: sessionId } }),
+                );
+              }}
+            >
+              Continue on phone
+            </PopoverItem>
+          ) : null}
           <PopoverItem
             icon="ph:pencil-simple"
             onSelect={() => {
@@ -4768,6 +4786,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onProjectChange={setProjectIdDraft}
                 onAddProject={overflowAddProject.beginAddProject}
                 familiar={familiar}
+                sessionId={sessionId}
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
                 onOpenDebug={openDebug}

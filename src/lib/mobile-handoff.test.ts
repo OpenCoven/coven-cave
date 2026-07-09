@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildInviteUrl,
   createMobileInvite,
+  withChatFragment,
   findServeUrl,
   magicDnsHost,
   magicDnsServeUrl,
@@ -209,6 +210,57 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(tailscaleIpHost({ Self: { TailscaleIPs: "100.101.102.103" } }), null);
   assert.equal(tailscaleIpHost({ TailscaleIPs: { primary: "100.101.102.103" } }), null);
   assert.equal(tailscaleIpHost({ TailscaleIPs: [null, 42, "100.101.102.103"] }), "100.101.102.103");
+}
+
+// ── Continue on phone (cave-i74f): the chat deep-link fragment ───────────────
+{
+  const base = "https://cave.ts.net/?coven_access_token=t";
+  assert.equal(
+    withChatFragment(base, "s-abc123"),
+    `${base}#chat-s-abc123`,
+    "a valid session id rides the invite as a #chat fragment",
+  );
+  assert.equal(withChatFragment(base, null), base, "no chat id → untouched");
+  assert.equal(withChatFragment(base, "   "), base, "blank id → untouched");
+  assert.equal(
+    withChatFragment(base, "../../evil"),
+    base,
+    "ids outside the daemon's shape never reach the URL",
+  );
+  assert.equal(
+    withChatFragment(`${base}#stale`, "s-1"),
+    `${base}#chat-s-1`,
+    "an existing fragment is replaced, not doubled",
+  );
+}
+
+// ── Wiring pins: one action → QR opens THIS conversation + paired signal ─────
+{
+  const { readFileSync } = await import("node:fs");
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+
+  const route = read("../app/api/mobile-handoff/route.ts");
+  assert.match(route, /withChatFragment\(discovery\.serveUrl, chatId\)/, "app-start QR target carries the chat fragment");
+  assert.match(route, /ensureNativeAppServe\(req, chatId\)/, "POST threads chatId into app-start");
+  assert.match(route, /lastSeenAt: await readMobileLastSeen\(\)/, "handoff responses expose the paired-device beat");
+
+  const refresh = read("../app/api/mobile-token/refresh/route.ts");
+  assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");
+
+  const modal = read("../components/mobile-handoff-modal.tsx");
+  assert.match(modal, /chatId \? \{ action: "app-start", chatId \} : \{ action: "app-start" \}/, "the modal forwards its chatId to app-start");
+  assert.match(modal, /Scan to continue this conversation on your phone\./, "chat handoff says what the scan does");
+
+  const chatView = read("../components/chat-view.tsx");
+  assert.match(chatView, /cave:continue-on-phone[\s\S]*detail: \{ chatId: sessionId \}/, "chat overflow dispatches the continue-on-phone event with the session id");
+  assert.match(chatView, />\s*Continue on phone\s*</, "the overflow menu offers Continue on phone");
+
+  const workspace = read("../components/workspace.tsx");
+  assert.match(workspace, /addEventListener\("cave:continue-on-phone"/, "workspace listens for the handoff event");
+  assert.match(workspace, /chatId=\{mobileHandoffChatId\}/, "workspace threads the chat id into the pairing modal");
+
+  const settings = read("../components/settings-shell.tsx");
+  assert.match(settings, /Paired · last seen \{relativeTime\(/, "the Settings card shows the paired-device beat");
 }
 
 console.log("mobile-handoff.test.ts OK");

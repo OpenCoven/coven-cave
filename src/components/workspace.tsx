@@ -407,6 +407,8 @@ export function Workspace() {
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
+  // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
+  const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
@@ -1491,6 +1493,14 @@ export function Workspace() {
       startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null, d?.initialControls ?? null);
     };
     window.addEventListener("cave:agents-new-chat", onAgentsNewChat);
+    // Chat overflow → "Continue on phone": open the pairing modal with the
+    // active conversation's deep link on the QR.
+    const onContinueOnPhone = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: string }>).detail;
+      setMobileHandoffChatId(detail?.chatId ?? null);
+      setMobileHandoffOpen(true);
+    };
+    window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
     return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
   }, [startFamiliarChat]);
 
@@ -2535,7 +2545,11 @@ export function Workspace() {
 
       <MobileHandoffModal
         open={mobileHandoffOpen}
-        onClose={() => setMobileHandoffOpen(false)}
+        chatId={mobileHandoffChatId}
+        onClose={() => {
+          setMobileHandoffOpen(false);
+          setMobileHandoffChatId(null);
+        }}
         mobileModeEnabled={mobileModeEnabled}
         nativeHost={mobileModeHost}
         mobileModeError={mobileModeError}

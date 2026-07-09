@@ -41,8 +41,11 @@ assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should pr
 assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
 assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
-assert.match(handoffRoute, /inviteUrl: invite\.url/, "API should expose inviteUrl as the canonical invite field");
-assert.match(handoffRoute, /appUrl: invite\.url/, "API should keep appUrl as an inviteUrl alias for compatibility");
+// cave-i74f: the invite may carry a #chat-<id> fragment (Continue on phone),
+// so the canonical field is the fragment-aware inviteUrl.
+assert.match(handoffRoute, /const inviteUrl = withChatFragment\(invite\.url, chatId\);/, "the web invite rides the chat fragment when a handoff targets a conversation");
+assert.match(handoffRoute, /inviteUrl,\n\s*url: inviteUrl,/, "API should expose inviteUrl as the canonical invite field");
+assert.match(handoffRoute, /appUrl: inviteUrl/, "API should keep appUrl as an inviteUrl alias for compatibility");
 assert.match(handoffRoute, /action === "app-start"/, "API should expose a native app mobile-mode start action");
 assert.match(handoffRoute, /action === "app-stop"/, "API should expose a native app mobile-mode stop action");
 assert.match(handoffRoute, /nativeHost/, "API should return the exact host the native iOS app should connect to");

@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import QRCode from "qrcode";
 import { stripAnsi } from "@/lib/ansi";
+import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
   createMobileInvite,
+  withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   tailnetDiscoveryProof,
@@ -196,7 +198,7 @@ function mobileAccessUnavailableResponse() {
   return NextResponse.json({ ok: false, error }, { status: 503 });
 }
 
-async function ensureNativeAppServe(req: Request) {
+async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
@@ -270,7 +272,12 @@ async function ensureNativeAppServe(req: Request) {
     );
   }
 
-  const qrSvg = await QRCode.toString(discovery.serveUrl, {
+  // "Continue on phone" (cave-i74f): the QR target carries the chat
+  // deep-link fragment so one scan opens THIS conversation. The bare host
+  // (nativeHost/serveUrl) stays clean — the native app pairs on the host,
+  // not the fragment.
+  const qrTarget = withChatFragment(discovery.serveUrl, chatId);
+  const qrSvg = await QRCode.toString(qrTarget, {
     type: "svg",
     margin: 1,
     width: 256,
@@ -281,15 +288,19 @@ async function ensureNativeAppServe(req: Request) {
     ok: true,
     backendUrl: backend,
     serveUrl: discovery.serveUrl,
+    url: qrTarget,
     nativeUrl: discovery.serveUrl,
     nativeHost: discovery.host,
     discoverySource: discovery.source,
+    // Paired signal (cave-i74f): the last token-refresh beat from a paired
+    // device — null until a phone has actually connected.
+    lastSeenAt: await readMobileLastSeen(),
     qrSvg,
     warning: fallbackWarning ?? serveWarning ?? undefined,
   });
 }
 
-async function mobileHandoff(req: Request) {
+async function mobileHandoff(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
@@ -353,7 +364,10 @@ async function mobileHandoff(req: Request) {
     sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
     ttlMs: MOBILE_INVITE_TTL_MS,
   });
-  const qrSvg = await QRCode.toString(invite.url, {
+  // "Continue on phone" (cave-i74f): the QR carries the chat deep-link
+  // fragment so one scan opens THIS conversation, not just the app.
+  const inviteUrl = withChatFragment(invite.url, chatId);
+  const qrSvg = await QRCode.toString(inviteUrl, {
     type: "svg",
     margin: 1,
     width: 256,
@@ -364,9 +378,9 @@ async function mobileHandoff(req: Request) {
     ok: true,
     backendUrl: backend,
     serveUrl: discovery.serveUrl,
-    inviteUrl: invite.url,
-    url: invite.url,
-    appUrl: invite.url,
+    inviteUrl,
+    url: inviteUrl,
+    appUrl: inviteUrl,
     // Native-app pairing: covencave:// deep link with a long-lived token —
     // shown beside the QR so the iOS/iPadOS app pairs without typing.
     appInviteUrl: invite.appInviteUrl,
@@ -374,6 +388,9 @@ async function mobileHandoff(req: Request) {
     discoverySource: discovery.source,
     expiresAt: invite.expiresAt,
     expiresAtIso: invite.expiresAtIso,
+    // Paired signal (cave-i74f): the last token-refresh beat from a paired
+    // device — null until a phone has actually connected.
+    lastSeenAt: await readMobileLastSeen(),
     qrSvg,
     // Non-fatal: the link/QR are usable, but Serve couldn't be (re)started, so
     // the tunnel may need attention if the link doesn't resolve on the phone.
@@ -385,11 +402,14 @@ export async function GET(req: Request) {
   return mobileHandoff(req);
 }
 
+
 export async function POST(req: Request) {
   let action = "start";
+  let chatId: string | null = null;
   try {
-    const body = (await req.json()) as { action?: string };
+    const body = (await req.json()) as { action?: string; chatId?: string };
     action = body.action ?? "start";
+    if (typeof body.chatId === "string") chatId = body.chatId;
   } catch {
     action = "start";
   }
@@ -404,7 +424,7 @@ export async function POST(req: Request) {
   }
 
   if (action === "app-start") {
-    return ensureNativeAppServe(req);
+    return ensureNativeAppServe(req, chatId);
   }
 
   if (action === "app-stop") {
@@ -416,5 +436,5 @@ export async function POST(req: Request) {
     }, { status: reset.ok ? 200 : 500 });
   }
 
-  return mobileHandoff(req);
+  return mobileHandoff(req, chatId);
 }

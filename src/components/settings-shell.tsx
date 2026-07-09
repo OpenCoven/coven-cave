@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
@@ -1950,6 +1951,9 @@ type MobileHandoffCardState = {
   inviteUrl: string | null;
   appInviteUrl: string | null;
   qrSvg: string | null;
+  /** Last token-refresh beat from a paired device (cave-i74f) — pairing
+   *  success used to be silent on the desktop. */
+  lastSeenAt: number | null;
 };
 
 function MobileModeToggle() {
@@ -1974,6 +1978,7 @@ function MobileModeToggle() {
         inviteUrl?: string | null;
         appInviteUrl?: string | null;
         qrSvg?: string | null;
+        lastSeenAt?: number | null;
         error?: string;
         stderr?: string;
       };
@@ -1988,6 +1993,7 @@ function MobileModeToggle() {
               inviteUrl: json.inviteUrl ?? null,
               appInviteUrl: json.appInviteUrl ?? null,
               qrSvg: json.qrSvg ?? null,
+              lastSeenAt: json.lastSeenAt ?? null,
             }
           : null,
       );
@@ -2051,6 +2057,11 @@ function MobileModeToggle() {
           <div className="min-w-0">
             <p className="text-[13px] font-medium text-[var(--text-primary)]">Mobile mode</p>
             <p className="truncate text-[11px] text-[var(--text-muted)]">{statusLine}</p>
+            {handoff?.lastSeenAt ? (
+              <p className="truncate text-[11px] text-[var(--text-secondary)]">
+                Paired · last seen {relativeTime(new Date(handoff.lastSeenAt).toISOString())}
+              </p>
+            ) : null}
           </div>
         </div>
         <button
