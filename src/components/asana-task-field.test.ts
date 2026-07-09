@@ -79,4 +79,44 @@ assert.match(queueStrip, /className="fwq-asana"/, "Queue Asana strip uses the fw
 assert.match(queueStrip, /usePausablePoll\(\(\) => void load\(\), 30_000/, "Queue Asana strip refreshes on the 30s poll");
 assert.match(queueStrip, /function sameItems\(/, "Queue Asana strip guards identical polls against re-render churn");
 
+// ── Per-agent assignment (cave-vn19): connect once, assign per familiar ──────
+{
+  const caveConfig = await source("lib/cave-config.ts");
+  const familiarsRoute = await source("app/api/familiars/route.ts");
+  const familiarType = await source("lib/types.ts");
+  const brainTab = await source("components/familiar-studio-brain-tab.tsx");
+  const asanaSection = await source("components/familiar-asana-section.tsx");
+  const workspacesRoute = await source("app/api/asana/workspaces/route.ts");
+  const workQueueView = await source("components/familiar-work-queue-view.tsx");
+
+  // Data model: per-agent enablement + workspace scope ride FamiliarBinding.
+  assert.match(caveConfig, /asanaEnabled\?: boolean/, "FamiliarBinding carries per-agent Asana enablement");
+  assert.match(caveConfig, /asanaWorkspaceGid\?: string/, "FamiliarBinding carries a per-agent Asana workspace scope");
+  assert.match(caveConfig, /asanaEnabled: f\.asanaEnabled/, "bindingFor surfaces asanaEnabled");
+  assert.match(familiarType, /asanaEnabled\?: boolean/, "the Familiar type exposes asanaEnabled to the UI");
+  assert.match(familiarsRoute, /asanaEnabled: configEntry\.asanaEnabled/, "the familiars route maps asanaEnabled through");
+
+  // Assigned route honors the familiar's assignment: opt-out + workspace scope.
+  assert.match(asanaAssigned, /searchParams\.get\("familiarId"\)/, "assigned route accepts a familiarId scope");
+  assert.match(asanaAssigned, /bindingFor\(await loadConfig\(\)/, "assigned route reads the familiar's binding");
+  assert.match(asanaAssigned, /binding\.asanaEnabled === false[\s\S]{0,160}assigned: false/, "an opted-out agent gets assigned:false and no tasks");
+  assert.match(asanaAssigned, /binding\.asanaWorkspaceGid/, "a scoped agent's fan-out filters to its workspace");
+
+  // Workspaces route backs the scope picker.
+  assert.match(workspacesRoute, /export async function GET/, "the workspaces route exists for the scope picker");
+  assert.match(workspacesRoute, /workspaces\.name/, "the workspaces route lists the user's Asana workspaces");
+
+  // Brain tab hosts connect + assignment in one per-agent place.
+  assert.match(brainTab, /<FamiliarAsanaSection familiar=\{familiar\}/, "the Brain tab renders the per-agent Asana section");
+  assert.match(asanaSection, /\/api\/asana\/pat/, "the section connects the app-wide PAT inline (seamless)");
+  assert.match(asanaSection, /asanaEnabled: next \? null : false/, "the toggle opts the agent in (null=on) or out (false)");
+  assert.match(asanaSection, /asanaWorkspaceGid: gid \|\| null/, "the scope select persists the workspace gid");
+
+  // Board + Queue scope to the agent.
+  assert.match(boardInspector, /assigned\?familiarId=\$\{encodeURIComponent\(card\.familiarId\)\}/, "the inspector picker scopes to the card's familiar");
+  assert.match(queueStrip, /familiarId\?: string \| null/, "the Queue strip accepts a familiar scope");
+  assert.match(queueStrip, /data\.assigned !== false/, "the Queue strip hides for an opted-out agent");
+  assert.match(workQueueView, /familiarId=\{activeFamiliarId\}/, "the Queue view scopes the strip to the active familiar");
+}
+
 console.log("asana task field guard passed");

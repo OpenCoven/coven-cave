@@ -7008,6 +7008,36 @@ a.mobile-handoff__link:hover {
 .familiar-studio-brain__hint { margin: 6px 0 0; font-size: var(--text-2xs); line-height: 1.5; color: var(--text-muted); }
 .familiar-studio-brain__switch { align-self: flex-start; cursor: pointer; }
 .familiar-studio-brain__control { display: flex; min-width: 0; gap: 6px; align-items: flex-start; }
+
+/* Asana section (Familiar Studio → Brain): inline connect + per-agent controls. */
+.familiar-asana__connect { display: flex; flex-direction: column; gap: 8px; }
+.familiar-asana__connect-row { display: flex; gap: 8px; align-items: center; }
+.familiar-asana__input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+.familiar-asana__connect-btn {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--accent-presence);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.familiar-asana__connect-btn:disabled { opacity: 0.5; cursor: default; }
+.familiar-asana__gen-link { font-size: var(--text-2xs); color: var(--accent-presence); width: fit-content; }
+.familiar-asana__error { margin: 6px 0 0; font-size: var(--text-2xs); color: var(--color-danger); }
 .familiar-studio-brain__input {
   flex: 1;
   min-width: 0;

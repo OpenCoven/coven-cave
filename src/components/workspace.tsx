@@ -2259,7 +2259,7 @@ export function Workspace() {
       <BoardView
         key={mode}
         initialTab={mode === "familiar-work-queue" ? "queue" : "tasks"}
-        queueSlot={<FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} embedded />}
+        queueSlot={<FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} embedded activeFamiliarId={activeId} />}
         familiars={familiars}
         sessions={sessions}
         activeFamiliarId={activeId}

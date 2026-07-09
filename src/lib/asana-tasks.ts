@@ -39,6 +39,19 @@ export type AsanaAssignedResponse = {
   items: AsanaItem[];
   /** True once an Asana PAT is stored — the "Asana connected" signal. */
   configured?: boolean;
+  /** When a familiarId was passed: false means this agent is opted out of Asana
+   *  (asanaEnabled === false). Absent/true otherwise. */
+  assigned?: boolean;
+  error?: string;
+};
+
+/** One of the connected user's Asana workspaces (for the per-agent scope picker). */
+export type AsanaWorkspace = { gid: string; name: string };
+
+export type AsanaWorkspacesResponse = {
+  ok: boolean;
+  configured?: boolean;
+  workspaces: AsanaWorkspace[];
   error?: string;
 };
 

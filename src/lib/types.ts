@@ -37,6 +37,11 @@ export type Familiar = {
   voiceModel?: string;
   voiceName?: string;
   autoSelfReport?: boolean;
+  /** Per-agent Asana assignment (see FamiliarBinding). Undefined = on when the
+   *  app is connected; false opts this familiar out. */
+  asanaEnabled?: boolean;
+  /** Optional Asana workspace gid this familiar is scoped to. */
+  asanaWorkspaceGid?: string;
 };
 
 export type DaemonStatus = {
