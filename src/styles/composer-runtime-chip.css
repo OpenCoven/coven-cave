@@ -18,9 +18,11 @@
   line-height: 1;
   cursor: pointer;
   border: 1px solid var(--border-hairline);
-  /* Shape matches the composer's control family (.cave-composer-select and
-     the icon buttons) — the shared control radius, not a pill. */
-  border-radius: var(--radius-control);
+  /* Pill radius — the chip sits in the composer's control row between fully
+     round icon buttons (attach / voice / options / send are rounded-full
+     circles), so it shares their curvature instead of the squarer
+     --radius-control that made it read as a different control family. */
+  border-radius: 999px;
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
 }
