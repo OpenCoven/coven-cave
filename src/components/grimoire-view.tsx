@@ -284,11 +284,14 @@ function KnowledgeMdEditor({
   entry,
   onSaved,
   onCancel,
+  onDirtyChange,
 }: {
   /** null → creating a new entry. */
   entry: KnowledgeEntry | null;
   onSaved: (entry: KnowledgeEntry) => void;
   onCancel?: () => void;
+  /** Forwarded to the editor (unsaved-edits indicator on the host tab). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const initial = useMemo(
     () =>
@@ -326,6 +329,7 @@ function KnowledgeMdEditor({
       sourceLabel="Knowledge vault"
       onSave={save}
       onCancel={onCancel}
+      onDirtyChange={onDirtyChange}
       // A new entry materializes on its first (manual) save, which re-keys and
       // remounts this editor; only autosave once it exists so typing isn't
       // interrupted mid-keystroke by that remount.
@@ -334,7 +338,16 @@ function KnowledgeMdEditor({
   );
 }
 
-function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void }) {
+function JournalMdEditor({
+  date,
+  onSaved,
+  onDirtyChange,
+}: {
+  date: string;
+  onSaved?: () => void;
+  /** Forwarded to the editor (unsaved-edits indicator on the host tab). */
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const dateTimePrefs = useDateTimePrefs();
   const [state, setState] = useState<{ reflection: string; reflectedBy: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -417,6 +430,7 @@ function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void
       showHeader={false}
       sourceLabel={`Journal · ${journalDayLabel(date, dateTimePrefs)}`}
       onSave={save}
+      onDirtyChange={onDirtyChange}
       autoSave
     />
   );
@@ -765,6 +779,19 @@ export function GrimoireView() {
   });
 
   /** Open (or focus) a document tab. */
+  // (grimoire-audit cave-vv2h) Per-tab unsaved-edits flags, reported by each
+  // editor via onDirtyChange — they drive the tab dot and the close confirm.
+  const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({});
+  const setTabDirty = useCallback((key: string, dirty: boolean) => {
+    setDirtyTabs((prev) => {
+      if (!!prev[key] === dirty) return prev;
+      const next = { ...prev };
+      if (dirty) next[key] = true;
+      else delete next[key];
+      return next;
+    });
+  }, []);
+
   const openDoc = useCallback((sel: GrimoireSelection) => {
     setTabState((prev) => {
       const key = selectionKey(sel);
@@ -784,6 +811,12 @@ export function GrimoireView() {
   }, []);
 
   const closeTab = useCallback((key: string) => {
+    setDirtyTabs((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
     setTabState((prev) => {
       const index = prev.openTabs.findIndex((t) => selectionKey(t) === key);
       if (index < 0) return prev;
@@ -795,6 +828,23 @@ export function GrimoireView() {
       return { openTabs: tabs, selection };
     });
   }, []);
+
+  /** Close from the tab strip: a tab with unsaved edits confirms first. */
+  const requestCloseTab = useCallback(
+    async (key: string, title: string) => {
+      if (dirtyTabs[key]) {
+        const ok = await confirm({
+          title: `Close ${title}?`,
+          body: "It has unsaved changes that will be lost.",
+          confirmLabel: "Close tab",
+          danger: true,
+        });
+        if (!ok) return;
+      }
+      closeTab(key);
+    },
+    [dirtyTabs, confirm, closeTab],
+  );
 
   /** Swap one tab for another in place (e.g. a saved draft gaining its id). */
   const replaceTab = useCallback((fromKey: string, next: GrimoireSelection) => {
@@ -1079,11 +1129,18 @@ export function GrimoireView() {
           path={tab.path}
           sourceLabel={compactPath(tab.path)}
           onCancel={() => closeTab(key)}
+          onDirtyChange={(dirty) => setTabDirty(key, dirty)}
         />
       );
     }
     if (tab.kind === "journal") {
-      return <JournalMdEditor date={tab.date} onSaved={() => void load()} />;
+      return (
+        <JournalMdEditor
+          date={tab.date}
+          onSaved={() => void load()}
+          onDirtyChange={(dirty) => setTabDirty(key, dirty)}
+        />
+      );
     }
     const entry =
       tab.kind === "knowledge" ? (knowledge ?? []).find((e) => e.id === tab.id) ?? null : null;
@@ -1095,6 +1152,7 @@ export function GrimoireView() {
           void load();
         }}
         onCancel={() => closeTab(key)}
+        onDirtyChange={(dirty) => setTabDirty(key, dirty)}
       />
     );
   };
@@ -1140,10 +1198,17 @@ export function GrimoireView() {
                 >
                   {tabTitle(tab)}
                 </button>
+                {dirtyTabs[key] ? (
+                  <span
+                    title="Unsaved changes"
+                    aria-hidden
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent-presence)]"
+                  />
+                ) : null}
                 <button
                   type="button"
-                  aria-label={`Close ${tabTitle(tab)}`}
-                  onClick={() => closeTab(key)}
+                  aria-label={`Close ${tabTitle(tab)}${dirtyTabs[key] ? " (unsaved changes)" : ""}`}
+                  onClick={() => void requestCloseTab(key, tabTitle(tab))}
                   className="focus-ring-inset shrink-0 px-1.5 py-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 >
                   <Icon name="ph:x" width={9} aria-hidden />

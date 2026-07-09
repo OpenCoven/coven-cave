@@ -91,6 +91,9 @@ export type MdEditorProps = {
   onCancel?: () => void;
   /** Observe every raw-document change (e.g. to mirror into caller state). */
   onChange?: (raw: string) => void;
+  /** Observe dirty-state transitions (unsaved edits vs baseline) — e.g. to
+   *  surface an unsaved dot on the host's tab. */
+  onDirtyChange?: (dirty: boolean) => void;
   /**
    * Persist edits automatically a short while after typing stops, in addition
    * to the explicit Save button. Only safe for **idempotent** surfaces whose
@@ -109,6 +112,7 @@ export function MdEditor({
   onSave,
   onCancel,
   onChange,
+  onDirtyChange,
   autoSave = false,
 }: MdEditorProps) {
   const [raw, setRaw] = useState(value);
@@ -136,6 +140,14 @@ export function MdEditor({
   const doc = useMemo(() => parseMdDocument(raw), [raw]);
   const stats = useMemo(() => computeMdDocStats(doc.body), [doc.body]);
   const dirty = raw !== baseline;
+
+  // Report dirty transitions through a ref so an unstable callback identity
+  // never re-fires the effect.
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty);
+  }, [dirty]);
 
   const applyHeader = useCallback(
     (header: { title?: string | null; tags?: string[] }) => {

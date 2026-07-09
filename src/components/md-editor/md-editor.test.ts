@@ -140,6 +140,14 @@ assert.match(sharedTheme, /export const caveCodeMirrorTheme/, "shared theme expo
 const codeEditor = await readFile(new URL("../code-editor.tsx", import.meta.url), "utf8");
 assert.match(codeEditor, /from "@\/components\/code-editor-theme"/, "code-editor consumes the shared theme");
 
+// ── onDirtyChange: hosts can observe unsaved-edits transitions (cave-vv2h) ───
+// The shell reports dirty flips through a ref so an unstable callback identity
+// never re-fires the effect; MemoryMdEditor forwards it to the inner editor.
+assert.match(shell, /onDirtyChange\?: \(dirty: boolean\) => void/, "MdEditor exposes an onDirtyChange prop");
+assert.match(shell, /const onDirtyChangeRef = useRef\(onDirtyChange\)/, "dirty reporting rides a ref, not the callback identity");
+assert.match(shell, /useEffect\(\(\) => \{\s*\n\s*onDirtyChangeRef\.current\?\.\(dirty\);\s*\n\s*\}, \[dirty\]\)/, "dirty transitions fire only when dirty actually flips");
+assert.match(memory, /onDirtyChange=\{onDirtyChange\}/, "MemoryMdEditor forwards onDirtyChange to the shell");
+
 console.log("md-editor.test: ok");
 
 // ── (grimoire-audit cave-say6) editor lazy-load skeleton ─────────────────────

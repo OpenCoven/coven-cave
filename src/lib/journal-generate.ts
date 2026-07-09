@@ -4,6 +4,7 @@
 // but returns the assistant's plain text (no artifact extraction).
 
 import { parseSseFrame } from "@/lib/canvas-generate";
+import { extractNextPaths } from "@/lib/next-paths";
 
 /** Wrap the day's activity context into a request for a short first-person reflection. */
 export function buildReflectionPrompt(context: string): string {
@@ -77,7 +78,11 @@ export async function generateReflection(opts: {
     }
   }
 
-  const trimmed = text.trim();
+  // /api/chat/send appends the <coven:next-paths> suggestions directive to
+  // every prompt, and a compliant familiar echoes the block back. The journal
+  // has no chip row — strip it (terminated or truncated) so it never lands in
+  // the stored reflection.
+  const trimmed = extractNextPaths(text).visible.trim();
   if (!trimmed && !error) error = "The familiar didn't return a reflection. Try again.";
   return { text: trimmed, error };
 }

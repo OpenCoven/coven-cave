@@ -31,6 +31,21 @@ assert.match(
 );
 assert.match(source, /conflict: true/, "the 409 body flags the conflict so the UI can reload");
 
+// ── next-paths never persists as journal content (cave-onp8) ─────────────────
+// A compliant familiar echoes the <coven:next-paths> chat directive back; the
+// journal has no chip row, so the block must be stripped at the persistence
+// boundary no matter which client wrote it.
+assert.match(
+  source,
+  /import \{ extractNextPaths \} from "@\/lib\/next-paths";/,
+  "the route uses the canonical next-paths extractor",
+);
+assert.match(
+  source,
+  /typeof body\.reflection === "string" \? extractNextPaths\(body\.reflection\)\.visible : ""/,
+  "POST strips the next-paths directive block before storing the reflection",
+);
+
 // ── generatedAt is preserved on manual saves, only stamped on generation ─────
 // The route used to stamp generatedAt: new Date() on EVERY save, so a hand-edit
 // read as a fresh generation ("· 2m ago"). Only the generate flow sends a

@@ -138,7 +138,7 @@ assert.match(view, /"cave:grimoire:active-tab"/, "the active tab persists too");
 assert.match(view, /export const MAX_OPEN_TABS = 8/, "open-tab count is capped");
 assert.match(view, /role="tablist"[\s\S]*?aria-label="Open documents"/, "tab strip is an accessible tablist");
 assert.match(view, /role="tab"[\s\S]*?aria-selected=\{active\}/, "tabs expose selection state");
-assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}`\}/, "each tab has a labelled close button");
+assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}/, "each tab has a labelled close button");
 // (cave-mglw) full tabs pattern: one roving tab stop (←/→ between tabs) and
 // tab ↔ tabpanel wiring. The strip stays hand-rolled because the shared
 // ui/tabs primitive has no per-tab close button.
@@ -227,5 +227,16 @@ assert.match(view, /modifiedRef\.current = json\.modified \?\? null;/, "the base
 assert.match(view, /expectedModified: modifiedRef\.current,/, "the autosave sends the mtime baseline");
 assert.match(view, /if \(res\.status === 409\)/, "a journal write conflict is surfaced, not silently overwritten");
 assert.match(view, /modifiedRef\.current = json\.modified \?\? modifiedRef\.current;/, "the baseline advances after a successful save so autosave can't self-conflict");
+
+// ── Dirty tabs: unsaved dot + confirm on close (cave-vv2h) ───────────────────
+// Each editor reports dirty transitions up via onDirtyChange; the tab strip
+// shows a dot and closing a dirty tab confirms instead of silently dropping
+// unsaved edits (autosave mitigates, but conflict-paused docs stay dirty).
+assert.match(view, /const \[dirtyTabs, setDirtyTabs\] = useState<Record<string, boolean>>\(\{\}\)/, "per-tab dirty flags are lifted into GrimoireView");
+assert.match(view, /onDirtyChange=\{\(dirty\) => setTabDirty\(key, dirty\)\}/, "editors report dirty state keyed by tab");
+assert.match(view, /\{dirtyTabs\[key\] \? \(\s*<span\s*\n?\s*title="Unsaved changes"/, "dirty tabs show an unsaved-changes dot");
+assert.match(view, /aria-label=\{`Close \$\{tabTitle\(tab\)\}\$\{dirtyTabs\[key\] \? " \(unsaved changes\)" : ""\}`\}/, "the close button's label says when edits are unsaved");
+assert.match(view, /if \(dirtyTabs\[key\]\) \{\s*\n\s*const ok = await confirm\(/, "closing a dirty tab confirms first");
+assert.match(view, /onClick=\{\(\) => void requestCloseTab\(key, tabTitle\(tab\)\)\}/, "the tab strip close goes through the confirm path");
 
 console.log("grimoire-view.test: ok");

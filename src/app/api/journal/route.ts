@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isValidNoteDate } from "@/lib/daily-note";
+import { extractNextPaths } from "@/lib/next-paths";
 import {
   buildJournalMemoryContext,
   buildJournalMemoryStats,
@@ -80,7 +81,12 @@ export async function POST(req: Request) {
   if (!isValidNoteDate(date)) {
     return NextResponse.json({ ok: false, error: "invalid date" }, { status: 400 });
   }
-  const reflection = typeof body.reflection === "string" ? body.reflection : "";
+  // Persistence-layer guard (mirrors /api/inbox/daily-summary): the
+  // <coven:next-paths> chat directive must never be stored as journal content,
+  // regardless of which client wrote it. extractNextPaths is a no-op when no
+  // block is present, so normal autosave round-trips stay byte-identical.
+  const reflection =
+    typeof body.reflection === "string" ? extractNextPaths(body.reflection).visible : "";
   const reflectedBy = typeof body.reflectedBy === "string" && body.reflectedBy ? body.reflectedBy : null;
   const expectedModified = typeof body.expectedModified === "string" ? body.expectedModified : null;
 
