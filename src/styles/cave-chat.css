@@ -5327,7 +5327,8 @@ details[open] > .cave-tool-summary::before {
    absolutely positioned): the rail reserves its own layout width so content
    sits beside it, never underneath. Carries the same glass as the left panel
    and the open right aside. */
-.workspace-rail-reopen {
+.workspace-rail-reopen,
+.chat-right-rail {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -5349,20 +5350,24 @@ details[open] > .cave-tool-summary::before {
     background var(--duration-fast) var(--ease-standard);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .workspace-rail-reopen { background: var(--bg-raised); }
+  .workspace-rail-reopen,
+.chat-right-rail { background: var(--bg-raised); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .workspace-rail-reopen {
+  .workspace-rail-reopen,
+.chat-right-rail {
     background: var(--bg-raised);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
 }
-.workspace-rail-reopen:hover {
+.workspace-rail-reopen:hover,
+.chat-right-rail:hover {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
 }
-.workspace-rail-reopen__label {
+.workspace-rail-reopen__label,
+.chat-right-rail__label {
   writing-mode: vertical-rl;
   font-size: 11px;
   font-weight: 600;

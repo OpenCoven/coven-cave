@@ -96,7 +96,7 @@ const caveChat = await readFile(new URL("../styles/cave-chat.css", import.meta.u
 // conversation tab) that reopens the LAST-used panel — not nothing.
 assert.match(
   chatSurface,
-  /scope === "conversation" && rightPanel === null && !isMobile && !paneNarrow && \([\s\S]{0,600}?className="workspace-rail-reopen chat-right-rail focus-ring"[\s\S]{0,300}?onClick=\{\(\) => setRightPanel\(lastPanel\)\}/,
+  /scope === "conversation" && rightPanel === null && !isMobile && !paneNarrow && \([\s\S]{0,600}?className="chat-right-rail focus-ring"[\s\S]{0,300}?onClick=\{\(\) => setRightPanel\(lastPanel\)\}/,
   "closing the right panel must leave a reopen rail (conversation tab, wide desktop panes) that restores the last-used panel",
 );
 assert.match(
@@ -105,36 +105,36 @@ assert.match(
   "the rail remembers the last-opened panel, defaulting to the Inspector",
 );
 
-// The rail participates in layout (content beside it, never underneath): it
-// must NOT be absolutely positioned, and it reserves its own flex width.
+// The rails participate in layout (content beside them, never underneath):
+// they must NOT be absolutely positioned, and they reserve their own width.
 assert.match(
   caveChat,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?flex: 0 0 44px;/,
-  "the reopen rail reserves in-flow layout width",
+  /\.workspace-rail-reopen,\s*\.chat-right-rail \{[\s\S]{0,900}?flex: 0 0 44px;/,
+  "the reopen rails reserve in-flow layout width",
 );
 assert.doesNotMatch(
   caveChat,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?position: absolute;/,
-  "the reopen rail must not overlay content (no absolute positioning)",
+  /\.workspace-rail-reopen,\s*\.chat-right-rail \{[\s\S]{0,900}?position: absolute;/,
+  "the reopen rails must not overlay content (no absolute positioning)",
 );
 
 // Label orientation: reads top→bottom with the glyph face to the
 // right/outside (vertical-rl) — mirroring the left rail's vocabulary.
 assert.match(
   caveChat,
-  /\.workspace-rail-reopen__label \{\s*writing-mode: vertical-rl;/,
-  "the rail label reads downward with its face to the right/outside",
+  /\.workspace-rail-reopen__label,\s*\.chat-right-rail__label \{\s*writing-mode: vertical-rl;/,
+  "the rail labels read downward with their face to the right/outside",
 );
 
-// The rail carries the left panel's glass (with honest fallbacks).
+// The rails carry the left panel's glass (with honest fallbacks).
 assert.match(
   caveChat,
-  /\.workspace-rail-reopen \{[\s\S]{0,900}?color-mix\(in oklch, var\(--bg-raised\) 88%, transparent\)[\s\S]{0,200}?backdrop-filter: blur\(14px\) saturate\(140%\)/,
-  "the rail wears the same glass as the left sidebar",
+  /\.workspace-rail-reopen,\s*\.chat-right-rail \{[\s\S]{0,900}?color-mix\(in oklch, var\(--bg-raised\) 88%, transparent\)[\s\S]{0,200}?backdrop-filter: blur\(14px\) saturate\(140%\)/,
+  "the rails wear the same glass as the left sidebar",
 );
 assert.match(
   caveChat,
-  /@media \(prefers-reduced-transparency: reduce\) \{\s*\.workspace-rail-reopen \{/,
+  /@media \(prefers-reduced-transparency: reduce\) \{\s*\.workspace-rail-reopen,\s*\.chat-right-rail \{/,
   "rail glass respects reduced transparency",
 );
 

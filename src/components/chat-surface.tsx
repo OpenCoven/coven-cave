@@ -802,11 +802,11 @@ export function ChatSurface({
           type="button"
           aria-label="Show session panels"
           title="Show session panels (Inspector · Debug · Changes)"
-          className="workspace-rail-reopen chat-right-rail focus-ring"
+          className="chat-right-rail focus-ring"
           onClick={() => setRightPanel(lastPanel)}
         >
           <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-          <span className="workspace-rail-reopen__label">Inspector</span>
+          <span className="chat-right-rail__label">Inspector</span>
         </button>
       )}
       {/* Collapsed code rail: a full-height reopen rail on the right edge that
