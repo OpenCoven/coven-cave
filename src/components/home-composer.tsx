@@ -801,7 +801,7 @@ export function HomeComposer({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
+          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_85%,transparent)] md:text-sm"
           placeholder={PLACEHOLDERS[destination]}
           rows={1}
           value={text}

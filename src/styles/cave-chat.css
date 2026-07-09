@@ -2365,6 +2365,10 @@ details[open] > .cave-tool-summary::before {
   border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+  /* Explicit tier (user report): with no color set, the icons inherited the
+     dim muted cascade — while the runtime/host chip labels beside them are
+     --text-primary. One family, one tier. */
+  color: var(--text-primary);
 }
 
 /* Base control pill — still used by the standalone ComposerHostChip. */

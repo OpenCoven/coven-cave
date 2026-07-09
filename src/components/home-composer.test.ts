@@ -696,3 +696,16 @@ assert.match(
   /onAdded: \(count\) => announce\(`Attached \$\{count\} file/,
   "adding attachments is announced (there is no toast on the success path)",
 );
+
+// ── Composer input visibility (cave-tjcx, user-reported) ────────────────────
+// The icon buttons inherited the dim muted cascade while the runtime/host
+// chip labels beside them are --text-primary; the placeholder sat at the 72%
+// muted tier. Icons now carry the primary tier explicitly (in cave-chat.css)
+// and both composers' placeholders render at 85% foreground.
+{
+  const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+  assert.match(css, /\.cave-composer-icon-button \{[\s\S]{0,600}?color: var\(--text-primary\);\n\}/, "composer icon buttons carry the primary text tier");
+  assert.match(source, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_85%,transparent\)\]/, "the home placeholder renders at 85% foreground");
+  const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+  assert.match(chat, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_85%,transparent\)\]/, "the chat placeholder matches (one composer family)");
+}
