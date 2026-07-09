@@ -25,6 +25,11 @@ assert.ok(compareSemver("1.0.0-beta.11", "1.0.0-beta.2") > 0, "beta.11 > beta.2"
 assert.ok(compareSemver("1.0.0-alpha", "1.0.0-alpha.1") < 0, "fewer identifiers lose the tie");
 assert.ok(compareSemver("1.0.0-alpha.1", "1.0.0-alpha.beta") < 0, "numeric identifiers rank below alphanumeric");
 assert.ok(compareSemver("1.0.0-beta", "1.0.0-alpha") > 0, "alphanumeric identifiers compare lexically");
+// Build metadata is ignored for precedence (semver §10) — review finding:
+// "+x" leaked into identifier comparison and outranked numeric identifiers.
+assert.ok(compareSemver("1.0.0-rc.2", "1.0.0-rc.1+x") > 0, "build metadata never outranks a newer prerelease");
+assert.equal(compareSemver("1.0.0-rc.1+b", "1.0.0-rc.1"), 0, "build metadata is precedence-invisible");
+assert.equal(compareSemver("2.0.0+build.5", "2.0.0"), 0, "release build metadata is precedence-invisible");
 
 // ── latest non-yanked pick ───────────────────────────────────────────────────
 {
