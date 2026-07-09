@@ -46,12 +46,24 @@ export type FolderMode =
   | "journal"
   | "grimoire";
 
+export type SidebarRoleSurfaceRow = {
+  /** Generic workspace mode string (`surface:<id>`) — the sidebar never
+   *  interprets it, only round-trips it through onModeChange. */
+  mode: string;
+  label: string;
+  iconName: Parameters<typeof Icon>[0]["name"];
+  description: string;
+};
+
 export type SidebarMinimalProps = {
   mode: string;
   /** Page modes currently open as secondary split tiles (drag-to-split).
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
   splitPageModes?: readonly string[];
+  /** Role Surface rooms visible for the active familiar. Registry-driven —
+   *  rendered as their own cluster; empty/omitted hides the cluster. */
+  roleSurfaces?: readonly SidebarRoleSurfaceRow[];
   sessions: SessionRow[];
   activeSessionId?: string | null;
   onNewChat: () => void;
@@ -288,6 +300,31 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             onClick={() => handleModeSelect(fm.id)}
           />
         ))}
+
+        {/* Role Surface rooms — the active familiar's vocation workspaces.
+            Registry-driven: the sidebar renders whatever it's handed and never
+            names a role. The cluster label keeps them reading as chambers of
+            the Cave rather than more app tabs. */}
+        {(props.roleSurfaces?.length ?? 0) > 0 && (
+          <>
+            <div className="sidebar-rooms-label" aria-hidden>
+              Rooms
+            </div>
+            {props.roleSurfaces!.map((room) => (
+              <FolderRow
+                key={room.mode}
+                id={room.mode}
+                label={room.label}
+                iconName={room.iconName}
+                state={sidebarRowState(room.mode, mode, props.splitPageModes)}
+                description={room.description}
+                onClick={() => {
+                  onModeChange(room.mode);
+                }}
+              />
+            ))}
+          </>
+        )}
 
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>

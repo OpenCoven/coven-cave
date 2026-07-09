@@ -27,12 +27,12 @@ assert.match(
 // ── Chat-first IA (cave-hsa6): the app boots straight into the conversation. ──
 assert.match(
   workspace,
-  /const \[mode, setModeRaw\] = useState<WorkspaceMode>\("chat"\)/,
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
   "workspace should boot into chat mode, not home",
 );
 assert.match(
   workspace,
-  /const \[lastNonChatMode, setLastNonChatMode\] = useState<WorkspaceMode>\("home"\)/,
+  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
   "the chat back-control still falls back to home when no other surface was visited",
 );
 
