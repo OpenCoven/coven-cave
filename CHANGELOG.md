@@ -7,6 +7,17 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.167] - 2026-07-09
+
+> _One-line teaser — edit before merge._
+
+Patch release on top of v0.0.166.
+
+### Changes
+- fix(marketplace): make prompt-pack "Try it" visible — bordered secondary pill with hand-off arrow (#2857)
+- fix(shell): title-bar controls never sit under the traffic lights (cave-i7wf) (#2856)
+
+
 ## [0.0.166] - 2026-07-09
 
 > 📓 **Journal moves into the Grimoire** — daily reflections are now a tab beside Docs and Graph, so the whole knowledge surface lives in one room. Plus registry-driven runtime adapter scaffolds and an analytics contract-compliance pass.
