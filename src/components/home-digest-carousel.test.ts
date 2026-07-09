@@ -34,10 +34,15 @@ assert.match(view, /mediaCards\.length > 0 && newsEnabled/, "disabling news leav
 assert.doesNotMatch(view, /mediaDismissed|setMediaDismissed/, "the per-mount dismissed state is retired (setting is the one source of truth)");
 assert.doesNotMatch(view, /aria-label="Close news carousel"/, "the inline X close button is removed");
 assert.doesNotMatch(view, /home-digest__media-close/, "no close-button markup remains");
+// cave-e2zx: the lane chrome is gone entirely — no icon marker, no band. The
+// track's aria-label is the lane's only (accessible) name; the reversed drift
+// direction separates it visually from the chats row.
+assert.doesNotMatch(view, /home-digest__media-chrome/, "the icon-only lane chrome stays deleted");
+assert.doesNotMatch(view, /home-digest__media-label/, "no lane-marker markup remains");
 assert.match(
   view,
-  /className="home-digest__media-chrome"[\s\S]*className="home-digest__media-label"[\s\S]*ph:newspaper[\s\S]*home-digest__track home-digest__track--media/,
-  "news row chrome still marks the media lane (icon-only) outside the moving track",
+  /home-digest__track home-digest__track--media" aria-label="Media headlines"/,
+  "the media track still names the lane for AT",
 );
 assert.doesNotMatch(view, />News</, "the visible 'News' word is removed from the media lane chrome");
 
@@ -72,7 +77,7 @@ assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbn
 assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is enlarged for the image-forward row");
 assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
 assert.match(css, /\.home-digest__media[\s\S]*?position: relative/, "media row anchors the close button");
-assert.match(css, /\.home-digest__media-chrome\s*\{[\s\S]*?display: flex[\s\S]*?justify-content: space-between/, "news row has static chrome outside the marquee track");
+assert.doesNotMatch(css, /home-digest__media-chrome/, "dead lane-chrome CSS is removed with the marker");
 assert.doesNotMatch(css, /home-digest__media-close/, "dead close-button CSS is removed with the inline dismiss");
 
 // ── Settings owns the opt-out: General section renders the switch ─────────────

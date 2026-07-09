@@ -1165,24 +1165,6 @@
   position: relative;
   margin-top: 10px;
 }
-.home-digest__media-chrome {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-inline: max(24px, 7%);
-  margin-bottom: 6px;
-}
-.home-digest__media-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
 .home-digest__track--media {
   animation-direction: reverse;
 }

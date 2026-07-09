@@ -88,13 +88,9 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
       ) : null}
       {mediaCards.length > 0 && newsEnabled ? (
         <div className="home-digest__media">
-          <div className="home-digest__media-chrome">
-            {/* Icon-only lane marker — the track below carries the accessible
-                "Media headlines" name, so the chrome stays wordless. */}
-            <span className="home-digest__media-label" aria-hidden="true">
-              <Icon name="ph:newspaper" width={12} aria-hidden />
-            </span>
-          </div>
+          {/* No lane chrome — the track itself carries the accessible
+              "Media headlines" name; the drift direction separates it
+              visually from the chats row. */}
           <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">
             <DigestRow cards={mediaCards} onOpenSession={onOpenSession} />
             <DigestRow cards={mediaCards} onOpenSession={onOpenSession} duplicate />
