@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon, type IconName } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
@@ -361,12 +362,23 @@ export function WorkspaceSidebar({
       </button>
 
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Header — one row: title + Home + the organize menu. Familiar scope
-            moved to the SIDENAV header (cave-vtk9, per operator direction),
-            which sits directly beside this panel — a second switcher here
-            (#2747's brief home for it) doubled the same global scope control. */}
+        {/* Header — the labeled familiar switcher (#2747). On the CHAT page
+            this sidebar REPLACES the global sidenav (SidebarMinimal never
+            renders here), so this is the page's only familiar control —
+            cave-l3ay restored it after #2750 removed it as a supposed
+            duplicate. Every other page gets the sidenav header switcher. */}
         <header className="cnav__header">
-          <span className="cnav__title">Chats</span>
+          <div className="cnav__switcher">
+            <FamiliarSwitcher
+              familiars={familiars}
+              activeFamiliarId={activeFamiliarId}
+              sessions={sessions}
+              responseNeeded={responseNeeded}
+              onSelectFamiliar={onSelectFamiliar}
+              placement="bottom-start"
+              labeled
+            />
+          </div>
           <button
             type="button"
             aria-label="Go to Home"

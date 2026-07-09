@@ -19,12 +19,12 @@ assert.doesNotMatch(source, /computeQuickSwitch/, "the strip's pin/recency selec
 assert.doesNotMatch(globals, /\.familiar-quickswitch__strip \{/, "strip CSS removed");
 assert.match(globals, /\.familiar-quickswitch \{/, "wrapper CSS remains for the top-bar call site");
 
-// ── Desktop home: the SIDENAV header switcher (cave-vtk9) ────────────────────
-// Familiar selection lives in the global sidenav header on every page (per
-// operator direction, superseding #2747's chat-sidebar placement — the two
-// panels are adjacent, so both hosting it doubled the same control).
+// ── Familiar selection: sidenav header everywhere, chat sidebar on chat ──────
+// Chat mode swaps the nav panel for the chat sidebar (SidebarMinimal never
+// renders there), so BOTH hosts are needed: the sidenav header on every other
+// page (cave-vtk9), the chat sidebar header on chat (#2747, cave-l3ay).
 assert.doesNotMatch(menuBar, /FamiliarQuickSwitch|FamiliarSwitcher/, "the menu bar no longer hosts familiar selection");
-assert.doesNotMatch(sidebar, /FamiliarSwitcher/, "the chat sidebar no longer duplicates the sidenav switcher");
+assert.match(sidebar, /<FamiliarSwitcher[\s\S]*?labeled/, "the chat sidebar header hosts the switcher (the chat page's only familiar control)");
 const sidenav = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 assert.match(
   sidenav,
