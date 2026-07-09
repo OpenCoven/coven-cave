@@ -91,6 +91,142 @@ export function useAddProjectFlow(args: {
   return { beginAddProject, addProjectModal, adding, addError };
 }
 
+/** Resolve the effective selection: NO_PROJECT_ID → none; null → first project. */
+function selectedProject(value: string | null, sorted: CaveProject[]): CaveProject | null {
+  return value === NO_PROJECT_ID
+    ? null
+    : (value ? sorted.find((project) => project.id === value) ?? sorted[0] : sorted[0]) ?? null;
+}
+
+/**
+ * Controlled popover half of the shared project picker — the filterable list,
+ * No-project row, and optional Add-project row, anchored to any caller-owned
+ * trigger. ProjectPicker mounts it behind its chip; the chat session kebab
+ * anchors it to the kebab trigger so switching projects is one compact row
+ * instead of a full inline list.
+ */
+export function ProjectPickerPopover({
+  open,
+  onOpenChange,
+  anchorRef,
+  projects,
+  value,
+  onChange,
+  allowNoProject = false,
+  onAddProject,
+  addingProject = false,
+  placement = "bottom-start",
+  ariaLabel,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  projects: CaveProject[];
+  /** Project id, NO_PROJECT_ID, or null (null falls back to the first project). */
+  value: string | null;
+  onChange: (id: string) => void;
+  allowNoProject?: boolean;
+  /** Presence enables the "Add project…" row. */
+  onAddProject?: () => void;
+  addingProject?: boolean;
+  placement?: "bottom-start" | "bottom-end";
+  ariaLabel: string;
+}) {
+  const [query, setQuery] = useState("");
+  const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
+  const selected = selectedProject(value, sortedProjects);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return sortedProjects;
+    return sortedProjects.filter(
+      (project) =>
+        project.name.toLowerCase().includes(q) || project.root.toLowerCase().includes(q),
+    );
+  }, [sortedProjects, query]);
+
+  const close = () => {
+    onOpenChange(false);
+    setQuery("");
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+      anchorRef={anchorRef}
+      placement={placement}
+      minWidth={260}
+      className="cave-project-picker__popover"
+      ariaLabel={ariaLabel}
+    >
+      <PopoverBody>
+        {projects.length > 6 ? (
+          <input
+            type="text"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter projects…"
+            aria-label="Filter projects"
+            className="cave-project-picker__filter focus-ring-inset"
+          />
+        ) : null}
+        <PopoverLabel>Project</PopoverLabel>
+        {allowNoProject ? (
+          <PopoverItem
+            icon="ph:folder"
+            checked={!selected}
+            active={!selected}
+            onSelect={() => {
+              onChange(NO_PROJECT_ID);
+              close();
+            }}
+          >
+            No project
+          </PopoverItem>
+        ) : null}
+        {visible.map((entry) => (
+          <PopoverItem
+            key={entry.id}
+            leading={
+              <ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />
+            }
+            checked={entry.id === selected?.id}
+            active={entry.id === selected?.id}
+            onSelect={() => {
+              onChange(entry.id);
+              close();
+            }}
+          >
+            <span className="cave-project-picker__option">
+              <span className="cave-project-picker__option-name">{entry.name}</span>
+              <span className="cave-project-picker__option-root">{entry.root}</span>
+            </span>
+          </PopoverItem>
+        ))}
+        {query.trim() && visible.length === 0 ? (
+          <div className="cave-project-picker__none">No projects match</div>
+        ) : null}
+        {onAddProject ? (
+          <>
+            <PopoverSeparator />
+            <PopoverItem
+              icon="ph:plus"
+              disabled={addingProject}
+              onSelect={() => {
+                close();
+                onAddProject();
+              }}
+            >
+              {addingProject ? "Adding project…" : "Add project…"}
+            </PopoverItem>
+          </>
+        ) : null}
+      </PopoverBody>
+    </Popover>
+  );
+}
+
 /**
  * Shared project picker: one trigger chip + popover for every surface that
  * lets the user choose the project a conversation runs in. Replaces the
@@ -122,29 +258,9 @@ export function ProjectPicker({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
-
-  const selected =
-    value === NO_PROJECT_ID
-      ? null
-      : (value ? sortedProjects.find((project) => project.id === value) ?? sortedProjects[0] : sortedProjects[0]) ??
-        null;
-
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return sortedProjects;
-    return sortedProjects.filter(
-      (project) =>
-        project.name.toLowerCase().includes(q) || project.root.toLowerCase().includes(q),
-    );
-  }, [sortedProjects, query]);
-
-  const close = () => {
-    setOpen(false);
-    setQuery("");
-  };
+  const selected = selectedProject(value, sortedProjects);
 
   const addFlow = useAddProjectFlow({
     familiarId,
@@ -159,7 +275,7 @@ export function ProjectPicker({
         ref={triggerRef}
         variant="ghost"
         className={`cave-project-picker__trigger focus-ring${className ? ` ${className}` : ""}`}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={ariaLabel}
@@ -176,79 +292,18 @@ export function ProjectPicker({
         </span>
         <Icon name="ph:caret-up-down-bold" width={10} aria-hidden />
       </Button>
-      <Popover
+      <ProjectPickerPopover
         open={open}
-        onOpenChange={(next) => (next ? setOpen(true) : close())}
+        onOpenChange={setOpen}
         anchorRef={triggerRef}
-        placement="bottom-start"
-        minWidth={260}
-        className="cave-project-picker__popover"
+        projects={projects}
+        value={value}
+        onChange={onChange}
+        allowNoProject={allowNoProject}
+        onAddProject={createProject ? addFlow.beginAddProject : undefined}
+        addingProject={addFlow.adding}
         ariaLabel={ariaLabel}
-      >
-        <PopoverBody>
-          {projects.length > 6 ? (
-            <input
-              type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter projects…"
-              aria-label="Filter projects"
-              className="cave-project-picker__filter focus-ring-inset"
-            />
-          ) : null}
-          <PopoverLabel>Project</PopoverLabel>
-          {allowNoProject ? (
-            <PopoverItem
-              icon="ph:folder"
-              checked={!selected}
-              active={!selected}
-              onSelect={() => {
-                onChange(NO_PROJECT_ID);
-                close();
-              }}
-            >
-              No project
-            </PopoverItem>
-          ) : null}
-          {visible.map((entry) => (
-            <PopoverItem
-              key={entry.id}
-              leading={
-                <ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />
-              }
-              checked={entry.id === selected?.id}
-              active={entry.id === selected?.id}
-              onSelect={() => {
-                onChange(entry.id);
-                close();
-              }}
-            >
-              <span className="cave-project-picker__option">
-                <span className="cave-project-picker__option-name">{entry.name}</span>
-                <span className="cave-project-picker__option-root">{entry.root}</span>
-              </span>
-            </PopoverItem>
-          ))}
-          {query.trim() && visible.length === 0 ? (
-            <div className="cave-project-picker__none">No projects match</div>
-          ) : null}
-          {createProject ? (
-            <>
-              <PopoverSeparator />
-              <PopoverItem
-                icon="ph:plus"
-                disabled={addFlow.adding}
-                onSelect={() => {
-                  close();
-                  addFlow.beginAddProject();
-                }}
-              >
-                {addFlow.adding ? "Adding project…" : "Add project…"}
-              </PopoverItem>
-            </>
-          ) : null}
-        </PopoverBody>
-      </Popover>
+      />
       {addFlow.addError ? (
         <span className="cave-project-picker__error" role="alert">
           {addFlow.addError}

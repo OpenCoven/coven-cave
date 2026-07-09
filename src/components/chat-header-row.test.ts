@@ -104,9 +104,10 @@ assert.doesNotMatch(
   "Standalone lifecycle status bar CSS is removed (folded into meta line)",
 );
 
-// In-chat delete lives ONLY in the header trash button now — it opens a confirm
-// popover, the explicit Delete commits via deleteChat, and success refreshes the
-// session list and navigates back. The overflow menu no longer carries delete.
+// In-chat delete lives ONLY in the session overflow (kebab) menu now — the
+// danger "Delete chat…" item swaps the menu body to a confirm view, the
+// explicit Delete commits via deleteChat, and success refreshes the session
+// list and navigates back. No standalone header trash button remains.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -118,33 +119,48 @@ assert.match(
   "Successful delete refreshes sessions and navigates back to the list",
 );
 
-// A standalone delete (trash) button sits at the top of the session, beside the
-// overflow menu, opening a confirm popover before it commits via deleteChat.
+// The kebab's delete is a two-step guard: the danger item arms a confirm view
+// (Delete this chat permanently? / Cancel / Delete chat) inside the popover.
 assert.match(
   source,
-  /function HeaderDeleteButton[\s\S]*?aria-label="Delete chat"[\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}/,
-  "HeaderDeleteButton renders a guarded trash trigger that confirms before deleting",
+  /function SessionOverflowMenu[\s\S]*?confirmingDelete \? \([\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}[\s\S]*?Delete chat…/,
+  "SessionOverflowMenu guards delete behind an in-popover confirm view",
 );
 assert.match(
   source,
-  /function HeaderDebugButton[\s\S]*?aria-label="Debug chat"[\s\S]*?<Icon name="ph:bug-bold"/,
-  "HeaderDebugButton renders a visible bug trigger for the debug panel",
+  /onSelect=\{\(\) => setConfirmingDelete\(true\)\}/,
+  "the danger Delete chat… item arms the confirm view instead of deleting outright",
 );
+// Closing the kebab disarms the confirm so it never reopens pre-armed.
 assert.match(
   source,
-  /<HeaderDebugButton onOpenDebug=\{openDebug\} \/>[\s\S]*?<HeaderDeleteButton key=\{sessionId\} onDelete=\{\(\) => void deleteChat\(\)\} deleting=\{deleting\} \/>/,
-  "the chat header mounts the visible debug bug immediately before the standalone delete button",
+  /const close = \(\) => \{\s*setOpen\(false\);\s*setConfirmingDelete\(false\);\s*\};/,
+  "closing the overflow menu resets the armed delete confirm",
 );
-// The overflow (kebab) menu no longer offers delete — it's header-only.
+// The standalone header debug/delete buttons are gone — the header's only
+// always-visible controls are Find and the kebab.
+assert.doesNotMatch(
+  source,
+  /function HeaderDebugButton|function HeaderDeleteButton|function HeaderThinkingToggle|function HeaderReflectButton/,
+  "the standalone header icon buttons are folded into the overflow menu",
+);
 assert.doesNotMatch(
   source,
   /onConfirmDeleteChange/,
-  "the overflow menu's two-step delete wiring is removed",
+  "the old overflow two-step delete wiring stays removed",
+);
+
+// Project selection is one compact row in the kebab that opens the shared
+// searchable ProjectPickerPopover — not an inline list of every project.
+assert.match(
+  source,
+  /function SessionOverflowMenu[\s\S]*?Project: \{activeProject \? activeProject\.name : "No project"\}[\s\S]*?<ProjectPickerPopover/,
+  "the kebab shows a single Project row that opens the shared picker popover",
 );
 assert.doesNotMatch(
   source,
-  /Confirm delete/,
-  "no 'Confirm delete' item remains in the overflow menu",
+  /projects\.map\(\(entry\) => \(\s*<PopoverItem/,
+  "the kebab no longer inlines the full project list",
 );
 
 // ── Collapsed tool rows show a one-line arg summary (CHAT-D4-02) ─────────────

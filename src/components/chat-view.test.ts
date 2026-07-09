@@ -60,16 +60,16 @@ assert.match(
 
 assert.match(
   source,
-  /HeaderReflectButton[\s\S]*Reflect on this thread[\s\S]*ph:sparkle-bold/,
-  "ChatView should expose a Reflect action in the chat header",
+  /Reflect on this thread[\s\S]{0,600}ph:phone/,
+  "ChatView should expose a Reflect action in the session overflow menu",
 );
 // Reflect must not reuse the thinking toggle's brain — two identical brains
-// in one header row made the actions indistinguishable. Sparkle matches the
-// daily note's Reflection section where reflections land.
-assert.doesNotMatch(
+// in one menu made the actions indistinguishable. Sparkle matches the daily
+// note's Reflection section where reflections land.
+assert.match(
   source,
-  /function HeaderReflectButton[\s\S]{0,900}ph:brain/,
-  "the Reflect header button must stay visually distinct from the thinking toggle's brain",
+  /reflecting \? "ph:circle-notch-bold" : "ph:sparkle-bold"/,
+  "the Reflect action keeps its sparkle (spinner while reflecting), distinct from the thinking brain",
 );
 
 assert.match(

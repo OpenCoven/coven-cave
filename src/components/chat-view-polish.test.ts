@@ -92,8 +92,8 @@ assert.match(
 );
 assert.match(
   source,
-  /function HeaderThinkingToggle[\s\S]*useShowThinking\(\)[\s\S]*aria-pressed=\{showThinking\}/,
-  "A header toggle flips the global Show-thinking preference",
+  /function SessionOverflowMenu[\s\S]*useShowThinking\(\)[\s\S]*checked=\{showThinking\}[\s\S]*\{showThinking \? "Hide thinking" : "Show thinking"\}/,
+  "The session overflow menu carries the global Show-thinking toggle",
 );
 
 assert.match(
@@ -501,10 +501,13 @@ assert.match(
   "Open chat header should be compressed for a streamlined session UI",
 );
 
-assert.match(
+// The standalone header icon buttons (thinking/debug/reflect/delete) are gone —
+// their chrome went with them; the kebab and find affordance are the only
+// always-visible session actions.
+assert.doesNotMatch(
   styles,
-  /\.cave-chat-icon-button\s*\{[\s\S]*border:\s*1px solid transparent;[\s\S]*background:\s*transparent;/,
-  "Open chat header icon buttons should be chromeless until hover/focus",
+  /\.cave-chat-icon-button/,
+  "Dead standalone icon-button chrome is removed with the buttons",
 );
 
 // Ultra-minimal header: at rest only the ⋮ kebab shows; the quick actions

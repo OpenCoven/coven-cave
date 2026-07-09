@@ -119,7 +119,7 @@ import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
-import { ProjectPicker, useAddProjectFlow } from "@/components/project-picker";
+import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
@@ -791,11 +791,14 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
 // view arms/executes its "Start a task" card-follows-chat flow (see
 // handleEvent's "session" case).
 
-/** Codex/ChatGPT-style overflow menu. Collapses the session's secondary
- *  controls — project switch, voice call, debug — into a single kebab so the
- *  header reads as title + quiet metadata instead of a row of competing icons.
- *  Find and Delete stay inline (one-click); everything else lives one click away
- *  here. */
+/** Codex/ChatGPT-style overflow menu. Collapses ALL of the session's secondary
+ *  controls — project selection, thinking toggle, reflect, voice call, debug,
+ *  delete — into a single kebab so the header reads as title + quiet metadata
+ *  plus Find, instead of a row of competing icons. Project selection is one
+ *  compact "Project: <name>" row that opens the shared searchable picker
+ *  (anchored to the same kebab trigger), not an inline list of every project.
+ *  Delete keeps its two-step guard: the danger item swaps the menu body to a
+ *  confirm view before anything commits. */
 function SessionOverflowMenu({
   projects,
   projectId,
@@ -803,9 +806,14 @@ function SessionOverflowMenu({
   onAddProject,
   familiar,
   sessionId,
+  hasTurns,
   voiceActive,
   onOpenVoice,
   onOpenDebug,
+  reflecting,
+  onReflect,
+  deleting,
+  onDelete,
 }: {
   projects: CaveProject[];
   projectId: string | null;
@@ -815,11 +823,21 @@ function SessionOverflowMenu({
   familiar: Familiar;
   /** Active conversation id — powers "Continue on phone" (cave-i74f). */
   sessionId?: string | null;
+  /** Gates the Show-thinking toggle — pointless on an empty transcript. */
+  hasTurns: boolean;
   voiceActive: boolean;
   onOpenVoice: () => void;
   onOpenDebug: () => void;
+  /** Reflect-on-thread (absent when the familiar has no id). */
+  reflecting: boolean;
+  onReflect?: () => void;
+  deleting: boolean;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showThinking, setShowThinking] = useShowThinking();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject =
     projectId === NO_PROJECT_ID
@@ -827,7 +845,10 @@ function SessionOverflowMenu({
       : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
   const voiceConfigured = Boolean(familiar.voiceProvider);
 
-  const close = () => setOpen(false);
+  const close = () => {
+    setOpen(false);
+    setConfirmingDelete(false);
+  };
 
   return (
     <>
@@ -839,7 +860,7 @@ function SessionOverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Session options"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? close() : setOpen(true))}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
@@ -851,208 +872,121 @@ function SessionOverflowMenu({
         minWidth={216}
         ariaLabel="Chat options"
       >
-        <PopoverBody>
-          {sessionId ? (
+        {confirmingDelete ? (
+          <PopoverBody>
+            <PopoverLabel>Delete this chat permanently?</PopoverLabel>
+            <PopoverItem icon="ph:x" onSelect={() => setConfirmingDelete(false)}>
+              Cancel
+            </PopoverItem>
+            <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
+              {deleting ? "Deleting…" : "Delete chat"}
+            </PopoverItem>
+          </PopoverBody>
+        ) : (
+          <PopoverBody>
+            {sessionId ? (
+              <PopoverItem
+                icon="ph:device-mobile"
+                onSelect={() => {
+                  close();
+                  // Golden path 5: hand off the MOMENT — the pairing modal's QR
+                  // carries #chat-<id> so one scan opens this conversation.
+                  window.dispatchEvent(
+                    new CustomEvent("cave:continue-on-phone", { detail: { chatId: sessionId } }),
+                  );
+                }}
+              >
+                Continue on phone
+              </PopoverItem>
+            ) : null}
             <PopoverItem
-              icon="ph:device-mobile"
+              icon="ph:pencil-simple"
               onSelect={() => {
+                window.dispatchEvent(new Event("cave:chat-rename"));
                 close();
-                // Golden path 5: hand off the MOMENT — the pairing modal's QR
-                // carries #chat-<id> so one scan opens this conversation.
-                window.dispatchEvent(
-                  new CustomEvent("cave:continue-on-phone", { detail: { chatId: sessionId } }),
-                );
               }}
             >
-              Continue on phone
+              Rename chat
             </PopoverItem>
-          ) : null}
-          <PopoverItem
-            icon="ph:pencil-simple"
-            onSelect={() => {
-              window.dispatchEvent(new Event("cave:chat-rename"));
-              close();
-            }}
-          >
-            Rename chat
-          </PopoverItem>
-          <PopoverSeparator />
-          {projects.length > 0 || onAddProject ? (
-            <>
-              <PopoverLabel>Project</PopoverLabel>
-              {projects.length > 0 ? (
-                <>
-                  <PopoverItem
-                    icon={activeProject ? "ph:folder" : "ph:check"}
-                    active={!activeProject}
-                    onSelect={() => {
-                      onProjectChange(NO_PROJECT_ID);
-                      close();
-                    }}
-                  >
-                    No project
-                  </PopoverItem>
-                  {projects.map((entry) => (
-                    <PopoverItem
-                      key={entry.id}
-                      icon={entry.id === activeProject?.id ? "ph:check" : "ph:folder"}
-                      active={entry.id === activeProject?.id}
-                      onSelect={() => {
-                        onProjectChange(entry.id);
-                        close();
-                      }}
-                    >
-                      {entry.name}
-                    </PopoverItem>
-                  ))}
-                </>
-              ) : null}
-              {onAddProject ? (
-                <PopoverItem
-                  icon="ph:plus"
-                  onSelect={() => {
-                    onAddProject();
-                    close();
-                  }}
-                >
-                  Add project…
-                </PopoverItem>
-              ) : null}
-              <PopoverSeparator />
-            </>
-          ) : null}
-          <PopoverItem
-            icon="ph:phone"
-            disabled={!voiceConfigured || voiceActive}
-            onSelect={() => {
-              onOpenVoice();
-              close();
-            }}
-          >
-            {voiceConfigured ? `Call ${familiar.display_name}` : "Voice — set up in Studio"}
-          </PopoverItem>
-          <PopoverItem
-            icon="ph:bug-bold"
-            onSelect={() => {
-              onOpenDebug();
-              close();
-            }}
-          >
-            Debug session
-          </PopoverItem>
-        </PopoverBody>
+            {projects.length > 0 || onAddProject ? (
+              <PopoverItem
+                icon="ph:folder"
+                title={activeProject?.root ?? "No project"}
+                onSelect={() => {
+                  // Chain popovers: the kebab closes on this click; the picker
+                  // mounts after it, so its outside-click listener misses the
+                  // same mousedown and it stays open on the shared anchor.
+                  close();
+                  setProjectPickerOpen(true);
+                }}
+              >
+                Project: {activeProject ? activeProject.name : "No project"}
+              </PopoverItem>
+            ) : null}
+            <PopoverSeparator />
+            {hasTurns ? (
+              <PopoverItem
+                icon={showThinking ? "ph:brain-bold" : "ph:brain"}
+                checked={showThinking}
+                title={showThinking ? "Hide reasoning blocks" : "Show reasoning blocks"}
+                onSelect={() => {
+                  setShowThinking(!showThinking);
+                  close();
+                }}
+              >
+                {showThinking ? "Hide thinking" : "Show thinking"}
+              </PopoverItem>
+            ) : null}
+            {onReflect ? (
+              <PopoverItem
+                icon={reflecting ? "ph:circle-notch-bold" : "ph:sparkle-bold"}
+                disabled={reflecting}
+                onSelect={() => {
+                  close();
+                  onReflect();
+                }}
+              >
+                {reflecting ? "Reflecting…" : "Reflect on this thread"}
+              </PopoverItem>
+            ) : null}
+            <PopoverItem
+              icon="ph:phone"
+              disabled={!voiceConfigured || voiceActive}
+              onSelect={() => {
+                onOpenVoice();
+                close();
+              }}
+            >
+              {voiceConfigured ? `Call ${familiar.display_name}` : "Voice — set up in Studio"}
+            </PopoverItem>
+            <PopoverItem
+              icon="ph:bug-bold"
+              onSelect={() => {
+                onOpenDebug();
+                close();
+              }}
+            >
+              Debug session
+            </PopoverItem>
+            <PopoverSeparator />
+            <PopoverItem icon="ph:trash" danger onSelect={() => setConfirmingDelete(true)}>
+              Delete chat…
+            </PopoverItem>
+          </PopoverBody>
+        )}
       </Popover>
-    </>
-  );
-}
-
-/** Header toggle for the global "Show thinking" preference — flips every
- *  reasoning disclosure in the transcript open/closed at once. */
-function HeaderThinkingToggle() {
-  const [showThinking, setShowThinking] = useShowThinking();
-  return (
-    <button
-      type="button"
-      className={`focus-ring cave-chat-icon-button${showThinking ? " cave-chat-icon-button--active" : ""}`}
-      aria-label={showThinking ? "Hide thinking" : "Show thinking"}
-      aria-pressed={showThinking}
-      title={showThinking ? "Hide reasoning blocks" : "Show reasoning blocks"}
-      onClick={() => setShowThinking(!showThinking)}
-    >
-      <Icon name={showThinking ? "ph:brain-bold" : "ph:brain"} width={15} aria-hidden />
-    </button>
-  );
-}
-
-function HeaderDebugButton({ onOpenDebug }: { onOpenDebug: () => void }) {
-  return (
-    <button
-      type="button"
-      className="focus-ring cave-chat-icon-button"
-      aria-label="Debug chat"
-      title="Debug chat"
-      onClick={onOpenDebug}
-    >
-      <Icon name="ph:bug-bold" width={15} aria-hidden />
-    </button>
-  );
-}
-
-function HeaderReflectButton({
-  reflecting,
-  onReflect,
-}: {
-  reflecting: boolean;
-  onReflect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="focus-ring cave-chat-icon-button"
-      aria-label="Reflect on this thread"
-      title="Reflect on this thread"
-      disabled={reflecting}
-      onClick={onReflect}
-    >
-      {/* Sparkle, not brain: reflections land in the daily note's Reflection
-          section (iconed ph:sparkle), and the brain belongs to the thinking
-          toggle two buttons away — two identical brains in one header row. */}
-      <Icon
-        name={reflecting ? "ph:circle-notch-bold" : "ph:sparkle-bold"}
-        width={15}
-        className={reflecting ? "animate-spin" : undefined}
-        aria-hidden
-      />
-    </button>
-  );
-}
-
-/** Standalone delete control for the chat header — a one-click trash button that
- *  opens a small confirm popover before committing. Mirrors the overflow menu's
- *  two-step guard, but surfaced at the top of the session for quick access. Uses
- *  its own open state so it never collides with the kebab's armed state; the
- *  in-flight `deleting` flag and the actual delete are shared via props. */
-function HeaderDeleteButton({
-  onDelete,
-  deleting,
-}: {
-  onDelete: () => void;
-  deleting: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="focus-ring cave-chat-delete-trigger"
-        aria-label="Delete chat"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="Delete chat"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Icon name="ph:trash" width={15} aria-hidden />
-      </button>
-      <Popover
-        open={open}
-        onOpenChange={setOpen}
+      <ProjectPickerPopover
+        open={projectPickerOpen}
+        onOpenChange={setProjectPickerOpen}
         anchorRef={triggerRef}
+        projects={projects}
+        value={projectId}
+        onChange={onProjectChange}
+        allowNoProject
+        onAddProject={onAddProject}
         placement="bottom-end"
-        minWidth={216}
-        ariaLabel="Delete chat"
-      >
-        <PopoverBody>
-          <PopoverLabel>Delete this chat permanently?</PopoverLabel>
-          <PopoverItem icon="ph:x" onSelect={() => setOpen(false)}>
-            Cancel
-          </PopoverItem>
-          <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
-            {deleting ? "Deleting…" : "Delete chat"}
-          </PopoverItem>
-        </PopoverBody>
-      </Popover>
+        ariaLabel="Project for this chat"
+      />
     </>
   );
 }
@@ -2284,7 +2218,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Two-step delete via the header trash button: it opens a confirm popover and
   // only the explicit Delete commits (HeaderDeleteButton owns the armed state).
   const [deleting, setDeleting] = useState(false);
-  const { projects, createProject, reload: reloadProjects } = useProjects();
+  // Scope the picker to the projects THIS familiar has been granted access to —
+  // the chat-send route enforces the same grant (assertProjectAccess → 403), so
+  // an unscoped list would offer projects that fail on send.
+  const { projects, createProject, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
   // A session whose recorded cwd maps to no registered project resolves to
@@ -4807,30 +4744,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPrev={findPrev}
               />
             ) : null}
-            {turns.length > 0 ? <HeaderThinkingToggle /> : null}
-            {sessionId && (
-              <HeaderDebugButton onOpenDebug={openDebug} />
-            )}
-            {sessionId && (
-              <HeaderDeleteButton key={sessionId} onDelete={() => void deleteChat()} deleting={deleting} />
-            )}
             {sessionId && (
               <SessionOverflowMenu
+                key={sessionId}
                 projects={projects}
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
                 onAddProject={overflowAddProject.beginAddProject}
                 familiar={familiar}
                 sessionId={sessionId}
+                hasTurns={turns.length > 0}
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
                 onOpenDebug={openDebug}
+                reflecting={reflecting}
+                onReflect={familiar.id ? () => void reflectOnThread() : undefined}
+                deleting={deleting}
+                onDelete={() => void deleteChat()}
               />
             )}
             {overflowAddProject.addProjectModal}
-            {sessionId && familiar.id ? (
-              <HeaderReflectButton reflecting={reflecting} onReflect={() => void reflectOnThread()} />
-            ) : null}
             {!hasLinkedChips ? linkedContextRow : null}
           </div>
         </MetaLine>

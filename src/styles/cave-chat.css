@@ -2793,44 +2793,6 @@ details[open] > .cave-tool-summary::before {
   box-shadow: 0 0 0 2px color-mix(in oklch, currentColor 14%, transparent);
 }
 
-.cave-chat-icon-button {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  transition:
-    background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.cave-chat-icon-button:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
-  background: color-mix(in oklch, var(--bg-hover) 72%, transparent);
-  color: var(--text-primary);
-}
-
-.cave-chat-icon-button:disabled {
-  opacity: 0.45;
-}
-
-.cave-chat-icon-button--active {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
-  color: var(--accent-presence);
-}
-
-.cave-chat-icon-button--active:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
-  color: var(--accent-presence);
-}
-
 .cave-chat-back-button {
   width: 24px;
   height: 24px;
@@ -3096,24 +3058,15 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-primary);
 }
 
-/* The header delete trigger reads as destructive on hover/open. */
-.cave-chat-session-actions > .cave-chat-delete-trigger:hover:not(:disabled),
-.cave-chat-session-actions > .cave-chat-delete-trigger[aria-expanded="true"] {
-  border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
-  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
-  color: var(--color-danger);
-}
-
 .cave-chat-session-actions .voice-call-button:disabled {
   opacity: 0.45;
 }
 
 /* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
- * find affordance show; the quick actions (thinking, debug, delete, reflect)
- * and the lone "link a task" + reveal on header hover or keyboard focus. They
- * keep their layout slot (no reflow on reveal). Touch devices — which have no
- * hover — skip this and show everything. The kebab still holds every action,
- * so nothing becomes hover-only. */
+ * find affordance show; the lone "link a task" chip reveals on header hover or
+ * keyboard focus, keeping its layout slot (no reflow on reveal). Touch devices
+ * — which have no hover — skip this and show everything. The kebab holds every
+ * secondary action, so nothing becomes hover-only. */
 @media (hover: hover) and (pointer: fine) {
   .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find),
   .cave-chat-linked-context .cave-chat-linked-chip--link-task {
