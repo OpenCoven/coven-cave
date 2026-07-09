@@ -226,11 +226,11 @@ test.describe("mobile foundations", () => {
     test.slow();
     // The in-shell WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
     // when a new surface is added — a new mode with a render crash should turn
-    // this red. Two modes are intentionally excluded: "journal" retired as a
-    // standalone surface and now redirects to Settings → Familiars (swept
-    // separately after the loop, asserting the redirect); "grimoire" mounts a
-    // heavy Milkdown editor whose cold compile under next dev makes this fast
-    // canary flaky — it has its own coverage (see cave follow-up).
+    // this red. Two modes are intentionally excluded: "journal" now opens the
+    // Grimoire surface on its Journal tab (swept separately after the loop);
+    // "grimoire" mounts a heavy Milkdown editor whose cold compile under next
+    // dev makes this fast canary flaky — it has its own coverage (see cave
+    // follow-up), and the journal step below exercises the same mount.
     const IN_SHELL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
       "browser", "terminal", "github", "roles", "marketplace",
@@ -261,31 +261,28 @@ test.describe("mobile foundations", () => {
       await expect(page.locator(".shell-frame"), `${surface} must keep the app shell mounted (no crash)`).toBeVisible();
     }
 
-    // Assert no in-shell surface render-crashed BEFORE the journal redirect
-    // below. That step navigates cross-document to /settings, which cancels the
-    // workspace's in-flight chunk/fetch requests; next dev and WebKit surface
-    // those cancellations as benign pageerrors ("Failed to load chunk",
-    // "aborted", "…due to access control checks") that are loading artifacts,
-    // not render crashes. Checking here keeps the canary meaningful without
-    // enumerating every benign message.
+    // Assert no in-shell surface render-crashed while sweeping.
     expect(errors, `render crashes while sweeping surfaces:\n${errors.join("\n")}`).toEqual([]);
 
-    // "journal" is a WorkspaceMode but no longer an in-shell surface: it
-    // hard-redirects to Settings → Familiars (openFamiliarStudioSettingsTab →
-    // window.location.assign("/settings#familiars")). Run it last — its
-    // navigation away from the workspace would strand the sweep otherwise — and
-    // assert the redirect lands on the Settings shell. A render crash there
-    // unmounts to the error boundary, so .settings-shell never appears.
+    // "journal" is now an in-shell surface: it opens the Grimoire surface on its
+    // Journal tab (setGrimoireView("journal") → mode "grimoire"), no longer a
+    // cross-document redirect to Settings. Assert the shell survives and the
+    // Grimoire surface mounts (a render crash there unmounts to the error
+    // boundary, so .grimoire-view never appears).
     current = "journal";
     await page.evaluate(() =>
       window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "journal" } })),
     );
-    // /settings now mounts the Milkdown-backed memory/journal editor, whose
-    // first-hit compile under next dev can run well past 15s — wait generously.
-    await page.waitForURL(/\/settings(\?|#|$)/, { timeout: 45_000 });
+    await page.waitForTimeout(250);
     await expect(
-      page.locator(".settings-shell"),
-      "journal must redirect to the Settings shell without crashing",
+      page.locator(".shell-frame"),
+      "journal must keep the app shell mounted (no crash)",
+    ).toBeVisible();
+    // The Grimoire surface (with its Journal tab) mounts in-shell; its first-hit
+    // compile under next dev can run well past 15s — wait generously.
+    await expect(
+      page.locator(".grimoire-view"),
+      "journal opens the Grimoire surface without crashing",
     ).toBeVisible({ timeout: 45_000 });
   });
 });

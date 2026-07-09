@@ -12,7 +12,7 @@ import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-m
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
-import { GrimoireView } from "@/components/grimoire-view";
+import { GrimoireView, type GrimoireViewKind } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
@@ -314,6 +314,10 @@ export function Workspace() {
   // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
   // #chat-…) and cave:navigate-mode override this as before.
   const [mode, setModeRaw] = useState<CaveMode>("chat");
+  // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
+  // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
+  // and so the choice persists across Grimoire remounts within a session.
+  const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
   // Group Chat retired its standalone page — it's now a tab inside the Chat
   // surface. Any request for the legacy `groupchat` mode (nav, deep link,
   // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
@@ -328,11 +332,13 @@ export function Workspace() {
       return;
     }
     if (next === "journal") {
-      // The Journal page retired — it lives in Settings → Familiars → Journal.
-      // Every entry point (sidebar row, ⌘K palette, ?mode= deep link,
-      // cave:navigate-mode, dashboard links) funnels through setMode, so this
-      // one redirect covers them all.
-      openFamiliarStudioSettingsTab("journal");
+      // Journal is now a tab inside the Grimoire surface. Every entry point
+      // (sidebar row, ⌘K palette, ?mode= deep link, cave:navigate-mode,
+      // dashboard links) funnels through setMode, so opening Grimoire on its
+      // Journal tab here covers them all. (Per-familiar journals still live in
+      // Settings → Familiars → Journal.)
+      setGrimoireView("journal");
+      setModeRaw("grimoire");
       return;
     }
     setModeRaw(next);
@@ -2264,7 +2270,12 @@ export function Workspace() {
         }}
       />
     ) : mode === "grimoire" ? (
-      <GrimoireView />
+      <GrimoireView
+        view={grimoireView}
+        onViewChange={setGrimoireView}
+        familiars={familiars}
+        activeFamiliarId={activeId}
+      />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode

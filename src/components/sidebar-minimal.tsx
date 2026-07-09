@@ -126,7 +126,7 @@ const FOLDER_MODES: Array<{
   // also carries the needs-you badge). Journal and Grimoire join the quiet
   // cluster: same flat list, same reachability (rows, palette, deep links),
   // just muted-until-hover so the conversation-first surfaces read first.
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — opens in Settings", quiet: true },
+  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in the Grimoire", quiet: true },
   { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
