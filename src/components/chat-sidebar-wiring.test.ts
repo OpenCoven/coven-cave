@@ -116,7 +116,7 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="sm"/,
+  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm"/,
   "ThreadRow renders the shared ProjectAvatar tile with an accessible project name",
 );
 assert.match(

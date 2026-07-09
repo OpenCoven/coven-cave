@@ -87,6 +87,19 @@ function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
   return "ph:folder-simple-dashed";
 }
 
+// Activity meta line under the folder name: "2 running · 12m" while sessions
+// run, else "6 chats · 3h". Subsumes the old count badge, so the header keeps
+// a single right-aligned slot for the hover actions.
+function groupMeta(group: ChatProjectGroup): string {
+  const running = group.sessions.filter((s) => s.status === "running").length;
+  const count =
+    running > 0
+      ? `${running} running`
+      : `${group.sessions.length} ${group.sessions.length === 1 ? "chat" : "chats"}`;
+  const age = group.updatedAt ? bareTime(group.updatedAt) : null;
+  return age ? `${count} · ${age}` : count;
+}
+
 // Returns a context-aware leading icon for threads whose title suggests a PR
 // or branch operation (from code-sidebar). Returns null for ordinary threads.
 function threadLeadingIcon(title: string): IconName | null {
@@ -105,7 +118,7 @@ type ThreadRowProps = {
   indent: "folder" | "flat";
   /** Shown in the time-bucketed Recent view, where rows from every project
    *  interleave — the folder view already says this via the group header. */
-  project?: { root: string; name: string } | null;
+  project?: { root: string; name: string; color: string | null } | null;
   /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
   glyph?: IconName | null;
   onOpen: () => void;
@@ -146,7 +159,7 @@ function ThreadRow({
         )}
         {project ? (
           <span className="cnav__thread-proj" title={project.name}>
-            <ProjectAvatar name={project.name} root={project.root} size="sm" />
+            <ProjectAvatar name={project.name} root={project.root} color={project.color} size="sm" />
             <span className="sr-only">{project.name}</span>
           </span>
         ) : null}
@@ -252,12 +265,12 @@ export function WorkspaceSidebar({
   // override-aware grouping the folder view renders — a chat dragged into
   // another folder shows that folder's tile, not its recorded cwd's.
   const sessionProjectById = useMemo(() => {
-    const byId = new Map<string, { root: string; name: string }>();
+    const byId = new Map<string, { root: string; name: string; color: string | null }>();
     for (const group of groups) {
       if (!group.projectRoot) continue;
       const name = folderLabel(group);
       for (const session of group.sessions) {
-        byId.set(session.id, { root: group.projectRoot, name });
+        byId.set(session.id, { root: group.projectRoot, name, color: group.projectColor });
       }
     }
     return byId;
@@ -595,14 +608,16 @@ export function WorkspaceSidebar({
                       >
                         <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
                         {group.projectId ? (
-                          <ProjectAvatar name={label} root={group.projectRoot} size="sm" className="cnav__folder" />
+                          <ProjectAvatar name={label} root={group.projectRoot} color={group.projectColor} size="sm" className="cnav__folder" />
                         ) : (
                           <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
                         )}
-                        <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
-                          {label}
+                        <span className="cnav__group-text">
+                          <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
+                            {label}
+                          </span>
+                          <span className="cnav__group-meta">{groupMeta(group)}</span>
                         </span>
-                        <span className="cnav__count">{group.sessions.length}</span>
                       </button>
                       {unregistered ? (
                         <button
