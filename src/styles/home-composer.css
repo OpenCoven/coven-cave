@@ -103,13 +103,20 @@
   50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
 }
 
+/* Cave home headline — Classic Coven identity moment.
+   Uses the canonical display face (EB Garamond) per OpenCoven DESIGN.md §4.
+   The serif is intentional: the home surface is where Val + her familiars
+   *arrive* every session, and the type should feel like a coven's field
+   manual, not a Vercel dashboard. */
 .home-composer-headline {
-  font-family: var(--font-fredoka, "Fredoka", system-ui, sans-serif);
+  font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
   font-weight: 500;
-  font-size: clamp(26px, 3.8vw, 44px);
-  line-height: 1.1;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.15;
   color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
-  letter-spacing: -0.02em;
+  /* EB Garamond's proportions already read tight — near-zero tracking
+     lets the letterforms breathe without the corporate feel of -0.02em. */
+  letter-spacing: -0.005em;
   margin: 0 0 6px;
 }
 

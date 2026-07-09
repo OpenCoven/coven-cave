@@ -49,6 +49,7 @@ assert.match(
   /className=\{selectTrigger\}/,
   "typography pair selector uses the shared standard-height trigger styling",
 );
+assert.match(src, /Display/, "renders a display (serif) preview specimen");
 assert.match(src, /Interface/, "keeps the interface preview");
 assert.match(src, /Code &amp; terminal/, "keeps the code and terminal preview");
 
