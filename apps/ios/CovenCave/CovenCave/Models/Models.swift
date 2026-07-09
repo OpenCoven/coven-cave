@@ -60,6 +60,11 @@ struct SessionRow: Identifiable, Codable, Hashable {
     var createdAt: String?
     var updatedAt: String?
     var archivedAt: String?
+    /// Provenance from /api/sessions/list — generator surfaces (journal,
+    /// canvas, cron, …) tag their runs so chat lists can hide them.
+    var origin: String?
+    /// Daemon-only runs the server flags as generated (not user chats).
+    var generated: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, title, harness, model, status
@@ -67,6 +72,18 @@ struct SessionRow: Identifiable, Codable, Hashable {
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case archivedAt = "archived_at"
+        case origin, generated
+    }
+
+    /// Mirrors the web's isGeneratedChatSession (chat-projects.ts): generated
+    /// runs stay out of thread lists. Legacy journal runs predate the origin
+    /// tag, so their exact machine-prompt titles match too — at the truncated
+    /// lengths the store actually keeps.
+    var isGeneratedRun: Bool {
+        if generated == true { return true }
+        if let origin, ["cron", "heartbeat", "canvas", "journal"].contains(origin) { return true }
+        return title.hasPrefix("Write a short narrative of my day (")
+            || title.hasPrefix("Write a short, first-person reflective journal entry")
     }
 }
 

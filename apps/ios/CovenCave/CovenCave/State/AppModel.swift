@@ -1051,7 +1051,9 @@ final class AppModel {
     func serverOnlySessions(for familiarId: String) -> [SessionRow] {
         let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
         return serverSessions
-            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) }
+            // Generated runs (journal narratives, canvas, crons) are not
+            // conversations — parity with the web chat lists (cave-48aa).
+            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) && !$0.isGeneratedRun }
             .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
     }
 
