@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.162] - 2026-07-09
+
+> 🖼️ **Your wallpapers, straight from the camera roll** — the backdrop picker now takes HEIC photos directly, no conversion detour. Plus the side-panel footer stays put on chat pages, familiar switching can't flash another familiar's sessions, Grimoire's graph reaches narrow screens, and daily narratives drop their stowaway next-paths block.
+
+Patch release on top of v0.0.161.
+
+### Fixes
+- **Backdrop: HEIC/HEIF wallpapers work in the picker** (#2815, cave-cjpb). The desktop app decodes iPhone photos natively; where a plain browser can't, the error now says what to do instead of a generic failure.
+- **Shell: the side-panel footer (Dashboard + Settings) stays on chat pages** (#2811).
+- **Workspace: switching familiars can't briefly show the previous familiar's sessions** (#2812, cave-jibj) — session loads are sequence-guarded.
+- **Daily report: narratives no longer carry a piggybacked next-paths block** (#2813).
+- **Grimoire: Graph mode is reachable on narrow/mobile layouts** (#2814, cave-quct).
+
 ## [0.0.161] - 2026-07-09
 
 > 📱 **Threads that stay yours** — the iOS app stops flooding its Threads list with journal-generated runs, matching the web. The task loop closes on the board with live status chips and one-click Mark done, harness failures grow inline fix actions, and Claude Fable 5 joins the Copilot model menu.
