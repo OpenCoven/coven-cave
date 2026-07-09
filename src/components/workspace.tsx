@@ -2040,6 +2040,7 @@ export function Workspace() {
       inboxPrefs={inboxPrefs}
       familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
+      selectedFamiliarIds={scopeIds}
       onFamiliarScopeChange={selectFamiliarScope}
       responseNeeded={responseNeeded}
       notificationBadgeCount={inboxBadgeCount}

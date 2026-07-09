@@ -63,6 +63,9 @@ export type SidebarMinimalProps = {
   inboxPrefs?: InboxPrefs;
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
+  /** Multiselect scope (≥2 ids) — the header switcher checks members and
+   *  summarizes the count on its trigger. */
+  selectedFamiliarIds?: ReadonlySet<string>;
   onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
@@ -213,6 +216,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     activeSessionId,
     familiars,
     activeFamiliarId,
+    selectedFamiliarIds,
     onFamiliarScopeChange,
     sessions,
     responseNeeded,
@@ -242,6 +246,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <FamiliarQuickSwitch
           familiars={familiars}
           activeFamiliarId={activeFamiliarId ?? null}
+          selectedFamiliarIds={selectedFamiliarIds}
           sessions={sessions}
           responseNeeded={responseNeeded}
           onSelectFamiliar={onFamiliarScopeChange}

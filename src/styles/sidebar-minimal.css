@@ -75,6 +75,30 @@
   min-width: 0;
   flex: 1;
 }
+/* The trigger wears the New-chat CTA's exact chrome (outlined accent, 34px,
+   control radius) as a full-width multiselector dropdown — the two stacked
+   full-width controls read as one family; the caret marks the selector. */
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 34px;
+  gap: 10px;
+  padding: 0 8px;
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 2px solid var(--accent-presence);
+  background: transparent;
+}
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: var(--accent-presence);
+}
+.sidebar-familiar-switch .familiar-switcher__trigger-label {
+  font-size: 13px;
+  font-weight: 600;
+}
 .sidebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -1067,10 +1091,17 @@
 }
 .shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
 .shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 0 0 auto;
   width: 28px;
   min-width: 28px;
+  min-height: 28px;
   padding: 0;
   justify-content: center;
+  border-width: 1px;
+}
+/* The dropdown caret is expanded-state chrome — drop it on the rail. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-caret {
+  display: none;
 }
 
 /* Labels and count pills collapse away; the icon is all that stays per row.

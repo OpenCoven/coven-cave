@@ -7,6 +7,8 @@ import type { SessionRow } from "@/lib/types";
 type Props = {
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
+  /** Multiselect scope, forwarded to the switcher's checkbox rows. */
+  selectedFamiliarIds?: ReadonlySet<string>;
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
   /** `null` scopes to "All familiars". */
@@ -27,6 +29,7 @@ type Props = {
 export function FamiliarQuickSwitch({
   familiars,
   activeFamiliarId,
+  selectedFamiliarIds,
   sessions,
   responseNeeded,
   onSelectFamiliar,
@@ -38,6 +41,7 @@ export function FamiliarQuickSwitch({
       <FamiliarSwitcher
         familiars={familiars}
         activeFamiliarId={activeFamiliarId}
+        selectedFamiliarIds={selectedFamiliarIds}
         sessions={sessions}
         responseNeeded={responseNeeded}
         onSelectFamiliar={onSelectFamiliar}

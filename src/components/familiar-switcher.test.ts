@@ -15,18 +15,23 @@ assert.match(
 );
 assert.match(
   source,
-  /active \?\s*\(\s*<FamiliarAvatar familiar=\{active\} size="sm" \/>\s*\) : \(\s*<Icon name="ph:sparkle"/,
-  "trigger shows the active familiar's avatar, falling back to an all-scope glyph",
+  /active && !multiScope \?\s*\(\s*<FamiliarAvatar familiar=\{active\} size="sm" \/>\s*\) : \(\s*<Icon name="ph:sparkle"/,
+  "trigger shows the active familiar's avatar; the all scope and a ≥2 multiselect fall back to the sparkle glyph",
 );
 assert.match(
   source,
-  /labeled \? <span className="familiar-switcher__trigger-label">\{active \? active\.display_name : "All familiars"\}<\/span> : null/,
-  "labeled trigger shows the selected familiar name",
+  /labeled \? <span className="familiar-switcher__trigger-label">\{triggerText\}<\/span> : null/,
+  "labeled trigger shows the scope text (name, All familiars, or the multiselect count)",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /familiar-switcher__caret/,
-  "trigger does not add a dropdown caret",
+  /multiScope\s*\? `\$\{multiScope\.size\} familiars`/,
+  "a ≥2 multiselect summarizes as a count on the trigger",
+);
+assert.match(
+  source,
+  /familiar-switcher__trigger-caret/,
+  "the labeled trigger carries a dropdown caret (it reads as a selector)",
 );
 assert.match(
   source,
@@ -42,8 +47,22 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => \{ onSelectFamiliar\(f\.id\); setOpen\(false\); \}\}/,
-  "picking a familiar scopes to its id",
+  /onClick=\{\(e\) => pickFamiliar\(f\.id, e\)\}/,
+  "picking a familiar routes through pickFamiliar (solo vs multi)",
+);
+// Multiselect: the checkbox zone (or ⌘/Ctrl-click) toggles scope membership and
+// keeps the menu open; a plain click solo-selects and closes.
+assert.match(
+  source,
+  /e\.metaKey \|\| e\.ctrlKey \|\|\s*Boolean\(\(e\.target as HTMLElement\)\.closest\("\.familiar-switcher__checkbox"\)\)/,
+  "the checkbox zone and ⌘/Ctrl-click both mean multi",
+);
+assert.match(source, /if \(!multi\) setOpen\(false\);/, "multi picks keep the menu open for more toggles");
+assert.match(source, /aria-multiselectable="true"/, "the listbox announces multiselect");
+assert.match(
+  source,
+  /className=\{`familiar-switcher__checkbox\$\{isActive \? " is-checked" : ""\}`\}/,
+  "each row renders its checkbox zone with checked state",
 );
 
 // Presence + reply signals preserved from the retired dock.

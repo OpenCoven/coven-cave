@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
@@ -24,10 +24,15 @@ type Presence = { label: string; dot: string };
 type Props = {
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
+  /** The multiselect scope (empty/undefined = single-select behavior). When it
+   *  holds ≥2 ids every member row reads selected and the trigger summarizes
+   *  the count. */
+  selectedFamiliarIds?: ReadonlySet<string>;
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
-  /** `null` scopes to "All familiars". */
-  onSelectFamiliar: (id: string | null) => void;
+  /** `null` scopes to "All familiars". `opts.multi` (row checkbox or ⌘/Ctrl
+   *  click) toggles the id in the multiselect scope instead of replacing it. */
+  onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   /** Menu placement relative to the trigger. Defaults to "bottom-start" (the
    *  left-edge sidebar home); the mobile top bar passes "bottom-end" since its
    *  trigger sits at the right edge. */
@@ -46,6 +51,7 @@ type Props = {
 export function FamiliarSwitcher({
   familiars,
   activeFamiliarId,
+  selectedFamiliarIds,
   sessions,
   responseNeeded,
   onSelectFamiliar,
@@ -62,6 +68,20 @@ export function FamiliarSwitcher({
     () => familiars.find((f) => f.id === activeFamiliarId) ?? null,
     [familiars, activeFamiliarId],
   );
+  // Multiselect scope: with ≥2 members the menu reads as a multiselector
+  // (member rows checked, trigger summarizes the count); otherwise the single
+  // active familiar drives the checked row.
+  const multiScope = selectedFamiliarIds && selectedFamiliarIds.size >= 2 ? selectedFamiliarIds : null;
+  const isScoped = (id: string) => (multiScope ? multiScope.has(id) : id === activeFamiliarId);
+  /** Row activation: the checkbox zone (or ⌘/Ctrl-click) toggles membership and
+   *  keeps the menu open for more picks; a plain click solo-selects and closes. */
+  const pickFamiliar = (id: string, e: ReactMouseEvent) => {
+    const multi =
+      e.metaKey || e.ctrlKey ||
+      Boolean((e.target as HTMLElement).closest(".familiar-switcher__checkbox"));
+    onSelectFamiliar(id, { multi });
+    if (!multi) setOpen(false);
+  };
 
   // Familiars are daemon-owned — there is no cave-side create. "New familiar"
   // routes to onboarding (the canonical create flow) via the window-event bus
@@ -104,9 +124,18 @@ export function FamiliarSwitcher({
     setFamiliarOrder(arrayMove(familiarIds, oldIndex, newIndex));
   }
 
-  const triggerLabel = active
-    ? `Switch familiar — current: ${active.display_name}`
-    : "Switch familiar — scope: all familiars";
+  // Trigger copy: a ≥2 multiselect summarizes the scope; otherwise the single
+  // active familiar (or the All scope) names the control.
+  const triggerText = multiScope
+    ? `${multiScope.size} familiars`
+    : active
+      ? active.display_name
+      : "All familiars";
+  const triggerLabel = multiScope
+    ? `Switch familiar — scope: ${multiScope.size} familiars`
+    : active
+      ? `Switch familiar — current: ${active.display_name}`
+      : "Switch familiar — scope: all familiars";
 
   return (
     <>
@@ -118,15 +147,16 @@ export function FamiliarSwitcher({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={triggerLabel}
-        title={active ? active.display_name : "All familiars"}
-        style={active ? ({ ["--familiar-accent" as string]: active.color } as CSSProperties) : undefined}
+        title={triggerText}
+        style={active && !multiScope ? ({ ["--familiar-accent" as string]: active.color } as CSSProperties) : undefined}
       >
-        {active ? (
+        {active && !multiScope ? (
           <FamiliarAvatar familiar={active} size="sm" />
         ) : (
           <Icon name="ph:sparkle" width={14} aria-hidden />
         )}
-        {labeled ? <span className="familiar-switcher__trigger-label">{active ? active.display_name : "All familiars"}</span> : null}
+        {labeled ? <span className="familiar-switcher__trigger-label">{triggerText}</span> : null}
+        {labeled ? <Icon name="ph:caret-up-down-bold" width={10} className="familiar-switcher__trigger-caret" aria-hidden /> : null}
         {anyNeedsReply ? <span className="familiar-switcher__unread" aria-hidden /> : null}
       </button>
 
@@ -201,25 +231,25 @@ export function FamiliarSwitcher({
               </SortableContext>
             </DndContext>
           ) : (
-            <ul className="familiar-switcher__list" role="listbox" aria-label="Switch familiar">
+            <ul className="familiar-switcher__list" role="listbox" aria-label="Switch familiar" aria-multiselectable="true">
               <li>
                 <button
                   type="button"
                   role="option"
-                  aria-selected={activeFamiliarId == null}
-                  className={`familiar-switcher__option${activeFamiliarId == null ? " is-active" : ""}`}
+                  aria-selected={!multiScope && activeFamiliarId == null}
+                  className={`familiar-switcher__option${!multiScope && activeFamiliarId == null ? " is-active" : ""}`}
                   onClick={() => { onSelectFamiliar(null); setOpen(false); }}
                 >
                   <span className="familiar-switcher__all-glyph" aria-hidden>
                     <Icon name="ph:sparkle" width={13} />
                   </span>
                   <span className="familiar-switcher__option-name">All familiars</span>
-                  {activeFamiliarId == null ? <Icon name="ph:check" width={12} aria-hidden /> : null}
+                  {!multiScope && activeFamiliarId == null ? <Icon name="ph:check" width={12} aria-hidden /> : null}
                 </button>
               </li>
 
               {filtered.map((f) => {
-                const isActive = f.id === activeFamiliarId;
+                const isActive = isScoped(f.id);
                 const needsReply = responseNeeded?.has(f.id) ?? false;
                 const presence = presenceFor(f, needsReply);
                 return (
@@ -230,9 +260,14 @@ export function FamiliarSwitcher({
                       aria-selected={isActive}
                       className={`familiar-switcher__option${isActive ? " is-active" : ""}`}
                       style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
-                      onClick={() => { onSelectFamiliar(f.id); setOpen(false); }}
-                      title={`${f.display_name} · ${presence.label}`}
+                      onClick={(e) => pickFamiliar(f.id, e)}
+                      title={`${f.display_name} · ${presence.label} · click switches, checkbox or ⌘-click multi-selects`}
                     >
+                      {/* Checkbox zone — clicking it toggles this familiar in the
+                          multiselect scope and keeps the menu open. */}
+                      <span className={`familiar-switcher__checkbox${isActive ? " is-checked" : ""}`} aria-hidden>
+                        {isActive ? <Icon name="ph:check" width={10} /> : null}
+                      </span>
                       <span className="familiar-switcher__avatar">
                         <FamiliarAvatar familiar={f} size="sm" />
                         <span className={`familiar-switcher__presence ${presence.dot}`} aria-hidden />
@@ -240,7 +275,6 @@ export function FamiliarSwitcher({
                       <span className="familiar-switcher__option-name">{f.display_name}</span>
                       {f.role ? <span className="familiar-switcher__option-meta">{f.role}</span> : null}
                       {needsReply ? <span className="familiar-switcher__option-unread" aria-hidden /> : null}
-                      {isActive ? <Icon name="ph:check" width={12} aria-hidden /> : null}
                     </button>
                     <button
                       type="button"
