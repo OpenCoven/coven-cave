@@ -2103,6 +2103,10 @@ export function Workspace() {
         await loadSessions();
       }}
       scheduledCount={scheduleNeedsCount}
+      onOpenSettings={() => {
+        shellRef.current?.dismissNavMobile();
+        nextRouter.push("/settings");
+      }}
     />
   );
 

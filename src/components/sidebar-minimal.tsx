@@ -21,7 +21,7 @@ import {
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
-import { APP_VERSION } from "@/lib/app-version";
+import { SidebarFooter } from "@/components/sidebar-footer";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -293,39 +293,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
-      {/* Bottom: Dashboard + Settings */}
-      <div className="sidebar-foot">
-        {/* Dashboard is a standalone Next route (/dashboard), not a workspace
-            mode — navigate with a real link rather than onModeChange. */}
-        <a
-          className="sidebar-foot-btn"
-          href="/dashboard"
-          aria-label="Dashboard"
-          title="Dashboard — activity overview and daily reports"
-        >
-          <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:squares-four" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
-          </span>
-          <span className="sidebar-foot-label">Dashboard</span>
-        </a>
-        <button
-          type="button"
-          className="sidebar-foot-btn"
-          onClick={onOpenSettings}
-          aria-label="Settings"
-          title="Settings"
-        >
-          <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:gear-six" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
-          </span>
-          <span className="sidebar-foot-label">Settings</span>
-        </button>
-      </div>
-
-      {/* Bottommost: app version — one minimal-height muted line. */}
-      <div className="sidebar-version" title={`CovenCave v${APP_VERSION}`}>
-        v{APP_VERSION}
-      </div>
+      {/* Bottom: Dashboard + Settings, then the version line — shared with the
+          chat-thread nav (WorkspaceSidebar) so the footer is identical and
+          persists on every surface, including Chat. */}
+      <SidebarFooter onOpenSettings={onOpenSettings} />
     </nav>
   );
 }

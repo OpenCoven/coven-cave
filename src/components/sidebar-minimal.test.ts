@@ -5,6 +5,9 @@ import { readFileSync } from "node:fs";
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+// The footer (Dashboard + Settings + version) now lives in a shared component so
+// it persists across every nav host, including Chat's WorkspaceSidebar.
+const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -228,6 +231,11 @@ assert.match(
 
 assert.match(
   source,
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/,
+  "SidebarMinimal renders the shared footer",
+);
+assert.match(
+  footer,
   /sidebar-foot-icon-cell/,
   "Footer controls should use the fixed footer icon cell",
 );
@@ -385,14 +393,19 @@ assert.match(
 // The app version renders as the bottommost sidebar element — one
 // minimal-height muted line under the footer icon row, hidden in the rail.
 assert.match(
-  source,
+  footer,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
-  "SidebarMinimal should read the version from the shared app-version module",
+  "the shared footer reads the version from the shared app-version module",
+);
+assert.match(
+  footer,
+  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>/,
+  "the version line is the bottommost element of the shared footer",
 );
 assert.match(
   source,
-  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>\s*<\/nav>/,
-  "The version line should be the bottommost element of the sidebar nav",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
+  "the shared footer is the bottommost element of the sidebar nav",
 );
 assert.match(
   styles,
