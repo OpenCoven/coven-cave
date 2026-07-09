@@ -19,6 +19,7 @@ import type { ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { Icon } from "@/lib/icon";
 import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
+import { formatTimeToFirstReply, timeToFirstReplyMs } from "@/lib/first-run-stamps";
 import { pulseTotal } from "@/lib/session-pulse";
 import {
   RESPONSE_CONFIDENCE_EMPTY_STATE,
@@ -466,6 +467,13 @@ export function FamiliarAnalyticsContent({
     return [...escalated, ...model.healRequests];
   }, [model.familiarId, model.healRequests, threadSignalsAggregate]);
   const pulseSessions = pulseTotal(model.sessionPulse);
+  // cave-fy1q phase 3: surface the first-run funnel while this install has
+  // both stamps. Sampled after mount — localStorage isn't SSR-safe.
+  const [timeToFirstReply, setTimeToFirstReply] = useState<string | null>(null);
+  useEffect(() => {
+    const ms = timeToFirstReplyMs();
+    setTimeToFirstReply(ms === null ? null : formatTimeToFirstReply(ms));
+  }, []);
 
   return (
     <>
@@ -522,6 +530,7 @@ export function FamiliarAnalyticsContent({
           <span className="fa-pulse__meta">
             {pulseSessions} session{pulseSessions === 1 ? "" : "s"} · last active{" "}
             <RelativeTime iso={model.growthReport?.lastActiveAt} fallback="never" />
+            {timeToFirstReply ? <> · first reply {timeToFirstReply} after first open</> : null}
           </span>
         </div>
         <ConfidenceRing confidence={model.confidence} />

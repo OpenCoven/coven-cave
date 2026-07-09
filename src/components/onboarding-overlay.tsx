@@ -890,6 +890,30 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
+  // cave-fy1q phase 1: the daemon is the one infra step that can simply
+  // happen. When the OPEN wizard reaches it (CLI, home, and runtime healthy;
+  // daemon not up), attempt ONE auto-start — the primary button stays as the
+  // retry affordance and the failure path is unchanged. Gated on `open`
+  // because hooks run even while the overlay renders null — a veteran
+  // machine with a stopped daemon must never get a surprise background
+  // start on boot. The ref (not state) survives re-renders, and it latches
+  // when the daemon is already up so a later crash mid-wizard never
+  // auto-restarts either.
+  const daemonAutoStartRef = useRef(false);
+  useEffect(() => {
+    if (!open || daemonAutoStartRef.current) return;
+    const s = status?.steps;
+    if (!s) return;
+    if (s.daemon.ok) {
+      daemonAutoStartRef.current = true;
+      return;
+    }
+    if (!s.covenCli.ok || !s.covenHome.ok || !s.adapters.ok) return;
+    daemonAutoStartRef.current = true;
+    void startDaemon();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, status]);
+
   const saveOnboardingConnection = async () => {
     setSavingOnboardingConnection(true);
     setSetupError(null);

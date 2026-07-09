@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
+import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed } from "@/lib/inbox-feed";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -840,6 +841,13 @@ export function Workspace() {
   // mute toggle.
   const inboxPrefsRef = useRef(inboxPrefs);
   inboxPrefsRef.current = inboxPrefs;
+
+  // cave-fy1q phase 3: first-run funnel anchor — written once ever, and only
+  // while onboarding is still undismissed (the lib guards both), so
+  // time-to-first-reply measures fresh installs and never re-anchors old ones.
+  useEffect(() => {
+    stampFirstOpenOnce();
+  }, []);
 
   // Subscribe to the inbox SSE stream: drives the inbox list, toasts, and
   // macOS system notifications. EventSource auto-reconnects on its own.

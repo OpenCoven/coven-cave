@@ -343,6 +343,8 @@ export const SUITES = {
     "src/lib/familiar-growth-signals.test.ts",
     "src/lib/familiar-growth-route-wiring.test.ts",
     "src/lib/session-pulse.test.ts",
+    "src/lib/first-run-stamps.test.ts",
+    "src/lib/summoning-draft.test.ts",
     "src/components/familiar-growth-view.test.ts",
     "src/lib/familiar-confidence.test.ts",
     "src/lib/familiar-analytics-insight.test.ts",

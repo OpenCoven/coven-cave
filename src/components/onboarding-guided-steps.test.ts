@@ -365,4 +365,34 @@ assert.match(
   "failed installs expose the full installer output tail",
 );
 
+
+// ── cave-fy1q phase 1: the daemon step auto-starts once ─────────────────────
+
+assert.match(
+  source,
+  /const daemonAutoStartRef = useRef\(false\)/,
+  "one-shot latch is a ref (survives re-renders, StrictMode re-runs)",
+);
+assert.match(
+  source,
+  /if \(s\.daemon\.ok\) \{\s*daemonAutoStartRef\.current = true;\s*return;\s*\}/,
+  "a daemon that's already up latches — a later crash never triggers a surprise auto-start",
+);
+assert.match(
+  source,
+  /if \(!s\.covenCli\.ok \|\| !s\.covenHome\.ok \|\| !s\.adapters\.ok\) return;\s*daemonAutoStartRef\.current = true;\s*void startDaemon\(\);/,
+  "auto-start fires only once the wizard has reached the daemon step (all prior infra healthy)",
+);
+assert.match(
+  source,
+  /\{startingDaemon \? "Starting…" : "Start local daemon"\}/,
+  "the manual button remains — it is the retry affordance when auto-start fails",
+);
+
+assert.match(
+  source,
+  /if \(!open \|\| daemonAutoStartRef\.current\) return;/,
+  "auto-start is gated on the overlay being OPEN — hooks run even while it renders null, and a closed wizard must never start the daemon",
+);
+
 console.log("onboarding-guided-steps.test.ts: ok");

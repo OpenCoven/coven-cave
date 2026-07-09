@@ -11,6 +11,7 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { segmentTurn } from "@/lib/turn-segments";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
+import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
@@ -4311,6 +4312,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // message from the turn's errored step when the stream gave none.
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
+        } else {
+          // cave-fy1q phase 3: first completed reply ever — no-op unless the
+          // first-open anchor exists (fresh installs only).
+          stampFirstReplyOnce();
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {

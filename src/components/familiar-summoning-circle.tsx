@@ -14,6 +14,7 @@ import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
+import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
@@ -258,42 +259,75 @@ function SummoningRite({
   onStartChat?: (id: string) => void;
   onClose: () => void;
 }) {
-  const [stage, setStage] = useState<StageIndex>(0);
+  // cave-fy1q: unmount still resets state (by design), but a per-window
+  // sessionStorage draft seeds it back so an accidental Escape doesn't
+  // restart the rite. Read once per mount; cleared on a successful summon.
+  const draft = useRef(readSummoningDraft()).current;
+  const draftVessel: VesselKind | null =
+    draft?.vessel === "local" || draft?.vessel === "ssh" || draft?.vessel === "openclaw"
+      ? draft.vessel
+      : null;
+  const [stage, setStage] = useState<StageIndex>((draft?.stage ?? 0) as StageIndex);
   // Stages the user has reached — sigil chips for these are clickable.
-  const [maxVisited, setMaxVisited] = useState<StageIndex>(0);
+  const [maxVisited, setMaxVisited] = useState<StageIndex>((draft?.maxVisited ?? 0) as StageIndex);
   const [error, setError] = useState<string | null>(null);
   const [summoned, setSummoned] = useState<{ id: string; name: string } | null>(null);
 
   // Stage I — the vessel.
-  const [vessel, setVessel] = useState<VesselKind | null>(null);
+  const [vessel, setVessel] = useState<VesselKind | null>(draftVessel);
   const [harnesses, setHarnesses] = useState<HarnessReport[] | null>(null);
   const [harness, setHarness] = useState<string | null>(
-    defaultHarness && COMPATIBILITY_ADAPTERS.some((a) => a.id === defaultHarness)
-      ? defaultHarness
-      : null,
+    draft?.harness && COMPATIBILITY_ADAPTERS.some((a) => a.id === draft.harness)
+      ? draft.harness
+      : defaultHarness && COMPATIBILITY_ADAPTERS.some((a) => a.id === defaultHarness)
+        ? defaultHarness
+        : null,
   );
   const [agents, setAgents] = useState<OpenClawAgent[] | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
-  const [agentId, setAgentId] = useState<string | null>(null);
-  const [sshHost, setSshHost] = useState("");
-  const [sshCwd, setSshCwd] = useState("");
-  const [sshCommand, setSshCommand] = useState("");
+  const [agentId, setAgentId] = useState<string | null>(draft?.agentId ?? null);
+  const [sshHost, setSshHost] = useState(draft?.sshHost ?? "");
+  const [sshCwd, setSshCwd] = useState(draft?.sshCwd ?? "");
+  const [sshCommand, setSshCommand] = useState(draft?.sshCommand ?? "");
   const [sshCheck, setSshCheck] = useState<SshCheckState>({ state: "idle" });
 
   // Stage II — the name.
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
-  const [description, setDescription] = useState("");
-  const [idOverride, setIdOverride] = useState<string | null>(null);
+  const [name, setName] = useState(draft?.name ?? "");
+  const [role, setRole] = useState(draft?.role ?? "");
+  const [description, setDescription] = useState(draft?.description ?? "");
+  const [idOverride, setIdOverride] = useState<string | null>(draft?.idOverride ?? null);
 
-  // Stage III — the form.
-  const [glyph, setGlyph] = useState<string>(DEFAULT_GLYPH);
+  // Stage III — the form. (The portrait is a File — it can't ride the draft.)
+  const [glyph, setGlyph] = useState<string>(draft?.glyph || DEFAULT_GLYPH);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [aura, setAura] = useState<string | null>(null);
+  const [aura, setAura] = useState<string | null>(draft?.aura ?? null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Stage IV — fine-tuning.
-  const [model, setModel] = useState("");
+  const [model, setModel] = useState(draft?.model ?? "");
+
+  // Persist the rite as it evolves; stop once summoned (success owns the
+  // clear — a re-save from the settle re-render would resurrect the draft).
+  useEffect(() => {
+    if (summoned) return;
+    saveSummoningDraft({
+      stage,
+      maxVisited,
+      vessel,
+      harness,
+      agentId,
+      sshHost,
+      sshCwd,
+      sshCommand,
+      name,
+      role,
+      description,
+      idOverride,
+      glyph,
+      aura,
+      model,
+    });
+  }, [summoned, stage, maxVisited, vessel, harness, agentId, sshHost, sshCwd, sshCommand, name, role, description, idOverride, glyph, aura, model]);
 
   // Load installed runtimes like onboarding did; fall back to the static
   // adapter catalog (installed state unknown) if the probe fails, so the
@@ -493,6 +527,7 @@ function SummoningRite({
         }
       }
       if (aura) setFamiliarOverride(newId, { color: aura });
+      clearSummoningDraft();
       setSummoned({ id: newId, name: name.trim() });
       setSubmitting(false);
       onCreated(newId);
