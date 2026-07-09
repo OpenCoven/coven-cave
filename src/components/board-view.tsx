@@ -1,7 +1,7 @@
 "use client";
 
 import "@/styles/board.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
@@ -25,6 +25,7 @@ import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
@@ -46,6 +47,12 @@ function loadPref<T extends string>(key: string, fallback: T, valid: T[]): T {
 
 type Props = {
   familiars: Familiar[];
+  /** Work-queue merge (cave-oa1z): the queue rides the Tasks page as a tab.
+   *  The slot keeps BoardView ignorant of the queue's data plumbing (the
+   *  Schedules calendar-slot pattern), and `initialTab` lets the legacy
+   *  familiar-work-queue mode deep-link straight onto the tab. */
+  queueSlot?: ReactNode;
+  initialTab?: "tasks" | "queue";
   sessions: SessionRow[];
   activeFamiliarId: string | null;
   /** Multiselect scope (empty = All). When ≥2 are selected the board filters to
@@ -81,8 +88,11 @@ function BoardKanbanSkeleton() {
   );
 }
 
-export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl }: Props) {
+export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl, queueSlot, initialTab }: Props) {
   const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState<"tasks" | "queue">(
+    initialTab === "queue" && queueSlot ? "queue" : "tasks",
+  );
   const [cards, setCards] = useState<Card[]>([]);
   // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
   // only after the undo window, and Undo restores them (mirrors chat/projects).
@@ -704,6 +714,23 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       {/* Header */}
       <header className="board-header">
         <span className="board-header-title">Tasks</span>
+        {queueSlot ? (
+          <Tabs
+            className="board-header-tabs"
+            variant="segment"
+            size="sm"
+            ariaLabel="Tasks tabs"
+            idPrefix="tasks"
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { id: "tasks" as const, label: "Tasks" },
+              { id: "queue" as const, label: "Work queue" },
+            ]}
+          />
+        ) : null}
+        {activeTab === "tasks" ? (
+        <>
         <div className="board-search-wrap">
           <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
           <label className="sr-only" htmlFor="board-search">Search tasks</label>
@@ -877,8 +904,25 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             + New task
           </button>
         </div>
+        </>
+        ) : null}
       </header>
 
+      {activeTab === "queue" && queueSlot ? (
+        <div
+          role="tabpanel"
+          id="tasks-panel-queue"
+          aria-labelledby="tasks-tab-queue"
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          {queueSlot}
+        </div>
+      ) : null}
+
+      {/* The board body stays mounted while the queue tab shows (polls keep
+          state warm for the switch back); display:contents preserves the
+          shell's flex layout when visible. */}
+      <div style={{ display: activeTab === "queue" ? "none" : "contents" }}>
       {error && (
         <div
           role="alert"
@@ -1185,6 +1229,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           onDismiss={commitCardDelete}
         />
       ) : null}
+      </div>
     </section>
   );
 }

@@ -2180,8 +2180,14 @@ export function Workspace() {
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInAppBrowser}
       />
-    ) : mode === "board" ? (
+    ) : mode === "board" || mode === "familiar-work-queue" ? (
+      // Tasks and the Work Queue are one surface (cave-oa1z, the Schedules
+      // pattern): the legacy familiar-work-queue mode still resolves here but
+      // opens that tab; keying on the mode remounts so deep links land on it.
       <BoardView
+        key={mode}
+        initialTab={mode === "familiar-work-queue" ? "queue" : "tasks"}
+        queueSlot={<FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} embedded />}
         familiars={familiars}
         sessions={sessions}
         activeFamiliarId={activeId}
@@ -2267,8 +2273,6 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
-    ) : mode === "familiar-work-queue" ? (
-      <FamiliarWorkQueueView familiars={resolvedFamiliars} onOpenUrl={openUrlInAppBrowser} />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : (

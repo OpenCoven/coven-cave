@@ -214,4 +214,41 @@ assert.equal(
   assert.deepEqual(clean.attention, [], "no unlinked/stale PRs → empty attention");
 }
 
+
+// ── cave-oa1z: the Work Queue rides the Tasks page as a tab ──────────────────
+// (Schedules pattern: legacy mode deep-links onto the tab; one nav entry.)
+{
+  const { readFileSync } = await import("node:fs");
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+
+  const workspace = read("../components/workspace.tsx");
+  if (!/mode === "board" \|\| mode === "familiar-work-queue"/.test(workspace)) {
+    throw new Error("workspace must resolve the legacy familiar-work-queue mode onto the merged Tasks surface");
+  }
+  if (!/initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/.test(workspace)) {
+    throw new Error("the legacy mode must deep-link onto the queue tab");
+  }
+  if (!/queueSlot=\{<FamiliarWorkQueueView[^>]*embedded/.test(workspace)) {
+    throw new Error("the queue rides the Tasks page as an embedded slot");
+  }
+
+  const board = read("../components/board-view.tsx");
+  if (!/idPrefix="tasks"/.test(board) || !/label: "Work queue"/.test(board)) {
+    throw new Error("BoardView hosts the Tasks | Work queue segment tabs");
+  }
+  if (!/activeTab === "queue" && queueSlot/.test(board)) {
+    throw new Error("the queue tabpanel renders the slot");
+  }
+
+  const sidebar = read("../components/sidebar-minimal.tsx");
+  if (/label: "Work Queue"/.test(sidebar)) {
+    throw new Error("the standalone Work Queue nav row stays retired — Tasks covers it");
+  }
+
+  const fwq = read("../components/familiar-work-queue-view.tsx");
+  if (!/embedded \? null : <h1 className="surface-compact-title">Work Queue<\/h1>/.test(fwq)) {
+    throw new Error("embedded queue suppresses its own h1 (the tab band names the surface)");
+  }
+}
+
 console.log("beads-work-queue.test.ts: ok");
