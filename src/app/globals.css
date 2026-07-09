@@ -13464,3 +13464,680 @@ details[open] > .cave-edit-card__summary::before {
   background: var(--accent-presence);
   transition: width 0.1s linear;
 }
+
+/* ── Role Surfaces — rooms within the Cave ─────────────────────────────────
+   Registry-driven vocation workspaces (role-surface-host.tsx + the
+   role-surfaces/ rooms). One spatial grammar — left rail / canvas / right
+   rail / bottom drawer — on the obsidian foundation, with each room keyed by
+   its own accent hue (`--room-accent-h`, set inline by SurfaceRoom) so
+   entering one reads as crossing into a different chamber, not switching a
+   tab. Glass panels, minimal chrome, no admin-dashboard flatness. */
+
+.role-surface-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.role-surface-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.role-surface-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.role-surface-header-title h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.role-surface-header-role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.role-surface-header-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.role-surface-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.role-surface-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.role-surface-status-dot--ok { background: oklch(0.75 0.14 155); }
+.role-surface-status-dot--busy { background: var(--accent-presence); }
+.role-surface-status-dot--warn { background: oklch(0.78 0.14 75); }
+
+.role-surface-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.role-surface-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.role-surface-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.role-surface-chip--accent {
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence);
+  border-color: transparent;
+}
+
+.role-surface-chip--accent:hover {
+  color: var(--accent-presence-foreground);
+  background: color-mix(in oklch, var(--accent-presence) 88%, white);
+}
+
+.role-surface-commands { position: relative; }
+
+.role-surface-commands-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+}
+
+.role-surface-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.role-surface-command:hover { background: var(--bg-hover); }
+
+.role-surface-command-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.role-surface-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px 0;
+}
+
+.role-surface-notice {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.role-surface-notice--warn {
+  border-color: color-mix(in oklch, oklch(0.78 0.14 75) 45%, transparent);
+  color: oklch(0.85 0.09 80);
+}
+
+.role-surface-notice--error {
+  border-color: color-mix(in oklch, var(--destructive, oklch(0.6 0.2 25)) 50%, transparent);
+}
+
+.role-surface-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Room shell ── */
+
+.role-surface-room {
+  --room-accent: oklch(0.74 0.11 var(--room-accent-h, 293));
+  --room-accent-soft: color-mix(in oklch, var(--room-accent) 22%, transparent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  isolation: isolate;
+}
+
+/* The chamber's glow: a quiet accent wash bleeding down from the ceiling.
+   Distinct hue per room, subtle enough to stay obsidian. */
+.role-surface-room::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 220px;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(120% 100% at 50% 0%, var(--room-accent-soft), transparent 70%);
+  opacity: 0.5;
+}
+
+.role-surface-columns {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow: hidden;
+}
+
+.role-surface-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.role-surface-canvas {
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  padding: 14px;
+}
+
+.role-surface-canvas-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.role-surface-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--bg-raised) 82%, transparent);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-surface-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--room-accent);
+}
+
+.role-surface-section-head h3 {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.role-surface-section-actions { margin-left: auto; }
+
+/* ── Room furniture ── */
+
+.role-surface-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.role-surface-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.role-surface-row-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.role-surface-row-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.role-surface-row-btn--active {
+  color: var(--text-primary);
+  background: var(--room-accent-soft);
+}
+
+.role-surface-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.role-surface-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.role-surface-inline-form {
+  display: flex;
+  gap: 6px;
+}
+
+.role-surface-stack-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.role-surface-inline-form input,
+.role-surface-stack-form input,
+.role-surface-field input,
+.role-surface-field select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-base, var(--background)) 60%, transparent);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+}
+
+/* Desktop-only compact sizes; on touch the global `max(16px, 1em)` input rule
+   applies so iOS Safari doesn't auto-zoom the fields on focus. */
+@media (pointer: fine) {
+  .role-surface-inline-form input,
+  .role-surface-stack-form input,
+  .role-surface-field input,
+  .role-surface-field select {
+    font-size: 12px;
+  }
+  .role-surface-notes {
+    font-size: 13px;
+  }
+}
+
+.role-surface-inline-form input:focus-visible,
+.role-surface-stack-form input:focus-visible,
+.role-surface-field input:focus-visible,
+.role-surface-field select:focus-visible,
+.role-surface-notes:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.role-surface-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.role-surface-field--grow { flex: 1; }
+
+.role-surface-field-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.role-surface-composer-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.role-surface-notes {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-base, var(--background)) 55%, transparent);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.role-surface-notes--short { min-height: 90px; }
+
+.role-surface-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.role-surface-check--done { color: var(--text-muted); text-decoration: line-through; }
+
+.role-surface-metric {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.role-surface-metric-warn { color: oklch(0.8 0.12 75); }
+
+.role-surface-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.role-surface-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.role-surface-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.role-surface-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+  font-size: 12px;
+}
+
+.role-surface-evidence-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.role-surface-evidence-meta input[type="range"] {
+  width: 90px;
+  accent-color: var(--room-accent);
+}
+
+.role-surface-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.role-surface-memory-path {
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.role-surface-memory-excerpt {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.role-surface-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.role-surface-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, translate 0.12s;
+}
+
+.role-surface-card:hover {
+  border-color: var(--border-strong);
+  translate: 0 -1px;
+}
+
+.role-surface-card--active {
+  border-color: color-mix(in oklch, var(--room-accent) 55%, transparent);
+  background: var(--room-accent-soft);
+}
+
+.role-surface-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.role-surface-clusters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-surface-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid color-mix(in oklch, var(--room-accent) 35%, transparent);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: color-mix(in oklch, var(--room-accent) 8%, transparent);
+}
+
+.role-surface-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  font-size: 11px;
+}
+
+.role-surface-facts dt { color: var(--text-muted); }
+.role-surface-facts dd { color: var(--text-primary); overflow-wrap: anywhere; }
+
+.role-surface-content {
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.role-surface-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 8px;
+  color: var(--text-muted);
+}
+
+.role-surface-empty-title { font-size: 12px; }
+.role-surface-empty-hint { font-size: 11px; opacity: 0.8; line-height: 1.5; }
+
+.role-surface-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.role-surface-unavailable-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Bottom drawer ── */
+
+.role-surface-drawer {
+  border-top: 1px solid var(--border);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.role-surface-drawer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 16px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.role-surface-drawer-toggle:hover { color: var(--text-primary); }
+
+.role-surface-drawer-body {
+  padding: 0 16px 14px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.role-surface-drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+/* Sidebar cluster label for Role Surface rooms */
+.sidebar-rooms-label {
+  margin: 14px 10px 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* Narrow shells: stack the room columns; rails become sections above/below
+   the canvas instead of vanishing. */
+@media (max-width: 1023px) {
+  .role-surface-columns {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .role-surface-rail { overflow-y: visible; }
+  .role-surface-canvas { overflow-y: visible; }
+}
