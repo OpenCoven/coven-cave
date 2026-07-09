@@ -3792,42 +3792,9 @@ textarea.required-inputs-control {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   Right panel — two-icon closed strip + open tab bar
+   Right panel — open tab bar (the collapsed state is the in-flow
+   .workspace-rail-reopen rail in chat-surface.tsx / cave-chat.css)
    ════════════════════════════════════════════════════════════════ */
-
-/* Closed strip (brain + chat icons, collapsed) */
-.right-panel-strip--closed {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding-top: 10px;
-  width: 36px;
-  flex-shrink: 0;
-  height: 100%;
-  border-left: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-}
-@media (min-width: 1024px) {
-  .right-panel-strip--closed { display: flex; }
-}
-
-.right-panel-strip-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.12s, background 0.12s;
-}
-.right-panel-strip-btn:hover {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
-}
 
 /* Open tab bar (sits at top of the open aside) — translucent so the aside's
    glass shows through, mirroring the left sidebar's chrome. */

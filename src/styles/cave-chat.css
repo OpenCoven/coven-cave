@@ -5320,38 +5320,54 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Collapsed code rail — a slim clickable strip on the surface's right edge
-   that reopens the rail. Absolutely positioned so it overlays the chat gutter
-   without reserving layout width. */
-/* Full-height reopen rail on the chat surface's right edge — mirrors the left
-   nav's collapsed rail (.chat-sidebar__rail): same 56px thickness, icon over a
-   vertical uppercase label ("Code"), transparent until hover. */
-.workspace-rail-reopen {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+/* Full-height reopen rails on the chat surface's right edge — the reflection
+   of the left nav's collapsed rail (.chat-sidebar__rail): icon over a vertical
+   uppercase label ("Inspector" / "Code"), reading top→bottom with the glyph
+   face to the right/outside (vertical-rl). In-flow flex children (NOT
+   absolutely positioned): the rail reserves its own layout width so content
+   sits beside it, never underneath. Carries the same glass as the left panel
+   and the open right aside. */
+.workspace-rail-reopen,
+.chat-right-rail {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 9px;
-  width: 56px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 100%;
   padding: 12px 0;
   border: 0;
   border-left: 1px solid var(--border-hairline);
-  background: transparent;
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   color: var(--text-muted);
   cursor: pointer;
-  z-index: 40;
   transition:
     color var(--duration-fast) var(--ease-standard),
     background var(--duration-fast) var(--ease-standard);
 }
-.workspace-rail-reopen:hover {
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .workspace-rail-reopen,
+.chat-right-rail { background: var(--bg-raised); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .workspace-rail-reopen,
+.chat-right-rail {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+.workspace-rail-reopen:hover,
+.chat-right-rail:hover {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
 }
-.workspace-rail-reopen__label {
+.workspace-rail-reopen__label,
+.chat-right-rail__label {
   writing-mode: vertical-rl;
   font-size: 11px;
   font-weight: 600;
