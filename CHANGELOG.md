@@ -9,7 +9,7 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.167] - 2026-07-09
 
-> _One-line teaser — edit before merge._
+> 🪄 **Polish pass** — the marketplace's prompt-pack "Try it" becomes an unmissable pill-with-arrow instead of near-invisible ghost text, and the desktop title-bar controls stop hiding under the macOS traffic lights.
 
 Patch release on top of v0.0.166.
 
