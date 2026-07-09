@@ -63,13 +63,15 @@
   border-color: transparent;
 }
 
-/* Header familiar switcher (cave-vtk9) — the scope selector on every page. */
+/* Header familiar switcher (cave-vtk9) — the scope selector on every page.
+   Zero horizontal padding so the trigger's edges line up exactly with the
+   New-chat CTA below it (.sidebar-actions is also flush). */
 .sidebar-familiar-switch {
   display: flex;
   align-items: center;
   min-width: 0;
   flex-shrink: 0;
-  padding: 2px 4px 2px 7px;
+  padding: 0;
 }
 .sidebar-familiar-switch .familiar-quickswitch {
   min-width: 0;
