@@ -4672,6 +4672,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // Slim header: the linked-context strip only earns its own header row when
+  // there are actual task/GitHub chips to show. A bare "link a task" affordance
+  // rides inline with the session actions instead, so an unlinked session's
+  // header is one row (title + meta), not title + a mostly-empty second band.
+  const hasLinkedChips =
+    Boolean(linkedContext?.task) ||
+    (linkedContext?.tasks?.length ?? 0) > 0 ||
+    (linkedContext?.github?.length ?? 0) > 0;
+  const linkedContextRow = (
+    <LinkedContextRow
+      linkedContext={linkedContext}
+      onOpenTask={onOpenTask}
+      sessionId={sessionId}
+      onLinkedContextChange={setLinkedContext}
+      handoff={{ turns, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
+      sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
+    />
+  );
+
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
@@ -4777,16 +4796,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             {sessionId && familiar.id ? (
               <HeaderReflectButton reflecting={reflecting} onReflect={() => void reflectOnThread()} />
             ) : null}
+            {!hasLinkedChips ? linkedContextRow : null}
           </div>
         </MetaLine>
-        <LinkedContextRow
-          linkedContext={linkedContext}
-          onOpenTask={onOpenTask}
-          sessionId={sessionId}
-          onLinkedContextChange={setLinkedContext}
-          handoff={{ turns, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
-          sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
-        />
+        {hasLinkedChips ? linkedContextRow : null}
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>

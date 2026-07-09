@@ -756,6 +756,11 @@ tr[role="checkbox"]:focus-visible {
   height: 100%;
   min-height: 0;
   background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+  /* Rows respond to the panel, not the viewport — the sidebar is drag-resizable
+     down to ~200px, where per-row ornaments crowd out the thread title. The
+     matching @container rules live below the thread-row styles they override. */
+  container-type: inline-size;
+  container-name: cnav;
 }
 
 /* Header */
@@ -774,7 +779,7 @@ tr[role="checkbox"]:focus-visible {
   /* Extra right padding so the trailing options (⋯) button isn't jammed against
      the panel edge; the left stays at --cnav-pad to align with the New-chat and
      search fields below. */
-  padding: 12px 15px 6px var(--cnav-pad);
+  padding: 8px 15px 4px var(--cnav-pad);
 }
 .cnav__back {
   display: grid;
@@ -1235,6 +1240,18 @@ tr[role="checkbox"]:focus-visible {
 /* On hover / active-with-actions, the timestamp yields to the row actions */
 .cnav__thread:hover .cnav__time {
   display: none;
+}
+
+/* Narrow panel: the title is the row's reason to exist — reclaim the project
+   tile's slot (its name stays for AT via the sr-only span) and tighten the row
+   gap so a ~200px panel still shows a readable title. */
+@container cnav (max-width: 212px) {
+  .cnav__thread-proj {
+    display: none;
+  }
+  .cnav__thread-main {
+    gap: 6px;
+  }
 }
 
 /* Inline delete confirm */
@@ -8600,12 +8617,12 @@ a.mobile-handoff__link:hover {
 }
 
 .chat-scope-tabs--minimal {
-  min-height: 38px;
+  min-height: 34px;
   background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
 }
 
 .chat-scope-tabs--minimal [role="tab"] {
-  padding-block: 8px;
+  padding-block: 7px;
 }
 
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS

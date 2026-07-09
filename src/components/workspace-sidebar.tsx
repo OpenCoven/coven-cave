@@ -466,7 +466,7 @@ export function WorkspaceSidebar({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search projects or threads…"
+              placeholder="Search chats…"
               aria-label="Search projects and threads"
             />
             {query ? (

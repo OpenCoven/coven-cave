@@ -37,6 +37,10 @@ assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph o
 assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");
 // Outer CSS classes for e2e compat
 assert.match(workspaceSidebar, /workspace-sidebar chat-sidebar/, "outer div must include both CSS classes for e2e compat");
+// The search placeholder must fit the panel's ~200px minimum width (the old
+// "Search projects or threads…" clipped); the aria-label keeps the full scope.
+assert.match(workspaceSidebar, /placeholder="Search chats…"/, "search placeholder fits the narrow panel");
+assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "search keeps its descriptive accessible name");
 // chat-view wiring (unchanged — just verify it still exists)
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");

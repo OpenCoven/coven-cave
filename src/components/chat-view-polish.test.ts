@@ -553,6 +553,19 @@ assert.match(
   /<LinkedContextRow\b/,
   "ChatView header should render LinkedContextRow for task/GitHub chips",
 );
+// Slim header: the linked-context strip only earns its own header row when
+// there are actual chips; the bare "link a task" affordance rides inline with
+// the session actions so an unlinked session's header stays one row.
+assert.match(
+  source,
+  /const hasLinkedChips =[\s\S]*?Boolean\(linkedContext\?\.task\)/,
+  "ChatView derives hasLinkedChips from the linked context",
+);
+assert.match(
+  source,
+  /\{!hasLinkedChips \? linkedContextRow : null\}[\s\S]*?<\/MetaLine>[\s\S]*?\{hasLinkedChips \? linkedContextRow : null\}/,
+  "The linked-context row renders inline with session actions when chip-less, and as its own header row only with chips",
+);
 
 assert.doesNotMatch(
   turnRow,
