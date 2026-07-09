@@ -9,7 +9,7 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.168] - 2026-07-09
 
-> _One-line teaser — edit before merge._
+> In-app updates work again on macOS — the updater tarball no longer breaks the app's code seal — plus a comprehensive title-bar fit and subtle titlebar glass.
 
 Patch release on top of v0.0.167.
 
