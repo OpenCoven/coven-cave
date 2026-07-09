@@ -924,20 +924,12 @@ function FamiliarsSection({
 
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="settings-touch-action"
-          onClick={() => setCreateOpen(true)}
-          leadingIcon="ph:magic-wand-fill"
-        >
-          Summon familiar
-        </Button>
-      </div>
+      {/* Summon lives inside the panel's familiar picker (dashed invitation
+          chip at the roster's end) — no floating action above the card. */}
       <FamiliarStudioInlinePanel
         familiars={rawFamiliars}
         resolved={familiars}
+        onSummon={() => setCreateOpen(true)}
       />
       {createDialog}
     </>
