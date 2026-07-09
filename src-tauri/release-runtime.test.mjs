@@ -186,3 +186,38 @@ test("macOS release signing preserves bundled Node JIT entitlement", async () =>
     "Node needs executable memory permission under hardened runtime for V8-generated code",
   );
 });
+
+test("macOS updater tarball ships no AppleDouble entries (v0.0.167 'app is damaged' regression)", async () => {
+  const releaseScript = await readFile(
+    new URL("../scripts/release.sh", import.meta.url),
+    "utf8",
+  );
+
+  // macOS bsdtar embeds xattrs/resource forks as `._*` sidecar entries by
+  // default. The Tauri updater's Rust extractor materializes those as literal
+  // files INSIDE the swapped-in .app, invalidating the code seal — Gatekeeper
+  // then rejects the update with "CovenCave is damaged and can't be opened".
+  assert.match(
+    releaseScript,
+    /COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -czf "\$UPDATER_TARBALL"/,
+    "the updater tarball must be created without AppleDouble/xattr metadata",
+  );
+  // bsdtar hides AppleDouble entries from listings and re-merges them on
+  // extract, so the gate must round-trip through a metadata-naive extractor
+  // (python tarfile — same literal behavior as the updater's Rust extractor).
+  assert.match(
+    releaseScript,
+    /python3 - "\$UPDATER_TARBALL" "\$probe_dir"/,
+    "the release script must extract the tarball with a metadata-naive extractor",
+  );
+  assert.match(
+    releaseScript,
+    /find "\$probe_dir" -name '\._\*' -print -quit/,
+    "the release script must refuse to ship a tarball that materializes AppleDouble files",
+  );
+  assert.match(
+    releaseScript,
+    /codesign --verify --deep --strict "\$probe_dir\/CovenCave\.app"/,
+    "the release script must round-trip the tarball and re-verify the extracted app's code seal",
+  );
+});
