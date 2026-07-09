@@ -24,6 +24,9 @@ import {
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
 
 type Props = {
+  /** Rendered inside the Tasks page's Work-queue tab (cave-oa1z): the tab
+   *  band provides the surface name, so the view's own h1 stays out. */
+  embedded?: boolean;
   familiars?: ResolvedFamiliar[];
   onOpenUrl?: (url: string) => void;
 };
@@ -88,7 +91,7 @@ function sameQueue(a: WorkQueue, b: WorkQueue): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
+export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = false }: Props) {
   const { announce } = useAnnouncer();
   const [queue, setQueue] = useState<WorkQueue | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -228,7 +231,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
     return (
       <div className="fwq" aria-busy>
         <header className="surface-compact-header">
-          <h1 className="surface-compact-title">Work Queue</h1>
+          {embedded ? null : <h1 className="surface-compact-title">Work Queue</h1>}
         </header>
         <div className="fwq-body">
           <SkeletonRows count={6} />
@@ -264,7 +267,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
           Marketplace / Tasks / Grimoire): small title, live summary inline
           (with a truthful "updated Xm ago" readout), Refresh on the right. */}
       <header className="surface-compact-header">
-        <h1 className="surface-compact-title">Work Queue</h1>
+        {embedded ? null : <h1 className="surface-compact-title">Work Queue</h1>}
         <p className="surface-compact-summary">
           {q.total === 0
             ? "No open PRs or ready beads."
