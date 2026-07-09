@@ -19,6 +19,10 @@ import { useCallback, useEffect } from "react";
  * otherwise the sent prompt resurrects as an unsent draft on return.
  */
 
+/** Home composer's draft key. Shared so surfaces that hand a prompt off to
+ *  Home (marketplace "Try it") write to the exact slot Home reads at mount. */
+export const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
+
 export function readComposerDraft(key: string): string {
   if (typeof window === "undefined") return "";
   try {

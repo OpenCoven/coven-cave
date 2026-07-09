@@ -1,12 +1,17 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
+import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/use-composer-draft";
+import { promptIconName } from "@/components/prompt-snippets-modal";
+import type { PromptOption } from "@/lib/slash-prompt";
+
+type PackPrompt = PromptOption;
 
 const TRUST_LABEL: Record<string, string> = {
   "official-remote": "Official remote",
@@ -118,6 +123,20 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
     }
   }, [plugin.id]);
   useFocusTrap(true, ref, { onEscape: onClose });
+
+  // "Try it" hands the template body to the Home composer: write its draft
+  // slot, close the detail, and navigate Home. Race-free — Home reads the
+  // draft at mount and it is unmounted while the marketplace shows, so there
+  // is no live composer to clobber; Tab-cycling picks up any placeholders on
+  // arrival (cave-1f9h).
+  const handleTryPrompt = useCallback(
+    (body: string) => {
+      writeComposerDraft(HOME_DRAFT_KEY, body);
+      onClose();
+      window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "home" } }));
+    },
+    [onClose],
+  );
   const state = pluginBadgeState(plugin);
   const decisionItems = detailDecisionItems(plugin);
   return (
@@ -190,11 +209,7 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
 
         {plugin.prompts?.length ? (
           <Section title="Prompt templates">
-            <div className="flex flex-wrap gap-1.5">
-              {plugin.prompts.map((p) => (
-                <span key={p} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">{p}</span>
-              ))}
-            </div>
+            <PackPromptPreviews pluginId={plugin.id} fallbackIds={plugin.prompts} onTry={handleTryPrompt} />
             <p className="mt-1.5 text-[12px] text-[var(--text-muted)]">
               Added templates appear in chat under /prompts and the Prompt snippets picker.
             </p>
@@ -288,6 +303,83 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
         </div>
       </div>
     </div>
+  );
+}
+
+/** Real previews for a pack's templates (cave-1f9h): fetched from
+ *  /api/marketplace/pack-prompts, which works pre-install. Falls back to the
+ *  bare catalog ids if the fetch fails, so the section never goes blank. */
+function PackPromptPreviews({
+  pluginId,
+  fallbackIds,
+  onTry,
+}: {
+  pluginId: string;
+  fallbackIds: string[];
+  onTry: (body: string) => void;
+}) {
+  const [prompts, setPrompts] = useState<PackPrompt[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setPrompts(null);
+    setFailed(false);
+    fetch(`/api/marketplace/pack-prompts?id=${encodeURIComponent(pluginId)}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        if (j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PackPrompt[]);
+        else setFailed(true);
+      })
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [pluginId]);
+
+  if (prompts === null && !failed) {
+    return <p className="text-[12px] text-[var(--text-muted)]">Loading previews…</p>;
+  }
+  // Fetch failed → the bare-id chips (previous behavior), never a blank slate.
+  if (failed || !prompts?.length) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {fallbackIds.map((p) => (
+          <span key={p} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">{p}</span>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-2">
+      {prompts.map((p) => (
+        <li
+          key={p.id}
+          className="flex items-start gap-3 rounded-lg border border-[var(--border-hairline)] p-2.5"
+        >
+          <Icon name={promptIconName(p.icon)} width={16} className="mt-0.5 shrink-0 text-[var(--text-muted)]" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium text-[var(--text-primary)]">{p.name}</p>
+            {p.description ? (
+              <p className="text-[12px] text-[var(--text-muted)]">{p.description}</p>
+            ) : null}
+            <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-[var(--text-muted)]">{p.body}</p>
+            {p.tags?.length ? (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {p.tags.map((tag) => (
+                  <span key={tag} className="rounded-full border border-[var(--border-hairline)] px-1.5 text-[10px] text-[var(--text-muted)]">{tag}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => onTry(p.body)}>Try it</Button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

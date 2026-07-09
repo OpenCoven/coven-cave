@@ -21,12 +21,12 @@ assert.match(
 // "home", and ⌘1 / nav / deep links reach it as before.
 assert.match(
   workspace,
-  /const \[mode, setModeRaw\] = useState<WorkspaceMode>\("chat"\)/,
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
   "Default workspace mode lands on Chat (chat-first boot, cave-hsa6)",
 );
 assert.match(
   workspace,
-  /const \[lastNonChatMode, setLastNonChatMode\] = useState<WorkspaceMode>\("home"\)/,
+  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
   "the chat Back control still returns to Home by default",
 );
 

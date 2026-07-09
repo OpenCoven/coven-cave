@@ -42,41 +42,51 @@
       applyGroup(modeGroup);
     }
     // ── Fonts ── apply saved non-default families before paint (no flash).
-    // Inlined from src/lib/font-catalog.ts (SANS_FALLBACK / MONO_FALLBACK) and
-    // src/lib/font-storage.ts (keys + approved pairs + stack shape) — keep in sync.
+    // Inlined from src/lib/font-catalog.ts (SERIF_FALLBACK / SANS_FALLBACK / MONO_FALLBACK)
+    // and src/lib/font-storage.ts (keys + approved pairs + stack shape) — keep in sync.
+    // Coven canonical defaults (DESIGN.md §4): EB Garamond + Inter + JetBrains Mono.
+    var SERIF_FB = "\"Iowan Old Style\", Georgia, \"Times New Roman\", serif";
     var SANS_FB = "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif";
     var MONO_FB = "ui-monospace, \"SF Mono\", Menlo, Consolas, \"Liberation Mono\", monospace";
-    var fontSansId = localStorage.getItem("cave:font:sans") || "geist";
+    var fontSerifId = localStorage.getItem("cave:font:serif") || "eb-garamond";
+    var fontSansId = localStorage.getItem("cave:font:sans") || "inter";
     var fontMonoId = localStorage.getItem("cave:font:mono") || "jetbrains-mono";
     var APPROVED_FONT_PAIRS = {
-      "geist-jetbrains": ["geist", "jetbrains-mono"],
-      "inter-geist-mono": ["inter", "geist-mono"],
-      "manrope-space-mono": ["manrope", "space-mono"],
-      "public-sans-roboto-mono": ["public-sans", "roboto-mono"],
-      "ibm-plex-pair": ["ibm-plex-sans", "ibm-plex-mono"],
-      "source-pair": ["source-sans-3", "source-code-pro"],
-      "dm-sans-fira-code": ["dm-sans", "fira-code"]
+      "coven-canon":       ["eb-garamond",      "inter",          "jetbrains-mono"],
+      "editorial-witch":   ["instrument-serif", "inter",          "jetbrains-mono"],
+      "shapeshifter":      ["fraunces",         "inter",          "jetbrains-mono"],
+      "geist-jetbrains":   ["eb-garamond",      "geist",          "jetbrains-mono"],
+      "ibm-plex-pair":     ["eb-garamond",      "ibm-plex-sans",  "ibm-plex-mono"],
+      "source-pair":       ["eb-garamond",      "source-sans-3",  "source-code-pro"]
     };
     var fontPairId = null;
-    if (/^[a-z0-9-]+$/.test(fontSansId) && /^[a-z0-9-]+$/.test(fontMonoId)) {
+    if (/^[a-z0-9-]+$/.test(fontSerifId) && /^[a-z0-9-]+$/.test(fontSansId) && /^[a-z0-9-]+$/.test(fontMonoId)) {
       for (var pairId in APPROVED_FONT_PAIRS) {
         if (!Object.prototype.hasOwnProperty.call(APPROVED_FONT_PAIRS, pairId)) continue;
         var pair = APPROVED_FONT_PAIRS[pairId];
-        if (pair[0] === fontSansId && pair[1] === fontMonoId) {
+        if (pair[0] === fontSerifId && pair[1] === fontSansId && pair[2] === fontMonoId) {
           fontPairId = pairId;
           break;
         }
       }
     }
     if (!fontPairId) {
-      fontSansId = "geist";
+      fontSerifId = "eb-garamond";
+      fontSansId = "inter";
       fontMonoId = "jetbrains-mono";
       try {
+        localStorage.setItem("cave:font:serif", fontSerifId);
         localStorage.setItem("cave:font:sans", fontSansId);
         localStorage.setItem("cave:font:mono", fontMonoId);
       } catch (e) {}
     }
-    if (fontSansId !== "geist") {
+    // Only override if the user picked something OTHER than the canonical
+    // default — the :root fallback in globals.css already points at the
+    // canonical family, so an override for the default would be a no-op.
+    if (fontSerifId !== "eb-garamond") {
+      try { html.style.setProperty("--font-serif", "var(--font-" + fontSerifId + "), " + SERIF_FB); } catch (e) {}
+    }
+    if (fontSansId !== "inter") {
       try { html.style.setProperty("--font-sans", "var(--font-" + fontSansId + "), " + SANS_FB); } catch (e) {}
     }
     if (fontMonoId !== "jetbrains-mono") {

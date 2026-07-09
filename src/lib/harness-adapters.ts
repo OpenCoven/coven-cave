@@ -289,80 +289,19 @@ export function runtimeSourceSetupState(
   return local;
 }
 
+// Adapter manifests come straight from the synced coven-runtimes registry:
+// every scaffold is the exact conformance-tested $COVEN_HOME/adapters document
+// that was accepted upstream (copilot and hermes included — their hand-written
+// Cave copies were retired in favor of the registry versions, cave-laxg).
 export function adapterManifestScaffoldForHarness(
   harnessId: string,
 ): AdapterManifestScaffold | null {
-  if (harnessId === "copilot") {
-    return {
-      filename: "copilot.json",
-      contents: `${JSON.stringify(
-        {
-          adapters: [
-            {
-              id: "copilot",
-              label: "Copilot",
-              executable: "copilot",
-              // The prompt is appended after the prefix args, so it lands as
-              // the flag's value: `copilot --interactive <prompt>` /
-              // `copilot … --prompt <prompt>`. Non-interactive runs need
-              // --allow-all-tools (Copilot exits otherwise) and --no-color so
-              // the captured transcript stays ANSI-free.
-              interactive_prompt_prefix_args: ["--interactive"],
-              non_interactive_prompt_prefix_args: [
-                "--allow-all-tools",
-                "--no-color",
-                "--prompt",
-              ],
-              install_hint:
-                "Install GitHub Copilot CLI with `npm install -g @github/copilot`, run `copilot` once and sign in with `/login` (or set GH_TOKEN), and make sure `copilot` is on PATH before using this adapter.",
-              system_prompt_flag: null,
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-    };
-  }
-  if (harnessId !== "hermes") {
-    // Registry-accepted runtimes carry their exact $COVEN_HOME/adapters
-    // document in the synced manifest — scaffold straight from it.
-    const registry = REGISTRY_RUNTIMES.find(
-      (runtime) => runtime.id === canonicalHarnessId(harnessId),
-    );
-    if (registry) {
-      return {
-        filename: `${registry.id}.json`,
-        contents: `${JSON.stringify(registry.adapterManifest, null, 2)}\n`,
-      };
-    }
-    return null;
-  }
+  const registry = REGISTRY_RUNTIMES.find(
+    (runtime) => runtime.id === canonicalHarnessId(harnessId),
+  );
+  if (!registry) return null;
   return {
-    filename: "hermes.json",
-    contents: `${JSON.stringify(
-      {
-        adapters: [
-          {
-            id: "hermes",
-            label: "Hermes",
-            executable: "hermes",
-            interactive_prompt_prefix_args: ["chat", "--source", "coven", "-q"],
-            non_interactive_prompt_prefix_args: [
-              "chat",
-              "--source",
-              "coven",
-              "-Q",
-              "-q",
-            ],
-            install_hint:
-              "Install Hermes with the official script (github.com/NousResearch/hermes-agent#quick-install), run `hermes setup`, and make sure `hermes` is on PATH before using this adapter.",
-            system_prompt_flag: null,
-          },
-        ],
-      },
-      null,
-      2,
-    )}\n`,
+    filename: `${registry.id}.json`,
+    contents: `${JSON.stringify(registry.adapterManifest, null, 2)}\n`,
   };
 }

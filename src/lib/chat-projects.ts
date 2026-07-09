@@ -11,6 +11,8 @@ export type ChatProjectGroup = {
   projectId: string | null;
   projectRoot: string | null;
   projectName: string | null;
+  /** Explicit user-set project color, when the root maps to a registered project. */
+  projectColor: string | null;
   sessions: SessionRow[];
   defaultFamiliarId: string | null;
   updatedAt: string | null;
@@ -194,6 +196,7 @@ export function deriveChatProjectGroups(
         projectId: project?.id ?? null,
         projectRoot,
         projectName: project?.name ?? inferredProjectName,
+        projectColor: project?.color ?? null,
         sessions: sorted,
         defaultFamiliarId: latest?.familiarId ?? null,
         updatedAt: latest ? sessionTimestamp(latest) : null,

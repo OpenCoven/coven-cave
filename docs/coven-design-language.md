@@ -66,7 +66,7 @@ color.
 - Radii: `--radius-control: 8px` · `--radius-card: 12px` ·
   `--radius-panel: 16px` · and the signature **999px pill** (§3).
 - Spacing: 4px grid (`--space-1` … `--space-10`).
-- Type: Geist Sans + JetBrains Mono; ladder `--text-2xs` (10px) →
+- Type: EB Garamond (display/hero) + Inter (body/UI) + JetBrains Mono (code/labels) — Coven canon per OpenCoven DESIGN.md §4. Geist stays in the selectable catalog but is no longer the shipped default. Ladder: `--text-2xs` (10px) →
   `--text-display` (28px); eyebrow tracking `0.08em` + uppercase for tiny
   labels.
 - Motion: `--duration-fast: 120ms` / `base: 180ms` / `slow: 260ms` with the

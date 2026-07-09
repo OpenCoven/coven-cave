@@ -205,28 +205,20 @@ assert.deepEqual(
   },
 );
 
+// Scaffolds come straight from the synced coven-runtimes registry — the exact
+// conformance-tested adapter documents (cave-laxg retired the hand-written
+// copilot/hermes copies).
 const hermesManifest = adapterManifestScaffoldForHarness("hermes");
 assert.equal(hermesManifest?.filename, "hermes.json");
-assert.deepEqual(JSON.parse(hermesManifest?.contents ?? "{}"), {
-  adapters: [
-    {
-      id: "hermes",
-      label: "Hermes",
-      executable: "hermes",
-      interactive_prompt_prefix_args: ["chat", "--source", "coven", "-q"],
-      non_interactive_prompt_prefix_args: [
-        "chat",
-        "--source",
-        "coven",
-        "-Q",
-        "-q",
-      ],
-      install_hint:
-        "Install Hermes with the official script (github.com/NousResearch/hermes-agent#quick-install), run `hermes setup`, and make sure `hermes` is on PATH before using this adapter.",
-      system_prompt_flag: null,
-    },
-  ],
-});
+{
+  const parsed = JSON.parse(hermesManifest?.contents ?? "{}");
+  const adapter = parsed.adapters?.[0];
+  assert.equal(adapter?.id, "hermes");
+  assert.equal(adapter?.executable, "hermes");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven", "-q"], "hermes keeps the coven-source chat entry");
+  assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q", "-q"]);
+  assert.ok(typeof adapter?.install_hint === "string" && adapter.install_hint.length > 0);
+}
 assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");
 
 // Registry-accepted runtimes scaffold their exact adapter manifest from the
@@ -239,28 +231,23 @@ assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes
 }
 assert.equal(adapterManifestScaffoldForHarness("not-a-runtime"), null);
 
-// Copilot runs through a Coven adapter manifest (like Hermes): the prompt is
-// appended after the prefix args, so it lands as the -i/-p flag's value.
+// Copilot's manifest is the registry's conformance-tested document: one-shot
+// via `-s -p`, interactive via `-i`, JSONL streaming + session pre-assignment
+// declared in stream_args, and the argv-list sandbox mapping (verified against
+// Copilot CLI 1.0.69 flags).
 const copilotManifest = adapterManifestScaffoldForHarness("copilot");
 assert.equal(copilotManifest?.filename, "copilot.json");
-assert.deepEqual(JSON.parse(copilotManifest?.contents ?? "{}"), {
-  adapters: [
-    {
-      id: "copilot",
-      label: "Copilot",
-      executable: "copilot",
-      interactive_prompt_prefix_args: ["--interactive"],
-      non_interactive_prompt_prefix_args: [
-        "--allow-all-tools",
-        "--no-color",
-        "--prompt",
-      ],
-      install_hint:
-        "Install GitHub Copilot CLI with `npm install -g @github/copilot`, run `copilot` once and sign in with `/login` (or set GH_TOKEN), and make sure `copilot` is on PATH before using this adapter.",
-      system_prompt_flag: null,
-    },
-  ],
-});
+{
+  const adapter = JSON.parse(copilotManifest?.contents ?? "{}").adapters?.[0];
+  assert.equal(adapter?.id, "copilot");
+  assert.equal(adapter?.executable, "copilot");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["-i"]);
+  assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["-s", "-p"]);
+  assert.equal(adapter?.model_flag, "--model", "model parity forwards through --model");
+  assert.deepEqual(adapter?.sandbox?.full_args, ["--allow-all"], "full permission maps to --allow-all (replaces the old hardcoded --allow-all-tools)");
+  assert.deepEqual(adapter?.sandbox?.read_only_args, ["--deny-tool", "write", "--deny-tool", "shell"]);
+  assert.equal(adapter?.stream_args?.session_id_flag, "--session-id");
+}
 
 assert.deepEqual(
   runtimeSourceSetupState(

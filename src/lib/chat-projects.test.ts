@@ -127,6 +127,20 @@ assert.deepEqual(
   assert.ok(visible.some((s) => s.id === "beta"), "ordinary chat sessions still show");
 }
 
+// Groups carry the registered project's explicit color for avatar rendering.
+{
+  const colored = deriveChatProjectGroups(
+    [session("tinted", "/work/alpha", "2026-06-06T00:00:00.000Z", "cody")],
+    [{ id: "alpha", name: "Alpha", root: "/work/alpha", color: "oklch(0.74 0.12 250)", createdAt: "", updatedAt: "" }],
+  );
+  assert.equal(colored[0]?.projectColor, "oklch(0.74 0.12 250)", "group exposes the project color");
+  const uncolored = deriveChatProjectGroups(
+    [session("plain", "/somewhere/else", "2026-06-06T00:00:00.000Z", "cody")],
+    [],
+  );
+  assert.equal(uncolored[0]?.projectColor, null, "unregistered roots have no explicit color");
+}
+
 console.log("chat-projects.test.ts: ok");
 
 // ── resolveChatProjectSelection ───────────────────────────────────────────────

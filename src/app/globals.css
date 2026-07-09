@@ -339,7 +339,13 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-accent-presence: var(--accent-presence);
-  --font-sans: var(--font-geist-sans);
+  /* Coven canonical type system (DESIGN.md §4):
+     --font-serif: EB Garamond   — display / hero / identity moments
+     --font-sans:  Inter          — everything you read (body, chat, UI, prose)
+     --font-mono:  JetBrains Mono — everything you inspect (code, terminal, labels)
+     These map to the preloaded next/font/google instances in src/app/fonts.ts. */
+  --font-serif: var(--font-eb-garamond);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains-mono);
 }
 
@@ -999,7 +1005,8 @@ tr[role="checkbox"]:focus-visible {
   color: var(--text-muted);
 }
 
-/* Project group header — sticky so context stays while scrolling long lists */
+/* Project group header — sticky so context stays while scrolling long lists.
+   Two lines: bold name over a muted activity meta ("2 running · 12m"). */
 .cnav__group-head {
   position: sticky;
   top: 0;
@@ -1007,8 +1014,8 @@ tr[role="checkbox"]:focus-visible {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 32px;
-  padding: 0 6px 0 8px;
+  min-height: 40px;
+  padding: 4px 6px 4px 8px;
   background: color-mix(in oklch, var(--bg-raised) 96%, var(--foreground) 4%);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
@@ -1040,33 +1047,31 @@ tr[role="checkbox"]:focus-visible {
   flex-shrink: 0;
   color: var(--text-muted);
 }
-.cnav__group-name {
+.cnav__group-text {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-width: 0;
+}
+.cnav__group-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12.5px;
   font-weight: 600;
+  line-height: 1.25;
   color: var(--text-primary);
 }
-.cnav__count {
-  flex-shrink: 0;
-  min-width: 20px;
-  height: 18px;
-  padding: 0 6px;
-  display: grid;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 8%, transparent);
-  font-size: 10.5px;
-  font-weight: 600;
+.cnav__group-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.3;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-}
-/* Count hides to make room for hover actions on the group header */
-.cnav__group-head:hover .cnav__count {
-  display: none;
 }
 
 /* Reveal-on-hover icon buttons (group +new / register; thread pin / delete) */
@@ -4947,7 +4952,8 @@ button:active > .edge-rail-chip {
   flex-wrap: nowrap;
   flex: 0 0 auto;
   /* Slim band (cave-p78p): hugs the 28px controls — and on the desktop shell,
-     the macOS traffic lights (~18px center) sit dead-center of the 36px bar. */
+     the Tauri titlebar override below keeps the band slim next to the macOS
+     traffic lights. */
   min-height: 34px;
   gap: 8px;
   padding-inline: 12px;
@@ -4997,10 +5003,16 @@ button:active > .edge-rail-chip {
    ──────────────────────────────────────────────── */
 @media (min-width: 1024px) {
   :root[data-tauri-titlebar] .shell-top {
-    /* ~78px clears the three traffic lights + their left inset; 36px centers
-       the bar's 28px controls on the lights (overlay default: ~18px center). */
+    /* ~78px clears the three traffic lights + their left inset; the slim 29px
+       band hugs the 28px controls so the bar doesn't tower over the lights
+       (was 36px — user asked for ~20% shorter). */
     padding-left: 78px;
-    min-height: 36px;
+    min-height: 29px;
+  }
+
+  /* The inner menu-bar would otherwise prop the band back open at 34px. */
+  :root[data-tauri-titlebar] .shell-top .menu-bar {
+    min-height: 28px;
   }
 
   /* Dia-style: with the side panel closed the shell hides the traffic lights
@@ -10409,6 +10421,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
      inspector tab panel. */
   height: 100%;
   overflow-y: auto;
+  /* KPI drill-throughs glide to their section instead of teleporting. */
+  scroll-behavior: smooth;
   padding: 24px;
   background: var(--bg-base);
   color: var(--text-primary);
@@ -10417,13 +10431,25 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   container-type: inline-size;
   container-name: fa;
 }
+/* Sticky glass breadcrumb — negative margins cancel the page padding so the
+   bar spans edge-to-edge and pins at the true scrollport top; refresh and the
+   freshness stamp stay reachable however deep the page scrolls. */
 .fa-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 34px;
+  margin: -24px -24px 0;
+  padding: 10px 24px;
   color: var(--text-muted);
   font-size: 12px;
+  background: color-mix(in oklch, var(--bg-base) 84%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .fa-topbar a {
   color: var(--text-secondary);
@@ -10434,7 +10460,24 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-primary);
   font-weight: 620;
 }
-.fa-topbar .retro-icon-btn { margin-left: auto; }
+.fa-topbar__updated {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* The stamp owns the right-push; the refresh button rides after it. (The
+   stamp renders whenever content does — updatedAt is set by the same load.) */
+.fa-topbar .retro-icon-btn { flex: 0 0 auto; }
+.fa-topbar > .retro-icon-btn:first-of-type:last-child { margin-left: auto; }
+/* Refresh spins while a quiet reload is in flight — visible progress, not
+   just a disabled button. */
+.fa-topbar .retro-icon-btn.is-refreshing svg {
+  animation: fa-refresh-spin 900ms linear infinite;
+}
+@keyframes fa-refresh-spin {
+  to { transform: rotate(360deg); }
+}
 .fa-header {
   display: flex;
   align-items: center;
@@ -10509,7 +10552,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-ring--developing { --fa-ring-color: var(--color-warning); }
 .fa-ring--reliable { --fa-ring-color: var(--accent-presence); }
 .fa-ring--trusted { --fa-ring-color: var(--color-success); }
-.fa-ring svg { width: 100%; height: 100%; display: block; }
+.fa-ring svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* Tier-colored halo — the hero metric glows softly in its own state color. */
+  filter: drop-shadow(0 0 7px color-mix(in oklch, var(--fa-ring-color) 32%, transparent));
+}
 .fa-ring__track {
   fill: none;
   stroke: var(--border-hairline);
@@ -10565,6 +10614,22 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-insight--good { --fa-insight-accent: var(--color-success); }
 .fa-insight--warn { --fa-insight-accent: var(--color-warning); }
 .fa-insight--bad { --fa-insight-accent: var(--color-danger); }
+/* Actionable insights carry their own next step. */
+.fa-insight__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: var(--radius-control);
+  padding: 2px 6px;
+}
+.fa-insight__action:hover { color: var(--text-primary); background: var(--bg-hover); }
+.fa-insight__action svg { width: 12px; height: 12px; color: currentColor; }
 
 .fa-kpis {
   display: grid;
@@ -10595,6 +10660,21 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-kpi:hover {
   border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
   background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+/* Drill cue — the chevron reveals on hover/focus so tiles read as links.
+   (Element+class selector: .fa-kpi__head svg would otherwise out-specify the
+   bare class and pin opacity at 0.85.) */
+.fa-kpi__head svg.fa-kpi__go {
+  margin-left: auto;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity var(--duration-fast, 120ms) ease, transform var(--duration-fast, 120ms) ease;
+}
+.fa-kpi:hover .fa-kpi__head svg.fa-kpi__go,
+.fa-kpi:focus-visible .fa-kpi__head svg.fa-kpi__go {
+  opacity: 0.9;
+  transform: translateX(0);
 }
 .fa-kpi--good:hover { border-left-color: var(--color-success); }
 .fa-kpi--warn:hover { border-left-color: var(--color-warning); }
@@ -10638,6 +10718,17 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   background: var(--bg-surface);
+  /* KPI drill-throughs land clear of the sticky breadcrumb. */
+  scroll-margin-top: 64px;
+}
+/* Arriving via a drill-through flashes the section border once, so the eye
+   lands where the jump did. */
+.fa-section:target {
+  animation: fa-target-flash 1100ms var(--ease-standard, ease) 1;
+}
+@keyframes fa-target-flash {
+  0% { border-color: var(--accent-presence); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 25%, transparent); }
+  100% { border-color: var(--border-hairline); box-shadow: 0 0 0 0 transparent; }
 }
 .fa-section__head {
   display: flex;
@@ -10645,11 +10736,19 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   justify-content: space-between;
   gap: 12px;
 }
+/* Counts read as quiet pill chips, matching the app's chip language. */
 .fa-section__head > span {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 .fa-section__title {
   margin: 0;
@@ -10843,13 +10942,18 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-review-list li {
   min-width: 0;
 }
-/* Each review item is a button — selecting it opens a discussion on the topic. */
+/* Each review item is a button — selecting it opens a discussion on the topic.
+   The shared .ui-btn base sets white-space: nowrap (single-line buttons), which
+   made these multi-line items unwrappable: one long title propped the page's
+   scrollWidth open ~1200px at every pane width. Review copy must wrap. */
 .fa-thread-review-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
   width: 100%;
   min-width: 0;
+  height: auto;
+  white-space: normal;
   text-align: left;
   padding: 9px;
   border: 1px solid var(--border-hairline);
@@ -11105,35 +11209,57 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   /* Reflow by the panel's own width, not the viewport — the analytics surface also
      renders in the narrow inspector sidepanel, where a fixed 5-column grid crushed
      each cell and broke labels mid-word. auto-fit collapses empty tracks so the
-     items still stretch edge-to-edge on the wide full-page view. */
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
+     items still stretch edge-to-edge on the wide full-page view. A 140px floor
+     keeps the two-word property names ("Bounded Authority", "Persistent
+     Memory") on one or two clean lines instead of ragged three-line wraps. */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  align-items: stretch;
 }
 .fa-contract-item {
   display: flex;
-  align-items: center;
-  gap: 7px;
+  /* Top-align the badge with the label's first line — with centered
+     alignment, two-line labels floated the icon into the seam between lines. */
+  align-items: flex-start;
+  gap: 8px;
   min-width: 0;
-  padding: 9px;
+  padding: 9px 11px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
+  /* Filled tile, matching the score-tile language of the neighboring panels
+     (.fa-thread-score) instead of a hollow outline. */
+  background: var(--bg-base);
   color: var(--text-secondary);
   font-size: 12px;
+}
+.fa-contract-item svg {
+  flex: 0 0 auto;
+  /* Optically center the 1em glyph against the first text line (1.35lh). */
+  margin-top: 1.5px;
 }
 .fa-contract-item span {
   min-width: 0;
   /* Wrap at word boundaries; only break a single over-long word as a last resort
      (avoids the "Name / d / Identit / y" character shredding in tight columns). */
   overflow-wrap: break-word;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 .fa-contract-item.is-pass svg { color: var(--color-success); }
 .fa-contract-item.is-fail svg { color: var(--color-danger); }
+/* Failing properties tint their hairline so the needs-review items pop before
+   the icon color resolves at a glance. */
+.fa-contract-item.is-fail {
+  border-color: color-mix(in oklch, var(--color-danger) 38%, var(--border-hairline));
+  color: var(--text-primary);
+}
 
 /* Pane-width responsiveness — the analytics view also renders in the narrow
    inspector tab, where viewport media queries never fire. */
 @container fa (max-width: 880px) {
-  .fa-grid { grid-template-columns: 1fr; }
+  /* minmax(0, …), NOT bare 1fr: a grid track's min defaults to the content's
+     min width, so one rigid child (a chart, a long token) props the whole
+     column open and the pane scrolls sideways at every narrow width. */
+  .fa-grid { grid-template-columns: minmax(0, 1fr); }
   .fa-response-factor-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 @container fa (max-width: 620px) {
@@ -11144,6 +11270,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-header__pulse {
     flex-basis: auto;
     width: 100%;
+    max-width: none;
   }
   .fa-ring {
     width: 86px;
@@ -11164,6 +11291,22 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tsc-head { align-items: flex-start; flex-direction: column; }
   .tsc-scores { grid-template-columns: 1fr; }
+  /* Heal cards stack their action chip under the copy instead of squeezing it. */
+  .fa-heal-card { flex-wrap: wrap; }
+  .fa-heal-card > b { align-self: flex-start; }
+  /* Actionable insight keeps its Review link on its own line when tight. */
+  .fa-insight { flex-wrap: wrap; }
+}
+/* Phone-width pane — the narrowest tier (inspector tab / small handsets). */
+@container fa (max-width: 420px) {
+  .fa-header h1 { font-size: 22px; }
+  .fa-avatar { width: 46px; height: 46px; font-size: 18px; }
+  .fa-kpis { gap: 8px; }
+  .fa-kpi { padding: 10px 12px; }
+  .fa-kpi__value { font-size: 19px; }
+  .fa-response-factor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fa-contract-grid { grid-template-columns: 1fr; }
+  .fa-topbar__updated { display: none; }
 }
 
 /* ── Thread Signal Card ──────────────────────────────────────────────────── */
@@ -11285,6 +11428,20 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .retro-pill { width: max-content; }
   .growth-surface { padding: 16px; }
   .fa-page { padding: 16px; }
+  /* Sticky topbar's edge-to-edge negative margins track the tighter padding. */
+  .fa-topbar { margin: -16px -16px 0; padding: 8px 16px; }
+}
+
+/* Analytics motion is decorative — all of it holds still on request. */
+@media (prefers-reduced-motion: reduce) {
+  .fa-page { scroll-behavior: auto; }
+  .fa-topbar .retro-icon-btn.is-refreshing svg { animation: none; opacity: 0.6; }
+  .fa-section:target {
+    animation: none;
+    border-color: var(--accent-presence);
+  }
+  .fa-kpi:hover { transform: none; }
+  .fa-kpi__head svg.fa-kpi__go { transition: none; }
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top
@@ -12555,19 +12712,19 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 11px;
   padding: 5px 7px;
 }
+/* Single summary line — the old chip strip overflowed sideways. */
 .skill-browser__agent-strip {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  padding-bottom: 1px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1.4;
 }
 .skill-browser__directory-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  overflow-x: auto;
-  padding-bottom: 1px;
 }
-.skill-browser__agent-strip span,
 .skill-browser__directory-links a {
   flex: 0 0 auto;
   border: 1px solid var(--border-hairline);
@@ -13330,4 +13487,681 @@ details[open] > .cave-edit-card__summary::before {
   height: 2px;
   background: var(--accent-presence);
   transition: width 0.1s linear;
+}
+
+/* ── Role Surfaces — rooms within the Cave ─────────────────────────────────
+   Registry-driven vocation workspaces (role-surface-host.tsx + the
+   role-surfaces/ rooms). One spatial grammar — left rail / canvas / right
+   rail / bottom drawer — on the obsidian foundation, with each room keyed by
+   its own accent hue (`--room-accent-h`, set inline by SurfaceRoom) so
+   entering one reads as crossing into a different chamber, not switching a
+   tab. Glass panels, minimal chrome, no admin-dashboard flatness. */
+
+.role-surface-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.role-surface-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.role-surface-header-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.role-surface-header-title h2 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.role-surface-header-role {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.role-surface-header-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.role-surface-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.role-surface-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-muted);
+}
+
+.role-surface-status-dot--ok { background: oklch(0.75 0.14 155); }
+.role-surface-status-dot--busy { background: var(--accent-presence); }
+.role-surface-status-dot--warn { background: oklch(0.78 0.14 75); }
+
+.role-surface-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.role-surface-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+
+.role-surface-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.role-surface-chip--accent {
+  color: var(--accent-presence-foreground);
+  background: var(--accent-presence);
+  border-color: transparent;
+}
+
+.role-surface-chip--accent:hover {
+  color: var(--accent-presence-foreground);
+  background: color-mix(in oklch, var(--accent-presence) 88%, white);
+}
+
+.role-surface-commands { position: relative; }
+
+.role-surface-commands-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+}
+
+.role-surface-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.role-surface-command:hover { background: var(--bg-hover); }
+
+.role-surface-command-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.role-surface-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px 0;
+}
+
+.role-surface-notice {
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.role-surface-notice--warn {
+  border-color: color-mix(in oklch, oklch(0.78 0.14 75) 45%, transparent);
+  color: oklch(0.85 0.09 80);
+}
+
+.role-surface-notice--error {
+  border-color: color-mix(in oklch, var(--destructive, oklch(0.6 0.2 25)) 50%, transparent);
+}
+
+.role-surface-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Room shell ── */
+
+.role-surface-room {
+  --room-accent: oklch(0.74 0.11 var(--room-accent-h, 293));
+  --room-accent-soft: color-mix(in oklch, var(--room-accent) 22%, transparent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  isolation: isolate;
+}
+
+/* The chamber's glow: a quiet accent wash bleeding down from the ceiling.
+   Distinct hue per room, subtle enough to stay obsidian. */
+.role-surface-room::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 220px;
+  pointer-events: none;
+  z-index: -1;
+  background: radial-gradient(120% 100% at 50% 0%, var(--room-accent-soft), transparent 70%);
+  opacity: 0.5;
+}
+
+.role-surface-columns {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow: hidden;
+}
+
+.role-surface-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.role-surface-canvas {
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
+  padding: 14px;
+}
+
+.role-surface-canvas-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.role-surface-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--bg-raised) 82%, transparent);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-surface-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--room-accent);
+}
+
+.role-surface-section-head h3 {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.role-surface-section-actions { margin-left: auto; }
+
+/* ── Room furniture ── */
+
+.role-surface-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.role-surface-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.role-surface-row-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.role-surface-row-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.role-surface-row-btn--active {
+  color: var(--text-primary);
+  background: var(--room-accent-soft);
+}
+
+.role-surface-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.role-surface-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.role-surface-inline-form {
+  display: flex;
+  gap: 6px;
+}
+
+.role-surface-stack-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.role-surface-inline-form input,
+.role-surface-stack-form input,
+.role-surface-field input,
+.role-surface-field select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-base, var(--background)) 60%, transparent);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+}
+
+/* Desktop-only compact sizes; on touch the global `max(16px, 1em)` input rule
+   applies so iOS Safari doesn't auto-zoom the fields on focus. */
+@media (pointer: fine) {
+  .role-surface-inline-form input,
+  .role-surface-stack-form input,
+  .role-surface-field input,
+  .role-surface-field select {
+    font-size: 12px;
+  }
+  .role-surface-notes {
+    font-size: 13px;
+  }
+}
+
+.role-surface-inline-form input:focus-visible,
+.role-surface-stack-form input:focus-visible,
+.role-surface-field input:focus-visible,
+.role-surface-field select:focus-visible,
+.role-surface-notes:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.role-surface-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.role-surface-field--grow { flex: 1; }
+
+.role-surface-field-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.role-surface-composer-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.role-surface-notes {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-base, var(--background)) 55%, transparent);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
+.role-surface-notes--short { min-height: 90px; }
+
+.role-surface-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.role-surface-check--done { color: var(--text-muted); text-decoration: line-through; }
+
+.role-surface-metric {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.role-surface-metric-warn { color: oklch(0.8 0.12 75); }
+
+.role-surface-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.role-surface-tag {
+  font-size: 10px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.role-surface-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.role-surface-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+  font-size: 12px;
+}
+
+.role-surface-evidence-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.role-surface-evidence-meta input[type="range"] {
+  width: 90px;
+  accent-color: var(--room-accent);
+}
+
+.role-surface-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.role-surface-memory-path {
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.role-surface-memory-excerpt {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.role-surface-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.role-surface-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s, translate 0.12s;
+}
+
+.role-surface-card:hover {
+  border-color: var(--border-strong);
+  translate: 0 -1px;
+}
+
+.role-surface-card--active {
+  border-color: color-mix(in oklch, var(--room-accent) 55%, transparent);
+  background: var(--room-accent-soft);
+}
+
+.role-surface-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.role-surface-clusters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.role-surface-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid color-mix(in oklch, var(--room-accent) 35%, transparent);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: color-mix(in oklch, var(--room-accent) 8%, transparent);
+}
+
+.role-surface-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  font-size: 11px;
+}
+
+.role-surface-facts dt { color: var(--text-muted); }
+.role-surface-facts dd { color: var(--text-primary); overflow-wrap: anywhere; }
+
+.role-surface-content {
+  font-size: 11px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.role-surface-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 8px;
+  color: var(--text-muted);
+}
+
+.role-surface-empty-title { font-size: 12px; }
+.role-surface-empty-hint { font-size: 11px; opacity: 0.8; line-height: 1.5; }
+
+.role-surface-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 32px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.role-surface-unavailable-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Bottom drawer ── */
+
+.role-surface-drawer {
+  border-top: 1px solid var(--border);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+.role-surface-drawer-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 16px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.role-surface-drawer-toggle:hover { color: var(--text-primary); }
+
+.role-surface-drawer-body {
+  padding: 0 16px 14px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.role-surface-drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+/* Sidebar cluster label for Role Surface rooms */
+.sidebar-rooms-label {
+  margin: 14px 10px 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* Narrow shells: stack the room columns; rails become sections above/below
+   the canvas instead of vanishing. */
+@media (max-width: 1023px) {
+  .role-surface-columns {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .role-surface-rail { overflow-y: visible; }
+  .role-surface-canvas { overflow-y: visible; }
 }

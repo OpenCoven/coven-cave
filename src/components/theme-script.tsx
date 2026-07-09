@@ -11,20 +11,23 @@
  *  4. Always set BOTH `data-theme` and `data-mode` on <html>.
  *  5. If theme === "custom", apply `cssVars.theme` (mode-agnostic) +
  *     `cssVars[mode]` (mode-specific) from localStorage["coven-custom-theme"].
- *  6. Read localStorage["cave:font:sans"] / localStorage["cave:font:mono"],
- *     accept only approved font pairs, and apply --font-sans / --font-mono CSS
- *     vars for non-default selections.
+ *  6. Read localStorage["cave:font:serif"] / localStorage["cave:font:sans"] /
+ *     localStorage["cave:font:mono"], accept only approved font pairs, and apply
+ *     --font-serif / --font-sans / --font-mono CSS vars for non-default
+ *     selections. Canonical defaults are EB Garamond + Inter + JetBrains Mono
+ *     (DESIGN.md §4).
  *
  * NOTE: The storage key strings ("coven-theme", "coven-mode",
  * "coven-custom-theme") and the legacy rename map are duplicated in
  * /public/scripts/theme-init.js from src/lib/theme-storage.ts.
  * Keep both in sync when adding new keys or renames.
  *
- * NOTE: The font keys ("cave:font:sans", "cave:font:mono"), default ids
- * ("geist", "jetbrains-mono"), approved pairs, and the SANS_FALLBACK /
- * MONO_FALLBACK strings are duplicated in /public/scripts/theme-init.js from
- * src/lib/font-catalog.ts and src/lib/font-storage.ts. Keep in sync when
- * adding new fonts, changing fallback chains, or editing pair choices.
+ * NOTE: The font keys ("cave:font:serif", "cave:font:sans", "cave:font:mono"),
+ * default ids ("eb-garamond", "inter", "jetbrains-mono"), approved pairs, and
+ * the SERIF_FALLBACK / SANS_FALLBACK / MONO_FALLBACK strings are duplicated in
+ * /public/scripts/theme-init.js from src/lib/font-catalog.ts and
+ * src/lib/font-storage.ts. Keep in sync when adding new fonts, changing
+ * fallback chains, or editing pair choices.
  */
 
 /**

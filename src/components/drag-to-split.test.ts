@@ -69,7 +69,7 @@ test("workspace owns split state and the drop handler, and reuses renderSurface"
   assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<SplitTarget\[\]>\(\[\]\)/);
   assert.match(src, /const openSplitPage = useCallback/);
   assert.match(src, /addSecondaryWorkspaceTile/, "workspace appends split pages up to the secondary tile cap");
-  assert.match(src, /const renderSurface = \(mode: WorkspaceMode\): ReactNode =>/);
+  assert.match(src, /const renderSurface = \(mode: CaveMode\): ReactNode =>/);
   assert.match(src, /\{renderSurface\(mode\)\}/, "primary uses renderSurface");
   assert.match(src, /renderSurface\(target\.mode\)/, "secondary tiles reuse the same machinery");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
