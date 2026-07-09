@@ -801,7 +801,7 @@ export function CommandPalette({
         aria-modal="true"
         aria-label="Command palette"
         tabIndex={-1}
-        className="mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
+        className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl"
         style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
       >
         <input

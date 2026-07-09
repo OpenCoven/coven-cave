@@ -202,6 +202,19 @@
   /* ---- Surface alphas ---- */
   --backdrop-scrim: oklch(0 0 0 / 60%);
 
+  /* ---- Glass (native-vibrancy translucency for overlay chrome) ----
+     Derived from the theme's own surface tokens via color-mix, so every
+     accent theme and light mode track automatically. Overlay surfaces only —
+     base panes have nothing rendering beneath them to blur, so glass there
+     would cost compositing for no visible depth. Pair the translucent fill
+     with blur(var(--glass-blur)); a see-through fill WITHOUT blur is
+     unreadable, which is why the @supports fallback below restores the
+     opaque tokens wherever backdrop-filter is unavailable. */
+  --glass-blur: 16px;
+  --glass-saturate: 140%;
+  --glass-elevated: color-mix(in oklch, var(--bg-elevated) 74%, transparent);
+  --glass-raised: color-mix(in oklch, var(--bg-raised) 80%, transparent);
+
   /* Foundations PR — disabled state */
   --opacity-disabled: 0.4;
 
@@ -1477,6 +1490,9 @@ tr[role="checkbox"]:focus-visible {
   position: fixed;
   inset: 0;
   background: var(--backdrop-scrim);
+  /* Soft depth cue: the app recedes behind the scrim instead of just dimming. */
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1503,7 +1519,10 @@ tr[role="checkbox"]:focus-visible {
   width: 100%;
   max-width: 560px;
   max-height: calc(100vh - 2 * var(--space-4));
-  background: var(--bg-raised);
+  /* Glassmorphic sheet — the dimmed app blurs through the dialog body. */
+  background: var(--glass-raised);
+  backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);
   display: flex;
@@ -2716,7 +2735,11 @@ textarea.required-inputs-control {
 }
 .ui-popover {
   position: absolute;
-  background: var(--bg-elevated);
+  /* Glassmorphic overlay: translucent theme surface over blurred content.
+     Opaque fallbacks live in the @supports / reduced-transparency blocks. */
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   box-shadow: 0 16px 40px oklch(0 0 0 / 45%);
@@ -2729,6 +2752,50 @@ textarea.required-inputs-control {
 @keyframes ui-popover-enter {
   from { opacity: 0; transform: translateY(-2px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Glass overlay utility ────────────────────────────────────────────────────
+ * For overlay surfaces that carry their chrome as component classes (command
+ * palette, notification bell popover, …) instead of the ui-popover/ui-modal
+ * primitives: the same translucent-fill + backdrop-blur pairing, from the
+ * same tokens. */
+.glass-overlay {
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Glass is only legible while the backdrop actually blurs: with no
+ * backdrop-filter support, a translucent fill over scrolling content is
+ * unreadable soup — restore the opaque theme surfaces. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ui-popover,
+  .glass-overlay {
+    background: var(--bg-elevated);
+  }
+  .ui-modal {
+    background: var(--bg-raised);
+  }
+}
+
+/* Native accessibility setting wins: users who asked the OS for less
+ * transparency get the opaque surfaces (and their compositor back). */
+@media (prefers-reduced-transparency: reduce) {
+  .ui-popover,
+  .glass-overlay {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .ui-modal {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .ui-modal-backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* Projects tab: a project's session list slides+fades in when expanded.

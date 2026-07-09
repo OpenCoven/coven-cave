@@ -226,7 +226,7 @@ export function NotificationBell({
           role="dialog"
           aria-label="Notifications"
           tabIndex={-1}
-          className="notification-bell__popover group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] shadow-2xl"
+          className="notification-bell__popover glass-overlay group/popover absolute right-0 top-full z-50 mt-1 w-[400px] rounded-xl border border-[var(--border-strong)] shadow-2xl"
         >
           <div className="notification-bell__header flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
             <span className="text-[11px] font-medium text-[var(--text-primary)]">

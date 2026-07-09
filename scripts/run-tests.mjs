@@ -217,6 +217,7 @@ export const SUITES = {
     "src/components/daily-summary-notifications.test.ts",
     "src/components/notification-bell-mutations.test.ts",
     "src/components/surface-error-states.test.ts",
+    "src/components/glass-overlay-chrome.test.ts",
     "src/components/surface-loading-states.test.ts",
     "src/components/chat-header-row.test.ts",
     "src/components/chat-usage-plan-ui.test.ts",
