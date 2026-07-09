@@ -29,6 +29,7 @@ import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format
 import { openExternalUrl } from "@/lib/open-external";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 import type { CardPatch } from "@/lib/board-card-ops";
+import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -1273,7 +1274,15 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   </span>
                   <span className="board-drawer-chat-body">
                     <span className="board-drawer-chat-title">{session.title || "(untitled)"}</span>
-                    <span className="board-drawer-chat-desc">Open conversation</span>
+                    {/* cave-32ks: live session state — dot + word — so the
+                        drawer answers "is the familiar on it?" at a glance. */}
+                    <span className="board-drawer-chat-desc">
+                      <span
+                        className={`board-drawer-chat-status-dot board-drawer-chat-status-dot--${sessionStatusTone(session.status)}`}
+                        aria-hidden
+                      />
+                      {sessionStatusWord(session.status)} · open conversation
+                    </span>
                   </span>
                   <Icon name="ph:arrow-square-out" width={12} className="board-drawer-chat-trail" />
                 </button>
