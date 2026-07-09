@@ -31,6 +31,24 @@ assert.match(
   /label="Typography pair"[\s\S]*?style=\{\{ width: "min\(100%, 300px\)", maxWidth: "100%" \}\}/,
   "typography pair selector uses a responsive width that fits curated pair labels",
 );
+// Row controls share one standard 28px height: the select trigger pins h-7
+// explicitly and the segmented wrappers pin the same h-7.
+assert.doesNotMatch(src, /gh-select/, "settings does not borrow the board view's 26px control chrome");
+assert.match(
+  src,
+  /const segWrap =\s*\n?\s*"flex h-7 /,
+  "segmented control wrappers pin the standard settings control height",
+);
+assert.match(
+  src,
+  /const selectTrigger =\s*\n?\s*"h-7 /,
+  "select triggers pin the standard settings control height",
+);
+assert.match(
+  src,
+  /className=\{selectTrigger\}/,
+  "typography pair selector uses the shared standard-height trigger styling",
+);
 assert.match(src, /Interface/, "keeps the interface preview");
 assert.match(src, /Code &amp; terminal/, "keeps the code and terminal preview");
 
