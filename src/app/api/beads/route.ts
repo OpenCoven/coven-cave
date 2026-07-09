@@ -19,6 +19,14 @@ type BeadsPostBody = {
   comment?: string;
   reason?: string;
   projectRoot?: string;
+  /** create action: the new bead's title (required). */
+  title?: string;
+  /** create action: description body. */
+  description?: string;
+  /** create action: external reference (e.g. an Asana/Linear ticket URL). */
+  externalRef?: string;
+  /** create action: labels to tag the bead with. */
+  labels?: string[];
 };
 
 function jsonFromStdout(stdout: string): unknown {
@@ -117,6 +125,36 @@ export async function POST(req: Request) {
 
   const root = await resolveProjectRoot(parsed.body.projectRoot ?? null);
   if (!root.ok) return projectRootErrorResponse(root);
+
+  // `create` files a new bead (e.g. from an external ticket) and needs a title
+  // rather than an id — handle it before the id requirement below. Links the
+  // source ticket through --external-ref, the beads protocol's visibility layer.
+  if (parsed.body.action === "create") {
+    const title = parsed.body.title?.trim();
+    if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
+    const createArgs = ["create", title, "--json"];
+    const description = parsed.body.description?.trim();
+    if (description) createArgs.push("-d", description);
+    const externalRef = parsed.body.externalRef?.trim();
+    if (externalRef) createArgs.push("--external-ref", externalRef);
+    const labels = (parsed.body.labels ?? []).map((label) => label.trim()).filter(Boolean);
+    if (labels.length) createArgs.push("--labels", labels.join(","));
+
+    const created = await runBd(root.repoRoot, root.beadsDir, createArgs);
+    if (!created.ok) {
+      return NextResponse.json(
+        { ok: false, error: created.error, stdout: created.stdout, stderr: created.stderr },
+        { status: created.status },
+      );
+    }
+    return NextResponse.json({
+      ok: true,
+      action: "create",
+      projectRoot: root.repoRoot,
+      data: jsonFromStdout(created.stdout),
+      stderr: created.stderr || undefined,
+    });
+  }
 
   const id = parsed.body.id?.trim();
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });

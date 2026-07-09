@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "./server/atomic-write.ts";
 import {
   DEFAULT_MAX_RETRIES,
   type Card,
+  type CardAsanaLink,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
@@ -17,6 +18,12 @@ import {
   normalizeTaskGitHubLinks,
   taskGitHubLinkFromUrl,
 } from "@/lib/task-github";
+import {
+  mergeLinksWithAsana,
+  mergeTaskAsanaLinks as mergeAsanaLinks,
+  normalizeTaskAsanaLinks,
+  taskAsanaLinkFromUrl,
+} from "@/lib/task-asana";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import {
   normalizeChatAttachments,
@@ -32,6 +39,7 @@ export {
   PRIORITIES,
   STATUSES,
   type Card,
+  type CardAsanaLink,
   type CardGitHubLink,
   type CardLifecycle,
   type CardPriority,
@@ -96,6 +104,19 @@ function gitHubLinksFromLinks(values: string[] | undefined): CardGitHubLink[] {
     .filter((item): item is CardGitHubLink => item !== null);
 }
 
+function normalizeAsanaLinks(values: CardAsanaLink[] | undefined): CardAsanaLink[] {
+  return normalizeTaskAsanaLinks(values);
+}
+
+// Derive structured Asana connections from bare app.asana.com URLs stashed in a
+// card's `links` (or written by an agent) — the same backfill github does, so a
+// pasted Asana task URL becomes a first-class connection.
+function asanaLinksFromLinks(values: string[] | undefined): CardAsanaLink[] {
+  return toStringList(values)
+    .map((url) => taskAsanaLinkFromUrl(url))
+    .filter((item): item is CardAsanaLink => item !== null);
+}
+
 function normalizeCwd(value: string | null | undefined): string | null {
   const cwd = value?.trim();
   return cwd ? cwd : null;
@@ -103,12 +124,12 @@ function normalizeCwd(value: string | null | undefined): string | null {
 
 type LegacyCard = Omit<
   Card,
-  "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+  "cwd" | "projectId" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
 > &
   Partial<
     Pick<
       Card,
-      "cwd" | "projectId" | "links" | "github" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
+      "cwd" | "projectId" | "links" | "github" | "asana" | "lifecycle" | "lifecycleAt" | "retryCount" | "maxRetries" | "steps" | "startDate" | "endDate"
     >
   >;
 
@@ -124,7 +145,10 @@ function normalizeBoardDate(value: string | null | undefined): string | null {
 function backfillCard(c: Card | LegacyCard): Card {
   const lifecycle = c.lifecycle ?? inferLifecycle(c.status);
   const github = mergeGitHubLinks(normalizeGitHubLinks(c.github), ...gitHubLinksFromLinks(c.links));
-  const links = mergeLinksWithGitHub(normalizeLinks(c.links), github);
+  const asana = mergeAsanaLinks(normalizeAsanaLinks(c.asana), ...asanaLinksFromLinks(c.links));
+  // Both link derivations feed back into `links` so a card's URL list stays the
+  // union of everything attached, regardless of which source added it.
+  const links = mergeLinksWithAsana(mergeLinksWithGitHub(normalizeLinks(c.links), github), asana);
   return {
     ...c,
     status: statusForLifecycle(lifecycle, c.status),
@@ -132,6 +156,7 @@ function backfillCard(c: Card | LegacyCard): Card {
     projectId: c.projectId ?? null,
     links,
     github,
+    asana,
     labels: normalizeList(c.labels),
     startDate: normalizeBoardDate(c.startDate),
     endDate: normalizeBoardDate(c.endDate),
@@ -226,6 +251,7 @@ export type NewCardInput = {
   projectId?: string | null;
   links?: string[];
   github?: CardGitHubLink[];
+  asana?: CardAsanaLink[];
   labels?: string[];
   startDate?: string | null;
   endDate?: string | null;
@@ -251,6 +277,7 @@ export async function createCard(input: NewCardInput): Promise<Card> {
   const now = new Date().toISOString();
   const status: CardStatus = input.status ?? "backlog";
   const github = mergeGitHubLinks(normalizeGitHubLinks(input.github), ...gitHubLinksFromLinks(input.links));
+  const asana = mergeAsanaLinks(normalizeAsanaLinks(input.asana), ...asanaLinksFromLinks(input.links));
   const card: Card = {
     id: crypto.randomUUID(),
     title: input.title.trim(),
@@ -261,8 +288,9 @@ export async function createCard(input: NewCardInput): Promise<Card> {
     sessionId: input.sessionId ?? null,
     cwd: normalizeCwd(input.cwd),
     projectId: input.projectId ?? null,
-    links: mergeLinksWithGitHub(normalizeLinks(input.links), github),
+    links: mergeLinksWithAsana(mergeLinksWithGitHub(normalizeLinks(input.links), github), asana),
     github,
+    asana,
     labels: normalizeList(input.labels),
     startDate: normalizeBoardDate(input.startDate),
     endDate: normalizeBoardDate(input.endDate),
@@ -303,6 +331,17 @@ export async function updateCard(
   const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
     ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
     : plain;
+  // Resolve the structured connection lists once, then fold both back into
+  // `links` so the URL list stays the union of everything attached (github +
+  // asana + explicit links) — same invariant createCard/backfill maintain.
+  const nextGithub = mergeGitHubLinks(
+    normalizeGitHubLinks("github" in patch ? patch.github : current.github),
+    ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
+  );
+  const nextAsana = mergeAsanaLinks(
+    normalizeAsanaLinks("asana" in patch ? patch.asana : current.asana),
+    ...asanaLinksFromLinks("links" in patch ? patch.links : current.links),
+  );
   const next: Card = {
     ...current,
     ...patch,
@@ -312,16 +351,11 @@ export async function updateCard(
     labels: patch.labels
       ? normalizeList(patch.labels)
       : current.labels,
-    github: mergeGitHubLinks(
-      normalizeGitHubLinks("github" in patch ? patch.github : current.github),
-      ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
-    ),
-    links: mergeLinksWithGitHub(
-      "links" in patch ? normalizeLinks(patch.links) : current.links,
-      mergeGitHubLinks(
-        normalizeGitHubLinks("github" in patch ? patch.github : current.github),
-        ...gitHubLinksFromLinks("links" in patch ? patch.links : current.links),
-      ),
+    github: nextGithub,
+    asana: nextAsana,
+    links: mergeLinksWithAsana(
+      mergeLinksWithGitHub("links" in patch ? normalizeLinks(patch.links) : current.links, nextGithub),
+      nextAsana,
     ),
     cwd: "cwd" in patch ? normalizeCwd(patch.cwd) : current.cwd,
     projectId: "projectId" in patch ? patch.projectId ?? null : current.projectId ?? null,

@@ -8,7 +8,7 @@ import {
   type CardStatus,
 } from "@/lib/cave-board";
 import type { CardStep } from "@/lib/cave-board-types";
-import type { CardGitHubLink } from "@/lib/cave-board-types";
+import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { CardOps } from "@/lib/board-card-ops";
 import { trustedProjectCwd } from "@/lib/cave-projects";
@@ -33,6 +33,7 @@ export async function PATCH(
     projectId: string | null;
     links: string[];
     github: CardGitHubLink[];
+    asana: CardAsanaLink[];
     labels: string[];
     startDate: string | null;
     endDate: string | null;

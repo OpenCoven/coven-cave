@@ -22,6 +22,7 @@ import {
   type WorkQueueLaneKey,
 } from "@/lib/beads-work-queue";
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
+import { AsanaQueueStrip } from "@/components/asana-queue-strip";
 
 type Props = {
   /** Rendered inside the Tasks page's Work-queue tab (cave-oa1z): the tab
@@ -334,6 +335,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
       ) : null}
 
       {q.attention.length > 0 ? <AttentionStrip items={q.attention} onOpenUrl={onOpenUrl} /> : null}
+
+      <AsanaQueueStrip onOpenUrl={onOpenUrl} onFiledBead={() => void load()} />
 
       <div className="fwq-body">
         {q.total === 0 ? (

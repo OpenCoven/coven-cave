@@ -18,6 +18,8 @@ type RouteContract = {
 
 const contracts: RouteContract[] = [
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
+  { route: "/asana/assigned", methods: ["GET"], kind: "json" },
+  { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/beads", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/beads/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },

@@ -5,7 +5,7 @@ import {
   type CardPriority,
   type CardStatus,
 } from "@/lib/cave-board";
-import type { CardGitHubLink } from "@/lib/cave-board-types";
+import type { CardAsanaLink, CardGitHubLink } from "@/lib/cave-board-types";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import { trustedProjectCwd } from "@/lib/cave-projects";
 
@@ -28,6 +28,7 @@ export async function POST(req: Request) {
     projectId?: string | null;
     links?: string[];
     github?: CardGitHubLink[];
+    asana?: CardAsanaLink[];
     labels?: string[];
     startDate?: string | null;
     endDate?: string | null;
@@ -64,6 +65,7 @@ export async function POST(req: Request) {
     projectId: body.projectId,
     links: body.links,
     github: body.github,
+    asana: body.asana,
     labels: body.labels,
     startDate: body.startDate,
     endDate: body.endDate,

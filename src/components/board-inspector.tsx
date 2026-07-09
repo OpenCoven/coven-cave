@@ -16,6 +16,12 @@ import {
   mergeTaskGitHubLinks,
   taskGitHubLinkFromGitHubItem,
 } from "@/lib/task-github";
+import type { AsanaItem } from "@/lib/asana-tasks";
+import {
+  mergeLinksWithAsana,
+  mergeTaskAsanaLinks,
+  taskAsanaLinkFromAsanaItem,
+} from "@/lib/task-asana";
 import { Icon } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
@@ -43,6 +49,7 @@ function formatAttachmentSize(size?: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
+const ASANA_PAT_URL = "https://app.asana.com/0/my-apps";
 
 type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
 const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
@@ -425,6 +432,262 @@ function GitHubAttachSection({
 }
 
 
+
+// ── Asana attach ──────────────────────────────────────────────────────────────
+// Mirrors GitHubAttachSection. Surfaces the connected user's incomplete Asana
+// tasks (via /api/asana/assigned, populated once the Asana PAT is stored) so a
+// card can be linked to the work it tracks. When no PAT is configured the
+// inline connect form appears — the in-app "enable Asana" on-ramp.
+function InlineAsanaPATSetup({ onSaved }: { onSaved: () => void }) {
+  const [pat, setPat] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const trimmed = pat.trim();
+    if (!trimmed) { setError("Enter an Asana personal access token."); return; }
+    setSaving(true); setError(null);
+    try {
+      const res = await fetch("/api/asana/pat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pat: trimmed }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) { setError(data?.error ?? "Failed to save."); return; }
+      onSaved();
+    } catch { setError("Network error — please try again."); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ padding: "10px 10px 8px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+        <Icon name="ph:check-circle" width={14} className="text-[var(--text-muted)]" />
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Connect Asana</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <label style={{ fontSize: 10, color: "var(--text-muted)", fontWeight: 500 }}>Personal Access Token</label>
+        <input type="password" value={pat} onChange={(e) => setPat(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void save()} placeholder="1/1234…:abcd…"
+          style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", borderRadius: 6,
+            padding: "5px 8px", fontSize: 11, color: "var(--text-primary)", outline: "none", width: "100%", boxSizing: "border-box" }} />
+      </div>
+      {error && <p style={{ fontSize: 10, color: "var(--color-danger)", margin: 0 }}>{error}</p>}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+        <button type="button" onClick={() => void openExternalUrl(ASANA_PAT_URL)}
+          style={{ background: "transparent", border: 0, padding: 0, fontSize: 10, color: "var(--accent-presence)", textDecoration: "none", cursor: "pointer" }}>
+          Generate token →
+        </button>
+        <button type="button" disabled={!pat.trim() || saving} onClick={() => void save()}
+          style={{ background: "var(--accent-presence)", color: "var(--text-primary)", border: "none", borderRadius: 6,
+            padding: "4px 12px", fontSize: 11, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>
+          {saving ? "Verifying…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AsanaAttachSection({
+  card,
+  onPatch,
+  onOpenUrl,
+}: {
+  card: Card;
+  onPatch: (id: string, patch: CardPatch) => void;
+  onOpenUrl?: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<AsanaItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [fetchKey, setFetchKey] = useState(0);
+  const coarse = useIsCoarsePointer();
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    fetch("/api/asana/assigned", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok: boolean; items?: AsanaItem[]; configured?: boolean; error?: string }) => {
+        if (cancelled) return;
+        if (d.ok) {
+          setItems(d.items ?? []);
+          setConfigured(d.configured ?? true);
+        } else {
+          setErr(d.error ?? "failed");
+        }
+      })
+      .catch(() => { if (!cancelled) setErr("fetch failed"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, fetchKey]); // fetchKey bumped to refetch after PAT save
+
+  const attachedUrls = new Set([...(card.links ?? []), ...(card.asana ?? []).map((item) => item.url)]);
+
+  const filtered = items.filter((item) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return item.title.toLowerCase().includes(q) || (item.projectName?.toLowerCase().includes(q) ?? false);
+  });
+
+  const attachedItems = mergeTaskAsanaLinks(
+    card.asana ?? [],
+    ...items.filter((i) => attachedUrls.has(i.url)).map(taskAsanaLinkFromAsanaItem),
+  );
+
+  function attach(item: AsanaItem) {
+    if (attachedUrls.has(item.url)) return;
+    const asana = mergeTaskAsanaLinks(card.asana ?? [], taskAsanaLinkFromAsanaItem(item));
+    onPatch(card.id, { asana, links: mergeLinksWithAsana(card.links, asana) });
+  }
+
+  function detach(url: string) {
+    const asana = (card.asana ?? []).filter((item) => item.url !== url);
+    onPatch(card.id, { asana, links: card.links.filter((l) => l !== url) });
+  }
+
+  const subtitle = (item: { projectName?: string; dueOn?: string | null }) =>
+    [item.projectName, item.dueOn ? `due ${item.dueOn}` : null].filter(Boolean).join(" · ");
+
+  return (
+    <div className="board-drawer-field">
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <Icon name="ph:check-circle" width={11} />
+          Asana
+          {attachedItems.length > 0 && <span className="board-drawer-count-pill">{attachedItems.length}</span>}
+        </span>
+        <button
+          type="button"
+          className="board-toolbar-btn"
+          onClick={() => setOpen((v) => !v)}
+          style={{ fontSize: 10, padding: "2px 8px" }}
+        >
+          <Icon name={open ? "ph:caret-up" : "ph:check-circle"} width={11} />
+          {open ? "Hide" : "Attach"}
+        </button>
+      </div>
+
+      {attachedItems.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+          {attachedItems.map((item) => (
+            <div key={item.id} style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "var(--bg-elevated)", borderRadius: 6,
+              padding: "5px 8px", border: "1px solid var(--border-hairline)"
+            }}>
+              <button
+                type="button"
+                className="board-github-attachment-open"
+                onClick={() => onOpenUrl?.(item.url)}
+                title="Open in Asana"
+                style={{
+                  flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center", gap: 6,
+                  border: 0, padding: 0, background: "transparent", color: "var(--text-primary)",
+                  textAlign: "left", cursor: "pointer",
+                }}
+              >
+                <Icon name="ph:check-circle" width={12} className={item.completed ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {item.title}{subtitle(item) ? ` — ${subtitle(item)}` : ""}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="board-toolbar-btn"
+                style={{ fontSize: 10, padding: "1px 6px" }}
+                onClick={() => detach(item.url)}
+                title="Detach"
+              >
+                <Icon name="ph:x-bold" width={9} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div style={{ border: "1px solid var(--border-hairline)", borderRadius: 8, overflow: "hidden", background: "var(--bg-raised)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
+            <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
+            <input
+              autoFocus={!coarse}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search tasks, projects…"
+              style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "var(--text-primary)" }}
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+                <Icon name="ph:x" width={11} />
+              </button>
+            )}
+          </div>
+
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {loading && (
+              <div style={{ padding: "10px" }}><SkeletonRows count={4} /></div>
+            )}
+            {err && (
+              <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
+            )}
+            {!loading && !err && configured === false && (
+              <InlineAsanaPATSetup onSaved={() => { setItems([]); setConfigured(null); setFetchKey((k) => k + 1); }} />
+            )}
+            {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
+              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+                No incomplete tasks assigned to you.
+              </div>
+            )}
+            {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
+              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>No matches.</div>
+            )}
+            {filtered.map((item) => {
+              const attached = attachedUrls.has(item.url);
+              return (
+                <div key={item.id} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)",
+                  background: attached ? "color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised))" : undefined,
+                }}>
+                  <Icon name="ph:check-circle" width={13} className="text-[var(--text-muted)]" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.title}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {subtitle(item) || "Asana task"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="board-toolbar-btn"
+                      style={{
+                        fontSize: 10, padding: "2px 7px",
+                        ...(attached ? { color: "var(--accent-presence)", borderColor: "var(--accent-presence)" } : {}),
+                      }}
+                      onClick={() => attached ? detach(item.url) : attach(item)}
+                    >
+                      <Icon name={attached ? "ph:check-bold" : "ph:paperclip-bold"} width={10} />
+                      {attached ? "Attached" : "Attach"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Links ────────────────────────────────────────────────────────────────────
 function LinksSection({
@@ -1347,6 +1610,8 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           <LinksSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 
           <GitHubAttachSection card={card} familiars={familiars} onPatch={onPatch} onOpenUrl={onOpenUrl} />
+
+          <AsanaAttachSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 
           <AttachmentsSection card={card} onPatch={onPatch} />
 

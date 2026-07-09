@@ -423,6 +423,8 @@ export const SUITES = {
     "src/components/familiar-studio-identity-tab.test.ts",
     "src/components/familiar-studio-lifecycle-tab.test.ts",
     "src/components/github-task-field.test.ts",
+    "src/components/asana-task-field.test.ts",
+    "src/lib/task-asana.test.ts",
     "src/components/github-view-polish.test.ts",
     "src/components/github-advanced.test.ts",
     "src/lib/issue-worktree.test.ts",
