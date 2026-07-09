@@ -92,16 +92,17 @@ function sameOrigin(value, expectedOrigin) {
     const url = new URL(value);
     if (url.origin === expectedOrigin) return true;
     const expected = new URL(expectedOrigin);
+    if (url.host === expected.host) return true;
     return url.protocol === expected.protocol && url.port === expected.port && isLoopbackHost(url.host) && isLoopbackHost(expected.host);
   } catch {
     return false;
   }
 }
-function isAllowedUpgradeSource(req) {
+function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
   const host = req.headers.host;
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!tailnetTrusted && !isLoopbackHost(host)) return false;
+  if (!tailnetTrusted && !tokenAuthenticated && !isLoopbackHost(host)) return false;
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 function isAuthorized(req, query) {
@@ -317,12 +318,13 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  if (!isAllowedUpgradeSource(req)) {
+  const tokenAuthenticated = ACCESS_TOKEN ? isAuthorized(req, query) : false;
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
+  if (ACCESS_TOKEN && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

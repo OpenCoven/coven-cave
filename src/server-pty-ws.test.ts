@@ -16,7 +16,36 @@ assert.match(src, /if \(!ACCESS_TOKEN\) return false/, "PTY WebSocket auth fails
 // no token (the local desktop app / dev server) the loopback host+origin gate is
 // the protection — guarding the 401 on ACCESS_TOKEN keeps credential-less local
 // connections working. #714 dropped this guard and 401'd every local terminal.
-assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+assert.match(src, /if \(ACCESS_TOKEN && !tokenAuthenticated\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+// Credentials are verified BEFORE the source gate: a paired device over
+// `tailscale serve` arrives with a non-loopback `<host>.ts.net` Host, so a
+// valid signed token must relax the host gate (mirrors proxy.ts's
+// isAllowedApiHost(mobileAccessAuthenticated) on REST). Without this the
+// paired iOS terminal 403s at the host gate while REST works — the "terminal
+// tab never connects" bug (cave-iz1j).
+assert.match(
+  src,
+  /const tokenAuthenticated = ACCESS_TOKEN \? isAuthorized\(req, query\) : false;/,
+  "PTY upgrade verifies the access token before the source gate",
+);
+assert.match(
+  src,
+  /isAllowedUpgradeSource\(req, tokenAuthenticated\)/,
+  "token-authenticated upgrades pass the non-loopback host gate (paired iOS terminal over tailscale serve)",
+);
+assert.match(
+  src,
+  /if \(!tailnetTrusted && !tokenAuthenticated && !isLoopbackHost\(host\)\) return false;/,
+  "host gate relaxes for tailnet-trust mode OR a verified token — never for anonymous non-loopback hosts",
+);
+// Serve terminates TLS, so a legit handoff browser page is https://<host>.ts.net
+// while the expectation string is built as http://<Host> — host equality (the
+// real cross-site defence) must satisfy the origin gate regardless of scheme.
+assert.match(
+  src,
+  /if \(url\.host === expected\.host\) return true;/,
+  "origin gate accepts a scheme-agnostic same-host Origin (Serve-terminated TLS)",
+);
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
