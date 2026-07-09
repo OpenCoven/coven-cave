@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Font Preview — Classic Coven</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  :root {
+    --font-eb-garamond: 'EB Garamond', Garamond, 'Times New Roman', serif;
+    --font-instrument-serif: 'Instrument Serif', Garamond, serif;
+    --font-fraunces: 'Fraunces', Georgia, serif;
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --surface-app: #000;
+    --surface-0: #0f0a14;
+    --text-primary: #f4f1fa;
+    --text-muted: #c5bded;
+    --oc-purple-primary: #9a8ecd;
+    --oc-purple-1: #7a6daa;
+    --border-subtle: rgba(154, 142, 205, 0.22);
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--surface-app);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+    padding: clamp(2rem, 5vw, 4rem);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  .kicker {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--oc-purple-primary);
+    margin: 0 0 0.75rem;
+  }
+  .title {
+    font-family: var(--font-sans);
+    font-size: clamp(2rem, 3.5vw, 2.75rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    margin: 0 0 0.75rem;
+  }
+  .intro {
+    color: var(--text-muted);
+    font-size: 1.05rem;
+    line-height: 1.6;
+    max-width: 58ch;
+    margin: 0 0 3rem;
+  }
+  .intro code { font-family: var(--font-mono); color: var(--text-primary); }
+  .cards { display: grid; gap: 2rem; }
+  .card {
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
+    padding: clamp(1.5rem, 3vw, 2.5rem);
+    background: var(--surface-0);
+  }
+  .card header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-wrap: wrap;
+  }
+  .card header .rank { font-size: 22px; }
+  .card header h3 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .card header .pitch {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+  }
+  .hero {
+    font-size: clamp(3.5rem, 8vw, 6rem);
+    letter-spacing: -0.02em;
+    font-weight: 500;
+    margin: 0;
+  }
+  .tagline {
+    color: var(--text-muted);
+    font-size: clamp(1rem, 1.4vw, 1.125rem);
+    line-height: 1.55;
+    margin: 0.75rem 0 2rem;
+    max-width: 44ch;
+    font-family: var(--font-sans);
+  }
+  .h1 {
+    font-size: clamp(2rem, 4vw, 3rem);
+    letter-spacing: -0.015em;
+    font-weight: 500;
+    margin: 0 0 0.75rem;
+  }
+  .h2 {
+    font-size: clamp(1.375rem, 2.5vw, 1.75rem);
+    line-height: 1.2;
+    font-style: italic;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin: 0 0 1.25rem;
+  }
+  .body {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.65;
+    max-width: 62ch;
+    margin: 0 0 1.5rem;
+  }
+  .quote {
+    font-size: clamp(1.125rem, 1.75vw, 1.375rem);
+    font-style: italic;
+    line-height: 1.4;
+    margin: 0 0 1.5rem;
+    padding: 0.5rem 0 0.5rem 1.25rem;
+    border-left: 2px solid var(--oc-purple-primary);
+    max-width: 48ch;
+  }
+  .footrow {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .footrow .italic { font-style: italic; font-size: 1.5rem; }
+  .footrow .meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  footer.page {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+
+  /* Font-family scopes */
+  .fam-eb, .fam-eb .hero, .fam-eb .h1, .fam-eb .h2, .fam-eb .quote, .fam-eb header h3, .fam-eb .footrow .italic {
+    font-family: var(--font-eb-garamond);
+  }
+  .fam-eb .hero { line-height: 1.15; }
+  .fam-is, .fam-is .hero, .fam-is .h1, .fam-is .h2, .fam-is .quote, .fam-is header h3, .fam-is .footrow .italic {
+    font-family: var(--font-instrument-serif);
+  }
+  .fam-is .hero { line-height: 1.1; font-size: clamp(4rem, 9vw, 7rem); }
+  .fam-is .h1 { font-size: clamp(2.25rem, 4.5vw, 3.5rem); }
+  .fam-is .h2 { font-size: clamp(1.5rem, 2.75vw, 2rem); }
+  .fam-fr, .fam-fr .hero, .fam-fr .h1, .fam-fr .h2, .fam-fr .quote, .fam-fr header h3, .fam-fr .footrow .italic {
+    font-family: var(--font-fraunces);
+    font-variation-settings: "opsz" 144, "SOFT" 30, "WONK" 0;
+  }
+  .fam-fr .hero { line-height: 1.15; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">Charm · Font Preview · Classic Coven</p>
+  <h1 class="title">Three display serifs, one Coven.</h1>
+  <p class="intro">
+    Each card renders the same Coven copy in a different display face.
+    Body text stays on the current sans stack (<code>Inter</code>) so the pairing is honest.
+    Pick the one that feels most like the Coven, and we&rsquo;ll canonize it across
+    <code>DESIGN.md</code>, Cave, and every downstream surface.
+  </p>
+
+  <div class="cards">
+    <!-- 🥇 EB Garamond -->
+    <section class="card fam-eb">
+      <header>
+        <span class="rank" aria-hidden="true">🥇</span>
+        <h3>EB Garamond</h3>
+        <span class="pitch">The grimoire pick — old-book warmth, italics with character.</span>
+      </header>
+      <div class="hero">OpenCoven</div>
+      <p class="tagline">An open ecosystem for persistent AI familiars.</p>
+      <div class="h1">The Coven remembers.</div>
+      <div class="h2">A familiar is not a faceless bot.</div>
+      <p class="body">Most AI today feels temporary: a user opens a chat, explains context, gets a response, and starts over. OpenCoven is built around a different future — AI that can stay. The next generation of AI should be durable, personal systems that remember what matters, understand their purpose, use tools, collaborate with other agents, and grow alongside the people and projects they serve.</p>
+      <blockquote class="quote">“AI should be powerful without becoming opaque, personal without pretending to be human, and extensible without collapsing into chaos.”</blockquote>
+      <div class="footrow">
+        <span class="italic">the whispering woods</span>
+        <span class="meta">familiar · memory · continuity · tools</span>
+      </div>
+    </section>
+
+    <!-- 🥈 Instrument Serif -->
+    <section class="card fam-is">
+      <header>
+        <span class="rank" aria-hidden="true">🥈</span>
+        <h3>Instrument Serif</h3>
+        <span class="pitch">The editorial-witch pick — high-contrast, swoon italics.</span>
+      </header>
+      <div class="hero">OpenCoven</div>
+      <p class="tagline">An open ecosystem for persistent AI familiars.</p>
+      <div class="h1">The Coven remembers.</div>
+      <div class="h2">A familiar is not a faceless bot.</div>
+      <p class="body">Most AI today feels temporary: a user opens a chat, explains context, gets a response, and starts over. OpenCoven is built around a different future — AI that can stay. The next generation of AI should be durable, personal systems that remember what matters, understand their purpose, use tools, collaborate with other agents, and grow alongside the people and projects they serve.</p>
+      <blockquote class="quote">“AI should be powerful without becoming opaque, personal without pretending to be human, and extensible without collapsing into chaos.”</blockquote>
+      <div class="footrow">
+        <span class="italic">the whispering woods</span>
+        <span class="meta">familiar · memory · continuity · tools</span>
+      </div>
+    </section>
+
+    <!-- 🥉 Fraunces -->
+    <section class="card fam-fr">
+      <header>
+        <span class="rank" aria-hidden="true">🥉</span>
+        <h3>Fraunces</h3>
+        <span class="pitch">The shapeshifter — variable optical + wonk axes.</span>
+      </header>
+      <div class="hero">OpenCoven</div>
+      <p class="tagline">An open ecosystem for persistent AI familiars.</p>
+      <div class="h1">The Coven remembers.</div>
+      <div class="h2">A familiar is not a faceless bot.</div>
+      <p class="body">Most AI today feels temporary: a user opens a chat, explains context, gets a response, and starts over. OpenCoven is built around a different future — AI that can stay. The next generation of AI should be durable, personal systems that remember what matters, understand their purpose, use tools, collaborate with other agents, and grow alongside the people and projects they serve.</p>
+      <blockquote class="quote">“AI should be powerful without becoming opaque, personal without pretending to be human, and extensible without collapsing into chaos.”</blockquote>
+      <div class="footrow">
+        <span class="italic">the whispering woods</span>
+        <span class="meta">familiar · memory · continuity · tools</span>
+      </div>
+    </section>
+  </div>
+
+  <footer class="page">
+    Charm — pick a winner and reply. Route lives at <span style="color:var(--text-primary)">/preview/fonts.html</span> (static, unaffected by app graph).
+  </footer>
+</div>
+</body>
+</html>

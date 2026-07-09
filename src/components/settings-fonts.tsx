@@ -111,6 +111,7 @@ const ALIGN_LABEL: Record<ReadingAlign, string> = {
 };
 
 const PREVIEW: Record<FontSlot, string> = {
+  serif: "The coven remembers what the machine forgets.",
   sans: "The quick brown fox jumps over 0123",
   mono: "const x = 42; // 0123",
 };
@@ -343,6 +344,7 @@ export function FontSettings() {
         {/* Live specimen — one inset panel, both samples, no center gutter. */}
         <div className="px-4 py-3">
           <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] divide-y divide-[var(--border-hairline)]">
+            <FontSpecimen slot="serif" label="Display" fontId={selectedPair.serifId} />
             <FontSpecimen slot="sans" label="Interface" fontId={selectedPair.sansId} />
             <FontSpecimen slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
           </div>

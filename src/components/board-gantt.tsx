@@ -442,7 +442,11 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
 
   // Pinch / ⌘-scroll to zoom the timeline, anchored at the cursor (the day under
   // the pointer stays put). A native non-passive listener so we can preventDefault
-  // the browser's page-zoom; plain scroll is left alone (it pans the timeline).
+  // the browser's page-zoom; plain scroll is left alone (it pans/scrolls the
+  // timeline natively — vertical when rows overflow, horizontal across days).
+  // Re-runs when the row count crosses zero: the empty state renders no scroller,
+  // so a mount-only ([]) effect grabbed a null ref and zoom never attached once
+  // data arrived.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -463,7 +467,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [allRows.length === 0]);
 
   // Quick-schedule presets for undated tasks: drop a task onto this/next week
   // (Mon–Sun) without opening the date pickers.

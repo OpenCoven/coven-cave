@@ -7,6 +7,7 @@ import {
   type FamiliarAnalyticsData,
   type FamiliarAnalyticsModel,
 } from "@/components/familiar-analytics-data";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -17,6 +18,7 @@ import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
+import type { Familiar } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
 import { formatTimeToFirstReply, timeToFirstReplyMs } from "@/lib/first-run-stamps";
@@ -35,6 +37,8 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Truthful freshness stamp — set when a load actually lands, never faked.
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -43,6 +47,7 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
     setError(null);
     try {
       setData(await loadFamiliarAnalyticsData(familiarId));
+      setUpdatedAt(new Date().toISOString());
       if (quiet) announce("Analytics refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "analytics data unavailable");
@@ -76,7 +81,7 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
           <span>{error}</span>
         </div>
       ) : null}
-      {model ? <FamiliarAnalyticsContent model={model} onRefresh={() => void load({ quiet: true })} refreshing={refreshing} /> : (
+      {model ? <FamiliarAnalyticsContent model={model} onRefresh={() => void load({ quiet: true })} refreshing={refreshing} updatedAt={updatedAt} /> : (
         <EmptyState
           compact
           icon="ph:users-three-bold"
@@ -166,15 +171,98 @@ function trendColor(averageConfidence: number): string {
   return "var(--color-danger)";
 }
 
+/**
+ * Empty state for the Response confidence panel. When the familiar hasn't
+ * enabled response self-reporting, the notice carries the fix — a one-click
+ * enable that persists `autoSelfReport` to cave-config (the same key the
+ * Studio's Brain tab toggles) instead of sending the user hunting through
+ * Settings.
+ */
+function SelfReportEmptyState({
+  familiar,
+  onSelfReportEnabled,
+}: {
+  familiar: Familiar | null;
+  onSelfReportEnabled?: () => void;
+}) {
+  const { announce } = useAnnouncer();
+  const [enabling, setEnabling] = useState(false);
+  // Truthful optimistic latch: set only after the config write succeeds, so
+  // the notice never claims a state the daemon didn't accept.
+  const [justEnabled, setJustEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selfReportOn = justEnabled || Boolean(familiar?.autoSelfReport);
+
+  const enable = useCallback(async () => {
+    if (!familiar) return;
+    setEnabling(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiars: { [familiar.id]: { autoSelfReport: true } } }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? res.statusText);
+      setJustEnabled(true);
+      announce("Response self-reporting enabled.");
+      onSelfReportEnabled?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "couldn't save");
+    } finally {
+      setEnabling(false);
+    }
+  }, [announce, familiar, onSelfReportEnabled]);
+
+  if (selfReportOn) {
+    return (
+      <EmptyState
+        compact
+        icon="ph:chart-bar-bold"
+        headline="No response confidence events yet."
+        subtitle={
+          justEnabled
+            ? "Self-reporting enabled — reports are written when a chat closes or is archived."
+            : "Self-reporting is on — reports are written when a chat closes or is archived."
+        }
+      />
+    );
+  }
+
+  return (
+    <EmptyState
+      compact
+      icon="ph:chart-bar-bold"
+      headline={RESPONSE_CONFIDENCE_EMPTY_STATE}
+      subtitle={error ? `Couldn't enable: ${error}` : undefined}
+      actions={
+        familiar ? (
+          <Button size="sm" variant="primary" loading={enabling} onClick={() => void enable()}>
+            Enable self-reporting
+          </Button>
+        ) : undefined
+      }
+    />
+  );
+}
+
 const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
   rollup,
   events,
+  familiar,
+  onSelfReportEnabled,
 }: {
   rollup: ResponseConfidenceRollup;
   events: ResponseConfidenceEvent[];
+  familiar: Familiar | null;
+  onSelfReportEnabled?: () => void;
 }) {
   if (rollup.eventCount === 0) {
-    return <EmptyState compact icon="ph:chart-bar-bold" headline={RESPONSE_CONFIDENCE_EMPTY_STATE} />;
+    return (
+      <SelfReportEmptyState familiar={familiar} onSelfReportEnabled={onSelfReportEnabled} />
+    );
   }
   const trend = buildResponseTrend(events);
 
@@ -402,7 +490,9 @@ const INSIGHT_ICON: Record<"good" | "warn" | "bad", Parameters<typeof Icon>[0]["
   bad: "ph:warning-circle",
 };
 
-/** One-line plain-language read of the familiar's state — turns numbers into meaning. */
+/** One-line plain-language read of the familiar's state — turns numbers into meaning.
+ *  When the read is actionable (attention tones with open heal requests), the
+ *  banner carries its own drill-through so the next step is one click. */
 const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   model,
   healRequestCount,
@@ -411,10 +501,17 @@ const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   healRequestCount: number;
 }) {
   const insight = deriveAnalyticsInsight(model, healRequestCount);
+  const actionable = insight.tone !== "good" && healRequestCount > 0;
   return (
     <p className={`fa-insight fa-insight--${insight.tone}`} role="note">
       <Icon name={INSIGHT_ICON[insight.tone]} aria-hidden />
       <span>{insight.text}</span>
+      {actionable ? (
+        <a className="fa-insight__action focus-ring" href="#fa-heal">
+          Review
+          <Icon name="ph:caret-right" aria-hidden />
+        </a>
+      ) : null}
     </p>
   );
 });
@@ -436,6 +533,8 @@ const FamiliarKpis = memo(function FamiliarKpis({
             <span className="fa-kpi__head">
               <Icon name={kpi.icon} aria-hidden />
               <span className="fa-kpi__label">{kpi.label}</span>
+              {/* Drill cue — reveals on hover/focus so tiles read as links. */}
+              <Icon name="ph:caret-right" className="fa-kpi__go" aria-hidden />
             </span>
             <strong className="fa-kpi__value">{kpi.value}</strong>
             <span className="fa-kpi__sub">{kpi.sub}</span>
@@ -450,10 +549,13 @@ export function FamiliarAnalyticsContent({
   model,
   onRefresh,
   refreshing = false,
+  updatedAt = null,
 }: {
   model: FamiliarAnalyticsModel;
   onRefresh?: () => void;
   refreshing?: boolean;
+  /** Truthful last-load stamp for the topbar freshness readout. */
+  updatedAt?: string | null;
 }) {
   const familiarName = model.familiar?.display_name ?? model.familiarId;
   const familiarRole = model.familiar?.role || model.familiar?.harness || "Familiar";
@@ -483,10 +585,15 @@ export function FamiliarAnalyticsContent({
         <a href="/dashboard/familiars/growth">Familiars</a>
         <span>/</span>
         <b>Analytics</b>
+        {updatedAt ? (
+          <span className="fa-topbar__updated">
+            Updated <RelativeTime iso={updatedAt} />
+          </span>
+        ) : null}
         {onRefresh ? (
           <button
             type="button"
-            className="retro-icon-btn"
+            className={`retro-icon-btn${refreshing ? " is-refreshing" : ""}`}
             aria-label="Refresh familiar analytics"
             title="Refresh familiar analytics"
             disabled={refreshing}
@@ -544,13 +651,27 @@ export function FamiliarAnalyticsContent({
         <FaSection
           id="fa-response-confidence"
           title="Response confidence"
-          wide
+          // An empty rollup renders a one-line empty state — spanning the full
+          // width would give the page's hero slot to a placeholder and push
+          // real signal below the fold, so the section only widens with data.
+          wide={model.responseConfidenceRollup.eventCount > 0}
           count={`${model.responseConfidenceRollup.eventCount} ${model.responseConfidenceRollup.eventCount === 1 ? "event" : "events"}`}
         >
-          <ResponseConfidenceSection rollup={model.responseConfidenceRollup} events={model.responseConfidenceEvents} />
+          <ResponseConfidenceSection
+            rollup={model.responseConfidenceRollup}
+            events={model.responseConfidenceEvents}
+            familiar={model.familiar}
+            onSelfReportEnabled={onRefresh}
+          />
         </FaSection>
 
         <ConfidenceBreakdown confidence={model.confidence} />
+
+        {/* Contract compliance pairs with the confidence breakdown — both read
+            on identity health — and sits above the fold instead of dangling
+            under the operational panels. The #fa-contract KPI drill-through
+            keeps working wherever the section lives. */}
+        <ContractCompliance report={model.contractReport} />
 
         <FaSection
           id="fa-heal"
@@ -567,8 +688,6 @@ export function FamiliarAnalyticsContent({
         >
           <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
         </FaSection>
-
-        <ContractCompliance report={model.contractReport} />
       </div>
     </>
   );

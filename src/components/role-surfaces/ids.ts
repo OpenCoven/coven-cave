@@ -1,0 +1,7 @@
+/** Role Surface ids — shared between each room component (for state keying)
+ *  and the registration manifest, without pulling component code into the
+ *  registration chunk. */
+
+export const RESEARCHER_SURFACE_ID = "researcher-desk";
+export const MESSENGER_SURFACE_ID = "messenger-ops";
+export const INDEXER_SURFACE_ID = "indexer-archive";

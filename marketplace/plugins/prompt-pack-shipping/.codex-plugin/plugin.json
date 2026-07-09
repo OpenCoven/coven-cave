@@ -1,0 +1,24 @@
+{
+  "name": "prompt-pack-shipping",
+  "version": "0.1.0",
+  "description": "Release, review, and team-ritual prompts \u2014 launch notes, detailed PRs, bug repros, standups, retros. Showcases multi-placeholder templates with defaults. Installed templates appear under /prompts and the Prompt snippets picker.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Prompt Pack: Shipping",
+    "shortDescription": "Release, review, and team-ritual prompts \u2014 launch notes, detailed PRs, bug repros, standups, retros. Showcases multi-placeholder templates with defaults. Installed templates appear under /prompts and the Prompt snippets picker.",
+    "longDescription": "Release, review, and team-ritual prompts \u2014 launch notes, detailed PRs, bug repros, standups, retros. Showcases multi-placeholder templates with defaults. Installed templates appear under /prompts and the Prompt snippets picker.",
+    "developerName": "OpenCoven",
+    "category": "Productivity",
+    "capabilities": [
+      "prompts",
+      "templates",
+      "release",
+      "team",
+      "review"
+    ],
+    "defaultPrompt": "Help me use Prompt Pack: Shipping safely."
+  }
+}

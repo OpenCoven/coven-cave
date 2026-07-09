@@ -11,7 +11,10 @@ const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.
 
 assert.match(modeType, /\| "grimoire"/, "grimoire is a WorkspaceMode");
 assert.match(workspace, /grimoire: "Grimoire"/, "grimoire has a page title (sr-only h1)");
-assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView \/>/, "grimoire mode renders GrimoireView");
+assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grimoireView\}/, "grimoire mode renders GrimoireView with the controlled view");
+// Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
+// Grimoire on its Journal tab instead of redirecting to Settings.
+assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\);/, "the journal mode routes into the Grimoire Journal tab");
 assert.match(sidebar, /\| "grimoire"/, "grimoire is a FolderMode");
 assert.match(sidebar, /id: "grimoire", label: "Grimoire"/, "grimoire has a sidebar row (and ⌘K palette entry via FOLDER_MODES)");
 
@@ -61,12 +64,12 @@ assert.match(view, /@container\/grimoire/, "layout adapts via container queries"
 // hides when the graph is showing, and the graph pane gets its own back row.
 assert.match(
   view,
-  /selection \|\| showGraph \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
-  "the rail yields to the graph on narrow widths",
+  /selection \|\| view !== "docs" \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  "the rail yields to the graph/journal tabs on narrow widths",
 );
 assert.match(
   view,
-  /onClick=\{\(\) => setShowGraph\(false\)\}\s*\n\s*aria-label="Back to document list"/,
+  /onClick=\{\(\) => setView\("docs"\)\}\s*\n\s*aria-label="Back to document list"/,
   "the graph pane has its own narrow-width back affordance",
 );
 
@@ -191,12 +194,27 @@ assert.match(view, /const localGraph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "
 assert.match(view, /markdown: k\.body/, "the fallback graph reads each knowledge body (already loaded)");
 assert.match(view, /const graph = scan\?\.graph \?\? localGraph/, "the server scan wins, the local graph stands in — never blank");
 assert.match(view, /if \(firstLoadDoneRef\.current\) refreshGraph\(\)/, "saves/deletes rescan the graph (mount already fetched)");
-assert.match(view, /aria-label="Grimoire view"/, "the Docs|Graph switch is a labelled control group");
-assert.match(view, /aria-pressed=\{!showGraph\}[\s\S]{0,1000}aria-pressed=\{showGraph\}/, "the segmented control exposes pressed state");
+assert.match(view, /aria-label="Grimoire view"/, "the Docs|Journal|Graph switch is a labelled control group");
 assert.match(
   view,
-  /showGraph \? \([\s\S]{0,1200}<GrimoireGraphView[\s\S]{0,400}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
+  /aria-pressed=\{view === "docs"\}[\s\S]{0,900}aria-pressed=\{view === "journal"\}[\s\S]{0,900}aria-pressed=\{view === "graph"\}/,
+  "the three-way segmented control exposes pressed state for docs, journal, and graph",
+);
+assert.match(
+  view,
+  /view === "graph" \? \([\s\S]{0,1200}<GrimoireGraphView[\s\S]{0,400}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
   "the graph replaces the detail pane and opens the clicked doc",
+);
+// Journal tab renders the full daily-reflection surface inside Grimoire (cave).
+assert.match(
+  view,
+  /view === "journal" \? \([\s\S]{0,600}<JournalEntries familiars=\{familiars\} activeFamiliarId=\{activeFamiliarId\}/,
+  "the Journal tab mounts the JournalEntries surface, coven-wide",
+);
+assert.match(
+  view,
+  /import \{ JournalEntries \} from "@\/components\/journal\/journal-entries"/,
+  "grimoire-view imports the shared journal surface",
 );
 assert.match(view, /scanning=\{scanning\}/, "the graph view knows a scan is in flight");
 assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is only surfaced when there is no scan to show");
@@ -208,12 +226,12 @@ assert.match(view, /scanError=\{scan \? null : scanError\}/, "a failed scan is o
 // the rail is then hidden.
 assert.match(
   view,
-  /selection \|\| showGraph \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
-  "the rail hides on narrow when a doc is open OR the graph is up",
+  /selection \|\| view !== "docs" \? "hidden @min-\[880px\]\/grimoire:flex" : ""/,
+  "the rail hides on narrow when a doc is open OR a non-docs tab is up",
 );
 assert.match(
   view,
-  /onClick=\{\(\) => setShowGraph\(false\)\}[\s\S]{0,120}aria-label="Back to document list"/,
+  /onClick=\{\(\) => setView\("docs"\)\}[\s\S]{0,120}aria-label="Back to document list"/,
   "the graph view offers a back-to-documents affordance (rail is hidden on narrow)",
 );
 

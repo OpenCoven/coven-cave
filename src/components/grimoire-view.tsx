@@ -22,6 +22,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Icon, type IconName } from "@/lib/icon";
 import { MdEditor, type MdEditorSaveResult } from "@/components/md-editor/md-editor";
 import { MemoryMdEditor } from "@/components/md-editor/memory-md-editor";
+import { JournalEntries } from "@/components/journal/journal-entries";
+import "@/styles/journal.css";
+import type { Familiar } from "@/lib/types";
 import { parseMdDocument, serializeMdDocument, type MdDocument } from "@/lib/md-frontmatter";
 import { relativeTime } from "@/lib/relative-time";
 import {
@@ -727,13 +730,37 @@ function GrimoireDocLinks({
 
 // ── Surface ──────────────────────────────────────────────────────────────────
 
-export function GrimoireView() {
+export type GrimoireViewKind = "docs" | "graph" | "journal";
+
+export function GrimoireView({
+  view: controlledView,
+  onViewChange,
+  familiars = [],
+  activeFamiliarId = null,
+}: {
+  /** Which tab shows. Controlled by the Workspace so the Journal nav row can
+   *  route straight into the Journal tab; falls back to internal state when the
+   *  view is rendered bare (tests). */
+  view?: GrimoireViewKind;
+  onViewChange?: (view: GrimoireViewKind) => void;
+  /** Roster for the Journal tab (reflection filter + attribution). */
+  familiars?: Familiar[];
+  activeFamiliarId?: string | null;
+} = {}) {
   const [knowledge, setKnowledge] = useState<KnowledgeEntry[] | null>(null);
   const [memory, setMemory] = useState<MemoryEntry[] | null>(null);
   const [journal, setJournal] = useState<JournalSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [showGraph, setShowGraph] = useState(false);
+  const [internalView, setInternalView] = useState<GrimoireViewKind>("docs");
+  const view = controlledView ?? internalView;
+  const setView = useCallback(
+    (next: GrimoireViewKind) => {
+      onViewChange?.(next);
+      if (controlledView === undefined) setInternalView(next);
+    },
+    [controlledView, onViewChange],
+  );
   const { scan, scanning, scanError, refreshGraph } = useGrimoireGraphScan();
   const [collapsedSections, setCollapsedSections] = useState<Record<RailSectionId, boolean>>(
     readCollapsedSections,
@@ -1266,10 +1293,10 @@ export function GrimoireView() {
           >
             <button
               type="button"
-              aria-pressed={!showGraph}
-              onClick={() => setShowGraph(false)}
+              aria-pressed={view === "docs"}
+              onClick={() => setView("docs")}
               className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
-                !showGraph
+                view === "docs"
                   ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               }`}
@@ -1279,10 +1306,23 @@ export function GrimoireView() {
             </button>
             <button
               type="button"
-              aria-pressed={showGraph}
-              onClick={() => setShowGraph(true)}
+              aria-pressed={view === "journal"}
+              onClick={() => setView("journal")}
               className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
-                showGraph
+                view === "journal"
+                  ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              <Icon name="ph:calendar-blank" width={11} aria-hidden />
+              Journal
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "graph"}
+              onClick={() => setView("graph")}
+              className={`focus-ring inline-flex h-full items-center gap-1 rounded px-2 text-[11px] transition-colors ${
+                view === "graph"
                   ? "bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               }`}
@@ -1308,7 +1348,7 @@ export function GrimoireView() {
           // so only one may show. Hide the rail when a doc is open OR the graph
           // is up — otherwise the rail wins the width and the graph is pushed
           // off-screen (Graph mode was dead on phones). Wide keeps both.
-          selection || showGraph ? "hidden @min-[880px]/grimoire:flex" : ""
+          selection || view !== "docs" ? "hidden @min-[880px]/grimoire:flex" : ""
         }`}
       >
         {/* Title + surface verbs moved to the compact band above; the rail
@@ -1474,10 +1514,18 @@ export function GrimoireView() {
       </aside>
       <main
         className={`h-full min-h-0 min-w-0 flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 ${
-          selection || showGraph ? "" : "hidden @min-[880px]/grimoire:block"
+          selection || view !== "docs" ? "" : "hidden @min-[880px]/grimoire:block"
         }`}
       >
-        {showGraph ? (
+        {view === "journal" ? (
+          // Journal tab — the full daily-reflection surface (day rail, generate,
+          // edit/delete with undo), coven-wide (no familiar scope). Not
+          // `standalone`: it's inside the Workspace, so "Run now" and toast
+          // actions ride the live event bus.
+          <div className="grimoire-journal-tab h-full min-h-0">
+            <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} />
+          </div>
+        ) : view === "graph" ? (
           <div className="flex h-full min-h-0 flex-col">
             {/* Narrow-only: the rail is hidden while the graph is up (see the
                 aside condition above), so give an explicit way back to the list
@@ -1485,7 +1533,7 @@ export function GrimoireView() {
             <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 @min-[880px]/grimoire:hidden">
               <button
                 type="button"
-                onClick={() => setShowGraph(false)}
+                onClick={() => setView("docs")}
                 aria-label="Back to document list"
                 className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
               >
@@ -1501,7 +1549,7 @@ export function GrimoireView() {
                 scanError={scan ? null : scanError}
                 onOpen={(ref) => {
                   openDoc(ref);
-                  setShowGraph(false);
+                  setView("docs");
                 }}
               />
             </div>

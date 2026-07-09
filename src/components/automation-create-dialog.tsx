@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { parseListInput } from "@/lib/automations/list-input";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { CronPromptBar } from "@/components/cron-prompt-bar";
+import type { CronPromptUpdate } from "@/lib/cron-prompt";
 
 export type AutomationCreateInput = {
   name: string;
@@ -81,6 +83,29 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
     );
   };
 
+  // Prompt-driven generate (CronPromptBar): one sentence fills the form —
+  // schedule, name, goals, deliverables — and the user reviews before Create.
+  const applyPromptUpdate = (update: CronPromptUpdate) => {
+    if (update.schedule) {
+      if (update.schedule.mode) setScheduleMode(update.schedule.mode);
+      if (update.schedule.time) setTime(update.schedule.time);
+      if (update.schedule.days) setDays(update.schedule.days);
+    }
+    if (update.name) setName(update.name);
+    if (update.goals) {
+      setGoals((prev) =>
+        update.goalsOp === "append" && prev.trim() ? `${prev.trimEnd()}\n${update.goals}` : update.goals!,
+      );
+    }
+    if (update.deliverables) {
+      setDeliverables((prev) =>
+        update.deliverablesOp === "append" && prev.trim()
+          ? `${prev.trimEnd()}\n${update.deliverables}`
+          : update.deliverables!,
+      );
+    }
+  };
+
   const rrule = buildCodexRrule(scheduleMode, time, days, rawRrule);
   const validSchedule =
     scheduleMode === "raw"
@@ -134,6 +159,11 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
         </div>
 
         <div className="automation-create-dialog__body">
+          <CronPromptBar
+            onApply={applyPromptUpdate}
+            placeholder='Describe it — "name it Nightly triage, every weekday at 9am, check open PRs"'
+          />
+
           <section className="automation-create-dialog__section" aria-label="Essentials">
             <div className="automation-create-dialog__section-header">
               <h3>Essentials</h3>

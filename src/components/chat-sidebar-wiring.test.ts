@@ -27,12 +27,12 @@ assert.match(
 // ── Chat-first IA (cave-hsa6): the app boots straight into the conversation. ──
 assert.match(
   workspace,
-  /const \[mode, setModeRaw\] = useState<WorkspaceMode>\("chat"\)/,
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
   "workspace should boot into chat mode, not home",
 );
 assert.match(
   workspace,
-  /const \[lastNonChatMode, setLastNonChatMode\] = useState<WorkspaceMode>\("home"\)/,
+  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
   "the chat back-control still falls back to home when no other surface was visited",
 );
 
@@ -116,7 +116,7 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="sm"/,
+  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm"/,
   "ThreadRow renders the shared ProjectAvatar tile with an accessible project name",
 );
 assert.match(

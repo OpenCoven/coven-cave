@@ -67,7 +67,7 @@ assert.match(
 // desktop the left panel must stay open when an option is selected.
 assert.match(
   workspace,
-  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as WorkspaceMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
   "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
 assert.match(

@@ -7,6 +7,37 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.166] - 2026-07-09
+
+> 📓 **Journal moves into the Grimoire** — daily reflections are now a tab beside Docs and Graph, so the whole knowledge surface lives in one room. Plus registry-driven runtime adapter scaffolds and an analytics contract-compliance pass.
+
+Patch release on top of v0.0.165.
+
+### Features
+- **Grimoire: Journal is now a tab** (#2854). The Docs/Graph switcher grows a third tab — Docs · Journal · Graph — rendering the full daily-reflection surface (day rail, generate, edit/delete with undo) in place. The Journal nav item opens it directly instead of routing to Settings; per-familiar journals still live in Settings → Familiars → Journal.
+
+### Improvements
+- **Runtimes: adapter scaffolds come straight from the registry** (#2853, cave-laxg).
+- **Analytics: contract compliance shown beside confidence, with one-click enable for self-reporting** (#2852, cave-ydv5).
+
+
+## [0.0.165] - 2026-07-09
+
+> 🏛️ **Rooms for every vocation** — the Cave becomes role-aware: a registry-driven Role Surface system gives Familiars specialized workspaces (a Research Desk, a Comms operations center, an Archive) instead of generic tabs. Plus the Coven adopts its canonical typography, an "ultimate Enhance" streaming rewrite across every composer, and a full prompt-template + marketplace-pack workflow.
+
+A feature release on top of v0.0.164.
+
+### Features
+- **Role Surface system — registry-driven rooms for Familiar vocations** (#2849, cave-htyp). A role-aware Cave with no role-specific branching in the shell: register a surface and it becomes a first-class room. Ships three — Research Desk (researcher), Comms Operations (messenger), The Archive (indexer) — with per-Familiar × per-surface state. See `docs/role-surfaces.md`.
+- **Typography: adopt the Coven canon** — EB Garamond display, Inter body, JetBrains Mono (#2850).
+- **Composer: ultimate Enhance** — model-backed streaming rewrite, race-safe, with an intent menu, across all three composers (#2842, cave-b6c2).
+- **Prompts: template power** — placeholder Tab flow, favorites/recents/tags, save/edit/delete (#2847, cave-jg6k).
+- **Marketplace: browsable prompt packs** — real previews, one-click Try it, prompt-pack shipping + docs (#2848, cave-1f9h).
+- **Runtimes: sync accepted runtimes from the coven-runtimes registry** (#2841) — one command (or an automated PR) brings a newly-accepted runtime into Cave.
+- **Chat: project group headers gain an activity meta line + explicit project colors** (#2846).
+- **Cron: a prompt bar + analytics UX polish**, alongside a static Coven font preview (#2843).
+
+
 ## [0.0.164] - 2026-07-09
 
 > 🚦 **Chrome that knows when to leave** — the macOS traffic lights hide with the side panel and glide back when it opens, Dia-style. iOS gets real split layouts on wide windows and a decluttered chat header, cron details fit every screen, and releases now stamp themselves with one command.

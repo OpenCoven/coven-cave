@@ -12,7 +12,7 @@ import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-m
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
-import { GrimoireView } from "@/components/grimoire-view";
+import { GrimoireView, type GrimoireViewKind } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
@@ -82,6 +82,18 @@ import {
   shouldRegenerateNarrative,
 } from "@/lib/daily-narrative";
 import type { Familiar, SessionRow } from "@/lib/types";
+import {
+  getRoleSurface,
+  isRoleSurfaceMode,
+  parseRoleSurfaceMode,
+  roleSurfaceMode,
+  type RoleSurfaceMode,
+} from "@/lib/role-surfaces";
+import { useRoleSurfaceSession } from "@/lib/use-role-surfaces";
+import { RoleSurfaceHost } from "@/components/role-surface-host";
+// Role Surfaces self-register via this manifest — the shell only ever handles
+// the generic `surface:<id>` mode and never names a role.
+import "@/components/role-surfaces/register";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -101,6 +113,10 @@ import {
 } from "@/lib/workspace-tiles";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
+
+// Everything the primary detail pane can show: the built-in workspace modes
+// plus registered Role Surfaces via the generic `surface:<id>` mode.
+type CaveMode = WorkspaceMode | RoleSurfaceMode;
 
 type WorkspaceTauriInternals = {
   invoke?: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -297,12 +313,16 @@ export function Workspace() {
   // empty state). Home stays one step away (⌘1 / nav / the chat Back control,
   // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
   // #chat-…) and cave:navigate-mode override this as before.
-  const [mode, setModeRaw] = useState<WorkspaceMode>("chat");
+  const [mode, setModeRaw] = useState<CaveMode>("chat");
+  // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
+  // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
+  // and so the choice persists across Grimoire remounts within a session.
+  const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
   // Group Chat retired its standalone page — it's now a tab inside the Chat
   // surface. Any request for the legacy `groupchat` mode (nav, deep link,
   // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
   // tab, so `mode` is never actually "groupchat" and the surface never flashes.
-  const setMode = useCallback((next: WorkspaceMode) => {
+  const setMode = useCallback((next: CaveMode) => {
     if (next === "groupchat") {
       // Set the latch synchronously so a freshly-mounting ChatSurface opens the
       // Group tab on mount; the event covers an already-mounted ChatSurface.
@@ -312,18 +332,20 @@ export function Workspace() {
       return;
     }
     if (next === "journal") {
-      // The Journal page retired — it lives in Settings → Familiars → Journal.
-      // Every entry point (sidebar row, ⌘K palette, ?mode= deep link,
-      // cave:navigate-mode, dashboard links) funnels through setMode, so this
-      // one redirect covers them all.
-      openFamiliarStudioSettingsTab("journal");
+      // Journal is now a tab inside the Grimoire surface. Every entry point
+      // (sidebar row, ⌘K palette, ?mode= deep link, cave:navigate-mode,
+      // dashboard links) funnels through setMode, so opening Grimoire on its
+      // Journal tab here covers them all. (Per-familiar journals still live in
+      // Settings → Familiars → Journal.)
+      setGrimoireView("journal");
+      setModeRaw("grimoire");
       return;
     }
     setModeRaw(next);
   }, []);
   // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
   // Its back control returns to the surface the user came from.
-  const [lastNonChatMode, setLastNonChatMode] = useState<WorkspaceMode>("home");
+  const [lastNonChatMode, setLastNonChatMode] = useState<CaveMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -728,7 +750,9 @@ export function Workspace() {
     // "journal" persists from before the page retired; restoring it would
     // hard-navigate to Settings on a mere familiar select. Stay put instead.
     else if (last === "journal") { /* no-op */ }
-    else if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
+    // A persisted Role Surface mode restores too — if this familiar no longer
+    // holds the role, the visibility effect below falls back generically.
+    else if (last && (VALID_MODES.has(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
@@ -2004,6 +2028,27 @@ export function Workspace() {
     window.setTimeout(() => browserPaneRef.current?.navigateTo(url), 0);
   }, []);
 
+  // Role Surfaces: build the shared context from the live session and resolve
+  // which registered surfaces the active familiar should see. Entirely
+  // registry-driven — the shell never branches on a specific role.
+  const roleSurfaceSession = useRoleSurfaceSession({
+    familiar: active,
+    sessions,
+    activeSessionId: routerRef.current?.currentSessionId() ?? null,
+    daemonRunning,
+    openUrl: openUrlInAppBrowser,
+    openSession: openFamiliarSession,
+  });
+
+  // If the current mode is a Role Surface this familiar can't see (role
+  // unassigned, surface unregistered, familiar switched away), fall back home.
+  useEffect(() => {
+    if (!isRoleSurfaceMode(mode)) return;
+    if (!roleSurfaceSession.rolesLoaded) return;
+    const surfaceId = parseRoleSurfaceMode(mode);
+    if (!roleSurfaceSession.visibleSurfaces.some((s) => s.id === surfaceId)) setMode("home");
+  }, [mode, roleSurfaceSession.rolesLoaded, roleSurfaceSession.visibleSurfaces, setMode]);
+
   useEffect(() => {
     const openPendingBrowserUrl = () => {
       const pending = window.sessionStorage.getItem(PENDING_IN_APP_BROWSER_URL_KEY);
@@ -2057,6 +2102,14 @@ export function Workspace() {
     <SidebarMinimal
       mode={mode}
       splitPageModes={splitPageModes}
+      // Registered Role Surfaces visible for the active familiar — rendered by
+      // the sidebar as generic rows (rooms), never named in shell code.
+      roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
+        mode: roleSurfaceMode(surface.id),
+        label: surface.title,
+        iconName: surface.iconName,
+        description: surface.description,
+      }))}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       onNewChat={() => {
@@ -2073,7 +2126,7 @@ export function Workspace() {
           shellRef.current?.dismissNavMobile();
           return;
         }
-        setMode(m as WorkspaceMode);
+        setMode(m as CaveMode);
         shellRef.current?.dismissNavMobile();
       }}
       onOpenSession={(id) => {
@@ -2136,8 +2189,17 @@ export function Workspace() {
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
   // secondary.
-  const renderSurface = (mode: WorkspaceMode): ReactNode =>
-    mode === "agents" ? (
+  const renderSurface = (mode: CaveMode): ReactNode =>
+    isRoleSurfaceMode(mode) ? (
+      // Generic Role Surface host — the registry decides what renders here.
+      <RoleSurfaceHost
+        surfaceId={parseRoleSurfaceMode(mode) ?? ""}
+        context={roleSurfaceSession.context}
+        visibleSurfaces={roleSurfaceSession.visibleSurfaces}
+        rolesLoaded={roleSurfaceSession.rolesLoaded}
+        onLeave={() => setMode("home")}
+      />
+    ) : mode === "agents" ? (
       <FamiliarsView
         familiars={familiars}
         sessions={sessions}
@@ -2208,7 +2270,12 @@ export function Workspace() {
         }}
       />
     ) : mode === "grimoire" ? (
-      <GrimoireView />
+      <GrimoireView
+        view={grimoireView}
+        onViewChange={setGrimoireView}
+        familiars={familiars}
+        activeFamiliarId={activeId}
+      />
     ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
@@ -2308,7 +2375,11 @@ export function Workspace() {
       ref={detailFadeRef}
       className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden"
     >
-      <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
+      <h1 className="sr-only">
+        {(isRoleSurfaceMode(mode)
+          ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
+          : WORKSPACE_MODE_TITLES[mode]) ?? "Coven Cave"}
+      </h1>
       {renderSurface(mode)}
     </div>
   );

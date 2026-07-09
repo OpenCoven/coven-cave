@@ -31,7 +31,10 @@ import {
 } from "@/lib/slash-prompt";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
-import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
+import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
+import { recordPromptRecent } from "@/lib/prompt-prefs";
+import { SaveTemplateModal } from "@/components/save-template-modal";
+import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
 import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
@@ -117,7 +120,6 @@ type Props = {
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
 // typing on the home screen (mirrors the chat composer's draft persistence).
-const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
 const HOME_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the home composer.
 const HOME_HISTORY_KEY = "cave:home-composer-history:v1";
@@ -142,6 +144,9 @@ export function HomeComposer({
   const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
+  // Save-as-template (cave-jg6k): the Options menu action snapshots the draft
+  // into the modal so edits while it is open don't mutate the form seed.
+  const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   // Persisted ↑/↓ prompt-history recall — shared hook (use-composer-history);
   // home records slash commands in history too, so pushes stay at call sites.
   const { push: pushHistory, handleArrowKey } = useComposerHistory(HOME_HISTORY_KEY);
@@ -311,6 +316,7 @@ export function HomeComposer({
   const insertPromptTemplate = useCallback(
     (p: PromptOption) => {
       const ins = promptInsertion(p);
+      recordPromptRecent(p.id);
       setText(ins.text);
       setSlashIdx(0);
       announce("Prompt inserted — edit and send.");
@@ -569,6 +575,11 @@ export function HomeComposer({
       // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
       // take priority over history/submit while one is open — shared hook.
       if (handleMenuKey(e)) return;
+      // Tab cycles {{placeholder}} tokens left in the draft (Shift+Tab
+      // reverses; Tab on a selected {{name|default}} accepts the default).
+      // After the menus — they own Tab-complete while open — and only when a
+      // token exists, so native focus-move survives (a11y).
+      if (handlePlaceholderTab(e, textareaRef.current, setText)) return;
       // plain Enter sends; Shift+Enter inserts newline. `isComposing` is true
       // for the Enter that confirms an IME candidate (CJK/pinyin/kana) —
       // treating it as "send" would fire a half-composed prompt and destroy
@@ -903,6 +914,8 @@ export function HomeComposer({
             hostValue={runtimeHost ?? LOCAL_HOST_ID}
             onHostPick={setRuntimeHost}
             disabled={sending}
+            onSaveAsTemplate={() => setSaveTemplateSeed(text)}
+            saveAsTemplateDisabled={!text.trim()}
             indicator={
               thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
               responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
@@ -965,6 +978,11 @@ export function HomeComposer({
         sessions={sessions}
         familiarNameById={familiarNameById}
         onOpenSession={onOpenSession}
+      />
+      <SaveTemplateModal
+        open={saveTemplateSeed !== null}
+        onClose={() => setSaveTemplateSeed(null)}
+        initialBody={saveTemplateSeed ?? ""}
       />
     </div>
   );
