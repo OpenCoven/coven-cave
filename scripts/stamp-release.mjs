@@ -195,7 +195,10 @@ function main() {
 
   const branch = `release/stamp-v${next}`;
   run("git", ["checkout", "-b", branch]);
-  run("git", ["add", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.file)]);
+  // -f: src-tauri/gen is gitignored but the generated iOS plist inside it is
+  // TRACKED — a plain `git add` exits 1 with the ignored-paths advice and
+  // killed the first real run of this script mid-stamp.
+  run("git", ["add", "-f", "CHANGELOG.md", ...STAMP_FILES.map((f) => f.file)]);
   // -S: repo rule — every commit lands Verified.
   run("git", ["commit", "-S", "-m", `chore(release): stamp v${next}\n\nPatch release on top of v${current}. Bumps all six version locations and\ndrafts the v${next} CHANGELOG entry for the ${subjects.length} commits since ${prevTag}.`]);
   run("git", ["push", "-u", "origin", branch]);
