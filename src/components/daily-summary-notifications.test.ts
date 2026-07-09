@@ -115,4 +115,31 @@ assert.match(toast, /aria-label=\{`Dismiss: \$\{t\.title\}`\}/, "the dismiss con
 assert.doesNotMatch(toast, />\s*Dismiss\s*<\/button>/, "the duplicate text Dismiss button stays gone");
 assert.match(toast, /kind: item\.kind,/, "toastFromItem carries the inbox kind for urgency");
 
+// ── Toast vibe pass (cave-18nk): glass surface + kind-tinted chip + pill actions ──
+assert.match(
+  toast,
+  /className="glass-overlay pointer-events-auto/,
+  "toasts sit on the shared glass surface like the bell popover",
+);
+assert.match(
+  toast,
+  /"daily-summary": "var\(--accent-presence\)"/,
+  "the daily report toast tints with presence, not the warning hue",
+);
+assert.match(
+  toast,
+  /\["--toast-accent" as string\]: KIND_ACCENT\[t\.kind \?\? "reminder"\]/,
+  "each toast carries its kind's accent as a CSS var",
+);
+assert.match(
+  toast,
+  /bg-\[color-mix\(in_oklch,var\(--toast-accent\)_14%,transparent\)\] text-\[var\(--toast-accent\)\]/,
+  "the icon chip wears the tint recipe (solid glyph over a 14% fill)",
+);
+assert.match(
+  toast,
+  /rounded-full border border-\[color-mix\(in_oklch,var\(--toast-accent\)_35%,transparent\)\]/,
+  "Open is a tinted pill, not a solid accent block (accent = presence, not CTA)",
+);
+
 console.log("daily-summary-notifications.test.ts: ok");

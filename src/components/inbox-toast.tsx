@@ -28,6 +28,16 @@ type Props = {
 
 const AUTO_DISMISS_MS = 8_000;
 
+/* Each kind wears its own tint — the daily report and familiar work carry
+   presence, while time-critical kinds keep the warning hue. The icon chip is
+   the toast's one flourish; everything else stays quiet surface. */
+const KIND_ACCENT: Record<NonNullable<Toast["kind"]>, string> = {
+  "daily-summary": "var(--accent-presence)",
+  agent: "var(--accent-presence)",
+  "response-needed": "var(--color-warning)",
+  reminder: "var(--color-warning)",
+};
+
 export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) {
   // Hover or focus anywhere inside a toast pauses its auto-hide (WCAG 2.2.1) —
   // content stopped vanishing mid-read. Unpausing re-arms the full window,
@@ -70,14 +80,20 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(t.id, false);
           }}
-          className="pointer-events-auto rounded-xl border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
-          style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
+          className="glass-overlay pointer-events-auto rounded-xl border border-[var(--border-strong)] p-3 shadow-2xl"
+          style={{
+            animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)",
+            ["--toast-accent" as string]: KIND_ACCENT[t.kind ?? "reminder"],
+          }}
         >
-          <div className="mb-1 flex items-start gap-2">
-            <span className="mt-0.5 shrink-0 text-[var(--color-warning)]" aria-hidden>
+          <div className="mb-1 flex items-start gap-2.5">
+            <span
+              className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-[color-mix(in_oklch,var(--toast-accent)_14%,transparent)] text-[var(--toast-accent)]"
+              aria-hidden
+            >
               <Icon name={t.iconName ?? "ph:alarm-fill"} />
             </span>
-            <span className="flex-1 text-sm font-medium text-[var(--text-primary)]">{t.title}</span>
+            <span className="flex-1 pt-0.5 text-[13px] font-semibold leading-snug text-[var(--text-primary)]">{t.title}</span>
             <button
               onClick={() => onDismiss(t.id)}
               className="focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -94,14 +110,17 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
             />
           ) : null}
           {t.body ? (
-            <p className="mb-2 line-clamp-3 text-[11px] text-[var(--text-secondary)]">{t.body}</p>
+            <p className="mb-2.5 line-clamp-3 pl-[34px] text-[11px] leading-relaxed text-[var(--text-secondary)]">{t.body}</p>
           ) : null}
-          <div className="flex gap-1.5">
-            <SnoozeMenu onSnooze={(untilIso) => onSnooze(t, untilIso)} />
+          <div className="flex items-center justify-end gap-1.5">
+            <SnoozeMenu
+              onSnooze={(untilIso) => onSnooze(t, untilIso)}
+              triggerClassName="focus-ring rounded-full border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            />
             {onOpen ? (
               <button
                 onClick={() => onOpen(t)}
-                className="focus-ring rounded bg-[var(--accent-presence)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-primary)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
+                className="focus-ring rounded-full border border-[color-mix(in_oklch,var(--toast-accent)_35%,transparent)] bg-[color-mix(in_oklch,var(--toast-accent)_12%,transparent)] px-2.5 py-1 text-[11px] font-semibold text-[var(--toast-accent)] transition-colors hover:bg-[color-mix(in_oklch,var(--toast-accent)_18%,transparent)]"
               >
                 Open
               </button>
