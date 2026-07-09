@@ -11135,6 +11135,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   margin: 0;
   padding: 0;
   list-style: none;
+  /* The queue is a triage strip, not the page — long summaries scroll. */
+  max-height: 240px;
+  overflow-y: auto;
 }
 .fa-thread-review-list li {
   min-width: 0;
@@ -11256,8 +11259,33 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border-color: color-mix(in oklch, var(--color-warning) 50%, var(--border-hairline));
   color: var(--color-warning);
 }
+.fa-thread-table-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.fa-thread-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.fa-thread-table__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
 .fa-thread-table-wrap {
   min-width: 0;
+  /* Scrollable data table: the section spans both analytics columns, so the
+     table caps its height and scrolls under its sticky header instead of
+     stretching the page. */
+  max-height: 420px;
   overflow: auto;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
@@ -11270,11 +11298,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   table-layout: fixed;
   font-size: 13px;
 }
-.fa-thread-table__col-signal { width: 25%; }
-.fa-thread-table__col-type { width: 18%; }
-.fa-thread-table__col-state { width: 15%; }
-.fa-thread-table__col-detail { width: 34%; }
-.fa-thread-table__col-count { width: 8%; }
+.fa-thread-table__col-select { width: 34px; }
+.fa-thread-table__col-signal { width: 23%; }
+.fa-thread-table__col-type { width: 15%; }
+.fa-thread-table__col-state { width: 13%; }
+.fa-thread-table__col-detail { width: 33%; }
+.fa-thread-table__col-count { width: 9%; }
+.fa-thread-table__col-actions { width: 84px; }
 .fa-thread-table thead th {
   position: sticky;
   top: 0;
@@ -11400,6 +11430,49 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-table__empty td {
   color: var(--text-muted);
   font-size: 12px;
+}
+/* Sortable header buttons — quiet text that inherits the th typography. */
+.fa-thread-table thead th .fa-thread-table__sort {
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+}
+.fa-thread-table thead th .fa-thread-table__sort:hover {
+  color: var(--text-primary);
+}
+.fa-thread-table__select {
+  text-align: center;
+}
+.fa-thread-table__select input[type="checkbox"],
+.fa-thread-table__select-all input[type="checkbox"] {
+  accent-color: var(--accent-presence);
+  cursor: pointer;
+}
+.fa-thread-table__select input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.fa-thread-table__actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.fa-thread-table__actions-head {
+  text-align: right;
+}
+/* Signals already promoted to board cards read as settled rows. */
+.fa-thread-table__row--added td {
+  opacity: 0.62;
+}
+.fa-thread-table__added {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-success, var(--accent-presence));
+  font-size: 11px;
 }
 .fa-contract-grid {
   display: grid;

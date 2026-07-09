@@ -5,6 +5,8 @@ import { aggregateThreadSignals, buildThreadSignalReviewQueue, THREAD_SIGNALS_EM
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
+const analyticsSource = readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8");
+const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 assert.match(source, /import \{ Button \}/, "ThreadSignalsSection review actions use the shared Button primitive");
 assert.doesNotMatch(source, /<button\b/, "ThreadSignalsSection should not hand-roll button controls");
@@ -141,7 +143,46 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /className="board-table-group-row fa-thread-table__group"/, "sections render as task-style grouped rows");
     assert.match(source, /className="fa-thread-table__col-detail"/, "column sizing classes stay separate from cell content classes");
     assert.match(source, /No access gaps\./, "empty category states remain visible inside the table");
-    assert.match(source, /<th>Signal<\/th>[\s\S]*<th>Type<\/th>[\s\S]*<th>Status<\/th>[\s\S]*<th>Detail<\/th>[\s\S]*<th>Reports<\/th>/, "table exposes scan-friendly columns");
+    assert.match(source, /\{ key: "signal", label: "Signal" \}[\s\S]*\{ key: "type", label: "Type" \}[\s\S]*\{ key: "state", label: "Status" \}/, "table exposes scan-friendly columns");
+    assert.match(source, /<th>Detail<\/th>/, "detail stays a plain column");
+  });
+
+  it("is a real data table: sortable columns with an accessible sort state", () => {
+    assert.match(source, /aria-sort=\{sortKey === column\.key \? \(sortDir === "asc" \? "ascending" : "descending"\) : undefined\}/, "sorted column exposes aria-sort");
+    assert.match(source, /onClick=\{\(\) => toggleSort\(column\.key\)\}/, "headers toggle sorting");
+    assert.match(source, /setSortKey\(null\)/, "third press returns to the default category grouping");
+    assert.match(source, /localeCompare/, "text columns compare locale-aware");
+    assert.match(source, /toggleSort\("count"\)/, "report count is sortable too");
+  });
+
+  it("mutates signal rows into board tasks", () => {
+    assert.match(source, /fetch\("\/api\/board"/, "row promotion posts to the board API");
+    assert.match(source, /taskDraftFromRow/, "rows are shaped into task drafts");
+    assert.match(source, /title: `\$\{row\.type\}: \$\{row\.signal\}`/, "task titles carry the signal identity");
+    assert.match(source, /labels: \["thread-signal"\]/, "created cards are labeled for provenance");
+    assert.match(source, /critical: "urgent",[\s\S]*warning: "high",[\s\S]*info: "medium",/, "severity maps to card priority");
+    assert.match(source, /type="checkbox"/, "rows are selectable");
+    assert.match(source, /aria-label="Select all signals"/, "bulk selection has an accessible control");
+    assert.match(source, /useAnnouncer/, "task creation results are announced to screen readers");
+    assert.match(source, /fa-thread-table__row--added/, "promoted rows read as settled");
+  });
+
+  it("spans both analytics columns and scrolls under a max height", () => {
+    assert.match(
+      analyticsSource,
+      /id="fa-thread-signals"[\s\S]*?wide=\{model\.threadReports\.length > 0\}/,
+      "the Thread signals section spans both fa-grid columns when it has data",
+    );
+    assert.match(
+      globals,
+      /\.fa-thread-table-wrap \{[^}]*max-height: 420px;[^}]*overflow: auto;/,
+      "the signal table caps its height and scrolls",
+    );
+    assert.match(
+      globals,
+      /\.fa-thread-review-list \{[^}]*max-height: 240px;[^}]*overflow-y: auto;/,
+      "the review queue caps its height and scrolls",
+    );
   });
 
   it("lets you select a review item to unlock a discussion on the topic", () => {
