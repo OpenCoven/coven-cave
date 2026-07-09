@@ -376,7 +376,15 @@ function PackPromptPreviews({
               </div>
             ) : null}
           </div>
-          <Button variant="ghost" size="sm" onClick={() => onTry(p.body)}>Try it</Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            trailingIcon="ph:arrow-right-bold"
+            className="self-center shrink-0"
+            onClick={() => onTry(p.body)}
+          >
+            Try it
+          </Button>
         </li>
       ))}
     </ul>
