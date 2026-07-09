@@ -10,9 +10,16 @@ const source = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf
 // Save posts the edited content to the write endpoint.
 assert.match(
   source,
-  /fetch\("\/api\/project-file",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?body:\s*JSON\.stringify\(\{ path: previewPath, content: editValue, familiarId: selectedProjectFamiliarId \}\)/,
+  /fetch\("\/api\/project-file",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?body:\s*JSON\.stringify\(\{ path: savedPath, content: editValue, familiarId: selectedProjectFamiliarId \}\)/,
   "saveEdit must POST { path, content, familiarId } to /api/project-file",
 );
+
+// A save targets the path captured at start, and its UI result is dropped if the
+// user opened a different file while the POST was in flight (cave-uv0t) —
+// otherwise the saved file's content paints over the newly-opened one.
+assert.match(source, /const savedPath = previewPath;/, "saveEdit captures the path it targets");
+assert.match(source, /const stillCurrent = previewReqRef\.current === savedPath;/, "saveEdit checks the file is still current after the POST");
+assert.match(source, /if \(!stillCurrent\) return;.*the user moved on/, "a save that lands after a file switch leaves the new file's preview alone");
 
 // On success the edit is committed back into the preview and edit mode exits.
 assert.match(

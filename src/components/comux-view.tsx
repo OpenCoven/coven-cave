@@ -1139,6 +1139,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const savingRef = useRef(false);
   const saveEdit = useCallback(async () => {
     if (!previewPath || savingRef.current) return;
+    // The file this save targets. If the user opens a different file while the
+    // POST is in flight, the write still lands server-side — but its result must
+    // not paint over the file now on screen (mirrors openFilePreview's
+    // previewReqRef guard); previewReqRef changes the moment another file opens.
+    const savedPath = previewPath;
     savingRef.current = true;
     setSaving(true);
     setSaveError(null);
@@ -1146,21 +1151,25 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       const res = await fetch("/api/project-file", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: previewPath, content: editValue, familiarId: selectedProjectFamiliarId }),
+        body: JSON.stringify({ path: savedPath, content: editValue, familiarId: selectedProjectFamiliarId }),
       });
       const json = (await res.json()) as { ok: boolean; size?: number; error?: string };
+      const stillCurrent = previewReqRef.current === savedPath;
       if (!res.ok || !json.ok) {
-        setSaveError(json.error ?? `save failed (${res.status})`);
+        if (stillCurrent) setSaveError(json.error ?? `save failed (${res.status})`);
         return;
       }
+      if (!stillCurrent) return; // saved fine, but the user moved on — leave the new file alone
       // Commit the edit into the preview so a cancel/reopen shows saved text.
       setPreview({ kind: "text", content: editValue, size: json.size });
       setEditing(false);
       setJustSaved(true);
       announce("File saved.");
     } catch (err) {
-      setSaveError(String(err));
-      announce(`Couldn't save the file: ${String(err)}`, "assertive");
+      if (previewReqRef.current === savedPath) {
+        setSaveError(String(err));
+        announce(`Couldn't save the file: ${String(err)}`, "assertive");
+      }
     } finally {
       setSaving(false);
       savingRef.current = false;
