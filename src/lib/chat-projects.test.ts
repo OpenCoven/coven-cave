@@ -4,6 +4,7 @@ import {
   chatProjectName,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
+  isGeneratedChatSession,
 } from "./chat-projects.ts";
 import type { SessionRow } from "./types.ts";
 
@@ -292,5 +293,30 @@ console.log("chat-projects.test.ts: ok");
     }),
     { projectId: "p2", project: roster[1] },
     "a brand-new task chat opens scoped to the task's project, not the first project",
+  );
+}
+
+// ── Journal-narrative noise stays out of the chat lists (cave-buih) ─────────
+{
+  const base = { id: "j", project_root: "", status: "completed", updated_at: "2026-07-08T00:00:00Z", familiarId: "nova" };
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "anything", origin: "journal" }),
+    true,
+    "origin:journal rows are generated runs",
+  );
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "Write a short narrative of my day (Jul 8) in the cave, as my familiar reporting back to me." }),
+    true,
+    "legacy untagged narratives hide by their exact machine-prompt title prefix",
+  );
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "Write a short, first-person reflective journal entry about my…" }),
+    true,
+    "legacy reflection runs hide — including the ~60-char truncated titles the store actually keeps",
+  );
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "Write a short story for my blog" }),
+    false,
+    "human chats that merely start with Write… stay visible",
   );
 }

@@ -1,3 +1,4 @@
+import type { SessionOrigin } from "./types";
 // Client helper: stream a one-shot prompt to a familiar through the chat bridge
 // (`/api/chat/send`, SSE) and return the concatenated assistant text. This is the
 // sanctioned client-side LLM path — the same bridge evals, workflow-generate, and
@@ -18,6 +19,9 @@ export async function streamFamiliarText(opts: {
   responseSpeed?: string;
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
+  /** Session provenance — set by generator surfaces (e.g. "journal") so the
+   *  chat lists can hide the run; user-facing chats leave it unset. */
+  origin?: SessionOrigin;
   signal?: AbortSignal;
   /** Called with the accumulated assistant text after each streamed chunk,
    *  so callers can render the reply incrementally as it arrives. */
@@ -40,6 +44,9 @@ export async function streamFamiliarText(opts: {
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
         ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
         ...(opts.modelOverrideScope ? { modelOverrideScope: opts.modelOverrideScope } : {}),
+        // Provenance for generated runs (journal narratives, …) so the chat
+        // lists can keep them out of the conversation rail (#2719 model).
+        ...(opts.origin ? { origin: opts.origin } : {}),
       }),
       signal: opts.signal,
     });

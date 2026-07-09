@@ -97,7 +97,8 @@ export type SessionOrigin =
   | "cron"
   | "heartbeat"
   | "call"
-  | "canvas";
+  | "canvas"
+  | "journal";
 
 export type SessionInitiator = {
   kind: "human" | "familiar" | "system" | "unknown";

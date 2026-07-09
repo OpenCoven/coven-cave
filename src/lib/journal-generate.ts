@@ -34,7 +34,9 @@ export async function generateReflection(opts: {
     res = await fetch("/api/chat/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ familiarId: opts.familiarId, prompt: buildReflectionPrompt(opts.context) }),
+      // origin:"journal" keeps these generated runs out of the chat lists
+      // (cave-buih, same provenance model as canvas-generate).
+      body: JSON.stringify({ familiarId: opts.familiarId, prompt: buildReflectionPrompt(opts.context), origin: "journal" }),
       signal: opts.signal,
     });
   } catch (err) {

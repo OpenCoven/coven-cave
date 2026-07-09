@@ -124,12 +124,25 @@ function projectNameWithParent(projectRoot: string): string {
 // heartbeat automations — not because someone opened a chat. They stay
 // reachable from their origination surfaces (Canvas, Schedules, Work Queue);
 // listing them here is just noise between real conversations.
-const CHAT_HIDDEN_ORIGINS: ReadonlySet<string> = new Set(["cron", "heartbeat", "canvas"]);
+const CHAT_HIDDEN_ORIGINS: ReadonlySet<string> = new Set(["cron", "heartbeat", "canvas", "journal"]);
+
+/** Legacy fallback for journal runs created before origin:"journal" existed:
+ *  their titles are the exact machine prompts (daily-narrative.ts and
+ *  journal-generate.ts), so prefix matches are safe — no human titles a chat
+ *  this way. */
+const LEGACY_JOURNAL_PROMPT_PREFIXES = [
+  "Write a short narrative of my day (",
+  // Stored titles truncate around 60 chars ("…about my…"), so match the
+  // opener, comfortably clear of the cut and still unmistakably machine text.
+  "Write a short, first-person reflective journal entry",
+] as const;
 
 /** True when the row is a generated run rather than a user-facing chat. */
 export function isGeneratedChatSession(session: SessionRow): boolean {
   if (session.generated) return true;
-  return session.origin != null && CHAT_HIDDEN_ORIGINS.has(session.origin);
+  if (session.origin != null && CHAT_HIDDEN_ORIGINS.has(session.origin)) return true;
+  const title = session.title ?? "";
+  return LEGACY_JOURNAL_PROMPT_PREFIXES.some((prefix) => title.startsWith(prefix));
 }
 
 export function filterVisibleChatSessions(

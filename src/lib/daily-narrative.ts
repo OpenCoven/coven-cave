@@ -114,6 +114,9 @@ export async function generateDailyNarrative(opts: {
   signal?: AbortSignal;
 }): Promise<DailyNarrativeResult> {
   const { text, error } = await streamFamiliarText({
+    // Journal narrative runs are generated, not conversations — tagging the
+    // origin keeps them out of the chat lists (cave-buih).
+    origin: "journal",
     familiarId: opts.familiarId,
     prompt: buildDailyNarrativePrompt(opts.report, opts.stats, opts.dayLabel),
     signal: opts.signal,
