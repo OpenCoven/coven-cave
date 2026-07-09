@@ -12,21 +12,25 @@
 export const PROMPT_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /** Derive a slug from a display name: lowercase, alphanumeric runs joined by
- *  single dashes, trimmed to 64 chars. Returns null when nothing survives. */
+ *  single dashes, trimmed to 64 chars. Returns null when nothing survives.
+ *  Dash-trimming is a linear scan, not an anchored `-+$` regex — the latter
+ *  is a polynomial-ReDoS shape on all-dash input (flagged by CodeQL). */
 export function promptSlug(name: string): string | null {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
-    .replace(/-+$/, "");
+  const joined = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 64);
+  let start = 0;
+  let end = joined.length;
+  while (start < end && joined[start] === "-") start += 1;
+  while (end > start && joined[end - 1] === "-") end -= 1;
+  const slug = joined.slice(start, end);
   return PROMPT_SLUG_RE.test(slug) ? slug : null;
 }
 
-/** Single-line frontmatter scalar: strip newlines (they would break the
- *  block) and the leading/trailing whitespace they leave behind. */
+/** Single-line frontmatter scalar: collapse every whitespace run (newlines
+ *  included) to a single space so the value can't break the YAML block.
+ *  `\s+` is linear — the earlier `\s*\r?\n\s*` overlapped and was a
+ *  polynomial-ReDoS shape. */
 function scalar(value: string): string {
-  return value.replace(/\s*\r?\n\s*/g, " ").trim();
+  return value.replace(/\s+/g, " ").trim();
 }
 
 /** Serialize a template to the .md shape prompt-scan.ts reads. Tags are

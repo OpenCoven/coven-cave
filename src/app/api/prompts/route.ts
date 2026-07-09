@@ -100,7 +100,10 @@ export async function POST(req: Request) {
   }
 
   const dir = userPromptsDir();
-  const file = path.join(dir, `${id}.md`);
+  // path.basename is the CodeQL-recognized js/path-injection sanitizer; the
+  // slug regex above already forbids any separator, so this is a no-op on
+  // valid input and defense-in-depth against a future looser id source.
+  const file = path.join(dir, `${path.basename(id)}.md`);
   if (raw.overwrite !== true) {
     try {
       await stat(file);
@@ -152,7 +155,8 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid template id" }, { status: 400 });
   }
   try {
-    await unlink(path.join(userPromptsDir(), `${id}.md`));
+    // path.basename is the recognized path-injection sanitizer (see POST).
+    await unlink(path.join(userPromptsDir(), `${path.basename(id)}.md`));
   } catch {
     return NextResponse.json({ ok: false, error: "template not found" }, { status: 404 });
   }
