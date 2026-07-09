@@ -74,5 +74,9 @@ assert.match(
 // the .fwq-attention count assertions in familiar-work-queue.spec.ts.
 assert.doesNotMatch(queueStrip, /className="fwq-attention/, "Queue Asana strip uses its own fwq-asana classes");
 assert.match(queueStrip, /className="fwq-asana"/, "Queue Asana strip uses the fwq-asana container class");
+// Freshness: refreshes on the Queue's poll cadence (cave-m4h9) with an equality
+// guard so identical polls don't churn re-renders.
+assert.match(queueStrip, /usePausablePoll\(\(\) => void load\(\), 30_000/, "Queue Asana strip refreshes on the 30s poll");
+assert.match(queueStrip, /function sameItems\(/, "Queue Asana strip guards identical polls against re-render churn");
 
 console.log("asana task field guard passed");

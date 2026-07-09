@@ -4,12 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import {
   createBoardCardFromAsanaItem,
   fileAsanaItemAsBead,
   type AsanaAssignedResponse,
   type AsanaItem,
 } from "@/lib/asana-tasks";
+
+// Content equality for the poll — the assigned list is a plain object graph, so a
+// serialized compare is exact. Keeping the previous array identity on a no-change
+// poll stops the 30s tick from re-rendering every row for an identical picture
+// (same discipline as the parent Queue's sameQueue guard).
+function sameItems(a: AsanaItem[], b: AsanaItem[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 type Props = {
   onOpenUrl?: (url: string) => void;
@@ -45,10 +54,11 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead }: Props) {
       // A failed fetch or unconfigured Asana leaves the strip hidden — never an
       // error banner; the Queue's beads/PR sources carry the surface on their own.
       if (data.ok && data.configured) {
-        setItems(Array.isArray(data.items) ? data.items : []);
+        const next = Array.isArray(data.items) ? data.items : [];
+        setItems((prev) => (sameItems(prev, next) ? prev : next));
         setConfigured(true);
       } else {
-        setItems([]);
+        setItems((prev) => (prev.length === 0 ? prev : []));
         setConfigured(false);
       }
     } catch {
@@ -63,6 +73,12 @@ export function AsanaQueueStrip({ onOpenUrl, onFiledBead }: Props) {
     void load();
     return () => abortRef.current?.abort();
   }, [load]);
+
+  // Refresh on the same 30s cadence as the Queue's beads/PR lanes so a task
+  // completed or reassigned in Asana doesn't linger here until remount. Paused
+  // while an input is focused and while the tab is hidden (usePausablePoll);
+  // kept at 30s — not tighter — to respect Asana's REST rate limits.
+  usePausablePoll(() => void load(), 30_000, { pauseWhileInputActive: true });
 
   const addToBoard = useCallback(
     async (item: AsanaItem) => {
