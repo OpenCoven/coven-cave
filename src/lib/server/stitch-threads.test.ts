@@ -48,8 +48,11 @@ try {
   const sewn = await markThreadSewn(thread.id, "retry-policy");
   assert.equal(sewn.sewnEntryId, "retry-policy");
 
-  // List sorts newest-updated first and skips junk files.
+  // List sorts newest-updated first and skips junk files. CI creates both
+  // threads in the same millisecond, so bump the second one explicitly —
+  // the assertion is about ordering, not about Date.now() granularity.
   const second = await createStitchThread("Other");
+  await writeStitchThread({ ...second, updatedAt: new Date(Date.now() + 1000).toISOString() });
   const listed = await listStitchThreads();
   assert.equal(listed.length, 2);
   assert.equal(listed[0].id, second.id);
