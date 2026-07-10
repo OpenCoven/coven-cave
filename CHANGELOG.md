@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.173] - 2026-07-10
+
+> _One-line teaser — edit before merge._
+
+Patch release on top of v0.0.172.
+
+### Changes
+- fix(projects): drop stale scope on refetch; gate palette project fetch on open (#2908)
+- docs: iOS onboarding + constant connection + cloud persistence — review & plan (cave-rku9) (#2909)
+- fix(rollout): five P3s from the evening re-audit (#2907)
+- feat(cave): chat/board polish batch — palette, pickers, header row, review fixes (#2906)
+- fix(rollout): three P2s from the evening re-audit (#2904)
+
+
 ## [0.0.172] - 2026-07-10
 
 > Analytics & daily-report polish, marketplace Crafts and Grimoire Stitches, plus cross-platform production hardening.
