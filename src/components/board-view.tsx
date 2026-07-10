@@ -447,11 +447,24 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   };
 
   const create = async (draft: NewCardDraft) => {
-    const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error ?? "create failed");
-    announce(`Created task '${draft.title.trim()}'.`);
-    await load();
+    try {
+      const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
+      // Guard the parse: a 500/HTML error page is not JSON and would otherwise
+      // throw an opaque parse error into the caller (which quick-add `void`s,
+      // silently dropping the failure).
+      const json = await res.json().catch(() => ({ ok: false, error: "the server returned an unreadable response" }));
+      if (!json.ok) throw new Error(json.error ?? "create failed");
+      setActionError(null);
+      announce(`Created task '${draft.title.trim()}'.`);
+      await load();
+    } catch (err) {
+      // Surface to the board's inline error banner so a failed quick-add is
+      // never silent; rethrow so the New-card modal path can react too.
+      setActionError(
+        err instanceof Error ? `Couldn't create the task — ${err.message}` : "Couldn't create the task.",
+      );
+      throw err;
+    }
   };
 
   // Inline quick-add from a kanban column: title-only card in that column's
