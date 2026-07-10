@@ -246,8 +246,10 @@ function commandFailureCode(step: CommandStep, error: unknown): CraftTransaction
     return "unsupported_runtime";
   }
   if (step === "marketplace-check" || step === "preflight") return "marketplace_check_failed";
-  if (step === "verification" || step === "uninstall-verification") return "verification_failed";
-  if (step === "uninstall" || step === "rollback" || step === "rollback-verification") {
+  if (step === "verification" || step === "uninstall-verification" || step === "rollback-verification") {
+    return "verification_failed";
+  }
+  if (step === "uninstall" || step === "rollback") {
     return "uninstall_failed";
   }
   return "install_failed";
@@ -522,6 +524,18 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
     }
   }
 
+  async function removePersisted(id: string): Promise<void> {
+    try {
+      await options.store.remove(id);
+    } catch {
+      const message = publicFailureMessage("persistence_failed");
+      throw new CraftTransactionError("persistence_failed", message, {
+        step: "persist",
+        message,
+      });
+    }
+  }
+
   async function rollback(definition: CraftDefinition): Promise<CraftRollbackDiagnostic> {
     try {
       await runJson("rollback", ["plugin", "remove", `${definition.id}@${CODEX_MARKETPLACE_NAME}`, "--json"]);
@@ -563,9 +577,7 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
       };
     }
 
-    let attemptedInstall = false;
     try {
-      attemptedInstall = true;
       await runJson("install", ["plugin", "add", plan.installTarget, "--json"]);
       const after = await runJson("verification", ["plugin", "list", "--json"]);
       if (!pluginIsVerified(after, definition)) {
@@ -590,7 +602,7 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
       const failure = error instanceof CraftTransactionError
         ? error
         : commandError("install", error, env);
-      if (!attemptedInstall || priorInstallPresent) throw failure;
+      if (priorInstallPresent) throw failure;
       if (failure.code === "persistence_failed") {
         await options.store.remove(definition.id).catch(() => {});
       }
@@ -606,7 +618,7 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
     await confirmMarketplace();
     const before = await runJson("preflight", ["plugin", "list", "--json"]);
     if (!pluginIsPresent(before, definition)) {
-      await options.store.remove(definition.id);
+      await removePersisted(definition.id);
       return {
         ok: true,
         installed: false,
@@ -630,7 +642,7 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
         message,
       });
     }
-    await options.store.remove(definition.id);
+    await removePersisted(definition.id);
     return {
       ok: true,
       installed: false,
