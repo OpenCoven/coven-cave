@@ -28,6 +28,7 @@ export const SUITES = {
     "src/lib/code-rail.test.ts",
     "src/lib/use-code-rail.test.ts",
     "src/lib/workspace-tiles.test.ts",
+    "src/lib/workspace-pane-request.test.ts",
     "src/lib/page-drag.test.ts",
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/role-surfaces.test.ts",

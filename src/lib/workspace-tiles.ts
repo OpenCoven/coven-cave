@@ -11,7 +11,7 @@ export function addSecondaryWorkspaceTile<T>(
   const nextKey = keyOf(next);
   const withoutDuplicate = tiles.filter((tile) => keyOf(tile) !== nextKey);
   if (withoutDuplicate.length >= MAX_SECONDARY_WORKSPACE_TILES) {
-    return [...withoutDuplicate.slice(0, MAX_SECONDARY_WORKSPACE_TILES - 1), next];
+    return [...withoutDuplicate.slice(-(MAX_SECONDARY_WORKSPACE_TILES - 1)), next];
   }
   return [...withoutDuplicate, next];
 }
