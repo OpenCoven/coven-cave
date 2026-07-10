@@ -1,6 +1,7 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { WorkspacePanePage } from "@/components/workspace-pane-page";
+import { reportCaughtWorkspacePaneError } from "@/lib/workspace-pane-error";
 
 const PRIVATE_DIAGNOSTIC =
   "token=sk-pane-secret /Users/operator/private.env https://internal.example.test/pane-debug";
@@ -23,8 +24,10 @@ function WorkspacePanePageHarness() {
   const [instanceId, setInstanceId] = useState("pane:group");
   const [mode, setMode] = useState<"ready" | "loading" | "unavailable">("ready");
   const [shouldCrash, setShouldCrash] = useState(false);
+  const [paneMountKey, setPaneMountKey] = useState(0);
   const [resetSequence, setResetSequence] = useState(0);
   const [recoveries, setRecoveries] = useState(0);
+  const [ordinaryUpdates, setOrdinaryUpdates] = useState(0);
 
   const showReady = () => {
     setShouldCrash(false);
@@ -35,6 +38,20 @@ function WorkspacePanePageHarness() {
     <main>
       <div aria-label="Harness controls">
         <button type="button">Sibling survives</button>
+        <button type="button" onClick={() => setOrdinaryUpdates((count) => count + 1)}>
+          Ordinary sibling update
+        </button>
+        <output aria-label="Ordinary update count">{ordinaryUpdates}</output>
+        <button
+          type="button"
+          onClick={() => {
+            setShouldCrash(true);
+            setMode("ready");
+            setPaneMountKey((key) => key + 1);
+          }}
+        >
+          Mount failing pane
+        </button>
         <button type="button" onClick={() => setShouldCrash(false)}>Prepare successful retry</button>
         <button
           type="button"
@@ -70,7 +87,7 @@ function WorkspacePanePageHarness() {
           }}
         />
       ) : (
-        <WorkspacePanePage instanceId={instanceId} landmark="Board pane">
+        <WorkspacePanePage key={paneMountKey} instanceId={instanceId} landmark="Board pane">
           <CrashableContent shouldCrash={shouldCrash} onCrash={() => setShouldCrash(true)} />
         </WorkspacePanePage>
       )}
@@ -81,7 +98,7 @@ function WorkspacePanePageHarness() {
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing workspace pane harness root");
 
-createRoot(rootElement).render(
+createRoot(rootElement, { onCaughtError: reportCaughtWorkspacePaneError }).render(
   <StrictMode>
     <WorkspacePanePageHarness />
   </StrictMode>,

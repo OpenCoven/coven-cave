@@ -3,6 +3,7 @@ import { build } from "esbuild";
 import path from "node:path";
 
 const repoRoot = process.cwd();
+const SAFE_CAUGHT_MESSAGE = "A workspace pane render error was caught.";
 let harnessBundle = "";
 
 test.beforeAll(async () => {
@@ -28,6 +29,10 @@ async function mountHarness(page: Page) {
 }
 
 test("isolates pane failures and restores focus through retries, resets, and states", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
   await mountHarness(page);
 
   const pane = page.locator('section[aria-label="Board pane"]');
@@ -49,6 +54,10 @@ test("isolates pane failures and restores focus through retries, resets, and sta
   await expect(alert).not.toContainText("sk-pane-secret");
   await expect(alert).not.toContainText("/Users/operator");
   await expect(page.getByRole("button", { name: "Sibling survives" })).toBeVisible();
+  await expect.poll(() => consoleErrors).toContain(SAFE_CAUGHT_MESSAGE);
+  expect(consoleErrors.join("\n")).not.toContain("sk-pane-secret");
+  expect(consoleErrors.join("\n")).not.toContain("/Users/operator");
+  expect(consoleErrors.join("\n")).not.toContain("internal.example.test");
 
   await retry.click();
   await expect(retry).toBeFocused();
@@ -87,4 +96,24 @@ test("isolates pane failures and restores focus through retries, resets, and sta
   await page.getByRole("button", { name: "Show ready" }).click();
   await expect(readyChild).toBeVisible();
   await expect(page.locator('.workspace-pane-page__state[role="status"]')).toHaveCount(0);
+});
+
+test("focuses an initial-mount failure without stealing focus on ordinary updates", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  await mountHarness(page);
+
+  const ordinaryUpdate = page.getByRole("button", { name: /Ordinary sibling update/ });
+  await ordinaryUpdate.click();
+  await expect(ordinaryUpdate).toBeFocused();
+  await expect(page.getByLabel("Ordinary update count")).toHaveText("1");
+
+  await page.getByRole("button", { name: "Mount failing pane" }).click();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeFocused();
+  await expect.poll(() => consoleErrors).toContain(SAFE_CAUGHT_MESSAGE);
+  expect(consoleErrors.join("\n")).not.toContain("sk-pane-secret");
+  expect(consoleErrors.join("\n")).not.toContain("/Users/operator");
+  expect(consoleErrors.join("\n")).not.toContain("internal.example.test");
 });
