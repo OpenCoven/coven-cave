@@ -421,6 +421,7 @@ export const SUITES = {
     "src/components/project-picker.test.ts",
     "src/components/directory-picker.test.ts",
     "src/components/chat-view.test.ts",
+    "src/components/workspace-pane-page.test.ts",
     "src/components/drag-to-split.test.ts",
     "src/components/daemon-start-button.test.ts",
     "src/components/familiar-avatar.test.ts",
