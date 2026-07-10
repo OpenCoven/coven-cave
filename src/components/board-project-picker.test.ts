@@ -53,8 +53,8 @@ assert.match(
 );
 assert.match(
   newCard,
-  /<Field label="Project">[\s\S]{0,260}options=\{\[\s*\{ value: "", label: "No project" \},/,
-  "new-card modal renders a Project field with a No-project default",
+  /<Field label="Project">[\s\S]{0,600}label: projectsLoading \? "Loading projects…" : "No project" \}/,
+  "new-card modal renders a Project field whose default reads 'Loading projects…' while the scoped list is in flight, else 'No project'",
 );
 assert.match(
   newCard,
