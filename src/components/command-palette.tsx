@@ -240,7 +240,9 @@ export function CommandPalette({
   onIntent,
 }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const { projects } = useProjects();
+  // "Open project" rows jump into the Projects hub, which is itself scoped to
+  // the active familiar — offer only projects that familiar can actually reach.
+  const { projects } = useProjects({ familiarId: activeFamiliarId });
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
@@ -652,16 +654,17 @@ export function CommandPalette({
     setSalemAnswer(null);
     setSalemError(null);
     try {
-      // Use the local familiar (the one you're scoped to, falling back to Salem)
-      // so the answer is synthesized through it and the AI credits attribute to
-      // its connected model.
+      // Use the local familiar (the one you're scoped to, falling back to the
+      // Salem persona's familiar if one exists, then ANY available familiar)
+      // so the answer is synthesized through it and the AI credits attribute
+      // to its connected model. No invented ids: when the coven is empty the
+      // request goes familiar-less and the route uses its hosted fallback.
       const localFamiliarId =
         activeFamiliarId ??
         familiars.find((f) => f.id === "salem")?.id ??
-        "salem";
+        familiars[0]?.id;
       const localModel =
-        familiars.find((f) => f.id === activeFamiliarId)?.model ??
-        familiars.find((f) => f.id === "salem")?.model ??
+        familiars.find((f) => f.id === localFamiliarId)?.model ??
         undefined;
       const res = await fetch("/api/salem", {
         method: "POST",

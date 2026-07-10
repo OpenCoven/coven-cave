@@ -927,7 +927,13 @@ function SessionOverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Session options"
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => {
+          // The picker shares this anchor, so its outside-click handler skips
+          // clicks here — close it explicitly or both popovers stack open.
+          setProjectPickerOpen(false);
+          if (open) close();
+          else setOpen(true);
+        }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>

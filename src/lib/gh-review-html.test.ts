@@ -24,7 +24,7 @@ const html = buildReviewHtml({
   number: 42,
   title: "Add <reviewer>",
   state: "merged",
-  author: "buns",
+  author: "octocat",
   url: "https://github.com/OpenCoven/coven-cave/pull/42",
   body: "Body with <html> & <script>alert(1)</script>",
   comments: [{ author: "rev", body: "looks good", createdAt: "2026-06-29" }],

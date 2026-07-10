@@ -12,7 +12,7 @@ const manifests = [
     scanned_at: "2026-06-11T12:00:00.000Z",
     global_instructions: {
       present: true,
-      path: "/Users/buns/.codex/AGENTS.md",
+      path: "/Users/dev/.codex/AGENTS.md",
       byte_count: 2048,
     },
     skills: [
@@ -21,7 +21,7 @@ const manifests = [
         name: "Review",
         source: "local",
         harness_id: "codex",
-        path: "/Users/buns/.codex/skills/review",
+        path: "/Users/dev/.codex/skills/review",
         description: "Review code",
         tags: ["quality"],
       },
@@ -30,7 +30,7 @@ const manifests = [
         name: "Daily Check",
         source: "harness-native",
         harness_id: "codex",
-        path: "/Users/buns/.codex/automations/daily-check",
+        path: "/Users/dev/.codex/automations/daily-check",
         description: "Run the daily check",
       },
     ],
@@ -58,7 +58,7 @@ const manifests = [
     warnings: [
       {
         kind: "parse",
-        path: "/Users/buns/.codex/config.toml",
+        path: "/Users/dev/.codex/config.toml",
         message: "Could not parse plugin config",
       },
     ],

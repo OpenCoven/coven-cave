@@ -170,8 +170,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const \{ projects \} = useProjects\(\)/,
-  "palette reads the project list to offer project navigation",
+  /const \{ projects \} = useProjects\(\{ familiarId: activeFamiliarId \}\)/,
+  "palette scopes project navigation to the active familiar's granted projects",
 );
 assert.match(
   source,

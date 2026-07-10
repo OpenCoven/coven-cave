@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import {
   Popover,
@@ -149,6 +149,14 @@ export function ProjectPickerPopover({
     onOpenChange(false);
     setQuery("");
   };
+
+  // Parents may close the picker by flipping `open` directly (e.g. the trigger
+  // chip toggles, or a shared-anchor sibling closes it) — those paths never go
+  // through close(), so the filter must also reset on the prop itself or the
+  // next open shows a stale pre-filtered list.
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   return (
     <Popover

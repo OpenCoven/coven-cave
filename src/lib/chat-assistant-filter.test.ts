@@ -11,11 +11,11 @@ function feed(lines: string[]): string {
 
 assert.equal(
   feed([
-    "workdir: /Users/buns/.openclaw/workspace/nova",
+    "workdir: /Users/dev/.openclaw/workspace/nova",
     "model: gpt-5.5",
     "reasoning: medium",
     "user",
-    "# AGENTS.md instructions for /Users/buns/.openclaw/workspace",
+    "# AGENTS.md instructions for /Users/dev/.openclaw/workspace",
     "<INSTRUCTIONS>",
     "# AGENTS.md - Your Workspace",
     "</INSTRUCTIONS>",
@@ -103,7 +103,7 @@ assert.equal(
     "codex",
     "I’m checking the relevant skill first.",
     "exec",
-    "/bin/zsh -lc 'sed -n 1,120p /Users/buns/.agents/skills/brainstorming/SKILL.md' in /repo",
+    "/bin/zsh -lc 'sed -n 1,120p /Users/dev/.agents/skills/brainstorming/SKILL.md' in /repo",
     " exited 0 in 12ms:",
     "---",
     "name: brainstorming",

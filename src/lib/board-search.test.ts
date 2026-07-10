@@ -14,7 +14,7 @@ const card = {
   priority: "medium",
   familiarId: "cody",
   sessionId: "session-1",
-  cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  cwd: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   projectId: "coven-cave",
   links: ["https://github.com/OpenCoven/coven-cave/pull/153"],
   github: [{

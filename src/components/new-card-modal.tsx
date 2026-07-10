@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import type { CaveProject } from "@/lib/cave-projects";
+import { useProjects } from "@/lib/use-projects";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { PropertyPill } from "@/components/ui/property-pill";
@@ -36,7 +36,6 @@ type Props = {
   onClose: () => void;
   familiars: Familiar[];
   sessions: SessionRow[];
-  projects: CaveProject[];
   defaultStatus?: CardStatus;
   defaultFamiliarId?: string | null;
   defaultTitle?: string;
@@ -51,7 +50,6 @@ export function NewCardModal({
   onClose,
   familiars,
   sessions,
-  projects,
   defaultStatus = "inbox",
   defaultFamiliarId = null,
   defaultTitle,
@@ -74,6 +72,12 @@ export function NewCardModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const coarse = useIsCoarsePointer();
+
+  // Only offer projects the assigned familiar can actually reach — the board
+  // POST starts the card's chat under that familiar, which the server rejects
+  // (403) for an ungranted project. Re-scopes when the Familiar picker below
+  // changes; a null familiar ("Default familiar") loads the operator-wide list.
+  const { projects } = useProjects({ familiarId, enabled: open });
 
   useEffect(() => {
     if (!open) return;
@@ -226,6 +230,9 @@ export function NewCardModal({
             onChange={(v) => {
               setFamiliarId(v || null);
               setSessionId(null);
+              // The project list re-scopes to the new familiar; a project the
+              // previous familiar could reach may not be granted to this one.
+              setProjectId(null);
             }}
             options={[
               { value: "", label: "Default familiar" },

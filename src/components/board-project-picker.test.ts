@@ -37,8 +37,20 @@ assert.match(
 
 // ── New-card modal can set a project at creation time ──────────────────────
 assert.match(newCard, /projectId: string \| null;/, "NewCardDraft carries projectId");
-assert.match(newCard, /projects: CaveProject\[\];/, "new-card modal Props declares a projects list");
+// The modal sources its own familiar-scoped project list (rather than taking an
+// unscoped `projects` prop) so the Project picker only offers projects the
+// assigned familiar has been granted — matching the server-side grant filter.
+assert.match(
+  newCard,
+  /useProjects\(\{ familiarId, enabled: open \}\)/,
+  "new-card modal scopes its project list to the selected familiar",
+);
 assert.match(newCard, /setProjectId\(null\)/, "new-card modal resets projectId when reopened");
+assert.match(
+  newCard,
+  /setFamiliarId\(v \|\| null\);[\s\S]{0,400}setProjectId\(null\);/,
+  "switching the familiar clears the selected project so an ungranted project can't ride along the re-scope",
+);
 assert.match(
   newCard,
   /<Field label="Project">[\s\S]{0,260}options=\{\[\s*\{ value: "", label: "No project" \},/,
@@ -56,10 +68,12 @@ assert.match(
   /<BoardInspector[\s\S]{0,600}projects=\{projects\}/,
   "board-view passes projects to the inspector",
 );
-assert.match(
+// The new-card modal now self-scopes to the assigned familiar, so board-view no
+// longer threads its unscoped project list into it (the inspector still gets it).
+assert.doesNotMatch(
   view,
   /<NewCardModal[\s\S]{0,200}projects=\{projects\}/,
-  "board-view passes projects to the new-card modal",
+  "board-view must not pass the unscoped project list to the new-card modal",
 );
 
 console.log("board-project-picker.test.ts OK");

@@ -1281,7 +1281,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       )}
 
       <NewCardModal open={modalOpen} onClose={() => setModalOpen(false)}
-        familiars={familiars} sessions={sessions} projects={projects}
+        familiars={familiars} sessions={sessions}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
       {deletePending ? (
