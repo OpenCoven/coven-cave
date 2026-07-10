@@ -19,6 +19,58 @@ const dashboardCss = existsSync(dashboardCssUrl) ? readFileSync(dashboardCssUrl,
 
 assert.match(
   source,
+  /export function SettingsShell\(\{ embedded = false \}: \{ embedded\?: boolean \}\)/,
+  "SettingsShell should expose a default-preserving embedded mode",
+);
+assert.match(
+  source,
+  /embedded \? "h-full" : "h-\[100dvh\]"/,
+  "embedded Settings should fill its pane while the standalone route keeps viewport height",
+);
+assert.match(
+  source,
+  /if \(!embedded && typeof window !== "undefined"\) \{\s*window\.history\.replaceState\(null, "", `#\$\{id\}`\);\s*\}/,
+  "embedded section changes should remain pane-local instead of replacing the route hash",
+);
+assert.match(
+  source,
+  /useEffect\(\(\) => \{\s*if \(embedded\) return;\s*const applyHashSection[\s\S]*window\.addEventListener\("hashchange", applyHashSection\)/,
+  "embedded Settings should skip route hash reads and listeners",
+);
+assert.match(
+  source,
+  /if \(!embedded && e\.key === "Escape"\) \{[\s\S]{0,120}router\.back\(\)/,
+  "only standalone Settings should consume Escape for route navigation",
+);
+assert.match(
+  source,
+  /const shellRef = useRef<HTMLDivElement>\(null\)/,
+  "embedded Settings should own a root ref for pane-local keyboard handling",
+);
+assert.match(
+  source,
+  /if \(embedded && !shellRef\.current\?\.contains\(target\)\) return;/,
+  "embedded section shortcuts should ignore key events from sibling panes",
+);
+assert.match(source, /ref=\{shellRef\}/, "the pane-local keyboard boundary should be attached to the Settings root");
+assert.match(
+  source,
+  /\{!embedded \|\| \(isMobile && !pickerView\) \? \(/,
+  "embedded Settings should hide the route Back action while retaining pane-local mobile drill-up",
+);
+assert.match(
+  source,
+  /else if \(!embedded\) router\.back\(\)/,
+  "the Settings header should never navigate back from an embedded pane",
+);
+assert.match(
+  source,
+  /embedded\s*\? \(isMobile \? \(pickerView \? "Tap a section to open" : "Back returns to Settings"\) : "↑↓ navigate sections"\)/,
+  "embedded Settings should not advertise route-level Escape behavior",
+);
+
+assert.match(
+  source,
   /const \[section, setSection\] = useState<Section>\("general"\)/,
   "SettingsShell should render the same initial section on server and client",
 );

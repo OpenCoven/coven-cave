@@ -45,6 +45,7 @@ const contracts: RouteContract[] = [
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/coven-memory", methods: ["GET"], kind: "json" },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/dashboard", methods: ["GET"], kind: "json" },
   { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/start", methods: ["POST"], kind: "json" },
   { route: "/daemon/status", methods: ["GET"], kind: "json" },
@@ -251,6 +252,24 @@ for (const contract of contracts) {
       assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
     }
   }
+}
+
+{
+  const dashboardSource = readFileSync(path.join(apiRoot, "dashboard", "route.ts"), "utf8");
+  assert.match(dashboardSource, /export const dynamic = "force-dynamic"/, "/dashboard should never cache a stale cockpit model");
+  assert.match(dashboardSource, /await loadInbox\(\)/, "/dashboard should read the same inbox source as the standalone route");
+  assert.match(dashboardSource, /buildDashboardModel\(inbox\.items, new Date\(\)\)/, "/dashboard should build the same view-model as the standalone route");
+  assert.match(dashboardSource, /date: model\.date\.toISOString\(\)/, "/dashboard should explicitly serialize its Date wire field");
+  assert.match(
+    dashboardSource,
+    /catch \{[\s\S]{0,180}\{ ok: false, error: "Dashboard unavailable" \}[\s\S]{0,100}status: 500/,
+    "/dashboard should return a guarded generic JSON failure",
+  );
+  assert.doesNotMatch(
+    dashboardSource,
+    /error instanceof Error|error\.message|String\(error\)/,
+    "/dashboard must not expose raw filesystem or parse diagnostics",
+  );
 }
 
 {

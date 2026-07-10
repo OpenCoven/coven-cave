@@ -8,8 +8,45 @@ const page = readFileSync(pageUrl, "utf8");
 
 assert.match(page, /loadInbox/, "dashboard should load persisted inbox data");
 assert.match(page, /buildDashboardModel/, "dashboard should build the view-model");
-assert.match(page, /DashboardCockpit/, "dashboard should render the power cockpit");
+assert.match(page, /<DashboardSurface initialModel=\{model\} \/>/, "dashboard should synchronously seed the embeddable surface");
+assert.doesNotMatch(page, /<DashboardCockpit/, "the dashboard route should render through the shared adapter");
 assert.match(page, /dr-page/, "dashboard should use the shared surface styling");
+
+const surfaceUrl = new URL("../components/dashboard/dashboard-surface.tsx", import.meta.url);
+assert.equal(existsSync(surfaceUrl), true, "DashboardSurface component should exist");
+const surface = existsSync(surfaceUrl) ? readFileSync(surfaceUrl, "utf8") : "";
+assert.match(surface, /initialModel\?: DashboardModel/, "the dashboard adapter should accept an optional server model");
+assert.match(
+  surface,
+  /useState<DashboardSurfaceState>\(\(\) =>\s*initialModel\s*\? \{ status: "ready", model: initialModel \}/,
+  "a supplied route model should render synchronously without a loading flash",
+);
+assert.match(surface, /if \(initialModel\) return;/, "a supplied route model should skip the embedded fetch");
+assert.match(surface, /fetch\("\/api\/dashboard", \{ signal: controller\.signal \}\)/, "embedded dashboard should load its model through the dedicated endpoint");
+assert.match(surface, /type DashboardModelWire = Omit<DashboardModel, "date"> & \{ date: string \}/, "the endpoint wire shape should encode the date as a string");
+assert.match(surface, /date: new Date\(model\.date\)/, "dashboard JSON should hydrate its date before cockpit rendering");
+assert.match(surface, /Number\.isNaN\(model\.date\.getTime\(\)\)/, "invalid dashboard dates should fail closed instead of entering the cockpit");
+assert.match(surface, /response\.ok[\s\S]{0,180}payload\.ok/, "the adapter should require both HTTP and payload success");
+assert.match(surface, /controller\.abort\(\)/, "dashboard model loading should abort when its pane unmounts");
+assert.match(
+  surface,
+  /if \(controller\.signal\.aborted\) return;\s*setState\(\{ status: "ready", model \}\)/,
+  "a dashboard response that finishes after unmount should not update pane state",
+);
+assert.match(surface, /status: "loading"/, "embedded dashboard should expose an explicit loading state");
+assert.match(surface, /Dashboard is unavailable/, "embedded dashboard should expose an explicit generic failure state");
+assert.match(surface, /<DashboardCockpit model=\{state\.model\} \/>/, "the ready adapter should render the existing cockpit");
+assert.doesNotMatch(surface, /WorkspacePanePage/, "DashboardSurface should not nest the standard pane root owned by the workspace renderer");
+assert.match(
+  surface,
+  /workspace-pane-page__state workspace-pane-page__state--loading/,
+  "dashboard loading should reuse the fill/min-zero standard pane state layout",
+);
+assert.match(
+  surface,
+  /workspace-pane-page__state workspace-pane-page__state--unavailable/,
+  "dashboard failure should reuse the fill/min-zero standard pane state layout",
+);
 
 const cockpitUrl = new URL("../components/dashboard/dashboard-cockpit.tsx", import.meta.url);
 assert.equal(existsSync(cockpitUrl), true, "DashboardCockpit component should exist");

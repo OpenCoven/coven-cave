@@ -1,6 +1,6 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
-import { DashboardCockpit } from "@/components/dashboard/dashboard-cockpit";
+import { DashboardSurface } from "@/components/dashboard/dashboard-surface";
 import { buildDashboardModel } from "@/lib/dashboard-model";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export default async function DashboardPage() {
         </nav>
       </div>
 
-      <DashboardCockpit model={model} />
+      <DashboardSurface initialModel={model} />
     </main>
   );
 }

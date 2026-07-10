@@ -107,9 +107,10 @@ function writeMobileModeEnabled(enabled: boolean) {
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
-export function SettingsShell() {
+export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const isMobile = useIsMobile();
+  const shellRef = useRef<HTMLDivElement>(null);
 
   const [section, setSection] = useState<Section>("general");
   // Mobile drill-down: when true, render the section list full-screen
@@ -173,13 +174,13 @@ export function SettingsShell() {
   function openSection(id: Section) {
     setSection(id);
     setPickerView(false);
-    if (typeof window !== "undefined") {
+    if (!embedded && typeof window !== "undefined") {
       window.history.replaceState(null, "", `#${id}`);
     }
   }
   function backToPicker() {
     setPickerView(true);
-    if (typeof window !== "undefined") {
+    if (!embedded && typeof window !== "undefined") {
       window.history.replaceState(null, "", window.location.pathname);
     }
   }
@@ -187,6 +188,7 @@ export function SettingsShell() {
   // Support hash-based deep-linking, e.g. /settings#familiars. Read it after
   // hydration so SSR and the first client render both start on General.
   useEffect(() => {
+    if (embedded) return;
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
@@ -199,15 +201,16 @@ export function SettingsShell() {
     applyHashSection();
     window.addEventListener("hashchange", applyHashSection);
     return () => window.removeEventListener("hashchange", applyHashSection);
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
+      if (embedded && !shellRef.current?.contains(target)) return;
       if (target?.isContentEditable) return;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "Escape") {
+      if (!embedded && e.key === "Escape") {
         e.preventDefault();
         router.back();
         return;
@@ -222,11 +225,14 @@ export function SettingsShell() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, section]);
+  }, [embedded, router, section]);
 
   return (
     <FamiliarStudioProvider>
-    <div className="settings-shell flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <div
+      ref={shellRef}
+      className={`settings-shell flex ${embedded ? "h-full" : "h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
+    >
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
           route. Desktop always pops the route. */}
@@ -243,17 +249,19 @@ export function SettingsShell() {
         // Back button and other controls opt out automatically as clickables.
         data-tauri-drag-region="deep"
       >
-        <button
-          type="button"
-          onClick={() => {
-            if (isMobile && !pickerView) backToPicker();
-            else router.back();
-          }}
-          className="settings-back-button focus-ring flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-        >
-          <Icon name="ph:arrow-left" width={13} />
-          {isMobile && !pickerView ? "Settings" : "Back"}
-        </button>
+        {!embedded || (isMobile && !pickerView) ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (isMobile && !pickerView) backToPicker();
+              else if (!embedded) router.back();
+            }}
+            className="settings-back-button focus-ring flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:arrow-left" width={13} />
+            {isMobile && !pickerView ? "Settings" : "Back"}
+          </button>
+        ) : null}
         <div className="min-w-0">
           <span className="surface-compact-title block truncate">
             {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
@@ -354,7 +362,9 @@ export function SettingsShell() {
         </main>
       </div>
       <footer className="shrink-0 border-t border-[var(--border-hairline)] px-4 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
-        {isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "Esc back · ↑↓ navigate sections"}
+        {embedded
+          ? (isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "↑↓ navigate sections")
+          : (isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "Esc back · ↑↓ navigate sections")}
       </footer>
     </div>
     </FamiliarStudioProvider>
