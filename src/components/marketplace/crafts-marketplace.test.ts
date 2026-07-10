@@ -39,7 +39,7 @@ for (const heading of [
   "Equip Roles",
   "Effective capabilities",
 ]) {
-  assert.match(craftDetail, new RegExp(heading.replace(/[&]/g, "&")), `${heading} is visible in the Craft dossier`);
+  assert.match(craftDetail, new RegExp(heading), `${heading} is visible in the Craft dossier`);
 }
 assert.match(craftDetail, /plan\.commands\.install\.join\(" "\)/, "exact Codex install argv is shown before confirmation");
 assert.match(craftDetail, /plan\?\.runtime\.disclosure/, "user-scope routing-boundary disclosure is visible");
@@ -48,6 +48,7 @@ assert.match(craftDetail, /originLabel/, "effective Role capability chips retain
 assert.match(craftDetail, /affectedRoles/, "detach-first failure shows affected Roles");
 assert.match(craftDetail, /affectedRolesTruncated/, "bounded detach-first diagnostics disclose omitted Role counts");
 assert.match(craftDetail, /aria-live="polite"/, "plan and action state changes are announced");
+assert.match(craftDetail, /ref=\{dialogRef\}[\s\S]*tabIndex=\{-1\}/, "focus-trap container remains programmatically focusable for its fallback path");
 assert.doesNotMatch(craftDetail, /<label[^>]+className="craft-role-row"/, "Role rows do not nest a button inside a label");
 assert.match(craftDetail, /Install Craft/, "new Crafts expose an explicit install state");
 assert.match(craftDetail, /Update Craft/, "stale Crafts expose an explicit update state");
