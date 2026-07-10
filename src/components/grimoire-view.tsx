@@ -5,8 +5,8 @@
  *
  * One OpenKnowledge-style home for every markdown document the coven keeps:
  *
- *   - Knowledge vault (~/.coven/knowledge) — curated reference entries,
- *     created and edited here (title/tags frontmatter map to the vault schema).
+ *   - Stitches — the knowledge vault (~/.coven/knowledge): curated reference
+ *     entries sewn from pinned sources or written by hand, edited here (title/tags frontmatter map to the vault schema).
  *   - Memory files — every allow-listed memory root, editable in place with
  *     mtime-guarded saves (agents also write these; conflicts surface, never
  *     silently lose an update).
@@ -44,6 +44,8 @@ import { useMemoryFile } from "@/lib/use-memory-file";
 import { resolveOutgoingLinks, type WikiDocIndex, type WikiDocRef } from "@/lib/wiki-link-resolve";
 import { buildDocGraph, type DocGraph, type GraphEdgeType } from "@/lib/grimoire-graph";
 import type { GrimoireGraphMeta } from "@/lib/server/grimoire-graph-scan";
+import { StitchIntake, StitchProvenance } from "@/components/stitch-intake";
+import type { StitchPinRef } from "@/lib/stitch";
 import dynamic from "next/dynamic";
 
 // The canvas graph is a chunk of physics + drawing code — lazy-load it so the
@@ -69,6 +71,8 @@ type KnowledgeEntry = {
   scope: "global" | string[];
   enabled: boolean;
   body: string;
+  /** Stitch provenance — present when the entry was sewn from pins. */
+  pins?: StitchPinRef[];
 };
 
 type MemoryEntry = {
@@ -85,6 +89,7 @@ type JournalSummary = { date: string; preview: string; reflectedBy: string | nul
 export type GrimoireSelection =
   | { kind: "knowledge"; id: string }
   | { kind: "knowledge-new" }
+  | { kind: "stitch-new" }
   | { kind: "memory"; path: string }
   | { kind: "journal"; date: string };
 
@@ -92,6 +97,7 @@ function selectionKey(sel: GrimoireSelection): string {
   if (sel.kind === "knowledge") return `knowledge:${sel.id}`;
   if (sel.kind === "memory") return `memory:${sel.path}`;
   if (sel.kind === "journal") return `journal:${sel.date}`;
+  if (sel.kind === "stitch-new") return "stitch-new";
   return "knowledge-new";
 }
 
@@ -119,7 +125,7 @@ function readGrimoireHash(): GrimoireSelection | null {
 function writeGrimoireHash(sel: GrimoireSelection | null) {
   if (typeof window === "undefined") return;
   const base = window.location.pathname + window.location.search;
-  if (!sel || sel.kind === "knowledge-new") {
+  if (!sel || sel.kind === "knowledge-new" || sel.kind === "stitch-new") {
     if (window.location.hash.startsWith(GRIMOIRE_HASH_PREFIX)) {
       window.history.replaceState(null, "", base);
     }
@@ -163,7 +169,7 @@ function parseStoredTabs(raw: string | null): GrimoireSelection[] {
       } else if (item.kind === "journal" && typeof item.date === "string" && item.date) {
         tabs.push({ kind: "journal", date: item.date });
       }
-      // "knowledge-new" drafts are intentionally NOT restored across reloads.
+      // "knowledge-new"/"stitch-new" drafts are intentionally NOT restored across reloads.
     }
     return tabs.slice(0, MAX_OPEN_TABS);
   } catch {
@@ -187,7 +193,7 @@ function writeStoredTabs(tabs: GrimoireSelection[], activeKey: string | null) {
   try {
     window.localStorage.setItem(
       TABS_STORAGE_KEY,
-      JSON.stringify(tabs.filter((t) => t.kind !== "knowledge-new")),
+      JSON.stringify(tabs.filter((t) => t.kind !== "knowledge-new" && t.kind !== "stitch-new")),
     );
     if (activeKey) window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeKey);
     else window.localStorage.removeItem(ACTIVE_TAB_STORAGE_KEY);
@@ -329,7 +335,7 @@ function KnowledgeMdEditor({
     <MdEditor
       key={entry?.id ?? "new"}
       value={initial}
-      sourceLabel="Knowledge vault"
+      sourceLabel="Stitches"
       onSave={save}
       onCancel={onCancel}
       onDirtyChange={onDirtyChange}
@@ -685,7 +691,7 @@ function GrimoireDocLinks({
                 title="No matching Grimoire doc"
                 aria-expanded={unresolvedHint === display}
                 onClick={() => {
-                  const hint = `“${display}” has no matching doc yet — create a knowledge entry with that title to link it.`;
+                  const hint = `“${display}” has no matching doc yet — create a stitch with that title to link it.`;
                   setUnresolvedHint((prev) => (prev === display ? null : display));
                   if (unresolvedHint !== display) announce(hint, "polite");
                 }}
@@ -699,7 +705,7 @@ function GrimoireDocLinks({
       ) : null}
       {unresolvedHint ? (
         <p className="text-[11px] text-[var(--text-muted)]" role="status">
-          “{unresolvedHint}” has no matching doc yet — create a knowledge entry with that title to
+          “{unresolvedHint}” has no matching doc yet — create a stitch with that title to
           link it.
         </p>
       ) : null}
@@ -928,12 +934,12 @@ export function GrimoireView({
   // trash (restorable via POST /api/memory/restore); knowledge entries and
   // journal reflections delete through their APIs.
   const deleteSelection = useCallback(async () => {
-    if (!selection || selection.kind === "knowledge-new" || deleting) return;
+    if (!selection || selection.kind === "knowledge-new" || selection.kind === "stitch-new" || deleting) return;
     const label =
       selection.kind === "memory"
         ? "Move this memory file to the trash?"
         : selection.kind === "knowledge"
-          ? "Delete this knowledge entry?"
+          ? "Delete this stitch?"
           : `Delete the journal reflection for ${journalDayLabel(selection.date, readDateTimePrefs())}?`;
     const body =
       selection.kind === "memory"
@@ -968,7 +974,7 @@ export function GrimoireView({
         selection.kind === "memory"
           ? "Memory file moved to trash"
           : selection.kind === "knowledge"
-            ? "Knowledge entry deleted"
+            ? "Stitch deleted"
             : `Journal reflection for ${selection.date} deleted`,
       );
     } catch (err) {
@@ -994,7 +1000,7 @@ export function GrimoireView({
     [memory, matches],
   );
   // Runtime roots write thousands of timestamp-named session files; rendered
-  // flat they drown Knowledge and Journal. Group memory by its source root —
+  // flat they drown Stitches and Journal. Group memory by its source root —
   // big groups start collapsed, and an active search expands everything so
   // matches stay reachable.
   const memoryGroups = useMemo(() => {
@@ -1042,7 +1048,7 @@ export function GrimoireView({
       announce(
         total === 0
           ? "No documents match"
-          : `${total} ${total === 1 ? "match" : "matches"} — ${visibleKnowledge.length} knowledge, ${visibleMemory.length} memory, ${visibleJournal.length} journal`,
+          : `${total} ${total === 1 ? "match" : "matches"} — ${visibleKnowledge.length} stitches, ${visibleMemory.length} memory, ${visibleJournal.length} journal`,
         "polite",
       );
     }, 400);
@@ -1110,7 +1116,7 @@ export function GrimoireView({
   // Incoming connections for the active doc (Obsidian's linked/unlinked
   // mentions), straight off the graph — selectionKey matches docRefKey.
   const backlinks = useMemo<GrimoireBacklink[]>(() => {
-    if (!selection || selection.kind === "knowledge-new") return [];
+    if (!selection || selection.kind === "knowledge-new" || selection.kind === "stitch-new") return [];
     const activeKey = selectionKey(selection);
     const nodesById = new Map(graph.nodes.map((n) => [n.id, n]));
     const out: GrimoireBacklink[] = [];
@@ -1128,6 +1134,7 @@ export function GrimoireView({
   const tabTitle = useCallback(
     (sel: GrimoireSelection): string => {
       if (sel.kind === "knowledge-new") return "New entry";
+      if (sel.kind === "stitch-new") return "New stitch";
       if (sel.kind === "knowledge") {
         return (knowledge ?? []).find((e) => e.id === sel.id)?.title ?? sel.id;
       }
@@ -1169,18 +1176,35 @@ export function GrimoireView({
         />
       );
     }
+    if (tab.kind === "stitch-new") {
+      return (
+        <StitchIntake
+          onSewn={(entryId) => {
+            replaceTab(key, { kind: "knowledge", id: entryId });
+            void load();
+          }}
+        />
+      );
+    }
     const entry =
       tab.kind === "knowledge" ? (knowledge ?? []).find((e) => e.id === tab.id) ?? null : null;
     return (
-      <KnowledgeMdEditor
-        entry={entry}
-        onSaved={(saved) => {
-          replaceTab(key, { kind: "knowledge", id: saved.id });
-          void load();
-        }}
-        onCancel={() => closeTab(key)}
-        onDirtyChange={(dirty) => setTabDirty(key, dirty)}
-      />
+      <div className="flex h-full min-h-0 flex-col">
+        {entry?.pins?.length ? (
+          <StitchProvenance pins={entry.pins} onOpenMemory={(path) => openDoc({ kind: "memory", path })} />
+        ) : null}
+        <div className="min-h-0 flex-1">
+          <KnowledgeMdEditor
+            entry={entry}
+            onSaved={(saved) => {
+              replaceTab(key, { kind: "knowledge", id: saved.id });
+              void load();
+            }}
+            onCancel={() => closeTab(key)}
+            onDirtyChange={(dirty) => setTabDirty(key, dirty)}
+          />
+        </div>
+      </div>
     );
   };
 
@@ -1190,7 +1214,7 @@ export function GrimoireView({
         <EmptyState
           icon="ph:book-open"
           headline="Select a document"
-          subtitle="Pick a knowledge entry, memory file, or journal day — or start a new knowledge entry."
+          subtitle="Pick a stitch, memory file, or journal day — or pin sources into a new stitch."
         />
       </div>
     ) : (
@@ -1265,7 +1289,7 @@ export function GrimoireView({
             </div>
           ) : null}
         </div>
-        {selection && selection.kind !== "knowledge-new" ? (
+        {selection && selection.kind !== "knowledge-new" && selection.kind !== "stitch-new" ? (
           <GrimoireDocLinks
             key={selectedKey ?? ""}
             selection={selection}
@@ -1333,11 +1357,19 @@ export function GrimoireView({
           </div>
           <button
             type="button"
+            onClick={() => openDoc({ kind: "stitch-new" })}
+            className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 px-2 text-[11px] text-[var(--text-primary)] hover:bg-[var(--accent-presence)]/20"
+          >
+            <Icon name="ph:push-pin" width={11} aria-hidden />
+            New stitch
+          </button>
+          <button
+            type="button"
             onClick={() => openDoc({ kind: "knowledge-new" })}
             className="focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:plus" width={11} aria-hidden />
-            New entry
+            Blank entry
           </button>
         </div>
       </header>
@@ -1380,17 +1412,17 @@ export function GrimoireView({
               {/* An active search auto-expands every section — matches must be
                   reachable regardless of collapse state. */}
               <RailSection
-                ariaLabel="Knowledge vault"
+                ariaLabel="Stitches"
                 icon="ph:book-open"
-                label="Knowledge"
-                description="Curated reference entries you write and keep — the durable vault"
+                label="Stitches"
+                description="Curated reference entries — sewn from pinned sources or written by hand"
                 count={visibleKnowledge.length}
                 collapsed={!q && collapsedSections.knowledge}
                 onToggle={() => toggleSection("knowledge")}
               >
                 {visibleKnowledge.length === 0 ? (
                   <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
-                    {q ? "No matches." : "No entries yet — curate durable reference knowledge here."}
+                    {q ? "No matches." : "No stitches yet — pin sources and sew your first entry."}
                   </p>
                 ) : (
                   visibleKnowledge.map((entry) => (
@@ -1558,7 +1590,9 @@ export function GrimoireView({
           <div className="flex h-full min-h-0 flex-col">
             <div
               className={`flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 ${
-                selection.kind === "knowledge-new" ? "@min-[880px]/grimoire:hidden" : ""
+                selection.kind === "knowledge-new" || selection.kind === "stitch-new"
+                  ? "@min-[880px]/grimoire:hidden"
+                  : ""
               }`}
             >
               <button
@@ -1576,7 +1610,7 @@ export function GrimoireView({
                   {deleteError}
                 </span>
               ) : null}
-              {selection.kind !== "knowledge-new" ? (
+              {selection.kind !== "knowledge-new" && selection.kind !== "stitch-new" ? (
                 <button
                   type="button"
                   onClick={() => void deleteSelection()}

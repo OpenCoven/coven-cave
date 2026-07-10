@@ -31,6 +31,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { covenHome } from "../coven-paths.ts";
+import { normalizePinRefs, type StitchPinRef } from "../stitch.ts";
 
 // ── Paths & id guard ────────────────────────────────────────────────────────
 
@@ -72,6 +73,9 @@ export type KnowledgeEntry = {
   scope: KnowledgeScope;
   enabled: boolean;
   body: string;
+  /** Stitch provenance: the pins this entry was sewn from (absent when the
+   *  entry was written by hand). */
+  pins?: StitchPinRef[];
 };
 
 // ── Parse / serialize (pure) ─────────────────────────────────────────────────
@@ -121,6 +125,7 @@ export function parseKnowledgeFile(id: string, raw: string): KnowledgeEntry {
       body = raw;
     }
   }
+  const pins = normalizePinRefs(front.pins);
   return {
     id,
     title: typeof front.title === "string" && front.title.trim() ? front.title.trim() : id,
@@ -128,6 +133,7 @@ export function parseKnowledgeFile(id: string, raw: string): KnowledgeEntry {
     scope: normalizeScope(front.scope),
     enabled: front.enabled !== false,
     body: body.trim(),
+    ...(pins.length > 0 ? { pins } : {}),
   };
 }
 
@@ -140,6 +146,16 @@ export function serializeKnowledgeEntry(entry: KnowledgeEntry): string {
     `tags: [${entry.tags.map((t) => JSON.stringify(t)).join(", ")}]`,
     `scope: ${JSON.stringify(scope)}`,
     `enabled: ${entry.enabled}`,
+    // Stitch provenance rides along as a YAML list of compact pin refs.
+    ...(entry.pins && entry.pins.length > 0
+      ? [
+          "pins:",
+          ...entry.pins.map(
+            (pin) =>
+              `  - { kind: ${JSON.stringify(pin.kind)}, ref: ${JSON.stringify(pin.ref)}, title: ${JSON.stringify(pin.title)} }`,
+          ),
+        ]
+      : []),
     "---",
     "",
     entry.body.trim(),

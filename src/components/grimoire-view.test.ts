@@ -25,10 +25,11 @@ assert.match(view, /fetch\("\/api\/knowledge"/, "navigator lists the knowledge v
 assert.match(view, /fetch\("\/api\/memory"/, "navigator lists memory files");
 assert.match(view, /fetch\("\/api\/journal"/, "navigator lists journal days");
 assert.match(view, /aria-label="Search grimoire documents"/, "navigator search is labelled");
-assert.match(view, /New entry/, "knowledge entries can be created here");
+assert.match(view, /New stitch/, "stitches can be sewn from pinned sources here");
+assert.match(view, /Blank entry/, "hand-written entries can still be created");
 assert.match(
   view,
-  /ariaLabel="Knowledge vault"[\s\S]*ariaLabel="Memory files"[\s\S]*ariaLabel="Journal"/,
+  /ariaLabel="Stitches"[\s\S]*ariaLabel="Memory files"[\s\S]*ariaLabel="Journal"/,
   "sections are labelled landmarks (RailSection renders section[aria-label])",
 );
 assert.match(view, /<section aria-label=\{ariaLabel\}>/, "RailSection emits the section landmark");
@@ -41,7 +42,7 @@ assert.match(
   /collapsed=\{!q && collapsedSections\.knowledge\}/,
   "an active search auto-expands sections so matches stay reachable",
 );
-assert.match(view, /ariaLabel="Knowledge vault"\s+icon="ph:book-open"/, "knowledge carries its kind icon");
+assert.match(view, /ariaLabel="Stitches"\s+icon="ph:book-open"/, "stitches carry their kind icon");
 assert.match(view, /ariaLabel="Memory files"\s+icon="ph:brain"/, "memory carries its kind icon");
 assert.match(view, /ariaLabel="Journal"\s+icon="ph:calendar-blank"/, "journal carries its kind icon");
 
@@ -113,11 +114,11 @@ assert.match(view, /evictedRef\.current = tabs\[evictIndex\] \?\? null/, "openDo
 assert.match(view, /announce\(`Closed \$\{tabTitle\(evictedRef\.current\)\} — \$\{MAX_OPEN_TABS\}-tab limit reached`/, "evictions are announced post-commit");
 // cave-gsvf: search results are announced to screen readers (debounced).
 assert.match(view, /No documents match/, "an empty result set announces");
-assert.match(view, /knowledge, \$\{visibleMemory\.length\} memory, \$\{visibleJournal\.length\} journal/, "match counts announce per section");
+assert.match(view, /stitches, \$\{visibleMemory\.length\} memory, \$\{visibleJournal\.length\} journal/, "match counts announce per section");
 // cave-bkpj: unresolved wiki-link chips are actionable on touch — tapping
 // shows a visible hint (and announces it) instead of a hover-only title.
 assert.match(view, /const \[unresolvedHint, setUnresolvedHint\] = useState<string \| null>/, "unresolved chips have a tap-visible hint");
-assert.match(view, /has no matching doc yet — create a knowledge entry/, "the hint says how to resolve the link");
+assert.match(view, /has no matching doc yet — create a stitch/, "the hint says how to resolve the link");
 assert.match(view, /aria-expanded=\{unresolvedHint === display\}/, "the unresolved chip exposes its hint state");
 
 // ── Delete/trash actions (cave-kv3) ──────────────────────────────────────────

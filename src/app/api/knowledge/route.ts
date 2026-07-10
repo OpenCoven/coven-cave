@@ -4,6 +4,7 @@ import {
   isValidKnowledgeId,
   listKnowledgeEntries,
   normalizeScope,
+  readKnowledgeEntry,
   selectKnowledgeForFamiliar,
   slugifyKnowledgeId,
   writeKnowledgeEntry,
@@ -64,6 +65,9 @@ export async function POST(req: Request) {
       ? body.tags.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean)
       : [];
 
+  // Editing a sewn entry must not strip its stitch provenance — the POST body
+  // doesn't carry pins, so they ride through from the stored entry.
+  const existing = await readKnowledgeEntry(requestedId);
   const entry: KnowledgeEntry = {
     id: requestedId,
     title: title || requestedId,
@@ -71,6 +75,7 @@ export async function POST(req: Request) {
     scope: normalizeScope(body.scope),
     enabled: body.enabled !== false,
     body: content,
+    ...(existing?.pins && existing.pins.length > 0 ? { pins: existing.pins } : {}),
   };
 
   const saved = await writeKnowledgeEntry(entry);
