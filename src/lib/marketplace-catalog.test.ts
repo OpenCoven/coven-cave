@@ -61,6 +61,8 @@ const fetchP = merged.find((p) => p.id === "fetch");
 assert.equal(fetchP.author, "Anthropic"); // string author form
 assert.equal(fetchP.installed, true);
 assert.equal(fetchP.requiresSetup, false);
+assert.deepEqual(fetchP.installation, installed.fetch, "legacy install state remains visible without new fields");
+assert.equal(fetchP.updateAvailable, false);
 
 const tinyfish = merged.find((p) => p.id === "tinyfish-search");
 assert.equal(tinyfish.kind, "api", "non-MCP configured API plugins should be first-class API entries");
@@ -224,10 +226,23 @@ const craftSpec = {
 const craftMerged = mergeCatalog(
   [{ name: "seekers-lens", displayName: "Seeker's Lens", kind: "craft", category: "Research Crafts", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
   { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec, mcpServers: { local: { command: "research-search", args: ["--stdio"] } } } },
-  {},
+  {
+    "seekers-lens": {
+      version: "0.1.0",
+      source: "catalog",
+      installedAt: "2026-07-09T23:30:00.000Z",
+      runtime: "codex",
+      verifiedAt: "2026-07-09T23:30:00.000Z",
+      craftVersion: "0.1.0",
+    },
+  },
 );
 assert.equal(craftMerged[0].kind, "craft");
 assert.deepEqual(craftMerged[0].craft, craftSpec, "Craft metadata is exposed through the marketplace model");
+assert.equal(craftMerged[0].installation.runtime, "codex");
+assert.equal(craftMerged[0].installation.verifiedAt, "2026-07-09T23:30:00.000Z");
+assert.equal(craftMerged[0].installation.craftVersion, "0.1.0");
+assert.equal(craftMerged[0].updateAvailable, false);
 
 // --- filterPlugins: kind + ids ---
 assert.deepEqual(filterPlugins(merged, { kind: "mcp" }).map((p) => p.id), ["fetch", "github"]);
@@ -320,12 +335,12 @@ for (const [label, source] of [
 ]) {
   assert.match(source, /sanitizeMarketplacePlugins/, `${label} should resolve ids through the familiar-safe marketplace catalog`);
 }
-// The install route delegates id-resolution to the shared, path-injection-safe
-// resolveCatalogName helper (which itself sanitizes the catalog), so it no
+// The install route delegates id-resolution and Craft classification to the
+// shared, path-injection-safe catalog helper (which sanitizes the catalog), so it no
 // longer names sanitizeMarketplacePlugins directly (cave-1f9h).
 assert.match(
   marketplaceInstallRoute,
-  /resolveCatalogName/,
+  /resolveCatalogPlugin/,
   "/api/marketplace/install should resolve ids through the shared catalog resolver",
 );
 

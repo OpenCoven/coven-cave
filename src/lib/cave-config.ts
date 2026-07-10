@@ -116,7 +116,18 @@ export type MarketplaceInstallEntry = {
   version: string;
   source: string;
   installedAt: string;
+  /** Runtime that performed and verified the installation. Legacy entries omit it. */
+  runtime?: string;
+  /** ISO timestamp of the most recent runtime verification. */
+  verifiedAt?: string;
+  /** Version of the Craft specification/package that was verified. */
+  craftVersion?: string;
 };
+
+export type MarketplaceInstallMetadata = Pick<
+  MarketplaceInstallEntry,
+  "runtime" | "verifiedAt" | "craftVersion"
+>;
 
 export type CaveMultiHostConfig = {
   mode: "local" | "hub";
@@ -410,6 +421,7 @@ export async function installMarketplacePlugin(
   pluginName: string,
   version: string,
   source: string,
+  metadata: MarketplaceInstallMetadata = {},
 ): Promise<string> {
   return withConfigLock(async () => {
   const cfg = await loadConfig();
@@ -419,7 +431,14 @@ export async function installMarketplacePlugin(
     marketplace: {
       installed: {
         ...cfg.marketplace.installed,
-        [pluginName]: { version, source, installedAt },
+        [pluginName]: {
+          version,
+          source,
+          installedAt,
+          ...(metadata.runtime ? { runtime: metadata.runtime } : {}),
+          ...(metadata.verifiedAt ? { verifiedAt: metadata.verifiedAt } : {}),
+          ...(metadata.craftVersion ? { craftVersion: metadata.craftVersion } : {}),
+        },
       },
     },
   };

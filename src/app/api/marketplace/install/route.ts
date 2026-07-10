@@ -10,21 +10,24 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { installMarketplacePlugin } from "@/lib/cave-config";
-import { resolveCatalogName } from "@/lib/server/marketplace-catalog-resolve";
+import { resolveCatalogPlugin } from "@/lib/server/marketplace-catalog-resolve";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 
-async function pluginVersion(name: string): Promise<string> {
+async function pluginManifest(name: string): Promise<{ version: string; kind?: string }> {
   try {
     const m = JSON.parse(
       await readFile(path.join(MARKETPLACE_DIR, "plugins", name, "plugin.json"), "utf8"),
     );
-    return typeof m?.version === "string" ? m.version : "0.0.0";
+    return {
+      version: typeof m?.version === "string" ? m.version : "0.0.0",
+      ...(typeof m?.kind === "string" ? { kind: m.kind } : {}),
+    };
   } catch {
-    return "0.0.0";
+    return { version: "0.0.0" };
   }
 }
 
@@ -36,10 +39,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
   const id = typeof body?.id === "string" ? body.id : "";
-  const name = id ? await resolveCatalogName(id) : null;
-  if (!name) {
+  const catalogPlugin = id ? await resolveCatalogPlugin(id) : null;
+  if (!catalogPlugin) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
-  const installedAt = await installMarketplacePlugin(name, await pluginVersion(name), "catalog");
+  if (catalogPlugin.kind === "craft") {
+    return NextResponse.json(
+      { ok: false, error: "Crafts require a verified Codex installation", code: "craft_transaction_required" },
+      { status: 409 },
+    );
+  }
+  const name = catalogPlugin.name;
+  const manifest = await pluginManifest(name);
+  if (manifest.kind === "craft") {
+    return NextResponse.json(
+      { ok: false, error: "Crafts require a verified Codex installation", code: "craft_transaction_required" },
+      { status: 409 },
+    );
+  }
+  const installedAt = await installMarketplacePlugin(name, manifest.version, "catalog");
   return NextResponse.json({ ok: true, installedAt });
 }

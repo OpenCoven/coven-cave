@@ -82,10 +82,23 @@ try {
   assert.equal(cfg.marketplace.installed.github.version, "0.1.0");
   assert.equal(cfg.marketplace.installed.github.source, "catalog");
   assert.equal(cfg.marketplace.installed.github.installedAt, installedAt);
+  assert.equal(cfg.marketplace.installed.github.runtime, undefined, "legacy install entries remain valid");
+
+  const craftVerifiedAt = "2026-07-09T23:30:00.000Z";
+  await config.installMarketplacePlugin("seekers-lens", "0.1.0", "catalog", {
+    runtime: "codex",
+    verifiedAt: craftVerifiedAt,
+    craftVersion: "0.1.0",
+  });
+  cfg = await config.loadConfig();
+  assert.equal(cfg.marketplace.installed["seekers-lens"].runtime, "codex");
+  assert.equal(cfg.marketplace.installed["seekers-lens"].verifiedAt, craftVerifiedAt);
+  assert.equal(cfg.marketplace.installed["seekers-lens"].craftVersion, "0.1.0");
 
   await config.uninstallMarketplacePlugin("github");
   cfg = await config.loadConfig();
-  assert.deepEqual(cfg.marketplace.installed, {});
+  assert.deepEqual(Object.keys(cfg.marketplace.installed), ["seekers-lens"]);
+  await config.uninstallMarketplacePlugin("seekers-lens");
 
   await config.saveConfig({
     multiHost: {

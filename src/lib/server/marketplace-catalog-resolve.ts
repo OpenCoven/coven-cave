@@ -10,9 +10,8 @@ import { sanitizeMarketplacePlugins, type MarketplaceJsonPlugin } from "@/lib/ma
 
 const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 
-/** Resolve a user-provided id to the matching catalog entry's own name, or
- *  null when the id is not in the catalog. */
-export async function resolveCatalogName(id: string): Promise<string | null> {
+/** Resolve a user-provided id to its familiar-safe generated catalog entry. */
+export async function resolveCatalogPlugin(id: string): Promise<MarketplaceJsonPlugin | null> {
   if (!id) return null;
   try {
     const raw = JSON.parse(await readFile(path.join(MARKETPLACE_DIR, "marketplace.json"), "utf8"));
@@ -20,10 +19,16 @@ export async function resolveCatalogName(id: string): Promise<string | null> {
       raw && Array.isArray(raw.plugins) ? (raw.plugins as MarketplaceJsonPlugin[]) : [],
     );
     const match = plugins.find((p: { name?: string }) => p.name === id);
-    return match && typeof match.name === "string" ? match.name : null;
+    return match && typeof match.name === "string" ? match : null;
   } catch {
     return null;
   }
+}
+
+/** Resolve a user-provided id to the matching catalog entry's own name, or
+ *  null when the id is not in the catalog. */
+export async function resolveCatalogName(id: string): Promise<string | null> {
+  return (await resolveCatalogPlugin(id))?.name ?? null;
 }
 
 /** Absolute path to an installed/catalog plugin's directory — built from the
