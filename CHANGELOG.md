@@ -9,7 +9,7 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.173] - 2026-07-10
 
-> _One-line teaser — edit before merge._
+> Board & palette project-scoping correctness, chat/board polish, and rollout-audit hardening.
 
 Patch release on top of v0.0.172.
 
