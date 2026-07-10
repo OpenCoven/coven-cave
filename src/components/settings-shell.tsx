@@ -206,7 +206,9 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (embedded && !shellRef.current?.contains(target)) return;
+      const paneRoot = shellRef.current?.closest<HTMLElement>(".workspace-pane-page");
+      const ownsTarget = shellRef.current?.contains(target) || target === paneRoot;
+      if (embedded && !ownsTarget) return;
       if (target?.isContentEditable) return;
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -231,7 +233,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
     <FamiliarStudioProvider>
     <div
       ref={shellRef}
-      className={`settings-shell flex ${embedded ? "h-full" : "h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
+      className={`settings-shell ${embedded ? "settings-shell--embedded" : ""} flex ${embedded ? "h-full" : "h-[100dvh]"} w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]`}
     >
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
@@ -247,7 +249,7 @@ export function SettingsShell({ embedded = false }: { embedded?: boolean }) {
         // Real window drag on the loopback webview (the CSS app-region hint is
         // inert on external URLs — see the titlebar notes in shell.tsx). The
         // Back button and other controls opt out automatically as clickables.
-        data-tauri-drag-region="deep"
+        data-tauri-drag-region={embedded ? undefined : "deep"}
       >
         {!embedded || (isMobile && !pickerView) ? (
           <button

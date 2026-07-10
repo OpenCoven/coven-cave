@@ -22,16 +22,15 @@ function hydrateDashboardModel(model: DashboardModelWire): DashboardModel {
 }
 
 export function DashboardSurface({ initialModel }: { initialModel?: DashboardModel }) {
+  if (initialModel) return <DashboardCockpit model={initialModel} />;
+  return <RemoteDashboardSurface />;
+}
+
+function RemoteDashboardSurface() {
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<DashboardSurfaceState>(() =>
-    initialModel
-      ? { status: "ready", model: initialModel }
-      : { status: "loading" },
-  );
+  const [state, setState] = useState<DashboardSurfaceState>({ status: "loading" });
 
   useEffect(() => {
-    if (initialModel) return;
-
     const controller = new AbortController();
     void fetch("/api/dashboard", { signal: controller.signal })
       .then(async (response) => {
@@ -47,7 +46,7 @@ export function DashboardSurface({ initialModel }: { initialModel?: DashboardMod
       });
 
     return () => controller.abort();
-  }, [attempt, initialModel]);
+  }, [attempt]);
 
   if (state.status === "loading") {
     return (

@@ -18,10 +18,15 @@ const surface = existsSync(surfaceUrl) ? readFileSync(surfaceUrl, "utf8") : "";
 assert.match(surface, /initialModel\?: DashboardModel/, "the dashboard adapter should accept an optional server model");
 assert.match(
   surface,
-  /useState<DashboardSurfaceState>\(\(\) =>\s*initialModel\s*\? \{ status: "ready", model: initialModel \}/,
-  "a supplied route model should render synchronously without a loading flash",
+  /function RemoteDashboardSurface\(\)/,
+  "unseeded dashboard loading should live in a private remountable boundary",
 );
-assert.match(surface, /if \(initialModel\) return;/, "a supplied route model should skip the embedded fetch");
+assert.match(
+  surface,
+  /if \(initialModel\) return <DashboardCockpit model=\{initialModel\} \/>;\s*return <RemoteDashboardSurface \/>/,
+  "a present seed should render directly while removing it remounts remote loading state",
+);
+assert.doesNotMatch(surface, /previousSeeded|setPreviousSeeded/, "prop lifecycle should not require render-phase state synchronization");
 assert.match(surface, /fetch\("\/api\/dashboard", \{ signal: controller\.signal \}\)/, "embedded dashboard should load its model through the dedicated endpoint");
 assert.match(surface, /type DashboardModelWire = Omit<DashboardModel, "date"> & \{ date: string \}/, "the endpoint wire shape should encode the date as a string");
 assert.match(surface, /date: new Date\(model\.date\)/, "dashboard JSON should hydrate its date before cockpit rendering");
@@ -35,7 +40,7 @@ assert.match(
 );
 assert.match(surface, /status: "loading"/, "embedded dashboard should expose an explicit loading state");
 assert.match(surface, /Dashboard is unavailable/, "embedded dashboard should expose an explicit generic failure state");
-assert.match(surface, /<DashboardCockpit model=\{state\.model\} \/>/, "the ready adapter should render the existing cockpit");
+assert.match(surface, /<DashboardCockpit model=\{state\.model\} \/>/, "the fetched ready adapter should render the existing cockpit");
 assert.doesNotMatch(surface, /WorkspacePanePage/, "DashboardSurface should not nest the standard pane root owned by the workspace renderer");
 assert.match(
   surface,

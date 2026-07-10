@@ -5043,6 +5043,9 @@ button:active > .edge-rail-chip {
 :root[data-tauri-titlebar] .settings-shell__header {
   padding-left: var(--titlebar-lights-inset);
 }
+:root[data-tauri-titlebar] .shell-frame .settings-shell--embedded .settings-shell__header {
+  padding-left: 12px;
+}
 :root[data-tauri-titlebar] .dr-topbar {
   padding-left: max(var(--titlebar-lights-inset), clamp(20px, 5vw, 64px));
 }

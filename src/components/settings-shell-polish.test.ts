@@ -29,6 +29,31 @@ assert.match(
 );
 assert.match(
   source,
+  /embedded \? "settings-shell--embedded" : ""/,
+  "embedded Settings should expose a modifier for native chrome overrides",
+);
+assert.match(
+  source,
+  /data-tauri-drag-region=\{embedded \? undefined : "deep"\}/,
+  "only standalone Settings should advertise a native header drag region",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-shell__header\s*\{[^}]*-webkit-app-region:\s*drag;[^}]*app-region:\s*drag;/,
+  "standalone Settings should retain both native drag-region declarations",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-shell--embedded \.settings-shell__header\s*\{[^}]*-webkit-app-region:\s*no-drag;[^}]*app-region:\s*no-drag;/,
+  "the bundled Settings stylesheet should disable the native app-region in a pane",
+);
+assert.match(
+  globals,
+  /:root\[data-tauri-titlebar\] \.shell-frame \.settings-shell--embedded \.settings-shell__header\s*\{[^}]*padding-left:\s*12px;/,
+  "an embedded Settings header should use compact shell padding instead of reserving traffic-light space",
+);
+assert.match(
+  source,
   /if \(!embedded && typeof window !== "undefined"\) \{\s*window\.history\.replaceState\(null, "", `#\$\{id\}`\);\s*\}/,
   "embedded section changes should remain pane-local instead of replacing the route hash",
 );
@@ -49,8 +74,13 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(embedded && !shellRef\.current\?\.contains\(target\)\) return;/,
-  "embedded section shortcuts should ignore key events from sibling panes",
+  /const paneRoot = shellRef\.current\?\.closest<HTMLElement>\("\.workspace-pane-page"\)/,
+  "embedded Settings should identify the standard pane root that recovery focuses",
+);
+assert.match(
+  source,
+  /const ownsTarget = shellRef\.current\?\.contains\(target\) \|\| target === paneRoot;\s*if \(embedded && !ownsTarget\) return;/,
+  "embedded section shortcuts should accept their pane root while ignoring sibling panes",
 );
 assert.match(source, /ref=\{shellRef\}/, "the pane-local keyboard boundary should be attached to the Settings root");
 assert.match(

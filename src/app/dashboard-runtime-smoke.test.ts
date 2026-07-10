@@ -13,7 +13,7 @@ assert.match(inbox, /export async function loadInbox/, "loadInbox is the direct 
 assert.doesNotMatch(page, /startScheduler\(/, "dashboard render must not start long-lived schedulers");
 assert.doesNotMatch(page, /fetch\(/, "dashboard server render must not block on client data endpoints");
 assert.match(page, /<DashboardSurface initialModel=\{model\} \/>/, "standalone dashboard passes its direct server model to the adapter");
-assert.match(surface, /if \(initialModel\) return;/, "the route-backed adapter does not repeat the inbox load in the browser");
+assert.match(surface, /if \(initialModel\) return <DashboardCockpit/, "the route-backed adapter does not repeat the inbox load in the browser");
 assert.match(surface, /fetch\("\/api\/dashboard"/, "only the unseeded embedded adapter fetches the dashboard model");
 
 console.log("dashboard-runtime-smoke.test.ts: ok");

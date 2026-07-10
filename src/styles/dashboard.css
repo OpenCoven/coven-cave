@@ -171,6 +171,12 @@
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.settings-shell--embedded .settings-shell__header {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
