@@ -699,10 +699,28 @@
   overflow: hidden;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-2xl, 14px);
-  background: var(--bg-base);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow:
     0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
     0 4px 18px -6px rgb(0 0 0 / 0.35);
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 /* Skills picker: option list + detail preview side by side. */
 .hc-slash-body { display: flex; align-items: stretch; min-height: 0; }

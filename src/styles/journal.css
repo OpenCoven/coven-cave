@@ -422,11 +422,29 @@
   padding: 10px 12px 10px 13px;
   font-size: 12.5px;
   color: var(--text-primary);
-  background: var(--bg-elevated, var(--bg-raised));
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-strong));
   border-radius: 12px;
   box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.6);
   animation: journal-notice-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .journal-notice {
+    background: var(--bg-elevated, var(--bg-raised));
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .journal-notice {
+    background: var(--bg-elevated, var(--bg-raised));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 @keyframes journal-notice-in {
   from { opacity: 0; transform: translate(-50%, 12px); }

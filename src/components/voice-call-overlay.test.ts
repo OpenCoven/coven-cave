@@ -55,8 +55,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.voice-call-overlay__dialog\s*\{[\s\S]*?background:\s*var\(--bg-raised\);[\s\S]*?box-shadow:/,
-  "voice overlay dialog has a styled raised surface",
+  /\.voice-call-overlay__dialog\s*\{[\s\S]*?background:\s*var\(--glass-raised\);[\s\S]*?backdrop-filter:\s*blur\(var\(--glass-blur\)\)[\s\S]*?box-shadow:/,
+  "voice overlay dialog is a frosted raised surface",
 );
 
 assert.match(

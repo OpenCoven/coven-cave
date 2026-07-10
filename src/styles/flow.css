@@ -435,7 +435,7 @@
 .flow-catalog-item-desc { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- Node detail view --------------------------------------------------- */
-.flow-ndv { position: absolute; top: 0; right: 0; bottom: 0; z-index: 8; width: 332px; display: flex; flex-direction: column; background: var(--bg-raised); border-left: 1px solid var(--border-hairline); box-shadow: -10px 0 32px rgb(0 0 0 / 30%); }
+.flow-ndv { position: absolute; top: 0; right: 0; bottom: 0; z-index: 8; width: 332px; display: flex; flex-direction: column; background: var(--glass-raised); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)); border-left: 1px solid var(--border-hairline); box-shadow: -10px 0 32px rgb(0 0 0 / 30%); }
 .flow-ndv-head { display: flex; align-items: center; gap: 8px; padding: var(--space-3); border-bottom: 1px solid var(--border-hairline); }
 .flow-ndv-icon { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: #11131a; }
 .flow-ndv-name { flex: 1; min-width: 0; padding: 4px 6px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--text-primary); font-size: var(--text-md); font-weight: 600; outline: none; }
@@ -595,11 +595,33 @@
   max-height: min(700px, 90vh);
   display: flex;
   flex-direction: column;
-  background: var(--bg-elevated);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   box-shadow: 0 24px 64px color-mix(in oklch, #000 45%, transparent);
   overflow: hidden;
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surfaces
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .flow-ndv { background: var(--bg-raised); }
+  .flow-template-overlay-panel { background: var(--bg-elevated); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .flow-ndv {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .flow-template-overlay-panel {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* Gallery container — used both in the overlay and as the full empty-state */
