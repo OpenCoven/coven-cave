@@ -29,6 +29,20 @@ test("addSecondaryWorkspaceTile evicts the oldest unique tile at the 3-secondary
   assert.deepEqual(next.map((tile) => tile.id), ["github", "board", "journal"]);
 });
 
+test("addSecondaryWorkspaceTile bounds over-cap input and retains the newest tiles", () => {
+  const tiles = [
+    { id: "first" },
+    { id: "second" },
+    { id: "third" },
+    { id: "fourth" },
+    { id: "fifth" },
+  ];
+  const next = addSecondaryWorkspaceTile(tiles, { id: "sixth" }, keyOf);
+
+  assert.equal(next.length, MAX_SECONDARY_WORKSPACE_TILES);
+  assert.deepEqual(next.map((tile) => tile.id), ["fourth", "fifth", "sixth"]);
+});
+
 test("addSecondaryWorkspaceTile moves an existing tile to the most recent position", () => {
   const tiles = [{ id: "library" }, { id: "github" }, { id: "board" }];
   const next = addSecondaryWorkspaceTile(tiles, { id: "library" }, keyOf);

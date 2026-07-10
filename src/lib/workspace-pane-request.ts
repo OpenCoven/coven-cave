@@ -2,13 +2,16 @@ import type {
   WorkspacePageId,
   WorkspacePageVariant,
 } from "./workspace-page-registry.ts";
-import { workspacePageDefinition } from "./workspace-page-registry.ts";
+import {
+  workspacePageDefinition,
+  workspacePageKey,
+} from "./workspace-page-registry.ts";
 
 export type WorkspacePaneRequest = {
-  instanceId: string;
-  pageId: WorkspacePageId;
-  requestedPageId: WorkspacePageId;
-  variant: WorkspacePageVariant;
+  readonly instanceId: string;
+  readonly pageId: WorkspacePageId;
+  readonly requestedPageId: WorkspacePageId;
+  readonly variant: WorkspacePageVariant;
 };
 
 export function normalizeWorkspacePaneRequest(
@@ -17,14 +20,19 @@ export function normalizeWorkspacePaneRequest(
 ): WorkspacePaneRequest | null {
   const definition = workspacePageDefinition(requestedPageId);
   if (!definition) return null;
-  return {
+  return Object.freeze({
     instanceId,
     pageId: definition.canonicalId,
     requestedPageId: definition.id,
     variant: definition.variant,
-  };
+  });
 }
 
-export function workspacePaneRequestKey(request: WorkspacePaneRequest): string {
-  return `${request.pageId}:${request.variant}`;
+export function workspacePaneRequestKey(
+  request: WorkspacePaneRequest,
+): `${WorkspacePageId}:${WorkspacePageVariant}` {
+  return workspacePageKey({
+    canonicalId: request.pageId,
+    variant: request.variant,
+  });
 }
