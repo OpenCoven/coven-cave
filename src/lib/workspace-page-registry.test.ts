@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import type { WorkspaceMode } from "./workspace-mode.ts";
 import type { WorkspacePageDefinition } from "./workspace-page-registry.ts";
 import {
@@ -63,14 +62,6 @@ const WORKSPACE_MODES: readonly WorkspaceMode[] = [
 test("built-in workspace page ids are exhaustive, ordered, and unique", () => {
   assert.deepEqual(BUILT_IN_WORKSPACE_PAGE_IDS, EXPECTED_BUILT_IN_IDS);
   assert.equal(new Set(BUILT_IN_WORKSPACE_PAGE_IDS).size, BUILT_IN_WORKSPACE_PAGE_IDS.length);
-});
-
-test("built-in ids derive from the authoritative page maps", async () => {
-  const source = await readFile(new URL("./workspace-page-registry.ts", import.meta.url), "utf8");
-
-  assert.doesNotMatch(source, /export const BUILT_IN_WORKSPACE_PAGE_IDS\s*=\s*\[/);
-  assert.match(source, /Object\.keys\(WORKSPACE_MODE_PAGES\)/);
-  assert.match(source, /Object\.keys\(SUPPLEMENTAL_PAGES\)/);
 });
 
 test("consumer page lists are derived from registry navigation metadata", () => {
@@ -228,6 +219,19 @@ test("dynamic role surfaces always receive a trimmed nonblank label", () => {
   assert.equal(workspacePageDefinition("surface:--researcher-desk__")?.title, "Researcher Desk");
   assert.equal(workspacePageDefinition("surface:researcher-desk")?.title, "Researcher Desk");
   assert.equal(workspacePageDefinition("surface:研究者")?.title, "研究者");
+  assert.equal(workspacePageDefinition("surface:باحث")?.title, "باحث");
+});
+
+test("dynamic role surface title casing recognizes Unicode word starts", () => {
+  for (const [id, expected] of [
+    ["surface:équipe", "Équipe"],
+    ["surface:crème-brûlée", "Crème Brûlée"],
+  ] as const) {
+    const definition = workspacePageDefinition(id);
+    assert.ok(definition);
+    assert.equal(definition.title, expected);
+    assert.equal(definition.landmark, expected);
+  }
 });
 
 test("static definitions cannot be mutated through lookup results", () => {

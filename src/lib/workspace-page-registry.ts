@@ -280,7 +280,7 @@ function roleSurfaceTitle(id: RoleSurfaceMode): string {
     .slice(ROLE_SURFACE_MODE_PREFIX.length)
     .replace(/[-_]+/g, " ")
     .trim()
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+    .replace(/(^|\s)\p{L}/gu, (wordStart) => wordStart.toUpperCase());
   return /[\p{L}\p{N}]/u.test(title) ? title : "Role Surface";
 }
 
