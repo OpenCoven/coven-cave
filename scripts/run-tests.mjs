@@ -454,6 +454,7 @@ export const SUITES = {
     "src/lib/chat-attachments.test.ts",
     "src/lib/codex-automations.test.ts",
     "src/lib/coven-spawn-error.test.ts",
+    "src/lib/login-shell-win32-guard.test.ts",
     "src/lib/daemon-sync-status.test.ts",
     "src/lib/familiar-glyph.test.ts",
     "src/lib/familiar-memory.test.ts",

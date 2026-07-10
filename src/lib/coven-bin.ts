@@ -116,6 +116,9 @@ export function pickWindowsLauncher(lines: string[]): string | null {
 }
 
 function loginShellPath(): string | null {
+  // Windows has no POSIX login shell to source — the `-ilc` probe below would
+  // always fail. Skip it (callers fall back to the registry/system PATH).
+  if (process.platform === "win32") return null;
   // Read SHELL through a deliberately opaque accessor so Turbopack's static
   // analysis can't union the value with a string literal like "/bin/zsh"
   // and treat it as a file pattern that matches the whole project tree.

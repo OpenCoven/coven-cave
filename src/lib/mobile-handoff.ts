@@ -64,6 +64,9 @@ function executableExists(candidate: string) {
 }
 
 function loginShellPath(): string | null {
+  // Windows has no POSIX login shell to source — skip the `-ilc` probe (which
+  // would try /bin/zsh and always fail) and fall back to the system PATH.
+  if (process.platform === "win32") return null;
   const env = process.env as Record<string, string | undefined>;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
