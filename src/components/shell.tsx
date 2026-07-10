@@ -34,12 +34,12 @@ import {
 //   ⌘\   toggle list
 //   ⌃`   toggle bottom terminal
 
-// v3: the nav now starts minimized to its icon rail by default (see the
-// default-minimize layout effect below) — bumping the key retires v2 saved
-// widths so the new default applies once, then the user's own resize persists.
+// v4: the nav adopts the 256px expanded / 48px rail sidepanel geometry. The
+// key bump retires v3's 240px / 56px layouts once, then user resize persists.
+// v3: the nav began minimized to its icon rail by default.
 // v2: panels went percent → pixel (see shell-left-panels-fit.test.ts); v1
 // layouts hold percent widths chosen under the old monitor-scaled defaults.
-const SHELL_GROUP_ID = "cave.shell.widths.v3";
+const SHELL_GROUP_ID = "cave.shell.widths.v4";
 const BOTTOM_GROUP_ID = "cave.shell.bottom.v1";
 
 const shellStorage = {
@@ -119,11 +119,11 @@ function markShellMinimizeApplied(id: string): void {
 
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
 // destination icons stay reachable. Sizes at/below the rail read as "collapsed".
-const NAV_RAIL_PX = 56;
+const NAV_RAIL_PX = 48;
 // The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
 // target, and the basis for the minimized-by-default layout injection (the rail
 // is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
-const NAV_OPEN_PX = 240;
+const NAV_OPEN_PX = 256;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellHandle = {
@@ -595,7 +595,7 @@ function ShellInner({
         // minimized-by-default rail is applied via the group's setLayout (see the
         // minimize effect above), not a rail-sized defaultSize here — a rail-sized
         // default made the solver squeeze the sibling list/code-rail panels.
-        defaultSize="240px"
+        defaultSize="256px"
         minSize="200px"
         maxSize="420px"
         collapsible

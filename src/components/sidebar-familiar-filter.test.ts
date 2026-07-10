@@ -7,6 +7,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatRouter = readFileSync(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const agentPanel = readFileSync(new URL("./familiar-panel.tsx", import.meta.url), "utf8");
+const chrome = readFileSync(new URL("./sidebar-chrome.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -23,15 +24,16 @@ assert.doesNotMatch(
   "Sidebar should no longer render the global search action in the left panel",
 );
 
-// The horizontal dock is gone, and the profile switcher is not in the left
-// panel: scope selection lives in the top bars (FamiliarMenuBar on desktop, the
-// mobile top bar). The sidebar is pure navigation.
+// The horizontal dock and ad-hoc filter are gone. Scope selection is the
+// account-style identity control at the bottom of the shared sidepanel.
 assert.doesNotMatch(sidebar, /<FamiliarDock/, "the horizontal familiar dock is replaced");
 assert.doesNotMatch(
   sidebar,
   /<FamiliarSwitcher/,
-  "the familiar switcher is no longer mounted in the left sidebar",
+  "SidebarMinimal delegates familiar identity to shared chrome",
 );
+assert.match(sidebar, /<SidebarIdentityFooter/, "the standard sidepanel exposes familiar scope in its identity footer");
+assert.match(chrome, /<FamiliarQuickSwitch[\s\S]*?placement="top-start"[\s\S]*?labeled/, "the footer keeps a labeled upward-opening familiar menu");
 
 assert.doesNotMatch(
   sidebar,
@@ -93,10 +95,10 @@ assert.match(
   "ChatSurface should show all familiar memory/list context when Familiars is selected",
 );
 
-assert.match(
+assert.doesNotMatch(
   styles,
   /\.sidebar-familiar-filter/,
-  "Sidebar familiar selector should have dedicated stable styling hooks",
+  "the retired ad-hoc familiar filter leaves no dead styling hooks",
 );
 
 console.log("sidebar-familiar-filter.test.ts: ok");

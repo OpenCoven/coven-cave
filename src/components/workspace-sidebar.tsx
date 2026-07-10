@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon, type IconName } from "@/lib/icon";
-import { SidebarFooter } from "@/components/sidebar-footer";
+import {
+  SidebarBrand,
+  SidebarIdentityFooter,
+  SidebarPrimaryActions,
+  SidebarUtilityNav,
+} from "@/components/sidebar-chrome";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
@@ -39,10 +43,11 @@ type Props = {
   /** Selected familiar (null = "All familiars"). Scopes the project list, the
    *  per-project session rows, and the project grant when registering. */
   activeFamiliarId?: string | null;
+  selectedFamiliarIds?: ReadonlySet<string>;
   activeSessionId?: string | null;
   responseNeeded?: Set<string>;
-  /** Change the familiar scope from the header switcher (`null` = All). */
-  onSelectFamiliar: (id: string | null) => void;
+  /** Change the familiar scope from the identity footer (`null` = All). */
+  onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
@@ -208,6 +213,7 @@ export function WorkspaceSidebar({
   sessions,
   familiars,
   activeFamiliarId = null,
+  selectedFamiliarIds,
   activeSessionId,
   responseNeeded,
   onSelectFamiliar,
@@ -365,38 +371,11 @@ export function WorkspaceSidebar({
 
   return (
     <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
-      {/* Collapsed rail — when the nav panel is collapsed the shell adds
-          `.shell-nav--rail`, which hides the full sidebar and shows this
-          vertical "Chats" label. Clicking it reopens the panel. */}
-      <button
-        type="button"
-        className="workspace-sidebar__rail chat-sidebar__rail focus-ring"
-        aria-label="Expand chats"
-        title="Expand chats"
-        onClick={() => window.dispatchEvent(new CustomEvent("cave:toggle-left-panel"))}
-      >
-        <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-        <span className="workspace-sidebar__rail-label chat-sidebar__rail-label">Chats</span>
-      </button>
-
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
-        {/* Header — the labeled familiar switcher (#2747). On the CHAT page
-            this sidebar REPLACES the global sidenav (SidebarMinimal never
-            renders here), so this is the page's only familiar control —
-            cave-l3ay restored it after #2750 removed it as a supposed
-            duplicate. Every other page gets the sidenav header switcher. */}
-        <header className="cnav__header">
-          <div className="cnav__switcher">
-            <FamiliarSwitcher
-              familiars={familiars}
-              activeFamiliarId={activeFamiliarId}
-              sessions={sessions}
-              responseNeeded={responseNeeded}
-              onSelectFamiliar={onSelectFamiliar}
-              placement="bottom-start"
-              labeled
-            />
-          </div>
+        <SidebarBrand />
+        <SidebarPrimaryActions onNewChat={() => onNewChat(null)} />
+
+        <div className="cnav__toolbar" role="group" aria-label="Chat sidebar shortcuts">
           <button
             type="button"
             aria-label="Go to Home"
@@ -405,6 +384,27 @@ export function WorkspaceSidebar({
             className="cnav__back focus-ring ml-auto"
           >
             <Icon name="ph:house-bold" width={15} aria-hidden />
+          </button>
+          <button
+            type="button"
+            title="Scheduled"
+            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
+            className="cnav__back focus-ring"
+          >
+            <Icon name="ph:clock" width={14} aria-hidden />
+            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
+              <span className="cnav__mini-count">{scheduledCount}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            title="Plugins"
+            aria-label="Plugins"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
+            className="cnav__back focus-ring"
+          >
+            <Icon name="ph:plugs" width={14} aria-hidden />
           </button>
           <button
             ref={menuAnchorRef}
@@ -438,37 +438,6 @@ export function WorkspaceSidebar({
               </PopoverBody>
             </div>
           </Popover>
-        </header>
-
-        {/* One-row quick actions: New chat takes the slack; the Scheduled and
-            Plugins shortcuts ride along as icon chips (labels live in
-            title/aria — the badge still shows the scheduled count). */}
-        <div className="cnav__quick">
-          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
-            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
-            <span className="cnav__new-label">New chat</span>
-          </button>
-          <button
-            type="button"
-            title="Scheduled"
-            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
-            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
-              <span className="cnav__mini-count">{scheduledCount}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            title="Plugins"
-            aria-label="Plugins"
-            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
-            className="cnav__mini focus-ring"
-          >
-            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
-          </button>
         </div>
 
         <div className="cnav__search-wrap">
@@ -692,10 +661,15 @@ export function WorkspaceSidebar({
           )}
         </nav>
 
-        {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
-            side-panel footer as every other surface; it sits below the scrolling
-            thread list because .cnav__scroll flexes and this stays put. */}
-        <SidebarFooter onOpenSettings={onOpenSettings} />
+        <SidebarUtilityNav onOpenSettings={onOpenSettings} />
+        <SidebarIdentityFooter
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId}
+          selectedFamiliarIds={selectedFamiliarIds}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
+          onFamiliarScopeChange={onSelectFamiliar}
+        />
       </div>
     </div>
   );

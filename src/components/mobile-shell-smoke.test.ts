@@ -188,6 +188,11 @@ assert.match(
   /\.shell-nav-panel,[\s\S]{0,120}\.shell-list-panel\s*\{[\s\S]{0,260}height:\s*100dvh/,
   "Mobile drawers should use dynamic viewport height so iOS browser chrome does not create hidden overflow",
 );
+assert.match(
+  globals,
+  /\.shell-nav-panel,[\s\S]{0,120}\.shell-list-panel\s*\{[\s\S]{0,320}width:\s*min\(86vw,\s*288px\)/,
+  "Mobile drawers should match the 288px reference sheet width",
+);
 
 assert.match(
   globals,

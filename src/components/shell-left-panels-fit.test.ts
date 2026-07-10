@@ -6,15 +6,15 @@ const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // The left panels are PIXEL-sized so they stop scaling with monitor width —
-// a 24%-wide nav is 826px on a 3440px ultrawide for a ~240px rail of labels.
+// a 24%-wide nav is 826px on a 3440px ultrawide for a 256px rail of labels.
 // The detail panel has no size props and absorbs everything the left releases.
-// The nav panel keeps its 240px default (so the group's layout solver leaves
+// The nav panel keeps its 256px default (so the group's layout solver leaves
 // the sibling list panel at its own default); "minimized by default" is done by
 // collapsing after mount, not by a rail-sized default that squeezed the list.
 assert.match(
   shell,
-  /id="nav"[\s\S]{0,600}?defaultSize="240px"[\s\S]{0,90}?minSize="200px"[\s\S]{0,60}?maxSize="420px"/,
-  "Shell nav panel keeps its 240px default, drag-resizable within a 200–420px band",
+  /id="nav"[\s\S]{0,600}?defaultSize="256px"[\s\S]{0,90}?minSize="200px"[\s\S]{0,60}?maxSize="420px"/,
+  "Shell nav panel keeps its 256px default, drag-resizable within a 200–420px band",
 );
 // Minimized by default via the group's setLayout (sets ALL panels at once) —
 // NOT a single-panel collapse(). Applied ONCE per group per browser via a
@@ -51,13 +51,14 @@ assert.match(
   "Shell list panel should default to 260px, drag-resizable within a 220–420px band",
 );
 
-// The key bump resets everyone to the new defaults exactly once. v3 retires v2
-// widths so the minimized-by-default nav takes effect; v2 retired v1 percents.
+// The key bump resets everyone to the new reference geometry exactly once.
 assert.match(
   shell,
-  /const SHELL_GROUP_ID = "cave\.shell\.widths\.v3"/,
-  "Shell layout persistence should use the v3 key (bumped so the minimized nav default applies once)",
+  /const SHELL_GROUP_ID = "cave\.shell\.widths\.v4"/,
+  "Shell layout persistence should use the v4 key for the 256/48 geometry",
 );
+assert.match(shell, /const NAV_RAIL_PX = 48/, "OpenTrust parity uses a 48px icon rail");
+assert.match(shell, /const NAV_OPEN_PX = 256/, "OpenTrust parity uses a 256px expanded panel");
 
 // Collapse-to-rail must survive the px conversion.
 assert.match(
@@ -68,7 +69,7 @@ assert.match(
 
 // The CSS vars mirror the panel props (React props can't read CSS vars) —
 // if one side changes, this keeps the other honest.
-assert.match(globals, /--shell-nav-width:\s*240px/, "--shell-nav-width mirrors the nav's expanded width (rail is NAV_RAIL_PX)");
+assert.match(globals, /--shell-nav-width:\s*256px/, "--shell-nav-width mirrors the nav's expanded width (rail is NAV_RAIL_PX)");
 assert.match(globals, /--shell-list-width:\s*260px/, "--shell-list-width should match the list panel default");
 
 console.log("shell-left-panels-fit.test.ts OK");

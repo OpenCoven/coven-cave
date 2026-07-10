@@ -1,33 +1,31 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
-const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
+const chrome = readFileSync(new URL("./sidebar-chrome.tsx", import.meta.url), "utf8");
 const minimal = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const chatNav = readFileSync(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
-// The side-panel footer (Dashboard + Settings + version) is a single shared
-// component so it renders identically in every nav host — and, critically,
-// persists on Chat, whose nav panel swaps SidebarMinimal out for WorkspaceSidebar.
+assert.equal(existsSync(new URL("./sidebar-footer.tsx", import.meta.url)), false, "the superseded two-row footer is retired");
+assert.match(chrome, /export function SidebarUtilityNav/, "shared chrome owns lower utilities");
+assert.match(chrome, /href="\/dashboard"/, "utilities link to Dashboard");
+assert.match(chrome, /onClick=\{onOpenSettings\}[\s\S]*?aria-label="Settings"/, "utilities wire Settings");
+assert.match(chrome, /onClick=\{openSidebarSearch\}[\s\S]*?aria-label="Search"/, "utilities expose labeled Search");
+assert.match(chrome, /className="sidebar-attribution">Coven Cave v\{APP_VERSION\}/, "identity footer shows the app version");
+assert.match(chrome, /<FamiliarQuickSwitch[\s\S]*?placement="top-start"/, "identity footer owns familiar selection");
 
-// The shared component owns the whole footer.
-assert.match(footer, /export function SidebarFooter\(\{ onOpenSettings \}/, "SidebarFooter is a shared component taking onOpenSettings");
-assert.match(footer, /href="\/dashboard"/, "footer links to the Dashboard route");
-assert.match(footer, /onClick=\{onOpenSettings\}[\s\S]*?aria-label="Settings"/, "footer Settings button calls onOpenSettings");
-assert.match(footer, /className="sidebar-version"[\s\S]*?v\{APP_VERSION\}/, "footer shows the app version line");
+for (const [name, source] of [["standard", minimal], ["Chat", chatNav]]) {
+  assert.match(source, /<SidebarUtilityNav onOpenSettings=\{onOpenSettings\}/, `${name} host uses shared utilities`);
+  assert.match(source, /<SidebarIdentityFooter/, `${name} host uses shared identity footer`);
+  assert.doesNotMatch(source, /SidebarFooter/, `${name} host does not import the retired footer`);
+}
 
-// Both nav hosts render it (so the footer can't drift between them)…
-assert.match(minimal, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "SidebarMinimal imports the shared footer");
-assert.match(minimal, /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/, "SidebarMinimal renders the shared footer");
-assert.match(chatNav, /import \{ SidebarFooter \} from "@\/components\/sidebar-footer"/, "the chat nav imports the shared footer");
-assert.match(chatNav, /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/, "the chat nav (WorkspaceSidebar) renders the shared footer so Chat keeps it");
-// …and neither hand-rolls its own copy anymore.
-assert.doesNotMatch(minimal, /className="sidebar-foot"[\s\S]{0,40}href="\/dashboard"/, "SidebarMinimal no longer inlines the footer markup");
-
-// WorkspaceSidebar takes onOpenSettings, and workspace threads it through to the
-// chat nav so the Settings button is wired on Chat too.
 assert.match(chatNav, /onOpenSettings: \(\) => void;/, "WorkspaceSidebar declares an onOpenSettings prop");
-assert.match(workspace, /<WorkspaceSidebar[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?push\("\/settings"\)/, "workspace wires onOpenSettings into the chat nav");
+assert.match(
+  workspace,
+  /<WorkspaceSidebar[\s\S]*?onOpenSettings=\{\(\) => \{[\s\S]*?push\("\/settings"\)/,
+  "workspace wires Settings into the Chat host",
+);
 
 console.log("sidebar-footer.test.ts: ok");

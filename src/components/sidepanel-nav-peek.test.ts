@@ -12,8 +12,9 @@ assert.match(shell, /onMouseEnter=\{!isMobile && !navOpen \? \(\) => setNavPeeki
 assert.match(shell, /onMouseLeave=\{!isMobile && !navOpen \? \(\) => setNavPeeking\(false\)/, "leaving the rail ends the peek");
 assert.match(shell, /if \(navOpen \|\| isMobile\) setNavPeeking\(false\)/, "peek resets when the rail goes away");
 
-// The peek overlay escapes the 56px rail box and floats over content.
+// The peek overlay escapes the 48px rail box and restores the 256px panel.
 assert.match(globals, /\.shell-nav-panel:has\(> \.shell-nav--peek\) \{[\s\S]*?overflow: visible/, "peek lets the nav escape its panel box");
 assert.match(globals, /\.shell-nav--peek \{[\s\S]*?position: absolute[\s\S]*?box-shadow/, "peek floats as a shadowed overlay");
+assert.match(globals, /\.shell-nav-panel > \.shell-nav--peek\s*\{[\s\S]*?width:\s*256px/, "peek restores the reference expanded width");
 
 console.log("sidepanel-nav-peek.test.ts: ok");

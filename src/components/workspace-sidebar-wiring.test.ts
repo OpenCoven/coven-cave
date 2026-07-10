@@ -29,15 +29,15 @@ assert.match(workspaceSidebar, /<span className="cnav__group-text">[\s\S]*?cnav_
 assert.doesNotMatch(workspaceSidebar, /cnav__count/, "the count badge is retired — the meta line carries the count");
 // New features from code-sidebar
 assert.match(workspaceSidebar, /cave:code-select-project/, "should broadcast code-select-project on project expand");
-// One-row quick actions: New chat + the Scheduled/Plugins icon chips share a
-// single row (no stacked mini-row), and the header hosts the familiar switcher.
+// Shared product/action chrome plus a compact Chat-specific shortcut toolbar.
 assert.doesNotMatch(workspaceSidebar, /cnav__mini-row/, "the stacked mini-row is retired — quick actions are one row");
 assert.match(workspaceSidebar, /aria-label=\{scheduledCount \? `Scheduled \(\$\{scheduledCount\}\)` : "Scheduled"\}/, "Scheduled shortcut is an icon chip with an accessible name");
-// The chat page's ONLY familiar control: chat mode swaps the nav panel for
-// this sidebar (SidebarMinimal never renders there), so the header hosts the
-// labeled switcher (#2747, restored by cave-l3ay after #2750 briefly removed
-// it as a supposed duplicate). Non-chat pages use the sidenav header switcher.
-assert.match(workspaceSidebar, /<header className="cnav__header">[\s\S]*?<FamiliarSwitcher/, "the chat sidebar header hosts the familiar switcher");
+assert.match(workspaceSidebar, /<SidebarBrand\s*\/>/, "the Chat host uses the shared product header");
+assert.match(workspaceSidebar, /<SidebarPrimaryActions onNewChat=\{\(\) => onNewChat\(null\)\}/, "the Chat host uses the shared New chat/Search row");
+assert.match(workspaceSidebar, /<SidebarUtilityNav onOpenSettings=\{onOpenSettings\}/, "the Chat host uses shared lower utilities");
+assert.match(workspaceSidebar, /<SidebarIdentityFooter[\s\S]*?selectedFamiliarIds=\{selectedFamiliarIds\}/, "the familiar selector is the shared identity footer");
+assert.doesNotMatch(workspaceSidebar, /workspace-sidebar__rail chat-sidebar__rail/, "the bespoke vertical collapsed rail is retired");
+assert.match(workspace, /<WorkspaceSidebar[\s\S]*?selectedFamiliarIds=\{scopeIds\}/, "Workspace threads multi-familiar scope into Chat");
 assert.doesNotMatch(workspaceSidebar, /cnav__eyebrow/, "the old Recent eyebrow stays retired");
 assert.match(workspaceSidebar, /ph:git-pull-request/, "should support PR glyph on thread rows");
 assert.match(workspaceSidebar, /scheduledCount/, "should accept scheduledCount prop");

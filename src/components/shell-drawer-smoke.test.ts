@@ -57,6 +57,11 @@ assert.match(
   /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel\s*\{[\s\S]*overscroll-behavior:\s*contain/,
   "globals.css contains drawer panel rubber-band scroll on mobile",
 );
+assert.match(
+  globals,
+  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel\s*\{[\s\S]{0,220}width:\s*min\(86vw,\s*288px\)/,
+  "mobile nav/list drawers use the reference 18rem maximum width",
+);
 
 // shell.tsx projects mobileDrawer state onto data-mobile-drawer.
 assert.match(

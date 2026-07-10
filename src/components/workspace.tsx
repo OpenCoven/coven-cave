@@ -2266,6 +2266,7 @@ export function Workspace() {
       sessions={sessions}
       familiars={resolvedFamiliars}
       activeFamiliarId={activeId}
+      selectedFamiliarIds={scopeIds}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       responseNeeded={responseNeeded}
       onSelectFamiliar={selectFamiliarScope}

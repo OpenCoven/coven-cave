@@ -5,9 +5,7 @@ import { readFileSync } from "node:fs";
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-// The footer (Dashboard + Settings + version) now lives in a shared component so
-// it persists across every nav host, including Chat's WorkspaceSidebar.
-const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
+const chrome = readFileSync(new URL("./sidebar-chrome.tsx", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -41,20 +39,20 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*13px/,
-  "Sidebar nav rows should keep compact side-panel text sizing",
+  /\.sidebar-folder-row,\n\.sidebar-utility-row\s*\{[^}]*font-size:\s*13px/,
+  "Sidebar destination and utility rows keep compact side-panel text sizing",
 );
 
 assert.match(
   styles,
-  /\.sidebar-nav-scroll\s*\{[^}]*gap:\s*4px/,
-  "Sidebar nav options should stay visually close together on desktop",
+  /\.sidebar-nav-scroll\s*\{[^}]*gap:\s*0/,
+  "Sidebar navigation uses compact groups without artificial section gaps",
 );
 
 assert.match(
   styles,
-  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*min-height:\s*30px/,
-  "Desktop sidebar option rows should use compact height before mobile touch-target overrides",
+  /\.sidebar-folder-row,\n\.sidebar-utility-row\s*\{[^}]*min-height:\s*32px/,
+  "Desktop destination and utility rows share the compact reference height",
 );
 
 assert.match(
@@ -63,10 +61,10 @@ assert.match(
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.doesNotMatch(
+assert.match(
   source,
-  /function SidebarSection|<SidebarSection|sidebar-section-label|fm\.group === "work"|fm\.group === "tools"/,
-  "Left sidepanel should render one flat list without collapsible Work/Tools sections",
+  /<SidebarSectionLabel>Cave tools<\/SidebarSectionLabel>/,
+  "Left sidepanel should expose the same labeled tool hierarchy as the reference",
 );
 
 // The standalone Knowledge section is gone; Library is now isolated on its
@@ -79,8 +77,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /VISIBLE_MODES\.map\(\(fm, i\) =>/,
-  "Sidebar renders the visible folder modes (navHidden surfaces filtered out)",
+  /PRIMARY_MODES\.map\(\(fm, i\) =>/,
+  "Sidebar renders primary visible modes in their own compact group",
+);
+assert.match(
+  source,
+  /TOOL_MODES\.map\(\(fm, i\) =>/,
+  "Sidebar renders tool visible modes in the labeled group",
 );
 assert.match(
   source,
@@ -100,14 +103,13 @@ assert.doesNotMatch(
   "Familiars subpage should not appear as a Work navigation row",
 );
 
-// The horizontal dock is gone, and the profile switcher no longer lives in the
-// left panel either: familiar scope selection moved to the desktop top menu bar
-// (FamiliarMenuBar) and the mobile top bar, leaving the sidebar as pure nav.
+// The horizontal dock is gone. Familiar scope lives in the reference-shaped
+// identity footer rather than a custom strip or a top-panel card.
 assert.doesNotMatch(source, /<FamiliarDock/, "the old horizontal familiar dock is gone");
-assert.doesNotMatch(
+assert.match(
   source,
-  /<FamiliarSwitcher/,
-  "the familiar switcher is no longer mounted in the left sidebar (it lives in the top bars)",
+  /<SidebarIdentityFooter/,
+  "the shared identity footer owns familiar selection in the left sidepanel",
 );
 assert.match(
   source,
@@ -169,7 +171,7 @@ assert.doesNotMatch(
 // it) but is navHidden, so it renders no sidebar row — summoned on demand.
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true, section: "tools" \}/,
   "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
@@ -224,26 +226,14 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  styles,
-  /\.sidebar-foot-bell,\n\.sidebar-foot-btn/,
-  "Legacy bell and footer buttons keep shared footer row treatment",
-);
-
-assert.match(
   source,
-  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/,
-  "SidebarMinimal renders the shared footer",
+  /<SidebarUtilityNav onOpenSettings=\{onOpenSettings\} \/>/,
+  "SidebarMinimal renders the shared lower utilities",
 );
 assert.match(
-  footer,
-  /sidebar-foot-icon-cell/,
-  "Footer controls should use the fixed footer icon cell",
-);
-
-assert.match(
-  styles,
-  /\.sidebar-foot-bell > \.relative,\n\.sidebar-foot-icon-cell/,
-  "Footer rows should align labels from matching icon cells",
+  chrome,
+  /className="sidebar-identity-footer"/,
+  "Shared chrome owns the identity footer",
 );
 
 // The left sidepanel footer stays quiet: reminders/notifications live in the
@@ -310,19 +300,16 @@ assert.match(
   "Recent Activity must receive activeSessionId to highlight the open session",
 );
 
-// "New chat" is the left panel's top CTA: it sits directly under the wordmark
-// (above the nav scroll) and calls onNewChat. It moved here from the desktop
-// menu bar and the mobile top bar, so the sidebar now owns the only new-chat
-// affordance on every breakpoint.
+// New Chat is the shared primary action, directly below the product identity.
 assert.match(
   source,
-  /<div className="sidebar-actions">\s*<button type="button" className="sidebar-action-row focus-ring" onClick=\{onNewChat\}[^>]*>/,
-  "the sidebar renders a New chat CTA at the top, wired to onNewChat",
+  /<SidebarPrimaryActions onNewChat=\{onNewChat\} \/>/,
+  "the sidebar renders the shared New chat action row",
 );
 assert.match(
-  source,
-  /<Icon[\s\S]{0,180}name="ph:note-pencil"[\s\S]*?<span>New chat<\/span>/,
-  "the New chat CTA is labelled and iconed",
+  chrome,
+  /className="sidebar-primary-action focus-ring"[\s\S]*?<span>New chat<\/span>/,
+  "the shared New chat CTA is labelled and iconed",
 );
 
 // The sidebar header is a static wordmark — collapsing the panel is owned by
@@ -333,24 +320,14 @@ assert.doesNotMatch(
   /className="sidebar-header sidebar-header--static"/,
   "the static wordmark header is gone — the familiar switcher owns the slot (collapse stays on the shell's floating toggle + ⌘B)",
 );
-// The header carries the familiar switcher on every page (cave-vtk9) — the
-// wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
+// Familiar selection moved from the top slot to the identity footer.
+assert.doesNotMatch(source, /className="sidebar-familiar-switch"/, "the legacy top switcher slot is retired");
 assert.match(
   source,
-  /<div className="sidebar-familiar-switch">[\s\S]{0,600}<FamiliarQuickSwitch/,
-  "the sidenav header mounts the familiar switcher",
-);
-assert.match(
-  source,
-  /onSelectFamiliar=\{onFamiliarScopeChange\}/,
-  "the header switcher drives the shared familiar scope",
+  /onFamiliarScopeChange=\{onFamiliarScopeChange\}/,
+  "the identity footer drives the shared familiar scope",
 );
 const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
-assert.match(
-  sidebarCss,
-  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
-  "the rail keeps the avatar-only trigger (label drops)",
-);
 assert.doesNotMatch(
   source,
   /onToggleSidebar/,
@@ -358,18 +335,18 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /\.sidebar-action-stack \.sidebar-action-row\s*\{[^}]*border-radius:\s*var\(--radius-control\);/,
-  "Sidebar action rows should follow the shared control radius setting",
+  /\.sidebar-primary-action,\n\.sidebar-search-action\s*\{[^}]*border-radius:\s*var\(--radius-control\);/,
+  "Shared primary controls follow the control radius setting",
 );
 assert.match(
   styles,
-  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*border-radius:\s*var\(--radius-control\);/,
-  "Sidebar folder/footer rows should follow the shared control radius setting",
+  /\.sidebar-folder-row,\n\.sidebar-utility-row\s*\{[^}]*border-radius:\s*var\(--radius-control\);/,
+  "Sidebar destination and utility rows follow the shared control radius setting",
 );
 assert.match(
   styles,
-  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-header,[\s\S]*\.sidebar-action-row,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-foot-btn,[\s\S]*\.sidebar-familiar-filter__select[\s\S]*min-height:\s*var\(--touch-target\)/,
-  "Mobile sidebar drawer rows and familiar select should meet the shared touch target",
+  /@media \(max-width: 1023px\) \{[\s\S]*\.sidebar-primary-action,[\s\S]*\.sidebar-folder-row,[\s\S]*\.sidebar-utility-row,[\s\S]*\.sidebar-identity-control \.familiar-switcher__trigger--labeled[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile shared actions, rows, and identity control meet the touch target",
 );
 
 // Every surface carries a one-line description, and FolderRow surfaces it as a
@@ -390,32 +367,21 @@ assert.match(
   "title combines label + description (+ shortcut when present) + drag-to-split hint + open-in-split hint",
 );
 
-// The app version renders as the bottommost sidebar element — one
-// minimal-height muted line under the footer icon row, hidden in the rail.
+// App version and familiar identity are co-located in the shared footer.
 assert.match(
-  footer,
+  chrome,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
-  "the shared footer reads the version from the shared app-version module",
+  "shared chrome reads the version from the shared app-version module",
 );
 assert.match(
-  footer,
-  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>/,
-  "the version line is the bottommost element of the shared footer",
+  chrome,
+  /className="sidebar-attribution">Coven Cave v\{APP_VERSION\}/,
+  "the identity footer carries the product version attribution",
 );
 assert.match(
   source,
-  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
-  "the shared footer is the bottommost element of the sidebar nav",
-);
-assert.match(
-  styles,
-  /\.sidebar-version \{[^}]*line-height: 1;[^}]*color: var\(--text-muted\)/,
-  "The version line should be minimal-height muted text",
-);
-assert.match(
-  styles,
-  /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
-  "The 56px rail has no room for text — the version line hides there",
+  /<SidebarIdentityFooter[\s\S]*?onFamiliarScopeChange=\{onFamiliarScopeChange\}[\s\S]*?\/>\s*<\/nav>/,
+  "the identity footer is the bottommost sidepanel element",
 );
 
 // Quiet cluster (§8): occasional destinations stay in the same flat list but
@@ -425,12 +391,12 @@ assert.match(
 // and Grimoire lead the quiet cluster, followed by Marketplace/GitHub/Work Queue.
 assert.match(
   source,
-  /\{ id: "journal",[^}]*quiet: true \}/,
+  /\{ id: "journal",[^}]*quiet: true[^}]*\}/,
   "Journal is in the quiet cluster (cave-xsq.8)",
 );
 assert.match(
   source,
-  /\{ id: "grimoire",[^}]*quiet: true \}/,
+  /\{ id: "grimoire",[^}]*quiet: true[^}]*\}/,
   "Grimoire is in the quiet cluster (cave-xsq.8)",
 );
 assert.match(
@@ -440,13 +406,13 @@ assert.match(
 );
 assert.match(
   source,
-  /\{ id: "marketplace",[^}]*quiet: true \}/,
+  /\{ id: "marketplace",[^}]*quiet: true[^}]*\}/,
   "Marketplace is in the quiet cluster",
 );
 assert.match(
   source,
-  /quietLead=\{Boolean\(fm\.quiet\) && !VISIBLE_MODES\[i - 1\]\?\.quiet\}/,
-  "the first quiet row opens the spacing gap (indexed on the VISIBLE list)",
+  /quietLead=\{Boolean\(fm\.quiet\) && !TOOL_MODES\[i - 1\]\?\.quiet\}/,
+  "the first quiet row opens the spacing gap within the visible tool group",
 );
 assert.match(
   styles,
@@ -455,7 +421,7 @@ assert.match(
 );
 assert.match(
   styles,
-  /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: var\(--space-3\);/,
+  /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: 4px;/,
   "the quiet cluster opens with spacing, not a hairline divider",
 );
 

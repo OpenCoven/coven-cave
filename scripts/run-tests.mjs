@@ -231,6 +231,7 @@ export const SUITES = {
     "src/components/surface-loading-states.test.ts",
     "src/components/chat-header-row.test.ts",
     "src/components/chat-usage-plan-ui.test.ts",
+    "src/components/sidebar-opentrust-parity.test.ts",
     "src/components/sidebar-minimal.test.ts",
     "src/components/sidebar-footer.test.ts",
     "src/components/sidepanel-badges.test.ts",
