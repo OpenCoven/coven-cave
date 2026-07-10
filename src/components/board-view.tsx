@@ -365,6 +365,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return "queued" as const;
   };
 
+  // (cave-381s) In-flight PATCH counter + deferred-reconcile flag: a failed
+  // patch inside a parallel bulk batch must not reload the board out from
+  // under its still-in-flight siblings. See patchCard's finally block.
+  const inFlightPatchesRef = useRef(0);
+  const reloadWhenPatchesSettleRef = useRef(false);
+
   const patchCard = async (id: string, patch: CardPatch, armUndo = true) => {
     if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
     // A date-only patch is a gantt reschedule — snapshot the prior dates so it
@@ -398,6 +404,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         ? { ...c, ...plain, ...applyCardOps(c, ops, new Date().toISOString()) }
         : { ...c, ...plain };
     }));
+    inFlightPatchesRef.current += 1;
     try {
       const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       const json = await res.json();
@@ -405,14 +412,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         // Revert to the server copy and tell the user — an optimistic change
         // that silently snaps back reads as a glitch.
         setActionError(json.error ? `Couldn't save changes — ${json.error}` : "Couldn't save changes — reverted to the server copy.");
-        await load();
+        reloadWhenPatchesSettleRef.current = true;
       } else {
         setActionError(null);
         if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
       }
     } catch {
       setActionError("Couldn't reach the server — your change was reverted.");
-      await load();
+      reloadWhenPatchesSettleRef.current = true;
+    } finally {
+      // (cave-381s) Bulk ops fire patchCard per id in parallel; a failure used
+      // to `await load()` IMMEDIATELY, which reverted the optimistic state of
+      // sibling patches still in flight (transient flicker as each settled and
+      // re-applied). The reconciling reload now waits for the whole batch:
+      // only the LAST settling patch runs it, once. A solo patch (count 1→0)
+      // still reloads right away — single-op behavior is unchanged.
+      inFlightPatchesRef.current -= 1;
+      if (inFlightPatchesRef.current === 0 && reloadWhenPatchesSettleRef.current) {
+        reloadWhenPatchesSettleRef.current = false;
+        await load();
+      }
     }
   };
 
@@ -421,7 +440,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (status === "running") (patch as Record<string, unknown>).runningSince = new Date().toISOString();
     const title = cards.find((c) => c.id === id)?.title;
     if (title) announce(`Moved '${title}' to ${status.charAt(0).toUpperCase()}${status.slice(1)}.`);
-    void patchCard(id, patch);
+    // Return the patch promise so bulkMove's Promise.all actually waits for
+    // the batch — bulkBusy used to clear while the PATCHes were still in
+    // flight (cave-381s). Fire-and-forget callers are unaffected.
+    return patchCard(id, patch);
   };
 
   const create = async (draft: NewCardDraft) => {

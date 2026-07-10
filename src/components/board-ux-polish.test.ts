@@ -244,4 +244,24 @@ assert.match(view, /return \(\) => cancelAnimationFrame\(frame\);/, "the scroll 
 assert.doesNotMatch(view, /querySelector<HTMLElement>\(`\[data-card-id="\$\{selectedCardId\}"\]`\)\s*\?\.focus\(\)/, "view switches must not steal focus from the toggle the user clicked");
 assert.match(gantt, /data-card-id=\{row\.cardId\}/, "gantt rows carry data-card-id so the view-switch scroll finds them");
 
+// ── Bulk-op patch failures reconcile ONCE, after the batch settles (cave-381s):
+// a failed patchCard used to `await load()` immediately, reverting the
+// optimistic state of sibling patches still in flight.
+assert.match(view, /inFlightPatchesRef\.current \+= 1/, "every patch enters the in-flight counter");
+assert.match(
+  view,
+  /inFlightPatchesRef\.current -= 1;\s*\n\s*if \(inFlightPatchesRef\.current === 0 && reloadWhenPatchesSettleRef\.current\) \{\s*\n\s*reloadWhenPatchesSettleRef\.current = false;\s*\n\s*await load\(\);/,
+  "the reconciling reload waits for the whole batch and runs once",
+);
+assert.doesNotMatch(
+  view,
+  /setActionError\([^)]*Couldn't save changes[^)]*\);\s*\n\s*await load\(\);/,
+  "a patch failure must NOT reload immediately (it reverts in-flight siblings)",
+);
+assert.match(
+  view,
+  /return patchCard\(id, patch\);\s*\n\s*\};\s*\n\s*const create/,
+  "moveCardToStatus returns the patch promise so bulkMove's busy state waits for the batch",
+);
+
 console.log("board-ux-polish.test.ts: ok");
