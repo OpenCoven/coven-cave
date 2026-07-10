@@ -116,8 +116,10 @@ export function htmlToText(html: string): { title: string; text: string } {
   const title = titleMatch ? decodeEntities(titleMatch[1]).replace(/\s+/g, " ").trim() : "";
   const text = decodeEntities(
     html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      // \b + [^>]* end-tag forms (`</script >`, `</style foo>`) close too —
+      // a plain `<\/script>` filter leaves those blocks in (CodeQL #109).
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script[^>]*>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style[^>]*>/gi, " ")
       .replace(/<(?:br|\/p|\/div|\/li|\/h[1-6]|\/tr)[^>]*>/gi, "\n")
       .replace(/<[^>]+>/g, " "),
   )

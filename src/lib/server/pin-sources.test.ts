@@ -60,6 +60,15 @@ describe("htmlToText", () => {
     assert.doesNotMatch(text, /p\{\}/);
   });
 
+  it("drops script blocks even with whitespace/attribute end tags", () => {
+    const { text } = htmlToText("<p>keep</p><script>evil()</script ><p>also</p><style media='x'>s{}</style\t><p>end</p>");
+    assert.doesNotMatch(text, /evil/);
+    assert.doesNotMatch(text, /s\{\}/);
+    assert.match(text, /keep/);
+    assert.match(text, /also/);
+    assert.match(text, /end/);
+  });
+
   it("decodes numeric entities and keeps line structure", () => {
     const { text } = htmlToText("<p>a&#39;b</p><p>next</p>");
     assert.match(text, /a'b/);
