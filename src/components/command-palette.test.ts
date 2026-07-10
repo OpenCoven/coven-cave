@@ -1,6 +1,9 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import {
+  workspacePageDefinition,
+  type WorkspacePageId,
+} from "../lib/workspace-page-registry.ts";
 
 const source = readFileSync(
   new URL("./command-palette.tsx", import.meta.url),
@@ -121,7 +124,7 @@ const stripMatch = source.match(/trimmedTitle = .*\.replace\((\/.*?\/[a-z]*),/);
 assert.ok(stripMatch, "create-task title strips a leading /task prefix via replace()");
 {
   const re = new Function(`return ${stripMatch[1]}`)();
-  const strip = (s) => s.trim().replace(re, "").trim();
+  const strip = (s: string) => s.trim().replace(re, "").trim();
   assert.equal(strip("/task fix login"), "fix login", "strips '/task ' prefix");
   assert.equal(strip("/TASK fix login"), "fix login", "strip is case-insensitive");
   assert.equal(strip("/task"), "", "bare '/task' yields empty title (no create row)");
@@ -132,18 +135,33 @@ assert.ok(stripMatch, "create-task title strips a leading /task prefix via repla
 // ── Surface navigation ("Go to <surface>") makes ⌘K a launcher ──
 assert.match(
   source,
-  /kind:\s*"go-to-surface";\s*mode:\s*FolderMode/,
+  /kind:\s*"go-to-surface";\s*mode:\s*WorkspacePageId/,
   "palette exposes a go-to-surface intent",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /import \{ FOLDER_MODES[\s\S]*?from "@\/components\/sidebar-minimal"/,
-  "surface rows are built from the shared FOLDER_MODES list (single source of truth)",
+  /(?:FOLDER_MODES|FolderMode)[\s\S]*?from "@\/components\/sidebar-minimal"/,
+  "command palette must not import page identity from a UI component",
 );
 assert.match(
   source,
-  /name:\s*`Go to \$\{fm\.label\}`/,
-  "each navigable surface renders a 'Go to <label>' row",
+  /import \{[\s\S]*WORKSPACE_PALETTE_PAGE_DEFINITIONS,[\s\S]*type WorkspacePageId,[\s\S]*\} from "@\/lib\/workspace-page-registry"/,
+  "command palette imports page identity and palette membership from the registry",
+);
+assert.match(
+  source,
+  /rank\(WORKSPACE_PALETTE_PAGE_DEFINITIONS/,
+  "surface rows derive from registry palette definitions",
+);
+assert.match(
+  source,
+  /name:\s*`Go to \$\{definition\.title\}`/,
+  "each navigable surface renders a 'Go to <registry title>' row",
+);
+assert.match(
+  source,
+  /fz\(definition\.title\)[\s\S]{0,120}fz\(definition\.id\)[\s\S]{0,120}fz\(definition\.landmark\)/,
+  "surface fuzzy matching covers registry title, id, and landmark",
 );
 assert.doesNotMatch(
   source,
@@ -161,6 +179,19 @@ assert.match(
   /intent\.kind === "go-to-surface"[\s\S]{0,80}?setMode\(intent\.mode as WorkspaceMode\)/,
   "workspace navigates to the chosen surface on a go-to-surface intent",
 );
+const representativePageIds: WorkspacePageId[] = [
+  "dashboard",
+  "settings",
+  "terminal",
+  "memory",
+  "surface:researcher",
+];
+for (const pageId of representativePageIds) {
+  assert.ok(
+    workspacePageDefinition(pageId),
+    `${pageId} demonstrates footer, companion, and dynamic role ids remain valid WorkspacePageId values`,
+  );
+}
 
 // ── "Open project" navigation ──
 assert.match(

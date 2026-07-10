@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
 
 const view = await readFile(new URL("./grimoire-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
@@ -15,8 +16,16 @@ assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grim
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\);/, "the journal mode routes into the Grimoire Journal tab");
-assert.match(sidebar, /\| "grimoire"/, "grimoire is a FolderMode");
-assert.match(sidebar, /id: "grimoire", label: "Grimoire"/, "grimoire has a sidebar row (and ⌘K palette entry via FOLDER_MODES)");
+assert.equal(workspacePageDefinition("grimoire")?.title, "Grimoire", "grimoire resolves through the public page registry");
+assert.deepEqual(
+  workspacePageDefinition("journal") && {
+    canonicalId: workspacePageDefinition("journal")!.canonicalId,
+    variant: workspacePageDefinition("journal")!.variant,
+  },
+  { canonicalId: "grimoire", variant: "journal" },
+  "journal resolves to the canonical Grimoire journal variant",
+);
+assert.match(sidebar, /id: "grimoire"/, "grimoire has a sidebar presentation row");
 
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────
 

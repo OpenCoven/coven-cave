@@ -26,25 +26,8 @@ import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
-
-export type FolderMode =
-  | "agents"
-  | "home"
-  | "chat"
-  | "groupchat"
-  | "board"
-  | "calendar"
-  | "inbox"
-  | "browser"
-  | "github"
-  | "roles"
-  | "marketplace"
-  | "flow"
-  | "submissions"
-  | "capabilities"
-  | "familiar-work-queue"
-  | "journal"
-  | "grimoire";
+import { workspacePageDefinition } from "@/lib/workspace-page-registry";
+import type { WorkspaceMode } from "@/lib/workspace-mode";
 
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
@@ -96,9 +79,8 @@ function badgeText(n?: number): string | undefined {
   return n > 99 ? "99+" : String(n);
 }
 
-const FOLDER_MODES: Array<{
-  id: FolderMode;
-  label: string;
+type SidebarPagePresentation = {
+  id: WorkspaceMode;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
   kbd?: string;
@@ -109,41 +91,46 @@ const FOLDER_MODES: Array<{
    *  tabindex, same click targets — but quiet rows render muted-until-hover
    *  and the first one opens a spacing gap, so daily destinations read first. */
   quiet?: boolean;
-  /** Kept in the list (so the command palette's "Go to" launcher and the
-   *  ⌘-number shortcut still reach it) but NOT rendered as a sidebar row. For
-   *  surfaces you summon on demand rather than navigate to daily — the Browser
-   *  opens itself when a link/URL is clicked, so it needn't sit in the nav. */
+  /** Kept in explicit presentation order but NOT rendered as a sidebar row.
+   *  Registry metadata independently controls palette membership; this flag is
+   *  only sidebar layout for on-demand surfaces such as Browser. */
   navHidden?: boolean;
-}> = [
-  { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
+};
+
+const SIDEBAR_PAGE_PRESENTATIONS = [
+  { id: "home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
+  { id: "chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
   // Group Chat ("coven") is no longer a standalone destination — it lives as the
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
-  { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "board", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
+  { id: "inbox", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
   // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
   // also carries the needs-you badge). Journal and Grimoire join the quiet
   // cluster: same flat list, same reachability (rows, palette, deep links),
   // just muted-until-hover so the conversation-first surfaces read first.
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in the Grimoire", quiet: true },
-  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
-  // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
-  // ⌘K palette) rather than navigated to daily, so it's kept in the list for
-  // those launchers but hidden from the sidebar rows.
-  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true },
+  { id: "journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in the Grimoire", quiet: true },
+  { id: "grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
+  // Browser is summoned on demand (a clicked link/URL, ⌘5, or the registry-fed
+  // ⌘K palette) rather than navigated to daily, so its sidebar presentation is
+  // hidden while its shortcut metadata remains available here.
+  { id: "browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
+  { id: "marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
-];
+  { id: "github", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
+] satisfies readonly SidebarPagePresentation[];
+
+export const FOLDER_MODES: readonly (SidebarPagePresentation & { readonly label: string })[] =
+  SIDEBAR_PAGE_PRESENTATIONS.map((presentation) => {
+    const definition = workspacePageDefinition(presentation.id);
+    if (!definition) throw new Error(`Missing workspace page definition for ${presentation.id}`);
+    return { ...presentation, label: definition.title };
+  });
 
 // Rows actually rendered in the sidebar — everything except on-demand surfaces
-// (navHidden), which stay in FOLDER_MODES for the ⌘K palette + ⌘-number launcher.
+// (navHidden), which stay in the presentation list for shortcut metadata.
 const VISIBLE_MODES = FOLDER_MODES.filter((fm) => !fm.navHidden);
-
-export { FOLDER_MODES };
-
 
 function FolderRow({
   id,
@@ -240,7 +227,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
-  const handleModeSelect = (id: FolderMode) => {
+  const handleModeSelect = (id: WorkspaceMode) => {
     onModeChange(id);
   };
 

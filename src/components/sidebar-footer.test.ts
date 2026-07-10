@@ -13,8 +13,21 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 
 // The shared component owns the whole footer.
 assert.match(footer, /export function SidebarFooter\(\{ onOpenSettings \}/, "SidebarFooter is a shared component taking onOpenSettings");
-assert.match(footer, /href="\/dashboard"/, "footer links to the Dashboard route");
-assert.match(footer, /onClick=\{onOpenSettings\}[\s\S]*?aria-label="Settings"/, "footer Settings button calls onOpenSettings");
+assert.match(footer, /function DraggablePageDestination\(/, "footer shares one focused draggable destination implementation");
+assert.equal(
+  footer.match(/setData\(PAGE_DRAG_MIME/g)?.length,
+  1,
+  "Dashboard and Settings share one page-drag protocol instead of copying it",
+);
+assert.match(footer, /pageId="dashboard"[\s\S]{0,160}href="\/dashboard"/, "Dashboard keeps its real /dashboard link semantics");
+assert.match(footer, /pageId="settings"[\s\S]{0,160}onClick=\{onOpenSettings\}/, "Settings keeps its existing onOpenSettings button semantics");
+assert.match(footer, /draggable[\s\S]{0,300}onDragStart=\{handleDragStart\}[\s\S]{0,160}onDragEnd=\{emitPageDragEnd\}/, "both footer destinations use the shared draggable behavior");
+assert.match(footer, /setData\(PAGE_DRAG_MIME, pageId\)/, "footer drag data carries the exact registry page id");
+assert.match(footer, /setData\("text\/plain", label\)/, "footer drag data includes the registry label");
+assert.match(footer, /effectAllowed = "copy"/, "footer page drags advertise copy semantics");
+assert.match(footer, /emitPageDragStart\(\{ mode: pageId, label \}\)/, "footer announces drag start with page id and label");
+assert.match(footer, /onDragEnd=\{emitPageDragEnd\}/, "footer clears the shared drag state when dragging ends");
+assert.match(footer, /aria-label=\{label\}/, "footer controls preserve an accessible registry-derived label");
 assert.match(footer, /className="sidebar-version"[\s\S]*?v\{APP_VERSION\}/, "footer shows the app version line");
 
 // Both nav hosts render it (so the footer can't drift between them)…

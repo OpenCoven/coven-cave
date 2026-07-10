@@ -1,6 +1,8 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
+import { isSplittablePage } from "../lib/page-drag.ts";
 
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -88,9 +90,54 @@ assert.match(
   "VISIBLE_MODES drops navHidden surfaces (Browser) from the rendered nav",
 );
 
+assert.doesNotMatch(
+  source,
+  /(?:export\s+)?type\s+FolderMode\b/,
+  "Sidebar must not maintain a duplicate FolderMode identity union",
+);
 assert.match(
   source,
-  /\{ id: "home", label: "Home"/,
+  /import type \{ WorkspaceMode \} from "@\/lib\/workspace-mode"/,
+  "Sidebar static presentation ids use the shared WorkspaceMode type",
+);
+assert.match(
+  source,
+  /import \{ workspacePageDefinition \} from "@\/lib\/workspace-page-registry"/,
+  "Sidebar resolves page identity and titles through the workspace registry",
+);
+assert.match(
+  source,
+  /id: WorkspaceMode;/,
+  "Sidebar presentation metadata type-checks every static id as WorkspaceMode",
+);
+assert.match(
+  source,
+  /satisfies readonly SidebarPagePresentation\[\]/,
+  "Sidebar presentation entries are checked against their presentation contract",
+);
+assert.match(
+  source,
+  /label: definition\.title/,
+  "Sidebar display labels come from registry definitions",
+);
+const presentationBlock = source.match(
+  /const SIDEBAR_PAGE_PRESENTATIONS[\s\S]*?satisfies readonly SidebarPagePresentation\[\];/,
+)?.[0];
+assert.ok(presentationBlock, "Sidebar keeps a focused presentation-order list");
+assert.doesNotMatch(
+  presentationBlock,
+  /\blabel\s*:/,
+  "Sidebar presentation metadata must not duplicate registry titles",
+);
+const presentationIds = [...presentationBlock.matchAll(/\bid: "([^"]+)"/g)].map((match) => match[1]);
+assert.ok(presentationIds.length > 0, "Sidebar declares static presentation entries");
+for (const id of presentationIds) {
+  assert.ok(workspacePageDefinition(id), `${id} must resolve through the workspace registry`);
+}
+
+assert.match(
+  source,
+  /\{ id: "home", iconName: "ph:house-bold"/,
   "Home is the first Work surface",
 );
 
@@ -123,13 +170,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description:/,
+  /\{ id: "chat", iconName: "ph:chats", kbd: "⌘2", description:/,
   "The Chat surface should keep the ⌘2 shortcut",
 );
 
 assert.match(
   source,
-  /\{ id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description:/,
+  /\{ id: "board", iconName: "ph:kanban", kbd: "⌘3", description:/,
   "the Tasks surface (mode id 'board') sits on the ⌘3 shortcut",
 );
 
@@ -141,7 +188,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
+  /\{ id: "inbox", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
   "Schedules should own the old Calendar shortcut as the active schedule surface",
 );
 
@@ -165,11 +212,11 @@ assert.doesNotMatch(
   "Library should not be a root add-on gate in the integrated sidebar",
 );
 
-// Browser stays in FOLDER_MODES (so ⌘5 + the ⌘K "Go to" launcher still reach
-// it) but is navHidden, so it renders no sidebar row — summoned on demand.
+// Browser stays in sidebar presentation metadata for its ⌘5 hint but is
+// navHidden, so it renders no sidebar row. The registry independently feeds ⌘K.
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
   "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
@@ -177,7 +224,7 @@ assert.doesNotMatch(source, /id:\s*"terminal"/, "Terminal is not a standalone si
 
 assert.match(
   source,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description:/,
+  /\{ id: "marketplace", iconName: "ph:storefront-bold", description:/,
   "The merged Marketplace hub should appear as a Tools surface",
 );
 
@@ -275,7 +322,7 @@ assert.match(
 assert.doesNotMatch(source, /id:\s*"terminal"/, "terminal does not stay visible");
 assert.match(
   source,
-  /id:\s*"marketplace"[^}]*label:\s*"Marketplace"/,
+  /id:\s*"marketplace"[^}]*iconName:\s*"ph:storefront-bold"/,
   "marketplace stays visible",
 );
 assert.doesNotMatch(
@@ -292,7 +339,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
+  /\{ id: "github", iconName: "ph:github-logo"/,
   "GitHub is visible by default",
 );
 
@@ -474,6 +521,21 @@ assert.match(
   source,
   /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
   "each row derives active/split/idle from mode + open split pages",
+);
+assert.match(
+  source,
+  /props\.roleSurfaces!\.map\([\s\S]{0,500}<FolderRow/,
+  "dynamic role rooms render through the same FolderRow as static destinations",
+);
+assert.match(
+  source,
+  /const draggable = isSplittablePage\(id\)/,
+  "FolderRow delegates drag eligibility to the registry-backed page-drag policy",
+);
+assert.equal(
+  isSplittablePage("surface:researcher"),
+  true,
+  "dynamic role rooms inherit draggable behavior through FolderRow",
 );
 assert.match(
   source,

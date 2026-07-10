@@ -11,7 +11,10 @@ import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
+import {
+  WORKSPACE_PALETTE_PAGE_DEFINITIONS,
+  type WorkspacePageId,
+} from "@/lib/workspace-page-registry";
 import { useProjects } from "@/lib/use-projects";
 
 function shortProjectRoot(root: string): string {
@@ -71,7 +74,7 @@ type PaletteIntent =
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
   | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
-  | { kind: "go-to-surface"; mode: FolderMode }
+  | { kind: "go-to-surface"; mode: WorkspacePageId }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
@@ -514,22 +517,21 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    // "Go to <surface>" rows make ⌘K a launcher for the visible sidebar
-    // surfaces. Hidden while typing a slash command or a familiar scope (where
-    // surface nav would be noise).
+    // "Go to <surface>" rows make ⌘K a launcher for registry-declared palette
+    // pages. Hidden while typing a slash command or a familiar scope (where
+    // page navigation would be noise).
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
-      : rank(FOLDER_MODES
-          // Fuzzy on the short label/id; substring-only on the long description
-          // (subsequence-matching prose surfaces irrelevant items).
-          .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
-          (fm) => [fm.label, fm.id])
-          .map((fm) => ({
-            id: `surface:${fm.id}`,
+      : rank(WORKSPACE_PALETTE_PAGE_DEFINITIONS
+          // Registry title, id, and landmark all participate in fuzzy matching.
+          .filter((definition) => !q || fz(definition.title) || fz(definition.id) || fz(definition.landmark)),
+          (definition) => [definition.title, definition.id, definition.landmark])
+          .map((definition) => ({
+            id: `surface:${definition.id}`,
             kind: "command" as const,
-            name: `Go to ${fm.label}`,
-            hint: fm.kbd ? `${fm.description} · ${fm.kbd}` : fm.description,
-            intent: { kind: "go-to-surface", mode: fm.id },
+            name: `Go to ${definition.title}`,
+            hint: definition.landmark,
+            intent: { kind: "go-to-surface", mode: definition.id },
           }));
 
     // "Open project <name>" rows jump into a project's chats (the Projects tab,
