@@ -9,16 +9,21 @@
  *
  * Keep this list truthful: every entry must correspond to a binding that
  * actually exists in code —
- *   - panels/terminal: src/components/shell.tsx keydown handlers
+ *   - panels: src/components/shell.tsx keydown handlers
  *   - palette, surfaces, familiars, new chat, this sheet: src/components/workspace.tsx
  *   - composer + slash menu: src/components/chat-view.tsx onComposerKey and
  *     src/components/home-composer.tsx handleKeyDown
  *   - "/" search focus: each surface's view (familiars-view, projects-view,
  *     capabilities-view, chat-list); "⌘F" sessions search: chat-list.tsx
- *   - terminal & panes: src/components/comux-view.tsx keydown handlers
  *   - browser pane: src/components/browser-pane.tsx (⌘L / ⌘K / [)
  *   - ⌘S save: familiar-daily-notes.tsx;
  *     artifact refine ⌘↵: chat-artifact-viewer.tsx
+ *
+ * (cave-7c9i) The sheet used to advertise ⌘6–⌘8 / a retired "Code" surface,
+ * a ⌃` terminal toggle whose Shell `bottom` slot the Workspace never passes,
+ * and a whole "Terminal & panes" group implemented only in the unmounted
+ * ComuxView. Advertised-but-dead shortcuts erode trust in the whole sheet —
+ * if a binding lands, add it here in the same change that wires it.
  */
 
 export type ShortcutEntry = {
@@ -28,7 +33,7 @@ export type ShortcutEntry = {
 };
 
 export type ShortcutGroup = {
-  id: "panels" | "terminal" | "browser" | "composer" | "slash-menu" | "other";
+  id: "panels" | "browser" | "composer" | "slash-menu" | "other";
   label: string;
   entries: ShortcutEntry[];
 };
@@ -41,8 +46,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘K", description: "Open the command palette" },
       { keys: "⌘B", description: "Toggle the left sidebar" },
       { keys: "⌘\\", description: "Toggle the list panel" },
-      { keys: "⌃`", description: "Toggle the integrated terminal (desktop app)" },
-      { keys: "⌘1–⌘8", description: "Jump to a sidebar surface (Home … Code)" },
+      { keys: "⌘1–⌘5", description: "Jump to a surface (Home, Chat, Tasks, Schedules, Browser)" },
       { keys: "⌘9", description: "Jump to Projects (Chat surface)" },
       { keys: "⌘[ / ⌘]", description: "Previous / next surface" },
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },
@@ -50,19 +54,6 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘N", description: "New chat (on the Chat surface)" },
       { keys: "/", description: "Focus the search (Familiars, Projects, Capabilities, Sessions)" },
       { keys: "⌘F", description: "Focus the sessions search" },
-    ],
-  },
-  {
-    id: "terminal",
-    label: "Terminal & panes",
-    entries: [
-      { keys: "⌘N", description: "New terminal session" },
-      { keys: "⌘W", description: "Close the focused pane" },
-      { keys: "⌘⌥←→↑↓", description: "Focus the pane in that direction" },
-      { keys: "⌘[ / ⌘]", description: "Cycle to the previous / next pane" },
-      { keys: "⌘1–⌘9", description: "Jump to pane N" },
-      { keys: "⌘↵", description: "Zoom the focused pane (toggle)" },
-      { keys: "⌘⇧B", description: "Broadcast input to every visible pane" },
     ],
   },
   {

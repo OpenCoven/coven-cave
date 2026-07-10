@@ -390,8 +390,8 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl, embedded = fa
             headline="Queue is clear"
             subtitle={
               beadsDegraded
-                ? "No open PRs need attention. Bead lanes are unavailable right now."
-                : "No open PRs need attention and no ready beads are waiting to ship."
+                ? "No open PRs need attention. Bead lanes (beads are the queue's tracked tasks) are unavailable right now."
+                : "No open PRs need attention and no ready beads — the queue's tracked tasks — are waiting to ship."
             }
           />
         ) : visibleLanes.length === 0 ? (

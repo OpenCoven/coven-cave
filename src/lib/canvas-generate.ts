@@ -75,33 +75,43 @@ export async function generateArtifactCode(opts: {
   let sessionId: string | null = null;
   let error: string | null = null;
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      const ev = parseSseFrame(frame);
-      if (!ev) continue;
-      switch (ev.kind) {
-        case "assistant_chunk":
-          text += ev.text ?? "";
-          opts.onText?.(text);
-          break;
-        case "session":
-          sessionId = ev.sessionId ?? sessionId;
-          break;
-        case "done":
-          if (ev.sessionId) sessionId = ev.sessionId;
-          if (ev.isError) error = error ?? "the familiar reported an error";
-          break;
-        case "error":
-          error = ev.message ?? "generation error";
-          break;
+  // A mid-stream network drop (or an abort) makes reader.read() REJECT — an
+  // unguarded loop turned that into a rejected promise that wedged callers'
+  // "generating" state forever (cave-v35w). Convert to a normal error result
+  // and keep any partial text.
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const ev = parseSseFrame(frame);
+        if (!ev) continue;
+        switch (ev.kind) {
+          case "assistant_chunk":
+            text += ev.text ?? "";
+            opts.onText?.(text);
+            break;
+          case "session":
+            sessionId = ev.sessionId ?? sessionId;
+            break;
+          case "done":
+            if (ev.sessionId) sessionId = ev.sessionId;
+            if (ev.isError) error = error ?? "the familiar reported an error";
+            break;
+          case "error":
+            error = ev.message ?? "generation error";
+            break;
+        }
       }
     }
+  } catch (err) {
+    error = opts.signal?.aborted
+      ? "cancelled"
+      : (err as Error)?.message ?? "the connection dropped mid-generation";
   }
 
   const extracted = extractArtifact(text);

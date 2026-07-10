@@ -342,6 +342,15 @@ export function Workspace() {
       setModeRaw("grimoire");
       return;
     }
+    if (next === "flow") {
+      // FlowView is retired (lives on feature/automations-flow); "flow" has no
+      // render branch, so an unremapped request fell through to Home with the
+      // wrong sr-title and no nav highlight (cave-hyor). The remap lives HERE —
+      // the single choke point — so ?mode=flow deep links, cave:navigate-mode,
+      // and last-mode restore all land on Schedules.
+      setModeRaw("inbox");
+      return;
+    }
     setModeRaw(next);
   }, []);
   // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
@@ -665,6 +674,17 @@ export function Workspace() {
     if (!target) return;
     setMode(target);
     clearModeParam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // `/#card-<id>` deep link (daily-report pages, dashboard action inbox):
+  // BoardView is the only consumer of the card hash and it never mounts on
+  // the boot-default Chat surface, so external card links opened the app and
+  // silently dropped the card (cave-qnh2). Switch to the board; BoardView's
+  // hash effect re-applies once cards load.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (/^#card-/.test(window.location.hash)) setMode("board");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

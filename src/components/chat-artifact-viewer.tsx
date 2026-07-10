@@ -45,6 +45,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const refineRef = useRef<HTMLTextAreaElement | null>(null);
+  const refineAbortRef = useRef<AbortController | null>(null);
 
   // Context-aware ideas derived from the artifact itself; recomputed only when
   // the code/kind changes (cheap string scans). Paired with the static defaults
@@ -71,6 +72,10 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
   // contentWindow passes, so a hostile embedder of the app can never spoof
   // sandbox-error events. (Audits keep flagging the "missing" origin check —
   // it's deliberate.)
+  // Abort an in-flight refine when the viewer unmounts — nothing should keep
+  // streaming into a dead component (cave-v35w).
+  useEffect(() => () => refineAbortRef.current?.abort(), []);
+
   useEffect(() => {
     setRuntimeError(null);
     function onMessage(e: MessageEvent) {
@@ -105,23 +110,39 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
     if (!ask || !familiarId || generating) return;
     setGenerating(true);
     setRuntimeError(null);
-    const result = await generateArtifactCode({
-      prompt: buildRefinePrompt(code, ask, kind),
-      familiarId,
-    });
-    setGenerating(false);
-    if (result.code) {
-      setCode(clampArtifactCode(result.code));
-      if (result.kind) setKind(result.kind);
-      setRefineText("");
-      setRefineOpen(false);
-      setEditing(false);
-      setTab("canvas");
-      setSaveState("idle");
-    } else {
-      setRuntimeError(result.error || "Refine failed — try a different description.");
+    const ctrl = new AbortController();
+    refineAbortRef.current = ctrl;
+    try {
+      const result = await generateArtifactCode({
+        prompt: buildRefinePrompt(code, ask, kind),
+        familiarId,
+        signal: ctrl.signal,
+      });
+      if (result.code) {
+        setCode(clampArtifactCode(result.code));
+        if (result.kind) setKind(result.kind);
+        setRefineText("");
+        setRefineOpen(false);
+        setEditing(false);
+        setTab("canvas");
+        setSaveState("idle");
+      } else if (result.error !== "cancelled") {
+        setRuntimeError(result.error || "Refine failed — try a different description.");
+      }
+    } catch (err) {
+      // generateArtifactCode converts stream failures to results, but keep a
+      // belt here — an uncaught rejection used to wedge "Refining…" forever
+      // with every control disabled (cave-v35w).
+      setRuntimeError((err as Error)?.message ?? "Refine failed — the connection dropped.");
+    } finally {
+      refineAbortRef.current = null;
+      setGenerating(false);
     }
   }, [refineText, familiarId, generating, code, kind]);
+
+  const cancelRefine = useCallback(() => {
+    refineAbortRef.current?.abort();
+  }, []);
 
   const openRefine = useCallback(() => {
     if (!familiarId) return;
@@ -328,8 +349,12 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
           <div className="chat-artifact__refine-foot">
             <span className="chat-artifact__refine-hint">⌘↵ to refine</span>
             <span className="chat-artifact__spacer" />
-            <button type="button" className="chat-artifact__btn chat-artifact__btn--text" onClick={() => setRefineOpen(false)}>
-              Cancel
+            <button
+              type="button"
+              className="chat-artifact__btn chat-artifact__btn--text"
+              onClick={() => (generating ? cancelRefine() : setRefineOpen(false))}
+            >
+              {generating ? "Stop" : "Cancel"}
             </button>
             <button
               type="button"

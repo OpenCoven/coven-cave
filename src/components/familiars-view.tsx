@@ -462,7 +462,7 @@ function FamiliarsEmptyState({
       className="familiars-view__empty mx-auto my-16 max-w-md"
       icon="ph:sparkle"
       headline="The circle awaits"
-      subtitle="No familiars yet — summon your first: it can run on this machine, on a remote host over SSH, or bridge an OpenClaw agent you already keep."
+      subtitle="A familiar is an AI agent with its own identity, memory, and runtime. Summon your first — it can run on this machine, on a remote host over SSH, or bridge an OpenClaw agent you already keep."
       actions={
         <div className="flex items-center gap-2">
           <Button variant="primary" leadingIcon="ph:magic-wand-fill" onClick={onCreate}>

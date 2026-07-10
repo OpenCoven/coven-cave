@@ -597,7 +597,7 @@ function DaemonSection() {
       <SettingsGroup label="Connection">
         <SettingControlRow
           label="Runtime target"
-          hint={status?.target?.mode === "hub" ? `Connected through ${status.target.url ?? "server hub"}` : "Use the local sidecar daemon or a server hub on your private network."}
+          hint={status?.target?.mode === "hub" ? `Connected through ${status.target.url ?? "server hub"}` : "Local runs everything on this machine (the default). Server hub connects to a shared daemon on another machine."}
         >
           <Segmented
             options={["local", "hub"] as const}
@@ -618,7 +618,7 @@ function DaemonSection() {
             className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
           />
         </SettingControlRow>
-        <SettingControlRow label="Executor addresses" hint="Optional executor nodes, one per line.">
+        <SettingControlRow label="Executor addresses" hint="Advanced, optional: addresses of extra machines that can run familiar sessions, one per line. Leave empty unless you run a multi-machine setup.">
           <textarea
             value={executorText}
             onChange={(event) => setExecutorText(event.target.value)}

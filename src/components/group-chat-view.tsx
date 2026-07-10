@@ -736,8 +736,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     </button>
                     <button
                       type="button"
-                      className="focus-ring absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
-                      title="Delete coven"
+                      className="focus-ring touch-always-visible absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
+                      title="Delete coven — removes this group chat only"
                       aria-label={`Delete ${g.name}`}
                       onClick={() => void requestDeleteGroup(g.id, g.name)}
                     >

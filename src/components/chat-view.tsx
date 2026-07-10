@@ -10,6 +10,7 @@ import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
@@ -17,7 +18,7 @@ import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/ch
 import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
-import { parseHarnessFailure } from "@/lib/harness-failure";
+import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
@@ -512,7 +513,9 @@ function ChatErrorStrip({
   addProjectLabel,
   addingProject,
   onAddProject,
+  onOpenProjects,
   onUseHarness,
+  harnessId,
 }: {
   message: string;
   code?: string;
@@ -528,8 +531,14 @@ function ChatErrorStrip({
   addProjectLabel?: string;
   addingProject?: boolean;
   onAddProject?: () => void;
+  /** When set, the chat's project folder is gone (project_root_unavailable):
+   *  render a primary action that opens the Projects tab to re-point it (cave-ivcc). */
+  onOpenProjects?: () => void;
   /** Switch the familiar to this harness and retry (harness-failure fix row). */
   onUseHarness?: (harnessId: string) => void | Promise<void>;
+  /** The runtime the failing send used — lets the auth-failure fix row name
+   *  it and offer its exact login command (cave-f6ol). */
+  harnessId?: string | null;
 }) {
   const { copied, copy } = useCopy();
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
@@ -560,6 +569,13 @@ function ChatErrorStrip({
   // Harness/runtime failures get an inline fix row (switch adapter / copy the
   // quoted `coven adapter …` commands) instead of ending at the message.
   const harnessFailure = useMemo(() => parseHarnessFailure(detailText), [detailText]);
+  // Sign-in failures land here at the FIRST message (the wizard greens on
+  // install, never auth) — surface the runtime's login command instead of
+  // ending at raw stderr (cave-f6ol).
+  const authFailure = useMemo(
+    () => parseHarnessAuthFailure(detailText, harnessId),
+    [detailText, harnessId],
+  );
 
   const btn =
     "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
@@ -605,6 +621,16 @@ function ChatErrorStrip({
               {addingProject ? "Adding…" : (addProjectLabel ?? "Add project")}
             </button>
           ) : null}
+          {onOpenProjects ? (
+            <button
+              type="button"
+              onClick={onOpenProjects}
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)]"
+            >
+              <Icon name="ph:folders-bold" width={11} aria-hidden />
+              Open projects
+            </button>
+          ) : null}
           {canRetry ? (
             <button type="button" onClick={onRetry} disabled={busy} className={btn}>
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
@@ -624,6 +650,9 @@ function ChatErrorStrip({
           buttonClassName={btn}
           className="px-5 pb-2"
         />
+      ) : null}
+      {!harnessFailure && authFailure ? (
+        <AuthFixRow failure={authFailure} buttonClassName={btn} />
       ) : null}
       {hasDetail && open ? (
         <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
@@ -648,6 +677,44 @@ function ChatErrorStrip({
             </div>
           ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Runtime sign-in fix row (cave-f6ol): names the runtime, gives the exact
+ *  login command to run in a terminal, and copies it — the predictable
+ *  first-message failure for a user who skipped the wizard's login prose. */
+function AuthFixRow({
+  failure,
+  buttonClassName,
+}: {
+  failure: HarnessAuthFailure;
+  buttonClassName: string;
+}) {
+  const { copied, copy } = useCopy();
+  const runtime = failure.harnessLabel ?? "The runtime";
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
+      <span className="min-w-0">
+        {runtime} isn&apos;t signed in.
+        {failure.loginCommand ? (
+          <>
+            {" "}Run{" "}
+            <code className="rounded bg-[var(--bg-base)]/40 px-1 py-0.5 font-mono text-[10px]">
+              {failure.loginCommand}
+            </code>{" "}
+            in a terminal, then retry.
+          </>
+        ) : (
+          " Sign in from a terminal, then retry."
+        )}
+      </span>
+      {failure.loginCommand ? (
+        <button type="button" onClick={() => copy(failure.loginCommand!)} className={buttonClassName}>
+          <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={11} aria-hidden />
+          {copied ? "Copied" : "Copy command"}
+        </button>
       ) : null}
     </div>
   );
@@ -1289,7 +1356,9 @@ function metaLineSegments(args: {
   // reads as a folder.
   const runtime = formatRuntime(args.runtime) ?? formatRuntime(args.projectRoot ? `local:${args.projectRoot}` : null);
   if (args.state === "offline") {
-    segs.push("daemon offline · check Coven");
+    // "check Coven" named nothing findable — the banner's Start-daemon action
+    // is the actual remedy (cave-7jzq).
+    segs.push("daemon offline · start it from the banner above");
   } else if (args.state === "failed") {
     if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
@@ -2210,6 +2279,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
   const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
+  // The chat's project folder no longer exists on disk (moved/deleted): the
+  // send 400s with code project_root_unavailable and Retry can never succeed —
+  // the recovery is re-pointing the project, not retrying (cave-ivcc).
+  const [projectRootMissing, setProjectRootMissing] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
@@ -3679,6 +3752,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setDebugError(null);
     setLastFailedSend(null);
     setProjectAccessRoot(null);
+    setProjectRootMissing(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
     setHistoryState("loaded");
@@ -3797,6 +3871,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (res.status === 403 && /project access denied|not registered/i.test(message)) {
           const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
           setProjectAccessRoot(failingRoot || null);
+        }
+        // A 400 with project_root_unavailable means the folder itself is gone
+        // (moved/deleted). The server's internal phrasing ("refusing to start a
+        // homedir-scoped fallback session") is jargon, and Retry can never
+        // succeed — swap in actionable copy + an Open-projects fix (cave-ivcc).
+        if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
+          const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+          setProjectRootMissing(true);
+          setError(
+            missingRoot
+              ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
+              : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.",
+          );
         }
         upsertTurnProgress(assistantId, {
           id: "connect",
@@ -5028,15 +5115,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onRetry={retryLastSend}
           onOpenDebug={openDebug}
           onUseHarness={lastFailedSend ? handleUseHarnessFix : undefined}
+          harnessId={familiar.harness ?? null}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
           }
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
+          onOpenProjects={
+            projectRootMissing
+              ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
+              : undefined
+          }
           onDismiss={() => {
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
+            setProjectRootMissing(false);
           }}
         />
       ) : null}

@@ -47,13 +47,18 @@ import { readFile } from "node:fs/promises";
   const source = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
   assert.match(
     source,
-    /import \{ parseHarnessFailure \} from "@\/lib\/harness-failure"/,
-    "chat-view should parse harness failures from the shared lib",
+    /import \{ parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure \} from "@\/lib\/harness-failure"/,
+    "chat-view should parse harness failures (and auth failures, cave-f6ol) from the shared lib",
   );
   assert.match(
     source,
     /parseHarnessFailure\(detailText\)/,
     "ChatErrorStrip should parse the full detail text (message + code + tool/step output)",
+  );
+  assert.match(
+    source,
+    /parseHarnessAuthFailure\(detailText, harnessId\)/,
+    "ChatErrorStrip should detect runtime sign-in failures with the failing send's runtime (cave-f6ol)",
   );
   assert.match(
     source,

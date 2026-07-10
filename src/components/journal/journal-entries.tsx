@@ -559,13 +559,25 @@ export function JournalEntries({
           aria-busy={generating}
           disabled={!canGenerate || generating || selected !== today || Boolean(outOfScopeBy)}
           onClick={generate}
-          title={Boolean(outOfScopeBy) ? `Today's entry was written by ${outOfScopeBy}` : selected !== today ? "Select today to generate" : undefined}
+          title={
+            !canGenerate
+              ? "Summon a familiar first — the journal is written by one of your familiars"
+              : Boolean(outOfScopeBy)
+                ? `Today's entry was written by ${outOfScopeBy}`
+                : selected !== today
+                  ? "Select today to generate"
+                  : undefined
+          }
         >
           <Icon name="ph:sparkle" aria-hidden />
           {generating ? "Reflecting…" : "Generate today's entry"}
           {/* The disabled reason lived only in title= (hover-only) — AT and
-              keyboard users get it in the accessible name too (cave-t1ou). */}
-          {!generating && Boolean(outOfScopeBy) ? (
+              keyboard users get it in the accessible name too (cave-t1ou).
+              The zero-familiar case had NO reason anywhere: the cold-start
+              empty state pointed at a button that was silently inert (cave-7jzq). */}
+          {!generating && !canGenerate ? (
+            <span className="sr-only">, unavailable — summon a familiar first</span>
+          ) : !generating && Boolean(outOfScopeBy) ? (
             <span className="sr-only">, unavailable — today's entry was written by {outOfScopeBy}</span>
           ) : !generating && selected !== today ? (
             <span className="sr-only">, unavailable — select today to generate</span>
@@ -590,7 +602,11 @@ export function JournalEntries({
         {!daysLoaded && days.length === 0 ? (
           <SkeletonRows count={4} className="journal-list__loading" />
         ) : days.length === 0 ? (
-          <div className="journal-empty">No journal entries yet. Generate today's above.</div>
+          <div className="journal-empty">
+            {canGenerate
+              ? "No journal entries yet. Generate today's above."
+              : "No journal entries yet. The journal is written by a familiar — summon one first, then generate today's entry above."}
+          </div>
         ) : filteredDays.length === 0 ? (
           <div className="journal-empty">No entries match “{filter.trim()}”.</div>
         ) : (

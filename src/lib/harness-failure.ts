@@ -136,6 +136,59 @@ export function parseHarnessFailure(
   };
 }
 
+// ── Runtime auth failures ─────────────────────────────────────────────────────
+// The onboarding wizard greens a runtime the moment its binary installs — it
+// never verifies login — so an unauthenticated runtime fails at the user's
+// FIRST MESSAGE with raw stderr (cave-f6ol). Recognize the common sign-in
+// failure shapes and hand surfaces a copyable login command. Patterns are
+// deliberately conservative: a bare "unauthorized" is NOT matched (the app's
+// own access-gate 401s use that word and are not a runtime-login problem).
+
+export type HarnessAuthFailure = {
+  /** Canonical id of the runtime needing login, when the caller knows it. */
+  harness: string | null;
+  harnessLabel: string | null;
+  /** Copyable terminal command that starts the sign-in flow, when known. */
+  loginCommand: string | null;
+};
+
+const AUTH_FAILURE_PATTERNS: RegExp[] = [
+  /\bnot (?:signed|logged) in\b/i,
+  /\bplease (?:run )?[`'"]?\/?login\b/i,
+  /\brun [`'"]?(?:codex login|claude \/login|copilot \/login|gh auth login)[`'"]?/i,
+  /\binvalid api key\b/i,
+  /\bapi key (?:not set|missing|not found|expired)\b/i,
+  /\bauthentication (?:error|failed|required)\b/i,
+  /\bcredentials? (?:missing|not found|expired|invalid|required)\b/i,
+  /\bauthentication[_-]error\b/i,
+];
+
+/** Terminal sign-in command per runtime (mirrors the onboarding install prose). */
+const LOGIN_COMMANDS: Record<string, string> = {
+  claude: "claude /login",
+  codex: "codex login",
+  copilot: "copilot /login",
+};
+
+/**
+ * Detect a runtime sign-in failure in error text. `harnessId` is the runtime
+ * the failing send used (the stderr rarely names it) — pass it when known so
+ * the fix can name the runtime and its exact login command.
+ */
+export function parseHarnessAuthFailure(
+  text: string | null | undefined,
+  harnessId?: string | null,
+): HarnessAuthFailure | null {
+  if (!text || typeof text !== "string") return null;
+  if (!AUTH_FAILURE_PATTERNS.some((re) => re.test(text))) return null;
+  const harness = knownAdapterId(harnessId);
+  return {
+    harness,
+    harnessLabel: harness ? adapterLabel(harness) : null,
+    loginCommand: harness ? LOGIN_COMMANDS[harness] ?? null : null,
+  };
+}
+
 /**
  * The harnesses a fix UI should offer to switch to: the configured list when
  * the error names one, otherwise every other chat-supported adapter. Capped so
