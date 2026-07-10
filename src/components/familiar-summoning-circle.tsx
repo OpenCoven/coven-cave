@@ -828,9 +828,21 @@ function StageVessel({
           {harnesses === null ? (
             <p className="text-[11px] text-[var(--text-muted)]">Looking for installed runtimes…</p>
           ) : installedHarnesses.length === 0 ? (
-            <p className="text-[11px] text-[var(--color-warning)]">
-              No chat-capable runtime found. Install one (Codex, Claude Code, Copilot, Hermes…) from Settings, then return to the circle.
-            </p>
+            // Runtime installs live in the SETUP WIZARD, not Settings — the old
+            // copy pointed at a Settings section that doesn't exist, looping
+            // users between the circle and Settings (cave-tpji).
+            <div className="flex flex-col items-start gap-1.5">
+              <p className="text-[11px] text-[var(--color-warning)]">
+                No chat-capable runtime found. Run setup to install one (Codex, Claude Code, Copilot…), then return to the circle.
+              </p>
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
+                className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+              >
+                Run setup
+              </button>
+            </div>
           ) : (
             <div role="radiogroup" aria-label="Runtime" className="summoning-chiprow">
               {installedHarnesses.map((h) => (

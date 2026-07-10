@@ -19,36 +19,48 @@ import {
   type RawMemoryEntry,
 } from "@/lib/familiar-card-data";
 
-let familiarsCache: Promise<Record<string, FamiliarStatusInfo>> | null = null;
-function loadFamiliarStatus(): Promise<Record<string, FamiliarStatusInfo>> {
+// Module-level caches keep repeated card opens cheap, but a FAILED load must
+// not be cached for the app's lifetime — that turned one transient error into
+// a permanent "No memory yet" on every card until a full reload (cave-2ex2).
+// Failures resolve to null AND clear the cache so the next mount retries.
+let familiarsCache: Promise<Record<string, FamiliarStatusInfo> | null> | null = null;
+function loadFamiliarStatus(): Promise<Record<string, FamiliarStatusInfo> | null> {
   if (!familiarsCache) {
     familiarsCache = fetch("/api/familiars", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
+        if (!j?.ok || !Array.isArray(j.familiars)) throw new Error("familiars load failed");
         const map: Record<string, FamiliarStatusInfo> = {};
-        if (j?.ok && Array.isArray(j.familiars)) {
-          for (const f of j.familiars) {
-            map[f.id] = {
-              status: f.status,
-              lastSeen: f.last_seen ?? null,
-              activeSessions: f.active_sessions,
-            };
-          }
+        for (const f of j.familiars) {
+          map[f.id] = {
+            status: f.status,
+            lastSeen: f.last_seen ?? null,
+            activeSessions: f.active_sessions,
+          };
         }
         return map;
       })
-      .catch(() => ({}));
+      .catch(() => {
+        familiarsCache = null;
+        return null;
+      });
   }
   return familiarsCache;
 }
 
-let memoryCache: Promise<RawMemoryEntry[]> | null = null;
-function loadMemoryEntries(): Promise<RawMemoryEntry[]> {
+let memoryCache: Promise<RawMemoryEntry[] | null> | null = null;
+function loadMemoryEntries(): Promise<RawMemoryEntry[] | null> {
   if (!memoryCache) {
     memoryCache = fetch("/api/memory", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => (j?.ok && Array.isArray(j.entries) ? (j.entries as RawMemoryEntry[]) : []))
-      .catch(() => []);
+      .then((j) => {
+        if (!j?.ok || !Array.isArray(j.entries)) throw new Error("memory load failed");
+        return j.entries as RawMemoryEntry[];
+      })
+      .catch(() => {
+        memoryCache = null;
+        return null;
+      });
   }
   return memoryCache;
 }
@@ -60,7 +72,7 @@ function useFamiliarStatus(id: string): { info: FamiliarStatusInfo | null; faile
     let alive = true;
     loadFamiliarStatus().then((map) => {
       if (!alive) return;
-      if (map[id]) setInfo(map[id]);
+      if (map?.[id]) setInfo(map[id]);
       else setFailed(true);
     });
     return () => {
@@ -70,22 +82,27 @@ function useFamiliarStatus(id: string): { info: FamiliarStatusInfo | null; faile
   return { info, failed };
 }
 
-function useFamiliarMemory(id: string): { entries: MemoryPeekEntry[]; loading: boolean } {
+function useFamiliarMemory(id: string): { entries: MemoryPeekEntry[]; loading: boolean; failed: boolean } {
   const [entries, setEntries] = useState<MemoryPeekEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
     setLoading(true);
+    setFailed(false);
     loadMemoryEntries().then((all) => {
       if (!alive) return;
-      setEntries(pickFamiliarMemory(all, id, 3));
+      // null = the load FAILED — an error is not evidence of an empty memory
+      // (the old path rendered "No memory yet" over it; cave-2ex2).
+      if (all === null) setFailed(true);
+      else setEntries(pickFamiliarMemory(all, id, 3));
       setLoading(false);
     });
     return () => {
       alive = false;
     };
   }, [id]);
-  return { entries, loading };
+  return { entries, loading, failed };
 }
 
 export function FamiliarInlineCard({
@@ -108,8 +125,8 @@ export function FamiliarInlineCard({
   });
 
   const { openFamiliarStudio } = useFamiliarStudio();
-  const { info, failed } = useFamiliarStatus(familiar.id);
-  const { entries, loading } = useFamiliarMemory(familiar.id);
+  const { info, failed: statusFailed } = useFamiliarStatus(familiar.id);
+  const { entries, loading, failed: memoryFailed } = useFamiliarMemory(familiar.id);
 
   const meta = statusMeta(info?.status);
 
@@ -137,7 +154,9 @@ export function FamiliarInlineCard({
 
       <div className="familiar-inline-card__status">
         {!info ? (
-          <span className="familiar-inline-card__status-muted">status unavailable</span>
+          <span className="familiar-inline-card__status-muted">
+            {statusFailed ? "status unavailable — reopen to retry" : "checking status…"}
+          </span>
         ) : (
           <>
             <span
@@ -189,6 +208,10 @@ export function FamiliarInlineCard({
         </div>
         {loading ? (
           <SkeletonRows count={3} className="familiar-inline-card__memory-loading" />
+        ) : memoryFailed ? (
+          // A failed load is NOT an empty memory (cave-2ex2). The cache
+          // self-clears on failure, so reopening the card retries.
+          <div className="familiar-inline-card__memory-muted">Memory unavailable right now — reopen to retry</div>
         ) : entries.length === 0 ? (
           <div className="familiar-inline-card__memory-muted">No memory yet</div>
         ) : (

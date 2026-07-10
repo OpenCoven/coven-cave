@@ -681,10 +681,14 @@ export function Workspace() {
   // BoardView is the only consumer of the card hash and it never mounts on
   // the boot-default Chat surface, so external card links opened the app and
   // silently dropped the card (cave-qnh2). Switch to the board; BoardView's
-  // hash effect re-applies once cards load.
+  // hash effect re-applies once cards load. Same treatment for `/#grimoire:`
+  // (memory/knowledge/journal doc links from daily-report pages and shared
+  // URLs): GrimoireView reads its hash on mount, so it only needs the mode
+  // switch here (cave-aka2).
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (/^#card-/.test(window.location.hash)) setMode("board");
+    else if (window.location.hash.startsWith("#grimoire:")) setMode("grimoire");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
