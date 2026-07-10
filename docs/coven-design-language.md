@@ -299,10 +299,89 @@ stays reachable in ≤2 interactions.
    that opens; reduced-motion story for anything that moves.
 6. Container queries for narrow-pane behavior; lazy-load if the chunk is
    heavy; respect the bundle budget.
-7. Copy: sentence case, terse, one flourish maximum, domain nouns not
+7. Copy follows §10: sentence case, persistent labels, canonical placeholders,
+   actionable state copy, one flourish maximum, and domain nouns rather than
    synonyms.
 8. Source-text pin tests for the contracts you'd be sad to lose (this repo's
    convention — see the existing `*.test.ts` pin suites).
+
+## 10. Interface copy and field contract
+
+The visual rules above and the language rules below form one interface
+contract. Contextual prose stays with its surface; reusable components own
+control semantics, state hierarchy, and accessibility.
+
+### Vocabulary
+
+- **Tasks** is the top-level user-facing noun in navigation, mobile tabs,
+  headings, commands, empty states, and actions. Use **task board** when the
+  kanban/table layout itself matters. Do not use bare **Board** as a
+  destination.
+- Use **task** instead of visible **card** unless describing card-shaped
+  presentation. Internal card types and APIs do not need cosmetic renames.
+- Use **chat** for a conversation people open and **session** only for
+  execution, debugging, or connection contexts where the distinction matters.
+- Keep the domain nouns in §4. Use **scheduled job** in ordinary interface
+  copy; reserve **cron** for cron syntax and scheduler diagnostics.
+- Use **project** for the user-facing codebase container. Use **working
+  directory** or `cwd` only when the filesystem concept is the actual field.
+
+### Action copy
+
+- Use sentence case, active voice, and the action's real verb: **Save changes**,
+  **Create task**, **Open settings**, **Retry**.
+- Avoid generic **Submit**, **OK**, and **Confirm** when the actual operation is
+  known.
+- Keep one verb through the lifecycle: **Publish** → **Publishing…** →
+  **Published**.
+- Icon-only controls need state-aware accessible names. Toggle names describe
+  the next action: **Pin chat** / **Unpin chat**.
+- Name destructive objects and consequences. Prefer undo for reversible
+  actions; use confirmation for irreversible actions.
+
+### Field semantics
+
+- Every editable control has a persistent visible label or an equally durable
+  accessible name for a self-explanatory global control. A placeholder never replaces a persistent label.
+- Put purpose in the label, constraints in help text, and repair instructions
+  in the error slot. One string does not perform multiple jobs.
+- Mark optional fields beside the label with **Optional**. Required controls
+  use native required semantics rather than decorative asterisks.
+- Connect help and errors with `aria-describedby` on React and equivalent
+  native accessibility semantics. Invalid controls expose their invalid state
+  programmatically.
+
+### Placeholder grammar
+
+Placeholders show an example, expected format, or input intent. They do not
+repeat the label, hold required instructions, disguise a default value, or
+carry a keyboard shortcut that disappears while typing.
+
+- Search a known collection: `Search <items>…`
+- Narrow a visible collection: `Filter <items>…`
+- Open a deferred choice: `Choose <item>…`
+- Create or compose: `Describe the task…`, `Message Sage…`, `Add a note…`
+- Show format: `e.g., owner/repository` or `e.g., 0 9 * * 1-5`
+- Secret input: `Paste personal access token`, paired with a provider-specific
+  label
+
+Use the single ellipsis character `…`, never three periods. Put optionality,
+shortcut hints, and critical constraints in persistent text outside the
+placeholder.
+
+### State copy
+
+- Name small loads: **Loading tasks…**, not bare **Loading…**. Use skeletons
+  when the content shape is known.
+- A true empty state has a short status headline, a concrete next step, and an
+  action when the person can resolve it.
+- A filtered empty state names the scope or query and offers **Clear filters**
+  where appropriate.
+- Never render a failed request as a convincing empty collection. Use
+  **Couldn't load <object>**, safe diagnostic detail, and a concrete recovery
+  action such as **Retry** or **Open settings**.
+- Announcements and toasts use the same action vocabulary as the visible
+  control.
 
 ---
 
