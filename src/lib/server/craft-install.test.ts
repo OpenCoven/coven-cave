@@ -83,7 +83,7 @@ type StoreHarness = {
   removals: string[];
 };
 
-function memoryStore(options: { failRecord?: boolean } = {}): StoreHarness {
+function memoryStore(options: { failRecord?: boolean; failRemove?: boolean } = {}): StoreHarness {
   const entries = new Map<string, CraftInstallationRecord>();
   const writes: CraftInstallationRecord[] = [];
   const removals: string[] = [];
@@ -103,6 +103,7 @@ function memoryStore(options: { failRecord?: boolean } = {}): StoreHarness {
         return saved;
       },
       async remove(id) {
+        if (options.failRemove) throw new Error("disk delete failed");
         entries.delete(id);
         removals.push(id);
       },
@@ -492,6 +493,32 @@ try {
     assert.equal(error.diagnostic.rollback?.succeeded, false, "rollback verifies the Craft is absent");
   }
 
+  // A failed rollback list command is a verification failure, not a second
+  // removal failure. The original install error remains the transaction code,
+  // while the bounded rollback diagnostic identifies the failing phase.
+  {
+    const harness = memoryStore();
+    let listCalls = 0;
+    const runner: CraftCommandRunner = async (_command, args) => {
+      const key = commandKey(args);
+      if (key === "plugin marketplace list --json") return { stdout: marketplaceList(), stderr: "" };
+      if (key === "plugin list --json") {
+        listCalls += 1;
+        if (listCalls === 1) return { stdout: pluginList(false), stderr: "" };
+        throw new Error("list failed");
+      }
+      if (key === `plugin add ${TARGET} --json`) return { stdout: "not-json", stderr: "" };
+      if (key === `plugin remove ${TARGET} --json`) return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+      assert.fail(`unexpected command: ${key}`);
+    };
+    const error = await expectTransactionError(
+      service(runner, harness.store, codexHome).install(craft.id),
+      "malformed_json",
+    );
+    assert.equal(error.diagnostic.rollback?.succeeded, false);
+    assert.match(error.diagnostic.rollback?.message ?? "", /expected Craft installation state/i);
+  }
+
   // Same-Craft concurrent requests serialize; the second observes the verified
   // installation and cannot launch a duplicate add process.
   {
@@ -612,6 +639,43 @@ try {
       "plugin list --json",
     ]);
     assert.deepEqual(harness.removals, [craft.id]);
+  }
+
+  // Cave state deletion failures retain a stable structured classification
+  // whether Codex was already absent or Cave removed and verified it now.
+  {
+    const harness = memoryStore({ failRemove: true });
+    const runner: CraftCommandRunner = async (_command, args) => {
+      const key = commandKey(args);
+      if (key === "plugin marketplace list --json") return { stdout: marketplaceList(), stderr: "" };
+      if (key === "plugin list --json") return { stdout: pluginList(false), stderr: "" };
+      assert.fail(`unexpected command: ${key}`);
+    };
+    const error = await expectTransactionError(
+      service(runner, harness.store, codexHome).uninstall(craft.id),
+      "persistence_failed",
+    );
+    assert.equal(error.diagnostic.step, "persist");
+  }
+
+  {
+    const harness = memoryStore({ failRemove: true });
+    let installed = true;
+    const runner: CraftCommandRunner = async (_command, args) => {
+      const key = commandKey(args);
+      if (key === "plugin marketplace list --json") return { stdout: marketplaceList(), stderr: "" };
+      if (key === "plugin list --json") return { stdout: pluginList(installed), stderr: "" };
+      if (key === `plugin remove ${TARGET} --json`) {
+        installed = false;
+        return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+      }
+      assert.fail(`unexpected command: ${key}`);
+    };
+    const error = await expectTransactionError(
+      service(runner, harness.store, codexHome).uninstall(craft.id),
+      "persistence_failed",
+    );
+    assert.equal(error.diagnostic.step, "persist");
   }
 
   console.log("craft-install.test.ts: ok");
