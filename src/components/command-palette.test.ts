@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  workspacePageDefinition,
-  type WorkspacePageId,
-} from "../lib/workspace-page-registry.ts";
+  CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS,
+} from "../lib/workspace-palette-navigation.ts";
 
 const source = readFileSync(
   new URL("./command-palette.tsx", import.meta.url),
@@ -145,13 +144,18 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /import \{[\s\S]*WORKSPACE_PALETTE_PAGE_DEFINITIONS,[\s\S]*type WorkspacePageId,[\s\S]*\} from "@\/lib\/workspace-page-registry"/,
-  "command palette imports page identity and palette membership from the registry",
+  /import \{ CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS \} from "@\/lib\/workspace-palette-navigation"/,
+  "command palette imports currently routable palette membership from the pure navigation helper",
 );
 assert.match(
   source,
-  /rank\(WORKSPACE_PALETTE_PAGE_DEFINITIONS/,
-  "surface rows derive from registry palette definitions",
+  /rank\(CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS/,
+  "surface rows derive from current registry-backed palette definitions",
+);
+assert.equal(
+  CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS.some(({ id }) => id === "flow"),
+  false,
+  "Flow is not emitted until Task 6 mounts FlowView",
 );
 assert.match(
   source,
@@ -176,22 +180,19 @@ assert.match(
 // Consumer: workspace switches surfaces on the intent.
 assert.match(
   workspace,
-  /intent\.kind === "go-to-surface"[\s\S]{0,80}?setMode\(intent\.mode as WorkspaceMode\)/,
-  "workspace navigates to the chosen surface on a go-to-surface intent",
+  /import \{ isRoutableWorkspacePaletteMode \} from "@\/lib\/workspace-palette-navigation"/,
+  "workspace imports the pure current-routing guard",
 );
-const representativePageIds: WorkspacePageId[] = [
-  "dashboard",
-  "settings",
-  "terminal",
-  "memory",
-  "surface:researcher",
-];
-for (const pageId of representativePageIds) {
-  assert.ok(
-    workspacePageDefinition(pageId),
-    `${pageId} demonstrates footer, companion, and dynamic role ids remain valid WorkspacePageId values`,
-  );
-}
+assert.match(
+  workspace,
+  /intent\.kind === "go-to-surface"[\s\S]{0,180}if \(!isRoutableWorkspacePaletteMode\(intent\.mode\)\) return;[\s\S]{0,100}setMode\(intent\.mode\)/,
+  "workspace routes palette page ids only after the guard narrows them to WorkspaceMode",
+);
+assert.doesNotMatch(
+  workspace,
+  /setMode\(intent\.mode as WorkspaceMode\)/,
+  "workspace palette routing must not force-cast WorkspacePageId",
+);
 
 // ── "Open project" navigation ──
 assert.match(

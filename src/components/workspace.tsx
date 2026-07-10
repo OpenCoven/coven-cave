@@ -9,6 +9,7 @@ import { sameSessionList } from "@/lib/session-list-equal";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
+import { isRoutableWorkspacePaletteMode } from "@/lib/workspace-palette-navigation";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
@@ -1833,7 +1834,8 @@ export function Workspace() {
       return;
     }
     if (intent.kind === "go-to-surface") {
-      setMode(intent.mode as WorkspaceMode);
+      if (!isRoutableWorkspacePaletteMode(intent.mode)) return;
+      setMode(intent.mode);
       shellRef.current?.dismissNavMobile();
       return;
     }
@@ -2445,8 +2447,8 @@ export function Workspace() {
     </div>
   );
 
-  // Split tiles: dragged-in pages (heavy/stateful surfaces like terminal are
-  // excluded from drag) or re-homed companion surfaces (Salem / Memory / Browser).
+  // Split tiles: dragged-in registered pages or re-homed companion surfaces
+  // (Salem / Memory / Browser / Terminal).
   const renderSplitTargetContent = (target: SplitTarget): ReactNode =>
     target.kind === "page" ? (
       target.mode !== mode ? (

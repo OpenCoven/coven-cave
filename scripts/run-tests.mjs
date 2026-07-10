@@ -33,6 +33,7 @@ export const SUITES = {
     "src/lib/sidebar-nav-state.test.ts",
     "src/lib/role-surfaces.test.ts",
     "src/lib/workspace-page-registry.test.ts",
+    "src/lib/workspace-palette-navigation.test.ts",
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-shell.test.ts",
     "src/components/chat-view-render-cap.test.ts",

@@ -11,10 +11,8 @@ import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import {
-  WORKSPACE_PALETTE_PAGE_DEFINITIONS,
-  type WorkspacePageId,
-} from "@/lib/workspace-page-registry";
+import type { WorkspacePageId } from "@/lib/workspace-page-registry";
+import { CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS } from "@/lib/workspace-palette-navigation";
 import { useProjects } from "@/lib/use-projects";
 
 function shortProjectRoot(root: string): string {
@@ -517,12 +515,12 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    // "Go to <surface>" rows make ⌘K a launcher for registry-declared palette
-    // pages. Hidden while typing a slash command or a familiar scope (where
-    // page navigation would be noise).
+    // "Go to <surface>" rows make ⌘K a launcher for currently routable,
+    // registry-declared palette pages. Hidden while typing a slash command or a
+    // familiar scope (where page navigation would be noise).
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
-      : rank(WORKSPACE_PALETTE_PAGE_DEFINITIONS
+      : rank(CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS
           // Registry title, id, and landmark all participate in fuzzy matching.
           .filter((definition) => !q || fz(definition.title) || fz(definition.id) || fz(definition.landmark)),
           (definition) => [definition.title, definition.id, definition.landmark])
