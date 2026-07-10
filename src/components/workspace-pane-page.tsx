@@ -3,6 +3,7 @@
 import { Component, Fragment, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { workspacePaneErrorMessage, workspacePaneResetKey } from "@/lib/workspace-pane-error";
 
 export type WorkspacePaneUnavailable = {
   reason: string;
@@ -30,20 +31,6 @@ type WorkspacePaneErrorBoundaryState = {
   retryKey: number;
 };
 
-const UNEXPECTED_ERROR_MESSAGE = "An unexpected error occurred.";
-
-function normalizeThrownValue(error: unknown): string {
-  if (typeof error === "string") return error.trim() || UNEXPECTED_ERROR_MESSAGE;
-
-  try {
-    if (error instanceof Error) return error.message.trim() || UNEXPECTED_ERROR_MESSAGE;
-  } catch {
-    // A thrown Proxy can fail even basic inspection; keep the pane fallback safe.
-  }
-
-  return UNEXPECTED_ERROR_MESSAGE;
-}
-
 class WorkspacePaneErrorBoundary extends Component<
   WorkspacePaneErrorBoundaryProps,
   WorkspacePaneErrorBoundaryState
@@ -55,7 +42,7 @@ class WorkspacePaneErrorBoundary extends Component<
   };
 
   static getDerivedStateFromError(error: unknown): Partial<WorkspacePaneErrorBoundaryState> {
-    return { errorMessage: normalizeThrownValue(error) };
+    return { errorMessage: workspacePaneErrorMessage(error) };
   }
 
   static getDerivedStateFromProps(
@@ -105,7 +92,7 @@ export function WorkspacePanePage({
 }: WorkspacePanePageProps) {
   return (
     <section className="workspace-pane-page" data-pane-instance={instanceId} aria-label={landmark}>
-      <WorkspacePaneErrorBoundary landmark={landmark} resetKey={`${instanceId}:${landmark}`}>
+      <WorkspacePaneErrorBoundary landmark={landmark} resetKey={workspacePaneResetKey(instanceId, landmark)}>
         {status === "loading" ? (
           <div
             className="workspace-pane-page__state workspace-pane-page__state--loading"

@@ -5,6 +5,23 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./workspace-pane-page.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
+const propsType = source.match(/export type WorkspacePanePageProps = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+assert.match(propsType, /instanceId:\s*string;/, "the public page-root props require an instance identity");
+assert.match(propsType, /landmark:\s*string;/, "the public page-root props require a landmark name");
+assert.match(propsType, /status\?:\s*"ready"\s*\|\s*"loading";/, "the public status is focused on ready and loading");
+assert.match(propsType, /unavailable\?:\s*WorkspacePaneUnavailable;/, "the public props accept an unavailable recovery state");
+assert.match(propsType, /children:\s*ReactNode;/, "the public props accept page children");
+assert.match(
+  source,
+  /export function WorkspacePanePage\(\{[\s\S]{0,180}status = "ready"/,
+  "WorkspacePanePage defaults to the ready state",
+);
+assert.match(
+  source,
+  /import \{ workspacePaneErrorMessage, workspacePaneResetKey \} from "@\/lib\/workspace-pane-error";/,
+  "the component imports the runtime-tested pane error helpers",
+);
+
 assert.match(
   source,
   /<section\s+className="workspace-pane-page"\s+data-pane-instance=\{instanceId\}\s+aria-label=\{landmark\}>/,
@@ -12,8 +29,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<WorkspacePaneErrorBoundary\s+landmark=\{landmark\}\s+resetKey=\{`\$\{instanceId\}:\$\{landmark\}`\}>[\s\S]*<\/WorkspacePaneErrorBoundary>/,
-  "each page root wraps only its own pane content in a resettable boundary",
+  /<WorkspacePaneErrorBoundary\s+landmark=\{landmark\}\s+resetKey=\{workspacePaneResetKey\(instanceId, landmark\)\}>[\s\S]*<\/WorkspacePaneErrorBoundary>/,
+  "each page root wraps only its own pane content with a collision-safe reset key",
 );
 
 assert.match(
@@ -23,8 +40,8 @@ assert.match(
 );
 assert.match(
   source,
-  /static getDerivedStateFromError\(error: unknown\)[\s\S]{0,240}normalizeThrownValue\(error\)/,
-  "the boundary catches render errors and safely normalizes unknown thrown values",
+  /static getDerivedStateFromError\(error: unknown\)[\s\S]{0,240}workspacePaneErrorMessage\(error\)/,
+  "the boundary catches render errors through the runtime-tested normalizer",
 );
 assert.match(
   source,
@@ -45,6 +62,17 @@ assert.doesNotMatch(
   source,
   /(?:window\.)?location\.reload|window\.location\s*=/,
   "pane retry never reloads the app or mutates global navigation",
+);
+assert.doesNotMatch(source, /<button\b/, "pane states use the existing Button primitive, never a hand-rolled button");
+assert.doesNotMatch(
+  source,
+  /(?:__test|testOnly|forTests?|resetForTests?)/i,
+  "the page root exposes no test-only methods or hooks",
+);
+assert.doesNotMatch(
+  source,
+  /function normalizeThrownValue|JSON\.stringify/,
+  "the component does not duplicate error normalization or reset-key serialization",
 );
 assert.match(
   source,
