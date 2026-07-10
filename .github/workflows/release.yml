@@ -247,6 +247,31 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+      - name: Measure and enforce Windows MSI budget
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: powershell
+        run: |
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($msis.Count -ne 1) {
+            throw "Expected exactly one built MSI, found $($msis.Count)"
+          }
+          & .\scripts\windows-msi-budget.ps1 `
+            -MsiPath $msis[0].FullName `
+            -OutputPath "$env:RUNNER_TEMP\windows-msi-metrics.json"
+
+      - name: Retain Windows MSI diagnostics
+        if: >-
+          always() && matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-msi-diagnostics-${{ env.RELEASE_VERSION }}
+          path: ${{ runner.temp }}/windows-msi-metrics.json
+          if-no-files-found: warn
+          compression-level: 0
+
       - name: Sign Linux/Windows updater artifact
         if: >-
           (

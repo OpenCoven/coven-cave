@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 #[cfg(desktop)]
 use std::process::{Child, Command, Stdio};
 #[cfg(desktop)]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 #[cfg(desktop)]
 use std::thread;
 #[cfg(desktop)]
@@ -484,7 +484,81 @@ fn sidecar_auth_token() -> String {
 }
 
 #[cfg(desktop)]
-struct SidecarState(Mutex<Option<Child>>);
+struct SidecarState(Arc<Mutex<Option<Child>>>);
+
+#[cfg(desktop)]
+struct SidecarCleanupGuard(Arc<Mutex<Option<Child>>>);
+
+#[cfg(desktop)]
+impl tauri::Resource for SidecarCleanupGuard {}
+
+#[cfg(desktop)]
+impl Drop for SidecarCleanupGuard {
+    fn drop(&mut self) {
+        let state = SidecarState(Arc::clone(&self.0));
+        if let Err(error) = state.stop() {
+            log::warn!("[cave] could not stop sidecar during application cleanup: {error}");
+        }
+    }
+}
+
+#[cfg(desktop)]
+impl SidecarState {
+    fn stop(&self) -> Result<(), String> {
+        let mut guard = self
+            .0
+            .lock()
+            .map_err(|_| "sidecar process lock is poisoned".to_string())?;
+        let Some(mut child) = guard.take() else {
+            return Ok(());
+        };
+        if child
+            .try_wait()
+            .map_err(|error| format!("could not inspect sidecar process: {error}"))?
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let pid = child.id().to_string();
+            let mut taskkill = Command::new(windows_system32_binary("taskkill.exe"));
+            taskkill
+                .args(["/PID", &pid, "/T", "/F"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(0x08000000);
+            match taskkill.status() {
+                Ok(status) if status.success() => {}
+                Ok(status) => log::warn!(
+                    "[cave] taskkill could not stop sidecar process tree {} (status {}); falling back to direct termination",
+                    pid,
+                    status
+                ),
+                Err(error) => log::warn!(
+                    "[cave] taskkill could not start for sidecar process tree {}: {}; falling back to direct termination",
+                    pid,
+                    error
+                ),
+            }
+        }
+
+        if child
+            .try_wait()
+            .map_err(|error| format!("could not inspect terminated sidecar: {error}"))?
+            .is_none()
+        {
+            child
+                .kill()
+                .map_err(|error| format!("could not stop sidecar process: {error}"))?;
+        }
+        child
+            .wait()
+            .map_err(|error| format!("could not wait for sidecar process shutdown: {error}"))?;
+        Ok(())
+    }
+}
 
 #[cfg(desktop)]
 fn find_free_port() -> Option<u16> {
@@ -574,6 +648,41 @@ mod tests {
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
+    #[test]
+    fn sidecar_cleanup_is_idempotent_when_no_child_is_running() {
+        let state = SidecarState(Arc::new(Mutex::new(None)));
+
+        state.stop().expect("first empty cleanup");
+        state.stop().expect("second empty cleanup");
+    }
+
+    #[test]
+    fn dropping_application_cleanup_guard_stops_and_reaps_sidecar() {
+        #[cfg(target_os = "windows")]
+        let mut command = {
+            let mut command = Command::new(windows_system32_binary("ping.exe"));
+            command.args(["127.0.0.1", "-n", "30"]);
+            command.creation_flags(0x08000000);
+            command
+        };
+        #[cfg(not(target_os = "windows"))]
+        let mut command = {
+            let mut command = Command::new("sleep");
+            command.arg("30");
+            command
+        };
+        let child = command
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cleanup fixture");
+        let slot = Arc::new(Mutex::new(Some(child)));
+
+        drop(SidecarCleanupGuard(Arc::clone(&slot)));
+
+        assert!(slot.lock().expect("sidecar slot").is_none());
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn node_arg_path_strips_windows_extended_prefix() {
@@ -609,6 +718,8 @@ mod tests {
 mod browser;
 #[cfg(desktop)]
 mod pty;
+#[cfg(all(desktop, target_os = "windows"))]
+mod sidecar_archive;
 
 #[cfg(desktop)]
 fn validate_shell_open_url(url: &str) -> Result<(), String> {
@@ -988,6 +1099,8 @@ pub fn run() {
     // tray icon. Everything below this point is gated to `cfg(desktop)`
     // by the imports at the top of the file.
     #[cfg(desktop)]
+    let sidecar_process = Arc::new(Mutex::new(None));
+    #[cfg(desktop)]
     builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
@@ -1012,8 +1125,15 @@ pub fn run() {
             shell_pick_directory,
             set_traffic_lights_visible,
         ])
-        .manage(SidecarState(Mutex::new(None)))
-        .setup(|app| {
+        .manage(SidecarState(Arc::clone(&sidecar_process)))
+        .setup(move |app| {
+            // The updater's Windows pre-exit path clears the application
+            // resource table after validating the package and before starting
+            // msiexec. Dropping this guard stops/reaps the sidecar even though
+            // std::process::exit bypasses window destruction and RunEvent.
+            let _ = app
+                .resources_table()
+                .add(SidecarCleanupGuard(Arc::clone(&sidecar_process)));
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -1026,7 +1146,23 @@ pub fn run() {
 
             // Desktop auto-update: updater checks/downloads/installs signed
             // release artifacts; process provides relaunch() after install.
-            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            let updater_builder = tauri_plugin_updater::Builder::new();
+            #[cfg(target_os = "windows")]
+            let updater_builder = {
+                let log_dir = app.path().app_log_dir()?;
+                std::fs::create_dir_all(&log_dir)?;
+                let log_path = log_dir.join(format!(
+                    "msi-upgrade-from-{}-{}.log",
+                    app.package_info().version,
+                    std::process::id()
+                ));
+                log::info!("[cave] updater MSI log -> {}", log_path.display());
+                updater_builder.installer_args([
+                    std::ffi::OsString::from("/L*V"),
+                    std::ffi::OsString::from(format!("\"{}\"", log_path.display())),
+                ])
+            };
+            app.handle().plugin(updater_builder.build())?;
             app.handle().plugin(tauri_plugin_process::init())?;
 
             check_app_translocation();
@@ -1050,6 +1186,13 @@ pub fn run() {
             // the /api/pty-ws terminal websocket bridge. server.js is Next's
             // generated standalone entrypoint, kept as a fallback for old
             // bundles — it serves the app but has no terminal bridge.
+            #[cfg(target_os = "windows")]
+            let server_dir_root = match sidecar_archive::prepare_sidecar_runtime(app, &resource_dir)
+            {
+                Ok(path) => path,
+                Err(error) => fatal_exit(&format!("could not prepare sidecar runtime: {error}")),
+            };
+            #[cfg(not(target_os = "windows"))]
             let server_dir_root = resource_dir.join("resources").join("server");
             let server_mjs = server_dir_root.join("server.mjs");
             let server_js = server_dir_root.join("server.js");
@@ -1190,13 +1333,20 @@ pub fn run() {
                 Err(e) => fatal_exit(&format!("failed to spawn node sidecar: {}", e)),
             };
 
-            *app
-                .state::<SidecarState>()
-                .0
-                .lock()
-                .expect("sidecar lock") = Some(child);
+            let sidecar_state = app.state::<SidecarState>();
+            let mut sidecar = match sidecar_state.0.lock() {
+                Ok(sidecar) => sidecar,
+                Err(_) => fatal_exit("sidecar process lock is poisoned"),
+            };
+            *sidecar = Some(child);
+            drop(sidecar);
 
-            if !wait_for_port(port, Duration::from_secs(20)) {
+            let sidecar_start_timeout = if cfg!(target_os = "windows") {
+                Duration::from_secs(90)
+            } else {
+                Duration::from_secs(20)
+            };
+            if !wait_for_port(port, sidecar_start_timeout) {
                 // Read the tail of the sidecar log to give the user a clue.
                 let tail = std::fs::read_to_string(&log_path)
                     .ok()
@@ -1214,13 +1364,19 @@ pub fn run() {
                     })
                     .unwrap_or_else(|| "(could not read sidecar log)".to_string());
                 fatal_exit(&format!(
-                    "Sidecar (node {}) did not become ready on port {} within 20s.\n\nLast lines from {}:\n{}",
+                    "Sidecar (node {}) did not become ready on port {} within {}s.\n\nLast lines from {}:\n{}",
                     node.display(),
                     port,
+                    sidecar_start_timeout.as_secs(),
                     log_path.display(),
                     tail
                 ));
             }
+
+            // Only retire older complete caches after the new runtime has
+            // actually booted. Keep one previous version for rollback.
+            #[cfg(target_os = "windows")]
+            sidecar_archive::cleanup_stale_sidecar_runtimes(&server_dir_root);
 
             format!(
                 "http://127.0.0.1:{}/?covenCaveToken={}&coven_access_token={}",
@@ -1387,9 +1543,8 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
                     if let Some(state) = window.app_handle().try_state::<SidecarState>() {
-                        if let Some(mut child) = state.0.lock().expect("sidecar lock").take() {
-                            let _ = child.kill();
-                            let _ = child.wait();
+                        if let Err(error) = state.stop() {
+                            log::warn!("[cave] could not stop sidecar during window teardown: {error}");
                         }
                     }
                 }

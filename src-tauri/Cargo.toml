@@ -55,6 +55,13 @@ portable-pty = "0.8"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 
+# Windows packages the large Next.js sidecar as one archive instead of one
+# WiX component per file. The launcher verifies and extracts it on first use.
+[target.'cfg(target_os = "windows")'.dependencies]
+flate2 = "1"
+sha2 = "0.10"
+tar = "0.4"
+
 # OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
 # behind the transparent webview on macOS (the only platform we apply it on;
 # the crate compiles everywhere and the call sites are cfg(target_os) gated).

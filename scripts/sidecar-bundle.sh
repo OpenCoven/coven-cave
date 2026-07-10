@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build + assemble the Next.js standalone server with a flat, complete
-# node_modules so it can boot from inside the Tauri .app bundle without any
-# pnpm symlink magic. Output: src-tauri/resources/server/.
+# node_modules so it can boot without any pnpm symlink magic. macOS/Linux
+# package the expanded tree; Windows packages a bounded archive that the
+# launcher expands into its versioned local runtime cache.
 #
 # Mobile-Tauri builds: skip entirely. iOS and Android sandboxes can't spawn
 # a child Node.js process, the resulting IPA / APK would balloon by ~100MB
@@ -22,11 +23,17 @@ esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"
+WINDOWS_ARCHIVE_DIR="$ROOT/src-tauri/resources/server-archive"
+WINDOWS_ARCHIVE="$WINDOWS_ARCHIVE_DIR/server.tar.gz"
+WINDOWS_ARCHIVE_MANIFEST="$WINDOWS_ARCHIVE_DIR/manifest.json"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 STATIC="$ROOT/.next/static"
 PUBLIC="$ROOT/public"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
-trap 'rm -rf "$PNPM_STAGE"' EXIT
+cleanup_staging() {
+  rm -rf "$PNPM_STAGE"
+}
+trap cleanup_staging EXIT
 
 fix_node_pty_spawn_helpers() {
   local base="$1"
@@ -192,6 +199,42 @@ copy_node_shared_runtime() {
   echo "==> bundled Node shared runtime $lib_name"
 }
 
+write_windows_sidecar_archive() {
+  mkdir -p "$WINDOWS_ARCHIVE_DIR"
+  rm -f "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST"
+
+  # The standalone output can retain valid pnpm symlinks. Materialize those
+  # few links in place instead of copying the entire 500+ MiB tree a second
+  # time. The manifest and runtime both reject any link that survives.
+  while IFS= read -r -d '' link; do
+    if [ ! -e "$link" ]; then
+      echo "ERROR: dangling sidecar symlink cannot be archived: $link" >&2
+      exit 1
+    fi
+    materialized="${link}.materialized.$$"
+    cp -aL "$link" "$materialized"
+    rm -f "$link"
+    mv "$materialized" "$link"
+  done < <(find "$DEST" -type l -print0)
+
+  echo "==> archiving Windows sidecar -> $WINDOWS_ARCHIVE"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs \
+      -czf "$WINDOWS_ARCHIVE" -C "$DEST" .
+  else
+    tar -czf "$WINDOWS_ARCHIVE" -C "$DEST" .
+  fi
+
+  node "$ROOT/scripts/sidecar-archive-manifest.mjs" \
+    "$DEST" "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST"
+
+  # Keep the expanded tree out of the Windows build workspace as a second
+  # guard against accidentally reintroducing thousands of WiX components.
+  rm -rf "$DEST"
+  mkdir -p "$DEST"
+  printf "generated at release build time\n" > "$DEST/placeholder.txt"
+}
+
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
 
@@ -340,6 +383,10 @@ if ! (cd "$DEST" && node -e "require('sharp')") >&2 2>&1; then
   echo "==> ! sharp failed to load from sidecar bundle — raster avatars will 404 (#2010)" >&2
   echo "    expected @img/sharp-<build-target> native binary under $DEST/node_modules/@img" >&2
   exit 1
+fi
+
+if [ "${TAURI_PLATFORM:-}" = "windows" ] || [ "${OS:-}" = "Windows_NT" ]; then
+  write_windows_sidecar_archive
 fi
 
 echo "==> sidecar bundle ready ($(du -sh "$DEST" | cut -f1))"

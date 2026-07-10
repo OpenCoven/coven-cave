@@ -3,8 +3,9 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("release bundle includes and prefers a bundled Node runtime", async () => {
-  const [tauriConfig, bundleScript, launcher] = await Promise.all([
+  const [tauriConfig, windowsConfig, bundleScript, launcher] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
+    readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
     readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
     readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
   ]);
@@ -13,6 +14,16 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
     tauriConfig,
     /"resources\/node\/\*\*\/\*"/,
     "Tauri resources must include the bundled Node runtime",
+  );
+  assert.match(
+    windowsConfig,
+    /"resources\/server-archive\/\*\*\/\*"/,
+    "Windows must package the sidecar archive instead of thousands of server files",
+  );
+  assert.doesNotMatch(
+    windowsConfig,
+    /"resources\/server\/\*\*\/\*"/,
+    "Windows platform config must not retain the expanded sidecar resource glob",
   );
   assert.match(
     tauriConfig,
@@ -39,6 +50,11 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
     /resources[\s\S]*node[\s\S]*bin[\s\S]*node/,
     "launcher must know the bundled Node resource path",
   );
+  assert.match(
+    launcher,
+    /sidecar_archive::prepare_sidecar_runtime\(app, &resource_dir\)/,
+    "Windows launcher must prepare the verified runtime cache before starting Node",
+  );
 });
 
 test("clean release runners have resource glob placeholders", async () => {
@@ -46,6 +62,7 @@ test("clean release runners have resource glob placeholders", async () => {
 
   await Promise.all([
     access(new URL("./resources/server/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/server-archive/placeholder.txt", import.meta.url)),
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
   ]);
 
@@ -56,9 +73,60 @@ test("clean release runners have resource glob placeholders", async () => {
   );
   assert.match(
     gitignore,
+    /!src-tauri\/resources\/server-archive\/placeholder\.txt/,
+    "server archive placeholder must be tracked so the Windows resource glob matches in clean CI",
+  );
+  assert.match(
+    gitignore,
     /!src-tauri\/resources\/node\/placeholder\.txt/,
     "node placeholder must be tracked so resources/node/**/* matches in clean CI",
   );
+});
+
+test("native updater cleanup stops the sidecar before Windows exits", async () => {
+  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+
+  assert.match(
+    launcher,
+    /struct SidecarCleanupGuard[\s\S]*impl Drop for SidecarCleanupGuard[\s\S]*state\.stop\(\)/,
+    "application resource cleanup must stop and reap the owned sidecar",
+  );
+  assert.match(
+    launcher,
+    /resources_table\(\)[\s\S]*\.add\(SidecarCleanupGuard/,
+    "sidecar cleanup guard must live in the application resource table cleared by the updater",
+  );
+  assert.match(
+    launcher,
+    /fn stop\(&self\)[\s\S]*guard\.take\(\)[\s\S]*child[\s\S]*\.wait\(\)/,
+    "sidecar cleanup must be idempotent and wait for process termination",
+  );
+  assert.match(
+    launcher,
+    /msi-upgrade-from-/,
+    "updater MSI logs must be versioned per running app",
+  );
+  assert.match(
+    launcher,
+    /installer_args\(\[[\s\S]*OsString::from\("\/L\*V"\)/,
+    "updater-driven MSI installs must retain a verbose per-run diagnostic log",
+  );
+});
+
+test("Windows release reports and enforces bounded MSI tables", async () => {
+  const [workflow, budget] = await Promise.all([
+    readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/windows-msi-budget.ps1", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(workflow, /Measure and enforce Windows MSI budget/);
+  assert.match(workflow, /windows-msi-metrics\.json/);
+  for (const table of ["File", "Component", "CreateFolder", "Directory"]) {
+    assert.match(budget, new RegExp("FROM `" + table + "`"), `budget must inspect MSI ${table} rows`);
+  }
+  assert.match(budget, /\$rowBudget = 64/);
+  assert.match(budget, /\$byteBudget = 256MB/);
+  assert.match(budget, /expected exactly one server\.tar\.gz File row/);
 });
 
 test("packaged app does not override Coven workspace with OpenClaw workspace", async () => {

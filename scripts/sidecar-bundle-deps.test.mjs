@@ -6,7 +6,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const src = await readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8");
+const [src, baseConfigSource, windowsConfigSource, manifestSource] = await Promise.all([
+  readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
+  readFile(new URL("./sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
+]);
+const baseConfig = JSON.parse(baseConfigSource);
+const windowsConfig = JSON.parse(windowsConfigSource);
 
 // Must use locked pnpm install (frozen lockfile prevents supply chain attacks)
 assert.match(src, /pnpm install --prod --frozen-lockfile/, "sidecar must install from locked pnpm lockfile");
@@ -80,6 +87,30 @@ assert.doesNotMatch(
   src,
   /sharp_pkg="@img\/sharp-/,
   "sidecar must NOT hard-code @img/sharp package names — they come from sidecar-target.mjs (#1990)",
+);
+
+// Windows must not hand WiX the expanded 20k-file server tree. macOS/Linux
+// retain it because their release pipeline signs nested native modules after
+// Tauri assembles the app.
+assert.deepEqual(
+  windowsConfig.bundle.resources,
+  ["resources/server-archive/**/*", "resources/node/**/*"],
+  "Windows resources must replace the expanded sidecar with its bounded archive",
+);
+assert.ok(
+  baseConfig.bundle.resources.includes("resources/server/**/*"),
+  "non-Windows bundles must retain the expanded tree for nested native signing",
+);
+assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.gz archive");
+assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
+assert.match(manifestSource, /archiveBytes: 256 \* 1024 \* 1024/, "archive size must have a 256 MiB hard budget");
+assert.match(manifestSource, /unpackedBytes: 768 \* 1024 \* 1024/, "expanded runtime must have a 768 MiB hard budget");
+assert.match(manifestSource, /fileCount: 50_000/, "archive entry count must have a hard budget");
+assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");
+assert.match(
+  src,
+  /write_windows_sidecar_archive\(\)[\s\S]*find "\$DEST" -type l[\s\S]*rm -rf "\$DEST"[\s\S]*placeholder\.txt/,
+  "Windows bundling must materialize links and remove the expanded resource payload",
 );
 
 console.log("sidecar-bundle-deps.test: ok");

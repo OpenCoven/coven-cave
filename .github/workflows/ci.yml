@@ -182,7 +182,7 @@ jobs:
   sidecar-runtime:
     name: Sidecar runtime (${{ matrix.os }})
     # Hung steps stall required checks for the 6h default (cave-whm5); ~3x p95 (windows runner is the flaky/slow one).
-    timeout-minutes: 20
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -197,6 +197,14 @@ jobs:
         with:
           node-version: 22
 
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
+        if: matrix.os == 'windows-latest'
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        if: matrix.os == 'windows-latest'
+        with:
+          workspaces: src-tauri -> target
+
       - run: pnpm install --frozen-lockfile
 
       # Slice B runtime proof for #1990: build the OS-specific packaged Node
@@ -209,6 +217,12 @@ jobs:
         run: bash scripts/sidecar-bundle.sh
 
       - run: pnpm test:sidecar-runtime
+
+      # Exercise the production archive verifier/extractor on its actual OS;
+      # the Node smoke above intentionally treats the archive as a black box.
+      - name: Test Windows sidecar cache extraction
+        if: matrix.os == 'windows-latest'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked sidecar_archive
 
   sidecar-runtime-required:
     name: Sidecar runtime required

@@ -14,6 +14,8 @@ next-env.d.ts
 # placeholder in each tree so Tauri's resource globs validate on clean CI.
 src-tauri/resources/server/*
 !src-tauri/resources/server/placeholder.txt
+src-tauri/resources/server-archive/*
+!src-tauri/resources/server-archive/placeholder.txt
 src-tauri/resources/node/*
 !src-tauri/resources/node/placeholder.txt
 

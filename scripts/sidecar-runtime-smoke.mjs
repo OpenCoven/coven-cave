@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { access, mkdir, mkdtemp } from "node:fs/promises";
+import { spawn, spawnSync } from "node:child_process";
+import { access, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -9,8 +9,7 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const sidecarRoot = path.join(root, "src-tauri", "resources", "server");
-const sidecarServer = path.join(sidecarRoot, "server.mjs");
+const stagedSidecarRoot = path.join(root, "src-tauri", "resources", "server");
 const bundledNode = path.join(
   root,
   "src-tauri",
@@ -57,7 +56,7 @@ async function requestAvatar(baseUrl, output) {
 }
 
 async function waitForAvatar(baseUrl, output) {
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + (process.platform === "win32" ? 90_000 : 30_000);
   while (Date.now() < deadline) {
     const res = await requestAvatar(baseUrl, output);
     if (!res) {
@@ -91,8 +90,39 @@ function attachOutput(child) {
 }
 
 async function main() {
+  let extractedSidecarRoot = null;
+  let sidecarRoot = stagedSidecarRoot;
+  if (process.platform === "win32") {
+    const archiveDir = path.join(root, "src-tauri", "resources", "server-archive");
+    const archive = path.join(archiveDir, "server.tar.gz");
+    const manifest = JSON.parse(await readFile(path.join(archiveDir, "manifest.json"), "utf8"));
+    assert.equal(manifest.schemaVersion, 1);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 50_000);
+    assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 256 * 1024 * 1024);
+    assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes <= 768 * 1024 * 1024);
+    extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
+    const extraction = spawnSync("tar", ["-xzf", archive, "-C", extractedSidecarRoot], {
+      encoding: "utf8",
+    });
+    if (extraction.status !== 0) {
+      throw new Error(`could not extract Windows sidecar archive: ${extraction.stderr || extraction.error}`);
+    }
+    sidecarRoot = extractedSidecarRoot;
+  }
+  const sidecarServer = path.join(sidecarRoot, "server.mjs");
   await access(sidecarServer);
   await access(bundledNode);
+
+  const nativeModules = spawnSync(
+    bundledNode,
+    ["-e", "require('sharp'); require('node-pty')"],
+    { cwd: sidecarRoot, encoding: "utf8" },
+  );
+  assert.equal(
+    nativeModules.status,
+    0,
+    `packaged native modules must load from the sidecar runtime: ${nativeModules.stderr || nativeModules.error}`,
+  );
 
   const covenHome = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-smoke-"));
   const avatarDir = path.join(covenHome, "workspaces", "familiars", "smoke", "avatars");
@@ -151,6 +181,10 @@ async function main() {
       waitForExit(child),
       new Promise((resolve) => setTimeout(resolve, 2_000)),
     ]);
+    await rm(covenHome, { recursive: true, force: true });
+    if (extractedSidecarRoot) {
+      await rm(extractedSidecarRoot, { recursive: true, force: true });
+    }
   }
 }
 

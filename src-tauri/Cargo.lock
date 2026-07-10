@@ -79,6 +79,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "app"
 version = "0.0.172"
 dependencies = [
+ "flate2",
  "log",
  "objc2",
  "once_cell",
@@ -87,6 +88,8 @@ dependencies = [
  "rand 0.8.6",
  "serde",
  "serde_json",
+ "sha2",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-log",
