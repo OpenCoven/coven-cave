@@ -77,7 +77,7 @@ export function NewCardModal({
   // POST starts the card's chat under that familiar, which the server rejects
   // (403) for an ungranted project. Re-scopes when the Familiar picker below
   // changes; a null familiar ("Default familiar") loads the operator-wide list.
-  const { projects } = useProjects({ familiarId, enabled: open });
+  const { projects, loading: projectsLoading } = useProjects({ familiarId, enabled: open });
 
   useEffect(() => {
     if (!open) return;
@@ -249,8 +249,12 @@ export function NewCardModal({
             value={projectId ?? ""}
             onChange={(v) => setProjectId(v || null)}
             options={[
-              { value: "", label: "No project" },
-              ...projects.map((p) => ({ value: p.id, label: p.name })),
+              // While the familiar-scoped list is in flight, suppress the
+              // options entirely: the retained list belongs to the *previous*
+              // familiar, so offering it lets the user pick a project this
+              // familiar can't reach (the board chat-launch then 403s).
+              { value: "", label: projectsLoading ? "Loading projects…" : "No project" },
+              ...(projectsLoading ? [] : projects.map((p) => ({ value: p.id, label: p.name }))),
             ]}
           />
         </Field>

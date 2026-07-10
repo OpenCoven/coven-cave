@@ -170,8 +170,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const \{ projects \} = useProjects\(\{ familiarId: activeFamiliarId \}\)/,
-  "palette scopes project navigation to the active familiar's granted projects",
+  /const \{ projects \} = useProjects\(\{ familiarId: activeFamiliarId, enabled: open \}\)/,
+  "palette scopes project navigation to the active familiar's granted projects and only fetches while open",
 );
 assert.match(
   source,

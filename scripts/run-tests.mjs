@@ -266,6 +266,7 @@ export const SUITES = {
     "src/components/vault-automations-filter.test.ts",
     "src/components/board-link-browser.test.ts",
     "src/components/new-card-modal.test.ts",
+    "src/lib/use-projects.test.ts",
     "src/components/calendar-view-polish.test.ts",
     "src/components/calendar-agenda-redesign.test.ts",
     "src/lib/calendar-layout.test.ts",

@@ -242,7 +242,10 @@ export function CommandPalette({
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   // "Open project" rows jump into the Projects hub, which is itself scoped to
   // the active familiar — offer only projects that familiar can actually reach.
-  const { projects } = useProjects({ familiarId: activeFamiliarId });
+  // The palette is always mounted (it self-returns null when closed), so gate
+  // the fetch on `open`, or it re-requests /api/projects on every active-familiar
+  // change while the user can't even see the palette.
+  const { projects } = useProjects({ familiarId: activeFamiliarId, enabled: open });
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
