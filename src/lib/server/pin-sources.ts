@@ -16,6 +16,9 @@
 
 import { readFile, stat } from "node:fs/promises";
 import { lookup } from "node:dns/promises";
+import type { LookupAddress, LookupOptions } from "node:dns";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import path from "node:path";
 import { loadConversation, isSafeConversationSessionId } from "../cave-conversations.ts";
@@ -74,22 +77,34 @@ export function isPrivateIp(addr: string): boolean {
   return true; // not an IP literal — callers resolve first
 }
 
-/** Resolve a hostname and reject when ANY address is private. */
-async function assertPublicHost(hostname: string): Promise<string | null> {
-  if (isIP(hostname)) {
-    return isPrivateIp(hostname) ? "URL resolves to a private address" : null;
-  }
-  let addresses: { address: string }[];
-  try {
-    addresses = await lookup(hostname, { all: true });
-  } catch {
-    return "URL hostname did not resolve";
-  }
-  if (addresses.length === 0) return "URL hostname did not resolve";
-  for (const { address } of addresses) {
-    if (isPrivateIp(address)) return "URL resolves to a private address";
-  }
-  return null;
+/**
+ * `dns.lookup`-shaped resolver handed to `http(s).request`: the address it
+ * returns IS the address the socket connects to, so validating here closes
+ * the DNS-rebinding TOCTOU that a check-then-fetch guard leaves open (a TTL-0
+ * host can answer the check with a public IP and the fetch with 127.0.0.1).
+ * Exported for tests.
+ */
+export function publicOnlyLookup(
+  hostname: string,
+  options: LookupOptions,
+  callback: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void,
+): void {
+  lookup(hostname, { all: true })
+    .then((addresses) => {
+      if (addresses.length === 0) {
+        callback(Object.assign(new Error("hostname did not resolve"), { code: "ENOTFOUND" }), "", 4);
+        return;
+      }
+      for (const { address } of addresses) {
+        if (isPrivateIp(address)) {
+          callback(Object.assign(new Error("URL resolves to a private address"), { code: "EACCES" }), "", 4);
+          return;
+        }
+      }
+      if (options?.all) callback(null, addresses);
+      else callback(null, addresses[0].address, addresses[0].family);
+    })
+    .catch((err) => callback(err as NodeJS.ErrnoException, "", 4));
 }
 
 // ── HTML → text ──────────────────────────────────────────────────────────────
@@ -202,6 +217,8 @@ export function githubApiTarget(url: URL): GitHubTarget | null {
 
 // ── Fetch plumbing ───────────────────────────────────────────────────────────
 
+/** Plain fetch for the FIXED GitHub hosts only (no user-controlled hostname —
+ *  no rebinding surface). URL pins go through `requestPublicUrl` instead. */
 async function fetchCapped(url: string, accept: string): Promise<Response> {
   return fetch(url, {
     redirect: "manual",
@@ -217,33 +234,83 @@ async function readBodyCapped(res: Response): Promise<string> {
   return text.length > FETCH_BYTE_CAP ? text.slice(0, FETCH_BYTE_CAP) : text;
 }
 
-/** Fetch a public URL following ≤3 redirects, re-validating EVERY hop. */
+type PlainResponse = { status: number; location: string | null; body: string };
+
+/** One http(s) request whose socket resolves through `publicOnlyLookup` —
+ *  the connection can only ever reach an address that passed the guard. */
+function requestOnce(url: URL): Promise<PlainResponse> {
+  return new Promise((resolve, reject) => {
+    const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const req = request(
+      url,
+      {
+        method: "GET",
+        lookup: publicOnlyLookup,
+        headers: {
+          accept: "text/html, text/plain;q=0.9, */*;q=0.1",
+          "user-agent": "coven-cave-grimoire-stitch",
+        },
+        timeout: FETCH_TIMEOUT_MS,
+      },
+      (res) => {
+        const declared = Number(res.headers["content-length"] ?? "0");
+        if (declared > FETCH_BYTE_CAP) {
+          res.destroy();
+          reject(new Error("response too large"));
+          return;
+        }
+        let size = 0;
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > FETCH_BYTE_CAP) {
+            res.destroy();
+            reject(new Error("response too large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode ?? 0,
+            location: typeof res.headers.location === "string" ? res.headers.location : null,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+        res.on("error", reject);
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("fetch timed out")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+/** Fetch a public URL following ≤3 redirects. Every hop's SOCKET is pinned to
+ *  guard-validated addresses via `publicOnlyLookup` (literal-IP hosts are
+ *  checked directly — node skips lookup for them). */
 async function fetchPublicUrl(startUrl: URL): Promise<{ finalUrl: URL; body: string } | { error: string }> {
   let current = startUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const hostError = await assertPublicHost(current.hostname);
-    if (hostError) return { error: hostError };
-    let res: Response;
+    if (isIP(current.hostname) && isPrivateIp(current.hostname)) {
+      return { error: "URL resolves to a private address" };
+    }
+    let res: PlainResponse;
     try {
-      res = await fetchCapped(current.toString(), "text/html, text/plain;q=0.9, */*;q=0.1");
-    } catch {
-      return { error: "fetch failed" };
+      res = await requestOnce(current);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "fetch failed";
+      return { error: /private address/.test(message) ? "URL resolves to a private address" : message };
     }
     if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      res.body?.cancel();
-      if (!location) return { error: "redirect without location" };
-      const next = parseSafeHttpUrl(new URL(location, current).toString());
+      if (!res.location) return { error: "redirect without location" };
+      const next = parseSafeHttpUrl(new URL(res.location, current).toString());
       if (!next) return { error: "redirected to an unsupported URL" };
       current = next;
       continue;
     }
-    if (!res.ok) return { error: `HTTP ${res.status}` };
-    try {
-      return { finalUrl: current, body: await readBodyCapped(res) };
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : "read failed" };
-    }
+    if (res.status < 200 || res.status >= 300) return { error: `HTTP ${res.status}` };
+    return { finalUrl: current, body: res.body };
   }
   return { error: "too many redirects" };
 }

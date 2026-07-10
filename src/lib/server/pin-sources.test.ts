@@ -6,6 +6,7 @@ import {
   githubApiTarget,
   htmlToText,
   isPrivateIp,
+  publicOnlyLookup,
 } from "./pin-sources.ts";
 
 describe("isPrivateIp — SSRF guard ranges", () => {
@@ -44,6 +45,20 @@ describe("isPrivateIp — SSRF guard ranges", () => {
   it("treats non-IP strings as blocked (resolve first)", () => {
     assert.equal(isPrivateIp("localhost"), true);
     assert.equal(isPrivateIp(""), true);
+  });
+});
+
+describe("publicOnlyLookup — connect-time SSRF guard", () => {
+  it("refuses hostnames that resolve to private addresses at CONNECT time", async () => {
+    // localhost resolves to loopback everywhere — the lookup handed to
+    // http(s).request must error instead of returning an address, so the
+    // socket can never reach it (closes the DNS-rebinding TOCTOU: the
+    // validated resolution IS the connection's resolution).
+    const err = await new Promise((resolve) => {
+      publicOnlyLookup("localhost", {}, (e) => resolve(e));
+    });
+    assert.ok(err instanceof Error, "lookup must error");
+    assert.match(err.message, /private address/);
   });
 });
 

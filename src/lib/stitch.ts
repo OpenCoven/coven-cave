@@ -198,8 +198,11 @@ export type SewOutput = {
  *  callers surface that as a retryable failure instead of writing garbage. */
 export function parseSewOutput(text: string): SewOutput | null {
   const trimmed = text.trim();
-  // Tolerate a fenced response even though the prompt forbids it.
-  const unfenced = trimmed.replace(/^```[a-z]*\r?\n([\s\S]*?)\r?\n```$/m, "$1").trim();
+  // Tolerate the WHOLE response being fenced even though the prompt forbids
+  // it. Anchored to the full string (no `m` flag) and greedy: a line-anchored
+  // lazy match would pair a code fence INSIDE the body and strip it, silently
+  // corrupting sewn entries that contain code blocks.
+  const unfenced = trimmed.replace(/^```[a-z]*\r?\n([\s\S]*)\r?\n```$/, "$1").trim();
   const match = unfenced.match(/^TITLE:\s*(.+)\r?\nTAGS:\s*(.*)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) return null;
   const title = match[1].trim();

@@ -29,12 +29,18 @@ export type SewInvocation = {
 
 const SEW_TIMEOUT_MS = 180_000;
 
-/** Pure: how to invoke `codex exec` for a sew. Unit-tested. */
+/** Pure: how to invoke `codex exec` for a sew. Unit-tested.
+ *
+ *  Unlike automation runs (user-authored prompts), the sew prompt embeds
+ *  attacker-influenceable remote content (fetched pages, GitHub bodies), so
+ *  the invocation pins its own privileges instead of inheriting the user's
+ *  codex config: a distillation needs no tools, so `--sandbox read-only`
+ *  overrides any permissive default while the run distills. */
 export function buildSewInvocation(thread: Pick<StitchThread, "title" | "pins">, lastMessagePath: string): SewInvocation {
   const command = process.env.COVEN_CODEX_BIN?.trim() || "codex";
   return {
     command,
-    args: ["exec", "--output-last-message", lastMessagePath, "-"],
+    args: ["exec", "--sandbox", "read-only", "--output-last-message", lastMessagePath, "-"],
     stdinPrompt: buildSewPrompt(thread),
   };
 }
@@ -104,7 +110,9 @@ export async function runAgenticSew(thread: StitchThread): Promise<SewRunResult>
           resolve(value);
         }
       };
-      const child = spawn(inv.command, inv.args, { stdio: ["pipe", "ignore", "ignore"] });
+      // Neutral cwd: the sew's temp dir, not the server checkout — even a
+      // read-only sandbox shouldn't be pointed at the repo as its workspace.
+      const child = spawn(inv.command, inv.args, { cwd: dir, stdio: ["pipe", "ignore", "ignore"] });
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
         settle({ code: null, error: "sew timed out" });

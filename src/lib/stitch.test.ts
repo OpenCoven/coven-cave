@@ -121,6 +121,21 @@ describe("sew prompt and output contract", () => {
     assert.deepEqual(out, { title: "T", tags: [], body: "Body" });
   });
 
+  it("never strips code fences INSIDE the body (only a whole-response wrap)", () => {
+    // A correct, unfenced response whose body contains a fenced code block
+    // must come through byte-identical — a line-anchored lazy unfence used to
+    // eat the body's fences (review finding on #2891).
+    const body = "Intro\n```js\nconsole.log(1)\n```\nAfter";
+    const out = parseSewOutput(`TITLE: Foo\nTAGS: a, b\n---\n${body}`);
+    assert.equal(out?.body, body);
+
+    // A fully-fenced response with an internal code block unwraps ONLY the
+    // outer pair (greedy match to the final closing fence).
+    const fenced = "```\nTITLE: Foo\nTAGS: a\n---\nIntro\n```js\nconsole.log(1)\n```\nAfter\n```";
+    const outFenced = parseSewOutput(fenced);
+    assert.equal(outFenced?.body, "Intro\n```js\nconsole.log(1)\n```\nAfter");
+  });
+
   it("rejects malformed output instead of guessing", () => {
     assert.equal(parseSewOutput("Sure! Here's your entry: ..."), null);
     assert.equal(parseSewOutput("TITLE: X\nTAGS: a\n---\n"), null);
