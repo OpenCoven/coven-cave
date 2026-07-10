@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
 
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
@@ -163,16 +164,33 @@ assert.doesNotMatch(
   "Workspace no longer mounts the far-left familiar mini panel",
 );
 
+const homePage = workspacePageDefinition("home");
+assert.deepEqual(
+  homePage && { id: homePage.id, title: homePage.title },
+  { id: "home", title: "Home" },
+  "the registry owns the Home page identity and title",
+);
 assert.match(
   sidebar,
-  /\{ id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description:/,
-  "Sidebar Home keeps its shortcut hint",
+  /\{ id: "home", iconName: "ph:house-bold", kbd: "⌘1", description:/,
+  "Sidebar Home presentation keeps its icon and shortcut hint",
 );
 
+const browserPage = workspacePageDefinition("browser");
+assert.deepEqual(
+  browserPage && { id: browserPage.id, title: browserPage.title },
+  { id: "browser", title: "Browser" },
+  "the registry owns the Browser page identity and title",
+);
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
-  "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
+  /\{ id: "browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  "Browser presentation is kept for ⌘5 but navHidden from the sidebar rows",
+);
+assert.doesNotMatch(
+  sidebar,
+  /\{ id: "(?:home|browser)",[^}]*\blabel:/,
+  "Sidebar presentation does not duplicate registry-owned Home or Browser titles",
 );
 
 assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");

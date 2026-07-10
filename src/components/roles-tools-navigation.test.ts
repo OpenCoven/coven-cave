@@ -1,6 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
 
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const palette = await readFile(new URL("./command-palette.tsx", import.meta.url), "utf8");
@@ -50,14 +51,25 @@ assert.doesNotMatch(
 );
 
 // ── Sidebar: one Tools entry for the merged hub ──────────────────────────────
+const marketplacePage = workspacePageDefinition("marketplace");
+assert.deepEqual(
+  marketplacePage && { id: marketplacePage.id, title: marketplacePage.title },
+  { id: "marketplace", title: "Marketplace" },
+  "the workspace registry owns the Marketplace page identity and title",
+);
 assert.match(
   sidebar,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true \},/,
-  "Sidebar navigation should expose the merged Marketplace hub with a description covering both halves",
+  /\{ id: "marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true \},/,
+  "Sidebar presentation keeps the merged hub icon and description covering both halves",
 );
 assert.doesNotMatch(
   sidebar,
-  /\{ id: "roles", label: "Roles"/,
+  /\{ id: "marketplace",[^}]*\blabel:/,
+  "Sidebar presentation does not duplicate the registry-owned Marketplace title",
+);
+assert.doesNotMatch(
+  sidebar,
+  /\{ id: "roles", iconName:/,
   "The separate Roles sidebar entry is retired — roles live inside the Marketplace hub",
 );
 assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");

@@ -4,6 +4,7 @@
 // branch and must not be surfaced from the main navigation.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
 
 const automations = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
 const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
@@ -14,10 +15,21 @@ const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.
 const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
 // ── The surface is "Schedules" everywhere it's named ────────────────────────
+const schedulesPage = workspacePageDefinition("inbox");
+assert.deepEqual(
+  schedulesPage && { id: schedulesPage.id, title: schedulesPage.title },
+  { id: "inbox", title: "Schedules" },
+  "the workspace registry owns the inbox page's Schedules title",
+);
 assert.match(
   sidebar,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check"/,
-  "Sidebar should label the slim surface Schedules",
+  /\{ id: "inbox", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge:/,
+  "Sidebar retains presentation metadata for the inbox destination",
+);
+assert.doesNotMatch(
+  sidebar,
+  /\{ id: "inbox",[^}]*\blabel:/,
+  "Sidebar presentation does not duplicate the registry-owned Schedules title",
 );
 assert.match(
   workspace,
@@ -92,7 +104,7 @@ assert.match(
   /id: "calendar"[\s\S]*id: "crons"/,
   "tabs ordered Calendar, Crons",
 );
-assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
+assert.doesNotMatch(sidebar, /\{ id: "flow", iconName:/, "Flow nav is hidden from the active branch");
 
 assert.doesNotMatch(automations, /listFlows\(\)/, "Schedules does not load flow docs");
 assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Schedules does not run flows");

@@ -4,6 +4,8 @@
 // top-level Journal surface.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { isSplittablePage } from "../lib/page-drag.ts";
+import { workspacePageDefinition } from "../lib/workspace-page-registry.ts";
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 
@@ -87,7 +89,6 @@ assert.match(
 
 const ws = read("./workspace.tsx");
 const sidebar = read("./sidebar-minimal.tsx");
-const pageDrag = read("../lib/page-drag.ts");
 const slash = read("../lib/slash-commands.ts");
 
 // ── Workspace: "journal" is a redirect-only mode (like groupchat) ────────────
@@ -104,11 +105,22 @@ assert.doesNotMatch(ws, /cave:journal-set-tab/, "the journal tab event plumbing 
 assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal routes through the redirect");
 
 // ── Sidebar: the Journal row stays (redirects on click), minus sketches ─────
-assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal row");
+const journalPage = workspacePageDefinition("journal");
+assert.deepEqual(
+  journalPage && {
+    title: journalPage.title,
+    canonicalId: journalPage.canonicalId,
+    variant: journalPage.variant,
+  },
+  { title: "Journal", canonicalId: "grimoire", variant: "journal" },
+  "the registry resolves Journal to the canonical Grimoire journal variant",
+);
+assert.match(sidebar, /id: "journal", iconName: "ph:book-open"/, "sidebar keeps Journal presentation metadata");
+assert.doesNotMatch(sidebar, /\{ id: "journal",[^}]*\blabel:/, "sidebar presentation does not duplicate the registry title");
 assert.doesNotMatch(sidebar, /generated sketches/, "sidebar description no longer promises the canvas");
 
-// ── A redirect is not a page: journal can't be dragged into a split ─────────
-assert.match(pageDrag, /NON_SPLITTABLE = new Set\(\["terminal", "journal"\]\)/, "journal is excluded from drag-to-split");
+// ── Registry-backed navigation makes Journal available to drag-to-split ──────
+assert.equal(isSplittablePage("journal"), true, "Journal is a registered draggable page destination");
 
 // ── Slash palette copy matches the new home ───────────────────────────────────
 assert.match(slash, /name: "\/journal"[^}]*Settings/, "/journal description points at Settings");
