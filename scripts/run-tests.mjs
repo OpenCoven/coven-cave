@@ -83,6 +83,7 @@ export const SUITES = {
     "src/lib/chat-add-project.test.ts",
     "src/lib/session-project-scope.test.ts",
     "scripts/sync-marketplace.test.mjs",
+    "scripts/crafts-audited-content.test.mjs",
     "src/lib/marketplace-catalog.test.ts",
     "src/lib/role-craft-composition.test.ts",
     "src/lib/server/craft-catalog.test.ts",

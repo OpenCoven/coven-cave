@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "opencoven.craft.v1",
+  "components": {
+    "required": [
+      "filesystem",
+      "memory",
+      "markitdown",
+      "research-ingestion"
+    ],
+    "optional": [
+      "fetch",
+      "ocr",
+      "sequential-thinking"
+    ]
+  },
+  "bundled": {
+    "skills": [
+      {
+        "id": "research-manager",
+        "sourcePath": "craft-sources/archivists-index/research-manager/SKILL.md",
+        "upstreamPath": "22-agent-native-research-artifact/research-manager/SKILL.md",
+        "contentHash": "sha256:f78da7627ac09a4be398ea4363fc7b8753b2dcb22bc961c5059395e33ef3ef2c",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "compiler",
+        "sourcePath": "craft-sources/archivists-index/compiler/SKILL.md",
+        "upstreamPath": "22-agent-native-research-artifact/compiler/SKILL.md",
+        "contentHash": "sha256:747c2f17125ce136e8f75baf8803eb3b21ccc01246498a7f0bc4c01ec6d01d9a",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "faiss",
+        "sourcePath": "craft-sources/archivists-index/faiss/SKILL.md",
+        "upstreamPath": "15-rag/faiss/SKILL.md",
+        "contentHash": "sha256:79a494b9212c73810d53527800c69f80acd6aa1907fca8c614c69583cac76e89",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "sentence-transformers",
+        "sourcePath": "craft-sources/archivists-index/sentence-transformers/SKILL.md",
+        "upstreamPath": "15-rag/sentence-transformers/SKILL.md",
+        "contentHash": "sha256:fca19457be4e78f0e3689284d4fbde649ddf9af0d3bba52d2ac1fb470a4c1bd8",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      }
+    ],
+    "prompts": [
+      {
+        "id": "archivists-index-review-install-plan",
+        "name": "Review the install plan",
+        "description": "Summarize the Craft footprint and confirm bounded use.",
+        "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+      }
+    ],
+    "workflows": [
+      {
+        "id": "archivists-index-bounded-research-cycle",
+        "name": "Bounded research cycle",
+        "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+        "steps": [
+          "Declare scope, authority, provenance, and resource limits.",
+          "Select the smallest reproducible action and record its inputs.",
+          "Run only within the declared bounds and preserve resumable state.",
+          "Evaluate outputs against a predeclared criterion.",
+          "Summarize evidence, limitations, and the next human checkpoint."
+        ]
+      }
+    ]
+  },
+  "requiredCapabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "recommendedRoles": [
+    "Researcher",
+    "Archivist"
+  ],
+  "provenance": {
+    "upstream": "Orchestra Research AI Research Skills",
+    "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+    "license": "MIT",
+    "modifications": [
+      "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+    ],
+    "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+    "licensePath": "craft-sources/orchestra-research/LICENSE"
+  }
+}

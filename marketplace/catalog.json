@@ -2541,6 +2541,728 @@
       }
     },
     {
+      "name": "archivists-index",
+      "displayName": "Archivist's Index",
+      "kind": "craft",
+      "visibility": "hidden",
+      "version": "0.1.0",
+      "description": "Ingestion, retrieval, provenance, and durable research memory.",
+      "category": "Research Crafts",
+      "license": "MIT",
+      "keywords": [
+        "research",
+        "craft"
+      ],
+      "capabilities": [
+        "research",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+      ],
+      "trust": "official-local",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "memory",
+            "markitdown",
+            "research-ingestion"
+          ],
+          "optional": [
+            "fetch",
+            "ocr",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "research-manager",
+              "sourcePath": "craft-sources/archivists-index/research-manager/SKILL.md",
+              "upstreamPath": "22-agent-native-research-artifact/research-manager/SKILL.md",
+              "contentHash": "sha256:f78da7627ac09a4be398ea4363fc7b8753b2dcb22bc961c5059395e33ef3ef2c",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "compiler",
+              "sourcePath": "craft-sources/archivists-index/compiler/SKILL.md",
+              "upstreamPath": "22-agent-native-research-artifact/compiler/SKILL.md",
+              "contentHash": "sha256:747c2f17125ce136e8f75baf8803eb3b21ccc01246498a7f0bc4c01ec6d01d9a",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "faiss",
+              "sourcePath": "craft-sources/archivists-index/faiss/SKILL.md",
+              "upstreamPath": "15-rag/faiss/SKILL.md",
+              "contentHash": "sha256:79a494b9212c73810d53527800c69f80acd6aa1907fca8c614c69583cac76e89",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "sentence-transformers",
+              "sourcePath": "craft-sources/archivists-index/sentence-transformers/SKILL.md",
+              "upstreamPath": "15-rag/sentence-transformers/SKILL.md",
+              "contentHash": "sha256:fca19457be4e78f0e3689284d4fbde649ddf9af0d3bba52d2ac1fb470a4c1bd8",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "archivists-index-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "archivists-index-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Archivist"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "alchemists-crucible",
+      "displayName": "Alchemist's Crucible",
+      "kind": "craft",
+      "visibility": "hidden",
+      "version": "0.1.0",
+      "description": "Reproducible data, training, tracking, and experiment recipes.",
+      "category": "Research Crafts",
+      "license": "MIT",
+      "keywords": [
+        "research",
+        "craft"
+      ],
+      "capabilities": [
+        "research",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+      ],
+      "trust": "official-local",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "ml-engineer"
+          ],
+          "optional": [
+            "coven-evals",
+            "memory",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "ray-data",
+              "sourcePath": "craft-sources/alchemists-crucible/ray-data/SKILL.md",
+              "upstreamPath": "05-data-processing/ray-data/SKILL.md",
+              "contentHash": "sha256:bcc73b3341dca18c59cad092cb6dedb7ac0bf0bde80467a039921ac0c02256c3",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "mlflow",
+              "sourcePath": "craft-sources/alchemists-crucible/mlflow/SKILL.md",
+              "upstreamPath": "13-mlops/mlflow/SKILL.md",
+              "contentHash": "sha256:36d2581f7d8beb8b27f66bbef5c94df7e9604b917c3aa15e4183a48a2b1f3f96",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "weights-and-biases",
+              "sourcePath": "craft-sources/alchemists-crucible/weights-and-biases/SKILL.md",
+              "upstreamPath": "13-mlops/weights-and-biases/SKILL.md",
+              "contentHash": "sha256:3cd5daa7cad70d97c96b2d6fdf8d0fc1ed8a97b1750c4e013e2405389baed3b6",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "ml-training-recipes",
+              "sourcePath": "craft-sources/alchemists-crucible/ml-training-recipes/SKILL.md",
+              "upstreamPath": "10-optimization/ml-training-recipes/SKILL.md",
+              "contentHash": "sha256:1cb661b0d3bac57ffed65075707a9079ac23123a5a597700e85c05e03e166a57",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "alchemists-crucible-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "alchemists-crucible-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "ML Engineer"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "oracles-measure",
+      "displayName": "Oracle's Measure",
+      "kind": "craft",
+      "visibility": "hidden",
+      "version": "0.1.0",
+      "description": "Evaluation design, rigor review, and benchmark execution.",
+      "category": "Research Crafts",
+      "license": "MIT",
+      "keywords": [
+        "research",
+        "craft"
+      ],
+      "capabilities": [
+        "research",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+      ],
+      "trust": "official-local",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "coven-evals"
+          ],
+          "optional": [
+            "huggingface",
+            "memory",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "rigor-reviewer",
+              "sourcePath": "craft-sources/oracles-measure/rigor-reviewer/SKILL.md",
+              "upstreamPath": "22-agent-native-research-artifact/rigor-reviewer/SKILL.md",
+              "contentHash": "sha256:5a8169a5d069caf36a30e0106e523503ffba685215c3cd0067a72aa64a7e2dbb",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "lm-evaluation-harness",
+              "sourcePath": "craft-sources/oracles-measure/lm-evaluation-harness/SKILL.md",
+              "upstreamPath": "11-evaluation/lm-evaluation-harness/SKILL.md",
+              "contentHash": "sha256:891b77bc09118393f9bd1235404ee3f0cf412f56e57dc4b454e2fbd8fd507bc3",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "bigcode-evaluation-harness",
+              "sourcePath": "craft-sources/oracles-measure/bigcode-evaluation-harness/SKILL.md",
+              "upstreamPath": "11-evaluation/bigcode-evaluation-harness/SKILL.md",
+              "contentHash": "sha256:7c46e8eb3ca8d4f51769162d16d87a7dff5ec0c4609131fd3c62fcb463522874",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "oracles-measure-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "oracles-measure-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Evaluator"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "scribes-quill",
+      "displayName": "Scribe's Quill",
+      "kind": "craft",
+      "visibility": "hidden",
+      "version": "0.1.0",
+      "description": "Evidence-grounded synthesis, papers, plots, and conference talks.",
+      "category": "Research Crafts",
+      "license": "MIT",
+      "keywords": [
+        "research",
+        "craft"
+      ],
+      "capabilities": [
+        "research",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+      ],
+      "trust": "official-local",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "research-ingestion"
+          ],
+          "optional": [
+            "pptx-generator",
+            "markitdown",
+            "memory"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "ml-paper-writing",
+              "sourcePath": "craft-sources/scribes-quill/ml-paper-writing/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/ml-paper-writing/SKILL.md",
+              "contentHash": "sha256:96733e6d758642d792ed15b7c08eb90548d4775099368cd72a8312127f2fe911",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "systems-paper-writing",
+              "sourcePath": "craft-sources/scribes-quill/systems-paper-writing/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/systems-paper-writing/SKILL.md",
+              "contentHash": "sha256:ee31b50b25192efcfcbe3252d7e15d88ec27bbd94817640b0357090f94c0e297",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "academic-plotting",
+              "sourcePath": "craft-sources/scribes-quill/academic-plotting/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/academic-plotting/SKILL.md",
+              "contentHash": "sha256:6613653d8109dcae36596b37d7414d5ae394a18f81543365222286d04485fd83",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "presenting-conference-talks",
+              "sourcePath": "craft-sources/scribes-quill/presenting-conference-talks/SKILL.md",
+              "upstreamPath": "20-ml-paper-writing/presenting-conference-talks/SKILL.md",
+              "contentHash": "sha256:5fb6b8f9e5b7690dcb0d783ff1e07c6d3f6b950b8f1238e0672e1f3c53bad57f",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "scribes-quill-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "scribes-quill-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Writer"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "grand-research-ritual",
+      "displayName": "Grand Research Ritual",
+      "kind": "craft",
+      "visibility": "hidden",
+      "version": "0.1.0",
+      "description": "Bounded research orchestration with resumable state and explicit checkpoints.",
+      "category": "Research Crafts",
+      "license": "MIT",
+      "keywords": [
+        "research",
+        "craft"
+      ],
+      "capabilities": [
+        "research",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+      ],
+      "trust": "official-local",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "sequential-thinking",
+            "coven-evals"
+          ],
+          "optional": [
+            "memory",
+            "ml-engineer",
+            "research-ingestion"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "0-autoresearch-skill",
+              "sourcePath": "craft-sources/grand-research-ritual/0-autoresearch-skill/SKILL.md",
+              "upstreamPath": "0-autoresearch-skill/SKILL.md",
+              "contentHash": "sha256:400178f8156280d9b7297d1e1b96701f6473ad2f44f82af7476dc1d56b839739",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, reviewable checkpoints, and bounded execution."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "grand-research-ritual-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "grand-research-ritual-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "Researcher",
+          "Research Lead"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+            "Rewrote continuous autonomy defaults to require explicit time, compute, storage, network, and spend bounds.",
+            "Removed implicit commit/push, recurring scheduling, external messaging, and autonomous scope/pivot/publication behavior; state remains resumable only in an approved project directory."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
+      "name": "artificers-codex",
+      "displayName": "Artificer's Codex",
+      "kind": "craft",
+      "visibility": "hidden",
+      "version": "0.1.0",
+      "description": "Optional AI and ML engineering specialization from model training to serving.",
+      "category": "Research Crafts",
+      "license": "MIT",
+      "keywords": [
+        "research",
+        "craft"
+      ],
+      "capabilities": [
+        "research",
+        "workflows"
+      ],
+      "sourceRefs": [
+        "https://github.com/orchestra-research/AI-Research-SKILLs/tree/773a52944ba4747a18bd4ae9ade53fff041adcbc"
+      ],
+      "trust": "official-local",
+      "craft": {
+        "schemaVersion": "opencoven.craft.v1",
+        "components": {
+          "required": [
+            "filesystem",
+            "ml-engineer",
+            "huggingface"
+          ],
+          "optional": [
+            "coven-evals",
+            "memory",
+            "sequential-thinking"
+          ]
+        },
+        "bundled": {
+          "skills": [
+            {
+              "id": "litgpt",
+              "sourcePath": "craft-sources/artificers-codex/litgpt/SKILL.md",
+              "upstreamPath": "01-model-architecture/litgpt/SKILL.md",
+              "contentHash": "sha256:523f0b786c915af20a7980857e174b838e4440afe851bd16917ef69f8042adb2",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "peft",
+              "sourcePath": "craft-sources/artificers-codex/peft/SKILL.md",
+              "upstreamPath": "03-fine-tuning/peft/SKILL.md",
+              "contentHash": "sha256:acdb318f94624517c8cdb3c925c7a2e8b34c65e8ca02b301777c51eea9f0f73c",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "accelerate",
+              "sourcePath": "craft-sources/artificers-codex/accelerate/SKILL.md",
+              "upstreamPath": "08-distributed-training/accelerate/SKILL.md",
+              "contentHash": "sha256:e94cea7a174f395df02d935065fe05db8ecb637c52e443b6380c703963758d7a",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "bitsandbytes",
+              "sourcePath": "craft-sources/artificers-codex/bitsandbytes/SKILL.md",
+              "upstreamPath": "10-optimization/bitsandbytes/SKILL.md",
+              "contentHash": "sha256:0a68e96c760b0ba561437328211a8405b4db422e9bad92415219abf91f87f849",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "gguf",
+              "sourcePath": "craft-sources/artificers-codex/gguf/SKILL.md",
+              "upstreamPath": "10-optimization/gguf/SKILL.md",
+              "contentHash": "sha256:11016e03b2b53c9a981f1ef7df96b078daf9bc929126ccf36377b86bb7025224",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "vllm",
+              "sourcePath": "craft-sources/artificers-codex/vllm/SKILL.md",
+              "upstreamPath": "12-inference-serving/vllm/SKILL.md",
+              "contentHash": "sha256:57eaf97e982fe758b6fd0ef2281b6961940e4a1c8258f303b0ce02d55d0636c6",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            },
+            {
+              "id": "llama-cpp",
+              "sourcePath": "craft-sources/artificers-codex/llama-cpp/SKILL.md",
+              "upstreamPath": "12-inference-serving/llama-cpp/SKILL.md",
+              "contentHash": "sha256:d74caa45483f5b3c6bd6267e39b444627989ff90fdb84b6c2e7c3da4ddf143ef",
+              "modifications": [
+                "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+                "Audited for local capability boundaries, provenance, and reviewable workflows."
+              ]
+            }
+          ],
+          "prompts": [
+            {
+              "id": "artificers-codex-review-install-plan",
+              "name": "Review the install plan",
+              "description": "Summarize the Craft footprint and confirm bounded use.",
+              "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+            }
+          ],
+          "workflows": [
+            {
+              "id": "artificers-codex-bounded-research-cycle",
+              "name": "Bounded research cycle",
+              "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+              "steps": [
+                "Declare scope, authority, provenance, and resource limits.",
+                "Select the smallest reproducible action and record its inputs.",
+                "Run only within the declared bounds and preserve resumable state.",
+                "Evaluate outputs against a predeclared criterion.",
+                "Summarize evidence, limitations, and the next human checkpoint."
+              ]
+            }
+          ]
+        },
+        "requiredCapabilities": [
+          "read_files",
+          "write_files",
+          "shell"
+        ],
+        "recommendedRoles": [
+          "ML Engineer",
+          "Researcher"
+        ],
+        "provenance": {
+          "upstream": "Orchestra Research AI Research Skills",
+          "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+          "license": "MIT",
+          "modifications": [
+            "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+          ],
+          "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+          "licensePath": "craft-sources/orchestra-research/LICENSE"
+        }
+      }
+    },
+    {
       "name": "seekers-lens",
       "displayName": "Seeker's Lens",
       "kind": "craft",

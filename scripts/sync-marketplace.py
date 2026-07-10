@@ -276,7 +276,7 @@ def craft_notice(plugin: dict[str, Any]) -> str:
                 f"### {skill['id']}",
                 "",
                 f"- Upstream path: `{skill['upstreamPath']}`",
-                f"- Upstream content hash: `{skill['contentHash']}`",
+                f"- Adapted source content hash: `{skill['contentHash']}`",
                 "- Coven modifications:",
                 *(f"  - {note}" for note in skill["modifications"]),
                 "",
@@ -391,7 +391,12 @@ def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) 
             craft = plugin["craft"]
             for skill in craft["bundled"]["skills"]:
                 source = marketplace_dir / Path(*PurePosixPath(skill["sourcePath"]).parts)
-                files[package_dir / "skills" / skill["id"] / "SKILL.md"] = source.read_text(encoding="utf-8")
+                source_root = source.parent
+                for source_file in source_root.rglob("*"):
+                    if not source_file.is_file():
+                        continue
+                    relative = source_file.relative_to(source_root)
+                    files[package_dir / "skills" / skill["id"] / relative] = source_file.read_bytes()
             for prompt in craft["bundled"].get("prompts", []):
                 files[package_dir / "prompts" / f"{prompt['id']}.md"] = prompt_markdown(prompt)
             for workflow in craft["bundled"].get("workflows", []):
@@ -546,11 +551,14 @@ def remove_unexpected_managed_files(files: dict[Path, str], managed_roots: set[P
                 raise
 
 
-def write_files(files: dict[Path, str], managed_roots: set[Path] | None = None) -> None:
+def write_files(files: dict[Path, str | bytes], managed_roots: set[Path] | None = None) -> None:
     remove_unexpected_managed_files(files, managed_roots or set())
     for path, content in sorted(files.items()):
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding="utf-8")
 
 
 def check_files(
@@ -567,8 +575,9 @@ def check_files(
         if not path.exists():
             problems.append(f"missing {display_path}")
             continue
-        actual = path.read_text(encoding="utf-8")
-        if actual != expected:
+        actual = path.read_bytes()
+        expected_bytes = expected if isinstance(expected, bytes) else expected.encode("utf-8")
+        if actual != expected_bytes:
             problems.append(f"stale {display_path}")
     for path in unexpected_managed_files(files, managed_roots or set()):
         try:
