@@ -35,3 +35,32 @@ test("no split modes provided behaves like an empty list", () => {
   assert.equal(sidebarRowState("board", "home"), "idle");
   assert.equal(sidebarRowState("board", "home", []), "idle");
 });
+
+test("deep-linkable modes hosted by another surface light the host row (cave-s9p6)", () => {
+  assert.equal(sidebarRowState("inbox", "calendar"), "active", "calendar renders on Schedules");
+  assert.equal(sidebarRowState("board", "familiar-work-queue"), "active", "the Queue is a Tasks-hub tab");
+  assert.equal(sidebarRowState("inbox", "flow"), "active", "retired flow remaps to Schedules");
+});
+
+test("the Journal row keys off the Grimoire tab, not the mode (cave-s9p6)", () => {
+  assert.equal(
+    sidebarRowState("journal", "grimoire", undefined, { grimoireView: "journal" }),
+    "active",
+    "Journal tab up → Journal row lights",
+  );
+  assert.equal(
+    sidebarRowState("grimoire", "grimoire", undefined, { grimoireView: "journal" }),
+    "idle",
+    "Journal tab up → Grimoire row yields",
+  );
+  assert.equal(
+    sidebarRowState("grimoire", "grimoire", undefined, { grimoireView: "docs" }),
+    "active",
+    "other Grimoire tabs keep the Grimoire row",
+  );
+  assert.equal(
+    sidebarRowState("journal", "grimoire"),
+    "idle",
+    "no view provided → unchanged legacy behavior",
+  );
+});

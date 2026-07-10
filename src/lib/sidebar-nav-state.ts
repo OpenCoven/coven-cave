@@ -19,6 +19,12 @@ export type SidebarRowState = "active" | "split" | "idle";
 const MODE_ALIASES: Record<string, string> = {
   roles: "marketplace",
   capabilities: "marketplace",
+  // Deep-linkable modes that render inside another surface left every row
+  // idle (cave-s9p6): the calendar lives on Schedules, the Queue is a tab of
+  // the Tasks hub, and retired "flow" remaps to Schedules in setMode.
+  calendar: "inbox",
+  "familiar-work-queue": "board",
+  flow: "inbox",
 };
 
 function normalizeMode(mode: string): string {
@@ -29,8 +35,18 @@ export function sidebarRowState(
   rowId: string,
   activeMode: string,
   splitPageModes?: readonly string[],
+  opts?: {
+    /** The Grimoire surface's current tab. `mode` is never "journal" (setMode
+     *  remaps it to grimoire+journal tab), so without this the Journal row
+     *  could never light — Grimoire lit instead (cave-s9p6). */
+    grimoireView?: string;
+  },
 ): SidebarRowState {
-  if (normalizeMode(activeMode) === rowId) return "active";
+  const effectiveActive =
+    activeMode === "grimoire" && opts?.grimoireView === "journal"
+      ? "journal"
+      : normalizeMode(activeMode);
+  if (effectiveActive === rowId) return "active";
   if (splitPageModes?.some((m) => normalizeMode(m) === rowId)) return "split";
   return "idle";
 }

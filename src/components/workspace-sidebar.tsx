@@ -633,12 +633,10 @@ export function WorkspaceSidebar({
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => {
-                          if (group.projectRoot) {
-                            window.dispatchEvent(new CustomEvent("cave:code-select-project", { detail: { root: group.projectRoot } }));
-                          }
-                          onNewChat(group.projectRoot);
-                        }}
+                        // (cave-gg5d) A "cave:code-select-project" dispatch used
+                        // to precede this — its only listener lived in the
+                        // unmounted ComuxView; onNewChat does the real work.
+                        onClick={() => onNewChat(group.projectRoot)}
                         title={`New chat in ${label}`}
                         aria-label={`New chat in ${label}`}
                         className="cnav__icon-btn focus-ring"

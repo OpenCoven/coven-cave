@@ -39,18 +39,14 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
   };
 }
 
-export const ComuxView = dynamic(
-  timed("comux", () => import("@/components/comux-view").then((m) => m.ComuxView)),
-  { ssr: false, loading: SurfaceFallback },
-);
+// (cave-gg5d) ComuxView and FlowView lazy exports removed: nothing imported
+// them — the standalone Code surface is retired and the Flow experience lives
+// on feature/automations-flow. The component sources remain for now; full
+// deletion is tracked separately (ComuxView.removeSession is the app's only
+// pty-kill site, so the rail-terminal PTY lifecycle must be settled first).
 
 export const GitHubView = dynamic(
   timed("github", () => import("@/components/github-view").then((m) => m.GitHubView)),
-  { ssr: false, loading: SurfaceFallback },
-);
-
-export const FlowView = dynamic(
-  timed("flow", () => import("@/components/flow/flow-view").then((m) => m.FlowView)),
   { ssr: false, loading: SurfaceFallback },
 );
 

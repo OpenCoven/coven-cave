@@ -44,7 +44,6 @@ import {
 } from "@/lib/familiar-memory";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
@@ -59,7 +58,7 @@ import {
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
@@ -298,6 +297,8 @@ export function Workspace() {
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  // The last session-list load failed (cave-x6k5) — see loadSessions.
+  const [sessionsError, setSessionsError] = useState(false);
   // Monotonic sequence guard for loadSessions (see its definition): the list is
   // scoped to the active familiar, and loadSessions re-fires on every scope
   // change, so a stale in-flight load must not paint the previous familiar's
@@ -441,7 +442,6 @@ export function Workspace() {
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
-  const [addChooserOpen, setAddChooserOpen] = useState(false);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
   // Continue-on-phone (cave-i74f): the chat id riding the next handoff QR.
   const [mobileHandoffChatId, setMobileHandoffChatId] = useState<string | null>(null);
@@ -858,8 +858,15 @@ export function Workspace() {
         const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
         if (!isCurrent()) return; // superseded by a newer load / scope change
-        if (!json.ok) return;
+        if (!json.ok) {
+          // A failed list is NOT "no chats" — flag it so the chat list can
+          // render a truthful can't-load state instead of the first-run
+          // empty state (cave-x6k5). The 4s poll retries.
+          setSessionsError(true);
+          return;
+        }
 
+        setSessionsError(false);
         const baseSessions = (json.sessions ?? []) as SessionRow[];
         // The 4s poll rebuilds a fresh array each tick; keep the previous
         // reference when nothing changed so an unchanged list doesn't re-render
@@ -880,7 +887,7 @@ export function Workspace() {
           });
         }
       } catch {
-        /* transient */
+        if (isCurrent()) setSessionsError(true); // transient — poll retries
       } finally {
         if (!baseSessionsApplied && isCurrent()) setSessionsLoaded(true);
       }
@@ -1260,43 +1267,61 @@ export function Workspace() {
     }
   }, []);
 
-  // Calendar item actions — optimistic local update + fire-and-forget POST;
-  // the /api/inbox/stream SSE reconciles authoritative state (same pattern as
-  // dismissToast/snoozeToast). The optimistic update is invisible to AT, so
-  // each action announces its outcome (generic on purpose: the callbacks are
-  // [] -deps'd and only carry the id — no stale-closure title lookups).
+  // Calendar item actions — optimistic local update + verified POST; the
+  // /api/inbox/stream SSE reconciles authoritative state on SUCCESS, but a
+  // FAILED write emits no SSE event, so each action now re-syncs from the
+  // server and corrects the announcement when its request fails — the old
+  // fire-and-forget left items visually done and told AT "Marked done."
+  // regardless (cave-x6k5). Announcements stay generic on purpose: the
+  // callbacks are [] -deps'd and only carry the id.
   const { announce } = useAnnouncer();
+  const verifyInboxWrite = useCallback((req: Promise<Response>, failureNote: string) => {
+    void req
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      })
+      .catch(() => {
+        announce(failureNote, "assertive");
+        void refreshInbox();
+      });
+  }, [announce, refreshInbox]);
   const completeInboxItem = useCallback((id: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "done" } : it)));
-    void fetch(`/api/inbox/${id}/done`, { method: "POST" });
+    verifyInboxWrite(fetch(`/api/inbox/${id}/done`, { method: "POST" }), "Couldn't mark done — restored.");
     announce("Marked done.");
-  }, [announce]);
+  }, [announce, verifyInboxWrite]);
   const dismissInboxItem = useCallback((id: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "dismissed" } : it)));
-    void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
+    verifyInboxWrite(fetch(`/api/inbox/${id}/dismiss`, { method: "POST" }), "Couldn't dismiss — restored.");
     announce("Dismissed.");
-  }, [announce]);
+  }, [announce, verifyInboxWrite]);
   const snoozeInboxItem = useCallback((id: string, untilIso: string) => {
     setInboxItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: "snoozed", snoozeUntil: untilIso } : it)));
-    void fetch(`/api/inbox/${id}/snooze`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ untilIso }),
-    });
+    verifyInboxWrite(
+      fetch(`/api/inbox/${id}/snooze`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ untilIso }),
+      }),
+      "Couldn't snooze — restored.",
+    );
     announce("Snoozed.");
-  }, [announce]);
+  }, [announce, verifyInboxWrite]);
   // Drag-to-reschedule from the calendar: move the item to a new fireAt and make
-  // it pending there (clearing any snooze). Optimistic; the SSE stream reconciles.
+  // it pending there (clearing any snooze). Optimistic; verified like the rest.
   const rescheduleInboxItem = useCallback((id: string, fireAtIso: string) => {
     setInboxItems((prev) =>
       prev.map((it) => (it.id === id ? { ...it, fireAt: fireAtIso, status: "pending", snoozeUntil: null } : it)),
     );
-    void fetch(`/api/inbox/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fireAt: fireAtIso, status: "pending", snoozeUntil: null }),
-    });
-  }, []);
+    verifyInboxWrite(
+      fetch(`/api/inbox/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fireAt: fireAtIso, status: "pending", snoozeUntil: null }),
+      }),
+      "Couldn't reschedule — restored.",
+    );
+  }, [verifyInboxWrite]);
 
   // Poll Inbox for unresolved-escalations count — drives the
   // sidebar/daemon-bar Inbox badge. Cheap GET every 30s; the route
@@ -1535,6 +1560,10 @@ export function Workspace() {
       window.location.hash = `card-${link.ref}`;
     } else if (link.kind === "session") {
       openFamiliarSession(link.ref);
+    } else if (link.kind === "memory") {
+      // LinkRef supported "memory" but this fell through silently — a visible
+      // Link button that did nothing (cave-gg5d). Grimoire is the memory reader.
+      openGrimoireDoc("memory", link.ref);
     }
   }, [nextRouter, openFamiliarSession]);
 
@@ -1618,6 +1647,7 @@ export function Workspace() {
         // ⌘9 -> Projects tab inside chat surface (no SURFACE_ORDER lookup needed)
         if (e.key === "9") {
           e.preventDefault();
+          markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
           setMode("chat");
           window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
           return;
@@ -1776,20 +1806,14 @@ export function Workspace() {
     [addSplitTarget, mode],
   );
 
+  // (cave-gg5d) The old "cave:salem-undock" dispatches here had NO listener
+  // anywhere — SalemChatPanel's unmount does the real teardown.
   const closeSplit = useCallback(() => {
-    // Tell Salem it's undocking so it can pause, mirroring the old rail teardown.
-    setSplitTargets((prev) => {
-      if (prev.some((target) => target.kind === "salem")) window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-      return [];
-    });
+    setSplitTargets([]);
   }, []);
 
   const closeSplitTile = useCallback((id: string) => {
-    setSplitTargets((prev) => {
-      const closing = prev.find((target) => splitTargetKey(target) === id);
-      if (closing?.kind === "salem") window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-      return removeSecondaryWorkspaceTile(prev, id, splitTargetKey);
-    });
+    setSplitTargets((prev) => removeSecondaryWorkspaceTile(prev, id, splitTargetKey));
   }, []);
 
   // Promote a split tile to the sole surface (its divider was dragged past the
@@ -1860,6 +1884,7 @@ export function Workspace() {
     if (intent.kind === "open-project") {
       // Open the Chat surface's Projects tab, then ask it to expand + scroll the
       // chosen project into view once it has mounted.
+      markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
       setMode("chat");
       shellRef.current?.dismissNavMobile();
       const root = intent.root;
@@ -1932,7 +1957,7 @@ export function Workspace() {
         setMode("board");
         return true;
       case "/journal":
-        setMode("journal"); // redirects to Settings → Familiars → Journal
+        setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
       case "/canvas":
         // The Canvas page moved to feature/journal-canvas-surface. /canvas is
@@ -1965,6 +1990,7 @@ export function Workspace() {
         setShortcutsOpen(true);
         return true;
       case "/projects":
+        markProjectsTabPending(); // latch beats the fresh-mount race (cave-c2zf)
         setMode("chat");
         window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
         return true;
@@ -2177,6 +2203,7 @@ export function Workspace() {
     <SidebarMinimal
       mode={mode}
       splitPageModes={splitPageModes}
+      grimoireView={grimoireView}
       // Registered Role Surfaces visible for the active familiar — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
       roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({
@@ -2307,6 +2334,7 @@ export function Workspace() {
         routerRef={routerRef}
         hideThreadRail
         sessionsLoaded={sessionsLoaded}
+        sessionsError={sessionsError}
         familiarsLoaded={familiarsLoaded}
         familiarsError={familiarsError}
         onRetryFamiliars={() => void loadFamiliars()}
@@ -2664,39 +2692,6 @@ export function Workspace() {
         open={glyphPickerFor !== null}
         familiar={glyphPickerFor}
         onClose={() => setGlyphPickerFor(null)}
-      />
-
-      <ChooserModal
-        open={addChooserOpen}
-        onClose={() => setAddChooserOpen(false)}
-        breadcrumb={["CovenCave", "Add"]}
-        options={
-          [
-            {
-              id: "reminder",
-              icon: "ph:alarm-bold",
-              title: "Reminder",
-              description: "Schedule a reminder to fire at a specific time.",
-            },
-            {
-              id: "board-card",
-              icon: "ph:kanban",
-              title: "Board card",
-              description: "Queue work for a familiar on the board.",
-            },
-            {
-              id: "familiar",
-              icon: "ph:sparkle",
-              title: "Familiar",
-              description: "Run setup to scaffold a new familiar.",
-            },
-          ] as ChooserOption[]
-        }
-        onPick={(id) => {
-          if (id === "reminder") openReminderModal();
-          else if (id === "board-card") setMode("board");
-          else if (id === "familiar") openOnboarding();
-        }}
       />
 
       <MobileHandoffModal

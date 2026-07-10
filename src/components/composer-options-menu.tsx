@@ -109,7 +109,7 @@ export function ComposerOptionsMenu({
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement | null>(null);
-  const { options: hostOptions, load } = useComposerHosts(hostValue);
+  const { options: hostOptions, load, removeHost } = useComposerHosts(hostValue);
 
   const showDot = Boolean(indicator) || hostValue !== LOCAL_HOST_ID;
 
@@ -174,6 +174,7 @@ export function ComposerOptionsMenu({
             <ComposerHostChoices
               options={hostOptions}
               value={hostValue}
+              onRemoveHost={(host) => void removeHost(host)}
               onPick={onHostPick}
               onConnectNew={() => {
                 setOpen(false);

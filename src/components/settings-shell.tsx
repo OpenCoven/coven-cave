@@ -1653,7 +1653,21 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     return () => mq.removeEventListener("change", onChange);
   }, [mode, activeTheme, customData]);
 
+  // Two-step: an imported/tuned theme is unrecoverable once cleared (recovery
+  // = re-import from a remembered URL), and the trigger is a ~14px X. First
+  // click arms, second confirms; arming auto-disarms after a beat (cave-5lsj).
+  const [resetCustomArmed, setResetCustomArmed] = useState(false);
+  useEffect(() => {
+    if (!resetCustomArmed) return;
+    const t = window.setTimeout(() => setResetCustomArmed(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [resetCustomArmed]);
   const handleResetCustom = () => {
+    if (!resetCustomArmed) {
+      setResetCustomArmed(true);
+      return;
+    }
+    setResetCustomArmed(false);
     clearCustomTheme();
     setActiveTheme("coven");
     setCustomData(null);
@@ -1767,14 +1781,20 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
               <button
                 type="button"
                 onClick={handleResetCustom}
-                className="focus-ring ml-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full opacity-70 hover:opacity-100"
-                aria-label={`Reset ${customData.name}`}
+                className={`focus-ring ml-1 inline-flex items-center justify-center rounded-full ${
+                  resetCustomArmed
+                    ? "h-auto w-auto px-1.5 text-[10px] font-semibold text-[var(--color-danger)]"
+                    : "h-3.5 w-3.5 opacity-70 hover:opacity-100"
+                }`}
+                aria-label={resetCustomArmed ? `Really discard ${customData.name}? Click again to confirm` : `Discard ${customData.name}`}
               >
-                <Icon name="ph:x-bold" width={9} />
+                {resetCustomArmed ? "Discard?" : <Icon name="ph:x-bold" width={9} />}
               </button>
             </span>
             <span className="text-[11px] text-[var(--text-muted)]">
-              Active — presets below will override.
+              {resetCustomArmed
+                ? "Click again to discard — re-importing needs the original URL."
+                : "Active — presets below will override."}
             </span>
           </div>
         )}

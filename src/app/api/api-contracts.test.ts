@@ -77,7 +77,7 @@ const contracts: RouteContract[] = [
   { route: "/flows/webhook-test", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
   { route: "/flows/webhook-test/[...path]", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
   { route: "/flows/webhook-test/listen", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/hosts", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/hosts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/github/comment", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/comments", methods: ["GET"], kind: "json" },
   { route: "/github/item", methods: ["GET"], kind: "json" },

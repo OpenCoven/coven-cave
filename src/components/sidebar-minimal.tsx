@@ -61,6 +61,9 @@ export type SidebarMinimalProps = {
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
   splitPageModes?: readonly string[];
+  /** Grimoire's current tab — lights the Journal row (not Grimoire) while the
+   *  Journal tab is up, since `mode` is never "journal" (cave-s9p6). */
+  grimoireView?: string;
   /** Role Surface rooms visible for the active familiar. Registry-driven —
    *  rendered as their own cluster; empty/omitted hides the cluster. */
   roleSurfaces?: readonly SidebarRoleSurfaceRow[];
@@ -289,7 +292,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             // Active follows the primary mode (Roles/Capabilities keep the
             // Marketplace hub lit); pages open as split tiles get a lighter
             // "open in split" state instead. Derivation in lib/sidebar-nav-state.
-            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
+            state={sidebarRowState(fm.id, mode, props.splitPageModes, { grimoireView: props.grimoireView })}
             badge={fm.badge?.(props)}
             kbd={fm.kbd}
             description={fm.description}

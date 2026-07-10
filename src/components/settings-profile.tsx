@@ -5,6 +5,7 @@ import { SettingsOverview } from "@/components/settings-overview";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
 import { Icon } from "@/lib/icon";
 import {
@@ -80,6 +81,14 @@ export function ProfileSection() {
   const [linkHint, setLinkHint] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  // One-click removals with no undo → two-step (cave-5lsj). Links arm per-row.
+  const avatarRemoveConfirm = useArmedConfirm();
+  const [armedLinkIndex, setArmedLinkIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (armedLinkIndex === null) return;
+    const t = window.setTimeout(() => setArmedLinkIndex(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [armedLinkIndex]);
   const [legacySvgAvatar, setLegacySvgAvatar] = useState(false);
   useEffect(() => {
     if (snapshot?.avatar.present) {
@@ -288,9 +297,9 @@ export function ProfileSection() {
                   variant="secondary"
                   size="sm"
                   disabled={avatarBusy}
-                  onClick={() => void removeAvatar()}
+                  onClick={() => avatarRemoveConfirm.trigger(() => void removeAvatar())}
                 >
-                  Remove
+                  {avatarRemoveConfirm.armed ? "Really remove?" : "Remove"}
                 </Button>
               ) : null}
             </div>
@@ -383,9 +392,16 @@ export function ProfileSection() {
                     variant="secondary"
                     size="sm"
                     disabled={disabled}
-                    onClick={() => void removeLink(index)}
+                    onClick={() => {
+                      if (armedLinkIndex === index) {
+                        setArmedLinkIndex(null);
+                        void removeLink(index);
+                      } else {
+                        setArmedLinkIndex(index);
+                      }
+                    }}
                   >
-                    Remove
+                    {armedLinkIndex === index ? "Really remove?" : "Remove"}
                   </Button>
                 </div>
                 {rowIncomplete ? (

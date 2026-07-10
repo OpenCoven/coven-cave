@@ -78,6 +78,34 @@
 .cave-host-choice--connect { color: var(--text-muted); }
 .cave-host-choice--connect:hover { color: var(--text-primary); }
 
+/* Row wrapper: the radio row plus (for ssh hosts) a small remove affordance —
+   the registry had no removal path anywhere (cave-4zdp). Two-step: the button
+   swaps to a "Remove?" confirm before firing. */
+.cave-host-choice-row { display: flex; align-items: center; gap: 4px; }
+.cave-host-choice-row .cave-host-choice { flex: 1; min-width: 0; }
+.cave-host-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+.cave-host-remove:hover { background: var(--bg-raised); color: var(--color-danger); }
+.cave-host-remove.is-armed {
+  border-color: color-mix(in oklch, var(--color-danger) 42%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
 /* Connect-new-host dialog */
 .cave-connect-host { display: flex; flex-direction: column; gap: 12px; }
 .cave-connect-host__hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }

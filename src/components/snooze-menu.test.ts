@@ -59,8 +59,11 @@ assert.match(
 );
 
 // ── Workspace inbox callbacks (calendar et al) announce too ──────────────────
-assert.match(ws, /void fetch\(`\/api\/inbox\/\$\{id\}\/done`, \{ method: "POST" \}\);\s*\n\s*announce\("Marked done\."\);/, "complete announces");
-assert.match(ws, /void fetch\(`\/api\/inbox\/\$\{id\}\/dismiss`, \{ method: "POST" \}\);\s*\n\s*announce\("Dismissed\."\);/, "dismiss announces");
+// The writes are now VERIFIED (cave-x6k5): failure re-syncs from the server
+// and corrects the announcement instead of leaving the optimistic state lying.
+assert.match(ws, /verifyInboxWrite\(fetch\(`\/api\/inbox\/\$\{id\}\/done`, \{ method: "POST" \}\), "Couldn't mark done — restored\."\);\s*\n\s*announce\("Marked done\."\);/, "complete announces and verifies");
+assert.match(ws, /verifyInboxWrite\(fetch\(`\/api\/inbox\/\$\{id\}\/dismiss`, \{ method: "POST" \}\), "Couldn't dismiss — restored\."\);\s*\n\s*announce\("Dismissed\."\);/, "dismiss announces and verifies");
 assert.match(ws, /announce\("Snoozed\."\);/, "snooze announces");
+assert.match(ws, /void refreshInbox\(\);/, "a failed write re-syncs the inbox from the server");
 
 console.log("snooze-menu.test.ts: ok");

@@ -72,8 +72,8 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
-  "Sidebar rows derive their highlight (including the marketplace aliasing) from sidebarRowState",
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes, \{ grimoireView: props\.grimoireView \}\)\}/,
+  "Sidebar rows derive their highlight (marketplace aliasing + the Journal/Grimoire tab split, cave-s9p6) from sidebarRowState",
 );
 
 // Settings: no separate plugins section, and the roles add-on toggle is gone

@@ -44,6 +44,8 @@ type Props = {
   onSessionStarted?: () => void;
   onSessionsChanged?: () => void;
   sessionsLoaded?: boolean;
+  /** Last session-list load failed — forwarded to ChatList (cave-x6k5). */
+  sessionsError?: boolean;
   familiarsLoaded?: boolean;
   /** Last roster-load failure. With an empty roster this swaps the "summon
    *  your first familiar" empty state for a can't-reach + Retry state — the
@@ -101,6 +103,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onSessionStarted,
     onSessionsChanged,
     sessionsLoaded,
+    sessionsError,
     familiarsLoaded,
     familiarsError,
     onRetryFamiliars,
@@ -432,6 +435,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessions={sessions}
         daemonRunning={daemonRunning}
         sessionsLoaded={sessionsLoaded}
+        sessionsError={sessionsError}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
         onOpen={(sessionId, familiarId, findQuery) => {

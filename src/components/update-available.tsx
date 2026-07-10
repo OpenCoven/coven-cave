@@ -127,6 +127,7 @@ function openReleasePageInBrowser(): void {
 
 type Resolved =
   | { kind: "current" }
+  | { kind: "unknown"; message: string }
   | { kind: "native"; version: string; update: TauriUpdate }
   | { kind: "native-unavailable"; version: string; url: string; message: string }
   | { kind: "fallback"; version: string; url: string };
@@ -144,6 +145,11 @@ async function resolveUpdate(): Promise<Resolved> {
       return { kind: "native-unavailable", version: fb.latest, url, message: native.message };
     }
     return { kind: "fallback", version: fb.latest, url };
+  }
+  if (native.kind === "failed" && !fb) {
+    // BOTH checks failed (true offline): currency is unknowable. Affirming
+    // "Up to date" here sent offline users away confident (cave-lsk4).
+    return { kind: "unknown", message: native.message };
   }
   return { kind: "current" };
 }
@@ -172,7 +178,10 @@ export function UpdateBannerTrigger() {
     const runCheck = () => {
       if (installing) return;
       void resolveUpdate().then((r) => {
-        if (cancelled || installing || r.kind === "current") return;
+        // "unknown" (both checks unreachable) stays quiet here — the periodic
+        // banner must not nag about connectivity; the Settings row reports it
+        // honestly on an explicit check (cave-lsk4).
+        if (cancelled || installing || r.kind === "current" || r.kind === "unknown") return;
         if (isDismissed(r.version)) return;
 
         pushBanner({
@@ -234,6 +243,7 @@ export function UpdateBannerTrigger() {
 type RowState =
   | { phase: "checking" }
   | { phase: "current" }
+  | { phase: "unknown"; message: string }
   | { phase: "available"; r: Extract<Resolved, { kind: "native" | "fallback" }> }
   | { phase: "native-unavailable"; r: Extract<Resolved, { kind: "native-unavailable" }> }
   | { phase: "downloading"; version: string; pct: number }
@@ -255,6 +265,7 @@ export function UpdateSettingsRow() {
     void resolveUpdate().then((r) => {
       if (!mounted.current) return;
       if (r.kind === "current") setState({ phase: "current" });
+      else if (r.kind === "unknown") setState({ phase: "unknown", message: r.message });
       else if (r.kind === "native-unavailable") setState({ phase: "native-unavailable", r });
       else setState({ phase: "available", r });
     });
@@ -360,6 +371,24 @@ export function UpdateSettingsRow() {
         >
           Open release page in Browser
         </Button>
+        <Button
+          variant="secondary"
+          size="xs"
+          onClick={check}
+          className={secondaryBtn}
+        >
+          Retry
+        </Button>
+      </>
+    );
+  } else if (state.phase === "unknown") {
+    // Both the native check and the fallback fetch failed — we could not
+    // verify anything, so don't claim currency (cave-lsk4).
+    control = (
+      <>
+        <span className="text-[12px] text-[var(--color-warning)]" title={state.message}>
+          Couldn&apos;t check — you may be offline
+        </span>
         <Button
           variant="secondary"
           size="xs"

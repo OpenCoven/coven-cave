@@ -79,6 +79,10 @@ type Props = {
    *  "no chats yet" empty state. Defaults true for callers that load
    *  sessions before mounting. */
   sessionsLoaded?: boolean;
+  /** The last session-list load failed. With no rows this swaps the "Ready
+   *  for a new thread" empty state for a can't-load state — a failed list is
+   *  not evidence there are no chats (cave-x6k5). */
+  sessionsError?: boolean;
   /** When true, hides the project sidebar rail so the list fits in a narrow
    *  companion panel (e.g. the Browser right-rail). */
   compact?: boolean;
@@ -233,7 +237,7 @@ function ChatListSection({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
   useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
@@ -942,6 +946,19 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 </span>
               </div>
             ))}
+          </div>
+        ) : sessionsError && !hasAny ? (
+          /* The session list FAILED to load — existing chats may be intact but
+             unreadable. "Ready for a new thread" here read as "your chats are
+             gone" (cave-x6k5). The 4s poll retries automatically. */
+          <div className="flex h-full flex-col justify-between px-4 py-4">
+            <EmptyState
+              compact
+              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35"
+              icon="ph:plugs"
+              headline="Can't load chats right now"
+              subtitle="Your chats are safe — the list didn't load. Retrying automatically; check the daemon banner if this persists."
+            />
           </div>
         ) : !hasAny ? (
           /* Empty state */

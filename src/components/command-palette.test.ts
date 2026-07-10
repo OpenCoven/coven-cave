@@ -183,11 +183,12 @@ assert.match(
   /intent:\s*\{ kind: "open-project", root: p\.root \}/,
   "an open-project row carries the project root",
 );
-// Consumer: workspace opens the Projects tab then focuses the chosen project.
+// Consumer: workspace latches the Projects tab (fresh-mount race, cave-c2zf),
+// opens it, then focuses the chosen project.
 assert.match(
   workspace,
-  /intent\.kind === "open-project"[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
-  "workspace opens the Projects tab then focuses the chosen project",
+  /intent\.kind === "open-project"[\s\S]{0,200}?markProjectsTabPending\(\)[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
+  "workspace latches then opens the Projects tab and focuses the chosen project",
 );
 
 // Board view-switch: the palette offers "Board: Kanban/Table/Gantt" rows that

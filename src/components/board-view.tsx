@@ -98,6 +98,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // only after the undo window, and Undo restores them (mirrors chat/projects).
   const { pending: deletePending, scheduleDelete: scheduleCardDelete, undo: undoCardDelete, commit: commitCardDelete } = useUndoDelete<Card[]>();
   const [error, setError] = useState<string | null>(null);
+  // Quiet-poll degradation: ≥2 consecutive background refresh failures while
+  // last-good cards stay rendered (cave-x6k5). Non-blocking strip, not `error`.
+  const [stale, setStale] = useState(false);
+  const quietFailStreakRef = useRef(0);
   // Distinguish "still loading" from "loaded and empty" so the empty-state
   // CTA doesn't flash on every open before the first GET resolves.
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -173,15 +177,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         // as workspace.tsx's poll over this endpoint).
         setCards((prev) => (arrayContentEqual(prev, loaded) ? prev : loaded));
         setError(null);
+        quietFailStreakRef.current = 0;
+        setStale(false);
       } else if (!quiet) {
         setCards([]);
         setError(json.error ?? "load failed");
+      } else {
+        // Quiet polls used to swallow failures entirely — last-good cards
+        // stayed up with no freshness cue (cave-x6k5). Two consecutive
+        // failures flip a non-blocking "showing earlier data" strip.
+        quietFailStreakRef.current += 1;
+        if (quietFailStreakRef.current >= 2) setStale(true);
       }
     } catch (err) {
       if (ctl.signal.aborted) return; // aborted mid-flight — leave state to the newer load
       if (!quiet) {
         setCards([]);
         setError(err instanceof Error ? err.message : "load failed");
+      } else {
+        quietFailStreakRef.current += 1;
+        if (quietFailStreakRef.current >= 2) setStale(true);
       }
     } finally {
       if (!ctl.signal.aborted) setHasLoaded(true);
@@ -931,6 +946,20 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           <span className="flex min-w-0 items-center gap-1.5">
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{error}</span>
+          </span>
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
+            Retry
+          </Button>
+        </div>
+      )}
+      {!error && stale && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--color-warning)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:clock-countdown" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">Refresh is failing — showing earlier data.</span>
           </span>
           <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
             Retry

@@ -10,6 +10,7 @@ import {
   writeBackdropImage,
   writeBackdropPrefs,
 } from "@/lib/cave-backdrop";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 
 /**
  * Settings → Appearance → Backdrop: pick an image that shows behind Home and
@@ -23,6 +24,8 @@ export function BackdropSettings() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Clearing discards the stored image with no undo — two-step (cave-5lsj).
+  const clearConfirm = useArmedConfirm();
   const urlRef = useRef<string | null>(null);
 
   // Thumbnail of whatever is stored — follows enable/replace/clear.
@@ -121,8 +124,14 @@ export function BackdropSettings() {
         </div>
         <div className="flex items-center gap-2">
           {previewUrl ? (
-            <Button size="xs" variant="ghost" leadingIcon="ph:x" onClick={() => void clearBackdrop()} disabled={busy}>
-              Clear
+            <Button
+              size="xs"
+              variant="ghost"
+              leadingIcon="ph:x"
+              onClick={() => clearConfirm.trigger(() => void clearBackdrop())}
+              disabled={busy}
+            >
+              {clearConfirm.armed ? "Really clear?" : "Clear"}
             </Button>
           ) : null}
         </div>

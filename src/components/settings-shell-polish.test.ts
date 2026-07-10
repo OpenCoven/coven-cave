@@ -157,12 +157,15 @@ assert.match(
   /aria-current=\{section === s\.id && !showPicker \? "page" : undefined\}/,
   "the active settings section is marked aria-current",
 );
-// The custom-theme reset button is labelled with the actual theme name.
+// The custom-theme discard button is labelled with the actual theme name and
+// is two-step: first click arms, second confirms (cave-5lsj — an imported
+// theme is unrecoverable once cleared).
 assert.match(
   source,
-  /aria-label=\{`Reset \$\{customData\.name\}`\}/,
-  "the custom-theme reset button names the theme it resets",
+  /aria-label=\{resetCustomArmed \? `Really discard \$\{customData\.name\}\? Click again to confirm` : `Discard \$\{customData\.name\}`\}/,
+  "the custom-theme discard button names the theme and confirms via a second click",
 );
+assert.match(source, /setResetCustomArmed\(false\), 4000\)/, "arming auto-disarms after a beat");
 
 assert.match(source, /className="max-w-none space-y-6"/, "settings pages fill the full pane width (no narrow max-w-2xl column on desktop)");
 

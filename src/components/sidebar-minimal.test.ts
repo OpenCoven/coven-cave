@@ -472,8 +472,8 @@ assert.match(
 );
 assert.match(
   source,
-  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
-  "each row derives active/split/idle from mode + open split pages",
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes, \{ grimoireView: props\.grimoireView \}\)\}/,
+  "each row derives active/split/idle from mode + open split pages + the Grimoire tab (Journal row, cave-s9p6)",
 );
 assert.match(
   source,

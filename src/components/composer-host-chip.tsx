@@ -7,7 +7,7 @@
 // current value and receives picks. Selection semantics stay the parent's
 // concern (per-session, fail-closed server-side resolution — see #2337).
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -122,6 +122,8 @@ export function ConnectHostDialog({ onClose, onConnected }: { onClose: () => voi
 export function useComposerHosts(value: string): {
   options: ChatHostOption[];
   load: (force?: boolean) => Promise<void>;
+  /** Unregister a host (DELETE /api/hosts) and refresh the list (cave-4zdp). */
+  removeHost: (host: string) => Promise<void>;
 } {
   const [hosts, setHosts] = useState<ChatHostOption[] | null>(null);
   const loading = useRef(false);
@@ -139,6 +141,19 @@ export function useComposerHosts(value: string): {
     }
   }, []);
 
+  const removeHost = useCallback(async (host: string) => {
+    try {
+      await fetch("/api/hosts", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host }),
+      });
+    } catch {
+      /* refresh below shows the surviving registry either way */
+    }
+    await load(true);
+  }, [load]);
+
   const options = useMemo<ChatHostOption[]>(() => {
     const base: ChatHostOption[] = hosts ?? [
       { id: LOCAL_HOST_ID, kind: "local", label: "This machine", online: true },
@@ -148,7 +163,7 @@ export function useComposerHosts(value: string): {
       : [...base, { id: value, kind: "ssh", label: value, online: null }];
   }, [hosts, value]);
 
-  return { options, load };
+  return { options, load, removeHost };
 }
 
 /**
@@ -163,20 +178,30 @@ export function ComposerHostChoices({
   value,
   onPick,
   onConnectNew,
+  onRemoveHost,
 }: {
   options: ChatHostOption[];
   value: string;
   onPick: (id: string) => void;
   onConnectNew: () => void;
+  /** Unregister an ssh host. Optional: pickers without registry authority
+   *  (or before wiring) simply don't render the remove affordance. */
+  onRemoveHost?: (host: string) => void;
 }) {
+  // Per-row two-step: first tap arms ("Remove?"), second fires (cave-4zdp).
+  const [armedRemoveId, setArmedRemoveId] = useState<string | null>(null);
+  useEffect(() => {
+    if (armedRemoveId === null) return;
+    const t = window.setTimeout(() => setArmedRemoveId(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [armedRemoveId]);
   return (
     <div className="cave-host-choices" role="radiogroup" aria-label="Run this chat on">
       {options.map((option) => {
         const optionStatus = hostStatusKind(option);
         const checked = option.id === value;
-        return (
+        const row = (
           <button
-            key={option.id}
             type="button"
             role="radio"
             aria-checked={checked}
@@ -190,6 +215,31 @@ export function ComposerHostChoices({
               {optionStatus === "online" ? "online" : optionStatus === "offline" ? "offline" : "checking"}
             </span>
           </button>
+        );
+        if (option.kind !== "ssh" || !onRemoveHost) {
+          return <div key={option.id} className="cave-host-choice-row">{row}</div>;
+        }
+        const armed = armedRemoveId === option.id;
+        return (
+          <div key={option.id} className="cave-host-choice-row">
+            {row}
+            <button
+              type="button"
+              className={`cave-host-remove focus-ring${armed ? " is-armed" : ""}`}
+              aria-label={armed ? `Really remove host ${option.label}? Click again to confirm` : `Remove host ${option.label}`}
+              title={armed ? "Click again to remove" : "Remove this host from the registry"}
+              onClick={() => {
+                if (armed) {
+                  setArmedRemoveId(null);
+                  onRemoveHost(option.id);
+                } else {
+                  setArmedRemoveId(option.id);
+                }
+              }}
+            >
+              {armed ? "Remove?" : <Icon name="ph:x" width={11} aria-hidden />}
+            </button>
+          </div>
         );
       })}
       <button
@@ -217,7 +267,7 @@ export function ComposerHostChip({
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement | null>(null);
-  const { options, load } = useComposerHosts(value);
+  const { options, load, removeHost } = useComposerHosts(value);
 
   const current = options.find((option) => option.id === value);
   const label = current?.label ?? value;
@@ -257,6 +307,7 @@ export function ComposerHostChip({
           <ComposerHostChoices
             options={options}
             value={value}
+            onRemoveHost={(host) => void removeHost(host)}
             onPick={(id) => {
               onPick(id);
               setOpen(false);

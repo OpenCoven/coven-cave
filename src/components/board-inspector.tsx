@@ -32,7 +32,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { parseHarnessFailure } from "@/lib/harness-failure";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
 import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
@@ -63,6 +63,9 @@ const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
 };
 
 function openProjectsSurface() {
+  // Latch BEFORE the mode flip: a freshly-mounting ChatSurface consumes it on
+  // mount, so the Projects tab opens even when the event loses the race (cave-c2zf).
+  markProjectsTabPending();
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
   window.setTimeout(() => {
     window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));

@@ -7,7 +7,7 @@ import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import { InspectorPane } from "@/components/inspector-pane";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { WorkspaceRail } from "@/components/workspace-rail";
@@ -68,6 +68,8 @@ type Props = {
   daemonRunning: boolean;
   routerRef: RefObject<ChatRouterHandle | null>;
   sessionsLoaded?: boolean;
+  /** Last session-list load failed — chat list shows a can't-load state (cave-x6k5). */
+  sessionsError?: boolean;
   familiarsLoaded?: boolean;
   /** Roster-load failure + retry, forwarded to ChatRouter's empty state (cave-atzv). */
   familiarsError?: string | null;
@@ -198,6 +200,7 @@ export function ChatSurface({
   daemonRunning,
   routerRef,
   sessionsLoaded,
+  sessionsError,
   familiarsLoaded,
   familiarsError,
   onRetryFamiliars,
@@ -601,6 +604,11 @@ export function ChatSurface({
   }
 
   useEffect(() => {
+    // Board→Projects handoffs fire the event from a surface where this
+    // listener isn't mounted yet — consume the retained latch on mount so the
+    // Projects tab opens even when the event loses the race (cave-c2zf; same
+    // shape as the coven-tab latch below).
+    if (consumeProjectsTabPending()) setScope("projects");
     const open = () => setScope("projects");
     window.addEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
@@ -723,6 +731,7 @@ export function ChatSurface({
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
+                  sessionsError={sessionsError}
                   familiarsLoaded={familiarsLoaded}
                   familiarsError={familiarsError}
                   onRetryFamiliars={onRetryFamiliars}
