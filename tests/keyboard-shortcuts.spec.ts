@@ -25,7 +25,9 @@ async function gotoApp(page: Page) {
 // so match the dialog by its accessible name rather than an aria-label attr.
 const sheet = (page: Page) => page.getByRole("dialog", { name: /Keyboard shortcuts/ });
 
-const GROUPS = ["Panels & navigation", "Terminal & panes", "Browser", "Composer", "Slash menu", "Other"];
+// "Terminal & panes" was removed from the catalog — its bindings lived only in
+// the unmounted ComuxView, and the sheet stays truthful (cave-7c9i).
+const GROUPS = ["Panels & navigation", "Browser", "Composer", "Slash menu", "Other"];
 
 test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
@@ -40,7 +42,9 @@ test.describe("keyboard shortcuts sheet", () => {
     }
     // Representative rows, including one from the #1605 additions.
     await expect(sheet(page).getByText("Open the command palette")).toBeVisible();
-    await expect(sheet(page).getByText("Broadcast input to every visible pane")).toBeVisible();
+    await expect(sheet(page).getByText("Recall prompt history (home composer, empty input)")).toBeVisible();
+    // Removed-with-the-group row must NOT resurface (cave-7c9i).
+    await expect(sheet(page).getByText("Broadcast input to every visible pane")).toBeHidden();
 
     await page.keyboard.press("Escape");
     await expect(sheet(page)).toBeHidden();
