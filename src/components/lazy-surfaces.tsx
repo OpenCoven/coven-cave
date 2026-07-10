@@ -39,11 +39,11 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
   };
 }
 
-// (cave-gg5d) ComuxView and FlowView lazy exports removed: nothing imported
-// them — the standalone Code surface is retired and the Flow experience lives
-// on feature/automations-flow. The component sources remain for now; full
-// deletion is tracked separately (ComuxView.removeSession is the app's only
-// pty-kill site, so the rail-terminal PTY lifecycle must be settled first).
+// (cave-c3yt) The retired ComuxView and FlowView surfaces are fully deleted —
+// the standalone Code surface is gone (the chat code rail is the file/terminal
+// host; it owns PTY teardown on session switch in chat-surface.tsx) and the
+// Flow experience lives on feature/automations-flow (its /api/flows engine +
+// webhooks remain live under src/lib/flow + src/lib/server).
 
 export const GitHubView = dynamic(
   timed("github", () => import("@/components/github-view").then((m) => m.GitHubView)),

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
+import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
 import { GroupChatView } from "@/components/group-chat-view";
@@ -372,9 +373,9 @@ export function ChatSurface({
   // the previous session and drop the terminal-held-open latch. The rail's pty
   // uses a per-session thread id (`cave.rail.<id>`), and BottomTerminal never
   // stops the shell on unmount (keepalive) — so without this, a session switch
-  // strands the old shell (desktop PTYs have no idle reaper; the WS bridge
-  // self-reaps) and keeps the rail forced-open on an unrelated session. Mirrors
-  // ComuxView.removeSession's desktop teardown.
+  // strands the old shell (desktop PTYs have no idle reaper). This is the
+  // app's deliberate PTY kill site (cave-c3yt: the retired ComuxView held the
+  // original; its sources are deleted).
   const railTermSessionRef = useRef<string | null>(snapshot.sessionId ?? null);
   useEffect(() => {
     const id = snapshot.sessionId ?? null;
@@ -388,6 +389,11 @@ export function ChatSurface({
           .then(({ invoke }) => invoke("pty_stop", { threadId: `cave.rail.${prev}` }))
           .catch(() => {});
       }
+      // WS transport (browser / iOS): the desktop pty_stop above only reaps
+      // native-IPC shells. Without the explicit kill frame the old session's
+      // shell (and its foreground job) leaks for the full detach grace
+      // (~5 min). No-op when no WS bridge is registered for the threadId.
+      killPtyBridge(`cave.rail.${prev}`);
     }
     setTerminalOpened(false);
     // Engaging a different session ends any "browse at root" peek — the rail

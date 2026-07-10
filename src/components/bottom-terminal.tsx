@@ -618,8 +618,9 @@ export function BottomTerminal({
         // (keepalive reparenting), and the fire-and-forget stop raced the
         // next mount's pty_list — losing the race attached the new terminal
         // to a shell that was about to be SIGHUPed, a dead pane that ate
-        // keystrokes. The shell is killed exactly once, when the user closes
-        // the tab (ComuxView.removeSession).
+        // keystrokes. The shell is killed exactly once, by the OWNER of the
+        // thread id — the chat code rail stops `cave.rail.<id>` shells on
+        // session switch (chat-surface.tsx, cave-c3yt).
       };
 
       if (disposed) cleanup();

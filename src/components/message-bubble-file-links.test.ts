@@ -41,7 +41,6 @@ const matches = (s) => FILE_REF_RE.exec(s);
 
 // ── wiring ───────────────────────────────────────────────────────────────────
 const bubble = await readFile(new URL("./message-bubble.tsx", import.meta.url), "utf8");
-const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 
@@ -72,29 +71,11 @@ assert.match(chatView, /resolveFileRefTarget\(ref, transcriptFileRoot, fileRefIn
 // no root ⇒ plain text, not a dead button.
 assert.match(chatView, /targetFile && railRoot \? \(/, "tool file chips are gated on a project root");
 
-// comux resolves relative refs against the selected project root.
-assert.match(
-  comux,
-  /detail\.path\.startsWith\("\/"\)[\s\S]*?selectedRoot[\s\S]*?\$\{detail\.path\.replace\(\/\^\\\.\?\\\/\/, ""\)\}/,
-  "relative prose paths resolve against the selected project root",
-);
-
 // Affordance styling exists.
 assert.match(css, /code\.cave-file-link \{[\s\S]*?cursor: pointer/, "file-link affordance is styled");
 
-// Opening a file that lives inside a tracked project also reveals it in the
-// tree: comux switches to the containing project and opens the file column.
+// (ComuxView's project-switch-on-open pins left with the component, cave-c3yt.)
 const tree = await readFile(new URL("./project-tree.tsx", import.meta.url), "utf8");
-assert.match(
-  comux,
-  /const within = projects\.find\(\(project\) => \{[\s\S]*?path\.startsWith\(`\$\{r\}\/`\)/,
-  "comux matches the opened path against existing project roots",
-);
-assert.match(
-  comux,
-  /if \(within\) \{[\s\S]*?setSelectedProjectRoot\(within\.root\)[\s\S]*?setProjectDetailCollapsed\(false\)/,
-  "an in-project file switches to that project and opens the file column",
-);
 // The tree auto-expands ancestors of the selected file so the highlight shows.
 assert.match(
   tree,

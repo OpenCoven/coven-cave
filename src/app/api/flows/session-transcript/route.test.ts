@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
-const hook = await readFile(new URL("../../../../components/flow/use-flow-run.ts", import.meta.url), "utf8");
 
 assert.match(route, /export async function GET\(req: Request\)/, "route should expose a GET handler");
 assert.match(
@@ -29,15 +28,6 @@ assert.match(
   /NextResponse\.json\(\{ ok: true, transcript: "", found: false \}\)/,
   "missing flow transcripts should return an empty successful payload instead of HTTP 404",
 );
-assert.match(
-  hook,
-  /\/api\/flows\/session-transcript\?\$\{params\.toString\(\)\}/,
-  "flow polling should use the no-404 transcript endpoint",
-);
-assert.doesNotMatch(
-  hook,
-  /\/api\/chat\/conversation\//,
-  "flow polling should not fetch missing chat conversations directly",
-);
+// (use-flow-run client pins left with the retired flow components — cave-c3yt.)
 
 console.log("flows session-transcript route.test.ts: ok");

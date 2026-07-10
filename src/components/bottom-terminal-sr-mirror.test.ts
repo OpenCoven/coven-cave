@@ -85,11 +85,8 @@ assert.match(source, /if \(cols === last\.cols && rows === last\.rows\) return;/
 assert.equal((source.match(/makeResizer\(term, fit/g) ?? []).length, 2, "both the Tauri and WS transports use makeResizer");
 assert.equal((source.match(/resizer\.dispose\(\)/g) ?? []).length, 2, "both transports clear the pending resize push on cleanup");
 
-// comux threads a separate `visible` signal: true for every rendered split
-// pane (so unfocused siblings keep announcing), false only for keepalive.
-const comux = readFileSync(new URL("./comux-view.tsx", import.meta.url), "utf8");
-assert.match(comux, /active=\{active && isActive\}\s*\n\s*visible=\{active\}/, "split panes are visible whenever the surface is, focused or not");
-assert.match(comux, /active=\{false\}\s*\n\s*visible=\{false\}/, "keepalive mounts are explicitly not visible");
+// (The former ComuxView `visible` threading asserts left with the component —
+// cave-c3yt. BottomTerminal's own visible/active handling stays pinned above.)
 
 // ── Terminal a11y (cave-p767) ──
 // Per-pane labels: split panes must be distinguishable to AT — the region and

@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 // plain textarea with real syntax highlighting + line numbers).
 
 const editor = await readFile(new URL("./code-editor.tsx", import.meta.url), "utf8");
-const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
+const railPreview = await readFile(new URL("./rail-file-preview.tsx", import.meta.url), "utf8");
 const pkg = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
 
 // Deps are present and pinned exact (dependency-policy guards the pinning).
@@ -62,13 +62,11 @@ assert.match(theme, /caretColor: "var\(--accent-presence\)"/, "caret uses the ap
 assert.match(editor, /from "@\/components\/code-editor-theme"/, "the editor consumes the shared theme module");
 assert.match(editor, /theme=\{appTheme\}/, "the editor uses the app theme");
 
-// comux uses CodeEditor in edit mode — the plain textarea is gone.
-assert.match(comux, /import \{ CodeEditor \} from "@\/components\/code-editor"/, "comux imports CodeEditor");
-assert.match(
-  comux,
-  /editing \? \([\s\S]*?<CodeEditor[\s\S]*?value=\{editValue\}[\s\S]*?onChange=\{setEditValue\}[\s\S]*?onSave=\{[\s\S]*?saveEdit[\s\S]*?onCancel=\{cancelEditing\}/,
-  "edit mode renders CodeEditor wired to the edit state",
-);
-assert.doesNotMatch(comux, /<textarea[\s\S]*?value=\{editValue\}/, "the plain edit textarea is replaced");
+// The rail file preview (the app's live file viewer) uses CodeEditor in edit
+// mode — the plain textarea is gone. (Pinned via ComuxView before its
+// deletion, cave-c3yt.)
+assert.match(railPreview, /import \{ CodeEditor \} from "@\/components\/code-editor"/, "rail file preview imports CodeEditor");
+assert.match(railPreview, /const saveEdit = useCallback/, "rail file preview wires a save handler for the editor");
+assert.doesNotMatch(railPreview, /<textarea[\s\S]*?value=\{editValue\}/, "the plain edit textarea is replaced");
 
 console.log("code-editor.test.ts: ok");

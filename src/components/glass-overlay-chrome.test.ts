@@ -104,7 +104,7 @@ for (const sel of ["shell-nav--peek", "ui-dock-chat", "ui-tooltip", "familiar-sw
 const featureSheets: Array<[string, string[]]> = [
   ["../styles/dashboard.css", ["dash-snooze__menu", "spark-tip"]],
   ["../styles/cave-chat.css", ["cave-chat-model-popover", "voice-call-overlay__dialog", "cave-table-lightbox__panel"]],
-  ["../styles/flow.css", ["flow-ndv", "flow-template-overlay-panel"]],
+  // flow.css left with the retired FlowView surface (cave-c3yt).
   ["../styles/home-composer.css", ["hc-slash-menu"]],
   ["../styles/journal.css", ["journal-notice"]],
   ["../styles/summoning-circle.css", ["summoning-dialog"]],

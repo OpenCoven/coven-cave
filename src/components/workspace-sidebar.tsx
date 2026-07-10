@@ -635,7 +635,7 @@ export function WorkspaceSidebar({
                         type="button"
                         // (cave-gg5d) A "cave:code-select-project" dispatch used
                         // to precede this — its only listener lived in the
-                        // unmounted ComuxView; onNewChat does the real work.
+                        // retired (now deleted) ComuxView; onNewChat does the work.
                         onClick={() => onNewChat(group.projectRoot)}
                         title={`New chat in ${label}`}
                         aria-label={`New chat in ${label}`}

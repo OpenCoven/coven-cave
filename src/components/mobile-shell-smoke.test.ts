@@ -9,7 +9,6 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const notificationBell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
-const comuxView = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const automationsView = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -259,14 +258,4 @@ assert.doesNotMatch(
   "The old persistent standalone terminal detail should not render on mobile surfaces",
 );
 
-assert.match(
-  comuxView,
-  /comux-terminal-toolbar-button[\s\S]*Split right[\s\S]*comux-terminal-toolbar-button[\s\S]*Split down[\s\S]*comux-terminal-add-button/,
-  "Terminal toolbar actions should expose stable mobile hit-area hooks",
-);
-
-assert.match(
-  globals,
-  /@media \(max-width: 767px\) \{[\s\S]*\.comux-terminal-toolbar-button,[\s\S]*\.comux-terminal-empty-add\s*\{[\s\S]*min-height:\s*var\(--touch-target\)[\s\S]*\.comux-terminal-add-button,[\s\S]*\.comux-terminal-tab-close,[\s\S]*\.comux-terminal-pane-action\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
-  "Terminal mobile toolbar and close controls should meet the shared touch target",
-);
+// (ComuxView terminal-toolbar touch pins left with the component, cave-c3yt.)
