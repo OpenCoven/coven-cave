@@ -203,7 +203,10 @@ function ThreadRow({
             "shrink-0 rounded p-0.5 transition-all hover:text-[var(--accent-presence)]",
             pinned
               ? "text-[var(--accent-presence)] opacity-100"
-              : "text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100",
+              : // touch-always-visible: hover-reveal is undiscoverable on touch
+                // (cave-w96h). The drag handles stay hover-only on purpose —
+                // they overlay the status dot, and stay hit-testable regardless.
+                "touch-always-visible text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100",
           ].join(" ")}
         >
           <Icon

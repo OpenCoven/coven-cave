@@ -119,10 +119,18 @@ const artifactViewer = read("./chat-artifact-viewer.tsx");
 // ── No surviving navigation into the retired Canvas page ─────────────────────
 assert.doesNotMatch(artifactViewer, /cave:journal/, "artifact viewer no longer deep-links the Canvas page");
 assert.match(artifactViewer, /Saved to Canvas/, "save-to-canvas confirms inline instead of navigating");
+// A persisted last-surface of "journal" now restores safely: setMode remaps
+// it to Grimoire's Journal tab, so the old skip-branch (which guarded against
+// a hard-navigate to Settings that no longer exists) was removed (cave-nwi8).
 assert.match(
   ws,
-  /last === "journal"/,
-  "a stale persisted last-surface of journal is not restored on familiar select",
+  /"journal" restores fine: setMode remaps it/,
+  "journal restore relies on the setMode remap instead of a stale skip-branch",
+);
+assert.match(
+  ws,
+  /if \(next === "journal"\) \{/,
+  "setMode still owns the journal→grimoire remap the restore path depends on",
 );
 
 const ghReview = read("./gh-review-actions.tsx");

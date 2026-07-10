@@ -36,7 +36,10 @@ describe("stitch intake panel", () => {
   it("stays accessible: announcer, alerts, keyboard-first affordances", () => {
     assert.match(intake, /useAnnouncer/, "capture/sew results are announced");
     assert.match(intake, /role="alert"/, "errors surface as alerts");
-    assert.match(intake, /aria-label=\{`Remove pin \$\{pin\.title\}`\}/, "pin removal is labelled");
+    // Pin removal is two-step (cave-exbq): the label carries the armed state.
+    assert.match(intake, /: `Remove pin \$\{pin\.title\}`/, "pin removal is labelled");
+    assert.match(intake, /Really remove pin \$\{pin\.title\}\? Click again to confirm/, "arming is announced in the accessible name");
+    assert.match(intake, /setArmedPinId\(null\), 4000/, "arming auto-disarms");
     assert.match(intake, /aria-pressed=\{kind === k\}/, "the source picker exposes its state");
     assert.doesNotMatch(intake, /hover-reveal|opacity-0/, "no hover-only affordances");
   });

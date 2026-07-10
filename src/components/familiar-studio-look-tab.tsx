@@ -12,6 +12,7 @@ import {
   useFamiliarOverrides,
 } from "@/lib/cave-familiar-overrides";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 
 type ColorPreset = {
   label: string;
@@ -75,6 +76,9 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
   const currentColor = overrides[familiar.id]?.color ?? null;
   const currentImage = images[familiar.id];
   const { onFile, clear, toast } = useFamiliarImageUpload(familiar.id);
+  // Removing the stored image is unrecoverable (re-upload only) — two-step,
+  // matching the profile avatar's armed Remove (cave-w96h).
+  const removeImageConfirm = useArmedConfirm();
   const [colorScope, setColorScope] = useState<ColorScope>("familiar");
   const [enlarged, setEnlarged] = useState(false);
 
@@ -149,10 +153,10 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
               </button>
               <button
                 type="button"
-                onClick={clear}
+                onClick={() => removeImageConfirm.trigger(clear)}
                 className="familiar-studio-look__remove"
               >
-                Remove image
+                {removeImageConfirm.armed ? "Really remove?" : "Remove image"}
               </button>
             </>
           ) : (

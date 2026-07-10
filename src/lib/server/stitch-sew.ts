@@ -119,7 +119,15 @@ export async function runAgenticSew(thread: StitchThread): Promise<SewRunResult>
       }, SEW_TIMEOUT_MS);
       child.on("error", (err) => {
         clearTimeout(timer);
-        settle({ code: null, error: err.message });
+        // Raw spawn errors ("spawn codex ENOENT") read as jargon in the
+        // intake (cave-exbq) — name the missing runtime and the escape hatch.
+        const missing = (err as NodeJS.ErrnoException).code === "ENOENT";
+        settle({
+          code: null,
+          error: missing
+            ? `The ${inv.command} CLI isn't installed, so agentic sewing can't run. Install it (npm i -g @openai/codex) or use "Sew by hand".`
+            : err.message,
+        });
       });
       child.on("close", (code) => {
         clearTimeout(timer);

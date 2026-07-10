@@ -60,8 +60,21 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
   const [pinning, setPinning] = useState(false);
   const [sewing, setSewing] = useState<"agentic" | "manual" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Per-pin two-step removal: first tap arms ("Remove?"), auto-disarms (cave-exbq).
+  const [armedPinId, setArmedPinId] = useState<string | null>(null);
+  useEffect(() => {
+    if (armedPinId === null) return;
+    const t = window.setTimeout(() => setArmedPinId(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [armedPinId]);
 
-  // Chat pins pick from real sessions — loaded once, on first need.
+  // Chat pins pick from real sessions — loaded on first need. A FAILED load
+  // must not settle as [] (that rendered an empty picker indistinguishable
+  // from having no chats, and the sessions!==null guard never retried;
+  // cave-exbq): failures leave sessions null with an error, and the retry
+  // nonce lets the user re-run the fetch.
+  const [sessionsError, setSessionsError] = useState(false);
+  const [sessionsRetryNonce, setSessionsRetryNonce] = useState(0);
   useEffect(() => {
     if (kind !== "chat" || sessions !== null) return;
     let cancelled = false;
@@ -70,9 +83,10 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
         const res = await fetch("/api/sessions/list", { cache: "no-store" });
         const json = await res.json();
         if (cancelled) return;
-        const rows = Array.isArray(json.sessions) ? json.sessions : [];
+        if (!json.ok || !Array.isArray(json.sessions)) throw new Error("sessions load failed");
+        setSessionsError(false);
         setSessions(
-          rows
+          json.sessions
             .slice(0, 100)
             .map((row: { id?: string; title?: string }) => ({
               id: String(row.id ?? ""),
@@ -81,13 +95,13 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
             .filter((row: SessionOption) => row.id),
         );
       } catch {
-        if (!cancelled) setSessions([]);
+        if (!cancelled) setSessionsError(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [kind, sessions]);
+  }, [kind, sessions, sessionsRetryNonce]);
 
   async function ensureThread(): Promise<StitchThread | null> {
     if (thread) return thread;
@@ -159,9 +173,14 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
       if (res.ok && json.ok) {
         setThread(json.thread as StitchThread);
         announce(`Removed pin ${pinTitle}.`);
+      } else {
+        // A silent no-op read as a dead button (cave-exbq). The pin stays.
+        setError(typeof json.error === "string" ? json.error : `Couldn't remove pin ${pinTitle}.`);
+        announce(`Couldn't remove pin ${pinTitle}.`, "assertive");
       }
     } catch {
-      /* pin stays; the chip remains actionable */
+      setError(`Couldn't remove pin ${pinTitle} — check your connection.`);
+      announce(`Couldn't remove pin ${pinTitle}.`, "assertive");
     }
   }
 
@@ -257,19 +276,42 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
           className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
       ) : kind === "chat" ? (
-        <select
-          value={sessionId}
-          onChange={(e) => setSessionId(e.target.value)}
-          aria-label="Chat session to pin"
-          className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
-        >
-          <option value="">{sessions === null ? "Loading sessions…" : "Pick a chat session…"}</option>
-          {(sessions ?? []).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
+        sessionsError ? (
+          // A failed load is not "no chats" (cave-exbq) — say so and retry.
+          <div className="flex items-center gap-2 text-[12px] text-[var(--color-warning)]">
+            <span>Couldn&apos;t load your chats.</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSessionsError(false);
+                setSessionsRetryNonce((n) => n + 1);
+              }}
+              className="focus-ring rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-primary)]"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <select
+            value={sessionId}
+            onChange={(e) => setSessionId(e.target.value)}
+            aria-label="Chat session to pin"
+            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
+          >
+            <option value="">
+              {sessions === null
+                ? "Loading sessions…"
+                : sessions.length === 0
+                  ? "No chats yet — start one first"
+                  : "Pick a chat session…"}
             </option>
-          ))}
-        </select>
+            {(sessions ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+              </option>
+            ))}
+          </select>
+        )
       ) : (
         <input
           type="text"
@@ -314,11 +356,27 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
                 </span>
                 <button
                   type="button"
-                  aria-label={`Remove pin ${pin.title}`}
-                  onClick={() => void removePin(pin.id, pin.title)}
-                  className="focus-ring shrink-0 rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  aria-label={
+                    armedPinId === pin.id
+                      ? `Really remove pin ${pin.title}? Click again to confirm`
+                      : `Remove pin ${pin.title}`
+                  }
+                  onClick={() => {
+                    // A gathered source has no undo — two-step (cave-exbq).
+                    if (armedPinId === pin.id) {
+                      setArmedPinId(null);
+                      void removePin(pin.id, pin.title);
+                    } else {
+                      setArmedPinId(pin.id);
+                    }
+                  }}
+                  className={`focus-ring shrink-0 rounded p-1 ${
+                    armedPinId === pin.id
+                      ? "px-1.5 text-[10px] font-semibold text-[var(--color-danger)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
                 >
-                  <Icon name="ph:x" width={10} aria-hidden />
+                  {armedPinId === pin.id ? "Remove?" : <Icon name="ph:x" width={10} aria-hidden />}
                 </button>
               </li>
             ))}

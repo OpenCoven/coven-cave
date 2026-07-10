@@ -30,6 +30,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -94,23 +95,28 @@ type Props = {
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
 
-function useFamiliars(): Familiar[] {
+function useFamiliars(): { familiars: Familiar[]; familiarsFailed: boolean } {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
+  const [familiarsFailed, setFamiliarsFailed] = useState(false);
   useEffect(() => {
     fetch("/api/familiars")
       .then((r) => r.json())
       .then((data) => {
         if (data?.ok && Array.isArray(data.familiars)) {
           setFamiliars(data.familiars as Familiar[]);
+          setFamiliarsFailed(false);
+        } else {
+          setFamiliarsFailed(true);
         }
       })
-      .catch(() => {});
+      .catch(() => setFamiliarsFailed(true)); // failed ≠ empty (cave-59cv)
   }, []);
-  return familiars;
+  return { familiars, familiarsFailed };
 }
 
-function useCards(): { cards: Card[]; reload: () => void } {
+function useCards(): { cards: Card[]; cardsFailed: boolean; reload: () => void } {
   const [cards, setCards] = useState<Card[]>([]);
+  const [cardsFailed, setCardsFailed] = useState(false);
   const [tick, setTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
@@ -120,12 +126,19 @@ function useCards(): { cards: Card[]; reload: () => void } {
         if (cancelled) return;
         if (data?.ok && Array.isArray(data.cards)) {
           setCards(data.cards as Card[]);
+          setCardsFailed(false);
+        } else {
+          setCardsFailed(true);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // A failed board load is NOT "no cards" — the link picker rendered a
+        // convincing empty over it with no cue (cave-59cv).
+        if (!cancelled) setCardsFailed(true);
+      });
     return () => { cancelled = true; };
   }, [tick]);
-  return { cards, reload: () => setTick((t) => t + 1) };
+  return { cards, cardsFailed, reload: () => setTick((t) => t + 1) };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -205,6 +218,7 @@ function PatSetupModal({
   const [usernameInput, setUsernameInput] = useState(username ?? "");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const removeConfirm = useArmedConfirm();
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -363,26 +377,29 @@ function PatSetupModal({
               disabled={removing || saving}
               onClick={() => {
                 if (removing) return;
-                setRemoving(true);
-                setError(null);
-                void (async () => {
-                  try {
-                    const res = await fetch("/api/github/pat", { method: "DELETE" });
-                    const data = await res.json().catch(() => null);
-                    if (!res.ok || data?.ok === false) {
-                      setError(data?.error ?? "Couldn't remove the token.");
-                      return;
+                // Two-step, matching the app's armed-confirm standard (cave-w96h).
+                removeConfirm.trigger(() => {
+                  setRemoving(true);
+                  setError(null);
+                  void (async () => {
+                    try {
+                      const res = await fetch("/api/github/pat", { method: "DELETE" });
+                      const data = await res.json().catch(() => null);
+                      if (!res.ok || data?.ok === false) {
+                        setError(data?.error ?? "Couldn't remove the token.");
+                        return;
+                      }
+                      onSaved(usernameInput.trim() || username || "", false);
+                    } catch {
+                      setError("Network error — please try again.");
+                    } finally {
+                      setRemoving(false);
                     }
-                    onSaved(usernameInput.trim() || username || "", false);
-                  } catch {
-                    setError("Network error — please try again.");
-                  } finally {
-                    setRemoving(false);
-                  }
-                })();
+                  })();
+                });
               }}
             >
-              {removing ? "Removing…" : "Remove stored token"}
+              {removing ? "Removing…" : removeConfirm.armed ? "Really remove?" : "Remove stored token"}
             </Button>
             <p className="mt-1 text-[10px] text-[var(--text-muted)]">
               Drops back to public data for @{usernameInput.trim() || username || "…"}.
@@ -435,6 +452,8 @@ function OpenChatAction({
   linkedCards,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onJumpToSession,
   onAfterLink,
 }: {
@@ -442,6 +461,8 @@ function OpenChatAction({
   linkedCards: Card[];
   familiars: Familiar[];
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onAfterLink: () => void;
 }) {
@@ -575,7 +596,9 @@ function OpenChatAction({
             mode="chat"
             item={item}
             familiars={familiars}
+            familiarsFailed={familiarsFailed}
             cards={cards}
+            cardsFailed={cardsFailed}
             onClose={() => setPopoverOpen(false)}
           />
         </div>
@@ -684,11 +707,15 @@ function AddToBoardAction({
   item,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onAfterLink,
 }: {
   item: GitHubItem;
   familiars: Familiar[];
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onAfterLink: () => void;
 }) {
   const [mode, setMode] = useState<PopoverMode | null>(null);
@@ -719,7 +746,9 @@ function AddToBoardAction({
             mode={mode}
             item={item}
             familiars={familiars}
+            familiarsFailed={familiarsFailed}
             cards={cards}
+            cardsFailed={cardsFailed}
             onClose={close}
           />
         </div>
@@ -2049,6 +2078,8 @@ function GitHubItemGlassPanel({
   familiars,
   resolvedById,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   counts,
   onJumpToSession,
   onFocusCard,
@@ -2059,6 +2090,8 @@ function GitHubItemGlassPanel({
   familiars: Familiar[];
   resolvedById: Map<string, ResolvedFamiliar>;
   cards: Card[];
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   counts: Record<Filter, number>;
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
@@ -2226,6 +2259,8 @@ function GitHubItemGlassPanel({
             linkedCards={linkedCards}
             familiars={familiars}
             cards={cards}
+            familiarsFailed={familiarsFailed}
+            cardsFailed={cardsFailed}
             onJumpToSession={onJumpToSession}
             onAfterLink={onAfterLink}
           />
@@ -2233,6 +2268,8 @@ function GitHubItemGlassPanel({
             item={item}
             familiars={familiars}
             cards={cards}
+            familiarsFailed={familiarsFailed}
+            cardsFailed={cardsFailed}
             onAfterLink={onAfterLink}
           />
           <SafeMergeAction
@@ -2296,8 +2333,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  const familiars = useFamiliars();
-  const { cards, reload: reloadCards } = useCards();
+  const { familiars, familiarsFailed } = useFamiliars();
+  const { cards, cardsFailed, reload: reloadCards } = useCards();
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
   const resolvedById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -2831,6 +2868,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                 familiars={familiars}
                 resolvedById={resolvedById}
                 cards={cards}
+                familiarsFailed={familiarsFailed}
+                cardsFailed={cardsFailed}
                 counts={counts}
                 onJumpToSession={onJumpToSession}
                 onFocusCard={onFocusCard}
@@ -3033,6 +3072,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             linkedCards={linked}
                             familiars={familiars}
                             cards={cards}
+                            familiarsFailed={familiarsFailed}
+                            cardsFailed={cardsFailed}
                             onJumpToSession={onJumpToSession}
                             onAfterLink={reloadCards}
                           />
@@ -3040,6 +3081,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             item={item}
                             familiars={familiars}
                             cards={cards}
+                            familiarsFailed={familiarsFailed}
+                            cardsFailed={cardsFailed}
                             onAfterLink={reloadCards}
                           />
                           <SafeMergeAction

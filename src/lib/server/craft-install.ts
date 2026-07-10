@@ -296,7 +296,9 @@ function commandFailureCode(step: CommandStep, error: unknown): CraftTransaction
 
 function publicFailureMessage(code: CraftTransactionErrorCode): string {
   switch (code) {
-    case "cli_missing": return "Codex CLI is unavailable.";
+    // Name the fix, not just the failure: a Claude-only user hitting this had
+    // no path forward from "unavailable" (cave-nkte).
+    case "cli_missing": return "Crafts install through the Codex CLI, which isn't installed on this machine. Install it with `npm i -g @openai/codex`, then retry.";
     case "timeout": return "The Codex plugin command timed out.";
     case "unsupported_runtime": return "This Codex CLI does not support verified Craft installation.";
     case "marketplace_check_failed": return "Cave could not inspect configured Codex marketplaces.";

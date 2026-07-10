@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { AsanaWorkspace, AsanaWorkspacesResponse } from "@/lib/asana-tasks";
 import { StandardSelect } from "@/components/ui/select";
+import { useArmedConfirm } from "@/lib/use-armed-confirm";
 import {
   reportDaemonSyncFailure,
   reportDaemonSyncSuccess,
@@ -32,6 +33,8 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
   const [pat, setPat] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  // Two-step, matching the app's armed-confirm standard (cave-w96h).
+  const disconnectConfirm = useArmedConfirm();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -246,11 +249,11 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
             <div className="familiar-studio-brain__control">
               <button
                 type="button"
-                onClick={() => void disconnect()}
+                onClick={() => disconnectConfirm.trigger(() => void disconnect())}
                 disabled={disconnecting}
                 className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:text-[var(--color-danger)]"
               >
-                {disconnecting ? "Disconnecting…" : "Disconnect Asana"}
+                {disconnecting ? "Disconnecting…" : disconnectConfirm.armed ? "Really disconnect?" : "Disconnect Asana"}
               </button>
             </div>
           </div>

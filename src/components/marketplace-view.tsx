@@ -761,7 +761,7 @@ export function MarketplaceViewSurface({
             <div>
               <p className="craft-loadout-intro__eyebrow">Role loadouts</p>
               <h2 id="craft-loadout-heading">Equip a way of working</h2>
-              <p>Crafts are versioned plugin bundles between a Role and its effective skills, prompts, workflows, and runtime capabilities.</p>
+              <p>A Craft is a versioned bundle of skills, prompts, workflows, and runtime capabilities that a Role equips as one unit.</p>
             </div>
             <div className="craft-loadout-path" role="list" aria-label="Craft capability hierarchy">
               {[

@@ -522,10 +522,6 @@ export function ChatSurface({
       setScope("conversation");
       window.setTimeout(() => routerRef.current?.openSession(d.sessionId!), 0);
     };
-    const onShowList = () => {
-      setScope("conversation");
-      window.setTimeout(() => routerRef.current?.goToList(), 0);
-    };
     const onFamiliarSelect = (e: Event) => {
       const d = (e as CustomEvent<{ familiarId?: string | null }>).detail;
       if (!d?.familiarId) return;
@@ -533,14 +529,14 @@ export function ChatSurface({
       setScope("conversation");
       window.setTimeout(() => routerRef.current?.goToList(), 0);
     };
+    // (cave-nwi8) "cave:agents-list" had zero dispatchers repo-wide — its
+    // listener is gone so no future emitter half-works against it.
     window.addEventListener("cave:agents-new-chat", onNewChat);
     window.addEventListener("cave:agents-open-session", onOpenSession);
-    window.addEventListener("cave:agents-list", onShowList);
     window.addEventListener("cave:familiar-select", onFamiliarSelect);
     return () => {
       window.removeEventListener("cave:agents-new-chat", onNewChat);
       window.removeEventListener("cave:agents-open-session", onOpenSession);
-      window.removeEventListener("cave:agents-list", onShowList);
       window.removeEventListener("cave:familiar-select", onFamiliarSelect);
     };
   }, [onSetActiveFamiliar, routerRef]);

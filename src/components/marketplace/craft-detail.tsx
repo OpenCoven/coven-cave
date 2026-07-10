@@ -147,6 +147,23 @@ export function CraftDetail({
     }
   }, [plugin.id]);
 
+  // Pre-flight: Crafts install through the Codex CLI. Warn BEFORE the user
+  // clicks Install instead of failing after (cave-nkte). Best-effort — a
+  // failed probe stays quiet and the server gate remains authoritative.
+  const [codexMissing, setCodexMissing] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/harnesses", { cache: "no-store", signal: controller.signal })
+      .then((res) => res.json())
+      .then((json) => {
+        if (controller.signal.aborted || !Array.isArray(json?.harnesses)) return;
+        const codex = json.harnesses.find((h: { id?: string; installed?: boolean }) => h.id === "codex");
+        setCodexMissing(Boolean(codex) && codex.installed === false);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     setPlan(null);
@@ -240,6 +257,12 @@ export function CraftDetail({
             </div>
           </div>
 
+          {codexMissing ? (
+            <p role="alert" className="craft-dossier__alert">
+              Crafts install through the Codex CLI, which isn&apos;t installed on this machine. Install it with{" "}
+              <code>npm i -g @openai/codex</code>, then retry.
+            </p>
+          ) : null}
           {planError ? <p role="alert" className="craft-dossier__alert">{planError}</p> : null}
           {actionError ? (
             <div role="alert" className="craft-dossier__alert">

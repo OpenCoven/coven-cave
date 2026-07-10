@@ -1448,7 +1448,7 @@ export function GrimoireView({
               >
                 {visibleMemory.length === 0 ? (
                   <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
-                    {q ? "No matches." : "No memory files found."}
+                    {q ? "No matches." : "No memory yet — it fills in as your familiars work and remember."}
                   </p>
                 ) : (
                   memoryGroups.map((group) => {
@@ -1526,7 +1526,7 @@ export function GrimoireView({
               >
                 {visibleJournal.length === 0 ? (
                   <p className="px-2 py-1 text-[11px] text-[var(--text-muted)]">
-                    {q ? "No matches." : "No journal entries yet."}
+                    {q ? "No matches." : "No journal entries yet — the Journal tab's Generate writes today's."}
                   </p>
                 ) : (
                   visibleJournal.map((day) => (

@@ -23,6 +23,10 @@ type Props = {
   item: GitHubItem;
   familiars: Familiar[];
   cards: Card[];
+  /** The corresponding load FAILED — an empty list then means "couldn't
+   *  load", not "none exist" (cave-59cv). */
+  familiarsFailed?: boolean;
+  cardsFailed?: boolean;
   onClose: () => void;
 };
 
@@ -57,10 +61,12 @@ function FeedbackBanner({
 function BoardMode({
   item,
   cards,
+  cardsFailed = false,
   onClose,
 }: {
   item: GitHubItem;
   cards: Card[];
+  cardsFailed?: boolean;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -158,7 +164,9 @@ function BoardMode({
             ))}
             {filtered.length === 0 && (
               <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
-                No cards match.
+                {cardsFailed && cards.length === 0
+                  ? "Couldn't load your tasks — close and reopen to retry."
+                  : "No cards match."}
               </li>
             )}
           </ul>
@@ -172,11 +180,13 @@ function BoardMode({
 
 function FamiliarPicker({
   familiars,
+  familiarsFailed = false,
   item,
   mode,
   onClose,
 }: {
   familiars: Familiar[];
+  familiarsFailed?: boolean;
   item: GitHubItem;
   mode: "chat" | "assign";
   onClose: () => void;
@@ -277,7 +287,9 @@ function FamiliarPicker({
         })}
         {resolved.length === 0 && (
           <li className="px-2.5 py-1.5 text-[11px] text-[var(--text-muted)]">
-            No familiars available.
+            {familiarsFailed
+              ? "Couldn't load familiars — close and reopen to retry."
+              : "No familiars available."}
           </li>
         )}
       </ul>
@@ -305,6 +317,8 @@ export function GitHubActionPopover({
   item,
   familiars,
   cards,
+  familiarsFailed = false,
+  cardsFailed = false,
   onClose,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -389,11 +403,12 @@ export function GitHubActionPopover({
 
       {/* Mode content */}
       {mode === "board" && (
-        <BoardMode item={item} cards={cards} onClose={onClose} />
+        <BoardMode item={item} cards={cards} cardsFailed={cardsFailed} onClose={onClose} />
       )}
       {(mode === "chat" || mode === "assign") && (
         <FamiliarPicker
           familiars={familiars}
+          familiarsFailed={familiarsFailed}
           item={item}
           mode={mode}
           onClose={onClose}

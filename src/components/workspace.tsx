@@ -824,11 +824,10 @@ export function Workspace() {
     // still a valid WorkspaceMode; otherwise fall back to the default.
     const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
     if (last === "flow") setMode("inbox");
-    // "journal" persists from before the page retired; restoring it would
-    // hard-navigate to Settings on a mere familiar select. Stay put instead.
-    else if (last === "journal") { /* no-op */ }
     // A persisted Role Surface mode restores too — if this familiar no longer
     // holds the role, the visibility effect below falls back generically.
+    // ("journal" restores fine: setMode remaps it to Grimoire's Journal tab —
+    // the old no-op predated that remap; cave-nwi8.)
     else if (last && (VALID_MODES.has(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
   }, []);
 
@@ -1666,7 +1665,7 @@ export function Workspace() {
       }
 
       // ⌘[ / ⌘] -> previous / next surface, cycling through SURFACE_ORDER in the
-      // same top-to-bottom order as ⌘1..⌘8 (wraps at the ends). From an off-list
+      // same top-to-bottom order as ⌘1..⌘5 (wraps at the ends). From an off-list
       // surface (Journal/Roles/Workflows), ⌘] lands on the first surface and ⌘[
       // on the last.
       if (meta && !alt && (e.key === "[" || e.key === "]")) {
