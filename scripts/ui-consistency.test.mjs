@@ -1,9 +1,37 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+function exactHeadingPattern(heading) {
+  const escapedHeading = heading.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escapedHeading}$`, "m");
+}
+
 const designLanguage = readFileSync(
   new URL("../docs/coven-design-language.md", import.meta.url),
   "utf8",
+);
+
+assert.match(
+  designLanguage,
+  /Section 10 is authoritative for interface language/,
+  "Section 10 is the interface language authority",
+);
+
+const vocabularyHeading = exactHeadingPattern("### Vocabulary");
+assert.match(
+  "### Vocabulary",
+  vocabularyHeading,
+  "exact heading matcher accepts the intended heading",
+);
+assert.doesNotMatch(
+  "#### Vocabulary",
+  vocabularyHeading,
+  "exact heading matcher rejects demoted headings",
+);
+assert.doesNotMatch(
+  "### Vocabulary and tone",
+  vocabularyHeading,
+  "exact heading matcher rejects suffixed headings",
 );
 
 for (const heading of [
@@ -16,7 +44,7 @@ for (const heading of [
 ]) {
   assert.match(
     designLanguage,
-    new RegExp(heading.replace(/[.*+?^\${}()|[\]\\]/g, "\\$&")),
+    exactHeadingPattern(heading),
     `design language contains ${heading}`,
   );
 }
@@ -28,7 +56,7 @@ assert.match(
 );
 assert.match(
   designLanguage,
-  /A placeholder never replaces a persistent label/,
+  /A\s+placeholder\s+never\s+replaces\s+a\s+persistent\s+label/,
   "placeholder-only labeling is forbidden",
 );
 assert.match(

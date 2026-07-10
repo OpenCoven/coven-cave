@@ -7,7 +7,10 @@ live reference page at `/aesthetic`; per-surface decisions live in
 `docs/specs/`. This document ties them together and codifies the rules that
 were previously only implicit.
 
-**When this doc and the code disagree, the code is right — then fix one of them.**
+**Code is authoritative for implemented visual and token behavior.
+Section 10 is authoritative for interface language; tracked product deviations
+are migration debt, not precedent. Reconcile every mismatch rather than
+letting it drift.**
 
 ---
 
@@ -342,7 +345,8 @@ control semantics, state hierarchy, and accessibility.
 ### Field semantics
 
 - Every editable control has a persistent visible label or an equally durable
-  accessible name for a self-explanatory global control. A placeholder never replaces a persistent label.
+  accessible name for a self-explanatory global control. A placeholder never
+  replaces a persistent label.
 - Put purpose in the label, constraints in help text, and repair instructions
   in the error slot. One string does not perform multiple jobs.
 - Mark optional fields beside the label with **Optional**. Required controls
