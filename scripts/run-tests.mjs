@@ -550,6 +550,7 @@ export const SUITES = {
     "src/lib/recent-colors.test.ts",
 	    "src/components/ui/color-picker.test.ts",
 	    "src/components/ui/button.test.ts",
+	    "src/components/ui/field.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/overflow-menu.test.ts",
     "src/components/minimalism-invariants.test.ts",
