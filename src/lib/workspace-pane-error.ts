@@ -1,17 +1,9 @@
-const FALLBACK_MESSAGE = "Unexpected pane error";
+const SAFE_PANE_ERROR_MESSAGE = "This page hit an unexpected error. Try again.";
 
 export function workspacePaneResetKey(instanceId: string, landmark: string): string {
   return JSON.stringify([instanceId, landmark]);
 }
 
-export function workspacePaneErrorMessage(thrown: unknown): string {
-  if (typeof thrown === "string") return thrown.trim() || FALLBACK_MESSAGE;
-
-  try {
-    if (thrown instanceof Error) return thrown.message.trim() || FALLBACK_MESSAGE;
-  } catch {
-    // Hostile thrown values must not prevent the pane fallback from rendering.
-  }
-
-  return FALLBACK_MESSAGE;
+export function workspacePaneErrorMessage(_thrown: unknown): string {
+  return SAFE_PANE_ERROR_MESSAGE;
 }

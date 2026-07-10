@@ -12440,15 +12440,15 @@ details[open] > .cave-edit-card__summary::before {
 
 .workspace-pane-page__state-title {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
 }
 
 .workspace-pane-page__state-description {
   margin-top: var(--space-1);
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 .workspace-pane-page__state--loading {

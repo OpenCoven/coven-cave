@@ -1,16 +1,86 @@
-// @ts-nocheck
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import type { WorkspacePanePageProps } from "./workspace-pane-page";
+
+const validReadyProps: WorkspacePanePageProps = {
+  instanceId: "pane-ready",
+  landmark: "Ready pane",
+  children: null,
+};
+const validLoadingProps: WorkspacePanePageProps = {
+  instanceId: "pane-loading",
+  landmark: "Loading pane",
+  status: "loading",
+};
+const validUnavailableProps: WorkspacePanePageProps = {
+  instanceId: "pane-unavailable",
+  landmark: "Unavailable pane",
+  unavailable: { reason: "Offline", recoveryLabel: "Reconnect", onRecover: () => undefined },
+};
+
+// @ts-expect-error loading is exclusive and cannot carry unavailable recovery state
+const invalidLoadingUnavailable: WorkspacePanePageProps = {
+  instanceId: "pane-invalid-loading-unavailable",
+  landmark: "Invalid pane",
+  status: "loading",
+  unavailable: { reason: "Offline", recoveryLabel: "Reconnect", onRecover: () => undefined },
+};
+// @ts-expect-error loading never renders children
+const invalidLoadingChildren: WorkspacePanePageProps = {
+  instanceId: "pane-invalid-loading-children",
+  landmark: "Invalid pane",
+  status: "loading",
+  children: null,
+};
+// @ts-expect-error unavailable never renders children
+const invalidUnavailableChildren: WorkspacePanePageProps = {
+  instanceId: "pane-invalid-unavailable-children",
+  landmark: "Invalid pane",
+  unavailable: { reason: "Offline", recoveryLabel: "Reconnect", onRecover: () => undefined },
+  children: null,
+};
+// @ts-expect-error ready cannot carry unavailable recovery state
+const invalidReadyUnavailable: WorkspacePanePageProps = {
+  instanceId: "pane-invalid-ready-unavailable",
+  landmark: "Invalid pane",
+  status: "ready",
+  unavailable: { reason: "Offline", recoveryLabel: "Reconnect", onRecover: () => undefined },
+  children: null,
+};
+
+void [
+  validReadyProps,
+  validLoadingProps,
+  validUnavailableProps,
+  invalidLoadingUnavailable,
+  invalidLoadingChildren,
+  invalidUnavailableChildren,
+  invalidReadyUnavailable,
+];
 
 const source = await readFile(new URL("./workspace-pane-page.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-const propsType = source.match(/export type WorkspacePanePageProps = \{([\s\S]*?)\n\};/)?.[1] ?? "";
-assert.match(propsType, /instanceId:\s*string;/, "the public page-root props require an instance identity");
-assert.match(propsType, /landmark:\s*string;/, "the public page-root props require a landmark name");
-assert.match(propsType, /status\?:\s*"ready"\s*\|\s*"loading";/, "the public status is focused on ready and loading");
-assert.match(propsType, /unavailable\?:\s*WorkspacePaneUnavailable;/, "the public props accept an unavailable recovery state");
-assert.match(propsType, /children:\s*ReactNode;/, "the public props accept page children");
+const commonProps = source.match(/type WorkspacePanePageCommonProps = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+assert.match(commonProps, /instanceId:\s*string;/, "the public page-root props require an instance identity");
+assert.match(commonProps, /landmark:\s*string;/, "the public page-root props require a landmark name");
+const readyProps = source.match(/type WorkspacePanePageReadyProps = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+assert.match(readyProps, /status\?:\s*"ready";/, "ready status may be omitted");
+assert.match(readyProps, /unavailable\?:\s*never;/, "ready pages cannot carry unavailable state");
+assert.match(readyProps, /children:\s*ReactNode;/, "ready pages require children");
+const loadingProps = source.match(/type WorkspacePanePageLoadingProps = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+assert.match(loadingProps, /status:\s*"loading";/, "loading status is explicit");
+assert.match(loadingProps, /unavailable\?:\s*never;/, "loading pages cannot carry unavailable state");
+assert.match(loadingProps, /children\?:\s*never;/, "loading pages cannot carry children");
+const unavailableProps = source.match(/type WorkspacePanePageUnavailableProps = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+assert.match(unavailableProps, /status\?:\s*never;/, "unavailable pages cannot carry status");
+assert.match(unavailableProps, /unavailable:\s*WorkspacePaneUnavailable;/, "unavailable pages require recovery state");
+assert.match(unavailableProps, /children\?:\s*never;/, "unavailable pages cannot carry children");
+assert.match(
+  source,
+  /export type WorkspacePanePageProps = WorkspacePanePageCommonProps &[\s\S]{0,180}WorkspacePanePageReadyProps \| WorkspacePanePageLoadingProps \| WorkspacePanePageUnavailableProps/,
+  "the public props are a common identity intersected with exclusive page states",
+);
 assert.match(
   source,
   /export function WorkspacePanePage\(\{[\s\S]{0,180}status = "ready"/,
@@ -24,13 +94,13 @@ assert.match(
 
 assert.match(
   source,
-  /<section\s+className="workspace-pane-page"\s+data-pane-instance=\{instanceId\}\s+aria-label=\{landmark\}>/,
-  "WorkspacePanePage renders a named semantic section for one pane instance",
+  /<section[\s\S]{0,180}ref=\{paneRef\}[\s\S]{0,120}className="workspace-pane-page"[\s\S]{0,120}data-pane-instance=\{instanceId\}[\s\S]{0,120}aria-label=\{landmark\}[\s\S]{0,80}tabIndex=\{-1\}/,
+  "WorkspacePanePage renders a programmatically focusable named section for one pane instance",
 );
 assert.match(
   source,
-  /<WorkspacePaneErrorBoundary\s+landmark=\{landmark\}\s+resetKey=\{workspacePaneResetKey\(instanceId, landmark\)\}>[\s\S]*<\/WorkspacePaneErrorBoundary>/,
-  "each page root wraps only its own pane content with a collision-safe reset key",
+  /<WorkspacePaneErrorBoundary[\s\S]{0,120}landmark=\{landmark\}[\s\S]{0,160}resetKey=\{workspacePaneResetKey\(instanceId, landmark\)\}[\s\S]{0,120}recoveryFocusRef=\{paneRef\}\s*>[\s\S]*<\/WorkspacePaneErrorBoundary>/,
+  "each page root passes its focus ref and collision-safe reset key to its local boundary",
 );
 
 assert.match(
@@ -57,6 +127,21 @@ assert.match(
   source,
   /<Fragment key=\{this\.state\.retryKey\}>\{this\.props\.children\}<\/Fragment>/,
   "retry remounts only the failed pane children",
+);
+assert.match(
+  source,
+  /componentWillUnmount\(\)[\s\S]{0,120}cancelScheduledFocus\(\)/,
+  "the boundary cancels scheduled focus when it unmounts",
+);
+assert.match(
+  source,
+  /window\.cancelAnimationFrame\(this\.focusFrame\)[\s\S]{0,420}typeof window === "undefined"[\s\S]{0,180}window\.requestAnimationFrame/,
+  "focus scheduling is cancellable and guarded for server rendering",
+);
+assert.match(
+  source,
+  /<Button ref=\{this\.retryButtonRef\}[^>]*onClick=\{this\.handleRetry\}[^>]*>Try again<\/Button>/,
+  "the shared Retry Button exposes a real focus ref",
 );
 assert.doesNotMatch(
   source,
@@ -134,5 +219,14 @@ assert.match(
   /\.workspace-pane-page__state-copy\s*\{[^}]*max-width:/,
   "state copy stays readable instead of spanning the full pane",
 );
+const titleRule = css.match(/\.workspace-pane-page__state-title\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(titleRule, /font-size:\s*var\(--text-base\)/, "state titles use the shared base text token");
+assert.doesNotMatch(titleRule, /font-size:\s*13px/, "state titles do not hardcode type size");
+const descriptionRule = [...css.matchAll(/\.workspace-pane-page__state-description\s*\{([^}]*)\}/g)]
+  .map((match) => match[1] ?? "")
+  .find((rule) => /font-size:/.test(rule)) ?? "";
+assert.match(descriptionRule, /font-size:\s*var\(--text-sm\)/, "state descriptions use the shared small text token");
+assert.match(descriptionRule, /line-height:\s*var\(--leading-normal\)/, "state descriptions use shared leading");
+assert.doesNotMatch(descriptionRule, /font-size:\s*12px|line-height:\s*1\.5/, "state descriptions do not hardcode type metrics");
 
 console.log("workspace-pane-page.test.ts: ok");
