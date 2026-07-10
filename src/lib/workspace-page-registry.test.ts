@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import type { WorkspaceMode } from "./workspace-mode.ts";
+import type { WorkspacePageDefinition } from "./workspace-page-registry.ts";
 import {
   BUILT_IN_WORKSPACE_PAGE_IDS,
   WORKSPACE_COMPANION_PAGE_DEFINITIONS,
@@ -61,6 +63,14 @@ const WORKSPACE_MODES: readonly WorkspaceMode[] = [
 test("built-in workspace page ids are exhaustive, ordered, and unique", () => {
   assert.deepEqual(BUILT_IN_WORKSPACE_PAGE_IDS, EXPECTED_BUILT_IN_IDS);
   assert.equal(new Set(BUILT_IN_WORKSPACE_PAGE_IDS).size, BUILT_IN_WORKSPACE_PAGE_IDS.length);
+});
+
+test("built-in ids derive from the authoritative page maps", async () => {
+  const source = await readFile(new URL("./workspace-page-registry.ts", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /export const BUILT_IN_WORKSPACE_PAGE_IDS\s*=\s*\[/);
+  assert.match(source, /Object\.keys\(WORKSPACE_MODE_PAGES\)/);
+  assert.match(source, /Object\.keys\(SUPPLEMENTAL_PAGES\)/);
 });
 
 test("consumer page lists are derived from registry navigation metadata", () => {
@@ -205,4 +215,43 @@ test("dynamic role surfaces resolve without requiring prior registration", () =>
 test("an empty role-surface suffix is rejected", () => {
   assert.equal(workspacePageDefinition("surface:"), null);
   assert.ok(!isWorkspacePageId("surface:"));
+});
+
+test("dynamic role surfaces always receive a trimmed nonblank label", () => {
+  for (const id of ["surface:!!!", "surface:---", "surface:_", "surface:   "]) {
+    const definition = workspacePageDefinition(id);
+    assert.ok(definition);
+    assert.equal(definition.title, "Role Surface");
+    assert.equal(definition.landmark, "Role Surface");
+  }
+
+  assert.equal(workspacePageDefinition("surface:--researcher-desk__")?.title, "Researcher Desk");
+  assert.equal(workspacePageDefinition("surface:researcher-desk")?.title, "Researcher Desk");
+  assert.equal(workspacePageDefinition("surface:研究者")?.title, "研究者");
+});
+
+test("static definitions cannot be mutated through lookup results", () => {
+  const home = workspacePageDefinition("home");
+  assert.ok(home);
+
+  assert.throws(() => Object.assign(home, { title: "Corrupted" }), TypeError);
+  assert.equal(workspacePageDefinition("home")?.title, "Home");
+});
+
+test("exported registry-derived lists cannot be mutated", () => {
+  const lists = [
+    WORKSPACE_DAILY_PAGE_DEFINITIONS,
+    WORKSPACE_NAVIGATION_PAGE_DEFINITIONS,
+    WORKSPACE_PALETTE_PAGE_DEFINITIONS,
+    WORKSPACE_FOOTER_PAGE_DEFINITIONS,
+    WORKSPACE_COMPANION_PAGE_DEFINITIONS,
+  ];
+  for (const list of lists) assert.ok(Object.isFrozen(list));
+
+  const dailyIds = WORKSPACE_DAILY_PAGE_DEFINITIONS.map(({ id }) => id);
+  assert.throws(
+    () => (WORKSPACE_DAILY_PAGE_DEFINITIONS as WorkspacePageDefinition[]).pop(),
+    TypeError,
+  );
+  assert.deepEqual(WORKSPACE_DAILY_PAGE_DEFINITIONS.map(({ id }) => id), dailyIds);
 });

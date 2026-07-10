@@ -28,7 +28,14 @@ export type WorkspacePageDefinition = {
   readonly landmark: string;
 };
 
-const WORKSPACE_MODE_PAGE_DEFINITIONS = {
+function freezePageMap<const Pages extends Record<string, WorkspacePageDefinition>>(
+  pages: Pages,
+): Readonly<Pages> {
+  for (const definition of Object.values(pages)) Object.freeze(definition);
+  return Object.freeze(pages);
+}
+
+const WORKSPACE_MODE_PAGES = freezePageMap({
   agents: {
     id: "agents",
     title: "Familiars",
@@ -182,11 +189,11 @@ const WORKSPACE_MODE_PAGE_DEFINITIONS = {
     split: "contextual",
     landmark: "Grimoire",
   },
-} satisfies Record<WorkspaceMode, WorkspacePageDefinition>;
+} satisfies Record<WorkspaceMode, WorkspacePageDefinition>);
 
 type SupplementalPageId = Exclude<BuiltInWorkspacePageId, WorkspaceMode> | CompanionPageId;
 
-const SUPPLEMENTAL_PAGE_DEFINITIONS = {
+const SUPPLEMENTAL_PAGES = freezePageMap({
   settings: {
     id: "settings",
     title: "Settings",
@@ -232,63 +239,49 @@ const SUPPLEMENTAL_PAGE_DEFINITIONS = {
     split: "contextual",
     landmark: "Terminal",
   },
-} satisfies Record<SupplementalPageId, WorkspacePageDefinition>;
+} satisfies Record<SupplementalPageId, WorkspacePageDefinition>);
 
 type StaticWorkspacePageId = BuiltInWorkspacePageId | CompanionPageId;
 
-const STATIC_PAGE_DEFINITIONS = {
-  ...WORKSPACE_MODE_PAGE_DEFINITIONS,
-  ...SUPPLEMENTAL_PAGE_DEFINITIONS,
-} satisfies Record<StaticWorkspacePageId, WorkspacePageDefinition>;
+const STATIC_PAGE_DEFINITIONS = freezePageMap({
+  ...WORKSPACE_MODE_PAGES,
+  ...SUPPLEMENTAL_PAGES,
+} satisfies Record<StaticWorkspacePageId, WorkspacePageDefinition>);
 
-export const BUILT_IN_WORKSPACE_PAGE_IDS = [
-  "agents",
-  "home",
-  "chat",
-  "groupchat",
-  "board",
-  "calendar",
-  "inbox",
-  "browser",
-  "github",
-  "roles",
-  "marketplace",
-  "flow",
-  "submissions",
-  "capabilities",
-  "familiar-work-queue",
-  "journal",
-  "grimoire",
-  "settings",
-  "dashboard",
-  "salem",
-  "memory",
-  "terminal",
-] as const satisfies readonly StaticWorkspacePageId[];
+export const BUILT_IN_WORKSPACE_PAGE_IDS: readonly StaticWorkspacePageId[] = Object.freeze([
+  ...(Object.keys(WORKSPACE_MODE_PAGES) as WorkspaceMode[]),
+  ...(Object.keys(SUPPLEMENTAL_PAGES) as SupplementalPageId[]),
+]);
 
 const BUILT_IN_PAGE_DEFINITIONS: readonly WorkspacePageDefinition[] =
-  BUILT_IN_WORKSPACE_PAGE_IDS.map((id) => STATIC_PAGE_DEFINITIONS[id]);
+  Object.freeze(BUILT_IN_WORKSPACE_PAGE_IDS.map((id) => STATIC_PAGE_DEFINITIONS[id]));
 
 export const WORKSPACE_DAILY_PAGE_DEFINITIONS: readonly WorkspacePageDefinition[] =
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily");
+  Object.freeze(BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily"));
 
 export const WORKSPACE_NAVIGATION_PAGE_DEFINITIONS: readonly WorkspacePageDefinition[] =
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily" || nav === "quiet");
+  Object.freeze(BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily" || nav === "quiet"));
 
 export const WORKSPACE_PALETTE_PAGE_DEFINITIONS: readonly WorkspacePageDefinition[] =
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "daily" || nav === "quiet" || nav === "hidden");
+  Object.freeze(
+    BUILT_IN_PAGE_DEFINITIONS.filter(
+      ({ nav }) => nav === "daily" || nav === "quiet" || nav === "hidden",
+    ),
+  );
 
 export const WORKSPACE_FOOTER_PAGE_DEFINITIONS: readonly WorkspacePageDefinition[] =
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "footer");
+  Object.freeze(BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "footer"));
 
 export const WORKSPACE_COMPANION_PAGE_DEFINITIONS: readonly WorkspacePageDefinition[] =
-  BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "companion");
+  Object.freeze(BUILT_IN_PAGE_DEFINITIONS.filter(({ nav }) => nav === "companion"));
 
 function roleSurfaceTitle(id: RoleSurfaceMode): string {
-  return id
+  const title = id
     .slice(ROLE_SURFACE_MODE_PREFIX.length)
     .replace(/[-_]+/g, " ")
+    .trim()
     .replace(/\b\w/g, (character) => character.toUpperCase());
+  return /[\p{L}\p{N}]/u.test(title) ? title : "Role Surface";
 }
 
 export function workspacePageDefinition(id: string): WorkspacePageDefinition | null {
