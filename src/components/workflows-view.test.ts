@@ -8,10 +8,24 @@ const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "ut
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/workflows.ts", import.meta.url), "utf8");
 
+function extractSidebarPresentationIds(source: string): Set<string> {
+  const declaration = source.match(
+    /const SIDEBAR_PAGE_PRESENTATIONS\s*=\s*\[[\s\S]*?\]\s+satisfies readonly SidebarPagePresentation\[\];/,
+  )?.[0];
+  assert.ok(declaration, "Sidebar presentation declaration should be extractable");
+  return new Set([...declaration.matchAll(/\bid:\s*"([^"]+)"/g)].map((match) => match[1]));
+}
+
+const sidebarPresentationIds = extractSidebarPresentationIds(sidebar);
+assert.ok(
+  sidebarPresentationIds.has("home") && sidebarPresentationIds.has("inbox"),
+  "sidebar presentation extractor finds known Home and Schedules destinations",
+);
+
 assert.doesNotMatch(workspace, /import \{ WorkflowsView \}/, "Workspace should not import the legacy Workflows page");
 assert.doesNotMatch(workspace, /mode === "workflows"/, "Workspace should not route to a Workflows page");
 assert.doesNotMatch(workspace, /setMode\("workflows"\)/, "Workspace should not navigate into the removed Workflows page");
-assert.doesNotMatch(sidebar, /\{ id: "workflows", label: "Workflows"/, "Sidebar should not expose Workflows as a page");
+assert.equal(sidebarPresentationIds.has("workflows"), false, "Sidebar should not expose Workflows as a page");
 assert.doesNotMatch(mode, /\|\s*"workflows"/, "WorkspaceMode should not include the removed Workflows page");
 assert.doesNotMatch(globals, /workflows\.css/, "Global CSS should not import the removed Workflow page styles");
 assert.equal(existsSync(new URL("./workflows-view.tsx", import.meta.url)), false, "Legacy Workflows page component should be removed");

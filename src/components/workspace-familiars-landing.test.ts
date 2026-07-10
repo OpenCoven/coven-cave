@@ -11,6 +11,20 @@ const workspaceMode = readFileSync(
   "utf8",
 );
 
+function extractSidebarPresentationIds(source: string): Set<string> {
+  const declaration = source.match(
+    /const SIDEBAR_PAGE_PRESENTATIONS\s*=\s*\[[\s\S]*?\]\s+satisfies readonly SidebarPagePresentation\[\];/,
+  )?.[0];
+  assert.ok(declaration, "Sidebar presentation declaration should be extractable");
+  return new Set([...declaration.matchAll(/\bid:\s*"([^"]+)"/g)].map((match) => match[1]));
+}
+
+const sidebarPresentationIds = extractSidebarPresentationIds(sidebar);
+assert.ok(
+  sidebarPresentationIds.has("home") && sidebarPresentationIds.has("chat"),
+  "sidebar presentation extractor finds known Home and Chat destinations",
+);
+
 assert.match(
   workspaceMode,
   /\|\s*"agents"/,
@@ -88,11 +102,13 @@ assert.doesNotMatch(
   "TopBar drops the brand/home/breadcrumb chrome — sidebar carries identity and nav",
 );
 
-assert.doesNotMatch(
-  sidebar,
-  /\{ id: "agents", label: "Familiars"/,
-  "Sidebar should not expose a Familiars subpage in Work",
-);
+for (const excludedId of ["agents", "familiars"]) {
+  assert.equal(
+    sidebarPresentationIds.has(excludedId),
+    false,
+    `Sidebar should not expose a ${excludedId} presentation for the Familiars subpage`,
+  );
+}
 
 assert.doesNotMatch(
   sidebar,

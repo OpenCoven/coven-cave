@@ -9,6 +9,20 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 
+function extractSidebarPresentationIds(source: string): Set<string> {
+  const declaration = source.match(
+    /const SIDEBAR_PAGE_PRESENTATIONS\s*=\s*\[[\s\S]*?\]\s+satisfies readonly SidebarPagePresentation\[\];/,
+  )?.[0];
+  assert.ok(declaration, "Sidebar presentation declaration should be extractable");
+  return new Set([...declaration.matchAll(/\bid:\s*"([^"]+)"/g)].map((match) => match[1]));
+}
+
+const sidebarPresentationIds = extractSidebarPresentationIds(sidebar);
+assert.ok(
+  sidebarPresentationIds.has("chat") && sidebarPresentationIds.has("board"),
+  "sidebar presentation extractor finds known Chat and Tasks destinations",
+);
+
 test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () => {
   assert.match(view, /export function GroupChatView/, "exports GroupChatView");
   // Fan-out: one /api/chat/send per participant carrying the per-familiar id.
@@ -106,11 +120,8 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
 
   // The standalone left-nav destination is gone.
-  assert.doesNotMatch(
-    sidebar,
-    /id: "groupchat", label: "Group"/,
-    "sidebar no longer exposes a standalone Group destination",
-  );
+  assert.equal(sidebarPresentationIds.has("groupchat"), false, "sidebar no longer exposes a standalone Group Chat destination");
+  assert.equal(sidebarPresentationIds.has("group"), false, "sidebar no longer exposes a standalone Group destination");
 
   // ChatSurface owns Group Chat now: it imports GroupChatView, offers a Group
   // scope tab, listens for the open-coven event, and renders it for that scope.

@@ -11,6 +11,21 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 // it persists across every nav host, including Chat's WorkspaceSidebar.
 const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
+function extractSidebarPresentation(source: string) {
+  const block = source.match(
+    /const SIDEBAR_PAGE_PRESENTATIONS\s*=\s*\[[\s\S]*?\]\s+satisfies readonly SidebarPagePresentation\[\];/,
+  )?.[0];
+  assert.ok(block, "Sidebar keeps an extractable presentation declaration");
+  const ids = [...block.matchAll(/\bid:\s*"([^"]+)"/g)].map((match) => match[1]);
+  return { block, ids };
+}
+
+const { block: presentationBlock, ids: presentationIds } = extractSidebarPresentation(source);
+const presentationIdSet = new Set(presentationIds);
+for (const includedId of ["home", "chat", "board", "inbox"]) {
+  assert.ok(presentationIdSet.has(includedId), `sidebar presentation extractor finds known ${includedId} destination`);
+}
+
 assert.match(
   source,
   /import \{ Icon, CAVE_ICON_SIZE \} from "@\/lib\/icon"/,
@@ -73,9 +88,9 @@ assert.doesNotMatch(
 
 // The standalone Knowledge section is gone; Library is now isolated on its
 // feature branch, so the integrated sidebar renders one flat app list.
-assert.doesNotMatch(
-  source,
-  /"knowledge"/,
+assert.equal(
+  presentationIdSet.has("knowledge"),
+  false,
   "Knowledge section removed",
 );
 
@@ -120,16 +135,11 @@ assert.match(
   /label: definition\.title/,
   "Sidebar display labels come from registry definitions",
 );
-const presentationBlock = source.match(
-  /const SIDEBAR_PAGE_PRESENTATIONS[\s\S]*?satisfies readonly SidebarPagePresentation\[\];/,
-)?.[0];
-assert.ok(presentationBlock, "Sidebar keeps a focused presentation-order list");
 assert.doesNotMatch(
   presentationBlock,
   /\blabel\s*:/,
   "Sidebar presentation metadata must not duplicate registry titles",
 );
-const presentationIds = [...presentationBlock.matchAll(/\bid: "([^"]+)"/g)].map((match) => match[1]);
 assert.ok(presentationIds.length > 0, "Sidebar declares static presentation entries");
 for (const id of presentationIds) {
   assert.ok(workspacePageDefinition(id), `${id} must resolve through the workspace registry`);
@@ -141,11 +151,13 @@ assert.match(
   "Home is the first Work surface",
 );
 
-assert.doesNotMatch(
-  source,
-  /\{ id: "agents", label: "Familiars"/,
-  "Familiars subpage should not appear as a Work navigation row",
-);
+for (const excludedId of ["agents", "familiars"]) {
+  assert.equal(
+    presentationIdSet.has(excludedId),
+    false,
+    `${excludedId} should not appear as a Familiars Work navigation row`,
+  );
+}
 
 // The horizontal dock is gone, and the profile switcher no longer lives in the
 // left panel either: familiar scope selection moved to the desktop top menu bar
@@ -180,9 +192,9 @@ assert.match(
   "the Tasks surface (mode id 'board') sits on the ⌘3 shortcut",
 );
 
-assert.doesNotMatch(
-  source,
-  /\{ id: "calendar", label: "Calendar"/,
+assert.equal(
+  presentationIdSet.has("calendar"),
+  false,
   "Calendar should not appear as a standalone sidebar row after merging into Schedules",
 );
 
@@ -192,17 +204,17 @@ assert.match(
   "Schedules should own the old Calendar shortcut as the active schedule surface",
 );
 
-assert.doesNotMatch(
-  source,
-  /\{ id: "library", label: "Library"/,
+assert.equal(
+  presentationIdSet.has("library"),
+  false,
   "Library should not be an integrated sidebar surface while it lives on feature/library",
 );
 
 // The "Coven" surface was purged — its docs/feedback/social are now default
 // Browser tabs, so no nav entry should remain.
-assert.doesNotMatch(
-  source,
-  /id: "docs"|label: "Coven"/,
+assert.equal(
+  presentationIdSet.has("docs"),
+  false,
   "the removed Coven (docs) surface should have no sidebar nav entry",
 );
 
@@ -228,21 +240,21 @@ assert.match(
   "The merged Marketplace hub should appear as a Tools surface",
 );
 
-assert.doesNotMatch(
-  source,
-  /\{ id: "roles", label: "Roles"/,
+assert.equal(
+  presentationIdSet.has("roles"),
+  false,
   "Roles is no longer a standalone nav entry — it merged into the Marketplace hub",
 );
 
-assert.doesNotMatch(
-  source,
-  /\{ id: "workflows", label: "Workflows"/,
+assert.equal(
+  presentationIdSet.has("workflows"),
+  false,
   "Workflows should not appear as a top-level Tools surface",
 );
 
-assert.doesNotMatch(
-  source,
-  /\{ id: "flow", label: "Flow", iconName: "ph:flow-arrow", description:/,
+assert.equal(
+  presentationIdSet.has("flow"),
+  false,
   "Flow should not appear as a top-level Tools surface on the active branch",
 );
 
@@ -324,11 +336,6 @@ assert.match(
   source,
   /id:\s*"marketplace"[^}]*iconName:\s*"ph:storefront-bold"/,
   "marketplace stays visible",
-);
-assert.doesNotMatch(
-  source,
-  /id:\s*"flow"[^}]*label:\s*"Flow"/,
-  "flow does not stay in Tools",
 );
 
 assert.doesNotMatch(
