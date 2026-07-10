@@ -21,10 +21,28 @@
   width: min(940px, 100%);
   max-height: min(760px, calc(100vh - 2 * var(--space-4)));
   overflow: hidden;
-  background: var(--bg-raised);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   box-shadow: 0 24px 64px oklch(0 0 0 / 35%);
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .summoning-dialog {
+    background: var(--bg-raised);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .summoning-dialog {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .summoning-body {

@@ -311,7 +311,9 @@
   max-height: 90vh;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
-  background: var(--bg-panel);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: 0 24px 70px color-mix(in oklch, black 45%, transparent);
   overflow: hidden;
 }
@@ -2877,7 +2879,9 @@ details[open] > .cave-tool-summary::before {
   width: min(320px, calc(100vw - 32px));
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  background: var(--bg-elevated);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   padding: 9px;
   box-shadow: 0 14px 34px color-mix(in oklch, var(--bg-base) 64%, transparent);
   color: var(--text-secondary);
@@ -3113,7 +3117,9 @@ details[open] > .cave-tool-summary::before {
   overflow: hidden;
   border: 1px solid var(--border-hairline);
   border-radius: 8px;
-  background: var(--bg-raised);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--text-primary);
   box-shadow: 0 24px 80px color-mix(in oklch, var(--bg-base) 76%, transparent);
 }
@@ -5352,11 +5358,29 @@ details[open] > .cave-tool-summary::before {
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .workspace-rail-reopen,
 .chat-right-rail { background: var(--bg-raised); }
+  .cave-chat-model-popover { background: var(--bg-elevated); }
+  .voice-call-overlay__dialog { background: var(--bg-raised); }
+  .cave-table-lightbox__panel { background: var(--bg-panel); }
 }
 @media (prefers-reduced-transparency: reduce) {
   .workspace-rail-reopen,
 .chat-right-rail {
     background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .cave-chat-model-popover {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .voice-call-overlay__dialog {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .cave-table-lightbox__panel {
+    background: var(--bg-panel);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

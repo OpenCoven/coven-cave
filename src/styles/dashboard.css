@@ -115,7 +115,9 @@
   min-width: 150px;
   padding: 4px;
   border-radius: 10px;
-  background: var(--bg-panel, var(--bg-base));
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong);
   box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45);
 }
@@ -178,12 +180,22 @@
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
   }
+  .dash-snooze__menu,
+  .spark-tip {
+    background: var(--bg-elevated);
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .settings-shell__header {
     background:
       linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .dash-snooze__menu,
+  .spark-tip {
+    background: var(--bg-elevated);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -531,7 +543,9 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
   white-space: nowrap; pointer-events: none; z-index: 4;
   padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
-  color: var(--text-primary); background: var(--bg-elevated, var(--bg-raised));
+  color: var(--text-primary); background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   font-variant-numeric: tabular-nums; }
 .spark-tip b { font-weight: 700; }

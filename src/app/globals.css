@@ -210,7 +210,7 @@
      with blur(var(--glass-blur)); a see-through fill WITHOUT blur is
      unreadable, which is why the @supports fallback below restores the
      opaque tokens wherever backdrop-filter is unavailable. */
-  --glass-blur: 16px;
+  --glass-blur: 20px;
   --glass-saturate: 140%;
   --glass-elevated: color-mix(in oklch, var(--bg-elevated) 74%, transparent);
   --glass-raised: color-mix(in oklch, var(--bg-raised) 80%, transparent);
@@ -667,7 +667,12 @@ tr[role="checkbox"]:focus-visible {
   bottom: 0;
   width: 232px;
   z-index: 60;
-  background: var(--bg-raised);
+  /* Frosted glass: the peek floats over live content, so blur keeps it
+     legible without going fully opaque. Opaque fallbacks live in the shared
+     @supports / reduced-transparency blocks below. */
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-right: 1px solid var(--border-hairline);
   box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
   animation: shellNavPeekIn 0.13s ease;
@@ -2046,7 +2051,9 @@ textarea.required-inputs-control {
   bottom: var(--space-4);
   width: 440px;
   max-width: calc(100vw - 2 * var(--space-4));
-  background: var(--bg-raised);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
   box-shadow: 0 16px 48px oklch(0 0 0 / 50%);
@@ -2807,11 +2814,22 @@ textarea.required-inputs-control {
  * unreadable soup — restore the opaque theme surfaces. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .ui-popover,
-  .glass-overlay {
+  .glass-overlay,
+  .ui-tooltip,
+  .ui-undo-toast,
+  .familiar-switcher__popover {
     background: var(--bg-elevated);
   }
-  .ui-modal {
+  .ui-modal,
+  .ui-dock-chat,
+  .shell-nav-panel > .shell-nav--peek,
+  .cave-cal-detail-panel,
+  .familiar-studio__drawer {
     background: var(--bg-raised);
+  }
+  .quick-chat-overlay,
+  .quick-chat-overlay__caret {
+    background: var(--bg-panel);
   }
 }
 
@@ -2819,13 +2837,26 @@ textarea.required-inputs-control {
  * transparency get the opaque surfaces (and their compositor back). */
 @media (prefers-reduced-transparency: reduce) {
   .ui-popover,
-  .glass-overlay {
+  .glass-overlay,
+  .ui-tooltip,
+  .ui-undo-toast,
+  .familiar-switcher__popover {
     background: var(--bg-elevated);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
-  .ui-modal {
+  .ui-modal,
+  .ui-dock-chat,
+  .shell-nav-panel > .shell-nav--peek,
+  .cave-cal-detail-panel,
+  .familiar-studio__drawer {
     background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .quick-chat-overlay,
+  .quick-chat-overlay__caret {
+    background: var(--bg-panel);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -2912,7 +2943,9 @@ textarea.required-inputs-control {
 .ui-tooltip {
   position: fixed;
   z-index: 70;
-  background: var(--bg-elevated);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--text-primary);
   font-size: var(--text-2xs);
   padding: 4px 8px;
@@ -5845,7 +5878,9 @@ button:active > .edge-rail-chip {
   padding: 0;
   border-radius: 12px;
   border: 1px solid var(--border-hairline);
-  background: var(--bg-base);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: var(--shadow-popover, 0 8px 28px rgb(0 0 0 / 0.28));
   overflow: hidden;
 }
@@ -6674,7 +6709,9 @@ a.mobile-handoff__link:hover {
   width: min(320px, 100%);
   display: flex;
   flex-direction: column;
-  background: var(--bg-raised);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   box-shadow: -8px 0 24px color-mix(in oklch, var(--text-primary) 10%, transparent);
   z-index: 10;
@@ -6728,7 +6765,9 @@ a.mobile-handoff__link:hover {
   width: min(496px, 92vw);
   display: grid;
   grid-template-columns: max-content 1fr;
-  background: var(--bg-base);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   box-shadow: -12px 0 40px color-mix(in oklch, var(--text-primary) 16%, transparent);
   z-index: 45;
@@ -12092,7 +12131,9 @@ details[open] > .cave-edit-card__summary::before {
   flex-direction: column;
   border-radius: var(--radius-panel, 14px);
   border: 1px solid var(--border-hairline);
-  background: var(--bg-panel);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--fg-primary);
   /* Layered elevation: an inner top highlight + two soft drop shadows read as a
      crisp floating panel rather than one flat blur. */
@@ -12109,7 +12150,10 @@ details[open] > .cave-edit-card__summary::before {
 .quick-chat-overlay__caret {
   width: 12px;
   height: 12px;
-  background: var(--bg-panel);
+  /* Matches the overlay's frosted fill so the caret doesn't read solid. */
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border-left: 1px solid var(--border-hairline);
   border-top: 1px solid var(--border-hairline);
   border-top-left-radius: 3px;
@@ -13690,7 +13734,9 @@ details[open] > .cave-edit-card__summary::before {
   max-width: 420px;
   border-radius: 8px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-elevated);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: 0 4px 24px rgb(0 0 0 / 35%);
   overflow: hidden;
   animation: ui-undo-toast-enter 0.18s var(--ease-decelerate, ease-out);

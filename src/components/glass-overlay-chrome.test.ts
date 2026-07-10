@@ -69,4 +69,60 @@ assert.match(palette, /className="glass-overlay mt-\[12vh\]/, "the command palet
 assert.doesNotMatch(palette, /mt-\[12vh\][^"]*bg-\[var\(--bg-elevated\)\]/, "the palette's old opaque fill is gone");
 assert.match(bell, /notification-bell__popover glass-overlay/, "the notification bell popover is glass");
 
+// ── Frosted floating chrome (autopilot: "ultra opaque components → frosty") ──
+// Floating overlays that used to paint fully-solid theme fills now pair a
+// translucent glass fill with backdrop blur, and every one of them appears in
+// BOTH opaque-fallback blocks (@supports-not and reduced-transparency), so
+// nothing goes see-through where the blur can't render.
+const GLASS_RE = String.raw`background: var\(--glass-(?:elevated|raised)\);\s*\n\s*backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);\s*\n\s*-webkit-backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);`;
+const frostedGlobals = [
+  String.raw`\.shell-nav-panel > \.shell-nav--peek`,
+  String.raw`\.ui-dock-chat`,
+  String.raw`\.ui-tooltip`,
+  String.raw`\.familiar-switcher__popover`,
+  String.raw`\.cave-cal-detail-panel`,
+  String.raw`\.familiar-studio__drawer`,
+  String.raw`\.quick-chat-overlay`,
+  String.raw`\.ui-undo-toast`,
+];
+for (const sel of frostedGlobals) {
+  assert.match(
+    css,
+    new RegExp(`${sel} \\{[\\s\\S]{0,700}?${GLASS_RE}`),
+    `${sel} is frosted glass`,
+  );
+}
+// Both fallback blocks restore an opaque fill for every frosted global.
+const supportsBlock = css.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+const reducedBlock = css.match(/@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+for (const sel of ["shell-nav--peek", "ui-dock-chat", "ui-tooltip", "familiar-switcher__popover", "cave-cal-detail-panel", "familiar-studio__drawer", "quick-chat-overlay", "ui-undo-toast"]) {
+  assert.ok(supportsBlock.includes(sel), `${sel} has an opaque no-backdrop-filter fallback`);
+  assert.ok(reducedBlock.includes(sel), `${sel} respects reduced transparency`);
+}
+
+// Feature stylesheets carry the same pairing + their own fallback blocks.
+const featureSheets: Array<[string, string[]]> = [
+  ["../styles/dashboard.css", ["dash-snooze__menu", "spark-tip"]],
+  ["../styles/cave-chat.css", ["cave-chat-model-popover", "voice-call-overlay__dialog", "cave-table-lightbox__panel"]],
+  ["../styles/flow.css", ["flow-ndv", "flow-template-overlay-panel"]],
+  ["../styles/home-composer.css", ["hc-slash-menu"]],
+  ["../styles/journal.css", ["journal-notice"]],
+  ["../styles/summoning-circle.css", ["summoning-dialog"]],
+  ["../styles/board.css", ["board-drawer", "gh-pat-dialog", "gh-action-popover", "gh-profile-card"]],
+];
+for (const [file, selectors] of featureSheets) {
+  const sheet = readFileSync(new URL(file, import.meta.url), "utf8");
+  const sheetSupports = sheet.match(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\) \{[\s\S]*?\n\}/g)?.join("\n") ?? "";
+  const sheetReduced = sheet.match(/@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*?\n\}/g)?.join("\n") ?? "";
+  for (const sel of selectors) {
+    assert.match(
+      sheet,
+      new RegExp(`\\.${sel}(?::not\\([^)]*\\))? \\{[\\s\\S]{0,900}?backdrop-filter:\\s*blur\\(var\\(--glass-blur\\)\\) saturate\\(var\\(--glass-saturate\\)\\)`),
+      `${file} ${sel} is frosted glass`,
+    );
+    assert.ok(sheetSupports.includes(sel), `${file} ${sel} has an opaque no-backdrop-filter fallback`);
+    assert.ok(sheetReduced.includes(sel), `${file} ${sel} respects reduced transparency`);
+  }
+}
+
 console.log("glass-overlay-chrome.test.ts: ok");
