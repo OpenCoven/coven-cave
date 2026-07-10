@@ -12933,6 +12933,163 @@ details[open] > .cave-edit-card__summary::before {
   }
 }
 
+/* ── Crafts: Role loadout path + install/equip dossier ── */
+.craft-loadout-intro {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.6fr);
+  gap: 20px;
+  margin-bottom: 20px;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 88%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  padding: 18px;
+}
+.craft-loadout-intro h2 {
+  margin: 3px 0 7px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: -0.025em;
+}
+.craft-loadout-intro p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.craft-loadout-intro__eyebrow,
+.craft-dossier__eyebrow {
+  color: var(--text-secondary) !important;
+  font-size: 10px !important;
+  font-style: normal;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.craft-loadout-path {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-base);
+}
+.craft-loadout-path > span {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 12px 13px;
+}
+.craft-loadout-path > span + span { border-left: 1px solid var(--border-hairline); }
+.craft-loadout-path small { color: var(--text-muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+.craft-loadout-path strong { overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; }
+.craft-loadout-path em { overflow: hidden; color: var(--text-muted); font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.craft-loadout-path svg { position: absolute; right: -7px; z-index: 1; color: var(--text-muted); background: var(--bg-base); }
+.craft-loadout-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.craft-dossier {
+  display: flex;
+  width: min(760px, 100vw);
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  box-shadow: -16px 0 48px color-mix(in oklch, black 18%, transparent);
+}
+.craft-dossier__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  padding: 16px 18px;
+}
+.craft-dossier__header h2 { margin: 2px 0 3px; color: var(--text-primary); font-size: 18px; font-weight: 730; letter-spacing: -0.02em; }
+.craft-dossier__header p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.craft-dossier__sigil { display: flex; width: 38px; height: 38px; flex: 0 0 auto; align-items: center; justify-content: center; border: 1px solid var(--border-hairline); border-radius: 9px; background: var(--bg-elevated); color: var(--text-secondary); }
+.craft-dossier__close { border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); padding: 6px; }
+.craft-dossier__body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 22px; }
+.craft-dossier__runtime { display: flex; gap: 10px; margin-bottom: 14px; border: 1px solid var(--border-hairline); border-radius: 8px; background: var(--bg-panel); padding: 11px 12px; }
+.craft-dossier__runtime > span { display: flex; width: 28px; height: 28px; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 7px; background: var(--bg-elevated); color: var(--text-secondary); }
+.craft-dossier__runtime strong { display: block; color: var(--text-primary); font-size: 12px; }
+.craft-dossier__runtime p { margin: 3px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+.craft-dossier__alert { margin: 0 0 12px; border: 1px solid var(--danger-border); border-radius: 7px; background: var(--danger-bg); color: var(--danger-text); font-size: 12px; line-height: 1.45; padding: 9px 10px; }
+.craft-dossier__alert ul { margin: 5px 0 0; padding-left: 18px; }
+.craft-dossier__ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 9px;
+  background: var(--bg-panel);
+}
+.craft-dossier__section { min-width: 0; padding: 13px; }
+.craft-dossier__section:nth-child(even) { border-left: 1px solid var(--border-hairline); }
+.craft-dossier__section:nth-child(n + 3) { border-top: 1px solid var(--border-hairline); }
+.craft-dossier__section h3 { margin: 0 0 9px; color: var(--text-secondary); font-size: 10px; font-weight: 750; letter-spacing: 0.1em; text-transform: uppercase; }
+.craft-dossier__quiet { margin: 5px 0 0; color: var(--text-muted); font-size: 11px; line-height: 1.45; }
+.craft-dossier__command { display: block; overflow-x: auto; border-radius: 6px; background: var(--bg-base); color: var(--text-primary); font-size: 10.5px; line-height: 1.45; padding: 8px; white-space: nowrap; }
+.craft-dossier__resource-list { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.craft-dossier__resource-list li { border: 1px solid var(--border-hairline); border-radius: 6px; background: var(--bg-base); color: var(--text-secondary); font-size: 10.5px; padding: 4px 6px; }
+.craft-dossier__enhancements { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.craft-dossier__enhancements li { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--border-hairline); padding-bottom: 5px; }
+.craft-dossier__enhancements span { color: var(--text-primary); font-size: 11px; }
+.craft-dossier__enhancements small { color: var(--text-muted); font-size: 9.5px; text-align: right; }
+.craft-dossier__provenance { display: grid; gap: 5px; margin: 0; }
+.craft-dossier__provenance > div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; font-size: 10.5px; }
+.craft-dossier__provenance dt { color: var(--text-muted); }
+.craft-dossier__provenance dd { min-width: 0; margin: 0; overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.craft-dossier__provenance a { color: var(--text-primary); text-decoration: underline; text-underline-offset: 2px; }
+.craft-dossier__source-list { display: grid; gap: 8px; margin-top: 10px; }
+.craft-dossier__source-list li { display: grid; gap: 3px; min-width: 0; padding: 9px; border: 1px solid var(--border-hairline); border-radius: 8px; background: color-mix(in srgb, var(--bg-panel) 78%, transparent); }
+.craft-dossier__source-list span { color: var(--text-muted); font-size: 10px; overflow-wrap: anywhere; }
+.craft-dossier__roles { margin-top: 16px; }
+.craft-dossier__section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.craft-dossier__section-head h3 { margin: 2px 0 0; color: var(--text-primary); font-size: 14px; }
+.craft-dossier__section-head > span { color: var(--text-muted); font-size: 10.5px; }
+.craft-role-grid { display: grid; grid-template-columns: minmax(170px, 0.72fr) minmax(0, 1.4fr); min-height: 230px; overflow: hidden; border: 1px solid var(--border-hairline); border-radius: 8px; background: var(--bg-panel); }
+.craft-role-list { overflow-y: auto; border-right: 1px solid var(--border-hairline); padding: 6px; }
+.craft-role-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; border-radius: 6px; padding: 7px; }
+.craft-role-row[data-selected],
+.craft-role-row:hover { background: var(--bg-raised); }
+.craft-role-row:focus-within { outline: var(--ring-width) solid var(--ring-focus); outline-offset: -2px; }
+.craft-role-row > button { display: flex; min-width: 0; flex-direction: column; border: 0; background: transparent; text-align: left; }
+.craft-role-row strong { overflow: hidden; color: var(--text-primary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.craft-role-row span,
+.craft-role-row small { color: var(--text-muted); font-size: 9.5px; }
+.craft-role-effective { overflow-y: auto; padding: 11px 12px; }
+.craft-role-effective h4 { margin: 0 0 10px; color: var(--text-primary); font-size: 12px; }
+.craft-role-effective h5 { margin: 9px 0 5px; color: var(--text-muted); font-size: 9.5px; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
+.craft-role-effective ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.craft-role-effective li { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-hairline); border-radius: 6px; background: var(--bg-base); padding: 4px 6px; }
+.craft-role-effective li span { color: var(--text-primary); font-size: 10px; }
+.craft-role-effective li small { color: var(--text-muted); font-size: 9px; }
+.craft-dossier__footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border-hairline); background: var(--bg-panel); padding: 11px 18px; }
+.craft-dossier__footer > div { display: flex; min-width: 160px; flex: 1; flex-direction: column; }
+.craft-dossier__footer strong { color: var(--text-primary); font-size: 11px; }
+.craft-dossier__footer span { color: var(--text-muted); font-size: 9.5px; }
+@media (max-width: 720px) {
+  .craft-loadout-intro { grid-template-columns: 1fr; }
+  .craft-loadout-path { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .craft-loadout-path > span:nth-child(3) { border-left: 0; border-top: 1px solid var(--border-hairline); }
+  .craft-loadout-path > span:nth-child(4) { border-top: 1px solid var(--border-hairline); }
+  .craft-dossier__ledger { grid-template-columns: 1fr; }
+  .craft-dossier__section:nth-child(even) { border-left: 0; }
+  .craft-dossier__section:nth-child(n + 2) { border-top: 1px solid var(--border-hairline); }
+  .craft-role-grid { grid-template-columns: 1fr; }
+  .craft-role-list { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--border-hairline); }
+}
+
 /* ── Skill Browser (Roles → Skills tab): rail · card list · SKILL.md detail ── */
 .skill-browser {
   display: flex;

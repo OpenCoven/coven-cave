@@ -5,6 +5,8 @@ import path from "node:path";
 import {
   CODEX_MARKETPLACE_NAME,
   CraftTransactionError,
+  craftTransactionStatus,
+  craftAffectedRoleDiagnostic,
   createCraftInstallService,
   type CraftCommandRunner,
   type CraftDefinition,
@@ -14,6 +16,22 @@ import {
 
 const NOW = "2026-07-09T23:30:00.000Z";
 const TARGET = `seekers-lens@${CODEX_MARKETPLACE_NAME}`;
+
+{
+  const diagnostics = craftAffectedRoleDiagnostic(
+    Array.from({ length: 25 }, (_, index) => ({
+      id: `role-${index}`,
+      name: index === 0 ? `Bearer secret-token ${"x".repeat(300)}` : `Role ${index}`,
+      familiar: `familiar-${index}`,
+    })),
+    { ...process.env, HOME: "/Users/researcher" },
+  );
+  assert.equal(diagnostics.affectedRoleCount, 25);
+  assert.equal(diagnostics.affectedRoles.length, 20);
+  assert.equal(diagnostics.affectedRolesTruncated, true);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /secret-token/);
+  assert.ok(diagnostics.affectedRoles.every((role) => Object.values(role).every((value) => value.length <= 160)));
+}
 
 const craft = {
   id: "seekers-lens",
@@ -173,6 +191,8 @@ try {
     assert.deepEqual(plan.components.optionalEnhancements.map((entry) => entry.id), ["exa"]);
     assert.deepEqual(plan.requiredCapabilities, ["filesystem.read", "network.http"]);
     assert.deepEqual(plan.bundled.skills, ["brainstorming-research-ideas"]);
+    assert.equal(plan.provenance.licensePath, "craft-sources/orchestra-research/LICENSE");
+    assert.deepEqual(plan.provenance.resources, craft.craft.bundled.skills);
     assert.equal(plan.runtime.scope, "user");
     assert.match(plan.runtime.disclosure, /user scope/i);
     assert.equal(harness.writes.length, 0);
@@ -575,6 +595,34 @@ try {
   }
 
   // Uninstall verifies absence before deleting Cave's record.
+  {
+    const harness = memoryStore();
+    const guarded = createCraftInstallService({
+      runner: async () => assert.fail("equipped Craft must be blocked before spawning Codex"),
+      store: harness.store,
+      catalog: { async get(id) { return id === craft.id ? craft : null; } },
+      now: () => NOW,
+      env: { NODE_ENV: "test", CODEX_HOME: codexHome, HOME: codexHome },
+      beforeUninstall: async () => {
+        throw new CraftTransactionError(
+          "craft_equipped",
+          "Detach this Craft from every Role before removing it.",
+          {
+            step: "role-check",
+            message: "Detach this Craft from every Role before removing it.",
+            affectedRoles: [{ id: "researcher", name: "Researcher", familiar: "nova" }],
+          },
+        );
+      },
+    });
+    const error = await expectTransactionError(guarded.uninstall(craft.id), "craft_equipped");
+    assert.equal(craftTransactionStatus(error.code), 409);
+    assert.deepEqual(error.diagnostic.affectedRoles, [
+      { id: "researcher", name: "Researcher", familiar: "nova" },
+    ]);
+    assert.deepEqual(harness.removals, []);
+  }
+
   {
     const harness = memoryStore();
     harness.entries.set(craft.id, {

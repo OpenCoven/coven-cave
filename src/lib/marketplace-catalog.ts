@@ -174,6 +174,18 @@ export type MarketplacePlugin = {
   craft?: CraftSpecification;
 };
 
+export function isCraftInstallationVerified(
+  plugin: Pick<MarketplacePlugin, "kind" | "installed" | "installation" | "version">,
+): boolean {
+  const installation = plugin.installation;
+  return plugin.kind === "craft"
+    && plugin.installed
+    && installation?.runtime === "codex"
+    && typeof installation.verifiedAt === "string"
+    && installation.verifiedAt.length > 0
+    && installation.craftVersion === plugin.version;
+}
+
 /**
  * "mcp" when the manifest declares any MCP server (stdio command or remote
  * url); "prompt" when it ships prompt templates (a prompt pack); "api" when
@@ -240,6 +252,14 @@ export function mergeCatalog(
       const installation = p.policy?.installation ?? "AVAILABLE";
       const installedState = installed[p.name];
       const requiredConfig = requiredConfigFromManifest(manifest);
+      const kind = p.kind === "craft" ? "craft" : deriveKind(manifest);
+      const version = manifest.version ?? "0.0.0";
+      const craftVerified = isCraftInstallationVerified({
+        kind,
+        installed: Boolean(installedState),
+        ...(installedState ? { installation: installedState } : {}),
+        version,
+      });
       return {
         id: p.name,
         displayName: p.displayName ?? p.name,
@@ -256,13 +276,16 @@ export function mergeCatalog(
         homepage: manifest.homepage,
         repository: manifest.repository,
         roleAffinity: p.roleAffinity ?? [],
-        kind: p.kind === "craft" ? "craft" : deriveKind(manifest),
-        version: manifest.version ?? "0.0.0",
+        kind,
+        version,
         installed: Boolean(installedState),
         ...(installedState ? { installation: { ...installedState } } : {}),
         updateAvailable: Boolean(
           installedState
-          && (installedState.craftVersion ?? installedState.version) !== (manifest.version ?? "0.0.0"),
+          && (
+            (kind === "craft" && !craftVerified)
+            || (installedState.craftVersion ?? installedState.version) !== version
+          ),
         ),
         requiresSetup: requiredConfig.length > 0,
         available: installation === "AVAILABLE",

@@ -26,6 +26,7 @@ type Props = {
 };
 
 function kindIcon(kind: MarketplacePlugin["kind"]) {
+  if (kind === "craft") return "ph:package-bold";
   if (kind === "mcp") return "ph:plug-bold";
   if (kind === "api") return "ph:cloud-bold";
   if (kind === "prompt") return "ph:chat-centered-text";
@@ -33,6 +34,7 @@ function kindIcon(kind: MarketplacePlugin["kind"]) {
 }
 
 function kindLabel(kind: MarketplacePlugin["kind"]) {
+  if (kind === "craft") return "Craft";
   if (kind === "mcp") return "MCP";
   if (kind === "api") return "API";
   if (kind === "prompt") return "Prompts";
@@ -42,6 +44,7 @@ function kindLabel(kind: MarketplacePlugin["kind"]) {
 // What "Add" actually does differs by kind — the button says so on hover
 // instead of leaving the verb ambiguous.
 function addHelp(kind: MarketplacePlugin["kind"]) {
+  if (kind === "craft") return "Preview the exact Codex install and Role capability plan";
   if (kind === "mcp") return "Add this MCP server to your Cave — familiars can call its tools";
   if (kind === "api") return "Connect this API so your familiars can use it";
   if (kind === "prompt") return "Add this prompt pack — its templates join the / menu";
@@ -114,7 +117,18 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             </span>
           </span>
         </button>
-        {state === "needs-setup" ? (
+        {plugin.kind === "craft" && state !== "unavailable" ? (
+          <Button
+            variant={state === "added" ? "secondary" : "primary"}
+            size="sm"
+            leadingIcon={state === "added" ? "ph:check" : "ph:package-bold"}
+            loading={busy}
+            onClick={() => onOpen(plugin.id)}
+            title={addHelp(plugin.kind)}
+          >
+            {state === "added" ? "Manage" : "Preview"}
+          </Button>
+        ) : state === "needs-setup" ? (
           <Button variant="primary" size="sm" leadingIcon="ph:warning" onClick={() => onConfigure(plugin.id)}>
             Set up
           </Button>

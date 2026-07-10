@@ -1,10 +1,11 @@
 "use client";
 
 // Marketplace hub — the store and your familiars' setup merged into one
-// surface. A single slim header row holds the section tabs (Browse · Skills ·
-// Capabilities, with live counts) and the scoped search — no hero.
+// surface. A single slim header row holds the section tabs (Browse · Crafts ·
+// Skills · Capabilities, with live counts) and the scoped search — no hero.
 // Browse is the plugin store (collections, categories, cards);
-// Skills/Capabilities are the "what my familiars can do" views that used
+// Crafts sits between Role context and effective capabilities; Skills and
+// Capabilities are the "what my familiars can do" views that used
 // to live on the separate Roles page. Deep links via WorkspaceMode still work —
 // the "capabilities" mode opens its section here; "roles" lands on Browse
 // while the Roles section is hidden.
@@ -19,6 +20,7 @@ import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
+import type { CraftActionError } from "@/components/marketplace/craft-detail";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
 import { SkillBrowser, type SkillBrowserEntry } from "@/components/skill-browser";
@@ -41,7 +43,7 @@ import {
   type MarketplacePlugin,
 } from "@/lib/marketplace-catalog";
 
-export type MarketplaceSection = "browse" | "roles" | "skills" | "capabilities";
+export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "capabilities";
 
 // Roles is hidden from the hub (kept in the MarketplaceSection type so
 // `mode === "roles"` deep links keep type-checking — they land on Browse).
@@ -50,6 +52,7 @@ export type MarketplaceSection = "browse" | "roles" | "skills" | "capabilities";
 // intact because it serves the live role definitions.
 const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
   { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
+  { id: "crafts", label: "Crafts", icon: "ph:package-bold" },
   { id: "skills", label: "Skills", icon: "ph:sparkle" },
   { id: "capabilities", label: "Capabilities", icon: "ph:lightning-bold" },
 ];
@@ -58,6 +61,7 @@ const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: Ico
 // subtitle, demoted so the header stays a single row).
 const SECTION_HINT: Record<MarketplaceSection, string> = {
   browse: "The catalog — add MCP servers, connected APIs, skills, and prompt packs to your Cave.",
+  crafts: "Versioned Role loadouts — preview, verify, equip, update, and detach Craft bundles.",
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
   skills: "Skills already in your Cave — reusable SKILL.md procedures familiars load while they work.",
   capabilities: "What each runtime you've installed can do — its instructions, skills, and plugins, side by side.",
@@ -65,6 +69,7 @@ const SECTION_HINT: Record<MarketplaceSection, string> = {
 
 const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> = {
   browse: "Search the marketplace",
+  crafts: "Search Crafts",
   roles: "Search roles",
   skills: "Search skills",
 };
@@ -75,6 +80,7 @@ const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
   { id: "mcp", label: "MCP servers" },
   { id: "skill", label: "Skills" },
   { id: "prompt", label: "Prompts" },
+  { id: "craft", label: "Crafts" },
 ];
 
 const SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: string }> = [
@@ -132,6 +138,7 @@ export function MarketplaceViewSurface({
   const [sort, setSort] = useState<SortKey>("recommended");
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [craftErrors, setCraftErrors] = useState<Record<string, CraftActionError | undefined>>({});
   // Ids with an install/uninstall in flight. A Set (not a scalar) so two
   // concurrent installs each keep their own busy state — with a scalar, the
   // second click overwrote the first and whichever settled first cleared the
@@ -283,6 +290,7 @@ export function MarketplaceViewSurface({
         icon: s.icon,
         count:
           s.id === "browse" && loaded ? plugins.length
+          : s.id === "crafts" && loaded ? plugins.filter((plugin) => plugin.kind === "craft").length
           : s.id === "skills" && skillsLoaded ? skills.length
           : undefined,
         title: SECTION_HINT[s.id],
@@ -310,6 +318,10 @@ export function MarketplaceViewSurface({
   }, [plugins, query, category, kind, sort, collectionIds, activeCollection]);
   const groupedFiltered = useMemo(() => groupPluginsByCategory(filtered), [filtered]);
   const groupedKindCounts = useMemo(() => countByKind(filtered), [filtered]);
+  const craftPlugins = useMemo(
+    () => sortPlugins(filterPlugins(plugins, { query, kind: "craft" }), sort),
+    [plugins, query, sort],
+  );
 
   const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selected) ?? null, [plugins, selected]);
   const configuringPlugin = useMemo(() => plugins.find((p) => p.id === configuringId) ?? null, [plugins, configuringId]);
@@ -327,51 +339,150 @@ export function MarketplaceViewSurface({
   }, []);
 
   const add = useCallback(async (id: string) => {
+    const plugin = plugins.find((entry) => entry.id === id);
+    if (!plugin) return;
+    const isCraft = plugin.kind === "craft";
     markBusy(id, true);
-    setInstalled(id, true);
+    if (!isCraft) setInstalled(id, true);
     setError(null); // a fresh attempt clears any prior failure banner (it's only
                     // set on error and was otherwise never cleared without a reload)
+    setCraftErrors((current) => ({ ...current, [id]: undefined }));
     try {
-      const res = await fetch("/api/marketplace/install", {
+      const endpoint = plugin.kind === "craft"
+        ? "/api/marketplace/crafts/install"
+        : "/api/marketplace/install";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string };
-      if (!json.ok) throw new Error(json.error ?? "install failed");
-      announce("Added to your setup", "polite");
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        installedAt?: string;
+        verifiedAt?: string;
+        runtime?: string;
+        craftVersion?: string;
+        diagnostic?: CraftActionError;
+      };
+      if (!json.ok) {
+        const message = json.error ?? "install failed";
+        if (isCraft) {
+          setCraftErrors((current) => ({
+            ...current,
+            [id]: {
+              message,
+              code: json.code,
+              affectedRoles: json.diagnostic?.affectedRoles,
+              affectedRoleCount: json.diagnostic?.affectedRoleCount,
+              affectedRolesTruncated: json.diagnostic?.affectedRolesTruncated,
+            },
+          }));
+        } else {
+          setInstalled(id, false);
+          setError(message);
+        }
+        announce(message, "assertive");
+        return;
+      }
+      if (isCraft) {
+        setPlugins((current) => current.map((entry) => entry.id === id ? {
+          ...entry,
+          installed: true,
+          updateAvailable: false,
+          installation: {
+            version: json.craftVersion ?? entry.version,
+            source: "catalog",
+            installedAt: json.installedAt ?? new Date().toISOString(),
+            runtime: json.runtime,
+            verifiedAt: json.verifiedAt,
+            craftVersion: json.craftVersion ?? entry.version,
+          },
+        } : entry));
+        announce("Craft installed and verified", "polite");
+      } else {
+        announce("Added to your setup", "polite");
+      }
     } catch (err) {
-      setInstalled(id, false);
       const msg = err instanceof Error ? err.message : "install failed";
-      setError(msg);
+      if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
+      else {
+        setInstalled(id, false);
+        setError(msg);
+      }
       announce(msg, "assertive");
     } finally {
       markBusy(id, false);
     }
-  }, [markBusy, setInstalled, announce]);
+  }, [announce, markBusy, plugins, setInstalled]);
 
   const remove = useCallback(async (id: string) => {
+    const plugin = plugins.find((entry) => entry.id === id);
+    if (!plugin) return;
+    const isCraft = plugin.kind === "craft";
     markBusy(id, true);
-    setInstalled(id, false);
+    if (!isCraft) setInstalled(id, false);
     setError(null); // clear any prior failure banner on a fresh attempt
+    setCraftErrors((current) => ({ ...current, [id]: undefined }));
     try {
-      const res = await fetch("/api/marketplace/uninstall", {
+      const endpoint = plugin.kind === "craft"
+        ? "/api/marketplace/crafts/uninstall"
+        : "/api/marketplace/uninstall";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string };
-      if (!json.ok) throw new Error(json.error ?? "uninstall failed");
-      announce("Removed from your setup", "polite");
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        diagnostic?: CraftActionError;
+      };
+      if (!json.ok) {
+        const message = json.error ?? "uninstall failed";
+        if (isCraft) {
+          setCraftErrors((current) => ({
+            ...current,
+            [id]: {
+              message,
+              code: json.code,
+              affectedRoles: json.diagnostic?.affectedRoles,
+              affectedRoleCount: json.diagnostic?.affectedRoleCount,
+              affectedRolesTruncated: json.diagnostic?.affectedRolesTruncated,
+            },
+          }));
+        } else {
+          setInstalled(id, true);
+          setError(message);
+        }
+        announce(message, "assertive");
+        return;
+      }
+      if (isCraft) {
+        setPlugins((current) => current.map((entry) => {
+          if (entry.id !== id) return entry;
+          const { installation: _installation, ...withoutInstallation } = entry;
+          return { ...withoutInstallation, installed: false, updateAvailable: false };
+        }));
+        announce("Craft removed", "polite");
+      } else {
+        setInstalled(id, false);
+        announce("Removed from your setup", "polite");
+      }
     } catch (err) {
-      setInstalled(id, true);
       const msg = err instanceof Error ? err.message : "uninstall failed";
-      setError(msg);
+      if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
+      else {
+        setInstalled(id, true);
+        setError(msg);
+      }
       announce(msg, "assertive");
     } finally {
       markBusy(id, false);
     }
-  }, [markBusy, setInstalled, announce]);
+  }, [announce, markBusy, plugins, setInstalled]);
 
   const activeError =
     section === "browse" ? error
@@ -481,6 +592,12 @@ export function MarketplaceViewSurface({
               Your setup
             </p>
             <nav className="flex flex-col gap-0.5" aria-label="Your setup">
+              <SetupRailLink
+                icon="ph:package-bold"
+                label="Crafts"
+                detail={loaded ? String(plugins.filter((plugin) => plugin.kind === "craft").length) : undefined}
+                onClick={() => selectSection("crafts")}
+              />
               <SetupRailLink
                 icon="ph:sparkle"
                 label="Skills"
@@ -633,6 +750,69 @@ export function MarketplaceViewSurface({
             )}
           </div>
         </div>
+      ) : section === "crafts" ? (
+        <div
+          role="tabpanel"
+          id="marketplace-panel-crafts"
+          aria-labelledby="marketplace-tab-crafts"
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-5 @min-[640px]/marketplace:px-7"
+        >
+          <section className="craft-loadout-intro" aria-labelledby="craft-loadout-heading">
+            <div>
+              <p className="craft-loadout-intro__eyebrow">Role loadouts</p>
+              <h2 id="craft-loadout-heading">Equip a way of working</h2>
+              <p>Crafts are versioned plugin bundles between a Role and its effective skills, prompts, workflows, and runtime capabilities.</p>
+            </div>
+            <div className="craft-loadout-path" role="list" aria-label="Craft capability hierarchy">
+              {[
+                ["Familiar", "Who acts"],
+                ["Role", "How they show up"],
+                ["Craft", "What they equip"],
+                ["Capabilities", "What becomes effective"],
+              ].map(([label, detail], index) => (
+                <span key={label} role="listitem">
+                  <small>{String(index + 1).padStart(2, "0")}</small>
+                  <strong>{label}</strong>
+                  <em>{detail}</em>
+                  {index < 3 ? <Icon name="ph:arrow-right-bold" width={12} aria-hidden /> : null}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <div className="craft-loadout-toolbar">
+            <p>{craftPlugins.length} {craftPlugins.length === 1 ? "Craft" : "Crafts"}</p>
+            <StandardSelect
+              label="Sort Crafts"
+              value={sort}
+              onChange={(next) => setSort(next as SortKey)}
+              className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
+              options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+            />
+          </div>
+
+          {!loaded ? <SkeletonRows count={3} /> : craftPlugins.length === 0 ? (
+            <EmptyState
+              icon="ph:package-bold"
+              headline={query ? "No matching Crafts" : "No public Crafts yet"}
+              subtitle={query ? "Try a different Craft name or capability." : "Audited Research Crafts will appear here when they are enabled."}
+            />
+          ) : (
+            <div className="marketplace-category-grid" aria-label="Available Crafts">
+              {craftPlugins.map((plugin) => (
+                <MarketplaceCard
+                  key={plugin.id}
+                  plugin={plugin}
+                  busy={busyIds.has(plugin.id)}
+                  onOpen={setSelected}
+                  onAdd={add}
+                  onRemove={remove}
+                  onConfigure={setConfiguringId}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       ) : section === "skills" ? (
         // Full-bleed 3-column browser that owns its own per-column scrolling.
         <div
@@ -671,6 +851,8 @@ export function MarketplaceViewSurface({
           key={selectedPlugin.id}
           plugin={selectedPlugin}
           busy={busyIds.has(selectedPlugin.id)}
+          actionError={craftErrors[selectedPlugin.id]}
+          onActionCleared={() => setCraftErrors((current) => ({ ...current, [selectedPlugin.id]: undefined }))}
           onClose={() => setSelected(null)}
           onAdd={() => void add(selectedPlugin.id)}
           onRemove={() => void remove(selectedPlugin.id)}
