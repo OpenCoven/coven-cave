@@ -7,6 +7,40 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.172] - 2026-07-10
+
+> Analytics & daily-report polish, marketplace Crafts and Grimoire Stitches, plus cross-platform production hardening.
+
+Patch release on top of v0.0.171.
+
+### Changes
+- fix(prod): short-circuit the POSIX login-shell PATH probe on Windows (#2902)
+- fix(stitches): review hardening — connect-time SSRF guard, sandboxed sew, fence-safe output parse (cave-746p) (#2900)
+- chore: delete retired ComuxView + FlowView sources; settle rail PTY lifecycle (cave-c3yt) (#2901)
+- fix(prod): cross-platform path bug, silent quick-add failure, app error boundaries (#2899)
+- feat(marketplace): add audited research Crafts (#2898)
+- style(daily-report): full-bleed stats row + ultra-minimal Apple-style cards (#2896)
+- fix(marketplace): preserve Craft dialog focus fallback (#2895)
+- fix(board): reconcile bulk patch failures once, after the batch settles (cave-381s) (#2897)
+- fix(rollout): seven P3 papercuts and dead-ends from the 100k-ft audit (#2894)
+- feat(marketplace): equip Roles with Crafts (#2893)
+- feat(grimoire): Stitches — KB intake via pins & threads, sewn agentically or by hand (cave-v7zs) (#2891)
+- style(chrome): frost the opaque floating overlay chrome (cave-il65) (#2890)
+- fix(inspector): open memory files via the server-resolved path, not a hardcoded dev home (#2889)
+- fix(rollout): eight P2 dead-ends and papercuts from the 100k-ft audit (#2888)
+- fix(marketplace): preserve Craft transaction diagnostics (#2887)
+- feat(marketplace): verify Craft installs with Codex (#2886)
+- fix(shell): keep headers adaptive across screen sizes (#2885)
+- fix(rollout): six P1 UX dead-ends from the 100k-ft audit (#2884)
+- feat(analytics): weight-honest confidence breakdown + clearly-labeled metrics (#2883)
+- feat(chat): closed right panel leaves a rail — the reflection of the left sidebar (cave-zn19) (#2879)
+- feat(marketplace): add Craft schema and Seeker's Lens (#2881)
+- feat(analytics): give the standalone analytics route the left sidepanel (#2882)
+- feat(analytics): thread signals span both columns with a scrollable, task-promoting data table (cave-bhh2) (#2880)
+- refactor(runtimes): one label authority, alias + merge-label fixes, hoisted rank map (#2878)
+- fix(chat): right sidebar mirrors the left panel's glass — flush fit, no far-right gap, whole tab labels (cave-wc78) (#2877)
+
+
 ## [0.0.171] - 2026-07-09
 
 > 🧹 **Tidier familiars, leaner chat header** — removing a familiar is now undo-safe (a distinct track from Archive), and the chat header slims to Find + a kebab with compact project selection.
