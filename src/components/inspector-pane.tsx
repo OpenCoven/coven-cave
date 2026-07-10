@@ -584,6 +584,10 @@ type CovenMemoryEntry = {
   familiar_id: string;
   title: string;
   path: string;
+  /** Server-resolved absolute path, attached by /api/coven-memory only when the
+   *  entry passes the memory allow-list. Absent otherwise (then no open-file
+   *  affordance is shown). Never guessed on the client. */
+  fullPath?: string;
   updated_at: string;
   excerpt?: string;
 };
@@ -830,19 +834,21 @@ function MemoryTab({
                   {e.excerpt}
                 </p>
               ) : null}
-              <button
-                onClick={() => {
-                  // Open the underlying file in the redacted file viewer if it
-                  // sits inside one of our allowed memory roots.
-                  const guessed = e.path.startsWith("/")
-                    ? e.path
-                    : `${process.env.NEXT_PUBLIC_COVEN_MEMORY_ROOT ?? "/Users/buns/.coven/memory"}/${e.path}`;
-                  setOpenPath(guessed);
-                }}
-                className="mt-1 text-[10px] text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
-              >
-                open file →
-              </button>
+              {e.fullPath ? (
+                <button
+                  onClick={() => {
+                    // Open the underlying file in the redacted file viewer via the
+                    // SERVER-resolved absolute path — /api/coven-memory attaches
+                    // `fullPath` only when the entry passes the memory allow-list.
+                    // No client-side home-directory guessing (which hardcoded one
+                    // developer's ~/.coven path and broke on every other machine).
+                    setOpenPath(e.fullPath!);
+                  }}
+                  className="mt-1 text-[10px] text-[var(--accent-presence)] hover:text-[var(--accent-presence)]"
+                >
+                  open file →
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
