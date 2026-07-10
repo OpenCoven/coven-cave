@@ -9304,6 +9304,8 @@ a.mobile-handoff__link:hover {
   min-height: 100vh;
   height: 100vh;
   overflow-y: auto;
+  /* Clip any scrollbar-width overflow from the full-bleed stats row below. */
+  overflow-x: clip;
   background:
     radial-gradient(1100px 520px at 82% -8%, color-mix(in oklch, var(--accent-presence) 18%, transparent), transparent 70%),
     radial-gradient(900px 480px at -6% 2%, color-mix(in oklch, var(--accent-presence) 9%, transparent), transparent 64%),
@@ -9427,47 +9429,46 @@ a.mobile-handoff__link:hover {
 /* Metric cards -------------------------------------------------------------- */
 .dr-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 14px;
-  margin-bottom: 40px;
+  /* Tighter min so more cards fit → the stats row uses the full width. */
+  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+  gap: 12px;
+  margin-bottom: 44px;
+  /* Break the stats row out of the centered 1060px reading column so the cards
+     span the full page width (side gutters match the shell's padding). .dr-page
+     clips the scrollbar-width overflow this 100vw breakout would otherwise add. */
+  margin-inline: calc(50% - 50vw);
+  padding-inline: clamp(20px, 5vw, 64px);
 }
 .dr-metric {
   position: relative;
   overflow: hidden;
-  padding: 18px 18px 16px;
-  border-radius: var(--radius-card);
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
-}
-.dr-metric::after {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--metric-accent, var(--accent-presence)), transparent);
-  opacity: 0.55;
+  padding: 20px;
+  /* Ultra low-profile, Apple-style grouped card: generous radius, a faint
+     hairline over a barely-raised translucent fill — no accent bar, no shadow,
+     no hover lift. All chrome earns its place. */
+  border-radius: 16px;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 55%, transparent);
+  background: color-mix(in oklch, var(--bg-raised) 45%, transparent);
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 .dr-metric:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 30px -18px color-mix(in oklch, var(--accent-presence) 60%, #000);
+  border-color: var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
 }
 .dr-metric__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .dr-metric__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px; height: 34px;
-  border-radius: 9px;
-  font-size: 18px;
+  width: 26px; height: 26px;
+  font-size: 16px;
+  /* The per-metric accent tints the glyph only — no filled chip. */
   color: var(--metric-accent, var(--accent-presence));
-  background: color-mix(in oklch, var(--metric-accent, var(--accent-presence)) 16%, transparent);
 }
-.dr-metric__value { font-size: 38px; font-weight: 720; line-height: 1; letter-spacing: -0.02em; }
-.dr-metric__label { margin-top: 8px; font-size: 13px; font-weight: 560; color: var(--text-primary); }
-.dr-metric__caption { margin-top: 2px; font-size: 12px; color: var(--text-muted); }
-.dr-metric__spark { margin-top: 10px; height: 26px; }
+.dr-metric__value { font-size: 34px; font-weight: 600; line-height: 1.02; letter-spacing: -0.03em; }
+.dr-metric__label { margin-top: 7px; font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.dr-metric__caption { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
+.dr-metric__spark { margin-top: 12px; height: 26px; }
 .dr-metric--muted .dr-metric__value { color: var(--text-muted); }
 /* Linkable metric cards get a hover lift + a reveal-on-hover go affordance. */
 a.dr-metric--link { display: block; color: inherit; text-decoration: none; }
