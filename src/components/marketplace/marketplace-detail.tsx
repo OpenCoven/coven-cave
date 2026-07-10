@@ -10,6 +10,7 @@ import { openExternalUrl } from "@/lib/open-external";
 import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/use-composer-draft";
 import { promptIconName } from "@/components/prompt-snippets-modal";
 import type { PromptOption } from "@/lib/slash-prompt";
+import { CraftDetail, type CraftActionError } from "@/components/marketplace/craft-detail";
 
 type PackPrompt = PromptOption;
 
@@ -27,6 +28,8 @@ type Props = {
   onClose: () => void;
   onAdd: () => void;
   onRemove: () => void;
+  actionError?: CraftActionError | null;
+  onActionCleared?: () => void;
 };
 
 function kindIcon(kind: MarketplacePlugin["kind"]) {
@@ -100,7 +103,24 @@ function detailDecisionItems(plugin: MarketplacePlugin) {
   ];
 }
 
-export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
+export function MarketplaceDetail(props: Props) {
+  if (props.plugin.kind === "craft") {
+    return (
+      <CraftDetail
+        plugin={props.plugin}
+        busy={props.busy}
+        actionError={props.actionError}
+        onClose={props.onClose}
+        onInstall={props.onAdd}
+        onRemove={props.onRemove}
+        onActionCleared={props.onActionCleared ?? (() => {})}
+      />
+    );
+  }
+  return <StandardMarketplaceDetail {...props} />;
+}
+
+function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   type ConnState = { state: "idle" | "testing" | "reachable" | "unreachable"; message?: string };
   const [conn, setConn] = useState<ConnState>({ state: "idle" });

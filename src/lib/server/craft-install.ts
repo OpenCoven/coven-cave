@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { CraftSpecification, PluginKind } from "../marketplace-catalog.ts";
+import { createKeyedTransactionLock, type KeyedTransactionLock } from "./keyed-transaction-lock.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,6 +12,8 @@ const CRAFT_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const COMMAND_TIMEOUT_MS = 120_000;
 const COMMAND_MAX_BUFFER = 256 * 1024;
 const DIAGNOSTIC_LIMIT = 2_048;
+const DIAGNOSTIC_LABEL_LIMIT = 160;
+const AFFECTED_ROLE_LIMIT = 20;
 const ANSI_RE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 
 export type CraftComponentDefinition = {
@@ -91,7 +94,9 @@ export type CraftInstallPlan = {
   bundled: { skills: string[]; prompts: string[]; workflows: string[] };
   requiredCapabilities: string[];
   recommendedRoles: string[];
-  provenance: CraftSpecification["provenance"];
+  provenance: CraftSpecification["provenance"] & {
+    resources: CraftSpecification["bundled"]["skills"];
+  };
   runtime: {
     id: typeof CRAFT_RUNTIME;
     marketplace: typeof CODEX_MARKETPLACE_NAME;
@@ -112,6 +117,9 @@ export type CraftTransactionDiagnostic = {
   stdout?: string;
   stderr?: string;
   rollback?: CraftRollbackDiagnostic;
+  affectedRoles?: Array<{ id: string; name: string; familiar: string }>;
+  affectedRoleCount?: number;
+  affectedRolesTruncated?: boolean;
 };
 
 export type CraftTransactionErrorCode =
@@ -126,7 +134,8 @@ export type CraftTransactionErrorCode =
   | "install_failed"
   | "verification_failed"
   | "uninstall_failed"
-  | "persistence_failed";
+  | "persistence_failed"
+  | "craft_equipped";
 
 export class CraftTransactionError extends Error {
   readonly code: CraftTransactionErrorCode;
@@ -178,6 +187,8 @@ export type CraftInstallServiceOptions = {
   cwd?: string;
   timeoutMs?: number;
   maxBuffer?: number;
+  beforeUninstall?: (definition: CraftDefinition) => Promise<void>;
+  withTransaction?: KeyedTransactionLock;
 };
 
 type CommandStep =
@@ -194,7 +205,11 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function redactedOutput(value: unknown, env: NodeJS.ProcessEnv): string | undefined {
+function redactedOutput(
+  value: unknown,
+  env: NodeJS.ProcessEnv,
+  limit = DIAGNOSTIC_LIMIT,
+): string | undefined {
   if (typeof value !== "string" || value.length === 0) return undefined;
   let output = value
     .replace(ANSI_RE, "")
@@ -211,10 +226,34 @@ function redactedOutput(value: unknown, env: NodeJS.ProcessEnv): string | undefi
     .replace(/\/Users\/[^/\s]+/g, "~")
     .replace(/[A-Za-z]:\\Users\\[^\\\s]+/g, "~");
 
-  if (output.length > DIAGNOSTIC_LIMIT) {
-    return `${output.slice(0, DIAGNOSTIC_LIMIT)}…[truncated]`;
+  if (output.length > limit) {
+    return `${output.slice(0, Math.max(0, limit - 1))}…`;
   }
   return output;
+}
+
+export function craftAffectedRoleDiagnostic(
+  roles: ReadonlyArray<{ id: string; name: string; familiar: string }>,
+  env: NodeJS.ProcessEnv = process.env,
+): {
+  affectedRoles: Array<{ id: string; name: string; familiar: string }>;
+  affectedRoleCount: number;
+  affectedRolesTruncated: boolean;
+} {
+  const clean = (value: string) => redactedOutput(
+    value.replace(/[\u0000-\u001f\u007f]+/g, " "),
+    env,
+    DIAGNOSTIC_LABEL_LIMIT,
+  ) ?? "";
+  return {
+    affectedRoles: roles.slice(0, AFFECTED_ROLE_LIMIT).map((role) => ({
+      id: clean(role.id),
+      name: clean(role.name),
+      familiar: clean(role.familiar),
+    })),
+    affectedRoleCount: roles.length,
+    affectedRolesTruncated: roles.length > AFFECTED_ROLE_LIMIT,
+  };
 }
 
 function diagnosticFromFailure(
@@ -264,6 +303,7 @@ function publicFailureMessage(code: CraftTransactionErrorCode): string {
     case "verification_failed": return "Codex did not report the expected Craft installation state.";
     case "uninstall_failed": return "Codex could not remove this Craft.";
     case "persistence_failed": return "Cave could not persist the verified Craft state.";
+    case "craft_equipped": return "Detach this Craft from every Role before removing it.";
     default: return "Codex could not install this Craft.";
   }
 }
@@ -404,7 +444,13 @@ function planFor(definition: CraftDefinition): CraftInstallPlan {
     },
     requiredCapabilities: [...definition.craft.requiredCapabilities],
     recommendedRoles: [...definition.craft.recommendedRoles],
-    provenance: { ...definition.craft.provenance },
+    provenance: {
+      ...definition.craft.provenance,
+      resources: definition.craft.bundled.skills.map((resource) => ({
+        ...resource,
+        modifications: [...resource.modifications],
+      })),
+    },
     runtime: {
       id: CRAFT_RUNTIME,
       marketplace: CODEX_MARKETPLACE_NAME,
@@ -431,6 +477,7 @@ export function craftTransactionStatus(code: CraftTransactionErrorCode): number 
   if (code === "invalid_craft") return 400;
   if (code === "marketplace_not_configured") return 409;
   if (code === "unsupported_runtime") return 409;
+  if (code === "craft_equipped") return 409;
   if (code === "cli_missing") return 503;
   if (code === "timeout") return 504;
   if (code === "persistence_failed") return 500;
@@ -443,7 +490,7 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
   const timeoutMs = options.timeoutMs ?? COMMAND_TIMEOUT_MS;
   const maxBuffer = options.maxBuffer ?? COMMAND_MAX_BUFFER;
   const now = options.now ?? (() => new Date().toISOString());
-  const locks = new Map<string, Promise<void>>();
+  const withCraftLock = options.withTransaction ?? createKeyedTransactionLock();
 
   async function definitionFor(id: string): Promise<CraftDefinition> {
     if (!CRAFT_ID_RE.test(id)) {
@@ -466,21 +513,6 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
       });
     }
     return definition;
-  }
-
-  async function withCraftLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
-    const previous = locks.get(id) ?? Promise.resolve();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const queued = previous.then(() => gate);
-    locks.set(id, queued);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (locks.get(id) === queued) locks.delete(id);
-    }
   }
 
   async function runJson(step: CommandStep, args: string[]): Promise<unknown> {
@@ -615,6 +647,7 @@ export function createCraftInstallService(options: CraftInstallServiceOptions): 
   }
 
   async function uninstallLocked(definition: CraftDefinition): Promise<CraftUninstallResult> {
+    await options.beforeUninstall?.(definition);
     await confirmMarketplace();
     const before = await runJson("preflight", ["plugin", "list", "--json"]);
     if (!pluginIsPresent(before, definition)) {

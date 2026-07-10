@@ -124,7 +124,7 @@ assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives
 assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
-for (const id of ["browse", "skills", "capabilities"]) {
+for (const id of ["browse", "crafts", "skills", "capabilities"]) {
   assert.match(
     marketplaceView,
     new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
@@ -142,6 +142,7 @@ assert.match(marketplaceView, /\{section !== "capabilities" \? \(\s*\n\s*<Search
 // what your familiars already have.
 assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setup group");
 assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no rail jump to Roles while the section is hidden");
+assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("crafts"\)\}/, "the rail jumps to Crafts");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
 assert.match(marketplaceView, /groupPluginsByCategory/, "Browse derives standardized category groups from the visible plugin set");

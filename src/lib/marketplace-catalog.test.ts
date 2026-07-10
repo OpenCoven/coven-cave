@@ -17,6 +17,7 @@ import {
   COLLECTIONS,
   sanitizeMarketplaceCatalogCards,
   sanitizeMarketplacePlugins,
+  isCraftInstallationVerified,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
@@ -243,6 +244,25 @@ assert.equal(craftMerged[0].installation.runtime, "codex");
 assert.equal(craftMerged[0].installation.verifiedAt, "2026-07-09T23:30:00.000Z");
 assert.equal(craftMerged[0].installation.craftVersion, "0.1.0");
 assert.equal(craftMerged[0].updateAvailable, false);
+assert.equal(isCraftInstallationVerified(craftMerged[0]), true);
+
+const legacyCraftMerged = mergeCatalog(
+  [{ name: "seekers-lens", displayName: "Seeker's Lens", kind: "craft", category: "Research Crafts", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
+  { "seekers-lens": { kind: "craft", version: "0.1.0", craft: craftSpec } },
+  {
+    "seekers-lens": {
+      version: "0.1.0",
+      source: "catalog",
+      installedAt: "2026-07-09T23:30:00.000Z",
+    },
+  },
+);
+assert.equal(isCraftInstallationVerified(legacyCraftMerged[0]), false);
+assert.equal(
+  legacyCraftMerged[0].updateAvailable,
+  true,
+  "legacy Craft installs must offer the Codex verification/update transaction",
+);
 
 // --- filterPlugins: kind + ids ---
 assert.deepEqual(filterPlugins(merged, { kind: "mcp" }).map((p) => p.id), ["fetch", "github"]);
