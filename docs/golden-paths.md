@@ -147,11 +147,15 @@ via the iPhone camera (Safari or the native app — `CaveInvite` parses the
 same link), manual setup is a collapsed disclosure, and tokens refresh on a
 30-day roll (`/api/mobile-token/refresh`).
 
-**Where it breaks:**
-- Pairing connects the *app*, not the *moment* — no "continue this chat on
-  the phone".
-- The desktop never learns the phone actually connected; success is silent.
-- The iOS connect screen accepts pasted invites but has no in-app scan.
+**Where it breaks:** *(items 1–2 shipped via cave-i74f/#2827; item 3 was
+stale — the in-app scan shipped in #2320. The remaining mobile journey work
+now lives in [`ios-connection-cloud-plan.md`](ios-connection-cloud-plan.md).)*
+- ~~Pairing connects the *app*, not the *moment*~~ — "Continue on phone"
+  carries `#chat-<id>` (though the native scanner still drops fragments; O4).
+- ~~The desktop never learns the phone actually connected~~ — "Paired · last
+  seen" ships, but only fires on token-refresh, which the current app-start
+  flow never triggers (O1).
+- ~~No in-app scan~~ — VisionKit scanner shipped in #2320.
 
 **Enablement plan** (bead `cave-i74f`):
 1. Session hand-off: append `#chat-<id>` to the invite URL when opened from
