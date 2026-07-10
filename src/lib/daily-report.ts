@@ -116,9 +116,11 @@ export const KIND_ICON: Record<ItemKind, string> = {
 
 /**
  * Turn an inbox item into an href the standalone routes can use. In-app
- * targets resolve to `/#<hash>` so the workspace deep-link listeners
- * (`#card-`, `#chat-`, `#memory:`) re-enter the right surface; bare urls pass
- * through. Items with no actionable target return `/` (the home shell).
+ * targets resolve to `/#<hash>` so the workspace boot deep-link handlers
+ * (`#card-`, `#chat-`, `#grimoire:`) re-enter the right surface; bare urls
+ * pass through. Items with no actionable target return `/` (the home shell).
+ * (`#memory:` never had a consumer — memory links ride the Grimoire hash,
+ * whose reader is the app's memory viewer; cave-aka2.)
  */
 export function itemHref(item: InboxItem): string {
   const link: LinkRef | null | undefined = item.link;
@@ -129,7 +131,7 @@ export function itemHref(item: InboxItem): string {
       case "session":
         return `/#chat-${link.ref}`;
       case "memory":
-        return `/#memory:${encodeURIComponent(link.ref)}`;
+        return `/#grimoire:memory:${encodeURIComponent(link.ref)}`;
       case "url":
         return link.ref || "/";
     }

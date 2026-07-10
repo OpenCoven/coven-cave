@@ -13,7 +13,9 @@ export default function FamiliarGrowthDashboardPage() {
             Dashboard
           </a>
           <span className="dr-crumb-sep" aria-hidden>/</span>
-          <a className="dr-back" href="/#familiars">
+          {/* ?mode= is the SPA's deep-link param; a bare #familiars hash has
+              no consumer and landed on the boot surface (cave-aka2). */}
+          <a className="dr-back" href="/?mode=agents">
             Familiars
           </a>
           <span className="dr-crumb-sep" aria-hidden>/</span>
