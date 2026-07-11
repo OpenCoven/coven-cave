@@ -431,6 +431,16 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   }, [cards, groupMode, ownerName, projectName, familiarColor]);
   const unscheduledCount = unscheduledCards.length;
 
+  // A selected card without dates lives only in the (default-closed)
+  // unscheduled tray, so the BoardView view-switch scroll pass would find no
+  // node for it (cave-iote). Reveal the tray whenever the selection lands on
+  // an unscheduled card; a manual re-collapse afterwards is left alone.
+  const selectedUnscheduled =
+    selectedCardId !== null && unscheduledCards.some((c) => c.id === selectedCardId);
+  useEffect(() => {
+    if (selectedUnscheduled) setShowUnscheduled(true);
+  }, [selectedUnscheduled]);
+
   // Auto-center on today once the timeline can be drawn (keyed on the clock +
   // zoom). centerOnTodayRef is assigned during render below; retry until it
   // succeeds (scroller mounted, today in range), then latch so we never fight a
@@ -497,7 +507,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         {showUnscheduled ? (
           <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
             {unscheduledCards.map((c) => (
-              <li key={c.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              <li key={c.id} data-card-id={c.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
                 <button
                   type="button"
                   draggable={!!onPatch}

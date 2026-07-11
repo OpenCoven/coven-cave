@@ -254,6 +254,13 @@ assert.match(table, /selectedGroupKey === "done" \? new Set<string>\(\) : new Se
 assert.match(table, /sel \? cardGroupKey\(sel, groupBy\) : null/, "the selection's group is derived through the same cardGroupKey the grouper uses");
 assert.match(table, /const key = cardGroupKey\(c, by\);/, "groupCards shares cardGroupKey — the two can never disagree on a card's group");
 assert.match(table, /\}, \[selectedGroupKey\]\);/, "the expand effect keys on the selection's group only — a manual collapse sticks until the selection moves");
+// ── cave-iote remainder: the view-switch scroll no-ops when the selection's
+// node doesn't exist in the freshly mounted view — reveal it, then retry once.
+assert.match(view, /if \(attempts\+\+ === 0\) frame = requestAnimationFrame\(locate\);/, "a missing card node gets exactly one more frame (a reveal effect may still be mounting it)");
+assert.match(table, /groups\.find\(\(g\) => g\.cards\.some\(\(c\) => c\.id === selectedCardId\)\)/, "the table locates the group holding the selection");
+assert.match(table, /next\.delete\(holder\.key\);/, "the table un-collapses the selection's group at mount (done is collapsed by default)");
+assert.match(gantt, /if \(selectedUnscheduled\) setShowUnscheduled\(true\);/, "the gantt reveals the unscheduled tray when the selection has no dates");
+assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tray items carry data-card-id so the scroll pass can reach them");
 
 // ── Bulk-op patch failures reconcile ONCE, after the batch settles (cave-381s):
 // a failed patchCard used to `await load()` immediately, reverting the

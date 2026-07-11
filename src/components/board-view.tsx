@@ -349,10 +349,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const switched = prevViewModeRef.current !== viewMode;
     prevViewModeRef.current = viewMode;
     if (!switched || !selectedCardId) return;
-    const frame = requestAnimationFrame(() => {
-      viewAreaRef.current
-        ?.querySelector<HTMLElement>(`[data-card-id="${selectedCardId}"]`)
-        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // Two-frame retry: the mounted view may still be revealing the
+    // default-collapsed group / unscheduled tray that holds the selection
+    // (cave-iote), so a missing node gets exactly one more frame to appear.
+    let attempts = 0;
+    let frame = requestAnimationFrame(function locate() {
+      const el = viewAreaRef.current?.querySelector<HTMLElement>(`[data-card-id="${selectedCardId}"]`);
+      if (el) {
+        el.scrollIntoView({ block: "nearest", inline: "nearest" });
+        return;
+      }
+      if (attempts++ === 0) frame = requestAnimationFrame(locate);
     });
     return () => cancelAnimationFrame(frame);
   }, [viewMode, selectedCardId]);
