@@ -1,0 +1,241 @@
+"use client";
+
+/**
+ * ChatSplitHost — wraps the chat surface and adds two things:
+ *
+ *  1. A **drop zone**: while a thread-rail conversation is being dragged, the
+ *     chat area lights up with a live snap preview — the nearest edge (left /
+ *     right / above / below) is resolved from the pointer position and the
+ *     half the pane will occupy glows. Dropping opens that conversation there.
+ *  2. A **resizable pane strip**: dropped conversations render beside (row) or
+ *     stacked with (column) the primary chat in a react-resizable-panels group,
+ *     each secondary pane with its own slim header (title · open as main · ✕).
+ *
+ * The chat sibling of DetailSplitHost (workspace pages); geometry and layout
+ * rules live in `@/lib/chat-split`.
+ */
+
+import React from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
+import {
+  CHAT_SESSION_DRAG_END,
+  CHAT_SESSION_DRAG_MIME,
+  CHAT_SESSION_DRAG_START,
+  CHAT_SPLIT_PRIMARY,
+  chatDropPreviewRect,
+  chatDropZoneLabel,
+  resolveChatDropZone,
+  type ChatDropZone,
+  type ChatSessionDragDetail,
+  type ChatSplitAxis,
+} from "@/lib/chat-split";
+
+export type ChatSplitTile = {
+  /** CHAT_SPLIT_PRIMARY or a session id. */
+  id: string;
+  title: string;
+  content: React.ReactNode;
+};
+
+export type ChatSplitHostProps = {
+  /** Panes in layout order; must contain the primary tile. */
+  panes: ChatSplitTile[];
+  axis: ChatSplitAxis;
+  /** Enable the drag-to-split drop zone (desktop, full-width chat only). */
+  enableDrop: boolean;
+  /** A conversation was dropped on the given snap zone. */
+  onDropSession: (sessionId: string, zone: ChatDropZone) => void;
+  /** Close one dropped pane. */
+  onClosePane: (sessionId: string) => void;
+  /** Promote a dropped pane to be the primary chat. */
+  onPromotePane?: (sessionId: string) => void;
+};
+
+export function ChatSplitHost({
+  panes,
+  axis,
+  enableDrop,
+  onDropSession,
+  onClosePane,
+  onPromotePane,
+}: ChatSplitHostProps) {
+  const hasSplit = panes.length > 1;
+
+  // ---- Drag-to-split drop zone -------------------------------------------
+  const [drag, setDrag] = React.useState<ChatSessionDragDetail | null>(null);
+  const [zone, setZone] = React.useState<ChatDropZone | null>(null);
+  const overlayRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!enableDrop) return;
+    const onStart = (e: Event) => {
+      const detail = (e as CustomEvent<ChatSessionDragDetail>).detail;
+      if (detail?.sessionId) setDrag(detail);
+    };
+    const onEnd = () => {
+      setDrag(null);
+      setZone(null);
+    };
+    window.addEventListener(CHAT_SESSION_DRAG_START, onStart);
+    window.addEventListener(CHAT_SESSION_DRAG_END, onEnd);
+    return () => {
+      window.removeEventListener(CHAT_SESSION_DRAG_START, onStart);
+      window.removeEventListener(CHAT_SESSION_DRAG_END, onEnd);
+    };
+  }, [enableDrop]);
+
+  const zoneFromPointer = React.useCallback((e: React.DragEvent): ChatDropZone | null => {
+    const el = overlayRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return resolveChatDropZone(rect.width, rect.height, e.clientX - rect.left, e.clientY - rect.top);
+  }, []);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setZone(zoneFromPointer(e));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const sessionId = e.dataTransfer.getData(CHAT_SESSION_DRAG_MIME) || drag?.sessionId || "";
+    const dropZone = zoneFromPointer(e) ?? zone;
+    setDrag(null);
+    setZone(null);
+    if (sessionId && dropZone) onDropSession(sessionId, dropZone);
+  };
+
+  const preview = zone ? chatDropPreviewRect(zone) : null;
+
+  const renderTile = (tile: ChatSplitTile) => {
+    if (tile.id === CHAT_SPLIT_PRIMARY) {
+      // The primary chat keeps its own header — no extra chrome.
+      return <div className="chat-split__pane-body">{tile.content}</div>;
+    }
+    return (
+      <section className="chat-split__tile" aria-label={`${tile.title} (split pane)`}>
+        <header className="chat-split__pane-head">
+          <span className="chat-split__pane-title" title={tile.title}>
+            <Icon name="ph:chats-circle" width={13} height={13} aria-hidden />
+            <span className="chat-split__pane-title-text">{tile.title}</span>
+          </span>
+          <span className="chat-split__pane-actions">
+            {onPromotePane ? (
+              <button
+                type="button"
+                className="chat-split__pane-btn"
+                title="Open as main chat"
+                aria-label={`Open ${tile.title} as main chat`}
+                onClick={() => onPromotePane(tile.id)}
+              >
+                <Icon
+                  name="ph:arrows-out-simple"
+                  width={CAVE_ICON_SIZE.shellToggle}
+                  height={CAVE_ICON_SIZE.shellToggle}
+                  aria-hidden
+                />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="chat-split__pane-btn chat-split__pane-close"
+              title="Close pane"
+              aria-label={`Close ${tile.title} pane`}
+              onClick={() => onClosePane(tile.id)}
+            >
+              <Icon
+                name="ph:x"
+                width={CAVE_ICON_SIZE.shellToggle}
+                height={CAVE_ICON_SIZE.shellToggle}
+                aria-hidden
+              />
+            </button>
+          </span>
+        </header>
+        <div className="chat-split__pane-body">{tile.content}</div>
+      </section>
+    );
+  };
+
+  return (
+    <>
+      {hasSplit ? (
+        <Group
+          // Remount on pane-set changes (mirrors DetailSplitHost, cave-hivd):
+          // RRP squeezes a panel added to a live group below its min — a fresh
+          // mount re-lays every pane out evenly.
+          key={`${axis}|${panes.map((tile) => tile.id).join("|")}`}
+          className="chat-split__group"
+          orientation={axis === "row" ? "horizontal" : "vertical"}
+        >
+          {panes.map((tile, i) => (
+            <React.Fragment key={tile.id}>
+              {i > 0 ? (
+                <Separator className="shell-separator chat-split__sep">
+                  <SeparatorHandle orientation={axis === "row" ? "col" : "row"} />
+                </Separator>
+              ) : null}
+              <Panel
+                id={`chat-split-${tile.id}`}
+                className="chat-split__pane-panel flex min-h-0 min-w-0"
+                // Pixel floors so a divider can't crush a conversation into
+                // letter soup; stacked panes need less than side-by-side ones.
+                minSize={axis === "row" ? "280px" : "160px"}
+              >
+                {renderTile(tile)}
+              </Panel>
+            </React.Fragment>
+          ))}
+        </Group>
+      ) : (
+        panes[0]?.content ?? null
+      )}
+
+      {enableDrop && drag ? (
+        <div
+          ref={overlayRef}
+          className="chat-split__dropzone"
+          data-zone={zone ?? undefined}
+          onDragOver={handleDragOver}
+          onDragLeave={(e) => {
+            // Only clear when actually leaving the overlay (not entering the
+            // pointer-events:none preview child).
+            if (e.currentTarget === e.target) setZone(null);
+          }}
+          onDrop={handleDrop}
+        >
+          {preview && zone ? (
+            <div
+              className="chat-split__preview"
+              style={{
+                left: `${preview.left}%`,
+                top: `${preview.top}%`,
+                width: `${preview.width}%`,
+                height: `${preview.height}%`,
+              }}
+              aria-hidden
+            >
+              <span className="chat-split__hint">
+                <Icon
+                  name={zone === "top" || zone === "bottom" ? "ph:rows" : "ph:columns"}
+                  width={16}
+                  height={16}
+                  aria-hidden
+                />
+                Open {drag.title} {chatDropZoneLabel(zone)}
+              </span>
+            </div>
+          ) : (
+            <span className="chat-split__hint chat-split__hint--idle">
+              <Icon name="ph:squares-four" width={16} height={16} aria-hidden />
+              Drag toward an edge to split
+            </span>
+          )}
+        </div>
+      ) : null}
+    </>
+  );
+}
