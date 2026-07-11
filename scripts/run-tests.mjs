@@ -554,6 +554,7 @@ export const SUITES = {
     "src/components/ui/undo-toast.test.ts",
     "src/components/ui/search-input.test.ts",
     "src/components/ui/modal.test.ts",
+    "src/components/ui/avatar-lightbox.test.ts",
     "src/components/ui/confirm-dialog.test.ts",
     "src/components/ui/relative-time.test.ts",
     "src/lib/workflow-source-bundle.test.ts",

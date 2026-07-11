@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
-import { Modal } from "./ui/modal";
+import { AvatarLightbox } from "./ui/avatar-lightbox";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Size = "sm" | "md" | "lg" | "xl";
@@ -35,7 +35,6 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
     [familiar.avatarImage, familiar.avatarImageFallback],
   );
   const [srcIdx, setSrcIdx] = useState(0);
-  const [enlarged, setEnlarged] = useState(false);
   useEffect(() => {
     setSrcIdx(0);
   }, [familiar.avatarImage, familiar.avatarImageFallback]);
@@ -64,33 +63,9 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
 
   if (expandable && hasImage) {
     return (
-      <>
-        <button
-          type="button"
-          onClick={() => setEnlarged(true)}
-          className="cursor-zoom-in"
-          aria-label={`Enlarge ${familiar.display_name} avatar`}
-          title="Click to enlarge"
-        >
-          {imgEl}
-        </button>
-        {enlarged ? (
-          <Modal
-            open
-            onClose={() => setEnlarged(false)}
-            breadcrumb={[familiar.display_name, "Avatar"]}
-            ariaLabel={`${familiar.display_name} avatar`}
-          >
-            <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
-              <img
-                src={currentSrc}
-                alt={`${familiar.display_name} avatar`}
-                className="h-full w-full object-cover"
-              />
-            </div>
-          </Modal>
-        ) : null}
-      </>
+      <AvatarLightbox src={currentSrc} label={familiar.display_name}>
+        {imgEl}
+      </AvatarLightbox>
     );
   }
 
