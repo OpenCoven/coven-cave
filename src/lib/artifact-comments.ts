@@ -26,6 +26,28 @@ export function commentsStorageKey(turnId: string): string {
   return `${STORAGE_PREFIX}${turnId}`;
 }
 
+/** Approx. half the rendered fab pill width (icon + "Comment" label + padding). */
+export const FAB_HALF_WIDTH = 52;
+/** Minimum gap kept between the fab edge and the viewport edge. */
+export const FAB_EDGE_MARGIN = 8;
+
+/**
+ * Clamp the floating Comment fab's center-x so the pill (rendered with
+ * `translateX(-50%)`) stays fully inside the viewport. Wide selections put the
+ * selection midpoint near an edge, which otherwise clips the button offscreen.
+ */
+export function clampFabX(
+  x: number,
+  viewportWidth: number,
+  halfWidth: number = FAB_HALF_WIDTH,
+  margin: number = FAB_EDGE_MARGIN,
+): number {
+  const min = margin + halfWidth;
+  const max = viewportWidth - margin - halfWidth;
+  if (max <= min) return viewportWidth / 2;
+  return Math.min(max, Math.max(min, x));
+}
+
 /** Collapse whitespace and clamp a selected excerpt to a quotable length. */
 export function normalizeExcerpt(raw: string): string {
   const collapsed = raw.replace(/\s+/g, " ").trim();

@@ -17,6 +17,12 @@ assert.match(
 assert.match(comp, /document\.addEventListener\("mouseup", onMouseUp\)/, "detects selection on mouseup");
 assert.match(comp, /window\.getSelection\(\)/, "reads the live text selection");
 assert.match(comp, /className="cave-artifact-comment-fab"/, "shows a floating Comment affordance on selection");
+// The fab's x is clamped so wide selections can't push it off the viewport edge.
+assert.match(
+  comp,
+  /clampFabX\(rect\.left \+ rect\.width \/ 2, window\.innerWidth\)/,
+  "clamps the fab position to the viewport so it never clips offscreen",
+);
 // The comments are folded into a prompt and sent via the chat send path.
 assert.match(comp, /buildCommentsPrompt\(comments/, "builds the revision prompt from the collected comments");
 assert.match(comp, /onRequest\(prompt\)/, "submits the synthesized prompt to the agent");

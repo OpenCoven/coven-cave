@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import {
   buildCommentsPrompt,
+  clampFabX,
   normalizeExcerpt,
   readComments,
   writeComments,
@@ -76,7 +77,8 @@ export function ArtifactComments({
           return;
         }
         const rect = selection.getRangeAt(0).getBoundingClientRect();
-        setSel({ text, x: rect.left + rect.width / 2, y: rect.top });
+        // Clamp so the pill never clips off either viewport edge on wide selections.
+        setSel({ text, x: clampFabX(rect.left + rect.width / 2, window.innerWidth), y: rect.top });
       }, 0);
     };
     const onSelectionChange = () => {
