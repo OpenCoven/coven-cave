@@ -7,13 +7,28 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.175] - 2026-07-11
+
+> 🪟 **Faster, quieter Windows packaging plus a batch of chat/board/desktop polish.** The Windows sidecar runtime now ships content-addressed and zstd-compressed with prepared background updates and a startup-progress surface, quick-chat gains attachments + message queueing, chat threads split into panes, and a run of picker/board/pairing fixes land.
+
 ### Features
-- **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-and-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keeps it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937).
-- **Chat: split panes** — drag a conversation from the thread rail onto the chat surface to snap it left / right / above / below the current chat as a resizable pane. Each secondary pane carries a slim header (title · open as main · ✕); opening a pane's thread as the primary chat collapses it back out of the strip. Desktop full-width chat only.
+- **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-and-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keeps it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937, #2938).
+- **Chat: split panes** — drag a conversation from the thread rail onto the chat surface to snap it left / right / above / below the current chat as a resizable pane. Each secondary pane carries a slim header (title · open as main · ✕); opening a pane's thread as the primary chat collapses it back out of the strip. Desktop full-width chat only (#2941).
+- **Windows: prepared background updates + startup progress** — updates download and verify in the background, and a startup-progress surface (with retry/cancel controls) shows sidecar runtime bring-up instead of a blank wait (#2916).
+- **iOS: honest reconnect pill** — tabs stay mounted through connection drops so a brief network blip shows a reconnect pill rather than tearing down and remounting the whole surface (cave-y482 part 2) (#2935).
+- **Avatars: shared AvatarLightbox primitive** — one reusable lightbox for avatar imagery across the app (cave-ocy8) (#2931).
 
 ### Fixes
-- **Folder picker is summoned to the foreground** — the native "choose a folder" dialog no longer opens hidden behind the window. On Windows the `FolderBrowserDialog` now gets a `TopMost` owner form so it comes forward focused; macOS activates System Events before `choose folder`; Linux runs zenity modal (#2614).
-- **A failed chat send keeps you in the conversation** — when the coven CLI can't be resolved from the app's environment, the send failure now surfaces as an inline error strip with your message preserved for one-click Retry and a soft "Open Setup" link (wizard overlay, not a hard navigation) instead of eating the message and bouncing to Setup (#2618).
+- **Folder picker is summoned to the foreground** — the native "choose a folder" dialog no longer opens hidden behind the window. On Windows the `FolderBrowserDialog` now gets a `TopMost` owner form so it comes forward focused; macOS activates System Events before `choose folder`; Linux runs zenity modal (#2614, #2944).
+- **A failed chat send keeps you in the conversation** — when the coven CLI can't be resolved from the app's environment, the send failure now surfaces as an inline error strip with your message preserved for one-click Retry and a soft "Open Setup" link (wizard overlay, not a hard navigation) instead of eating the message and bouncing to Setup (#2618, #2944).
+- **Board: table never mounts with the selected card hidden** — switching to the table view with a card selected in the collapsed-by-default "done" group used to leave no row for the anchor scroll to find; the collapse initializer is now selection-aware and the still-selected card is revealed after a view-mode switch (cave-iote) (#2940, #2943).
+- **Board: detail-panel action popover no longer clips** — the popover anchors left so it isn't cut off at the panel edge (#2936).
+- **Projects: deduped by normalized root at load** — projects registered under differently-normalized paths no longer show as duplicates (#2932).
+- **Desktop: mobile pairing secret persists across restarts** — the pairing secret survives app restarts so paired mobile devices stay paired (cave-y482) (#2933).
+- **Artifact comments: Comment fab stays on-screen** — the fab's x is clamped so wide selections don't push it off the viewport (#2934).
+
+### Performance
+- **Windows: content-addressed, compressed runtime extraction** — the packaged sidecar runtime is content-addressed and zstd-compressed (decompressed via the Windows inbox `tar.exe`), with lifecycle diagnostics and a guarded MSI uninstall cache cleanup, cutting extraction time and disk churn on install/upgrade (#2930, #2942).
 
 ## [0.0.174] - 2026-07-11
 
