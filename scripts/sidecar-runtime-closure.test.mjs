@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -199,7 +200,8 @@ try {
     publishedArchive,
     publishedManifest,
   );
-  assert.equal(await readFile(publishedArchive, "utf8"), "verified candidate archive\n");
+  const publishedArchiveBytes = await readFile(publishedArchive);
+  assert.equal(createHash("sha256").update(publishedArchiveBytes).digest("hex"), published.archiveSha256);
   assert.deepEqual(JSON.parse(await readFile(publishedManifest, "utf8")), published);
   assert.ok(await missing(verifiedArchive), "successful publication must consume its staged archive");
 

@@ -231,13 +231,9 @@ write_windows_sidecar_archive() {
   done < <(find "$DEST" -type l -print0)
 
   echo "==> archiving Windows sidecar -> $WINDOWS_ARCHIVE_TEMP"
-  if [ "$(uname -s)" = "Darwin" ]; then
-    COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs \
-      -czf "$WINDOWS_ARCHIVE_TEMP" -C "$DEST" .
-  else
-    tar -czf "$WINDOWS_ARCHIVE_TEMP" -C "$DEST" .
-  fi
-
+  # The Node writer emits a canonical tar stream (byte-sorted paths, fixed
+  # uid/gid/mtime/modes) and normalizes the gzip header. Identical payloads
+  # therefore keep the same digest/cache key across release builds and hosts.
   node "$ROOT/scripts/sidecar-archive-manifest.mjs" --publish \
     "$DEST" "$WINDOWS_ARCHIVE_TEMP" \
     "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST" \

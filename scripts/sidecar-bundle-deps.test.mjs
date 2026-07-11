@@ -138,7 +138,21 @@ assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.g
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
 assert.match(src, /\.server\.tar\.gz\.\$\$\.tmp/, "archive generation must use a same-directory staging path");
 assert.match(src, /sidecar-archive-manifest\.mjs" --publish/, "verified archive publication must use the atomic publisher");
+assert.doesNotMatch(
+  src,
+  /tar -czf "\$WINDOWS_ARCHIVE/,
+  "Windows archive bytes must not depend on the host tar implementation",
+);
 assert.match(manifestSource, /rename\(temporaryArchivePath, archivePath\)[\s\S]*rename\(temporaryManifestPath, manifestPath\)/, "archive must publish only after verification and manifest must publish last");
+assert.match(manifestSource, /SIDECAR_ARCHIVE_SCHEMA_VERSION = 2/, "content-addressed manifests must use schema 2");
+assert.match(manifestSource, /entries\.sort\(compareArchivePaths\)/, "archive paths must have deterministic byte ordering");
+assert.match(manifestSource, /writeOctal\(header, 108, 8, 0, "uid"\)/, "archive uid must be normalized");
+assert.match(manifestSource, /writeOctal\(header, 116, 8, 0, "gid"\)/, "archive gid must be normalized");
+assert.match(manifestSource, /writeOctal\(header, 136, 12, 0, "mtime"\)/, "archive mtime must be normalized");
+assert.match(manifestSource, /kind: "file",[\s\S]*mode: NORMALIZED_FILE_MODE/, "archive file modes must be normalized");
+assert.match(manifestSource, /header\[9\] = 0xff/, "gzip host metadata must be normalized");
+assert.match(manifestSource, /payloadSha256/, "manifest must identify canonical payload content separately from gzip bytes");
+assert.match(manifestSource, /treeSha256/, "manifest must authenticate the activated runtime tree");
 assert.match(manifestSource, /archiveBytes: 80 \* 1024 \* 1024/, "archive size must stay within the 80 MiB target");
 assert.match(manifestSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "expanded runtime must stay strictly below the 200 MiB target");
 assert.match(manifestSource, /fileCount: 4_999/, "archive must stay below 5,000 files");
