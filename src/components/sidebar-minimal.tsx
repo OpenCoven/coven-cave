@@ -61,9 +61,6 @@ export type SidebarMinimalProps = {
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
   splitPageModes?: readonly string[];
-  /** Grimoire's current tab — lights the Journal row (not Grimoire) while the
-   *  Journal tab is up, since `mode` is never "journal" (cave-s9p6). */
-  grimoireView?: string;
   /** Role Surface rooms visible for the active familiar. Registry-driven —
    *  rendered as their own cluster; empty/omitted hides the cluster. */
   roleSurfaces?: readonly SidebarRoleSurfaceRow[];
@@ -126,11 +123,15 @@ const FOLDER_MODES: Array<{
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and scheduled jobs in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
   // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
-  // also carries the needs-you badge). Journal and Grimoire join the quiet
-  // cluster: same flat list, same reachability (rows, palette, deep links),
-  // just muted-until-hover so the conversation-first surfaces read first.
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in the Grimoire", quiet: true },
-  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
+  // also carries the needs-you badge). Memories joins the quiet cluster: same
+  // flat list, same reachability (rows, palette, deep links), just
+  // muted-until-hover so the conversation-first surfaces read first.
+  // Journal keeps no row of its own — it's a tab inside Memories, and a
+  // dedicated row double-listed the same surface. navHidden keeps the mode in
+  // the ⌘K palette and as a deep-link target (setMode remaps it to the
+  // Memories surface's Journal tab).
+  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in Memories", quiet: true, navHidden: true },
+  { id: "grimoire", label: "Memories", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
   // those launchers but hidden from the sidebar rows.
@@ -292,7 +293,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             // Active follows the primary mode (Roles/Capabilities keep the
             // Marketplace hub lit); pages open as split tiles get a lighter
             // "open in split" state instead. Derivation in lib/sidebar-nav-state.
-            state={sidebarRowState(fm.id, mode, props.splitPageModes, { grimoireView: props.grimoireView })}
+            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
             badge={fm.badge?.(props)}
             kbd={fm.kbd}
             description={fm.description}

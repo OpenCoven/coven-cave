@@ -25,6 +25,9 @@ const MODE_ALIASES: Record<string, string> = {
   calendar: "inbox",
   "familiar-work-queue": "board",
   flow: "inbox",
+  // Journal has no sidebar row of its own anymore — it's a tab inside the
+  // Memories (grimoire) surface, so that row stays lit on either tab.
+  journal: "grimoire",
 };
 
 function normalizeMode(mode: string): string {
@@ -35,18 +38,8 @@ export function sidebarRowState(
   rowId: string,
   activeMode: string,
   splitPageModes?: readonly string[],
-  opts?: {
-    /** The Grimoire surface's current tab. `mode` is never "journal" (setMode
-     *  remaps it to grimoire+journal tab), so without this the Journal row
-     *  could never light — Grimoire lit instead (cave-s9p6). */
-    grimoireView?: string;
-  },
 ): SidebarRowState {
-  const effectiveActive =
-    activeMode === "grimoire" && opts?.grimoireView === "journal"
-      ? "journal"
-      : normalizeMode(activeMode);
-  if (effectiveActive === rowId) return "active";
+  if (normalizeMode(activeMode) === rowId) return "active";
   if (splitPageModes?.some((m) => normalizeMode(m) === rowId)) return "split";
   return "idle";
 }

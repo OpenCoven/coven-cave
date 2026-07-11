@@ -4676,6 +4676,11 @@ details[open] > .cave-tool-summary::before {
 .workspace-rail {
   display: flex;
   flex-direction: row;
+  /* Fill the hosting panel. The code-rail Panel clamps at maxSize 560px while
+     the resizable layout can hand it more — without flex-grow the rail sat at
+     its content width and left a dead band between its right edge and the
+     collapsed Inspector rail on wide windows. */
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
   min-width: 0;

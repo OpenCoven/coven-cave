@@ -300,6 +300,31 @@ export function covenLaunchCommand(): CovenLaunchCommand {
 }
 
 /**
+ * Value for COVEN_HARNESS_ADAPTER_DIRS in coven child processes: the user's
+ * own value (if any) with COVEN_HOME/adapters appended.
+ *
+ * Released coven CLIs (≤0.0.53) only auto-trust manifests in
+ * COVEN_HOME/adapters whose id matches a built-in install recipe (hermes
+ * today). The manifests Cave scaffolds there for other runtimes (copilot,
+ * opencode, …) are silently ignored, so `coven run copilot` failed with
+ * "unsupported harness" even though the manifest existed and parsed. The
+ * CLI's sanctioned path for other external harnesses is this env var, so
+ * every coven spawn points it at the directory Cave writes manifests into.
+ * The CLI dedups against recipe-trusted manifests and tolerates a missing
+ * directory. Exported for tests.
+ */
+export function covenAdapterDirsEnvValue(
+  existing: string | undefined,
+  covenHome?: string,
+): string {
+  const home = covenHome?.trim() || path.join(HOME, ".coven");
+  const adaptersDir = path.join(home, "adapters");
+  const dirs = (existing ?? "").split(path.delimiter).filter(Boolean);
+  if (dirs.includes(adaptersDir)) return dirs.join(path.delimiter);
+  return [...dirs, adaptersDir].join(path.delimiter);
+}
+
+/**
  * Augmented spawn env with PATH containing the user's interactive-shell PATH
  * plus the candidate dirs (in priority order), so subprocesses launched from
  * a Finder-spawned cave can still resolve nested tooling (codex, claude,
@@ -325,6 +350,10 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
     cachedPath = dedup.join(path.delimiter);
   }
   const env: NodeJS.ProcessEnv = { ...process.env, PATH: cachedPath };
+  env.COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue(
+    process.env.COVEN_HARNESS_ADAPTER_DIRS,
+    process.env.COVEN_HOME,
+  );
   for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
     delete env[key];
   }

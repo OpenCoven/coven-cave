@@ -103,8 +103,10 @@ assert.doesNotMatch(ws, /mode === "journal" \?/, "no journal surface branch rema
 assert.doesNotMatch(ws, /cave:journal-set-tab/, "the journal tab event plumbing is gone");
 assert.match(ws, /case "\/journal":\s*\n\s*setMode\("journal"\)/, "/journal routes through the redirect");
 
-// ── Sidebar: the Journal row stays (redirects on click), minus sketches ─────
-assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal row");
+// ── Sidebar: the Journal mode stays reachable (⌘K palette + deep links via
+// navHidden) even though its dedicated row is retired — it's a tab inside
+// Memories now. ─────
+assert.match(sidebar, /id: "journal", label: "Journal", iconName: "ph:book-open"/, "sidebar keeps the Journal FOLDER_MODES entry for the palette");
 assert.doesNotMatch(sidebar, /generated sketches/, "sidebar description no longer promises the canvas");
 
 // ── A redirect is not a page: journal can't be dragged into a split ─────────

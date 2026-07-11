@@ -192,3 +192,33 @@ assert.equal(
   "Here are the options:\n---\nNote: pick the one that fits your budget.\n",
   "a horizontal rule followed by capitalized prose (Note:) is NOT skill frontmatter",
 );
+
+// ── passthrough: external manifest adapters (copilot, opencode, …) ──────────
+// Their CLIs pipe raw stdout with none of the codex/claude output shapes this
+// filter keys on: the default "pre" phase suppressed the entire reply
+// (observed as copilot chats ending "completed but produced no output"), and
+// BANNER_LINE_RE's token-count heuristic (a bare number) ate legitimate
+// numeric answers ("What is 2+3?" → "5" → suppressed).
+{
+  const external = new AssistantFilter({ passthrough: true });
+  let out = external.push("Here is the answer you asked for.\n");
+  out += external.push("5\n");
+  out += external.flush();
+  assert.equal(
+    out,
+    "Here is the answer you asked for.\n5\n",
+    "external-adapter stdout passes through verbatim — no marker gate, no banner heuristics",
+  );
+}
+assert.equal(
+  feed(["A bare line with no marker before it."]),
+  "",
+  "default construction still gates on the codex/claude markers",
+);
+assert.equal(
+  feed(["codex", "12,345"]),
+  "",
+  "default construction still suppresses codex token-count banner numbers",
+);
+
+console.log("chat-assistant-filter.test: ok (passthrough)");

@@ -10,13 +10,13 @@ const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.
 // ── Surface registration: mode, title, render branch, sidebar row ────────────
 
 assert.match(modeType, /\| "grimoire"/, "grimoire is a WorkspaceMode");
-assert.match(workspace, /grimoire: "Grimoire"/, "grimoire has a page title (sr-only h1)");
+assert.match(workspace, /grimoire: "Memories"/, "grimoire has a page title (sr-only h1) reading Memories");
 assert.match(workspace, /mode === "grimoire" \? \(\s*<GrimoireView\s+view=\{grimoireView\}/, "grimoire mode renders GrimoireView with the controlled view");
 // Journal is now a tab inside Grimoire: the nav/deep-link `journal` mode opens
 // Grimoire on its Journal tab instead of redirecting to Settings.
 assert.match(workspace, /if \(next === "journal"\) \{[\s\S]{0,400}setGrimoireView\("journal"\);\s*\n\s*setModeRaw\("grimoire"\);/, "the journal mode routes into the Grimoire Journal tab");
 assert.match(sidebar, /\| "grimoire"/, "grimoire is a FolderMode");
-assert.match(sidebar, /id: "grimoire", label: "Grimoire"/, "grimoire has a sidebar row (and ⌘K palette entry via FOLDER_MODES)");
+assert.match(sidebar, /id: "grimoire", label: "Memories"/, "grimoire has a sidebar row labeled Memories (and ⌘K palette entry via FOLDER_MODES)");
 
 // ── Navigator: three sources, searchable, new-entry affordance ───────────────
 
@@ -171,7 +171,7 @@ assert.match(
   "the doc index maps memory entries by fullPath (the same path openDoc navigates to)",
 );
 assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
-assert.match(view, /title="No matching Grimoire doc"[\s\S]{0,600}border-dashed/, "an unresolved link renders dashed with a hint (tap shows why — cave-bkpj)");
+assert.match(view, /title="No matching Memories doc"[\s\S]{0,600}border-dashed/, "an unresolved link renders dashed with a hint (tap shows why — cave-bkpj)");
 assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
 
 // ── Backlinks: incoming mentions from the doc graph (cave-hand) ──────────────
@@ -195,7 +195,7 @@ assert.match(view, /const localGraph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "
 assert.match(view, /markdown: k\.body/, "the fallback graph reads each knowledge body (already loaded)");
 assert.match(view, /const graph = scan\?\.graph \?\? localGraph/, "the server scan wins, the local graph stands in — never blank");
 assert.match(view, /if \(firstLoadDoneRef\.current\) refreshGraph\(\)/, "saves/deletes rescan the graph (mount already fetched)");
-assert.match(view, /aria-label="Grimoire view"/, "the Docs|Journal|Graph switch is a labelled control group");
+assert.match(view, /aria-label="Memories view"/, "the Docs|Journal|Graph switch is a labelled control group");
 assert.match(
   view,
   /aria-pressed=\{view === "docs"\}[\s\S]{0,900}aria-pressed=\{view === "journal"\}[\s\S]{0,900}aria-pressed=\{view === "graph"\}/,
