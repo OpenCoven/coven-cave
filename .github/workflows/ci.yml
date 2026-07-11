@@ -224,6 +224,20 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked sidecar_archive
 
+      # The updater clears Tauri's resource table immediately before
+      # launching msiexec. Exercise the native Drop guard on Windows so an
+      # update cannot strand the packaged Node process tree.
+      - name: Test Windows updater sidecar cleanup
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib tests::dropping_application_cleanup_guard_stops_and_reaps_sidecar -- --exact --nocapture
+
+      - name: Test Windows upgrade diagnostics fixture
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: .\scripts\windows-upgrade-diagnostics.test.ps1
+
   sidecar-runtime-required:
     name: Sidecar runtime required
     runs-on: ubuntu-latest
