@@ -3065,6 +3065,26 @@ textarea.required-inputs-control {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---- AvatarLightbox trigger -------------------------------- */
+/* Shared reset for the "click to enlarge" avatar button (AvatarLightbox). The
+   caller owns the inline avatar inside; this strips all button chrome so the
+   avatar looks identical whether or not it is expandable, and only adds the
+   zoom cursor. Focus styling comes from the composed `.focus-ring` utility. */
+.cave-avatar-lightbox-trigger {
+  display: inline-flex;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 0;
+  border-radius: inherit;
+  cursor: zoom-in;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 /* ---- ThinkingIndicator ------------------------------------- */
 .ui-thinking {
   display: inline-flex;
