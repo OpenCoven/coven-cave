@@ -149,7 +149,7 @@ test("packaged sidecar bootstraps mobile handoff tokens", async () => {
   );
   assert.match(
     launcher,
-    /\?covenCaveToken=\{\}&coven_access_token=\{\}/,
+    /\?covenCaveToken=\{auth_token\}&coven_access_token=\{mobile_access_token\}/,
     "desktop webview should bootstrap both sidecar auth and mobile access cookies",
   );
 });
@@ -169,8 +169,13 @@ test("macOS tray exposes quick chat as a separate floating window", async () => 
   );
   assert.match(
     launcher,
-    /show_quick_chat_window\(app, &quick_chat_url_for_menu\)/,
-    "the Quick Chat menu item must open the dedicated quick chat window",
+    /"quick_chat" => show_quick_chat_from_main\(app\)/,
+    "the Quick Chat menu item must resolve the ready main sidecar before opening",
+  );
+  assert.match(
+    launcher,
+    /fn quick_chat_url_from_main[\s\S]*trusted_loopback[\s\S]*url\.set_path\("\/quick-chat"\)/,
+    "quick chat must not open against the local startup page or an untrusted origin",
   );
   assert.match(
     launcher,
@@ -209,8 +214,46 @@ test("Windows packaged sidecar starts without a console window", async () => {
   );
   assert.match(
     launcher,
-    /cmd\.creation_flags\(0x08000000\)/,
+    /command\.creation_flags\(0x08000000\)/,
     "Windows launcher must use CREATE_NO_WINDOW for the Node sidecar process",
+  );
+});
+
+test("Windows first launch paints progress and supports recovery while the sidecar starts", async () => {
+  const [launcher, startupPage] = await Promise.all([
+    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readFile(new URL("./frontend-stub/startup.html", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(
+    launcher,
+    /WebviewUrl::App\("startup\.html"\.into\(\)\)/,
+    "Windows release startup must create a local window before runtime preparation",
+  );
+  assert.match(
+    launcher,
+    /thread::Builder::new\(\)[\s\S]*coven-sidecar-startup[\s\S]*start_sidecar_runtime/,
+    "runtime preparation and sidecar readiness must run off the UI thread",
+  );
+  assert.match(
+    launcher,
+    /retry_sidecar_startup[\s\S]*cancel_sidecar_startup/,
+    "startup must expose retry and cancellation commands",
+  );
+  assert.match(
+    startupPage,
+    /role="progressbar"[\s\S]*aria-live="polite"/,
+    "startup page must expose accessible progress",
+  );
+  assert.match(
+    startupPage,
+    /sidecar-startup-progress/,
+    "startup page must listen for native phase changes",
+  );
+  assert.match(
+    startupPage,
+    /Startup diagnostics[\s\S]*retry_sidecar_startup/,
+    "startup failures must surface diagnostics and an in-window retry",
   );
 });
 

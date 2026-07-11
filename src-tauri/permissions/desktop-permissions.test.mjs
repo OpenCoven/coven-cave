@@ -41,6 +41,9 @@ const requiredPermissionIds = [
   "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
+  "allow-sidecar-startup-status",
+  "allow-retry-sidecar-startup",
+  "allow-cancel-sidecar-startup",
 ];
 
 const requiredCommands = [
@@ -58,6 +61,9 @@ const requiredCommands = [
   "browser_close_all",
   "browser_reload",
   "shell_open",
+  "sidecar_startup_status",
+  "retry_sidecar_startup",
+  "cancel_sidecar_startup",
 ];
 
 // Node 22 (CI's runtime) has no global URLPattern, so match capability
@@ -207,6 +213,9 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
   assertCapabilityDoesNotGrant(loopbackBrowserCapability, [
     "default",
     "allow-shell-open",
+    "allow-sidecar-startup-status",
+    "allow-retry-sidecar-startup",
+    "allow-cancel-sidecar-startup",
   ]);
 });
 
@@ -370,17 +379,21 @@ test("the trusted main loopback webview can run the native in-app updater", () =
     "grant exactly check/download/install (updater:default), relaunch, and the platform/arch reads used to pick installer fallbacks — nothing else (no process:allow-exit)",
   );
 
-  // The web side must actually drive the native path: check() from
-  // plugin-updater, downloadAndInstall on the returned update, and relaunch()
-  // from plugin-process. If a refactor drops any of these the capability
-  // grant is dead weight and users silently regress to browser downloads.
+  // The web side must actually drive the native path: check(), prepare the
+  // signed download while the old app remains usable, explicitly install,
+  // and relaunch. If a refactor drops these the capability grant is dead.
   assert.ok(
     updateAvailable.includes('await import("@tauri-apps/plugin-updater")'),
     "update-available.tsx must check for updates through the native plugin-updater",
   );
   assert.ok(
+    updateAvailable.includes("prepareNativeUpdate") && updateAvailable.includes("installPreparedUpdate"),
+    "update-available.tsx must separate signed download preparation from explicit install",
+  );
+  assert.equal(
     updateAvailable.includes("downloadAndInstall"),
-    "update-available.tsx must install through the native updater download",
+    false,
+    "update preparation must not exit the old app as soon as download finishes",
   );
   assert.ok(
     updateAvailable.includes('await import("@tauri-apps/plugin-process")'),

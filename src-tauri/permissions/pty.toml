@@ -77,3 +77,18 @@ commands.allow = ["browser_report_title"]
 identifier = "allow-browser-report-scroll"
 description = "Allows child browser webviews to report scroll position via Rust."
 commands.allow = ["browser_report_scroll"]
+
+[[permission]]
+identifier = "allow-sidecar-startup-status"
+description = "Allows the bundled local startup page to read sidecar preparation status."
+commands.allow = ["sidecar_startup_status"]
+
+[[permission]]
+identifier = "allow-retry-sidecar-startup"
+description = "Allows the bundled local startup page to retry sidecar preparation."
+commands.allow = ["retry_sidecar_startup"]
+
+[[permission]]
+identifier = "allow-cancel-sidecar-startup"
+description = "Allows the bundled local startup page to cancel sidecar preparation at a safe boundary."
+commands.allow = ["cancel_sidecar_startup"]

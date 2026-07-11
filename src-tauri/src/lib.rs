@@ -4,6 +4,8 @@
 // Android. Mobile binaries are thin shells: webview only, no sidecar.
 #[cfg(desktop)]
 use rand::{rngs::OsRng, RngCore};
+#[cfg(all(desktop, target_os = "windows"))]
+use serde::Serialize;
 #[cfg(desktop)]
 use std::net::TcpListener;
 #[cfg(all(desktop, target_os = "windows"))]
@@ -12,6 +14,8 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 #[cfg(desktop)]
 use std::process::{Child, Command, Stdio};
+#[cfg(all(desktop, target_os = "windows"))]
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(desktop)]
 use std::sync::{Arc, Mutex};
 #[cfg(desktop)]
@@ -25,7 +29,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
-
 #[cfg(desktop)]
 const QUICK_CHAT_WINDOW_LABEL: &str = "quick-chat";
 #[cfg(desktop)]
@@ -79,9 +82,37 @@ fn quick_chat_position(app: &tauri::AppHandle) -> (f64, f64) {
         let screen_x = position.x as f64 / scale;
         let screen_y = position.y as f64 / scale;
         let screen_w = size.width as f64 / scale;
-        return (screen_x + screen_w - QUICK_CHAT_WIDTH - 14.0, screen_y + 34.0);
+        return (
+            screen_x + screen_w - QUICK_CHAT_WIDTH - 14.0,
+            screen_y + 34.0,
+        );
     }
     (24.0, 40.0)
+}
+
+#[cfg(desktop)]
+fn quick_chat_url_from_main(mut url: Url) -> Option<Url> {
+    let trusted_loopback = url.scheme() == "http"
+        && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
+        && url.port().is_some();
+    if !trusted_loopback {
+        return None;
+    }
+    url.set_path("/quick-chat");
+    Some(url)
+}
+
+#[cfg(desktop)]
+fn show_quick_chat_from_main(app: &tauri::AppHandle) {
+    let Some(url) = app
+        .get_webview_window("main")
+        .and_then(|window| window.url().ok())
+        .and_then(quick_chat_url_from_main)
+    else {
+        focus_main_window(app);
+        return;
+    };
+    show_quick_chat_window(app, &url);
 }
 
 #[cfg(desktop)]
@@ -230,7 +261,9 @@ fn fatal_exit(msg: &str) -> ! {
 fn check_app_translocation() {
     #[cfg(target_os = "macos")]
     {
-        let Ok(exe) = std::env::current_exe() else { return };
+        let Ok(exe) = std::env::current_exe() else {
+            return;
+        };
         let path = exe.to_string_lossy().to_string();
         if !path.contains("/AppTranslocation/") && !path.contains("/Volumes/") {
             return;
@@ -277,8 +310,7 @@ fn find_node(resource_dir: &Path) -> Option<PathBuf> {
         let home = std::env::var("USERPROFILE").unwrap_or_default();
 
         // nvm-windows stores versions under %APPDATA%\nvm\v<version>\node.exe
-        let nvm_root =
-            PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("nvm");
+        let nvm_root = PathBuf::from(std::env::var("APPDATA").unwrap_or_default()).join("nvm");
         if let Ok(entries) = std::fs::read_dir(&nvm_root) {
             let mut versions: Vec<PathBuf> = entries
                 .filter_map(|e| e.ok())
@@ -297,8 +329,7 @@ fn find_node(resource_dir: &Path) -> Option<PathBuf> {
         // Standard / tool-manager install locations
         let candidates = [
             PathBuf::from(
-                std::env::var("ProgramFiles")
-                    .unwrap_or_else(|_| "C:\\Program Files".into()),
+                std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into()),
             )
             .join("nodejs")
             .join("node.exe"),
@@ -411,7 +442,10 @@ fn find_coven() -> Option<PathBuf> {
                 return Some(c.clone());
             }
         }
-        if let Ok(out) = std::process::Command::new("where.exe").arg("coven").output() {
+        if let Ok(out) = std::process::Command::new("where.exe")
+            .arg("coven")
+            .output()
+        {
             let path = String::from_utf8_lossy(&out.stdout)
                 .lines()
                 .next()
@@ -487,6 +521,162 @@ fn sidecar_auth_token() -> String {
 struct SidecarState(Arc<Mutex<Option<Child>>>);
 
 #[cfg(desktop)]
+#[derive(Clone, Copy)]
+enum SidecarStartupStep {
+    PreparingRuntime,
+    StartingService,
+    WaitingForService,
+}
+
+#[cfg(desktop)]
+enum SidecarStartError {
+    Cancelled,
+    Failed(String),
+}
+
+#[cfg(desktop)]
+enum PortWaitResult {
+    Ready,
+    Cancelled,
+    TimedOut,
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+const SIDECAR_STARTUP_EVENT: &str = "sidecar-startup-progress";
+
+#[cfg(all(desktop, target_os = "windows"))]
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SidecarStartupStatus {
+    phase: &'static str,
+    progress: u8,
+    message: String,
+    can_retry: bool,
+    can_cancel: bool,
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+impl SidecarStartupStatus {
+    fn preparing() -> Self {
+        Self {
+            phase: "preparing",
+            progress: 10,
+            message: "Verifying and preparing the application runtime".to_string(),
+            can_retry: false,
+            can_cancel: false,
+        }
+    }
+
+    fn starting() -> Self {
+        Self {
+            phase: "starting",
+            progress: 70,
+            message: "Starting local services".to_string(),
+            can_retry: false,
+            can_cancel: true,
+        }
+    }
+
+    fn waiting() -> Self {
+        Self {
+            phase: "waiting",
+            progress: 85,
+            message: "Waiting for CovenCave to become ready".to_string(),
+            can_retry: false,
+            can_cancel: true,
+        }
+    }
+
+    fn ready() -> Self {
+        Self {
+            phase: "ready",
+            progress: 100,
+            message: "CovenCave is ready".to_string(),
+            can_retry: false,
+            can_cancel: false,
+        }
+    }
+
+    fn failed(message: String) -> Self {
+        Self {
+            phase: "failed",
+            progress: 0,
+            message,
+            can_retry: true,
+            can_cancel: false,
+        }
+    }
+
+    fn cancelled() -> Self {
+        Self {
+            phase: "cancelled",
+            progress: 0,
+            message: "Startup was cancelled. The prepared runtime is safe to reuse.".to_string(),
+            can_retry: true,
+            can_cancel: false,
+        }
+    }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+struct SidecarStartupControl {
+    status: Mutex<SidecarStartupStatus>,
+    running: AtomicBool,
+    cancel_requested: AtomicBool,
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+impl SidecarStartupControl {
+    fn new() -> Self {
+        Self {
+            status: Mutex::new(SidecarStartupStatus::preparing()),
+            running: AtomicBool::new(false),
+            cancel_requested: AtomicBool::new(false),
+        }
+    }
+
+    fn begin(&self) -> Result<(), String> {
+        self.running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "sidecar startup is already running".to_string())?;
+        self.cancel_requested.store(false, Ordering::Release);
+        Ok(())
+    }
+
+    fn finish(&self) {
+        self.running.store(false, Ordering::Release);
+    }
+
+    fn request_cancel(&self) -> Result<(), String> {
+        if !self.running.load(Ordering::Acquire) {
+            return Err("sidecar startup is not running".to_string());
+        }
+        self.cancel_requested.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancel_requested.load(Ordering::Acquire)
+    }
+
+    fn status(&self) -> Result<SidecarStartupStatus, String> {
+        self.status
+            .lock()
+            .map(|status| status.clone())
+            .map_err(|_| "sidecar startup status lock is poisoned".to_string())
+    }
+
+    fn set_status(&self, status: SidecarStartupStatus) -> Result<(), String> {
+        let mut current = self
+            .status
+            .lock()
+            .map_err(|_| "sidecar startup status lock is poisoned".to_string())?;
+        *current = status;
+        Ok(())
+    }
+}
+
+#[cfg(desktop)]
 struct SidecarCleanupGuard(Arc<Mutex<Option<Child>>>);
 
 #[cfg(desktop)]
@@ -509,55 +699,61 @@ impl SidecarState {
             .0
             .lock()
             .map_err(|_| "sidecar process lock is poisoned".to_string())?;
-        let Some(mut child) = guard.take() else {
+        let Some(child) = guard.take() else {
             return Ok(());
         };
-        if child
-            .try_wait()
-            .map_err(|error| format!("could not inspect sidecar process: {error}"))?
-            .is_some()
-        {
-            return Ok(());
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            let pid = child.id().to_string();
-            let mut taskkill = Command::new(windows_system32_binary("taskkill.exe"));
-            taskkill
-                .args(["/PID", &pid, "/T", "/F"])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .creation_flags(0x08000000);
-            match taskkill.status() {
-                Ok(status) if status.success() => {}
-                Ok(status) => log::warn!(
-                    "[cave] taskkill could not stop sidecar process tree {} (status {}); falling back to direct termination",
-                    pid,
-                    status
-                ),
-                Err(error) => log::warn!(
-                    "[cave] taskkill could not start for sidecar process tree {}: {}; falling back to direct termination",
-                    pid,
-                    error
-                ),
-            }
-        }
-
-        if child
-            .try_wait()
-            .map_err(|error| format!("could not inspect terminated sidecar: {error}"))?
-            .is_none()
-        {
-            child
-                .kill()
-                .map_err(|error| format!("could not stop sidecar process: {error}"))?;
-        }
-        child
-            .wait()
-            .map_err(|error| format!("could not wait for sidecar process shutdown: {error}"))?;
-        Ok(())
+        drop(guard);
+        stop_sidecar_child(child)
     }
+}
+
+#[cfg(desktop)]
+fn stop_sidecar_child(mut child: Child) -> Result<(), String> {
+    if child
+        .try_wait()
+        .map_err(|error| format!("could not inspect sidecar process: {error}"))?
+        .is_some()
+    {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let pid = child.id().to_string();
+        let mut taskkill = Command::new(windows_system32_binary("taskkill.exe"));
+        taskkill
+            .args(["/PID", &pid, "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000);
+        match taskkill.status() {
+            Ok(status) if status.success() => {}
+            Ok(status) => log::warn!(
+                "[cave] taskkill could not stop sidecar process tree {} (status {}); falling back to direct termination",
+                pid,
+                status
+            ),
+            Err(error) => log::warn!(
+                "[cave] taskkill could not start for sidecar process tree {}: {}; falling back to direct termination",
+                pid,
+                error
+            ),
+        }
+    }
+
+    if child
+        .try_wait()
+        .map_err(|error| format!("could not inspect terminated sidecar: {error}"))?
+        .is_none()
+    {
+        child
+            .kill()
+            .map_err(|error| format!("could not stop sidecar process: {error}"))?;
+    }
+    child
+        .wait()
+        .map_err(|error| format!("could not wait for sidecar process shutdown: {error}"))?;
+    Ok(())
 }
 
 #[cfg(desktop)]
@@ -604,18 +800,20 @@ fn live_dev_server_url(app: &tauri::App) -> Option<tauri::Url> {
 }
 
 #[cfg(desktop)]
-fn wait_for_port(port: u16, timeout: Duration) -> bool {
-    use std::net::TcpStream;
-    let addr = format!("127.0.0.1:{}", port);
-    let parsed = addr.parse().expect("valid sidecar addr");
+fn wait_for_port(port: u16, timeout: Duration, should_cancel: impl Fn() -> bool) -> PortWaitResult {
+    use std::net::{SocketAddr, TcpStream};
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if TcpStream::connect_timeout(&parsed, Duration::from_millis(200)).is_ok() {
-            return true;
+        if should_cancel() {
+            return PortWaitResult::Cancelled;
+        }
+        if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+            return PortWaitResult::Ready;
         }
         thread::sleep(Duration::from_millis(150));
     }
-    false
+    PortWaitResult::TimedOut
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -635,6 +833,375 @@ fn node_arg_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+#[cfg(desktop)]
+fn start_sidecar_runtime(
+    app: &tauri::AppHandle,
+    mut on_step: impl FnMut(SidecarStartupStep),
+    should_cancel: impl Fn() -> bool,
+) -> Result<Url, SidecarStartError> {
+    on_step(SidecarStartupStep::PreparingRuntime);
+    let resource_dir = app.path().resource_dir().map_err(|error| {
+        SidecarStartError::Failed(format!("could not resolve resource dir: {error}"))
+    })?;
+
+    #[cfg(target_os = "windows")]
+    let server_dir_root =
+        sidecar_archive::prepare_sidecar_runtime(app, &resource_dir).map_err(|error| {
+            SidecarStartError::Failed(format!("could not prepare sidecar runtime: {error}"))
+        })?;
+    #[cfg(not(target_os = "windows"))]
+    let server_dir_root = resource_dir.join("resources").join("server");
+
+    if should_cancel() {
+        return Err(SidecarStartError::Cancelled);
+    }
+
+    let server_mjs = server_dir_root.join("server.mjs");
+    let server_js = server_dir_root.join("server.js");
+    let server_entry = if server_mjs.exists() {
+        server_mjs
+    } else if server_js.exists() {
+        log::warn!(
+            "[cave] bundle has no server.mjs - terminal websocket bridge unavailable in this build"
+        );
+        server_js
+    } else {
+        return Err(SidecarStartError::Failed(format!(
+            "standalone server not found at {}",
+            server_js.display()
+        )));
+    };
+
+    let port = find_free_port()
+        .ok_or_else(|| SidecarStartError::Failed("no free local port available".to_string()))?;
+    let auth_token = sidecar_auth_token();
+    let mobile_access_token = sidecar_auth_token();
+    log::info!("[cave] starting sidecar on port {port}");
+
+    let node = find_node(&resource_dir).ok_or_else(|| {
+        SidecarStartError::Failed(
+            "Could not find a `node` binary. Install Node.js from https://nodejs.org and re-launch CovenCave."
+                .to_string(),
+        )
+    })?;
+    log::info!("[cave] using node at {}", node.display());
+
+    // Capture sidecar logs so startup failures can be surfaced in the local
+    // preparation window instead of leaving a blank webview.
+    let log_dir = {
+        #[cfg(target_os = "macos")]
+        {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join("Library/Logs/CovenCave"))
+                .unwrap_or_else(|_| std::env::temp_dir())
+        }
+        #[cfg(target_os = "windows")]
+        {
+            PathBuf::from(
+                std::env::var("APPDATA")
+                    .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into()),
+            )
+            .join("CovenCave")
+            .join("logs")
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".local/share/CovenCave/logs"))
+                .unwrap_or_else(|_| std::env::temp_dir())
+        }
+    };
+    if let Err(error) = std::fs::create_dir_all(&log_dir) {
+        log::warn!(
+            "[cave] could not create sidecar log directory {}: {error}",
+            log_dir.display()
+        );
+    }
+    let log_path = log_dir.join("sidecar.log");
+    log::info!("[cave] sidecar log -> {}", log_path.display());
+    let stdout_log = std::fs::File::create(&log_path).ok();
+    let stderr_log = stdout_log.as_ref().and_then(|file| file.try_clone().ok());
+
+    let server_dir = server_entry.parent().ok_or_else(|| {
+        SidecarStartError::Failed("server entry has no parent directory".to_string())
+    })?;
+    let server_js_arg = node_arg_path(&server_entry);
+    let server_dir_arg = node_arg_path(server_dir);
+
+    let path_sep = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
+    let default_path = if cfg!(target_os = "windows") {
+        std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
+    } else {
+        std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
+    };
+    let mut augmented_path = default_path;
+    if let Some(directory) = node.parent() {
+        augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
+    }
+    match find_coven() {
+        Some(coven) => {
+            log::info!("[cave] using coven at {}", coven.display());
+            if let Some(directory) = coven.parent() {
+                augmented_path = format!("{}{}{}", directory.display(), path_sep, augmented_path);
+            }
+        }
+        None => log::warn!("[cave] `coven` CLI not found on disk - onboarding will prompt install"),
+    }
+
+    on_step(SidecarStartupStep::StartingService);
+    if should_cancel() {
+        return Err(SidecarStartError::Cancelled);
+    }
+
+    let mut command = Command::new(&node);
+    command
+        .arg(&server_js_arg)
+        .current_dir(&server_dir_arg)
+        .env("PATH", &augmented_path)
+        .env("PORT", port.to_string())
+        .env("HOSTNAME", "127.0.0.1")
+        .env("NODE_ENV", "production")
+        .env("COVEN_CAVE_BUNDLE", "1")
+        .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
+        .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
+
+    if let Some(output) = stdout_log {
+        command.stdout(Stdio::from(output));
+    } else {
+        command.stdout(Stdio::null());
+    }
+    if let Some(error_output) = stderr_log {
+        command.stderr(Stdio::from(error_output));
+    } else {
+        command.stderr(Stdio::null());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let child = command.spawn().map_err(|error| {
+        SidecarStartError::Failed(format!("failed to spawn node sidecar: {error}"))
+    })?;
+    let sidecar_state = app.state::<SidecarState>();
+    match sidecar_state.0.lock() {
+        Ok(mut sidecar) => *sidecar = Some(child),
+        Err(_) => {
+            let cleanup = stop_sidecar_child(child)
+                .err()
+                .map(|error| format!("; cleanup also failed: {error}"))
+                .unwrap_or_default();
+            return Err(SidecarStartError::Failed(format!(
+                "sidecar process lock is poisoned{cleanup}"
+            )));
+        }
+    }
+
+    on_step(SidecarStartupStep::WaitingForService);
+    let sidecar_start_timeout = if cfg!(target_os = "windows") {
+        Duration::from_secs(90)
+    } else {
+        Duration::from_secs(20)
+    };
+    match wait_for_port(port, sidecar_start_timeout, &should_cancel) {
+        PortWaitResult::Ready => {}
+        PortWaitResult::Cancelled => return Err(SidecarStartError::Cancelled),
+        PortWaitResult::TimedOut => {
+            let tail = std::fs::read_to_string(&log_path)
+                .ok()
+                .map(|contents| {
+                    let lines: Vec<&str> = contents.lines().rev().take(8).collect();
+                    let mut tail = lines.into_iter().rev().collect::<Vec<_>>().join("\n");
+                    if tail.is_empty() {
+                        tail.push_str("(no output captured)");
+                    }
+                    tail
+                })
+                .unwrap_or_else(|| "(could not read sidecar log)".to_string());
+            return Err(SidecarStartError::Failed(format!(
+                "Sidecar (node {}) did not become ready on port {} within {}s.\n\nLast lines from {}:\n{}",
+                node.display(),
+                port,
+                sidecar_start_timeout.as_secs(),
+                log_path.display(),
+                tail
+            )));
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    sidecar_archive::cleanup_stale_sidecar_runtimes(&server_dir_root);
+
+    format!(
+        "http://127.0.0.1:{port}/?covenCaveToken={auth_token}&coven_access_token={mobile_access_token}"
+    )
+    .parse()
+    .map_err(|error| SidecarStartError::Failed(format!("could not build sidecar URL: {error}")))
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn publish_sidecar_startup_status(
+    app: &tauri::AppHandle,
+    control: &SidecarStartupControl,
+    status: SidecarStartupStatus,
+) -> Result<(), String> {
+    control.set_status(status.clone())?;
+    app.emit_to("main", SIDECAR_STARTUP_EVENT, status)
+        .map_err(|error| format!("could not publish sidecar startup status: {error}"))
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn spawn_sidecar_startup(
+    app: tauri::AppHandle,
+    control: Arc<SidecarStartupControl>,
+) -> Result<(), String> {
+    control.begin()?;
+    if let Err(error) =
+        publish_sidecar_startup_status(&app, &control, SidecarStartupStatus::preparing())
+    {
+        control.finish();
+        return Err(error);
+    }
+
+    let thread_control = Arc::clone(&control);
+    let worker_app = app.clone();
+    let spawn_result = thread::Builder::new()
+        .name("coven-sidecar-startup".to_string())
+        .spawn(move || {
+            let app = worker_app;
+            let progress_app = app.clone();
+            let progress_control = Arc::clone(&thread_control);
+            let cancel_control = Arc::clone(&thread_control);
+            let result = start_sidecar_runtime(
+                &app,
+                move |step| {
+                    let status = match step {
+                        SidecarStartupStep::PreparingRuntime => SidecarStartupStatus::preparing(),
+                        SidecarStartupStep::StartingService => SidecarStartupStatus::starting(),
+                        SidecarStartupStep::WaitingForService => SidecarStartupStatus::waiting(),
+                    };
+                    if let Err(error) = publish_sidecar_startup_status(
+                        &progress_app,
+                        &progress_control,
+                        status,
+                    ) {
+                        log::warn!("[cave] {error}");
+                    }
+                },
+                move || cancel_control.is_cancelled(),
+            );
+
+            let final_status = match result {
+                Ok(_url) if thread_control.is_cancelled() => {
+                    if let Some(sidecar) = app.try_state::<SidecarState>() {
+                        if let Err(error) = sidecar.stop() {
+                            log::warn!("[cave] could not stop cancelled sidecar: {error}");
+                        }
+                    }
+                    SidecarStartupStatus::cancelled()
+                }
+                Ok(url) => {
+                    pty::trust_main_origin(&url);
+                    let navigation = app
+                        .get_webview_window("main")
+                        .ok_or_else(|| "startup window is unavailable".to_string())
+                        .and_then(|window| {
+                            window
+                                .navigate(url)
+                                .map_err(|error| format!("could not open CovenCave: {error}"))
+                        });
+                    match navigation {
+                        Ok(()) => SidecarStartupStatus::ready(),
+                        Err(error) => {
+                            if let Some(sidecar) = app.try_state::<SidecarState>() {
+                                if let Err(stop_error) = sidecar.stop() {
+                                    log::warn!(
+                                        "[cave] could not stop sidecar after navigation failure: {stop_error}"
+                                    );
+                                }
+                            }
+                            SidecarStartupStatus::failed(error)
+                        }
+                    }
+                }
+                Err(SidecarStartError::Cancelled) => {
+                    if let Some(sidecar) = app.try_state::<SidecarState>() {
+                        if let Err(error) = sidecar.stop() {
+                            log::warn!("[cave] could not stop cancelled sidecar: {error}");
+                        }
+                    }
+                    SidecarStartupStatus::cancelled()
+                }
+                Err(SidecarStartError::Failed(error)) => {
+                    if let Some(sidecar) = app.try_state::<SidecarState>() {
+                        if let Err(stop_error) = sidecar.stop() {
+                            log::warn!(
+                                "[cave] could not stop sidecar after startup failure: {stop_error}"
+                            );
+                        }
+                    }
+                    SidecarStartupStatus::failed(error)
+                }
+            };
+
+            if let Err(error) =
+                publish_sidecar_startup_status(&app, &thread_control, final_status)
+            {
+                log::warn!("[cave] {error}");
+            }
+            thread_control.finish();
+        });
+
+    if let Err(error) = spawn_result {
+        control.finish();
+        let message = format!("could not start sidecar preparation worker: {error}");
+        let _ = publish_sidecar_startup_status(
+            &app,
+            &control,
+            SidecarStartupStatus::failed(message.clone()),
+        );
+        return Err(message);
+    }
+
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+#[tauri::command]
+fn sidecar_startup_status(
+    state: tauri::State<'_, Arc<SidecarStartupControl>>,
+) -> Result<SidecarStartupStatus, String> {
+    state.status()
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+#[tauri::command]
+fn retry_sidecar_startup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<SidecarStartupControl>>,
+) -> Result<(), String> {
+    spawn_sidecar_startup(app, Arc::clone(state.inner()))
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+#[tauri::command]
+fn cancel_sidecar_startup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<SidecarStartupControl>>,
+) -> Result<(), String> {
+    state.request_cancel()?;
+    let mut status = state.status()?;
+    status.phase = "cancelling";
+    status.message = "Finishing the current operation before cancelling".to_string();
+    status.can_cancel = false;
+    publish_sidecar_startup_status(&app, state.inner(), status)
+}
+
 #[cfg(all(test, desktop))]
 mod tests {
     #[allow(unused_imports)]
@@ -646,6 +1213,67 @@ mod tests {
 
         assert_eq!(token.len(), 64);
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn quick_chat_url_requires_a_loopback_sidecar_origin() {
+        let sidecar = Url::parse("http://127.0.0.1:43123/?token=secret").expect("sidecar URL");
+        let quick_chat = quick_chat_url_from_main(sidecar).expect("trusted quick chat URL");
+
+        assert_eq!(quick_chat.path(), "/quick-chat");
+        assert_eq!(quick_chat.query(), Some("token=secret"));
+        assert!(quick_chat_url_from_main(
+            Url::parse("https://example.test/").expect("external URL")
+        )
+        .is_none());
+        assert!(quick_chat_url_from_main(
+            Url::parse("tauri://localhost/startup.html").expect("local startup URL")
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind readiness fixture");
+        let port = listener.local_addr().expect("fixture address").port();
+        assert!(matches!(
+            wait_for_port(port, Duration::from_secs(1), || false),
+            PortWaitResult::Ready
+        ));
+        drop(listener);
+
+        assert!(matches!(
+            wait_for_port(port, Duration::from_secs(1), || true),
+            PortWaitResult::Cancelled
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn startup_control_prevents_concurrent_workers_and_resets_cancellation() {
+        let control = SidecarStartupControl::new();
+
+        control.begin().expect("first worker starts");
+        assert!(control.begin().is_err());
+        control.request_cancel().expect("running worker cancels");
+        assert!(control.is_cancelled());
+        control.finish();
+
+        control.begin().expect("retry starts after completion");
+        assert!(!control.is_cancelled());
+        control.finish();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn startup_status_uses_frontend_field_names() {
+        let value = serde_json::to_value(SidecarStartupStatus::waiting())
+            .expect("serialize startup status");
+
+        assert_eq!(value["phase"], "waiting");
+        assert_eq!(value["progress"], 85);
+        assert_eq!(value["canRetry"], false);
+        assert_eq!(value["canCancel"], true);
     }
 
     #[test]
@@ -743,8 +1371,8 @@ fn validate_shell_open_path(path: &str) -> Result<PathBuf, String> {
         return Err("shell_open_path requires an absolute path".to_string());
     }
 
-    let metadata = std::fs::metadata(&path)
-        .map_err(|_| "shell_open_path path does not exist".to_string())?;
+    let metadata =
+        std::fs::metadata(&path).map_err(|_| "shell_open_path path does not exist".to_string())?;
     if !metadata.is_dir() {
         return Err("shell_open_path only opens directories".to_string());
     }
@@ -800,8 +1428,7 @@ fn set_traffic_lights_visible(window: tauri::WebviewWindow, visible: bool) {
                 let ns_window = ns_ptr as *mut AnyObject;
                 // NSWindowButton: close = 0, miniaturize = 1, zoom = 2.
                 for kind in 0u64..=2u64 {
-                    let button: *mut AnyObject =
-                        msg_send![&*ns_window, standardWindowButton: kind];
+                    let button: *mut AnyObject = msg_send![&*ns_window, standardWindowButton: kind];
                     if !button.is_null() {
                         let _: () = msg_send![&*button, setHidden: !visible];
                     }
@@ -911,7 +1538,11 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
             .map_err(|e| e.to_string())?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(if stderr.is_empty() { "folder picker failed".to_string() } else { stderr });
+            return Err(if stderr.is_empty() {
+                "folder picker failed".to_string()
+            } else {
+                stderr
+            });
         }
         return normalize_picked_directory(&String::from_utf8_lossy(&output.stdout));
     }
@@ -919,7 +1550,12 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
     #[cfg(target_os = "linux")]
     {
         let zenity = std::process::Command::new("zenity")
-            .args(["--file-selection", "--directory", "--title", "Choose a folder for CovenCave"])
+            .args([
+                "--file-selection",
+                "--directory",
+                "--title",
+                "Choose a folder for CovenCave",
+            ])
             .output();
         if let Ok(output) = zenity {
             if output.status.success() {
@@ -966,7 +1602,9 @@ mod shell_open_tests {
         let path = super::windows_system32_binary("rundll32.exe");
         let path = path.to_string_lossy();
         assert!(path.starts_with(r"C:\") || path.contains(r":\"));
-        assert!(path.ends_with(r"System32\rundll32.exe") || path.ends_with("System32/rundll32.exe"));
+        assert!(
+            path.ends_with(r"System32\rundll32.exe") || path.ends_with("System32/rundll32.exe")
+        );
     }
 
     #[test]
@@ -980,7 +1618,11 @@ mod shell_open_tests {
     #[test]
     fn normalizes_only_absolute_existing_picked_directories() {
         let current = std::env::current_dir().expect("current dir");
-        assert!(super::normalize_picked_directory(&current.to_string_lossy()).unwrap().is_some());
+        assert!(
+            super::normalize_picked_directory(&current.to_string_lossy())
+                .unwrap()
+                .is_some()
+        );
         assert_eq!(super::normalize_picked_directory("").unwrap(), None);
         assert!(super::normalize_picked_directory("relative/path").is_err());
         assert!(super::normalize_picked_directory(&file!()).is_err());
@@ -1101,7 +1743,7 @@ pub fn run() {
     #[cfg(desktop)]
     let sidecar_process = Arc::new(Mutex::new(None));
     #[cfg(desktop)]
-    builder
+    let builder = builder
         .invoke_handler(tauri::generate_handler![
             pty::pty_start,
             pty::pty_write,
@@ -1124,8 +1766,18 @@ pub fn run() {
             shell_open_path,
             shell_pick_directory,
             set_traffic_lights_visible,
+            #[cfg(target_os = "windows")]
+            sidecar_startup_status,
+            #[cfg(target_os = "windows")]
+            retry_sidecar_startup,
+            #[cfg(target_os = "windows")]
+            cancel_sidecar_startup,
         ])
-        .manage(SidecarState(Arc::clone(&sidecar_process)))
+        .manage(SidecarState(Arc::clone(&sidecar_process)));
+    #[cfg(all(desktop, target_os = "windows"))]
+    let builder = builder.manage(Arc::new(SidecarStartupControl::new()));
+    #[cfg(desktop)]
+    builder
         .setup(move |app| {
             // The updater's Windows pre-exit path clears the application
             // resource table after validating the package and before starting
@@ -1175,266 +1827,83 @@ pub fn run() {
             // checkout could not boot `pnpm dev:app` at all — and when a
             // stale bundle did exist, the dev app silently rendered an old
             // production build instead of live code.
-            let main_url: tauri::Url = if let Some(dev_url) = live_dev_server_url(app) {
-                dev_url
+            let main_url: Option<tauri::Url> = if let Some(dev_url) = live_dev_server_url(app) {
+                Some(dev_url)
             } else {
-            let resource_dir = match app.path().resource_dir() {
-                Ok(d) => d,
-                Err(e) => fatal_exit(&format!("could not resolve resource dir: {}", e)),
-            };
-            // Prefer the custom server (server.ts → server.mjs): it carries
-            // the /api/pty-ws terminal websocket bridge. server.js is Next's
-            // generated standalone entrypoint, kept as a fallback for old
-            // bundles — it serves the app but has no terminal bridge.
-            #[cfg(target_os = "windows")]
-            let server_dir_root = match sidecar_archive::prepare_sidecar_runtime(app, &resource_dir)
-            {
-                Ok(path) => path,
-                Err(error) => fatal_exit(&format!("could not prepare sidecar runtime: {error}")),
-            };
-            #[cfg(not(target_os = "windows"))]
-            let server_dir_root = resource_dir.join("resources").join("server");
-            let server_mjs = server_dir_root.join("server.mjs");
-            let server_js = server_dir_root.join("server.js");
-            let server_entry = if server_mjs.exists() {
-                server_mjs
-            } else if server_js.exists() {
-                log::warn!(
-                    "[cave] bundle has no server.mjs — terminal websocket bridge unavailable in this build"
-                );
-                server_js
-            } else {
-                fatal_exit(&format!(
-                    "standalone server not found at {}",
-                    server_js.display()
-                ));
-            };
-
-            let port = match find_free_port() {
-                Some(p) => p,
-                None => fatal_exit("no free local port available"),
-            };
-            let auth_token = sidecar_auth_token();
-            let mobile_access_token = sidecar_auth_token();
-            log::info!("[cave] starting sidecar on port {}", port);
-
-            let node = match find_node(&resource_dir) {
-                Some(p) => p,
-                None => fatal_exit(
-                    "Could not find a `node` binary. Install Node.js from \
-                     https://nodejs.org and re-launch CovenCave.",
-                ),
-            };
-            log::info!("[cave] using node at {}", node.display());
-
-            // Capture sidecar logs so we can show what went wrong if it never
-            // becomes ready. Platform-specific log directory:
-            //   macOS:   ~/Library/Logs/CovenCave/sidecar.log
-            //   Windows: %APPDATA%\CovenCave\logs\sidecar.log
-            //   Linux:   ~/.local/share/CovenCave/logs/sidecar.log
-            let log_dir = {
-                #[cfg(target_os = "macos")]
-                {
-                    std::env::var("HOME")
-                        .map(|h| PathBuf::from(h).join("Library/Logs/CovenCave"))
-                        .unwrap_or_else(|_| std::env::temp_dir())
-                }
                 #[cfg(target_os = "windows")]
                 {
-                    PathBuf::from(
-                        std::env::var("APPDATA")
-                            .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into()),
-                    )
-                    .join("CovenCave")
-                    .join("logs")
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("startup.html".into()))
+                        .title("CovenCave")
+                        .inner_size(1320.0, 820.0)
+                        .min_inner_size(960.0, 600.0)
+                        .resizable(true)
+                        .disable_drag_drop_handler()
+                        .build()?;
+
+                    let startup_control =
+                        Arc::clone(app.state::<Arc<SidecarStartupControl>>().inner());
+                    spawn_sidecar_startup(app.handle().clone(), startup_control)?;
+                    None
                 }
-                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                #[cfg(not(target_os = "windows"))]
                 {
-                    std::env::var("HOME")
-                        .map(|h| PathBuf::from(h).join(".local/share/CovenCave/logs"))
-                        .unwrap_or_else(|_| std::env::temp_dir())
-                }
-            };
-            let _ = std::fs::create_dir_all(&log_dir);
-            let log_path = log_dir.join("sidecar.log");
-            log::info!("[cave] sidecar log → {}", log_path.display());
-
-            let stdout_log = std::fs::File::create(&log_path).ok();
-            let stderr_log = stdout_log
-                .as_ref()
-                .and_then(|f| f.try_clone().ok());
-
-            // Crucially, run from the directory that contains the server
-            // entrypoint so Next.js can locate its sibling .next/ and public/.
-            let server_dir = server_entry
-                .parent()
-                .ok_or("server entry has no parent dir")?;
-            let server_js_arg = node_arg_path(&server_entry);
-            let server_dir_arg = node_arg_path(server_dir);
-
-            // GUI launches often inherit a stripped PATH. Prepend the
-            // directories holding `node` and `coven` so the sidecar's API
-            // routes can spawn them by name. Missing `coven` is non-fatal —
-            // onboarding surfaces it.
-            //
-            // PATH separator is ':' on Unix and ';' on Windows.
-            let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
-            let default_path = if cfg!(target_os = "windows") {
-                std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
-            } else {
-                std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
-            };
-            let mut augmented_path = default_path;
-            if let Some(dir) = node.parent() {
-                augmented_path = format!("{}{}{}", dir.display(), path_sep, augmented_path);
-            }
-            match find_coven() {
-                Some(coven) => {
-                    log::info!("[cave] using coven at {}", coven.display());
-                    if let Some(dir) = coven.parent() {
-                        augmented_path =
-                            format!("{}{}{}", dir.display(), path_sep, augmented_path);
-                    }
-                }
-                None => log::warn!(
-                    "[cave] `coven` CLI not found on disk — onboarding will prompt install"
-                ),
-            }
-
-            let mut cmd = Command::new(&node);
-            cmd.arg(&server_js_arg)
-                .current_dir(&server_dir_arg)
-                .env("PATH", &augmented_path)
-                .env("PORT", port.to_string())
-                .env("HOSTNAME", "127.0.0.1")
-                .env("NODE_ENV", "production")
-                .env("COVEN_CAVE_BUNDLE", "1")
-                .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
-                .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
-
-            if let Some(out) = stdout_log {
-                cmd.stdout(Stdio::from(out));
-            } else {
-                cmd.stdout(Stdio::null());
-            }
-            if let Some(err) = stderr_log {
-                cmd.stderr(Stdio::from(err));
-            } else {
-                cmd.stderr(Stdio::null());
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-
-            let child = match cmd.spawn() {
-                Ok(c) => c,
-                Err(e) => fatal_exit(&format!("failed to spawn node sidecar: {}", e)),
-            };
-
-            let sidecar_state = app.state::<SidecarState>();
-            let mut sidecar = match sidecar_state.0.lock() {
-                Ok(sidecar) => sidecar,
-                Err(_) => fatal_exit("sidecar process lock is poisoned"),
-            };
-            *sidecar = Some(child);
-            drop(sidecar);
-
-            let sidecar_start_timeout = if cfg!(target_os = "windows") {
-                Duration::from_secs(90)
-            } else {
-                Duration::from_secs(20)
-            };
-            if !wait_for_port(port, sidecar_start_timeout) {
-                // Read the tail of the sidecar log to give the user a clue.
-                let tail = std::fs::read_to_string(&log_path)
-                    .ok()
-                    .map(|s| {
-                        let lines: Vec<&str> = s.lines().rev().take(8).collect();
-                        let mut tail = lines
-                            .into_iter()
-                            .rev()
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        if tail.is_empty() {
-                            tail.push_str("(no output captured)");
+                    let sidecar_url = match start_sidecar_runtime(app.handle(), |_| {}, || false) {
+                        Ok(url) => url,
+                        Err(SidecarStartError::Cancelled) => {
+                            fatal_exit("sidecar startup was cancelled")
                         }
-                        tail
-                    })
-                    .unwrap_or_else(|| "(could not read sidecar log)".to_string());
-                fatal_exit(&format!(
-                    "Sidecar (node {}) did not become ready on port {} within {}s.\n\nLast lines from {}:\n{}",
-                    node.display(),
-                    port,
-                    sidecar_start_timeout.as_secs(),
-                    log_path.display(),
-                    tail
-                ));
-            }
-
-            // Only retire older complete caches after the new runtime has
-            // actually booted. Keep one previous version for rollback.
-            #[cfg(target_os = "windows")]
-            sidecar_archive::cleanup_stale_sidecar_runtimes(&server_dir_root);
-
-            format!(
-                "http://127.0.0.1:{}/?covenCaveToken={}&coven_access_token={}",
-                port, auth_token, mobile_access_token
-            )
-            .parse()
-            .expect("valid url")
+                        Err(SidecarStartError::Failed(error)) => fatal_exit(&error),
+                    };
+                    Some(sidecar_url)
+                }
             };
 
-            pty::trust_main_origin(&main_url);
-            let mut quick_chat_url = main_url.clone();
-            quick_chat_url.set_path("/quick-chat");
-            let mut main_window = WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External(main_url),
-            )
-            .title("CovenCave")
-            .inner_size(1320.0, 820.0)
-            .min_inner_size(960.0, 600.0)
-            .resizable(true)
-            // Required for HTML5 drag-and-drop (Coven Board card moves) to
-            // work in the webview — otherwise Tauri's OS-level file-drop
-            // handler intercepts dragenter/dragover/drop before the DOM sees
-            // them.
-            .disable_drag_drop_handler();
-            // macOS: dissolve the seam between the native title bar and the
-            // app's top toolbar. `Overlay` lets the webview content fill to the
-            // very top (the traffic-light buttons float over it) and
-            // `hidden_title` drops the centered "CovenCave" label, so the
-            // toolbar reads as one continuous strip. The web side reserves room
-            // for the traffic lights (`[data-tauri-titlebar]` in globals.css)
-            // and marks the bar `data-tauri-drag-region="deep"`; the drag is
-            // an ACL-gated IPC call, granted to this loopback origin by
-            // capabilities/loopback-window-drag.json. No-op on Windows/Linux.
-            #[cfg(target_os = "macos")]
-            {
-                main_window = main_window
-                    .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .hidden_title(true);
-            }
-            // Dev-only automation hook: WKWebView has no external driver
-            // protocol, so dev tooling (terminal e2e checks, screenshots)
-            // can inject a script that runs before the page loads. No-op in
-            // release builds.
-            if cfg!(debug_assertions) {
-                if let Ok(script) = std::env::var("COVEN_CAVE_DEV_INIT_SCRIPT") {
-                    if !script.is_empty() {
-                        log::info!(
-                            "[cave] injecting COVEN_CAVE_DEV_INIT_SCRIPT ({} bytes)",
-                            script.len()
-                        );
-                        main_window = main_window.initialization_script(&script);
+            if let Some(main_url) = main_url {
+                pty::trust_main_origin(&main_url);
+                let mut main_window =
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(main_url))
+                        .title("CovenCave")
+                        .inner_size(1320.0, 820.0)
+                        .min_inner_size(960.0, 600.0)
+                        .resizable(true)
+                        // Required for HTML5 drag-and-drop (Coven Board card moves) to
+                        // work in the webview — otherwise Tauri's OS-level file-drop
+                        // handler intercepts dragenter/dragover/drop before the DOM sees
+                        // them.
+                        .disable_drag_drop_handler();
+                // macOS: dissolve the seam between the native title bar and the
+                // app's top toolbar. `Overlay` lets the webview content fill to the
+                // very top (the traffic-light buttons float over it) and
+                // `hidden_title` drops the centered "CovenCave" label, so the
+                // toolbar reads as one continuous strip. The web side reserves room
+                // for the traffic lights (`[data-tauri-titlebar]` in globals.css)
+                // and marks the bar `data-tauri-drag-region="deep"`; the drag is
+                // an ACL-gated IPC call, granted to this loopback origin by
+                // capabilities/loopback-window-drag.json. No-op on Windows/Linux.
+                #[cfg(target_os = "macos")]
+                {
+                    main_window = main_window
+                        .title_bar_style(tauri::TitleBarStyle::Overlay)
+                        .hidden_title(true);
+                }
+                // Dev-only automation hook: WKWebView has no external driver
+                // protocol, so dev tooling (terminal e2e checks, screenshots)
+                // can inject a script that runs before the page loads. No-op in
+                // release builds.
+                if cfg!(debug_assertions) {
+                    if let Ok(script) = std::env::var("COVEN_CAVE_DEV_INIT_SCRIPT") {
+                        if !script.is_empty() {
+                            log::info!(
+                                "[cave] injecting COVEN_CAVE_DEV_INIT_SCRIPT ({} bytes)",
+                                script.len()
+                            );
+                            main_window = main_window.initialization_script(&script);
+                        }
                     }
                 }
-            }
-            if let Err(e) = main_window.build() {
-                fatal_exit(&format!("failed to build main window: {}", e));
+                if let Err(e) = main_window.build() {
+                    fatal_exit(&format!("failed to build main window: {}", e));
+                }
             }
 
             // Status bar / system-tray menu — quick access to inbox + reminder
@@ -1443,13 +1912,8 @@ pub fn run() {
             // WebView listens for.
             let open_inbox =
                 MenuItem::with_id(app, "open_inbox", "Open Inbox", true, None::<&str>)?;
-            let new_reminder = MenuItem::with_id(
-                app,
-                "new_reminder",
-                "New Reminder…",
-                true,
-                None::<&str>,
-            )?;
+            let new_reminder =
+                MenuItem::with_id(app, "new_reminder", "New Reminder…", true, None::<&str>)?;
             let quick_chat =
                 MenuItem::with_id(app, "quick_chat", "Quick Chat…", true, None::<&str>)?;
             let show_app =
@@ -1472,7 +1936,6 @@ pub fn run() {
             // `icon_as_template(true)` is a macOS-only concept (renders the
             // icon as a template image so the system can adapt it to dark/light
             // menu bar). On other platforms the call doesn't exist — guard it.
-            let quick_chat_url_for_menu = quick_chat_url.clone();
             let tray_builder = TrayIconBuilder::with_id("cave-tray")
                 .icon(coven_tray_icon())
                 .menu(&tray_menu)
@@ -1487,7 +1950,7 @@ pub fn run() {
                         focus_main_window(app);
                         let _ = app.emit("tray:new-reminder", ());
                     }
-                    "quick_chat" => show_quick_chat_window(app, &quick_chat_url_for_menu),
+                    "quick_chat" => show_quick_chat_from_main(app),
                     "show_app" => focus_main_window(app),
                     "quit" => app.exit(0),
                     _ => {}
@@ -1514,10 +1977,9 @@ pub fn run() {
             {
                 let previous_hook = std::panic::take_hook();
                 std::panic::set_hook(Box::new(|_| {}));
-                let tray_result =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        tray_builder.build(app)
-                    }));
+                let tray_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    tray_builder.build(app)
+                }));
                 std::panic::set_hook(previous_hook);
 
                 match tray_result {
@@ -1544,7 +2006,9 @@ pub fn run() {
                 if window.label() == "main" {
                     if let Some(state) = window.app_handle().try_state::<SidecarState>() {
                         if let Err(error) = state.stop() {
-                            log::warn!("[cave] could not stop sidecar during window teardown: {error}");
+                            log::warn!(
+                                "[cave] could not stop sidecar during window teardown: {error}"
+                            );
                         }
                     }
                 }

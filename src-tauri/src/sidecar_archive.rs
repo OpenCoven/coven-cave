@@ -502,7 +502,7 @@ pub(crate) fn cleanup_stale_sidecar_runtimes(current: &Path) {
 }
 
 pub(crate) fn prepare_sidecar_runtime(
-    app: &tauri::App,
+    app: &tauri::AppHandle,
     resource_dir: &Path,
 ) -> Result<PathBuf, String> {
     let archive_dir = resource_dir.join("resources").join("server-archive");

@@ -17,4 +17,7 @@ permissions = [
   "allow-browser-report-title",
   "allow-browser-report-scroll",
   "allow-shell-open",
+  "allow-sidecar-startup-status",
+  "allow-retry-sidecar-startup",
+  "allow-cancel-sidecar-startup",
 ]
