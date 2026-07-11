@@ -107,6 +107,12 @@ import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
 } from "@/lib/open-external";
+import { deactivateAllNativeBrowserWebviews } from "@/lib/native-browser-lifecycle";
+import {
+  consumeBrowserNavigation,
+  enqueueBrowserNavigation,
+  type BrowserNavigationRequest,
+} from "@/lib/browser-navigation-queue";
 import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
@@ -117,16 +123,6 @@ type WorkspaceMode = WorkspaceModeFromDaemon;
 // Everything the primary detail pane can show: the built-in workspace modes
 // plus registered Role Surfaces via the generic `surface:<id>` mode.
 type CaveMode = WorkspaceMode | RoleSurfaceMode;
-
-type WorkspaceTauriInternals = {
-  invoke?: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
-};
-
-function closeAllNativeBrowserWebviews(): void {
-  if (typeof window === "undefined") return;
-  const internals = (window as typeof window & { __TAURI_INTERNALS__?: WorkspaceTauriInternals }).__TAURI_INTERNALS__;
-  void internals?.invoke?.("browser_close_all");
-}
 
 // What the drag-to-split secondary pane is showing: either a draggable page
 // (a workspace mode) or one of the companion surfaces (Salem / Memory /
@@ -325,6 +321,12 @@ export function Workspace() {
   // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
   // tab, so `mode` is never actually "groupchat" and the surface never flashes.
   const setMode = useCallback((next: CaveMode) => {
+    // Native child WebViews render above React. Deactivate the primary pane
+    // before committing a non-Browser surface so there is no paint where the
+    // old WebView can intercept the new surface's first clicks.
+    if (modeRef.current === "browser" && next !== "browser") {
+      deactivateAllNativeBrowserWebviews("main");
+    }
     if (next === "groupchat") {
       // Set the latch synchronously so a freshly-mounting ChatSurface opens the
       // Group tab on mount; the event covers an already-mounted ChatSurface.
@@ -372,6 +374,24 @@ export function Workspace() {
   const [authExpired, setAuthExpired] = useState(false);
   const daemonHealthyStreakRef = useRef(0);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
+  const browserNavigationIdRef = useRef(Date.now() * 1024);
+  const [browserNavigationQueue, setBrowserNavigationQueue] = useState<BrowserNavigationRequest[]>([]);
+
+  const openUrlInAppBrowser = useCallback((url: string) => {
+    if (!url) return;
+    browserNavigationIdRef.current += 1;
+    const request = { id: browserNavigationIdRef.current, url };
+    setBrowserNavigationQueue((queue) => enqueueBrowserNavigation(queue, request));
+    setMode("browser");
+    shellRef.current?.dismissNavMobile();
+  }, [setMode]);
+
+  const acknowledgeBrowserNavigation = useCallback((request: BrowserNavigationRequest) => {
+    setBrowserNavigationQueue((queue) => consumeBrowserNavigation(queue, request.id));
+    if (window.sessionStorage.getItem(PENDING_IN_APP_BROWSER_URL_KEY) === request.url) {
+      window.sessionStorage.removeItem(PENDING_IN_APP_BROWSER_URL_KEY);
+    }
+  }, []);
 
   // ── Mode-transition crossfade ──────────────────────────────────────────
   // The `.cave-mode-fade` CSS animation only plays on the wrapper's *initial*
@@ -1556,8 +1576,7 @@ export function Workspace() {
         nextRouter.push(link.ref);
         return;
       }
-      setMode("browser");
-      requestAnimationFrame(() => browserPaneRef.current?.navigateTo(link.ref));
+      openUrlInAppBrowser(link.ref);
     } else if (link.kind === "card") {
       setMode("board");
       window.location.hash = `card-${link.ref}`;
@@ -1568,7 +1587,7 @@ export function Workspace() {
       // Link button that did nothing (cave-gg5d). Grimoire is the memory reader.
       openGrimoireDoc("memory", link.ref);
     }
-  }, [nextRouter, openFamiliarSession]);
+  }, [nextRouter, openFamiliarSession, openUrlInAppBrowser]);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
     const sessionId =
@@ -2125,13 +2144,6 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
-  const openUrlInAppBrowser = useCallback((url: string) => {
-    if (!url) return;
-    setMode("browser");
-    shellRef.current?.dismissNavMobile();
-    window.setTimeout(() => browserPaneRef.current?.navigateTo(url), 0);
-  }, []);
-
   // Role Surfaces: build the shared context from the live session and resolve
   // which registered surfaces the active familiar should see. Entirely
   // registry-driven — the shell never branches on a specific role.
@@ -2157,7 +2169,6 @@ export function Workspace() {
     const openPendingBrowserUrl = () => {
       const pending = window.sessionStorage.getItem(PENDING_IN_APP_BROWSER_URL_KEY);
       if (pending) {
-        window.sessionStorage.removeItem(PENDING_IN_APP_BROWSER_URL_KEY);
         openUrlInAppBrowser(pending);
         return;
       }
@@ -2166,7 +2177,6 @@ export function Workspace() {
     const onOpenBrowserUrl = (event: Event) => {
       const detail = (event as CustomEvent<{ url?: string }>).detail;
       if (detail?.url) {
-        window.sessionStorage.removeItem(PENDING_IN_APP_BROWSER_URL_KEY);
         openUrlInAppBrowser(detail.url);
       }
     };
@@ -2199,7 +2209,7 @@ export function Workspace() {
 
   useEffect(() => {
     if (browserVisible) return;
-    closeAllNativeBrowserWebviews();
+    deactivateAllNativeBrowserWebviews();
   }, [browserVisible]);
 
   const sidebar = (
@@ -2444,7 +2454,14 @@ export function Workspace() {
         }
       />
     ) : mode === "browser" ? (
-      <BrowserPane handleRef={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} active={browserVisible} />
+      <BrowserPane
+        handleRef={browserPaneRef}
+        label="main"
+        activeFamiliarId={active?.id ?? null}
+        active={browserVisible}
+        navigationRequest={browserNavigationQueue[0] ?? null}
+        onNavigationConsumed={acknowledgeBrowserNavigation}
+      />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}

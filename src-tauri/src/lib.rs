@@ -12,8 +12,10 @@ use std::net::TcpListener;
 use std::os::windows::process::CommandExt;
 #[cfg(desktop)]
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "windows"))]
+use std::process::Command;
 #[cfg(desktop)]
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 #[cfg(all(desktop, target_os = "windows"))]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(desktop)]
@@ -600,7 +602,27 @@ fn mobile_access_token_for_app(app: &tauri::AppHandle) -> String {
 }
 
 #[cfg(desktop)]
-struct SidecarState(Arc<Mutex<Option<Child>>>);
+struct SidecarProcess {
+    child: Child,
+    #[cfg(target_os = "windows")]
+    job: windows_process_job::ProcessJob,
+}
+
+#[cfg(desktop)]
+impl SidecarProcess {
+    #[cfg(target_os = "windows")]
+    fn from_gated(child: Child, job: windows_process_job::ProcessJob) -> Self {
+        Self { child, job }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn new(child: Child) -> Self {
+        Self { child }
+    }
+}
+
+#[cfg(desktop)]
+struct SidecarState(Arc<Mutex<Option<SidecarProcess>>>);
 
 #[cfg(desktop)]
 #[derive(Clone, Copy)]
@@ -705,6 +727,7 @@ struct SidecarStartupControl {
     status: Mutex<SidecarStartupStatus>,
     running: AtomicBool,
     cancel_requested: AtomicBool,
+    shutdown_requested: AtomicBool,
 }
 
 #[cfg(all(desktop, target_os = "windows"))]
@@ -714,10 +737,14 @@ impl SidecarStartupControl {
             status: Mutex::new(SidecarStartupStatus::preparing()),
             running: AtomicBool::new(false),
             cancel_requested: AtomicBool::new(false),
+            shutdown_requested: AtomicBool::new(false),
         }
     }
 
     fn begin(&self) -> Result<(), String> {
+        if self.shutdown_requested.load(Ordering::Acquire) {
+            return Err("application shutdown is in progress".to_string());
+        }
         self.running
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| "sidecar startup is already running".to_string())?;
@@ -739,6 +766,12 @@ impl SidecarStartupControl {
 
     fn is_cancelled(&self) -> bool {
         self.cancel_requested.load(Ordering::Acquire)
+            || self.shutdown_requested.load(Ordering::Acquire)
+    }
+
+    fn request_shutdown(&self) {
+        self.shutdown_requested.store(true, Ordering::Release);
+        self.cancel_requested.store(true, Ordering::Release);
     }
 
     fn status(&self) -> Result<SidecarStartupStatus, String> {
@@ -759,7 +792,7 @@ impl SidecarStartupControl {
 }
 
 #[cfg(desktop)]
-struct SidecarCleanupGuard(Arc<Mutex<Option<Child>>>);
+struct SidecarCleanupGuard(Arc<Mutex<Option<SidecarProcess>>>);
 
 #[cfg(desktop)]
 impl tauri::Resource for SidecarCleanupGuard {}
@@ -777,6 +810,17 @@ impl Drop for SidecarCleanupGuard {
 #[cfg(desktop)]
 impl SidecarState {
     fn stop(&self) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        let mut guard = match self.0.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                // Never stall the Windows UI/exit path on a startup worker.
+                // Any locally-held Job Object is closed by process exit.
+                return Err("sidecar state is busy; process-job cleanup remains armed".to_string());
+            }
+        };
+        #[cfg(not(target_os = "windows"))]
         let mut guard = self
             .0
             .lock()
@@ -790,8 +834,9 @@ impl SidecarState {
 }
 
 #[cfg(desktop)]
-fn stop_sidecar_child(mut child: Child) -> Result<(), String> {
-    if child
+fn stop_sidecar_child(mut process: SidecarProcess) -> Result<(), String> {
+    if process
+        .child
         .try_wait()
         .map_err(|error| format!("could not inspect sidecar process: {error}"))?
         .is_some()
@@ -801,41 +846,49 @@ fn stop_sidecar_child(mut child: Child) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        let pid = child.id().to_string();
-        let mut taskkill = Command::new(windows_system32_binary("taskkill.exe"));
-        taskkill
-            .args(["/PID", &pid, "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(0x08000000);
-        match taskkill.status() {
-            Ok(status) if status.success() => {}
-            Ok(status) => log::warn!(
-                "[cave] taskkill could not stop sidecar process tree {} (status {}); falling back to direct termination",
-                pid,
-                status
-            ),
-            Err(error) => log::warn!(
-                "[cave] taskkill could not start for sidecar process tree {}: {}; falling back to direct termination",
-                pid,
-                error
-            ),
-        }
+        // TerminateJobObject is a bounded kernel operation over the full tree;
+        // it does not wait for Node, Coven, pipes, JavaScript, or taskkill.exe.
+        // Dropping the KILL_ON_JOB_CLOSE handle is a second fail-safe and also
+        // covers Task Manager/TerminateProcess, where Rust cleanup never runs.
+        process
+            .job
+            .terminate()
+            .map_err(|error| format!("could not terminate sidecar process job: {error}"))?;
+        return Ok(());
     }
 
-    if child
-        .try_wait()
-        .map_err(|error| format!("could not inspect terminated sidecar: {error}"))?
-        .is_none()
+    #[cfg(not(target_os = "windows"))]
     {
-        child
-            .kill()
-            .map_err(|error| format!("could not stop sidecar process: {error}"))?;
+        if process
+            .child
+            .try_wait()
+            .map_err(|error| format!("could not inspect terminated sidecar: {error}"))?
+            .is_none()
+        {
+            process
+                .child
+                .kill()
+                .map_err(|error| format!("could not stop sidecar process: {error}"))?;
+        }
+        process
+            .child
+            .wait()
+            .map_err(|error| format!("could not wait for sidecar process shutdown: {error}"))?;
+        Ok(())
     }
-    child
-        .wait()
-        .map_err(|error| format!("could not wait for sidecar process shutdown: {error}"))?;
-    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn shutdown_owned_processes(app: &tauri::AppHandle) {
+    if let Some(control) = app.try_state::<Arc<SidecarStartupControl>>() {
+        control.request_shutdown();
+    }
+    if let Some(sidecar) = app.try_state::<SidecarState>() {
+        if let Err(error) = sidecar.stop() {
+            log::warn!("[cave] sidecar shutdown deferred to process job: {error}");
+        }
+    }
+    pty::terminate_all_owned_processes();
 }
 
 #[cfg(desktop)]
@@ -1039,9 +1092,28 @@ fn start_sidecar_runtime(
         return Err(SidecarStartError::Cancelled);
     }
 
-    let mut command = Command::new(&node);
+    #[cfg(target_os = "windows")]
+    let (mut command, process_job, launch_gate) = {
+        let process_job = windows_process_job::ProcessJob::new().map_err(|error| {
+            SidecarStartError::Failed(format!("could not create sidecar process job: {error}"))
+        })?;
+        let launch_gate = windows_process_job::ProcessLaunchGate::new().map_err(|error| {
+            SidecarStartError::Failed(format!("could not create sidecar launch gate: {error}"))
+        })?;
+        let launcher = launch_gate
+            .launcher(&node, [&server_js_arg])
+            .map_err(|error| {
+                SidecarStartError::Failed(format!("could not prepare sidecar launch gate: {error}"))
+            })?;
+        (launcher.into_std_command(), process_job, launch_gate)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let mut command = {
+        let mut command = Command::new(&node);
+        command.arg(&server_js_arg);
+        command
+    };
     command
-        .arg(&server_js_arg)
         .current_dir(&server_dir_arg)
         .env("PATH", &augmented_path)
         .env("PORT", port.to_string())
@@ -1067,9 +1139,28 @@ fn start_sidecar_runtime(
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = command.spawn().map_err(|error| {
+    let mut child = command.spawn().map_err(|error| {
         SidecarStartError::Failed(format!("failed to spawn node sidecar: {error}"))
     })?;
+    #[cfg(target_os = "windows")]
+    let child = {
+        if let Err(error) = process_job.assign_child(&child) {
+            let _ = child.kill();
+            return Err(SidecarStartError::Failed(format!(
+                "could not assign sidecar launch gate to process job: {error}"
+            )));
+        }
+        if let Err(error) = launch_gate.release() {
+            let _ = process_job.terminate();
+            let _ = child.kill();
+            return Err(SidecarStartError::Failed(format!(
+                "could not release sidecar launch gate: {error}"
+            )));
+        }
+        SidecarProcess::from_gated(child, process_job)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let child = SidecarProcess::new(child);
     let sidecar_state = app.state::<SidecarState>();
     match sidecar_state.0.lock() {
         Ok(mut sidecar) => *sidecar = Some(child),
@@ -1288,6 +1379,8 @@ fn cancel_sidecar_startup(
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+    #[cfg(target_os = "windows")]
+    use std::process::Command;
 
     #[test]
     fn sidecar_auth_token_is_256_bit_hex() {
@@ -1419,16 +1512,9 @@ mod tests {
         state.stop().expect("second empty cleanup");
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn dropping_application_cleanup_guard_stops_and_reaps_sidecar() {
-        #[cfg(target_os = "windows")]
-        let mut command = {
-            let mut command = Command::new(windows_system32_binary("ping.exe"));
-            command.args(["127.0.0.1", "-n", "30"]);
-            command.creation_flags(0x08000000);
-            command
-        };
-        #[cfg(not(target_os = "windows"))]
         let mut command = {
             let mut command = Command::new("sleep");
             command.arg("30");
@@ -1439,11 +1525,70 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn cleanup fixture");
+        let child = SidecarProcess::new(child);
         let slot = Arc::new(Mutex::new(Some(child)));
 
         drop(SidecarCleanupGuard(Arc::clone(&slot)));
 
         assert!(slot.lock().expect("sidecar slot").is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn sidecar_state_terminates_root_and_descendant_within_deadline() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::windows::process::CommandExt;
+        use std::time::Instant;
+        use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+        };
+
+        fn wait_for_pid_exit(pid: u32, timeout: Duration) -> bool {
+            let process = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+            if process.is_null() {
+                return true;
+            }
+            let timeout_ms = timeout.as_millis().min(u32::MAX as u128) as u32;
+            let result = unsafe { WaitForSingleObject(process, timeout_ms) };
+            unsafe { CloseHandle(process) };
+            result == WAIT_OBJECT_0
+        }
+
+        let powershell = windows_system32_binary("WindowsPowerShell/v1.0/powershell.exe");
+        let script = r#"$null=[Console]::In.ReadLine(); $p=Start-Process "$env:SystemRoot\System32\ping.exe" -ArgumentList '127.0.0.1','-n','30' -WindowStyle Hidden -PassThru; [Console]::Out.WriteLine($p.Id); Wait-Process -Id $p.Id"#;
+        let mut child = Command::new(powershell)
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .expect("spawn sidecar cleanup fixture");
+        let root_pid = child.id();
+        let job = windows_process_job::ProcessJob::new().expect("create sidecar process job");
+        job.assign_child(&child)
+            .expect("assign fixture before descendant launch");
+        writeln!(child.stdin.take().expect("fixture stdin")).expect("release fixture");
+        let mut descendant_line = String::new();
+        BufReader::new(child.stdout.take().expect("fixture stdout"))
+            .read_line(&mut descendant_line)
+            .expect("read descendant pid");
+        let descendant_pid: u32 = descendant_line
+            .trim()
+            .parse()
+            .expect("numeric descendant pid");
+        let slot = Arc::new(Mutex::new(Some(SidecarProcess::from_gated(child, job))));
+
+        let started = Instant::now();
+        drop(SidecarCleanupGuard(Arc::clone(&slot)));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "sidecar cleanup must return without waiting on child cooperation"
+        );
+        assert!(slot.lock().expect("sidecar slot").is_none());
+        assert!(wait_for_pid_exit(root_pid, Duration::from_secs(3)));
+        assert!(wait_for_pid_exit(descendant_pid, Duration::from_secs(3)));
     }
 
     #[cfg(target_os = "windows")]
@@ -1483,6 +1628,8 @@ mod browser;
 mod pty;
 #[cfg(all(desktop, target_os = "windows"))]
 mod sidecar_archive;
+#[cfg(all(desktop, target_os = "windows"))]
+mod windows_process_job;
 
 #[cfg(desktop)]
 fn validate_shell_open_url(url: &str) -> Result<(), String> {
@@ -1829,6 +1976,11 @@ fn webview_probe_report(report: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(desktop, target_os = "windows"))]
+    if let Some(code) = windows_process_job::run_gated_child_if_requested() {
+        std::process::exit(code);
+    }
+
     let builder = tauri::Builder::default().plugin(tauri_plugin_os::init());
 
     // Mobile-Tauri shell: no sidecar, no tray, no embedded browser/pty.
@@ -1927,8 +2079,10 @@ pub fn run() {
             browser::browser_hide,
             browser::browser_hide_all_except,
             browser::browser_close,
+            browser::browser_deactivate_all,
             browser::browser_close_all,
             browser::browser_reload,
+            browser::browser_report_user_navigation,
             browser::browser_report_title,
             browser::browser_report_scroll,
             shell_open,
@@ -1942,7 +2096,8 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             cancel_sidecar_startup,
         ])
-        .manage(SidecarState(Arc::clone(&sidecar_process)));
+        .manage(SidecarState(Arc::clone(&sidecar_process)))
+        .manage(browser::BrowserLifecycleState::default());
     #[cfg(all(desktop, target_os = "windows"))]
     let builder = builder.manage(Arc::new(SidecarStartupControl::new()));
     #[cfg(desktop)]
@@ -2121,7 +2276,11 @@ pub fn run() {
                     }
                     "quick_chat" => show_quick_chat_from_main(app),
                     "show_app" => focus_main_window(app),
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        #[cfg(target_os = "windows")]
+                        shutdown_owned_processes(app);
+                        app.exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -2171,6 +2330,24 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Tauri automatically prevents a native close when any JS
+            // `tauri://close-requested` listener is registered. If WebView2's
+            // JS thread is wedged (the same failure that makes the UI ignore
+            // clicks), that listener can never finish the close and Windows'
+            // title-bar X becomes permanently inert. The main Windows window
+            // has no supported close-to-tray contract, so make its native close
+            // request authoritative and independent of WebView responsiveness.
+            // Application cleanup drops SidecarCleanupGuard and reaps the
+            // sidecar process tree.
+            #[cfg(target_os = "windows")]
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. })
+                && window.label() == "main"
+            {
+                shutdown_owned_processes(window.app_handle());
+                window.app_handle().exit(0);
+                return;
+            }
+
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
                     if let Some(state) = window.app_handle().try_state::<SidecarState>() {

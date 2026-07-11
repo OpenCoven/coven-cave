@@ -30,6 +30,11 @@ use tauri::{AppHandle, Emitter, Url, Webview};
 use log::{debug, info, warn};
 
 struct PtySession {
+    /// Declare the job before the ConPTY master so any ordinary session drop
+    /// kills clients before ClosePseudoConsole runs. Older Windows releases
+    /// can otherwise block ClosePseudoConsole while clients remain attached.
+    #[cfg(target_os = "windows")]
+    process_job: crate::windows_process_job::ProcessJob,
     #[allow(dead_code)]
     master: Box<dyn MasterPty + Send>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -46,6 +51,24 @@ static SESSIONS: Lazy<Mutex<HashMap<String, PtySession>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 static STARTING_SESSIONS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 static TRUSTED_MAIN_ORIGINS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+/// Terminate every owned PTY process tree without dropping ConPTY masters on
+/// the Windows UI thread. ClosePseudoConsole could block indefinitely before
+/// Windows 11 24H2 while clients or output pipes remained attached; process
+/// exit will reclaim the retained handles after the bounded job termination.
+#[cfg(target_os = "windows")]
+pub fn terminate_all_owned_processes() {
+    if let Some(sessions) = SESSIONS.try_lock() {
+        for (thread_id, session) in sessions.iter() {
+            if let Err(error) = session.process_job.terminate() {
+                warn!(
+                    "pty shutdown[{}]: could not terminate process job: {}",
+                    thread_id, error
+                );
+            }
+        }
+    }
+}
 
 const DEFAULT_PTY_COLS: u16 = 120;
 const DEFAULT_PTY_ROWS: u16 = 40;
@@ -150,7 +173,24 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
     let command = default_shell();
     let args = default_shell_args();
     info!("pty_start[{}]: spawning {} {:?}", thread_id, command, args);
+    #[cfg(target_os = "windows")]
+    let (mut cmd, process_job, launch_gate) = {
+        let process_job = crate::windows_process_job::ProcessJob::new()
+            .map_err(|error| format!("could not create PTY process job: {error}"))?;
+        let launch_gate = crate::windows_process_job::ProcessLaunchGate::new()
+            .map_err(|error| format!("could not create PTY launch gate: {error}"))?;
+        let launcher = launch_gate
+            .launcher(&command, &args)
+            .map_err(|error| format!("could not prepare PTY launch gate: {error}"))?;
+        (
+            CommandBuilder::from_argv(launcher.into_argv()),
+            process_job,
+            launch_gate,
+        )
+    };
+    #[cfg(not(target_os = "windows"))]
     let mut cmd = CommandBuilder::new(&command);
+    #[cfg(not(target_os = "windows"))]
     cmd.args(&args);
     if let Some(root) = validated_cwd(options.project_root.as_deref())? {
         info!("pty_start[{}]: cwd={}", thread_id, root);
@@ -190,6 +230,25 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
             return Err(e.to_string());
         }
     };
+    #[cfg(target_os = "windows")]
+    {
+        let pid = match child.process_id() {
+            Some(pid) => pid,
+            None => {
+                let _ = child.kill();
+                return Err("PTY child did not expose a process id".to_string());
+            }
+        };
+        if let Err(error) = process_job.assign_pid(pid) {
+            let _ = child.kill();
+            return Err(format!("could not assign PTY to process job: {error}"));
+        }
+        if let Err(error) = launch_gate.release() {
+            let _ = process_job.terminate();
+            let _ = child.kill();
+            return Err(format!("could not release PTY launch gate: {error}"));
+        }
+    }
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
@@ -199,6 +258,8 @@ pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Res
         guard.insert(
             thread_id.clone(),
             PtySession {
+                #[cfg(target_os = "windows")]
+                process_job,
                 master: pair.master,
                 writer: Arc::new(Mutex::new(writer)),
                 scrollback: scrollback.clone(),
@@ -307,8 +368,16 @@ pub fn pty_stop(webview: Webview, thread_id: String) -> Result<(), String> {
     // Dropping the PtySession drops the master, which closes the slave's
     // controlling tty; the child receives SIGHUP and exits. The waiter
     // thread cleans up SESSIONS and emits pty:exit.
-    let mut sessions = SESSIONS.lock();
-    sessions.remove(&thread_id);
+    let session = SESSIONS.lock().remove(&thread_id);
+    #[cfg(target_os = "windows")]
+    if let Some(session) = session {
+        let _ = session.process_job.terminate();
+        // Keep ClosePseudoConsole off the IPC/UI dispatcher even after clients
+        // have been killed. This is bounded from the caller's perspective.
+        thread::spawn(move || drop(session));
+    }
+    #[cfg(not(target_os = "windows"))]
+    drop(session);
     Ok(())
 }
 
@@ -348,9 +417,20 @@ fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
         .map_err(|e| format!("openpty: {e}"))?;
 
     #[cfg(target_os = "windows")]
-    let mut cmd = CommandBuilder::new("cmd.exe");
-    #[cfg(target_os = "windows")]
-    cmd.args(["/C", "echo coven-cave-pty-ok"]);
+    let (mut cmd, process_job, launch_gate) = {
+        let process_job = crate::windows_process_job::ProcessJob::new()
+            .map_err(|error| format!("create diagnostic process job: {error}"))?;
+        let launch_gate = crate::windows_process_job::ProcessLaunchGate::new()
+            .map_err(|error| format!("create diagnostic launch gate: {error}"))?;
+        let launcher = launch_gate
+            .launcher("cmd.exe", ["/C", "echo coven-cave-pty-ok"])
+            .map_err(|error| format!("prepare diagnostic launch gate: {error}"))?;
+        (
+            CommandBuilder::from_argv(launcher.into_argv()),
+            process_job,
+            launch_gate,
+        )
+    };
 
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
@@ -363,6 +443,25 @@ fn run_pty_diagnose() -> Result<DiagnoseReport, String> {
     cmd.env("TERM", "xterm-256color");
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| format!("spawn: {e}"))?;
+    #[cfg(target_os = "windows")]
+    {
+        let pid = match child.process_id() {
+            Some(pid) => pid,
+            None => {
+                let _ = child.kill();
+                return Err("diagnostic child did not expose a process id".to_string());
+            }
+        };
+        if let Err(error) = process_job.assign_pid(pid) {
+            let _ = child.kill();
+            return Err(format!("assign diagnostic process job: {error}"));
+        }
+        if let Err(error) = launch_gate.release() {
+            let _ = process_job.terminate();
+            let _ = child.kill();
+            return Err(format!("release diagnostic launch gate: {error}"));
+        }
+    }
     let pid = child.process_id();
     let mut reader = pair.master.try_clone_reader().map_err(|e| format!("reader: {e}"))?;
     drop(pair.master);
@@ -602,6 +701,7 @@ mod tests {
         let _ = std::fs::remove_file(file);
     }
 
+    #[cfg(not(target_os = "windows"))]
     #[test]
     fn pty_diagnose_spawns_shell_and_reads_output() {
         let report = run_pty_diagnose().expect("pty diagnostic should run");
@@ -612,5 +712,25 @@ mod tests {
             report.output,
         );
         assert!(report.bytes > 0, "diagnostic PTY should produce output bytes");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn pty_diagnostic_uses_the_private_gated_launcher() {
+        let gate = crate::windows_process_job::ProcessLaunchGate::new()
+            .expect("create diagnostic launch gate");
+        let argv = gate
+            .launcher("cmd.exe", ["/C", "echo coven-cave-pty-ok"])
+            .expect("build diagnostic launcher")
+            .into_argv();
+
+        assert_eq!(
+            argv[0],
+            std::env::current_exe().expect("current executable")
+        );
+        assert_eq!(argv[1], "--coven-cave-internal-gated-child-v1");
+        assert_eq!(argv[5], "cmd.exe");
+        assert_eq!(argv[6], "/C");
+        assert_eq!(argv[7], "echo coven-cave-pty-ok");
     }
 }

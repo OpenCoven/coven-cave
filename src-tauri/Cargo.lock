@@ -99,6 +99,7 @@ dependencies = [
  "tauri-plugin-updater",
  "window-vibrancy",
  "zstd",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

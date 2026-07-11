@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "browser-child-reporting",
+  "description": "allows native browser children to report bounded display metadata and navigation attribution without browser-control authority",
+  "local": false,
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "webviews": [
+    "cave-browser-*"
+  ],
+  "remote": {
+    "urls": [
+      "http://*:*/*",
+      "https://*:*/*"
+    ]
+  },
+  "permissions": [
+    "allow-browser-report-title",
+    "allow-browser-report-scroll",
+    "allow-browser-report-user-navigation"
+  ]
+}

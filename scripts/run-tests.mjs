@@ -43,6 +43,7 @@ export const SUITES = {
     "src/lib/legacy-svg-avatar-hint.test.ts",
     "src/lib/familiar-avatar-src.test.ts",
     "src/lib/app-update.test.ts",
+    "src/lib/browser-navigation-queue.test.ts",
     "src/lib/open-external.test.ts",
     "src/lib/coven-version.test.ts",
     "src/components/update-available.test.ts",

@@ -54,8 +54,13 @@ description = "Allows closing an embedded browser webview."
 commands.allow = ["browser_close"]
 
 [[permission]]
+identifier = "allow-browser-deactivate-all"
+description = "Allows hiding every embedded browser webview for a pane during surface changes."
+commands.allow = ["browser_deactivate_all"]
+
+[[permission]]
 identifier = "allow-browser-close-all"
-description = "Allows closing every embedded browser webview for a pane during surface teardown."
+description = "Allows destroying every embedded browser webview for a pane."
 commands.allow = ["browser_close_all"]
 
 [[permission]]
@@ -77,6 +82,11 @@ commands.allow = ["browser_report_title"]
 identifier = "allow-browser-report-scroll"
 description = "Allows child browser webviews to report scroll position via Rust."
 commands.allow = ["browser_report_scroll"]
+
+[[permission]]
+identifier = "allow-browser-report-user-navigation"
+description = "Allows child browser webviews to mark a pending same-context user navigation for event ordering."
+commands.allow = ["browser_report_user_navigation"]
 
 [[permission]]
 identifier = "allow-sidecar-startup-status"

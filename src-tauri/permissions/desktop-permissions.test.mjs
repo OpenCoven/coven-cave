@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const defaultCapability = JSON.parse(readFileSync(new URL("../capabilities/default.json", import.meta.url), "utf8"));
+const browserChildReportingCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/browser-child-reporting.json", import.meta.url), "utf8"),
+);
 const loopbackBrowserCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-browser.json", import.meta.url), "utf8"),
 );
@@ -38,6 +41,7 @@ const requiredPermissionIds = [
   "allow-browser-hide",
   "allow-browser-hide-all-except",
   "allow-browser-close",
+  "allow-browser-deactivate-all",
   "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
@@ -58,6 +62,7 @@ const requiredCommands = [
   "browser_hide",
   "browser_hide_all_except",
   "browser_close",
+  "browser_deactivate_all",
   "browser_close_all",
   "browser_reload",
   "shell_open",
@@ -101,6 +106,8 @@ function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
 
 test("packaged desktop app can use native browser and terminal commands", () => {
   assert.equal(defaultCapability.local, true, "packaged local app origin must receive the default capability");
+  assert.deepEqual(defaultCapability.webviews, ["main"], "default authority must be limited to the main webview");
+  assert.equal(defaultCapability.windows, undefined, "default authority must not cover every child in the main window");
   assert.deepEqual(
     defaultCapability.platforms,
     ["linux", "macOS", "windows"],
@@ -128,6 +135,16 @@ test("packaged desktop app can use native browser and terminal commands", () => 
 });
 
 test("packaged sidecar loopback origins can use browser commands and main-webview PTY", () => {
+  assert.deepEqual(
+    loopbackBrowserCapability.webviews,
+    ["main"],
+    "loopback browser and PTY controls must be limited to the trusted main webview",
+  );
+  assert.equal(
+    loopbackBrowserCapability.windows,
+    undefined,
+    "loopback controls must not cover native browser child webviews",
+  );
   for (const origin of [
     "http://127.0.0.1:3000/",
     "http://localhost:3000/",
@@ -195,9 +212,9 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-browser-hide",
     "allow-browser-hide-all-except",
     "allow-browser-close",
+    "allow-browser-deactivate-all",
     "allow-browser-close-all",
     "allow-browser-reload",
-    "allow-browser-report-title",
   ]) {
     assert.ok(
       loopbackBrowserCapability.permissions.includes(permission),
@@ -212,11 +229,87 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
 
   assertCapabilityDoesNotGrant(loopbackBrowserCapability, [
     "default",
+    "allow-browser-report-title",
+    "allow-browser-report-scroll",
+    "allow-browser-report-user-navigation",
     "allow-shell-open",
     "allow-sidecar-startup-status",
     "allow-retry-sidecar-startup",
     "allow-cancel-sidecar-startup",
   ]);
+});
+
+test("native browser children can report metadata but cannot control browser layers", () => {
+  assert.deepEqual(browserChildReportingCapability.webviews, ["cave-browser-*"]);
+  assert.equal(browserChildReportingCapability.windows, undefined);
+  assert.equal(browserChildReportingCapability.local, false);
+  assert.ok(capabilityAllowsOrigin(browserChildReportingCapability, "https://github.com/OpenCoven/coven-cave"));
+  assert.ok(capabilityAllowsOrigin(browserChildReportingCapability, "http://localhost:43123/page"));
+  assert.deepEqual(
+    browserChildReportingCapability.permissions,
+    [
+      "allow-browser-report-title",
+      "allow-browser-report-scroll",
+      "allow-browser-report-user-navigation",
+    ],
+  );
+  for (const [permission, command] of [
+    ["allow-browser-report-title", "browser_report_title"],
+    ["allow-browser-report-scroll", "browser_report_scroll"],
+    ["allow-browser-report-user-navigation", "browser_report_user_navigation"],
+  ]) {
+    assert.equal(
+      defaultPermissions.includes(`"${permission}"`),
+      false,
+      `${permission} must stay out of the trusted-main default permission set`,
+    );
+    assert.match(
+      commandPermissions,
+      new RegExp(String.raw`identifier\s*=\s*"${permission}"[\s\S]{0,240}commands\.allow\s*=\s*\[[^\]]*"${command}"`),
+      `${permission} must map to ${command}`,
+    );
+  }
+  assertCapabilityDoesNotGrant(browserChildReportingCapability, [
+    "default",
+    "allow-pty-start",
+    "allow-browser-navigate",
+    "allow-browser-set-bounds",
+    "allow-browser-hide",
+    "allow-browser-close",
+    "allow-browser-deactivate-all",
+    "allow-browser-close-all",
+    "allow-browser-reload",
+  ]);
+
+  for (const command of [
+    "browser_navigate",
+    "browser_set_bounds",
+    "browser_hide",
+    "browser_hide_all_except",
+    "browser_close",
+    "browser_deactivate_all",
+    "browser_close_all",
+    "browser_reload",
+  ]) {
+    assert.match(
+      browserRust,
+      new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}ensure_browser_controller\(&caller\)\?;`),
+      `${command} must reject browser-child callers even if a capability is misconfigured`,
+    );
+  }
+  assert.match(browserRust, /pub fn browser_report_title\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)/);
+  assert.match(browserRust, /title\.chars\(\)\.take\(512\)/, "untrusted child titles must be bounded");
+  assert.match(browserRust, /pub fn browser_report_scroll\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}scroll_y\.is_finite\(\)/);
+  assert.match(
+    browserRust,
+    /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,500}event_tracker_for_label\(lifecycle\.inner\(\), &label\)/,
+    "navigation attribution must validate and use the actual child caller label",
+  );
+  assert.match(
+    libRust,
+    /browser::browser_report_user_navigation,/,
+    "the child navigation-attribution command must be registered",
+  );
 });
 
 test("privileged PTY commands require the trusted main webview at runtime", () => {
@@ -281,10 +374,11 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
 // app-region hint is equally inert on external URLs).
 test("loopback app webviews can drive native window drag for the seamless titlebar", () => {
   assert.deepEqual(
-    loopbackWindowDragCapability.windows,
+    loopbackWindowDragCapability.webviews,
     ["main", "quick-chat"],
-    "drag permissions cover the main shell and the decoration-less quick-chat tray window (which is otherwise unmovable)",
+    "drag permissions cover only the main and decoration-less quick-chat webviews, never browser children",
   );
+  assert.equal(loopbackWindowDragCapability.windows, undefined);
   assert.deepEqual(
     loopbackWindowDragCapability.platforms,
     ["linux", "macOS", "windows"],

@@ -113,6 +113,75 @@ test("native updater cleanup stops the sidecar before Windows exits", async () =
   );
 });
 
+test("Windows native close remains authoritative when the WebView is unresponsive", async () => {
+  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+
+  assert.match(
+    launcher,
+    /#\[cfg\(target_os = "windows"\)\][\s\S]*WindowEvent::CloseRequested[\s\S]*window\.label\(\) == "main"[\s\S]*shutdown_owned_processes\(window\.app_handle\(\)\)[\s\S]*window\.app_handle\(\)\.exit\(0\)/,
+    "the Windows title-bar close must exit natively without waiting for a wedged JS close listener",
+  );
+});
+
+test("Windows owned process trees use bounded kernel Job Object cleanup", async () => {
+  const [launcher, jobs, pty] = await Promise.all([
+    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readFile(new URL("./src/windows_process_job.rs", import.meta.url), "utf8"),
+    readFile(new URL("./src/pty.rs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(
+    jobs,
+    /JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE[\s\S]*AssignProcessToJobObject[\s\S]*TerminateJobObject/,
+    "sidecar and PTY descendants must be owned by a kill-on-close Windows Job Object",
+  );
+  assert.match(
+    jobs,
+    /struct ProcessLaunchGate[\s\S]*fn wait_for_gate_release[\s\S]*run_gated_child_if_requested/,
+    "owned roots must wait behind a native launch gate until Job assignment completes",
+  );
+  assert.match(
+    launcher,
+    /ProcessLaunchGate::new\(\)[\s\S]*launcher\(&node[\s\S]*command\.spawn\(\)[\s\S]*process_job\.assign_child\(&child\)[\s\S]*launch_gate\.release\(\)[\s\S]*SidecarProcess::from_gated\(child, process_job\)/,
+    "the sidecar cannot execute Node before its launcher is assigned to the job",
+  );
+  assert.match(
+    launcher,
+    /run_gated_child_if_requested\(\)[\s\S]{0,200}std::process::exit\(code\)/,
+    "the private launch gate runs before Tauri initializes",
+  );
+  assert.match(
+    launcher,
+    /process[\s\S]{0,120}\.job[\s\S]{0,120}\.terminate\(\)/,
+    "sidecar shutdown terminates the complete job",
+  );
+  assert.match(
+    pty,
+    /ProcessJob::new\(\)[\s\S]*ProcessLaunchGate::new\(\)[\s\S]*CommandBuilder::from_argv\(launcher\.into_argv\(\)\)[\s\S]*assign_pid\(pid\)[\s\S]*launch_gate\.release\(\)[\s\S]*process_job,/,
+    "PTY shells cannot execute before their gated launcher is job-owned",
+  );
+  assert.match(
+    pty,
+    /pub fn terminate_all_owned_processes\(\)[\s\S]{0,700}session\.process_job\.terminate\(\)/,
+    "Windows close terminates PTY jobs without waiting on ConPTY",
+  );
+  assert.doesNotMatch(
+    pty.match(/pub fn terminate_all_owned_processes\(\)[\s\S]*?\n\}/)?.[0] ?? "",
+    /sessions\.clear\(\)|remove\(/,
+    "the native close callback must not drop ConPTY masters",
+  );
+  assert.match(
+    launcher,
+    /fn sidecar_state_terminates_root_and_descendant_within_deadline\(\)/,
+    "behavioral coverage must exercise the real sidecar state cleanup path",
+  );
+  assert.doesNotMatch(
+    launcher,
+    /Command::new\(windows_system32_binary\("taskkill\.exe"\)\)/,
+    "Windows shutdown must not depend on taskkill",
+  );
+});
+
 test("Windows release reports and enforces bounded MSI tables", async () => {
   const [workflow, budget] = await Promise.all([
     readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
