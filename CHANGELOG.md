@@ -7,6 +7,28 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.174] - 2026-07-11
+
+> 💬 **Copilot chats natively, cleaner Windows packaging, and the Grimoire becomes Memories.** Copilot (and other manifest adapters) now render their replies correctly in chat, the packaged Windows sidecar runtime is pruned and MSI publication is gated, and the knowledge surface is renamed Memories.
+
+Rolls up on top of v0.0.172 — this release also carries the v0.0.173-stamped work below (board/palette project-scoping, chat/board polish, rollout-audit hardening, and the MSI sidecar collapse), which was stamped but never cut as its own release. **Windows note:** the v0.0.172 → v0.0.174 upgrade is the one-time legacy bridge that removes v0.0.172's expanded sidecar tree; archive-to-archive upgrades after this are the fast path.
+
+### Features
+- **Analytics: thread signals become a scrollable, task-promoting data table** spanning both columns (#2920, cave-bhh2).
+
+### Fixes
+- **Chat: Copilot (and other manifest adapters) render replies natively** — external adapters pipe raw CLI stdout without codex/claude output shapes, so the assistant filter was eating whole replies; they now pass through verbatim (with CRLF/backspace handling). Plus the code rail fills wide panels and the sidenav "Grimoire" is renamed **Memories** (#2927, cave-ns35).
+- **Projects: drop stale scope on refetch; gate the palette project fetch until open** — prevents a mid-refetch pick from reaching a project the new familiar can't access (board chat-launch 403) (#2918).
+- **Board: Tasks|Queue segment tabs standardized to the group-toggle footprint** (#2921).
+
+### Windows runtime
+- **Prune the packaged sidecar runtime closure** — traced dep closure instead of the whole tree, with file/size budgets (#2922, by @romgenie).
+- **Gate MSI publication + upgrade diagnostics** — an MSI can't publish before its budget passes (#2923, by @romgenie).
+
+### Internal
+- **Runtimes: one label authority** — consolidated runtime label resolution, alias + merge-label fixes (#2919).
+
+
 ## [0.0.173] - 2026-07-10
 
 > Board & palette project-scoping correctness, chat/board polish, and rollout-audit hardening.
