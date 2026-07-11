@@ -101,7 +101,8 @@ private struct ReconnectPill: View {
         .buttonStyle(.plain)
         .glass(.elevated, in: Capsule())
         .padding(.top, 6)
-        .accessibilityLabel(Text("Reconnecting to your desktop. Tap to retry now."))
+        .accessibilityLabel(label)
+        .accessibilityHint(Text("Tap to retry now."))
     }
 
     /// `Text(_:style:)` renders an auto-updating relative clock ("2 min"),
