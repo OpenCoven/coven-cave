@@ -31,7 +31,17 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
-    var connectionState: ConnectionState = .unconfigured
+    /// Stamped the moment the state LEAVES `.connected` — the last instant the
+    /// desktop was known reachable — so the reconnect pill can say
+    /// "last seen 2 min ago" honestly during a drop.
+    private(set) var lastConnectedAt: Date?
+    var connectionState: ConnectionState = .unconfigured {
+        didSet {
+            if oldValue == .connected, connectionState != .connected {
+                lastConnectedAt = Date()
+            }
+        }
+    }
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
@@ -671,14 +681,22 @@ final class AppModel {
         connectionMonitor.start(queue: connectionMonitorQueue)
     }
 
+    /// Quiet: the state only changes on an outcome, so a healthy path change
+    /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
+    /// flash the reconnect pill over perfectly good tabs.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
-        await refreshConnection(reloadLoadedSurfaces: true)
+        await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    private var shouldReloadLoadedSurfaces: Bool {
+    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// through a connection drop (RootView shows the reconnect pill over it
+    /// instead of tearing down to the Connect screen).
+    var hasLoadedSurfaces: Bool {
         !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
     }
+
+    private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
 
     private func pairingMessage() -> String {
         CaveConnection.accessToken == nil

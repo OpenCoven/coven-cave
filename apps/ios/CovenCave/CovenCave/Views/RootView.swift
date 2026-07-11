@@ -3,19 +3,52 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         @Bindable var app = app
         Group {
             switch app.connectionState {
-            case .unconfigured:
+            case .unconfigured, .needsAuth:
+                // No endpoint, or the desktop is up but demands pairing —
+                // only the user can fix either, so the Connect screen takes
+                // over fully.
                 ConnectionView()
-            case .checking where app.connection != nil && app.familiars.isEmpty:
+            case .checking where app.connection != nil && !app.hasLoadedSurfaces:
                 ConnectingView()
-            case .unreachable, .needsAuth:
+            case .unreachable where !app.hasLoadedSurfaces:
+                // Never got in this session — nothing to keep on screen.
                 ConnectionView()
             default:
+                // Connected — or a transient drop AFTER surfaces loaded. Keep
+                // the tab tree mounted (cached data stays usable, offline
+                // compose keeps queueing) and narrate recovery with the pill
+                // instead of tearing down to the Connect screen.
                 MainTabView()
+            }
+        }
+        .overlay(alignment: .top) {
+            if showsReconnectPill {
+                ReconnectPill(lastSeenAt: app.lastConnectedAt) {
+                    Task { await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true) }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: showsReconnectPill)
+        // While the pill is up over the tabs, quietly re-probe so a desktop
+        // that comes back (restarted, woke from sleep) reconnects on its own.
+        // The Connect screen has its own ticker for the pre-surfaces case;
+        // the hasLoadedSurfaces guard keeps the two from double-probing.
+        // Keyed on scenePhase so backgrounding stops the timer.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                if Task.isCancelled { return }
+                guard app.hasLoadedSurfaces,
+                      case .unreachable = app.connectionState else { continue }
+                await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
             }
         }
         .background(chrome.bgBase.ignoresSafeArea())
@@ -30,6 +63,53 @@ struct RootView: View {
         .fullScreenCover(isPresented: $app.diaryPresented) {
             DiaryView()
         }
+    }
+
+    /// The tabs are mounted but the desktop is out of reach (or a recovery
+    /// probe is in flight) — show the honest "Reconnecting…" pill.
+    private var showsReconnectPill: Bool {
+        guard app.hasLoadedSurfaces else { return false }
+        switch app.connectionState {
+        case .unreachable, .checking: return true
+        default: return false
+        }
+    }
+}
+
+/// Floating "Reconnecting… · last seen Xm" capsule shown over the mounted tab
+/// tree during a connection drop. Tapping it fires an immediate quiet probe
+/// instead of waiting out the 10s ticker.
+private struct ReconnectPill: View {
+    @Environment(\.chrome) private var chrome
+    var lastSeenAt: Date?
+    var retry: () -> Void
+
+    var body: some View {
+        Button(action: retry) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(chrome.textSecondary)
+                label
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(chrome.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .glass(.elevated, in: Capsule())
+        .padding(.top, 6)
+        .accessibilityLabel(label)
+        .accessibilityHint(Text("Tap to retry now."))
+    }
+
+    /// `Text(_:style:)` renders an auto-updating relative clock ("2 min"),
+    /// so the pill's age counts up without a timer.
+    private var label: Text {
+        guard let lastSeenAt else { return Text("Reconnecting…") }
+        return Text("Reconnecting… · last seen \(Text(lastSeenAt, style: .relative)) ago")
     }
 }
 
