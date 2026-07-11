@@ -244,6 +244,17 @@ assert.match(view, /return \(\) => cancelAnimationFrame\(frame\);/, "the scroll 
 assert.doesNotMatch(view, /querySelector<HTMLElement>\(`\[data-card-id="\$\{selectedCardId\}"\]`\)\s*\?\.focus\(\)/, "view switches must not steal focus from the toggle the user clicked");
 assert.match(gantt, /data-card-id=\{row\.cardId\}/, "gantt rows carry data-card-id so the view-switch scroll finds them");
 
+// ── …and the table never mounts with the selection hidden (cave-iote, the
+// P1-6 remainder): "done" collapses by default, so switching to table with a
+// done card selected used to leave no row for the anchor scroll to find — the
+// inspector described an invisible card. The collapse initializer must be
+// selection-aware, and a later selection must expand its own collapsed group
+// without un-sticking manual collapses.
+assert.match(table, /selectedGroupKey === "done" \? new Set<string>\(\) : new Set\(\["done"\]\)/, "the default 'done' collapse yields when the selection lives there (lazy init — no flash, nothing to race the view-switch scroll)");
+assert.match(table, /sel \? cardGroupKey\(sel, groupBy\) : null/, "the selection's group is derived through the same cardGroupKey the grouper uses");
+assert.match(table, /const key = cardGroupKey\(c, by\);/, "groupCards shares cardGroupKey — the two can never disagree on a card's group");
+assert.match(table, /\}, \[selectedGroupKey\]\);/, "the expand effect keys on the selection's group only — a manual collapse sticks until the selection moves");
+
 // ── Bulk-op patch failures reconcile ONCE, after the batch settles (cave-381s):
 // a failed patchCard used to `await load()` immediately, reverting the
 // optimistic state of sibling patches still in flight.
