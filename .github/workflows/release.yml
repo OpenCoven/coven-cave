@@ -220,14 +220,8 @@ jobs:
 
       - name: Build with tauri-action
         if: >-
-          (
-            matrix.family == 'linux' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
-          ) ||
-          (
-            matrix.family == 'windows' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
-          )
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -244,6 +238,17 @@ jobs:
           # latest.json is built by the dedicated `updater-manifest` job after
           # all platforms upload their signed artifacts — per-job generation
           # here would clobber the manifest with a single platform.
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}
+
+      # Build without release inputs so tauri-action cannot publish the MSI
+      # before its component/size budget has passed.
+      - name: Build Windows MSI without publishing
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
+        with:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
@@ -271,6 +276,41 @@ jobs:
           path: ${{ runner.temp }}/windows-msi-metrics.json
           if-no-files-found: warn
           compression-level: 0
+
+      - name: Publish validated Windows MSI
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($msis.Count -ne 1) {
+            throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
+          }
+
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG `
+              --verify-tag `
+              --title "CovenCave $env:RELEASE_TAG" `
+              --notes "Release artifacts are still being assembled by the release workflow."
+            if ($LASTEXITCODE -ne 0) {
+              # Another matrix leg may have created the release concurrently.
+              Start-Sleep -Seconds 5
+              gh release view $env:RELEASE_TAG *> $null
+              if ($LASTEXITCODE -ne 0) {
+                throw "Could not create or find release $env:RELEASE_TAG"
+              }
+            }
+          }
+
+          gh release upload $env:RELEASE_TAG $msis[0].FullName --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not publish budget-approved MSI"
+          }
 
       - name: Sign Linux/Windows updater artifact
         if: >-

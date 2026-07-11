@@ -127,6 +127,55 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(budget, /\$rowBudget = 64/);
   assert.match(budget, /\$byteBudget = 256MB/);
   assert.match(budget, /expected exactly one server\.tar\.gz File row/);
+  assert.match(
+    workflow,
+    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
+    "the MSI must pass its budget before it becomes a release asset",
+  );
+  const buildOnlyStart = workflow.indexOf("- name: Build Windows MSI without publishing");
+  const budgetStart = workflow.indexOf("- name: Measure and enforce Windows MSI budget");
+  const windowsBuildBlock = workflow.slice(buildOnlyStart, budgetStart);
+  assert.doesNotMatch(
+    windowsBuildBlock,
+    /tagName:|releaseName:|releaseId:/,
+    "the pre-budget Windows build must not give tauri-action release upload inputs",
+  );
+});
+
+test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async () => {
+  const [harness, fixtureTest, workflow, changelog, guide] = await Promise.all([
+    readFile(new URL("../scripts/windows-upgrade-diagnostics.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/windows-upgrade-diagnostics.test.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"),
+    readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/windows-upgrade-benchmark.md", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(harness, /ParameterSetName = "Fixture"/);
+  assert.match(harness, /CandidateMsiPath[\s\S]*CandidateUrl/);
+  assert.match(harness, /AllowInstall/);
+  assert.match(harness, /Live installation requires -ExpectedFromVersion and -ExpectedToVersion/);
+  assert.match(harness, /Get-FileHash[\s\S]*SHA256/);
+  assert.match(harness, /performanceSamples/);
+  assert.match(harness, /Get-WindowsInstallerEvents/);
+  assert.match(harness, /Microsoft-Windows-RestartManager/);
+  assert.match(harness, /processSnapshots/);
+  assert.match(harness, /sidecarReadyAtUtc[\s\S]*interactiveReadyAtUtc/);
+  assert.match(harness, /"\/L\*V"/);
+  assert.match(harness, /forcedInstallerTermination = \$false/);
+  assert.doesNotMatch(
+    harness,
+    /Stop-Process|\.Kill\(/,
+    "the timeout path must leave Windows Installer in control of completion or rollback",
+  );
+  assert.match(fixtureTest, /legacy-expanded-msi-bridge/);
+  assert.match(fixtureTest, /msiLog\.actions/);
+  assert.match(workflow, /Test Windows updater sidecar cleanup[\s\S]*cargo test[^\n]*cleanup/);
+  assert.match(workflow, /Test Windows upgrade diagnostics fixture/);
+  assert.match(changelog, /\[0\.0\.173\][\s\S]*#2911/);
+  assert.match(changelog, /v0\.0\.172.*v0\.0\.173 is the one-time legacy bridge/);
+  assert.match(guide, /archive-to-archive/);
+  assert.match(guide, /does not uninstall the product, delete[\s\S]*application data/);
 });
 
 test("packaged app does not override Coven workspace with OpenClaw workspace", async () => {

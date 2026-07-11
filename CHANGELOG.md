@@ -13,7 +13,10 @@ breaking config changes; patch releases stay additive.
 
 Patch release on top of v0.0.172.
 
+> **Windows upgrade note:** v0.0.172 → v0.0.173 is the one-time legacy bridge. Windows Installer must still remove v0.0.172's expanded sidecar tree; archive-to-archive upgrades after v0.0.173 are the representative fast path.
+
 ### Changes
+- fix(windows): collapse the MSI sidecar payload into one verified runtime archive, reducing per-file upgrade work (#2911)
 - fix(projects): drop stale scope on refetch; gate palette project fetch on open (#2908)
 - docs: iOS onboarding + constant connection + cloud persistence — review & plan (cave-rku9) (#2909)
 - fix(rollout): five P3s from the evening re-audit (#2907)
