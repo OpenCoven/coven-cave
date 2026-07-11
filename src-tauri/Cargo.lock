@@ -77,8 +77,9 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app"
-version = "0.0.173"
+version = "0.0.174"
 dependencies = [
+ "fs2",
  "log",
  "objc2",
  "once_cell",
@@ -97,7 +98,6 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-updater",
  "window-vibrancy",
- "windows-sys 0.61.2",
  "zstd",
 ]
 
@@ -1227,6 +1227,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
 ]
 
 [[package]]

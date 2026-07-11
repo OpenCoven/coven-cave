@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { covenLaunchCommandForBinary, pickWindowsLauncher, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 
@@ -173,6 +173,37 @@ assert.match(
   source,
   /execFileSync\("where", \["coven"\][\s\S]*pickWindowsLauncher/,
   "covenBin falls back to `where` + launcher picking before the literal name on Windows",
+);
+
+// Released coven CLIs only auto-trust recipe-installed manifests inside
+// COVEN_HOME/adapters (hermes); Cave-scaffolded copilot/opencode manifests
+// there are ignored unless COVEN_HARNESS_ADAPTER_DIRS names the directory.
+// Every coven spawn must therefore carry the env var.
+const defaultAdapters = path.join(os.homedir(), ".coven", "adapters");
+assert.equal(
+  covenAdapterDirsEnvValue(undefined),
+  defaultAdapters,
+  "no user value → COVEN_HOME defaults to ~/.coven and adapters/ is named",
+);
+assert.equal(
+  covenAdapterDirsEnvValue(undefined, path.join(os.tmpdir(), "coven-home")),
+  path.join(os.tmpdir(), "coven-home", "adapters"),
+  "an explicit COVEN_HOME override wins over ~/.coven",
+);
+assert.equal(
+  covenAdapterDirsEnvValue("/opt/adapters"),
+  ["/opt/adapters", defaultAdapters].join(path.delimiter),
+  "a user-set value keeps priority; Cave's directory is appended",
+);
+assert.equal(
+  covenAdapterDirsEnvValue(defaultAdapters),
+  defaultAdapters,
+  "already-listed directory is not duplicated (dup adapter ids error in the CLI)",
+);
+assert.match(
+  source,
+  /COVEN_HARNESS_ADAPTER_DIRS = covenAdapterDirsEnvValue\(/,
+  "covenSpawnEnv wires the adapter dirs into every coven child process",
 );
 
 console.log("coven-bin.test.ts: ok");

@@ -140,7 +140,13 @@ assert.equal(
 const sidecarBundle = readFileSync(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8");
 assert.match(
   sidecarBundle,
-  /cp "\$ROOT\/server\.mjs" "\$DEST\/server\.mjs"/,
+  /node "\$ROOT\/scripts\/sidecar-runtime-closure\.mjs"/,
+  "sidecar bundle delegates packaging to the traced runtime assembler",
+);
+const sidecarClosure = readFileSync(new URL("../scripts/sidecar-runtime-closure.mjs", import.meta.url), "utf8");
+assert.match(
+  sidecarClosure,
+  /copyResolvedEntry\(path\.join\(projectRoot, "server\.mjs"\), path\.join\(destination, "server\.mjs"\)/,
   "sidecar bundle ships the custom PTY-bridge server next to the standalone tree",
 );
 const tauriLib = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");

@@ -42,25 +42,18 @@ test("deep-linkable modes hosted by another surface light the host row (cave-s9p
   assert.equal(sidebarRowState("inbox", "flow"), "active", "retired flow remaps to Schedules");
 });
 
-test("the Journal row keys off the Grimoire tab, not the mode (cave-s9p6)", () => {
+test("Journal is a Memories tab — the Memories (grimoire) row hosts it", () => {
+  // The Journal sidebar row is retired (navHidden): the surface lives as a
+  // tab inside Memories, so the Memories row stays lit on either tab, and a
+  // "journal" deep-link mode lights the Memories row too.
   assert.equal(
-    sidebarRowState("journal", "grimoire", undefined, { grimoireView: "journal" }),
+    sidebarRowState("grimoire", "grimoire"),
     "active",
-    "Journal tab up → Journal row lights",
+    "Memories row lights for the grimoire mode regardless of tab",
   );
   assert.equal(
-    sidebarRowState("grimoire", "grimoire", undefined, { grimoireView: "journal" }),
-    "idle",
-    "Journal tab up → Grimoire row yields",
-  );
-  assert.equal(
-    sidebarRowState("grimoire", "grimoire", undefined, { grimoireView: "docs" }),
+    sidebarRowState("grimoire", "journal"),
     "active",
-    "other Grimoire tabs keep the Grimoire row",
-  );
-  assert.equal(
-    sidebarRowState("journal", "grimoire"),
-    "idle",
-    "no view provided → unchanged legacy behavior",
+    "a journal deep-link mode lights the Memories row",
   );
 });

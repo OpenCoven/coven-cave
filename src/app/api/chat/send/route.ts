@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
-import { stripAnsi } from "@/lib/ansi";
+import { resolveBackspaces, stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
   enqueueOfflineTravelItem,
@@ -1336,7 +1336,15 @@ export async function POST(req: Request) {
       push({ kind: "user", text: promptText });
 
       let sessionId: string | null = body.sessionId ?? null;
-      let assistantFilter = new AssistantFilter();
+      // The AssistantFilter's suppressions all key on codex/claude output
+      // shapes (marker lines, startup banners, exec echoes). External manifest
+      // adapters (copilot, opencode, hermes, …) pipe the CLI's raw stdout with
+      // none of those shapes — the phase gate ate whole replies ("completed
+      // but produced no output") and the banner heuristic ate bare-number
+      // answers — so their text passes through verbatim.
+      const rawStdoutHarness =
+        binding.harness !== "codex" && binding.harness !== "claude";
+      let assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
       let assistantText = "";
       let jsonBuf = "";
       let result: {
@@ -1372,7 +1380,11 @@ export async function POST(req: Request) {
       // model field arrives (older CLIs omit it → honest `pending`).
       let confirmedModel: string | null = null;
 
-      const handleLine = (line: string) => {
+      const handleLine = (rawLine: string) => {
+        // stdout is split on bare \n; external adapters (copilot) emit CRLF,
+        // and a trailing \r would both fail the endsWith("}") JSON sniff and
+        // leak into bubble text.
+        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = line.startsWith("{") && line.endsWith("}");
@@ -1479,7 +1491,7 @@ export async function POST(req: Request) {
             /* fall through to filter */
           }
         }
-        const cleaned = stripAnsi(line);
+        const cleaned = resolveBackspaces(stripAnsi(line));
         // Snapshot error-looking stdout lines for the empty-response diagnostic.
         const trimmed = cleaned.trim();
         if (trimmed && ERR_LINE_RE.test(trimmed)) {
@@ -1654,7 +1666,7 @@ export async function POST(req: Request) {
           "running",
         );
         sessionId = null;
-        assistantFilter = new AssistantFilter();
+        assistantFilter = new AssistantFilter({ passthrough: rawStdoutHarness });
         assistantText = "";
         jsonBuf = "";
         result = {};

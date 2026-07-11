@@ -127,70 +127,55 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   assert.match(budget, /\$rowBudget = 64/);
   assert.match(budget, /\$byteBudget = 256MB/);
   assert.match(budget, /expected exactly one server\.tar\.zst File row/);
+  assert.match(
+    workflow,
+    /Build Windows MSI without publishing[\s\S]*Measure and enforce Windows MSI budget[\s\S]*Publish validated Windows MSI/,
+    "the MSI must pass its budget before it becomes a release asset",
+  );
+  const buildOnlyStart = workflow.indexOf("- name: Build Windows MSI without publishing");
+  const budgetStart = workflow.indexOf("- name: Measure and enforce Windows MSI budget");
+  const windowsBuildBlock = workflow.slice(buildOnlyStart, budgetStart);
+  assert.doesNotMatch(
+    windowsBuildBlock,
+    /tagName:|releaseName:|releaseId:/,
+    "the pre-budget Windows build must not give tauri-action release upload inputs",
+  );
 });
 
-test("Windows runtime uses measured zstd extraction diagnostics and uninstall cleanup", async () => {
-  const [archiveRuntime, bundleScript, manifestWriter, smoke, uninstaller, windowsConfig, wixCleanup, compressionGuide] = await Promise.all([
-    readFile(new URL("./src/sidecar_archive.rs", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/sidecar-runtime-smoke.mjs", import.meta.url), "utf8"),
-    readFile(new URL("../scripts/uninstall-app.sh", import.meta.url), "utf8"),
-    readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
-    readFile(new URL("./windows/fragments/sidecar-cache-cleanup.wxs", import.meta.url), "utf8"),
-    readFile(new URL("../docs/windows-sidecar-compression.md", import.meta.url), "utf8"),
+test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async () => {
+  const [harness, fixtureTest, workflow, changelog, guide] = await Promise.all([
+    readFile(new URL("../scripts/windows-upgrade-diagnostics.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/windows-upgrade-diagnostics.test.ps1", import.meta.url), "utf8"),
+    readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8"),
+    readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8"),
+    readFile(new URL("../docs/windows-upgrade-benchmark.md", import.meta.url), "utf8"),
   ]);
 
-  assert.match(bundleScript, /server\.tar\.zst/);
-  assert.match(bundleScript, /System32\/tar\.exe[\s\S]*libzstd/);
-  assert.doesNotMatch(bundleScript, /server\.tar\.gz/);
-  assert.match(archiveRuntime, /ZstdDecoder::new/);
-  assert.match(archiveRuntime, /const ARCHIVE_FORMAT: &str = "tar\.zst"/);
-  assert.match(archiveRuntime, /const MANIFEST_SCHEMA_VERSION: u32 = 3/);
-  assert.match(manifestWriter, /schemaVersion: 3/);
-  for (const field of [
-    "cache_outcome",
-    "compressed_bytes",
-    "expanded_bytes",
-    "file_count",
-    "directory_count",
-    "defender_relevant_file_entries",
-    "windows_defender_process_detected",
-    "staging_disk_bytes_estimate",
-    "existing_cache_logical_bytes_before",
-    "peak_cache_logical_bytes_estimate",
-    "archive_decompression_ms",
-    "file_creation_ms",
-    "archive_extract_ms",
-    "tree_verify_ms",
-    "total_ms",
-  ]) {
-    assert.match(archiveRuntime, new RegExp(field), `runtime diagnostics must include ${field}`);
-  }
-  assert.match(archiveRuntime, /sidecar-runtime-latest\.json/);
-  assert.match(archiveRuntime, /"cacheOutcome": "error"/);
-  assert.match(archiveRuntime, /"failedPhase": context\.failed_phase/);
-  assert.match(smoke, /server\.tar\.zst/);
-  assert.match(smoke, /System32", "tar\.exe"/);
-  assert.match(uninstaller, /\$\{local_appdata\}\/\$\{APP_ID\}\/sidecar-runtime/);
-  assert.match(windowsConfig, /sidecar-cache-cleanup\.wxs/);
-  assert.match(windowsConfig, /SidecarRuntimeCleanupAnchor/);
-  assert.match(wixCleanup, /Execute="commit"/);
-  assert.match(wixCleanup, /Impersonate="yes"/);
-  assert.match(wixCleanup, /if defined LOCALAPPDATA/);
-  assert.match(wixCleanup, /%LOCALAPPDATA%\\ai\.opencoven\.cave\\sidecar-runtime/);
-  assert.match(wixCleanup, /\(REMOVE = "ALL"\) AND NOT UPGRADINGPRODUCTCODE/);
-  for (const invariant of [
-    "canonical payload",
-    "full-tree digests",
-    "payload-derived cache key",
-    "fs2",
-    "free-space preflight",
-    "full-file warm validation",
-    "atomic recovery",
-  ]) {
-    assert.match(compressionGuide, new RegExp(invariant), `schema 3 integration contract must preserve ${invariant}`);
-  }
+  assert.match(harness, /ParameterSetName = "Fixture"/);
+  assert.match(harness, /CandidateMsiPath[\s\S]*CandidateUrl/);
+  assert.match(harness, /AllowInstall/);
+  assert.match(harness, /Live installation requires -ExpectedFromVersion and -ExpectedToVersion/);
+  assert.match(harness, /Get-FileHash[\s\S]*SHA256/);
+  assert.match(harness, /performanceSamples/);
+  assert.match(harness, /Get-WindowsInstallerEvents/);
+  assert.match(harness, /Microsoft-Windows-RestartManager/);
+  assert.match(harness, /processSnapshots/);
+  assert.match(harness, /sidecarReadyAtUtc[\s\S]*interactiveReadyAtUtc/);
+  assert.match(harness, /"\/L\*V"/);
+  assert.match(harness, /forcedInstallerTermination = \$false/);
+  assert.doesNotMatch(
+    harness,
+    /Stop-Process|\.Kill\(/,
+    "the timeout path must leave Windows Installer in control of completion or rollback",
+  );
+  assert.match(fixtureTest, /legacy-expanded-msi-bridge/);
+  assert.match(fixtureTest, /msiLog\.actions/);
+  assert.match(workflow, /Test Windows updater sidecar cleanup[\s\S]*cargo test[^\n]*cleanup/);
+  assert.match(workflow, /Test Windows upgrade diagnostics fixture/);
+  assert.match(changelog, /\[0\.0\.173\][\s\S]*#2911/);
+  assert.match(changelog, /v0\.0\.172.*v0\.0\.173 is the one-time legacy bridge/);
+  assert.match(guide, /archive-to-archive/);
+  assert.match(guide, /does not uninstall the product, delete[\s\S]*application data/);
 });
 
 test("packaged app does not override Coven workspace with OpenClaw workspace", async () => {
@@ -213,7 +198,7 @@ test("packaged sidecar bootstraps mobile handoff tokens", async () => {
   );
   assert.match(
     launcher,
-    /\?covenCaveToken=\{\}&coven_access_token=\{\}/,
+    /\?covenCaveToken=\{auth_token\}&coven_access_token=\{mobile_access_token\}/,
     "desktop webview should bootstrap both sidecar auth and mobile access cookies",
   );
 });
@@ -233,8 +218,13 @@ test("macOS tray exposes quick chat as a separate floating window", async () => 
   );
   assert.match(
     launcher,
-    /show_quick_chat_window\(app, &quick_chat_url_for_menu\)/,
-    "the Quick Chat menu item must open the dedicated quick chat window",
+    /"quick_chat" => show_quick_chat_from_main\(app\)/,
+    "the Quick Chat menu item must resolve the ready main sidecar before opening",
+  );
+  assert.match(
+    launcher,
+    /fn quick_chat_url_from_main[\s\S]*trusted_loopback[\s\S]*url\.set_path\("\/quick-chat"\)/,
+    "quick chat must not open against the local startup page or an untrusted origin",
   );
   assert.match(
     launcher,
@@ -273,8 +263,46 @@ test("Windows packaged sidecar starts without a console window", async () => {
   );
   assert.match(
     launcher,
-    /cmd\.creation_flags\(0x08000000\)/,
+    /command\.creation_flags\(0x08000000\)/,
     "Windows launcher must use CREATE_NO_WINDOW for the Node sidecar process",
+  );
+});
+
+test("Windows first launch paints progress and supports recovery while the sidecar starts", async () => {
+  const [launcher, startupPage] = await Promise.all([
+    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readFile(new URL("./frontend-stub/startup.html", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(
+    launcher,
+    /WebviewUrl::App\("startup\.html"\.into\(\)\)/,
+    "Windows release startup must create a local window before runtime preparation",
+  );
+  assert.match(
+    launcher,
+    /thread::Builder::new\(\)[\s\S]*coven-sidecar-startup[\s\S]*start_sidecar_runtime/,
+    "runtime preparation and sidecar readiness must run off the UI thread",
+  );
+  assert.match(
+    launcher,
+    /retry_sidecar_startup[\s\S]*cancel_sidecar_startup/,
+    "startup must expose retry and cancellation commands",
+  );
+  assert.match(
+    startupPage,
+    /role="progressbar"[\s\S]*aria-live="polite"/,
+    "startup page must expose accessible progress",
+  );
+  assert.match(
+    startupPage,
+    /sidecar-startup-progress/,
+    "startup page must listen for native phase changes",
+  );
+  assert.match(
+    startupPage,
+    /Startup diagnostics[\s\S]*retry_sidecar_startup/,
+    "startup failures must surface diagnostics and an in-window retry",
   );
 });
 

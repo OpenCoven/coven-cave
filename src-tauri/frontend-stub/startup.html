@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starting CovenCave</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #090909;
+        color: #f7f7f2;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        background:
+          radial-gradient(circle at 22% 12%, rgba(255, 255, 255, 0.1), transparent 34%),
+          linear-gradient(155deg, #111 0%, #080808 58%, #18120d 100%);
+      }
+
+      main {
+        width: min(100%, 520px);
+        display: grid;
+        gap: 18px;
+      }
+
+      .mark {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.07);
+        font-size: 26px;
+        font-weight: 700;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.15;
+      }
+
+      p {
+        margin: 0;
+        color: rgba(247, 247, 242, 0.7);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .progress-track {
+        height: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .progress-value {
+        width: 0;
+        height: 100%;
+        border-radius: inherit;
+        background: #f7f7f2;
+        transition: width 180ms ease;
+      }
+
+      .phase {
+        min-height: 22px;
+        color: rgba(247, 247, 242, 0.86);
+        font-size: 14px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      button {
+        min-height: 40px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 8px;
+        padding: 0 14px;
+        background: #f7f7f2;
+        color: #090909;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      button.secondary {
+        background: transparent;
+        color: #f7f7f2;
+      }
+
+      button[hidden] {
+        display: none;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+      }
+
+      details {
+        color: #ffb4a8;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      pre {
+        max-height: 180px;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        color: rgba(247, 247, 242, 0.72);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">C</div>
+      <h1>Starting CovenCave</h1>
+      <p>
+        The application runtime is being verified and prepared. The first start after an update can
+        take longer; later starts reuse the prepared runtime.
+      </p>
+      <div
+        class="progress-track"
+        id="progress"
+        role="progressbar"
+        aria-label="CovenCave startup progress"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+      >
+        <div class="progress-value" id="progress-value"></div>
+      </div>
+      <div class="phase" id="phase" role="status" aria-live="polite">Preparing startup…</div>
+      <div class="actions">
+        <button id="retry" type="button" hidden>Retry</button>
+        <button class="secondary" id="cancel" type="button" hidden>Cancel startup</button>
+      </div>
+      <details id="diagnostics" hidden>
+        <summary>Startup diagnostics</summary>
+        <pre id="diagnostic-message"></pre>
+      </details>
+    </main>
+
+    <script>
+      (() => {
+        const eventName = "sidecar-startup-progress";
+        const progress = document.getElementById("progress");
+        const progressValue = document.getElementById("progress-value");
+        const phase = document.getElementById("phase");
+        const retry = document.getElementById("retry");
+        const cancel = document.getElementById("cancel");
+        const diagnostics = document.getElementById("diagnostics");
+        const diagnosticMessage = document.getElementById("diagnostic-message");
+
+        function render(status) {
+          const value = Math.max(0, Math.min(100, Number(status?.progress) || 0));
+          progress.setAttribute("aria-valuenow", String(value));
+          progressValue.style.width = `${value}%`;
+          phase.textContent = status?.message || "Preparing CovenCave";
+          retry.hidden = !status?.canRetry;
+          retry.disabled = false;
+          cancel.hidden = !status?.canCancel;
+          cancel.disabled = false;
+          const failed = status?.phase === "failed";
+          diagnostics.hidden = !failed;
+          diagnosticMessage.textContent = failed ? status.message : "";
+        }
+
+        async function invoke(command) {
+          const api = window.__TAURI__;
+          if (!api?.core?.invoke) throw new Error("Native startup API is unavailable");
+          return api.core.invoke(command);
+        }
+
+        retry.addEventListener("click", async () => {
+          retry.disabled = true;
+          diagnostics.hidden = true;
+          try {
+            await invoke("retry_sidecar_startup");
+          } catch (error) {
+            render({
+              phase: "failed",
+              progress: 0,
+              message: error instanceof Error ? error.message : String(error),
+              canRetry: true,
+              canCancel: false,
+            });
+          }
+        });
+
+        cancel.addEventListener("click", async () => {
+          cancel.disabled = true;
+          try {
+            await invoke("cancel_sidecar_startup");
+          } catch (error) {
+            phase.textContent = error instanceof Error ? error.message : String(error);
+            cancel.disabled = false;
+          }
+        });
+
+        async function initialize() {
+          const api = window.__TAURI__;
+          if (!api?.event?.listen) throw new Error("Native startup events are unavailable");
+          await api.event.listen(eventName, (event) => render(event.payload));
+          render(await invoke("sidecar_startup_status"));
+        }
+
+        initialize().catch((error) => {
+          render({
+            phase: "failed",
+            progress: 0,
+            message: error instanceof Error ? error.message : String(error),
+            canRetry: false,
+            canCancel: false,
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

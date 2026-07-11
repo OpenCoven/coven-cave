@@ -135,4 +135,8 @@ assert.match(mobileDocsSource, /signed (?:expiring )?invites?/, "mobile docs sho
 assert.match(tauriSource, /sidecar_auth_token\(\)/, "Tauri sidecar should generate a per-launch token");
 assert.match(tauriSource, /\.env\("COVEN_CAVE_AUTH_TOKEN", &auth_token\)/, "Tauri sidecar should pass the token to Next.js");
 assert.match(tauriSource, /\.env\("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token\)/, "Tauri sidecar should pass the mobile access secret to Next.js");
-assert.match(tauriSource, /\?covenCaveToken=\{\}&coven_access_token=\{\}/, "Tauri app URL should bootstrap both tokens into the webview");
+assert.match(
+  tauriSource,
+  /\?covenCaveToken=\{auth_token\}&coven_access_token=\{mobile_access_token\}/,
+  "Tauri app URL should bootstrap both named tokens into the webview",
+);

@@ -171,7 +171,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   capabilities: "Capabilities",
   "familiar-work-queue": "Queue",
   journal: "Journal",
-  grimoire: "Grimoire",
+  grimoire: "Memories",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -2206,7 +2206,6 @@ export function Workspace() {
     <SidebarMinimal
       mode={mode}
       splitPageModes={splitPageModes}
-      grimoireView={grimoireView}
       // Registered Role Surfaces visible for the active familiar — rendered by
       // the sidebar as generic rows (rooms), never named in shell code.
       roleSurfaces={roleSurfaceSession.visibleSurfaces.map((surface) => ({

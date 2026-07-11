@@ -21,13 +21,9 @@ alternated to reduce filesystem-cache and Defender ordering bias.
 Every extraction produced exactly 24,293 files, 4,018 directories, and
 549,137,534 bytes. Zstd was 12.9% smaller, 2.9x faster to compress, and 26.1%
 faster to extract on the two-run mean. File creation and real-time scanning
-still dominate warm extraction, which is why the runtime records file counts,
-per-phase timings, staging estimates, and observable Defender process context.
-Cache disk diagnostics sum the logical bytes actually present before
-preparation, then add the manifest-sized staging estimate for a conservative
-peak. Failure records retain completed phase timings, the active failed phase,
-cache/generation context, and Defender process context for extraction-related
-failures. The latest diagnostics file is replaced atomically on Windows.
+still dominate warm extraction. The canonical uncompressed tar and
+activated-tree digests remain the cache's stable identities, so zstd frame
+details cannot force needless re-extraction.
 
 ## Pruned runtime closure
 
@@ -56,9 +52,9 @@ the full extraction interval to the codec.
 
 ## Decision
 
-Use `server.tar.zst` at zstd level 3. Windows' inbox bsdtar creates the release
-archive without an extra runner dependency, and the Rust launcher decodes it
-in-process. The manifest identifies `tar.zst` explicitly and retains the same
+Use `server.tar.zst` at zstd level 3. Node 24's built-in zstd codec compresses
+the canonical tar directly, and the Rust launcher decodes it in-process. The
+manifest identifies `tar.zst` explicitly and retains the same
 SHA-256, expanded-byte, file-count, and directory-count integrity checks.
 
 The cache key and current-plus-one-previous retention policy are unchanged.
@@ -101,12 +97,8 @@ and whether `MsMpEng.exe` was running so later measurements remain comparable.
 
 ## Integration contract
 
-This independently based compression change reserves manifest schema 3 for
-the combined runtime-cache implementation. When this work is semantically
-merged with the schema-2 content-addressed cache change, schema 3 must retain
-its canonical payload and full-tree digests, payload-derived cache key,
-interprocess `fs2` lock, free-space preflight, full-file warm validation, and
-atomic recovery behavior while changing the archive transport to `tar.zst`.
-The branches intentionally remain non-stacked and may require conflict
-resolution; schema 3 prevents either incompatible wire format from being
-mistaken for the other during that integration.
+Manifest schema 3 combines zstd transport with the content-addressed cache:
+canonical payload and full-tree digests, a payload-derived cache key,
+interprocess `fs2` locking, free-space preflight, full-file warm validation,
+and atomic publication/recovery. Schema 3 prevents the older gzip wire format
+from being mistaken for the zstd resource during upgrades.

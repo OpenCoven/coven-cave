@@ -16,7 +16,7 @@ const PRIMARY: RailDest[] = [
   { href: "/?mode=board", label: "Tasks", icon: "ph:kanban" },
   { href: "/?mode=inbox", label: "Schedules", icon: "ph:calendar-check" },
   { href: "/?mode=journal", label: "Journal", icon: "ph:book-open" },
-  { href: "/?mode=grimoire", label: "Grimoire", icon: "ph:books" },
+  { href: "/?mode=grimoire", label: "Memories", icon: "ph:books" },
   { href: "/?mode=marketplace", label: "Marketplace", icon: "ph:storefront-bold" },
   { href: "/?mode=github", label: "GitHub", icon: "ph:github-logo" },
 ];

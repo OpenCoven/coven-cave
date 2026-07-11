@@ -38,6 +38,14 @@
 
 .board-clear-confirm { display:flex; gap:6px; }
 
+/* Tasks|Queue segment tabs (shared Tabs, variant=segment) — standardized to the
+   group-toggle footprint: same total height (control + 1px borders) and the
+   same 10px/12px button metrics as .board-group-toggle-btn, while keeping the
+   segment aesthetic (hairline container, rounded active pill). Same recipe as
+   .gh-compact-tabs below. */
+.board-header-tabs { flex:0 0 auto; height:calc(var(--board-control-h,28px) + 2px); padding:2px; }
+.board-header-tabs [role="tab"] { height:100%; padding:0 10px; font-size:12px; }
+
 .board-group-toggle { display:flex; border:1px solid var(--border-strong); border-radius:var(--radius-control); overflow:hidden; }
 /* Leading zoom glyph so the compact D/W/M reads as a timeline zoom, not a range filter. */
 .board-group-toggle .cg-zoom-cell { display:flex; align-items:center; padding:0 4px 0 8px; background:var(--bg-raised); color:var(--text-muted); border-right:1px solid var(--border-strong); }
