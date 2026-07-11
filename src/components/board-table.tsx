@@ -175,6 +175,25 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
 
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
   const groups = useMemo(() => groupCards(sorted, groupBy, familiars, projects), [sorted, groupBy, familiars, projects]);
+
+  // The "done" group is collapsed by default, so a still-selected done card
+  // can mount with no row for the BoardView view-switch scroll pass to find
+  // (cave-iote). Reveal the group holding the selection once at mount; later
+  // manual collapses are the user's call and are never fought.
+  useEffect(() => {
+    if (!selectedCardId) return;
+    const holder = groups.find((g) => g.cards.some((c) => c.id === selectedCardId));
+    if (!holder) return;
+    setCollapsed((prev) => {
+      if (!prev.has(holder.key)) return prev;
+      const next = new Set(prev);
+      next.delete(holder.key);
+      return next;
+    });
+    // Mount-only by design — reruns would reopen groups the user closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // The familiar options are identical for every row, so build them once instead
   // of rebuilding the option data per row on each render.
   const familiarOptions = useMemo(
