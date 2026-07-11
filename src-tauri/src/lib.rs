@@ -518,6 +518,88 @@ fn sidecar_auth_token() -> String {
 }
 
 #[cfg(desktop)]
+const MOBILE_ACCESS_TOKEN_FILE: &str = "mobile-access-token";
+
+#[cfg(desktop)]
+fn is_valid_persisted_token(token: &str) -> bool {
+    token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// The mobile access secret must survive desktop restarts: phones sign their
+/// tokens against it, so minting a fresh one per launch would force every
+/// paired phone back through QR pairing after any restart. Load-or-create it
+/// from disk; the per-launch webview token (`COVEN_CAVE_AUTH_TOKEN`) stays
+/// ephemeral because the desktop webview receives a fresh URL each launch.
+#[cfg(desktop)]
+fn load_or_create_mobile_access_token(secret_path: &Path) -> String {
+    match std::fs::read_to_string(secret_path) {
+        Ok(existing) => {
+            let trimmed = existing.trim();
+            if is_valid_persisted_token(trimmed) {
+                return trimmed.to_string();
+            }
+            log::warn!(
+                "[cave] persisted mobile access token at {} is malformed - regenerating (paired phones will need to re-pair)",
+                secret_path.display()
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            log::warn!(
+                "[cave] could not read mobile access token at {}: {error}",
+                secret_path.display()
+            );
+        }
+    }
+
+    let token = sidecar_auth_token();
+    if let Some(parent) = secret_path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            log::warn!(
+                "[cave] could not create {} ({error}) - mobile access token will not persist across launches",
+                parent.display()
+            );
+            return token;
+        }
+    }
+    if let Err(error) = write_secret_file(secret_path, &token) {
+        log::warn!(
+            "[cave] could not persist mobile access token to {} ({error}) - paired phones will need to re-pair after restart",
+            secret_path.display()
+        );
+    }
+    token
+}
+
+#[cfg(desktop)]
+fn write_secret_file(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(contents.as_bytes())
+}
+
+#[cfg(desktop)]
+fn mobile_access_token_for_app(app: &tauri::AppHandle) -> String {
+    match app.path().app_data_dir() {
+        Ok(dir) => load_or_create_mobile_access_token(&dir.join(MOBILE_ACCESS_TOKEN_FILE)),
+        Err(error) => {
+            log::warn!(
+                "[cave] could not resolve app data dir ({error}) - mobile access token will not persist across launches"
+            );
+            sidecar_auth_token()
+        }
+    }
+}
+
+#[cfg(desktop)]
 struct SidecarState(Arc<Mutex<Option<Child>>>);
 
 #[cfg(desktop)]
@@ -875,7 +957,7 @@ fn start_sidecar_runtime(
     let port = find_free_port()
         .ok_or_else(|| SidecarStartError::Failed("no free local port available".to_string()))?;
     let auth_token = sidecar_auth_token();
-    let mobile_access_token = sidecar_auth_token();
+    let mobile_access_token = mobile_access_token_for_app(app);
     log::info!("[cave] starting sidecar on port {port}");
 
     let node = find_node(&resource_dir).ok_or_else(|| {
@@ -1213,6 +1295,59 @@ mod tests {
 
         assert_eq!(token.len(), 64);
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn mobile_access_token_persists_across_launches() {
+        let dir = std::env::temp_dir().join(format!(
+            "cave-mobile-token-test-{}-{}",
+            std::process::id(),
+            sidecar_auth_token()
+        ));
+        let secret_path = dir.join("nested").join(MOBILE_ACCESS_TOKEN_FILE);
+
+        let first = load_or_create_mobile_access_token(&secret_path);
+        let second = load_or_create_mobile_access_token(&secret_path);
+
+        assert_eq!(first, second, "restart must reuse the persisted secret");
+        assert!(is_valid_persisted_token(&first));
+        assert_eq!(
+            std::fs::read_to_string(&secret_path).expect("secret file written"),
+            first
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&secret_path)
+                .expect("secret metadata")
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600, "secret file must be owner-only");
+        }
+
+        std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn mobile_access_token_regenerates_when_persisted_secret_is_malformed() {
+        let dir = std::env::temp_dir().join(format!(
+            "cave-mobile-token-bad-{}-{}",
+            std::process::id(),
+            sidecar_auth_token()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let secret_path = dir.join(MOBILE_ACCESS_TOKEN_FILE);
+        std::fs::write(&secret_path, "not-a-token").expect("write malformed secret");
+
+        let token = load_or_create_mobile_access_token(&secret_path);
+
+        assert!(is_valid_persisted_token(&token));
+        assert_eq!(
+            std::fs::read_to_string(&secret_path).expect("secret file rewritten"),
+            token
+        );
+
+        std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
     }
 
     #[test]
