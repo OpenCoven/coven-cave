@@ -107,6 +107,10 @@ jobs:
 
       - run: cargo check --locked
 
+      # Persisted mobile pairing secret (cave-y482): a desktop restart must
+      # not rotate the secret phones signed their tokens against.
+      - run: cargo test --locked --lib tests::mobile_access_token -- --nocapture
+
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
