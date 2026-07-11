@@ -33,10 +33,21 @@ function projectTimestamp(project: CaveProject): number {
   return Number.isFinite(createdAt) ? createdAt : Number.NEGATIVE_INFINITY;
 }
 
-export function dedupeProjectsByRoot(projects: CaveProject[]): CaveProject[] {
+/**
+ * Collapse the list to one project per path. The normalized root is the
+ * identity for dedupe purposes — ids are random and can diverge across
+ * duplicate rows, but two entries pointing at the same path are the same
+ * project. Newest record (by updatedAt, then createdAt) wins. Callers may
+ * pass a stricter normalizer (e.g. the server-side tilde-expanding one) so
+ * `~/code/app` and its absolute twin collapse too.
+ */
+export function dedupeProjectsByRoot(
+  projects: CaveProject[],
+  normalizeRoot: (root: string) => string = normalizeProjectRoot,
+): CaveProject[] {
   const byRoot = new Map<string, CaveProject>();
   for (const project of projects) {
-    const root = normalizeProjectRoot(project.root);
+    const root = normalizeRoot(project.root);
     const existing = byRoot.get(root);
     if (!existing || projectTimestamp(project) > projectTimestamp(existing)) {
       byRoot.set(root, project);

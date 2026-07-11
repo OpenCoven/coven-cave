@@ -125,6 +125,74 @@ try {
   await seedDefaultProjectsIfEmpty();
   assert.equal((await loadProjects()).length, 0, "calling seed twice remains a no-op");
 
+  // Paths are the source of truth for identity: duplicate rows already on disk
+  // (persisted before the one-per-root guard, or written by hand) collapse at
+  // load time, so server consumers (projectById/trustedProjectCwd) can never
+  // resolve an entry the UI hides. Newest record wins; ~ expands like the
+  // server normalizer so a tilde row and its absolute twin are one project.
+  const { writeFile } = await import("node:fs/promises");
+  const homeAbs = path.join(os.homedir(), "dupe-home").replace(/\\/g, "/");
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        {
+          id: "disk-old",
+          name: "Old",
+          root: "/tmp/dupe",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "disk-new",
+          name: "New",
+          root: "/tmp/dupe/",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        },
+        {
+          id: "tilde-row",
+          name: "Tilde",
+          root: "~/dupe-home",
+          createdAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        },
+        {
+          id: "abs-row",
+          name: "Absolute",
+          root: homeAbs,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  const dedupedLoad = await loadProjects();
+  assert.deepEqual(
+    dedupedLoad.map((entry) => entry.id).sort(),
+    ["disk-new", "tilde-row"],
+    "loadProjects collapses on-disk duplicates by normalized path, newest wins",
+  );
+  assert.equal(
+    projectForRoot("/tmp/dupe/", dedupedLoad)?.id,
+    "disk-new",
+    "path lookups resolve to the surviving (newest) duplicate",
+  );
+  // The next mutation persists the deduped list — the file self-heals.
+  assert.equal(await deleteProject("tilde-row"), true);
+  const healed = JSON.parse(
+    await readFile(process.env.CAVE_PROJECTS_PATH_OVERRIDE, "utf8"),
+  );
+  assert.deepEqual(
+    healed.projects.map((entry) => entry.id),
+    ["disk-new"],
+    "a write after load persists the deduped list, dropping stale duplicate rows",
+  );
+  assert.equal(await deleteProject("disk-new"), true);
+  assert.deepEqual(await loadProjects(), []);
+
   assert.deepEqual(
     sortProjectsAlphabetically([
       { id: "z", name: "Zed", root: "/work/zed", createdAt: "", updatedAt: "" },

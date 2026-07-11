@@ -10,6 +10,7 @@ export {
   sortProjectsAlphabetically,
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
+import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -73,7 +74,15 @@ export async function loadProjects(): Promise<CaveProject[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as Partial<ProjectsFile>;
-    return Array.isArray(parsed.projects) ? parsed.projects : [];
+    if (!Array.isArray(parsed.projects)) return [];
+    // Dedupe at the source of truth: the normalized path IS the project
+    // identity. createProject/patchProject keep new writes one-per-root, but
+    // duplicates persisted before that guard (or written by hand) would
+    // otherwise leak into every server consumer (projectById,
+    // trustedProjectCwd, permission filtering) while the UI hid them via
+    // dedupeProjectsByRoot — a client/server divergence. Newest record wins;
+    // the next mutation persists the deduped list, self-healing the file.
+    return dedupeByRoot(parsed.projects, normalizeRoot);
   } catch {
     return [];
   }
