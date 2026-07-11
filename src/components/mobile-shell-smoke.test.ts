@@ -218,8 +218,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /browserPaneRef\.current\?\.navigateTo\(url\)/,
-  "Link opens should navigate the embedded Browser pane",
+  /setBrowserNavigationQueue\(\(queue\) => enqueueBrowserNavigation\(queue, request\)\)/,
+  "Link opens should survive lazy Browser mounting in the durable navigation queue",
+);
+assert.match(
+  workspace,
+  /navigationRequest=\{browserNavigationQueue\[0\] \?\? null\}[\s\S]{0,120}onNavigationConsumed=\{acknowledgeBrowserNavigation\}/,
+  "BrowserPane should acknowledge queued links only after accepting the navigation",
 );
 assert.match(
   workspace,
