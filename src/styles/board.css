@@ -831,6 +831,10 @@
 .gh-action-popover-item:disabled { opacity:.55; cursor:wait; }
 .gh-action-popover-item-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gh-action-popover-item-familiar { color:var(--text-muted); font-size:10.5px; }
+/* Detail-panel actions sit at the panel's LEFT edge, so a right-anchored popover
+   extends into the scroll container's unreachable left overflow and gets clipped.
+   Anchor to the actions row itself (wrap goes static) and open from the left. */
+.gh-glass-actions .gh-action-popover { left:0; right:auto; max-width:100%; }
 
 .gh-glass-panel {
   position:relative;
