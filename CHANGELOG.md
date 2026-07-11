@@ -7,6 +7,23 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.174] - 2026-07-11
+
+> Copilot familiars work in native chat, the code rail fills wide windows, and the sidenav gains Memories.
+
+Patch release on top of v0.0.173.
+
+### Changes
+- fix(cave): copilot runs in native chat · code rail fills wide panels · sidenav Memories rename (cave-ns35) (#2927)
+- fix(windows): gate MSI publication and add upgrade diagnostics (#2923)
+- perf(windows): prune the packaged sidecar runtime closure (#2922)
+- fix(board): standardize Tasks|Queue segment tabs to the group-toggle footprint (#2921)
+- refactor(runtimes): one label authority, alias + merge-label fixes, hoisted rank map (#2919)
+- feat(analytics): thread signals span both columns with a scrollable, task-promoting data table (cave-bhh2) (#2920)
+- fix(projects): drop stale scope on refetch; gate palette project fetch on open (#2918)
+- fix(windows): collapse MSI sidecar payload (#2911)
+
+
 ## [0.0.173] - 2026-07-10
 
 > Board & palette project-scoping correctness, chat/board polish, and rollout-audit hardening.
