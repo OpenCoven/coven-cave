@@ -45,6 +45,7 @@ struct RootView: View {
             guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
+                if Task.isCancelled { return }
                 guard app.hasLoadedSurfaces,
                       case .unreachable = app.connectionState else { continue }
                 await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
