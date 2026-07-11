@@ -35,8 +35,8 @@ assert.match(
 );
 assert.match(
   hook,
-  /resolveQuickChatTarget\(draft, familiars, selectedFamiliarId\)/,
-  "quick chat resolves @familiar mentions before sending",
+  /resolveQuickChatTarget\(raw, familiars, selectedFamiliarId\)/,
+  "quick chat resolves @familiar mentions before sending (sendText pipeline)",
 );
 assert.match(
   hook,
@@ -51,6 +51,16 @@ assert.match(
   component,
   /const inherited = reportsRef\.current\[activeIdRef\.current\]\?\.familiar\?\.id \?\? null/,
   "a new tab inherits the active tab's selected familiar",
+);
+assert.match(
+  component,
+  /useState<TabDescriptor\[]>\(\[\{ id: 1, initialFamiliarId: null, showAgentPicker: false \}\]\)/,
+  "the boot tab starts with compact controls (agent picker hidden)",
+);
+assert.match(
+  component,
+  /setTabs\(\(prev\) => \[\.\.\.prev, \{ id, initialFamiliarId: inherited, showAgentPicker: true \}\]\)/,
+  "clicking + opens a new chat with the agent picker visible",
 );
 assert.match(component, /aria-label="New chat"/, "the header exposes an add-chat button");
 assert.match(
@@ -142,6 +152,16 @@ assert.match(
 
 // ── Shared pieces (one source of truth with the overlay-era components) ─────
 assert.match(component, /<QuickChatControlsRow/, "tray renders the shared controls row");
+assert.match(
+  component,
+  /showFamiliarPicker=\{showAgentPicker && !pickerDismissed && messages\.length === 0\}/,
+  "agent selection is only shown for fresh + chats (hidden once the thread starts)",
+);
+assert.match(
+  component,
+  /if \(id\) setPickerDismissed\(true\)/,
+  "picking a familiar dismisses the agent picker — the selection UI goes away once the choice is made",
+);
 assert.match(component, /<QuickChatComposer/, "tray renders the shared composer");
 assert.match(
   controls,

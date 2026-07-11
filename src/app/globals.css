@@ -11864,6 +11864,117 @@ details[open] > .cave-edit-card__summary::before {
   border-radius: 999px;
 }
 
+/* Reply recommendation — a proposed next reply offered above the composer,
+ * Tab-to-autofill once a familiar has replied (shared overlay + tray). */
+.quick-chat-reco {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent) 6%, var(--bg-raised));
+}
+.quick-chat-reco__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--accent-presence, var(--accent));
+}
+.quick-chat-reco__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--fg-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.quick-chat-reco__text--preview {
+  color: var(--fg-muted);
+}
+.quick-chat-reco__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.quick-chat-reco__kbd {
+  font-size: 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--fg-muted);
+}
+.quick-chat-reco__shimmer {
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--fg-muted) 12%, transparent) 25%,
+    color-mix(in oklch, var(--fg-muted) 22%, transparent) 50%,
+    color-mix(in oklch, var(--fg-muted) 12%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: quick-chat-reco-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes quick-chat-reco-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quick-chat-reco__shimmer {
+    animation: none;
+  }
+}
+
+/* Next-path suggestions — the agent's parseable trailer surfaced as tap-to-fill
+ * chips on the latest familiar reply (shared overlay + tray). Same accent-tint
+ * language as the main chat's .cave-next-path, sized for the compact tray.
+ * `.ui-btn.` specificity: the chips ride the shared Button primitive, so the
+ * base .ui-btn geometry (32px, nowrap) must lose here. */
+.quick-chat-next-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.ui-btn.quick-chat-next-path {
+  height: auto;
+  min-height: 24px;
+  padding: 3px 10px;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  border-radius: var(--radius-control);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 38%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-secondary);
+}
+.ui-btn.quick-chat-next-path:hover {
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  border-color: var(--accent-presence);
+  color: var(--text-primary);
+}
+
 /* Composer — textarea + action row pinned to the bottom (shared overlay + tray). */
 .quick-chat-overlay__composer {
   display: flex;
@@ -11906,6 +12017,97 @@ details[open] > .cave-edit-card__summary::before {
 }
 .quick-chat-overlay__actions button:not(:disabled):hover {
   filter: brightness(1.06);
+}
+
+/* Drag-and-drop attachments — the composer footer is the drop target; the
+ * counted enter/leave handlers (shared useAttachmentStaging) keep this veil
+ * steady while the drag crosses child elements. */
+.quick-chat-overlay__composer--drop {
+  outline: 1.5px dashed var(--accent-presence, var(--accent));
+  outline-offset: -4px;
+}
+.quick-chat-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-presence, var(--accent));
+  background: color-mix(in oklch, var(--bg-base) 78%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+/* Staged-file chips (above the actions row) and the paperclip line a sent
+ * user turn keeps in its bubble. */
+.quick-chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.quick-chat-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px 2px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.quick-chat-attachment-chip__name {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-chat-bubble__files {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Queued messages — parked while a reply streams, auto-send on settle. The
+ * tinted border echoes the reply-recommendation strip: "held, not lost". */
+.quick-chat-queued {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.quick-chat-queued__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px 2px 8px;
+  border-radius: var(--radius-control);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence, var(--accent)) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence, var(--accent)) 6%, transparent);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.quick-chat-queued__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quick-chat-queued__count {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--fg-muted);
 }
 
 /* ======================================================================

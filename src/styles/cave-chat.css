@@ -2466,6 +2466,18 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-primary);
 }
 
+/* Enhance split-control segments (composer-enhance.tsx) — the same tint family
+   as the icon buttons, but a dedicated class: the mobile touch-target override
+   inflates .cave-composer-icon-button into 44px circles, which blew the
+   sparkle + caret out of their shared hairline rectangle. These segments must
+   always render as two flat rectangles filling that rectangle (sparkle wider
+   than the caret) — the rectangle itself is the touch target. */
+.composer-enhance-control__segment {
+  background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--text-primary);
+}
+
 /* Base control pill — still used by the standalone ComposerHostChip. */
 .cave-composer-select {
   height: 30px;
