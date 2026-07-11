@@ -53,13 +53,17 @@ async function treeMetrics(root) {
 }
 
 export async function writeSidecarArchiveManifest(sourceRoot, archivePath, outputPath) {
+  if (!archivePath.toLowerCase().endsWith(".tar.zst")) {
+    throw new Error(`sidecar archive must use the measured tar.zst format: ${archivePath}`);
+  }
   const [{ size: archiveBytes }, metrics, archiveSha256] = await Promise.all([
     stat(archivePath),
     treeMetrics(sourceRoot),
     sha256File(archivePath),
   ]);
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 3,
+    archiveFormat: "tar.zst",
     archiveSha256,
     archiveBytes,
     ...metrics,

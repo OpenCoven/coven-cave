@@ -94,14 +94,16 @@ async function main() {
   let sidecarRoot = stagedSidecarRoot;
   if (process.platform === "win32") {
     const archiveDir = path.join(root, "src-tauri", "resources", "server-archive");
-    const archive = path.join(archiveDir, "server.tar.gz");
+    const archive = path.join(archiveDir, "server.tar.zst");
     const manifest = JSON.parse(await readFile(path.join(archiveDir, "manifest.json"), "utf8"));
-    assert.equal(manifest.schemaVersion, 1);
+    assert.equal(manifest.schemaVersion, 3);
+    assert.equal(manifest.archiveFormat, "tar.zst");
     assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 50_000);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 256 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes <= 768 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
-    const extraction = spawnSync("tar", ["-xzf", archive, "-C", extractedSidecarRoot], {
+    const windowsTar = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+    const extraction = spawnSync(windowsTar, ["-xf", archive, "-C", extractedSidecarRoot], {
       encoding: "utf8",
     });
     if (extraction.status !== 0) {

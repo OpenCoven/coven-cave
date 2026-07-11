@@ -4,6 +4,16 @@
     "resources": [
       "resources/server-archive/**/*",
       "resources/node/**/*"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "fragmentPaths": [
+          "./windows/fragments/sidecar-cache-cleanup.wxs"
+        ],
+        "componentRefs": [
+          "SidecarRuntimeCleanupAnchor"
+        ]
+      }
+    }
   }
 }

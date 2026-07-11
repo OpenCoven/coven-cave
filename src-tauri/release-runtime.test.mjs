@@ -126,7 +126,71 @@ test("Windows release reports and enforces bounded MSI tables", async () => {
   }
   assert.match(budget, /\$rowBudget = 64/);
   assert.match(budget, /\$byteBudget = 256MB/);
-  assert.match(budget, /expected exactly one server\.tar\.gz File row/);
+  assert.match(budget, /expected exactly one server\.tar\.zst File row/);
+});
+
+test("Windows runtime uses measured zstd extraction diagnostics and uninstall cleanup", async () => {
+  const [archiveRuntime, bundleScript, manifestWriter, smoke, uninstaller, windowsConfig, wixCleanup, compressionGuide] = await Promise.all([
+    readFile(new URL("./src/sidecar_archive.rs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/sidecar-runtime-smoke.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/uninstall-app.sh", import.meta.url), "utf8"),
+    readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8"),
+    readFile(new URL("./windows/fragments/sidecar-cache-cleanup.wxs", import.meta.url), "utf8"),
+    readFile(new URL("../docs/windows-sidecar-compression.md", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(bundleScript, /server\.tar\.zst/);
+  assert.match(bundleScript, /System32\/tar\.exe[\s\S]*libzstd/);
+  assert.doesNotMatch(bundleScript, /server\.tar\.gz/);
+  assert.match(archiveRuntime, /ZstdDecoder::new/);
+  assert.match(archiveRuntime, /const ARCHIVE_FORMAT: &str = "tar\.zst"/);
+  assert.match(archiveRuntime, /const MANIFEST_SCHEMA_VERSION: u32 = 3/);
+  assert.match(manifestWriter, /schemaVersion: 3/);
+  for (const field of [
+    "cache_outcome",
+    "compressed_bytes",
+    "expanded_bytes",
+    "file_count",
+    "directory_count",
+    "defender_relevant_file_entries",
+    "windows_defender_process_detected",
+    "staging_disk_bytes_estimate",
+    "existing_cache_logical_bytes_before",
+    "peak_cache_logical_bytes_estimate",
+    "archive_decompression_ms",
+    "file_creation_ms",
+    "archive_extract_ms",
+    "tree_verify_ms",
+    "total_ms",
+  ]) {
+    assert.match(archiveRuntime, new RegExp(field), `runtime diagnostics must include ${field}`);
+  }
+  assert.match(archiveRuntime, /sidecar-runtime-latest\.json/);
+  assert.match(archiveRuntime, /"cacheOutcome": "error"/);
+  assert.match(archiveRuntime, /"failedPhase": context\.failed_phase/);
+  assert.match(smoke, /server\.tar\.zst/);
+  assert.match(smoke, /System32", "tar\.exe"/);
+  assert.match(uninstaller, /\$\{local_appdata\}\/\$\{APP_ID\}\/sidecar-runtime/);
+  assert.match(windowsConfig, /sidecar-cache-cleanup\.wxs/);
+  assert.match(windowsConfig, /SidecarRuntimeCleanupAnchor/);
+  assert.match(wixCleanup, /Execute="commit"/);
+  assert.match(wixCleanup, /Impersonate="yes"/);
+  assert.match(wixCleanup, /if defined LOCALAPPDATA/);
+  assert.match(wixCleanup, /%LOCALAPPDATA%\\ai\.opencoven\.cave\\sidecar-runtime/);
+  assert.match(wixCleanup, /\(REMOVE = "ALL"\) AND NOT UPGRADINGPRODUCTCODE/);
+  for (const invariant of [
+    "canonical payload",
+    "full-tree digests",
+    "payload-derived cache key",
+    "fs2",
+    "free-space preflight",
+    "full-file warm validation",
+    "atomic recovery",
+  ]) {
+    assert.match(compressionGuide, new RegExp(invariant), `schema 3 integration contract must preserve ${invariant}`);
+  }
 });
 
 test("packaged app does not override Coven workspace with OpenClaw workspace", async () => {

@@ -1,13 +1,22 @@
-use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{self, Read};
+use std::os::windows::ffi::OsStrExt;
+use std::os::windows::process::CommandExt;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+use zstd::stream::read::Decoder as ZstdDecoder;
 
-const MANIFEST_SCHEMA_VERSION: u32 = 1;
+const MANIFEST_SCHEMA_VERSION: u32 = 3;
+const COMPLETION_MARKER_SCHEMA_VERSION: u32 = 1;
+const DIAGNOSTICS_SCHEMA_VERSION: u32 = 1;
+const ARCHIVE_FORMAT: &str = "tar.zst";
+const ARCHIVE_FILE_NAME: &str = "server.tar.zst";
+const DIAGNOSTICS_FILE_NAME: &str = "sidecar-runtime-latest.json";
 const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 768 * 1024 * 1024;
 const MAX_FILE_COUNT: u64 = 50_000;
@@ -26,6 +35,7 @@ const REQUIRED_RUNTIME_PATHS: [&str; 7] = [
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SidecarArchiveManifest {
     schema_version: u32,
+    archive_format: String,
     archive_sha256: String,
     archive_bytes: u64,
     unpacked_bytes: u64,
@@ -39,6 +49,111 @@ struct CompletionMarker {
     schema_version: u32,
     package_version: String,
     archive_sha256: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimePhaseDiagnostics {
+    manifest_read_ms: f64,
+    cache_lookup_ms: f64,
+    archive_metadata_ms: f64,
+    archive_hash_ms: f64,
+    recovery_cleanup_ms: f64,
+    staging_create_ms: f64,
+    archive_decompression_ms: f64,
+    file_creation_ms: f64,
+    archive_extract_ms: f64,
+    tree_verify_ms: f64,
+    marker_write_ms: f64,
+    activation_ms: f64,
+    total_ms: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SidecarRuntimeDiagnostics {
+    schema_version: u32,
+    archive_format: &'static str,
+    package_version: String,
+    cache_outcome: &'static str,
+    cache_path: String,
+    archive_path: String,
+    archive_hash_verified: bool,
+    compressed_bytes: u64,
+    expanded_bytes: u64,
+    file_count: u64,
+    directory_count: u64,
+    defender_relevant_file_entries: u64,
+    windows_defender_process_detected: Option<bool>,
+    defender_probe_ms: f64,
+    existing_complete_generations_before: u64,
+    existing_cache_logical_bytes_before: u64,
+    staging_disk_bytes_estimate: u64,
+    peak_cache_logical_bytes_estimate: u64,
+    phases: RuntimePhaseDiagnostics,
+}
+
+#[derive(Debug)]
+struct PreparedSidecarRuntime {
+    path: PathBuf,
+    diagnostics: SidecarRuntimeDiagnostics,
+}
+
+struct ExtractionDiagnostics {
+    archive_decompression_ms: f64,
+    file_creation_ms: f64,
+    archive_extract_ms: f64,
+    tree_verify_ms: f64,
+}
+
+#[derive(Clone, Debug, Default)]
+struct FailureContext {
+    failed_phase: &'static str,
+    phases: RuntimePhaseDiagnostics,
+    cache_path: String,
+    existing_complete_generations_before: u64,
+    existing_cache_logical_bytes_before: u64,
+}
+
+fn record_phase_context(
+    context: &Mutex<FailureContext>,
+    failed_phase: &'static str,
+    phases: &RuntimePhaseDiagnostics,
+) {
+    if let Ok(mut context) = context.lock() {
+        context.failed_phase = failed_phase;
+        context.phases = phases.clone();
+    }
+}
+
+struct TimedRead<R> {
+    inner: R,
+    read_elapsed: Duration,
+}
+
+impl<R: Read> Read for TimedRead<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let started = Instant::now();
+        let result = self.inner.read(buffer);
+        self.read_elapsed = self.read_elapsed.saturating_add(started.elapsed());
+        result
+    }
+}
+
+struct RuntimeDiagnosticsInput<'a> {
+    package_version: &'a str,
+    archive_path: &'a Path,
+    cache_path: &'a Path,
+    cache_outcome: &'static str,
+    archive_hash_verified: bool,
+    existing_complete_generations_before: u64,
+    existing_cache_logical_bytes_before: u64,
+    staging_disk_bytes_estimate: u64,
+    phases: RuntimePhaseDiagnostics,
+}
+
+fn elapsed_ms(started: Instant) -> f64 {
+    started.elapsed().as_secs_f64() * 1_000.0
 }
 
 fn read_manifest(path: &Path) -> Result<SidecarArchiveManifest, String> {
@@ -55,6 +170,12 @@ fn read_manifest(path: &Path) -> Result<SidecarArchiveManifest, String> {
         return Err(format!(
             "unsupported sidecar manifest schema {}",
             manifest.schema_version
+        ));
+    }
+    if manifest.archive_format != ARCHIVE_FORMAT {
+        return Err(format!(
+            "unsupported sidecar archive format {}",
+            manifest.archive_format
         ));
     }
     if manifest.archive_sha256.len() != 64
@@ -144,11 +265,127 @@ fn cache_is_ready(destination: &Path, package_version: &str, archive_sha256: &st
     };
     match serde_json::from_str::<CompletionMarker>(&marker) {
         Ok(marker) => {
-            marker.schema_version == MANIFEST_SCHEMA_VERSION
+            marker.schema_version == COMPLETION_MARKER_SCHEMA_VERSION
                 && marker.package_version == package_version
                 && marker.archive_sha256 == archive_sha256
         }
         Err(_) => false,
+    }
+}
+
+fn complete_cache_generation_count(cache_root: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(cache_root) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir() && has_complete_marker(&entry.path()))
+        .count() as u64
+}
+
+fn cache_logical_bytes(cache_root: &Path) -> u64 {
+    let mut total = 0_u64;
+    let mut pending = vec![cache_root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if metadata.is_dir() && !metadata.file_type().is_symlink() {
+                pending.push(entry.path());
+            } else if metadata.is_file() {
+                total = total.saturating_add(metadata.len());
+            }
+        }
+    }
+    total
+}
+
+fn defender_process_context() -> (Option<bool>, f64) {
+    let started = Instant::now();
+    let mut command = Command::new(super::windows_system32_binary("tasklist.exe"));
+    command
+        .args(["/FI", "IMAGENAME eq MsMpEng.exe", "/NH"])
+        .creation_flags(0x08000000);
+    let detected = match command.output() {
+        Ok(output) if output.status.success() => Some(
+            String::from_utf8_lossy(&output.stdout)
+                .to_ascii_lowercase()
+                .contains("msmpeng.exe"),
+        ),
+        Ok(_) | Err(_) => None,
+    };
+    (detected, elapsed_ms(started))
+}
+
+fn write_diagnostics(path: &Path, value: &impl Serialize) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("diagnostics path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).map_err(|error| {
+        format!(
+            "could not create sidecar diagnostics directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    let json = serde_json::to_string_pretty(value)
+        .map_err(|error| format!("could not serialize sidecar diagnostics: {error}"))?;
+    let temporary = parent.join(format!(
+        ".{DIAGNOSTICS_FILE_NAME}.{}-{}.tmp",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0)
+    ));
+    fs::write(&temporary, format!("{json}\n")).map_err(|error| {
+        format!(
+            "could not write sidecar diagnostics staging file {}: {error}",
+            temporary.display()
+        )
+    })?;
+    atomic_replace_file(&temporary, path).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        format!(
+            "could not activate sidecar diagnostics {}: {error}",
+            path.display()
+        )
+    })
+}
+
+fn atomic_replace_file(temporary: &Path, destination: &Path) -> io::Result<()> {
+    if !destination.exists() {
+        return fs::rename(temporary, destination);
+    }
+    let destination_wide: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let temporary_wide: Vec<u16> = temporary
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: both path buffers are NUL-terminated and remain alive for the
+    // call; backup, exclude, and reserved pointers are intentionally null.
+    let replaced = unsafe {
+        windows_sys::Win32::Storage::FileSystem::ReplaceFileW(
+            destination_wide.as_ptr(),
+            temporary_wide.as_ptr(),
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    if replaced == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 
@@ -204,15 +441,21 @@ fn extract_archive(
     archive_path: &Path,
     staging: &Path,
     manifest: &SidecarArchiveManifest,
-) -> Result<(), String> {
+) -> Result<ExtractionDiagnostics, String> {
+    let extraction_started = Instant::now();
     let archive_file = File::open(archive_path).map_err(|error| {
         format!(
             "could not open sidecar archive {}: {error}",
             archive_path.display()
         )
     })?;
-    let decoder = GzDecoder::new(archive_file);
-    let mut archive = tar::Archive::new(decoder);
+    let decoder = ZstdDecoder::new(archive_file)
+        .map_err(|error| format!("could not initialize sidecar zstd decoder: {error}"))?;
+    let timed_decoder = TimedRead {
+        inner: decoder,
+        read_elapsed: Duration::ZERO,
+    };
+    let mut archive = tar::Archive::new(timed_decoder);
     let entries = archive
         .entries()
         .map_err(|error| format!("could not read sidecar archive: {error}"))?;
@@ -313,6 +556,14 @@ fn extract_archive(
             manifest.file_count, manifest.directory_count
         ));
     }
+    let archive_extract_ms = elapsed_ms(extraction_started);
+    let archive_decompression_ms = archive.into_inner().read_elapsed.as_secs_f64() * 1_000.0;
+    // Extraction streams decompressed tar bytes directly into filesystem
+    // writes. The residual captures tar parsing, path creation, and file I/O;
+    // keeping both values exposes whether CPU decompression or filesystem/
+    // real-time scanning dominates a release-machine cold launch.
+    let file_creation_ms = (archive_extract_ms - archive_decompression_ms).max(0.0);
+    let verification_started = Instant::now();
     let (file_count, directory_count, unpacked_bytes) = tree_metrics(staging)?;
     if file_count != manifest.file_count
         || directory_count != manifest.directory_count
@@ -324,27 +575,119 @@ fn extract_archive(
         return Err("sidecar archive is missing required runtime files".to_string());
     }
 
-    Ok(())
+    Ok(ExtractionDiagnostics {
+        archive_decompression_ms,
+        file_creation_ms,
+        archive_extract_ms,
+        tree_verify_ms: elapsed_ms(verification_started),
+    })
 }
 
+fn runtime_diagnostics(
+    manifest: &SidecarArchiveManifest,
+    input: RuntimeDiagnosticsInput<'_>,
+) -> SidecarRuntimeDiagnostics {
+    SidecarRuntimeDiagnostics {
+        schema_version: DIAGNOSTICS_SCHEMA_VERSION,
+        archive_format: ARCHIVE_FORMAT,
+        package_version: input.package_version.to_string(),
+        cache_outcome: input.cache_outcome,
+        cache_path: input.cache_path.to_string_lossy().into_owned(),
+        archive_path: input.archive_path.to_string_lossy().into_owned(),
+        archive_hash_verified: input.archive_hash_verified,
+        compressed_bytes: manifest.archive_bytes,
+        expanded_bytes: manifest.unpacked_bytes,
+        file_count: manifest.file_count,
+        directory_count: manifest.directory_count,
+        defender_relevant_file_entries: manifest
+            .file_count
+            .saturating_add(manifest.directory_count),
+        windows_defender_process_detected: None,
+        defender_probe_ms: 0.0,
+        existing_complete_generations_before: input.existing_complete_generations_before,
+        existing_cache_logical_bytes_before: input.existing_cache_logical_bytes_before,
+        staging_disk_bytes_estimate: input.staging_disk_bytes_estimate,
+        peak_cache_logical_bytes_estimate: input
+            .existing_cache_logical_bytes_before
+            .saturating_add(input.staging_disk_bytes_estimate),
+        phases: input.phases,
+    }
+}
+
+#[cfg(test)]
 fn prepare_runtime_from_files(
     archive_path: &Path,
     manifest_path: &Path,
     cache_root: &Path,
     package_version: &str,
-) -> Result<PathBuf, String> {
+) -> Result<PreparedSidecarRuntime, String> {
+    let failure_context = Mutex::new(FailureContext::default());
+    prepare_runtime_from_files_with_context(
+        archive_path,
+        manifest_path,
+        cache_root,
+        package_version,
+        &failure_context,
+    )
+}
+
+fn prepare_runtime_from_files_with_context(
+    archive_path: &Path,
+    manifest_path: &Path,
+    cache_root: &Path,
+    package_version: &str,
+    failure_context: &Mutex<FailureContext>,
+) -> Result<PreparedSidecarRuntime, String> {
+    let total_started = Instant::now();
+    let mut phases = RuntimePhaseDiagnostics::default();
+
+    record_phase_context(failure_context, "manifest-read", &phases);
+    let phase_started = Instant::now();
     let manifest = read_manifest(manifest_path)?;
+    phases.manifest_read_ms = elapsed_ms(phase_started);
     let destination = cache_root.join(cache_key(package_version, &manifest.archive_sha256));
-    if cache_is_ready(&destination, package_version, &manifest.archive_sha256) {
-        return Ok(destination);
+    let existing_complete_generations = complete_cache_generation_count(cache_root);
+    let existing_cache_bytes = cache_logical_bytes(cache_root);
+    if let Ok(mut context) = failure_context.lock() {
+        context.cache_path = destination.to_string_lossy().into_owned();
+        context.existing_complete_generations_before = existing_complete_generations;
+        context.existing_cache_logical_bytes_before = existing_cache_bytes;
     }
 
+    record_phase_context(failure_context, "cache-lookup", &phases);
+    let phase_started = Instant::now();
+    if cache_is_ready(&destination, package_version, &manifest.archive_sha256) {
+        phases.cache_lookup_ms = elapsed_ms(phase_started);
+        phases.total_ms = elapsed_ms(total_started);
+        return Ok(PreparedSidecarRuntime {
+            diagnostics: runtime_diagnostics(
+                &manifest,
+                RuntimeDiagnosticsInput {
+                    package_version,
+                    archive_path,
+                    cache_path: &destination,
+                    cache_outcome: "hit",
+                    archive_hash_verified: false,
+                    existing_complete_generations_before: existing_complete_generations,
+                    existing_cache_logical_bytes_before: existing_cache_bytes,
+                    staging_disk_bytes_estimate: 0,
+                    phases,
+                },
+            ),
+            path: destination,
+        });
+    }
+    phases.cache_lookup_ms = elapsed_ms(phase_started);
+
+    record_phase_context(failure_context, "archive-metadata", &phases);
+    let phase_started = Instant::now();
     let metadata = fs::metadata(archive_path).map_err(|error| {
         format!(
             "could not inspect sidecar archive {}: {error}",
             archive_path.display()
         )
     })?;
+    phases.archive_metadata_ms = elapsed_ms(phase_started);
     if metadata.len() != manifest.archive_bytes {
         return Err(format!(
             "sidecar archive size does not match manifest ({}/{})",
@@ -352,7 +695,11 @@ fn prepare_runtime_from_files(
             manifest.archive_bytes
         ));
     }
+
+    record_phase_context(failure_context, "archive-hash", &phases);
+    let phase_started = Instant::now();
     let actual_sha256 = sha256_file(archive_path)?;
+    phases.archive_hash_ms = elapsed_ms(phase_started);
     if actual_sha256 != manifest.archive_sha256 {
         return Err("sidecar archive SHA-256 does not match its manifest".to_string());
     }
@@ -363,16 +710,43 @@ fn prepare_runtime_from_files(
             cache_root.display()
         )
     })?;
+
+    let phase_started = Instant::now();
     if cache_is_ready(&destination, package_version, &manifest.archive_sha256) {
-        return Ok(destination);
+        phases.cache_lookup_ms += elapsed_ms(phase_started);
+        phases.total_ms = elapsed_ms(total_started);
+        return Ok(PreparedSidecarRuntime {
+            diagnostics: runtime_diagnostics(
+                &manifest,
+                RuntimeDiagnosticsInput {
+                    package_version,
+                    archive_path,
+                    cache_path: &destination,
+                    cache_outcome: "hit-after-validation-race",
+                    archive_hash_verified: true,
+                    existing_complete_generations_before: existing_complete_generations,
+                    existing_cache_logical_bytes_before: existing_cache_bytes,
+                    staging_disk_bytes_estimate: 0,
+                    phases,
+                },
+            ),
+            path: destination,
+        });
     }
+    phases.cache_lookup_ms += elapsed_ms(phase_started);
+
+    let mut cache_outcome = "miss";
     if destination.exists() {
+        record_phase_context(failure_context, "recovery-cleanup", &phases);
+        let phase_started = Instant::now();
         fs::remove_dir_all(&destination).map_err(|error| {
             format!(
                 "could not replace incomplete sidecar cache {}: {error}",
                 destination.display()
             )
         })?;
+        phases.recovery_cleanup_ms = elapsed_ms(phase_started);
+        cache_outcome = "recovered-incomplete";
     }
 
     let nonce = SystemTime::now()
@@ -384,17 +758,27 @@ fn prepare_runtime_from_files(
         std::process::id(),
         cache_key(package_version, &manifest.archive_sha256)
     ));
+    record_phase_context(failure_context, "staging-create", &phases);
+    let phase_started = Instant::now();
     fs::create_dir(&staging).map_err(|error| {
         format!(
             "could not create sidecar staging directory {}: {error}",
             staging.display()
         )
     })?;
+    phases.staging_create_ms = elapsed_ms(phase_started);
 
+    record_phase_context(failure_context, "archive-extract", &phases);
     let extraction = (|| -> Result<(), String> {
-        extract_archive(archive_path, &staging, &manifest)?;
+        let extraction = extract_archive(archive_path, &staging, &manifest)?;
+        phases.archive_decompression_ms = extraction.archive_decompression_ms;
+        phases.file_creation_ms = extraction.file_creation_ms;
+        phases.archive_extract_ms = extraction.archive_extract_ms;
+        phases.tree_verify_ms = extraction.tree_verify_ms;
+        record_phase_context(failure_context, "marker-write", &phases);
+        let marker_started = Instant::now();
         let marker = CompletionMarker {
-            schema_version: MANIFEST_SCHEMA_VERSION,
+            schema_version: COMPLETION_MARKER_SCHEMA_VERSION,
             package_version: package_version.to_string(),
             archive_sha256: manifest.archive_sha256.clone(),
         };
@@ -402,6 +786,7 @@ fn prepare_runtime_from_files(
             .map_err(|error| format!("could not serialize sidecar completion marker: {error}"))?;
         fs::write(staging.join(".complete.json"), format!("{marker_json}\n"))
             .map_err(|error| format!("could not write sidecar completion marker: {error}"))?;
+        phases.marker_write_ms = elapsed_ms(marker_started);
         Ok(())
     })();
     if let Err(error) = extraction {
@@ -409,20 +794,42 @@ fn prepare_runtime_from_files(
         return Err(error);
     }
 
-    match fs::rename(&staging, &destination) {
-        Ok(()) => Ok(destination),
+    record_phase_context(failure_context, "activation", &phases);
+    let phase_started = Instant::now();
+    let activated_path = match fs::rename(&staging, &destination) {
+        Ok(()) => destination.clone(),
         Err(_error) if cache_is_ready(&destination, package_version, &manifest.archive_sha256) => {
             let _ = fs::remove_dir_all(&staging);
-            Ok(destination)
+            cache_outcome = "hit-after-activation-race";
+            destination.clone()
         }
         Err(error) => {
             let _ = fs::remove_dir_all(&staging);
-            Err(format!(
+            return Err(format!(
                 "could not activate extracted sidecar cache {}: {error}",
                 destination.display()
-            ))
+            ));
         }
-    }
+    };
+    phases.activation_ms = elapsed_ms(phase_started);
+    phases.total_ms = elapsed_ms(total_started);
+    Ok(PreparedSidecarRuntime {
+        diagnostics: runtime_diagnostics(
+            &manifest,
+            RuntimeDiagnosticsInput {
+                package_version,
+                archive_path,
+                cache_path: &activated_path,
+                cache_outcome,
+                archive_hash_verified: true,
+                existing_complete_generations_before: existing_complete_generations,
+                existing_cache_logical_bytes_before: existing_cache_bytes,
+                staging_disk_bytes_estimate: manifest.unpacked_bytes,
+                phases,
+            },
+        ),
+        path: activated_path,
+    })
 }
 
 fn has_complete_marker(runtime: &Path) -> bool {
@@ -434,7 +841,7 @@ fn has_complete_marker(runtime: &Path) -> bool {
     };
     match serde_json::from_str::<CompletionMarker>(&contents) {
         Ok(marker) => {
-            marker.schema_version == MANIFEST_SCHEMA_VERSION
+            marker.schema_version == COMPLETION_MARKER_SCHEMA_VERSION
                 && marker.archive_sha256.len() == 64
                 && marker
                     .archive_sha256
@@ -506,32 +913,99 @@ pub(crate) fn prepare_sidecar_runtime(
     resource_dir: &Path,
 ) -> Result<PathBuf, String> {
     let archive_dir = resource_dir.join("resources").join("server-archive");
-    let archive_path = archive_dir.join("server.tar.gz");
+    let archive_path = archive_dir.join(ARCHIVE_FILE_NAME);
     let manifest_path = archive_dir.join("manifest.json");
     let cache_root = app
         .path()
         .app_local_data_dir()
         .map_err(|error| format!("could not resolve sidecar cache directory: {error}"))?
         .join("sidecar-runtime");
+    let diagnostics_path = app
+        .path()
+        .app_log_dir()
+        .ok()
+        .map(|directory| directory.join(DIAGNOSTICS_FILE_NAME));
     let started = Instant::now();
-    let runtime = prepare_runtime_from_files(
+    let failure_context = Mutex::new(FailureContext::default());
+    let prepared = match prepare_runtime_from_files_with_context(
         &archive_path,
         &manifest_path,
         &cache_root,
         &app.package_info().version.to_string(),
-    )?;
+        &failure_context,
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            if let Some(path) = diagnostics_path.as_deref() {
+                let mut context = failure_context
+                    .lock()
+                    .map(|context| context.clone())
+                    .unwrap_or_default();
+                context.phases.total_ms = elapsed_ms(started);
+                let defender_relevant = matches!(
+                    context.failed_phase,
+                    "archive-hash"
+                        | "staging-create"
+                        | "archive-extract"
+                        | "marker-write"
+                        | "activation"
+                );
+                let (defender_detected, defender_probe_ms) = if defender_relevant {
+                    defender_process_context()
+                } else {
+                    (None, 0.0)
+                };
+                let failure = serde_json::json!({
+                    "schemaVersion": DIAGNOSTICS_SCHEMA_VERSION,
+                    "archiveFormat": ARCHIVE_FORMAT,
+                    "cacheOutcome": "error",
+                    "cachePath": context.cache_path,
+                    "archivePath": archive_path.to_string_lossy(),
+                    "failedPhase": context.failed_phase,
+                    "existingCompleteGenerationsBefore": context.existing_complete_generations_before,
+                    "existingCacheLogicalBytesBefore": context.existing_cache_logical_bytes_before,
+                    "windowsDefenderProcessDetected": defender_detected,
+                    "defenderProbeMs": defender_probe_ms,
+                    "phases": context.phases,
+                    "totalMs": elapsed_ms(started),
+                    "error": &error,
+                });
+                if let Err(diagnostic_error) = write_diagnostics(path, &failure) {
+                    log::warn!(
+                        "[cave] could not persist sidecar failure diagnostics: {diagnostic_error}"
+                    );
+                }
+            }
+            return Err(error);
+        }
+    };
+    let mut diagnostics = prepared.diagnostics;
+    if diagnostics.cache_outcome != "hit" {
+        let (defender_detected, defender_probe_ms) = defender_process_context();
+        diagnostics.windows_defender_process_detected = defender_detected;
+        diagnostics.defender_probe_ms = defender_probe_ms;
+    }
+    if let Some(path) = diagnostics_path.as_deref() {
+        if let Err(error) = write_diagnostics(path, &diagnostics) {
+            log::warn!("[cave] could not persist sidecar runtime diagnostics: {error}");
+        }
+    }
+    if let Ok(json) = serde_json::to_string(&diagnostics) {
+        log::info!("[cave] sidecar_runtime_diagnostics={json}");
+    }
     log::info!(
         "[cave] Windows sidecar runtime ready at {} in {:.2?}",
-        runtime.display(),
+        prepared.path.display(),
         started.elapsed()
     );
-    Ok(runtime)
+    Ok(prepared.path)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flate2::{write::GzEncoder, Compression};
+    use std::thread;
+    use zstd::stream::write::Encoder as ZstdEncoder;
 
     fn test_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
@@ -569,19 +1043,20 @@ mod tests {
             fs::write(destination, contents).expect("write fixture file");
         }
 
-        let archive_path = root.join("server.tar.gz");
+        let archive_path = root.join(ARCHIVE_FILE_NAME);
         let archive_file = File::create(&archive_path).expect("create archive");
-        let encoder = GzEncoder::new(archive_file, Compression::default());
+        let encoder = ZstdEncoder::new(archive_file, 3).expect("create zstd encoder");
         let mut archive = tar::Builder::new(encoder);
         archive
             .append_dir_all(".", &source)
             .expect("append fixture tree");
         let encoder = archive.into_inner().expect("finish tar");
-        encoder.finish().expect("finish gzip");
+        encoder.finish().expect("finish zstd");
         let (file_count, directory_count, unpacked_bytes) =
             tree_metrics(&source).expect("fixture metrics");
         let manifest = SidecarArchiveManifest {
             schema_version: MANIFEST_SCHEMA_VERSION,
+            archive_format: ARCHIVE_FORMAT.to_string(),
             archive_sha256: sha256_file(&archive_path).expect("fixture digest"),
             archive_bytes: fs::metadata(&archive_path).expect("archive metadata").len(),
             unpacked_bytes,
@@ -593,6 +1068,7 @@ mod tests {
             &manifest_path,
             serde_json::to_vec(&serde_json::json!({
                 "schemaVersion": manifest.schema_version,
+                "archiveFormat": manifest.archive_format.clone(),
                 "archiveSha256": manifest.archive_sha256.clone(),
                 "archiveBytes": manifest.archive_bytes,
                 "unpackedBytes": manifest.unpacked_bytes,
@@ -610,16 +1086,56 @@ mod tests {
         let root = test_root("extract");
         let (archive, manifest, _) = write_fixture(&root);
         let cache = root.join("cache");
-        let runtime = prepare_runtime_from_files(&archive, &manifest, &cache, "1.2.3")
+        let cold = prepare_runtime_from_files(&archive, &manifest, &cache, "1.2.3")
             .expect("extract runtime");
-        assert!(runtime.join("server.mjs").is_file());
-        assert!(runtime.join(".complete.json").is_file());
+        assert!(cold.path.join("server.mjs").is_file());
+        assert!(cold.path.join(".complete.json").is_file());
+        assert_eq!(cold.diagnostics.archive_format, ARCHIVE_FORMAT);
+        assert_eq!(cold.diagnostics.cache_outcome, "miss");
+        assert!(cold.diagnostics.archive_hash_verified);
+        assert!(cold.diagnostics.compressed_bytes > 0);
+        assert!(cold.diagnostics.expanded_bytes > 0);
+        assert_eq!(
+            cold.diagnostics.defender_relevant_file_entries,
+            cold.diagnostics
+                .file_count
+                .saturating_add(cold.diagnostics.directory_count)
+        );
+        assert_eq!(
+            cold.diagnostics.staging_disk_bytes_estimate,
+            cold.diagnostics.expanded_bytes
+        );
+        assert!(cold.diagnostics.phases.archive_decompression_ms > 0.0);
+        assert!(cold.diagnostics.phases.file_creation_ms >= 0.0);
+        assert!(
+            (cold.diagnostics.phases.archive_decompression_ms
+                + cold.diagnostics.phases.file_creation_ms
+                - cold.diagnostics.phases.archive_extract_ms)
+                .abs()
+                < 0.01
+        );
+        assert!(
+            cold.diagnostics.peak_cache_logical_bytes_estimate
+                >= cold.diagnostics.staging_disk_bytes_estimate
+        );
+        let diagnostics_path = root.join(DIAGNOSTICS_FILE_NAME);
+        write_diagnostics(&diagnostics_path, &cold.diagnostics).expect("persist cold diagnostics");
+        let persisted: serde_json::Value = serde_json::from_slice(
+            &fs::read(&diagnostics_path).expect("read persisted diagnostics"),
+        )
+        .expect("parse persisted diagnostics");
+        assert_eq!(persisted["cacheOutcome"], "miss");
+        assert_eq!(persisted["archiveFormat"], "tar.zst");
+        let runtime_path = cold.path.clone();
 
         fs::remove_file(&archive).expect("remove archive after first extraction");
-        assert_eq!(
-            prepare_runtime_from_files(&archive, &manifest, &cache, "1.2.3").expect("reuse cache"),
-            runtime
-        );
+        let warm =
+            prepare_runtime_from_files(&archive, &manifest, &cache, "1.2.3").expect("reuse cache");
+        assert_eq!(warm.path, runtime_path);
+        assert_eq!(warm.diagnostics.cache_outcome, "hit");
+        assert!(!warm.diagnostics.archive_hash_verified);
+        assert_eq!(warm.diagnostics.staging_disk_bytes_estimate, 0);
+        assert_eq!(warm.diagnostics.phases.archive_extract_ms, 0.0);
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -635,8 +1151,10 @@ mod tests {
 
         let runtime = prepare_runtime_from_files(&archive, &manifest_path, &cache, "1.2.3")
             .expect("replace incomplete cache");
-        assert!(!runtime.join("partial").exists());
-        assert!(runtime.join("server.mjs").is_file());
+        assert!(!runtime.path.join("partial").exists());
+        assert!(runtime.path.join("server.mjs").is_file());
+        assert_eq!(runtime.diagnostics.cache_outcome, "recovered-incomplete");
+        assert!(runtime.diagnostics.phases.recovery_cleanup_ms >= 0.0);
         fs::remove_dir_all(root).expect("remove test root");
     }
 
@@ -644,7 +1162,7 @@ mod tests {
     fn rejects_a_corrupt_archive_without_activating_it() {
         let root = test_root("corrupt");
         let (archive, manifest, _) = write_fixture(&root);
-        fs::write(&archive, b"not a gzip archive").expect("corrupt archive");
+        fs::write(&archive, b"not a zstd archive").expect("corrupt archive");
         let cache = root.join("cache");
         let error = prepare_runtime_from_files(&archive, &manifest, &cache, "1.2.3")
             .expect_err("corrupt archive must fail");
@@ -673,11 +1191,128 @@ mod tests {
     }
 
     #[test]
+    fn manifest_rejects_an_unexpected_compression_format() {
+        let root = test_root("format");
+        let (_, manifest_path, _) = write_fixture(&root);
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).expect("read manifest"))
+                .expect("parse manifest");
+        value["archiveFormat"] = serde_json::json!("tar.gz");
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec(&value).expect("serialize wrong-format manifest"),
+        )
+        .expect("write wrong-format manifest");
+        assert!(read_manifest(&manifest_path)
+            .expect_err("unexpected archive format must fail")
+            .contains("archive format"));
+        fs::remove_dir_all(root).expect("remove format root");
+    }
+
+    #[test]
+    fn diagnostics_replace_existing_file_atomically() {
+        let root = test_root("diagnostics-replace");
+        let diagnostics = root.join(DIAGNOSTICS_FILE_NAME);
+        fs::write(&diagnostics, "old\n").expect("write old diagnostics");
+        write_diagnostics(&diagnostics, &serde_json::json!({ "value": "new" }))
+            .expect("replace diagnostics");
+        let contents = fs::read_to_string(&diagnostics).expect("read diagnostics");
+        assert!(contents.contains("new"));
+        assert!(!contents.contains("old"));
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn logical_cache_bytes_sum_actual_generation_files() {
+        let root = test_root("logical-cache-bytes");
+        fs::create_dir(root.join("a")).expect("create first generation");
+        fs::create_dir(root.join("b")).expect("create second generation");
+        fs::write(root.join("a/one"), b"123").expect("write first file");
+        fs::write(root.join("b/two"), b"12345").expect("write second file");
+        assert_eq!(cache_logical_bytes(&root), 8);
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn failure_context_records_explicit_phase_and_cache_usage() {
+        let root = test_root("failure-context");
+        let (archive, manifest_path, _) = write_fixture(&root);
+        let cache = root.join("cache");
+        fs::create_dir_all(&cache).expect("create cache");
+        fs::write(cache.join("existing"), b"1234").expect("write existing cache file");
+        fs::write(&archive, b"corrupt").expect("corrupt archive");
+        let context = Mutex::new(FailureContext::default());
+        let result = prepare_runtime_from_files_with_context(
+            &archive,
+            &manifest_path,
+            &cache,
+            "1.2.3",
+            &context,
+        );
+        assert!(result.is_err(), "corrupt archive must fail");
+        let context = context.lock().expect("read failure context");
+        assert_eq!(context.failed_phase, "archive-metadata");
+        assert_eq!(context.existing_cache_logical_bytes_before, 4);
+        assert!(context.cache_path.contains("1.2.3-"));
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    fn write_complete_runtime(
+        cache: &Path,
+        name: &str,
+        version: &str,
+        digest_byte: char,
+    ) -> PathBuf {
+        let runtime = cache.join(name);
+        fs::create_dir(&runtime).expect("create complete runtime");
+        for (path, contents) in fixture_files() {
+            let destination = runtime.join(path);
+            fs::create_dir_all(destination.parent().expect("runtime fixture parent"))
+                .expect("create runtime fixture parent");
+            fs::write(destination, contents).expect("write runtime fixture");
+        }
+        let marker = CompletionMarker {
+            schema_version: COMPLETION_MARKER_SCHEMA_VERSION,
+            package_version: version.to_string(),
+            archive_sha256: std::iter::repeat(digest_byte).take(64).collect(),
+        };
+        fs::write(
+            runtime.join(".complete.json"),
+            serde_json::to_vec(&marker).expect("serialize complete marker"),
+        )
+        .expect("write complete marker");
+        runtime
+    }
+
+    #[test]
+    fn cleanup_preserves_current_and_one_previous_complete_runtime() {
+        let root = test_root("cleanup");
+        let cache = root.join("cache");
+        fs::create_dir(&cache).expect("create cleanup cache");
+        let oldest = write_complete_runtime(&cache, "oldest", "1.0.0", 'a');
+        thread::sleep(Duration::from_millis(25));
+        let previous = write_complete_runtime(&cache, "previous", "1.1.0", 'b');
+        thread::sleep(Duration::from_millis(25));
+        let current = write_complete_runtime(&cache, "current", "1.2.0", 'c');
+        let incomplete = cache.join("incomplete");
+        fs::create_dir(&incomplete).expect("create incomplete cache");
+        fs::write(incomplete.join("partial"), b"partial").expect("write incomplete cache");
+
+        cleanup_stale_sidecar_runtimes(&current);
+
+        assert!(current.is_dir());
+        assert!(previous.is_dir());
+        assert!(!oldest.exists());
+        assert!(!incomplete.exists());
+        fs::remove_dir_all(root).expect("remove cleanup root");
+    }
+
+    #[test]
     fn extracts_the_built_windows_archive_when_available() {
         let archive_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
             .join("server-archive");
-        let archive = archive_dir.join("server.tar.gz");
+        let archive = archive_dir.join(ARCHIVE_FILE_NAME);
         let manifest = archive_dir.join("manifest.json");
         if !archive.is_file() || !manifest.is_file() {
             // Plain cargo test/check runs do not build release resources. The
@@ -687,7 +1322,8 @@ mod tests {
         let root = test_root("built-archive");
         let runtime = prepare_runtime_from_files(&archive, &manifest, &root, "ci-fixture")
             .expect("extract built Windows archive with production code");
-        assert!(runtime_has_required_files(&runtime));
+        assert!(runtime_has_required_files(&runtime.path));
+        assert_eq!(runtime.diagnostics.archive_format, "tar.zst");
         fs::remove_dir_all(root).expect("remove built archive fixture");
     }
 }

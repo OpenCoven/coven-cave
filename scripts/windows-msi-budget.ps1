@@ -104,7 +104,7 @@ try {
         )
         $script:installedFileBytes += [long]$size
         $longName = ($name -split '\|')[-1]
-        if ($longName -eq "server.tar.gz") {
+        if ($longName -eq "server.tar.zst") {
             $script:serverArchiveRows += 1
         }
     }
@@ -142,7 +142,7 @@ try {
         }
     }
     if ($serverArchiveRows -ne 1) {
-        $violations += "expected exactly one server.tar.gz File row; found $serverArchiveRows"
+        $violations += "expected exactly one server.tar.zst File row; found $serverArchiveRows"
     }
     if ($violations.Count -gt 0) {
         throw "Windows MSI budget failed: $($violations -join '; ')"

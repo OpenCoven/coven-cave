@@ -101,9 +101,16 @@ assert.ok(
   baseConfig.bundle.resources.includes("resources/server/**/*"),
   "non-Windows bundles must retain the expanded tree for nested native signing",
 );
-assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.gz archive");
+assert.match(src, /server\.tar\.zst/, "Windows sidecar must be emitted as a zstd-compressed tar archive");
+assert.match(src, /System32\/tar\.exe/, "Windows bundling must use the inbox libzstd-enabled bsdtar");
+assert.match(src, /-acf "\$WINDOWS_ARCHIVE"/, "archive suffix must select zstd compression");
+assert.match(src, /zstd:compression-level=3/, "release archive must use the measured zstd level 3");
+assert.doesNotMatch(src, /server\.tar\.gz/, "Windows must not retain the slower gzip archive path");
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
 assert.match(manifestSource, /archiveBytes: 256 \* 1024 \* 1024/, "archive size must have a 256 MiB hard budget");
+assert.match(manifestSource, /schemaVersion: 3/, "zstd archive format must use the non-colliding combined manifest schema");
+assert.match(manifestSource, /archiveFormat: "tar\.zst"/, "manifest must identify the selected compression format");
+assert.match(manifestSource, /endsWith\("\.tar\.zst"\)/, "manifest writer must reject a misleading archive suffix");
 assert.match(manifestSource, /unpackedBytes: 768 \* 1024 \* 1024/, "expanded runtime must have a 768 MiB hard budget");
 assert.match(manifestSource, /fileCount: 50_000/, "archive entry count must have a hard budget");
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");

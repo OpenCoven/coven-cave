@@ -1,12 +1,34 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 const scriptUrl = new URL("./uninstall-app.sh", import.meta.url);
+const wixCleanupUrl = new URL(
+  "../src-tauri/windows/fragments/sidecar-cache-cleanup.wxs",
+  import.meta.url,
+);
+const nativeScriptPath = fileURLToPath(scriptUrl);
+function toBashPath(value) {
+  return process.platform === "win32"
+    ? value.replace(/^([A-Za-z]):[\\/]/, (_, drive) => `/${drive.toLowerCase()}/`).replaceAll("\\", "/")
+    : value;
+}
+const bashScriptPath = process.platform === "win32"
+  ? toBashPath(nativeScriptPath)
+  : nativeScriptPath;
+const windowsGitBash = [
+  process.env.ProgramFiles && path.join(process.env.ProgramFiles, "Git", "bin", "bash.exe"),
+  process.env["ProgramFiles(x86)"] && path.join(process.env["ProgramFiles(x86)"], "Git", "bin", "bash.exe"),
+].find((candidate) => candidate && existsSync(candidate));
+const bashExecutable = process.platform === "win32" && windowsGitBash
+  ? windowsGitBash
+  : "bash";
 const source = await readFile(scriptUrl, "utf8");
+const wixCleanup = await readFile(wixCleanupUrl, "utf8");
 
 assert.match(source, /APP_ID="ai\.opencoven\.cave"/, "uninstaller should target the Tauri app identifier");
 assert.match(source, /--execute/, "uninstaller should be dry-run by default and require --execute");
@@ -32,13 +54,27 @@ assert.match(source, /XDG_DATA_HOME/, "Linux app data should be removed");
 assert.match(source, /XDG_CONFIG_HOME/, "Linux config should be removed");
 assert.match(source, /XDG_CACHE_HOME/, "Linux cache should be removed");
 assert.match(source, /LOCALAPPDATA/, "Windows app install/data paths should be covered");
+assert.match(
+  source,
+  /LOCALAPPDATA[\s\S]*\$\{local_appdata\}\/\$\{APP_ID\}\/sidecar-runtime/,
+  "Windows uninstall diagnostics must explicitly cover the extracted sidecar cache",
+);
 assert.match(source, /skip: LOCALAPPDATA is not set/, "Windows cleanup should not form root-relative paths from missing env vars");
+assert.match(wixCleanup, /if defined LOCALAPPDATA/, "MSI cleanup must refuse a missing LOCALAPPDATA root");
+assert.match(wixCleanup, /Impersonate="yes"/, "MSI cleanup must target the interactive user's cache");
+assert.match(wixCleanup, /Execute="commit"/, "MSI cleanup must wait until uninstall commits");
+assert.match(
+  wixCleanup,
+  /\(REMOVE = "ALL"\) AND NOT UPGRADINGPRODUCTCODE/,
+  "MSI cleanup must run only for a full uninstall, not a major upgrade",
+);
 
 function run(args, env = {}) {
-  const result = spawnSync("bash", [scriptUrl.pathname, ...args], {
+  const result = spawnSync(bashExecutable, [bashScriptPath, ...args], {
     encoding: "utf8",
     env: {
       ...process.env,
+      COVEN_HOME: "",
       ...env,
     },
   });
@@ -82,8 +118,8 @@ function run(args, env = {}) {
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, new RegExp(`${stateRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/coven-cave`));
-  assert.match(result.stdout, new RegExp(`${covenHome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(result.stdout, /\.state[\\/]coven-cave/);
+  assert.match(result.stdout, /\.coven/);
   assert.doesNotMatch(result.stdout, /preserve: .*\.coven/);
 }
 
@@ -106,6 +142,60 @@ function run(args, env = {}) {
 }
 
 {
+  const home = mkdtempSync(path.join(tmpdir(), "coven-cave-uninstall-home-"));
+  const localAppData = path.join(home, "LocalAppData");
+  const sidecarCache = path.join(localAppData, "ai.opencoven.cave", "sidecar-runtime");
+  const unrelatedUserData = path.join(localAppData, "coven-user-data");
+  mkdirSync(sidecarCache, { recursive: true });
+  mkdirSync(unrelatedUserData, { recursive: true });
+  writeFileSync(path.join(sidecarCache, ".complete.json"), "{}");
+  writeFileSync(path.join(unrelatedUserData, "keep.txt"), "keep");
+
+  const result = run(["--execute"], {
+    HOME: home,
+    OSTYPE: "msys",
+    LOCALAPPDATA: localAppData,
+    APPDATA: "",
+    PROGRAMDATA: "",
+    USERPROFILE: "",
+    TMPDIR: path.join(home, "tmp"),
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /ai\.opencoven\.cave\/sidecar-runtime/);
+  await assert.rejects(access(sidecarCache), "sidecar cache should be removed on execute");
+  await access(path.join(unrelatedUserData, "keep.txt"));
+}
+
+if (process.platform === "win32") {
+  const localAppData = mkdtempSync(path.join(tmpdir(), "coven-cave-msi-cleanup-"));
+  const sidecarCache = path.join(localAppData, "ai.opencoven.cave", "sidecar-runtime");
+  const unrelatedUserData = path.join(localAppData, "unrelated-user-data");
+  mkdirSync(sidecarCache, { recursive: true });
+  mkdirSync(unrelatedUserData, { recursive: true });
+  writeFileSync(path.join(sidecarCache, ".complete.json"), "{}");
+  writeFileSync(path.join(unrelatedUserData, "keep.txt"), "keep");
+
+  const result = spawnSync(
+    "cmd.exe",
+    [
+      "/D",
+      "/C",
+      "if defined LOCALAPPDATA if exist \"%LOCALAPPDATA%\\ai.opencoven.cave\\sidecar-runtime\" rmdir /S /Q \"%LOCALAPPDATA%\\ai.opencoven.cave\\sidecar-runtime\"",
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, LOCALAPPDATA: localAppData },
+      windowsVerbatimArguments: true,
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  await assert.rejects(access(sidecarCache), "MSI command should remove only the sidecar cache");
+  await access(path.join(unrelatedUserData, "keep.txt"));
+}
+
+if (process.platform !== "win32") {
   const home = mkdtempSync(path.join(tmpdir(), "coven-cave-uninstall-home-"));
   const bin = path.join(home, "bin");
   const copiedDiagnostics = path.join(home, "copied-diagnostics.txt");

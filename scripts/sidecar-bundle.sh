@@ -24,7 +24,7 @@ esac
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"
 WINDOWS_ARCHIVE_DIR="$ROOT/src-tauri/resources/server-archive"
-WINDOWS_ARCHIVE="$WINDOWS_ARCHIVE_DIR/server.tar.gz"
+WINDOWS_ARCHIVE="$WINDOWS_ARCHIVE_DIR/server.tar.zst"
 WINDOWS_ARCHIVE_MANIFEST="$WINDOWS_ARCHIVE_DIR/manifest.json"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 STATIC="$ROOT/.next/static"
@@ -217,13 +217,23 @@ write_windows_sidecar_archive() {
     mv "$materialized" "$link"
   done < <(find "$DEST" -type l -print0)
 
-  echo "==> archiving Windows sidecar -> $WINDOWS_ARCHIVE"
-  if [ "$(uname -s)" = "Darwin" ]; then
-    COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs \
-      -czf "$WINDOWS_ARCHIVE" -C "$DEST" .
-  else
-    tar -czf "$WINDOWS_ARCHIVE" -C "$DEST" .
+  # Git for Windows ships GNU tar, whose --zstd mode requires a separate
+  # zstd.exe that is not installed on GitHub runners. Windows' inbox bsdtar
+  # links libzstd directly, so use it explicitly and let -a select zstd from
+  # the .tar.zst suffix.
+  if [ -z "${SYSTEMROOT:-}" ] || ! command -v cygpath >/dev/null 2>&1; then
+    echo "ERROR: Windows zstd archive generation requires Git Bash and SYSTEMROOT" >&2
+    exit 1
   fi
+  windows_tar="$(cygpath -u "$SYSTEMROOT/System32/tar.exe")"
+  if [ ! -x "$windows_tar" ] || ! "$windows_tar" --version 2>&1 | grep -q 'libzstd'; then
+    echo "ERROR: Windows inbox tar does not expose libzstd: $windows_tar" >&2
+    exit 1
+  fi
+
+  echo "==> archiving Windows sidecar with zstd -> $WINDOWS_ARCHIVE"
+  "$windows_tar" -acf "$WINDOWS_ARCHIVE" \
+    --options 'zstd:compression-level=3' -C "$DEST" .
 
   node "$ROOT/scripts/sidecar-archive-manifest.mjs" \
     "$DEST" "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST"
