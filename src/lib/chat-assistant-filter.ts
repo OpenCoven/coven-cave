@@ -103,6 +103,20 @@ export class AssistantFilter {
   private inExecEcho: "none" | "header" | "cmdline" | "output" = "none";
   private execEchoDepth = 0;
 
+  // Every suppression in this filter keys on codex/claude output shapes: the
+  // "pre" phase gates on their marker lines (CODEX_START_LINE /
+  // CLAUDE_ASSISTANT_RE), BANNER_LINE_RE matches their startup banners and
+  // token-count lines (a bare number!), and the exec-echo machine matches
+  // codex's tool-echo blocks. External manifest adapters (copilot, opencode,
+  // hermes, …) pipe their CLI's raw stdout with none of those shapes — the
+  // phase gate suppressed entire replies, and the banner heuristic ate
+  // legitimate numeric answers. Those callers get verbatim passthrough.
+  private passthrough = false;
+
+  constructor(opts?: { passthrough?: boolean }) {
+    this.passthrough = opts?.passthrough === true;
+  }
+
   push(chunk: string): string {
     this.buf += chunk;
     let out = "";
@@ -128,6 +142,7 @@ export class AssistantFilter {
 
   private processLine(rawLine: string): string {
     const line = rawLine.replace(/\r/g, "");
+    if (this.passthrough) return line + "\n";
     const trimmed = line.trim();
 
     if (trimmed === CODEX_START_LINE || CLAUDE_ASSISTANT_RE.test(trimmed)) {
