@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import type { SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";
 import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selection";
@@ -23,6 +23,11 @@ import {
 } from "@/lib/chat-session-order";
 import { Icon, type IconName } from "@/lib/icon";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import {
+  CHAT_SESSION_DRAG_MIME,
+  emitChatSessionDragEnd,
+  emitChatSessionDragStart,
+} from "@/lib/chat-split";
 import {
   DndContext,
   PointerSensor,
@@ -89,6 +94,28 @@ function repoLabel(group: ChatProjectGroup): string {
     group.projectName ??
     (group.projectRoot?.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? "No project")
   );
+}
+
+// Native HTML5 drag props for a thread row: dragging the row *body* carries the
+// conversation to the chat surface's split drop zone (chat-split-host). The
+// dnd-kit reorder handle is exempted — a native dragstart from inside it is
+// cancelled so the pointer-driven reorder keeps sole ownership of that slot.
+function sessionDragProps(sessionId: string, title: string) {
+  return {
+    draggable: true,
+    onDragStart: (e: ReactDragEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("[data-thread-drag-handle]")) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, sessionId);
+      e.dataTransfer.setData("text/plain", title);
+      e.dataTransfer.effectAllowed = "copyMove";
+      emitChatSessionDragStart({ sessionId, title });
+    },
+    onDragEnd: () => emitChatSessionDragEnd(),
+  };
 }
 
 
@@ -158,6 +185,7 @@ function ThreadRow({
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpen();
         }}
+        {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
         className={[
           "focus-ring-inset relative flex min-h-[36px] w-full items-center gap-1.5 py-2 pl-2 pr-1.5 text-left text-[12px] transition-colors",
@@ -178,6 +206,7 @@ function ThreadRow({
             type="button"
             {...attributes}
             {...listeners}
+            data-thread-drag-handle=""
             onClick={(e) => e.stopPropagation()}
             title="Drag to reorder"
             aria-label={`Reorder ${title}`}
@@ -261,6 +290,7 @@ function FolderChatRow({
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpen();
         }}
+        {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
         className={[
           "relative flex min-h-[34px] w-full items-center gap-1.5 py-2 pl-2 pr-2 text-left text-[12px] transition-colors",
@@ -281,6 +311,7 @@ function FolderChatRow({
             type="button"
             {...attributes}
             {...listeners}
+            data-thread-drag-handle=""
             onClick={(e) => e.stopPropagation()}
             title="Drag to reorder or move to another project"
             aria-label={`Move ${title}`}

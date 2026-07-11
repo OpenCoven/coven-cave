@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { ChatList } from "@/components/chat-list";
 import { ChatProjectSidebar } from "@/components/chat-project-sidebar";
 import { ChatView } from "@/components/chat-view";
+import { ChatSplitHost, type ChatSplitTile } from "@/components/chat-split-host";
 import { NewChatLaunch } from "@/components/new-chat-launch";
 import { FamiliarChatoutCodexSurface } from "@/components/familiar-chatout-codex";
 import { caveChatoutCodex } from "@/lib/feature-flags";
@@ -15,6 +16,14 @@ import {
 } from "@/lib/chat-projects";
 import { applyProjectOverrides } from "@/lib/chat-project-overrides";
 import type { ChatAttachment } from "@/lib/chat-attachments";
+import {
+  CHAT_SPLIT_PRIMARY,
+  dropSessionIntoChatSplit,
+  emptyChatSplitLayout,
+  removeChatSplitPane,
+  type ChatDropZone,
+} from "@/lib/chat-split";
+import { sessionRailTitle } from "@/lib/session-rail-title";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
@@ -119,6 +128,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   ref,
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
+  // ── Multi-pane split (drag a convo from the thread rail onto the chat) ────
+  // The primary chat is one pane; dropped conversations open beside/above/
+  // below it. Pure layout rules live in @/lib/chat-split; panes for deleted
+  // sessions are filtered at render (the id simply stops resolving).
+  const [split, setSplit] = useState(() => emptyChatSplitLayout());
   // Set when a conversation-search hit asks the opened chat to jump to a query;
   // handed to ChatView (nonce-keyed) so it opens in-thread find on the match.
   const [pendingFind, setPendingFind] = useState<{ query: string; nonce: number } | null>(null);
@@ -249,6 +263,27 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
       : familiar ?? fallbackFamiliar;
     if (next) onSetActiveFamiliar?.(next.id);
     return next;
+  }
+
+  // A conversation opened as the primary chat leaves the split — the same
+  // thread twice would stream twice. (Also how "open as main" collapses the
+  // promoted pane: promotion just opens it as primary.)
+  const primarySessionId = view.kind === "chat" ? view.sessionId : null;
+  useEffect(() => {
+    if (!primarySessionId) return;
+    setSplit((prev) => removeChatSplitPane(prev, primarySessionId));
+  }, [primarySessionId]);
+
+  function handleDropSession(sessionId: string, zone: ChatDropZone) {
+    if (sessionId === primarySessionId) return; // already the open chat
+    if (!sessions.some((entry) => entry.id === sessionId)) return;
+    setSplit((prev) => dropSessionIntoChatSplit(prev, sessionId, zone));
+  }
+
+  function handlePromotePane(sessionId: string) {
+    const session = sessions.find((entry) => entry.id === sessionId);
+    const next = selectFamiliarForChat(session?.familiarId ?? null);
+    setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
   }
 
   useEffect(() => {
@@ -480,6 +515,79 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     );
   }
 
+  const primaryChat = caveChatoutCodex() ? (
+    <FamiliarChatoutCodexSurface />
+  ) : (
+    <ChatView
+      ref={viewHandle}
+      familiar={chatFamiliar}
+      sessionId={view.sessionId}
+      session={activeSession}
+      projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
+      initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+      initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
+      initialControls={view.kind === "chat" ? view.initialControls : undefined}
+      origin={view.kind === "chat" ? view.origin : undefined}
+      openFindQuery={pendingFind?.query}
+      openFindNonce={pendingFind?.nonce}
+      daemonRunning={daemonRunning}
+      sessions={sessions}
+      onSessionsChanged={onSessionsChanged}
+      onBack={() => setView({ kind: "list" })}
+      onSessionStarted={(sid) => {
+        // Only promote the sessionId in the view state when the current chat
+        // has no session yet (null). If a session is already set, leave the
+        // view alone — updating it would re-mount ChatView and lose the live
+        // currentSessionRef, breaking follow-up messages.
+        setView((prev) =>
+          prev.kind === "chat" && prev.sessionId === null
+            ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
+            : prev,
+        );
+        onSessionStarted?.();
+      }}
+      onSlashCommand={onSlashFromChat}
+      onOpenOnboarding={onOpenOnboarding}
+      onOpenTask={onOpenTask}
+      onOpenUrl={onOpenUrl}
+      onProjectRootChange={syncSidebarProjectRoot}
+    />
+  );
+
+  // Split panes only render on the full-width desktop chat: the compact
+  // companion rail and mobile have no room, and the Codex surface is its own
+  // world. Panes whose session vanished (deleted) resolve to nothing here —
+  // the layout state simply stops matching and the strip collapses.
+  const enableSplit = !compact && !isMobile && !caveChatoutCodex();
+  const splitPaneTiles: ChatSplitTile[] = (enableSplit ? split.panes : [CHAT_SPLIT_PRIMARY]).flatMap(
+    (paneId): ChatSplitTile[] => {
+      if (paneId === CHAT_SPLIT_PRIMARY) {
+        return [{ id: paneId, title: "Current chat", content: primaryChat }];
+      }
+      const paneSession = sessions.find((entry) => entry.id === paneId);
+      if (!paneSession) return [];
+      const paneFamiliar = familiars.find((entry) => entry.id === paneSession.familiarId) ?? chatFamiliar;
+      return [
+        {
+          id: paneId,
+          title: sessionRailTitle(paneSession),
+          content: (
+            <ChatView
+              familiar={paneFamiliar}
+              sessionId={paneId}
+              session={paneSession}
+              daemonRunning={daemonRunning}
+              sessions={sessions}
+              onSessionsChanged={onSessionsChanged}
+              onOpenTask={onOpenTask}
+              onOpenUrl={onOpenUrl}
+            />
+          ),
+        },
+      ];
+    },
+  );
+
   return (
     <div className="flex h-full min-w-0">
       {!compact && (
@@ -515,45 +623,15 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         onOpenProjectsTab={openProjectsTab}
       />
       )}
-      <div className="min-h-0 min-w-0 flex-1">
-        {caveChatoutCodex() ? (
-          <FamiliarChatoutCodexSurface />
-        ) : (
-          <ChatView
-            ref={viewHandle}
-            familiar={chatFamiliar}
-            sessionId={view.sessionId}
-            session={activeSession}
-            projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
-            initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
-            initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
-            initialControls={view.kind === "chat" ? view.initialControls : undefined}
-            origin={view.kind === "chat" ? view.origin : undefined}
-            openFindQuery={pendingFind?.query}
-            openFindNonce={pendingFind?.nonce}
-            daemonRunning={daemonRunning}
-            sessions={sessions}
-            onSessionsChanged={onSessionsChanged}
-            onBack={() => setView({ kind: "list" })}
-            onSessionStarted={(sid) => {
-              // Only promote the sessionId in the view state when the current chat
-              // has no session yet (null). If a session is already set, leave the
-              // view alone — updating it would re-mount ChatView and lose the live
-              // currentSessionRef, breaking follow-up messages.
-              setView((prev) =>
-                prev.kind === "chat" && prev.sessionId === null
-                  ? { kind: "chat", sessionId: sid, projectRoot: prev.projectRoot, familiarId: prev.familiarId }
-                  : prev,
-              );
-              onSessionStarted?.();
-            }}
-            onSlashCommand={onSlashFromChat}
-            onOpenOnboarding={onOpenOnboarding}
-            onOpenTask={onOpenTask}
-            onOpenUrl={onOpenUrl}
-            onProjectRootChange={syncSidebarProjectRoot}
-          />
-        )}
+      <div className="relative min-h-0 min-w-0 flex-1">
+        <ChatSplitHost
+          panes={splitPaneTiles}
+          axis={split.axis}
+          enableDrop={enableSplit}
+          onDropSession={handleDropSession}
+          onClosePane={(paneId) => setSplit((prev) => removeChatSplitPane(prev, paneId))}
+          onPromotePane={handlePromotePane}
+        />
       </div>
     </div>
   );

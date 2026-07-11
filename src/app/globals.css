@@ -12374,8 +12374,129 @@ details[open] > .cave-edit-card__summary::before {
   pointer-events: none;
 }
 
+/* ── Chat split panes — drag a conversation from the thread rail onto the
+      chat and snap it left / right / above / below (chat-split-host). ── */
+.chat-split__group {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.chat-split__pane-panel {
+  min-width: 0;
+  min-height: 0;
+}
+.chat-split__tile {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-base);
+}
+.chat-split__pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+}
+.chat-split__pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.chat-split__pane-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-split__pane-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.chat-split__pane-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.chat-split__pane-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+.chat-split__pane-close:hover {
+  color: var(--color-danger, #e5484d);
+}
+.chat-split__pane-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chat-split__pane-body > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Drop overlay: one live layer over the chat — the snap preview tracks the
+   pointer's nearest edge and glows over the half the pane will occupy. */
+.chat-split__dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  background: color-mix(in oklch, var(--bg-base) 35%, transparent);
+}
+.chat-split__preview {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
+  pointer-events: none;
+}
+.chat-split__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 80%;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  border: 1px solid var(--border-hairline);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.chat-split__hint--idle {
+  color: var(--text-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .split-host__guide { transition: none; }
+  .chat-split__preview { transition: none; }
 }
 
 @media (max-width: 1023px) {

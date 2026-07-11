@@ -38,8 +38,10 @@ assert.match(
 
 assert.match(
   source,
-  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatView/,
-  "ChatRouter should render the projects sidebar next to ChatView while a chat is open",
+  // The chat surface renders through ChatSplitHost (multi-pane chat); the
+  // sidebar still sits beside it while a chat is open.
+  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatSplitHost/,
+  "ChatRouter should render the projects sidebar next to the chat surface while a chat is open",
 );
 
 assert.match(
