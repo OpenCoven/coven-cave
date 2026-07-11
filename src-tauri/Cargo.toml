@@ -59,6 +59,7 @@ tauri-plugin-process = "2"
 # WiX component per file. The launcher verifies and extracts it on first use.
 [target.'cfg(target_os = "windows")'.dependencies]
 flate2 = "1"
+fs2 = "0.4.3"
 sha2 = "0.10"
 tar = "0.4"
 

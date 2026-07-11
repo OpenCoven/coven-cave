@@ -103,6 +103,20 @@ assert.ok(
 );
 assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.gz archive");
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
+assert.doesNotMatch(
+  src,
+  /tar -czf "\$WINDOWS_ARCHIVE"/,
+  "Windows archive bytes must not depend on the host tar implementation",
+);
+assert.match(manifestSource, /SIDECAR_ARCHIVE_SCHEMA_VERSION = 2/, "content-addressed manifests must use schema 2");
+assert.match(manifestSource, /entries\.sort\(compareArchivePaths\)/, "archive paths must have deterministic byte ordering");
+assert.match(manifestSource, /writeOctal\(header, 108, 8, 0, "uid"\)/, "archive uid must be normalized");
+assert.match(manifestSource, /writeOctal\(header, 116, 8, 0, "gid"\)/, "archive gid must be normalized");
+assert.match(manifestSource, /writeOctal\(header, 136, 12, 0, "mtime"\)/, "archive mtime must be normalized");
+assert.match(manifestSource, /kind: "file",[\s\S]*mode: NORMALIZED_FILE_MODE/, "archive file modes must be normalized");
+assert.match(manifestSource, /header\[9\] = 0xff/, "gzip host metadata must be normalized");
+assert.match(manifestSource, /payloadSha256/, "manifest must identify canonical payload content separately from gzip bytes");
+assert.match(manifestSource, /treeSha256/, "manifest must authenticate the activated runtime tree");
 assert.match(manifestSource, /archiveBytes: 256 \* 1024 \* 1024/, "archive size must have a 256 MiB hard budget");
 assert.match(manifestSource, /unpackedBytes: 768 \* 1024 \* 1024/, "expanded runtime must have a 768 MiB hard budget");
 assert.match(manifestSource, /fileCount: 50_000/, "archive entry count must have a hard budget");
