@@ -2398,21 +2398,75 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Distance-from-bottom captured at the instant of expansion so the prepended
   // older rows don't visually shove the viewport (restored in a layout effect).
   const expandAnchorRef = useRef<number | null>(null);
+  const releasedScrollAnchorRef = useRef<{ turnId: string | null; node: HTMLElement | null; top: number } | null>(null);
+  const releasedAnchorFrameRef = useRef<number | null>(null);
+  const captureReleasedScrollAnchor = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) {
+      releasedScrollAnchorRef.current = null;
+      return;
+    }
+    const viewport = scroller.getBoundingClientRect();
+    let candidate: HTMLElement | null = null;
+    for (const node of scroller.querySelectorAll<HTMLElement>("[data-turn-id]")) {
+      const rect = node.getBoundingClientRect();
+      if (rect.bottom > viewport.top + 1 && rect.top < viewport.bottom - 1) {
+        candidate = node;
+        break;
+      }
+    }
+    releasedScrollAnchorRef.current = candidate
+      ? { turnId: candidate.dataset.turnId ?? null, node: candidate, top: candidate.getBoundingClientRect().top }
+      : null;
+  }, []);
+  const restoreReleasedScrollAnchor = useCallback(() => {
+    if (followingRef.current) return;
+    if (releasedAnchorFrameRef.current !== null) return;
+    releasedAnchorFrameRef.current = requestAnimationFrame(() => {
+      releasedAnchorFrameRef.current = null;
+      if (followingRef.current) return;
+      const scroller = scrollRef.current;
+      const anchor = releasedScrollAnchorRef.current;
+      if (!scroller || !anchor) {
+        captureReleasedScrollAnchor();
+        return;
+      }
+      const anchoredNode =
+        anchor.node?.isConnected
+          ? anchor.node
+          : Array.from(scroller.querySelectorAll<HTMLElement>("[data-turn-id]")).find(
+              (node) => node.dataset.turnId === anchor.turnId,
+            ) ?? null;
+      if (!anchoredNode) {
+        captureReleasedScrollAnchor();
+        return;
+      }
+      const delta = anchoredNode.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(delta) >= 0.5) scroller.scrollTop += delta;
+      captureReleasedScrollAnchor();
+    });
+  }, [captureReleasedScrollAnchor]);
   const updateFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
     setFollowing(next);
     if (next) {
       // Reset count when returning to the bottom
       setNewTurnsCount(0);
+      releasedScrollAnchorRef.current = null;
+      if (releasedAnchorFrameRef.current !== null) {
+        cancelAnimationFrame(releasedAnchorFrameRef.current);
+        releasedAnchorFrameRef.current = null;
+      }
     } else if (!historyExpandedRef.current) {
       // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
       // the full transcript and anchor the scroll so older rows slide in above
       // the current view instead of jumping it.
       const el = scrollRef.current;
       expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+      captureReleasedScrollAnchor();
       setHistoryExpanded(true);
     }
-  }, []);
+  }, [captureReleasedScrollAnchor]);
 
   // Restore the pre-expansion distance-from-bottom once the full transcript has
   // mounted, so revealing the older rows doesn't jump the reader's viewport.
@@ -2422,8 +2476,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     expandAnchorRef.current = null;
     if (anchor == null) return;
     const el = scrollRef.current;
-    if (el) el.scrollTop = Math.max(0, el.scrollHeight - anchor);
-  }, [historyExpanded]);
+    if (el) {
+      el.scrollTop = Math.max(0, el.scrollHeight - anchor);
+      captureReleasedScrollAnchor();
+    }
+  }, [captureReleasedScrollAnchor, historyExpanded]);
 
   // `shouldApply` lets a caller (the effect below) veto the setState after the
   // await — a fetch that resolves after a thread switch must not overwrite the
@@ -3426,19 +3483,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // bottom while `following` is still true ("the chat scrolled up by
   // itself"). While following, ANY size change of the thread (content
   // growth) or the scroller (composer/window resize) re-pins through the
-  // same coalesced rAF; while released it does nothing, so a reader's place
-  // is never disturbed.
+  // same coalesced rAF. While released, late async layout above the viewport
+  // preserves the first visible turn's screen position, which stands in for
+  // native scroll anchoring in WKWebView.
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
-      if (followingRef.current) schedulePin();
+      if (followingRef.current) {
+        schedulePin();
+        return;
+      }
+      restoreReleasedScrollAnchor();
     });
     ro.observe(scroller);
     const thread = threadRef.current;
     if (thread) ro.observe(thread);
     return () => ro.disconnect();
-  }, [schedulePin]);
+  }, [restoreReleasedScrollAnchor, schedulePin]);
 
   useEffect(() => () => {
     if (pinFrameRef.current !== null) {
@@ -3448,6 +3510,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // guard in schedulePin, and no pin ever runs again for the lifetime of
       // the component — the "chat opens at the top and never follows" bug.
       pinFrameRef.current = null;
+    }
+    if (releasedAnchorFrameRef.current !== null) {
+      cancelAnimationFrame(releasedAnchorFrameRef.current);
+      releasedAnchorFrameRef.current = null;
     }
   }, []);
 
@@ -3459,6 +3525,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     updateFollowing(true);
     setHistoryExpanded(false);
     expandAnchorRef.current = null;
+    releasedScrollAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
 
   // Release on intent: only USER input events detach following. Programmatic
@@ -3536,12 +3603,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!el) return;
     const onScroll = () => {
       if (followingRef.current) return;
+      captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [updateFollowing]);
+  }, [captureReleasedScrollAnchor, updateFollowing]);
 
   useEffect(() => {
     inputRef.current?.focus();

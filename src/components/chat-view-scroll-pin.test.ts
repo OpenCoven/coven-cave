@@ -46,14 +46,32 @@ assert.match(
 
 assert.match(
   src,
-  /new ResizeObserver\(\(\) => \{\s*if \(followingRef\.current\) schedulePin\(\);\s*\}\)/,
-  "a ResizeObserver re-pins on size changes ONLY while following — a released reader is never moved",
+  /new ResizeObserver\(\(\) => \{\s*if \(followingRef\.current\) \{\s*schedulePin\(\);\s*return;\s*\}\s*restoreReleasedScrollAnchor\(\);\s*\}\)/,
+  "a ResizeObserver re-pins while following and restores the released scroll anchor otherwise",
 );
 
 assert.match(
   src,
   /ro\.observe\(scroller\);\s*const thread = threadRef\.current;\s*if \(thread\) ro\.observe\(thread\);/,
   "the observer watches both the scroller (composer/window resizes) and the thread (content growth)",
+);
+
+assert.match(
+  src,
+  /const releasedScrollAnchorRef = useRef<\{ turnId: string \| null; node: HTMLElement \| null; top: number \} \| null>\(null\);/,
+  "released readers keep a DOM anchor so late layout above the viewport can be corrected",
+);
+
+assert.match(
+  src,
+  /const captureReleasedScrollAnchor = useCallback\(\(\) => \{[\s\S]*?querySelectorAll<HTMLElement>\("\[data-turn-id\]"\)[\s\S]*?getBoundingClientRect\(\)[\s\S]*?releasedScrollAnchorRef\.current = candidate/,
+  "released anchor capture records the first visible turn before async content changes height",
+);
+
+assert.match(
+  src,
+  /const restoreReleasedScrollAnchor = useCallback\(\(\) => \{[\s\S]*?scroller\.scrollTop \+= delta;[\s\S]*?captureReleasedScrollAnchor\(\);/,
+  "released anchor restore offsets scrollTop by the anchor delta and refreshes the anchor",
 );
 
 assert.match(
