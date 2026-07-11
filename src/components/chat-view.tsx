@@ -509,6 +509,7 @@ function ChatErrorStrip({
   busy,
   onRetry,
   onOpenDebug,
+  onOpenSetup,
   onDismiss,
   addProjectLabel,
   addingProject,
@@ -536,6 +537,9 @@ function ChatErrorStrip({
   onOpenProjects?: () => void;
   /** Switch the familiar to this harness and retry (harness-failure fix row). */
   onUseHarness?: (harnessId: string) => void | Promise<void>;
+  /** Open the Setup wizard overlay (soft, not a route change) when the coven
+   *  CLI is unresolvable — the composer message is preserved for retry (#2618). */
+  onOpenSetup?: () => void;
   /** The runtime the failing send used — lets the auth-failure fix row name
    *  it and offer its exact login command (cave-f6ol). */
   harnessId?: string | null;
@@ -575,6 +579,14 @@ function ChatErrorStrip({
   const authFailure = useMemo(
     () => parseHarnessAuthFailure(detailText, harnessId),
     [detailText, harnessId],
+  );
+  // The coven CLI couldn't be resolved from the app's spawn environment
+  // (the #2610 class of failure). Rather than a bare error + generic Retry,
+  // offer a soft "Open Setup" link (overlay, not a hard nav) — the message
+  // stays in the composer for retry (#2618).
+  const covenMissing = useMemo(
+    () => /coven CLI not found on PATH/i.test(message) || code === "ENOENT",
+    [message, code],
   );
 
   const btn =
@@ -653,6 +665,18 @@ function ChatErrorStrip({
       ) : null}
       {!harnessFailure && authFailure ? (
         <AuthFixRow failure={authFailure} buttonClassName={btn} />
+      ) : null}
+      {!harnessFailure && !authFailure && covenMissing ? (
+        <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
+          <span className="min-w-0">
+            The coven CLI isn&apos;t resolvable from this app&apos;s environment. Open Setup to install
+            or repair it, then retry — your message is kept.
+          </span>
+          <button type="button" onClick={onOpenSetup} className={btn}>
+            <Icon name="ph:wrench" width={11} aria-hidden />
+            Open Setup
+          </button>
+        </div>
       ) : null}
       {hasDetail && open ? (
         <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
@@ -5121,6 +5145,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onRetry={retryLastSend}
           onOpenDebug={openDebug}
           onUseHarness={lastFailedSend ? handleUseHarnessFix : undefined}
+          onOpenSetup={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
           harnessId={familiar.harness ?? null}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
