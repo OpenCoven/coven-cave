@@ -688,7 +688,7 @@ function GrimoireDocLinks({
               <button
                 key={i}
                 type="button"
-                title="No matching Grimoire doc"
+                title="No matching Memories doc"
                 aria-expanded={unresolvedHint === display}
                 onClick={() => {
                   const hint = `“${display}” has no matching doc yet — create a stitch with that title to link it.`;
@@ -1308,11 +1308,11 @@ export function GrimoireView({
           Marketplace / Tasks): small title on the left, the surface verbs on the
           right. The rail keeps its own search (it filters the rail list). */}
       <header className="surface-compact-header">
-        <h1 className="surface-compact-title">Grimoire</h1>
+        <h1 className="surface-compact-title">Memories</h1>
         <div className="surface-compact-actions">
           <div
             role="group"
-            aria-label="Grimoire view"
+            aria-label="Memories view"
             className="inline-flex h-[26px] items-center gap-0.5 rounded-md border border-[var(--border-hairline)] p-0.5"
           >
             <button

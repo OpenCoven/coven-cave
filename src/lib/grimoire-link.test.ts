@@ -30,6 +30,6 @@ assert.match(lib, /window\.history\.replaceState/, "the hash is written before t
 assert.match(reader, /openGrimoireDoc\("memory", row\.contentPath/, "memory reader links its file to the Grimoire");
 assert.match(reader, /row\.contentPath \?/, "reader only offers the link when the file path resolved");
 assert.match(inspector, /openGrimoireDoc\("memory", path\)/, "chat inspector's memory file view links to the Grimoire");
-assert.match(inspector, /aria-label="Open in Grimoire"/, "inspector link is labelled");
+assert.match(inspector, /aria-label="Open in Memories"/, "inspector link is labelled");
 
 console.log("grimoire-link.test: ok");

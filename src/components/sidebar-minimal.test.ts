@@ -421,21 +421,21 @@ assert.match(
 // Quiet cluster (§8): occasional destinations stay in the same flat list but
 // render muted-until-hover, with the first quiet row opening a spacing gap.
 // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
-// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Journal
-// and Grimoire lead the quiet cluster, followed by Marketplace/GitHub/Work Queue.
+// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Memories
+// leads the quiet cluster, followed by Marketplace/GitHub/Work Queue.
 assert.match(
   source,
-  /\{ id: "journal",[^}]*quiet: true \}/,
-  "Journal is in the quiet cluster (cave-xsq.8)",
+  /\{ id: "journal",[^}]*navHidden: true \}/,
+  "Journal keeps no sidebar row — it's a tab inside Memories (palette/deep-link reachability stays via navHidden)",
 );
 assert.match(
   source,
-  /\{ id: "grimoire",[^}]*quiet: true \}/,
-  "Grimoire is in the quiet cluster (cave-xsq.8)",
+  /\{ id: "grimoire", label: "Memories",[^}]*quiet: true \}/,
+  "Memories (grimoire) is in the quiet cluster (cave-xsq.8)",
 );
 assert.match(
   source,
-  /id: "inbox",[\s\S]*?\{ id: "journal"/,
+  /id: "inbox",[\s\S]*?\{ id: "grimoire"/,
   "the ⌘-numbered prominent cluster (…Schedules) renders above the quiet cluster",
 );
 assert.match(
@@ -472,8 +472,8 @@ assert.match(
 );
 assert.match(
   source,
-  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes, \{ grimoireView: props\.grimoireView \}\)\}/,
-  "each row derives active/split/idle from mode + open split pages + the Grimoire tab (Journal row, cave-s9p6)",
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  "each row derives active/split/idle from mode + open split pages",
 );
 assert.match(
   source,

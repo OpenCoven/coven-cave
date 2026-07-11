@@ -471,8 +471,8 @@ function MemoryFileView({ path, file, reveal, totalRedactions, onRevealToggle, o
       <div className="flex-1 truncate font-mono text-[var(--text-secondary)]">{filename}</div>
       <button
         onClick={() => openGrimoireDoc("memory", path)}
-        title="Open in the Grimoire editor"
-        aria-label="Open in Grimoire"
+        title="Open in the Memories editor"
+        aria-label="Open in Memories"
         className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
       >
         <Icon name="ph:book-open" width={13} />
