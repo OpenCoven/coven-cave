@@ -12,19 +12,26 @@ import type { PromptEnhanceState } from "@/lib/use-prompt-enhance";
 
 const LONG_PRESS_MS = 420;
 
-/** Sparkle split-control in the composer's 30px round-button language.
- *  Click = smart enhance; the chevron (or ArrowDown / long-press on the main
- *  button) opens the intent menu. Accent shows only while loading. */
+/** Sparkle split-control: one minimal rectangle (control-radius, hairline
+ *  border) holding the sparkle segment and the caret segment — a single
+ *  combined control, not two floating round buttons.
+ *  Click = smart enhance; the caret (or ArrowDown / long-press on the main
+ *  segment) opens the intent menu. Accent shows only while loading. */
 export function EnhanceControl({
   state,
   onEnhance,
   onCancel,
   disabled,
+  size = "md",
 }: {
   state: PromptEnhanceState;
   onEnhance: (intent: EnhanceIntent) => void;
   onCancel: () => void;
   disabled?: boolean;
+  /** Height language of the hosting composer — "md" sits with the 30px
+   *  icon-button rows (home, chat); "sm" matches the 26px `Button size="sm"`
+   *  Send button (quick chat). */
+  size?: "sm" | "md";
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const mainRef = useRef<HTMLButtonElement | null>(null);
@@ -37,15 +44,21 @@ export function EnhanceControl({
   }, []);
   useEffect(() => clearPress, [clearPress]);
 
-  const baseBtn =
-    "cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40";
+  // Both segments share one hairline rectangle — borderless inside, split by
+  // a hairline divider, height matched to the composer's Send button. They use
+  // their own segment class (NOT cave-composer-icon-button): the mobile
+  // touch-target override turns that class into 44px circles, which blew the
+  // segments out of the rectangle. Here the rectangle itself is the control —
+  // two flat rectangles inside it, the sparkle wider than the caret.
+  const heightClass = size === "sm" ? "h-[26px]" : "h-[30px]";
+  const segmentBtn = `composer-enhance-control__segment focus-ring grid ${heightClass} place-items-center hover:bg-[var(--bg-raised)] disabled:opacity-40`;
 
   return (
-    <span className="composer-enhance-control inline-flex items-center gap-0.5">
+    <span className="composer-enhance-control inline-flex items-stretch overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)]">
       <button
         ref={mainRef}
         type="button"
-        className={baseBtn}
+        className={`${segmentBtn} px-2`}
         title="Enhance prompt"
         aria-label="Enhance prompt"
         disabled={disabled && !loading}
@@ -81,7 +94,7 @@ export function EnhanceControl({
       </button>
       <button
         type="button"
-        className="cave-composer-icon-button focus-ring grid h-[30px] w-4 place-items-center rounded-full text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40"
+        className={`${segmentBtn} w-[18px] border-l border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--text-primary)]`}
         aria-label="Enhance options"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
