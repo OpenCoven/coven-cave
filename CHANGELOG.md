@@ -8,7 +8,7 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Features
-- **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keep it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937).
+- **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-and-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keeps it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937).
 
 ## [0.0.174] - 2026-07-11
 
