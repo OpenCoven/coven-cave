@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build + assemble the Next.js standalone server with a flat, complete
-# node_modules so it can boot without any pnpm symlink magic. macOS/Linux
-# package the expanded tree; Windows packages a bounded archive that the
-# launcher expands into its versioned local runtime cache.
+# Build + assemble the Next.js standalone server from its emitted file traces
+# plus Cave's explicit runtime data. macOS/Linux package the expanded tree;
+# Windows packages a bounded archive that the launcher expands into its
+# versioned local runtime cache.
 #
 # Mobile-Tauri builds: skip entirely. iOS and Android sandboxes can't spawn
 # a child Node.js process, the resulting IPA / APK would balloon by ~100MB
@@ -26,12 +26,13 @@ DEST="$ROOT/src-tauri/resources/server"
 WINDOWS_ARCHIVE_DIR="$ROOT/src-tauri/resources/server-archive"
 WINDOWS_ARCHIVE="$WINDOWS_ARCHIVE_DIR/server.tar.gz"
 WINDOWS_ARCHIVE_MANIFEST="$WINDOWS_ARCHIVE_DIR/manifest.json"
+WINDOWS_ARCHIVE_TEMP="$WINDOWS_ARCHIVE_DIR/.server.tar.gz.$$.tmp"
+WINDOWS_ARCHIVE_MANIFEST_TEMP="$WINDOWS_ARCHIVE_DIR/.manifest.json.$$.tmp"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
-STATIC="$ROOT/.next/static"
-PUBLIC="$ROOT/public"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
 cleanup_staging() {
   rm -rf "$PNPM_STAGE"
+  rm -f "$WINDOWS_ARCHIVE_TEMP" "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
 }
 trap cleanup_staging EXIT
 
@@ -139,12 +140,18 @@ prune_sidecar_nonruntime_files() {
     "$dest/node_modules/@playwright" \
     "$dest/node_modules/@types" \
     "$dest/node_modules/playwright" \
-    "$dest/node_modules/playwright-core"
+    "$dest/node_modules/playwright-core" \
+    "$dest/node_modules/node-pty/deps" \
+    "$dest/node_modules/node-pty/scripts" \
+    "$dest/node_modules/node-pty/src" \
+    "$dest/node_modules/node-pty/typings"
 
   find "$dest" -type f \( \
     -name '*.map' -o \
     -name '*.d.ts' -o \
-    -name '*.d.ts.map' \
+    -name '*.d.ts.map' -o \
+    -name '*.pdb' -o \
+    -name '*.test.js' \
   \) -delete
 }
 
@@ -201,7 +208,13 @@ copy_node_shared_runtime() {
 
 write_windows_sidecar_archive() {
   mkdir -p "$WINDOWS_ARCHIVE_DIR"
-  rm -f "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST"
+  # A killed prior build must not leave unbounded staging files. Final archive
+  # and manifest paths remain untouched until the replacement passes all
+  # integrity and size gates.
+  find "$WINDOWS_ARCHIVE_DIR" -maxdepth 1 -type f -mmin +1440 \( \
+    -name '.server.tar.gz.*.tmp' -o \
+    -name '.manifest.json.*.tmp' \
+  \) -delete
 
   # The standalone output can retain valid pnpm symlinks. Materialize those
   # few links in place instead of copying the entire 500+ MiB tree a second
@@ -217,16 +230,18 @@ write_windows_sidecar_archive() {
     mv "$materialized" "$link"
   done < <(find "$DEST" -type l -print0)
 
-  echo "==> archiving Windows sidecar -> $WINDOWS_ARCHIVE"
+  echo "==> archiving Windows sidecar -> $WINDOWS_ARCHIVE_TEMP"
   if [ "$(uname -s)" = "Darwin" ]; then
     COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs \
-      -czf "$WINDOWS_ARCHIVE" -C "$DEST" .
+      -czf "$WINDOWS_ARCHIVE_TEMP" -C "$DEST" .
   else
-    tar -czf "$WINDOWS_ARCHIVE" -C "$DEST" .
+    tar -czf "$WINDOWS_ARCHIVE_TEMP" -C "$DEST" .
   fi
 
-  node "$ROOT/scripts/sidecar-archive-manifest.mjs" \
-    "$DEST" "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST"
+  node "$ROOT/scripts/sidecar-archive-manifest.mjs" --publish \
+    "$DEST" "$WINDOWS_ARCHIVE_TEMP" \
+    "$WINDOWS_ARCHIVE" "$WINDOWS_ARCHIVE_MANIFEST" \
+    "$WINDOWS_ARCHIVE_MANIFEST_TEMP"
 
   # Keep the expanded tree out of the Windows build workspace as a second
   # guard against accidentally reintroducing thousands of WiX components.
@@ -281,90 +296,16 @@ fi
 prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 
-echo "==> copying standalone tree → $DEST"
-rm -rf "$DEST"
-mkdir -p "$DEST"
-# Skip the standalone's broken pnpm-style node_modules; we'll bring in the
-# locked, dereferenced pnpm one instead.
-(cd "$STANDALONE" && find . -mindepth 1 -maxdepth 1 ! -name node_modules \
-   -exec cp -a {} "$DEST/" \;)
+echo "==> assembling traced sidecar runtime → $DEST"
+node "$ROOT/scripts/sidecar-runtime-closure.mjs" \
+  "$ROOT" "$STANDALONE" "$PNPM_STAGE/node_modules" "$DEST"
 
-echo "==> grafting locked node_modules → $DEST/node_modules"
-cp -aL "$PNPM_STAGE/node_modules" "$DEST/node_modules"
+echo "==> pruning sidecar runtime for the release target"
+prune_foreign_native_packages "$DEST/node_modules"
 fix_node_pty_spawn_helpers "$DEST/node_modules"
 
-# The standalone tree's server.js is Next's generated entrypoint — it serves
-# the app but has no /api/pty-ws websocket bridge, so the terminal cannot
-# reach a shell through the sidecar. Ship the custom server (server.ts →
-# server.mjs, produced by `pnpm build:server` inside `pnpm build` above);
-# the Tauri launcher prefers server.mjs when present.
-echo "==> shipping custom PTY-bridge server → $DEST/server.mjs"
-if [ ! -f "$ROOT/server.mjs" ]; then
-  echo "ERROR: $ROOT/server.mjs missing after build — build:server should have produced it" >&2
-  exit 1
-fi
-cp "$ROOT/server.mjs" "$DEST/server.mjs"
-
-# But Next.js's compiled server.js can require the standalone's own internal
-# next package layout. Merge any package the standalone shipped that the
-# locked production install did not include (rare, but cheap to do).
-if [ -d "$STANDALONE/node_modules" ]; then
-  echo "==> backfilling any pnpm-only packages from standalone"
-  (cd "$STANDALONE/node_modules" && find . -maxdepth 2 -mindepth 1 -type d \
-     ! -path "./.pnpm*" -print0 2>/dev/null \
-     | while IFS= read -r -d '' pkg; do
-        rel="${pkg#./}"
-        if [ ! -e "$DEST/node_modules/$rel" ]; then
-          mkdir -p "$DEST/node_modules/$(dirname "$rel")"
-          cp -aL "$STANDALONE/node_modules/$rel" \
-            "$DEST/node_modules/$rel" 2>/dev/null || true
-        fi
-      done)
-fi
-
-if [ -d "$STATIC" ]; then
-  mkdir -p "$DEST/.next/static"
-  echo "==> copying .next/static → $DEST/.next/static"
-  cp -a "$STATIC/." "$DEST/.next/static/"
-fi
-
-# Next.js + pnpm also drops symlinks under .next/node_modules/ that point at
-# ../../node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> (e.g. shiki,
-# oniguruma-to-es). After we swap in the locked top-level node_modules
-# above, those symlinks dangle, and Tauri's resource glob rejects the bundle
-# with `resource path doesn't exist`. Resolve each into a real directory.
-if [ -d "$DEST/.next/node_modules" ]; then
-  echo "==> resolving dangling pnpm symlinks in .next/node_modules"
-  while IFS= read -r link; do
-    # Only patch dangling symlinks (non-dangling ones are fine as-is).
-    if [ -e "$link" ]; then
-      continue
-    fi
-    # Strip the trailing -<16hex> webpack-content-hash suffix
-    pkg="$(basename "$link" | sed -E 's/-[a-f0-9]{16}$//')"
-    src=""
-    if [ -d "$PNPM_STAGE/node_modules/$pkg" ]; then
-      src="$PNPM_STAGE/node_modules/$pkg"
-    elif [ -d "$ROOT/node_modules/$pkg" ]; then
-      src="$ROOT/node_modules/$pkg"
-    fi
-    if [ -n "$src" ] && [ -d "$src" ]; then
-      rm -f "$link"
-      cp -aL "$src" "$link"
-      echo "    resolved $(basename "$link") ← $pkg"
-    else
-      echo "    ! could not resolve $(basename "$link") (pkg=$pkg)" >&2
-    fi
-  done < <(find "$DEST/.next/node_modules" -mindepth 1 -maxdepth 1 -type l)
-fi
-
-if [ -d "$PUBLIC" ]; then
-  mkdir -p "$DEST/public"
-  echo "==> copying public/ → $DEST/public"
-  cp -a "$PUBLIC/." "$DEST/public/"
-fi
-
 prune_sidecar_nonruntime_files "$DEST"
+node "$ROOT/scripts/sidecar-runtime-closure.mjs" --verify "$DEST"
 
 # Sanity check
 for must in node_modules/@next/env node_modules/@swc/helpers/_; do

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readdir, stat, writeFile } from "node:fs/promises";
+import { lstat, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const SIDECAR_ARCHIVE_BUDGETS = Object.freeze({
-  archiveBytes: 256 * 1024 * 1024,
-  unpackedBytes: 768 * 1024 * 1024,
-  fileCount: 50_000,
+  archiveBytes: 80 * 1024 * 1024,
+  unpackedBytes: 200 * 1024 * 1024 - 1,
+  fileCount: 4_999,
 });
 
 async function sha256File(file) {
@@ -75,13 +75,42 @@ export async function writeSidecarArchiveManifest(sourceRoot, archivePath, outpu
   return manifest;
 }
 
+export async function publishSidecarArchive(
+  sourceRoot,
+  temporaryArchivePath,
+  archivePath,
+  manifestPath,
+  temporaryManifestPath = `${manifestPath}.${process.pid}.tmp`,
+) {
+  try {
+    const manifest = await writeSidecarArchiveManifest(sourceRoot, temporaryArchivePath, temporaryManifestPath);
+    // Both files are fully written, hashed, and budgeted before either public
+    // path changes. Publish the manifest last so readers never accept a new
+    // archive using stale integrity metadata.
+    await rename(temporaryArchivePath, archivePath);
+    await rename(temporaryManifestPath, manifestPath);
+    return manifest;
+  } catch (error) {
+    await Promise.all([
+      rm(temporaryArchivePath, { force: true }),
+      rm(temporaryManifestPath, { force: true }),
+    ]);
+    throw error;
+  }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [sourceRoot, archivePath, outputPath] = process.argv.slice(2);
-  if (!sourceRoot || !archivePath || !outputPath) {
-    console.error("usage: sidecar-archive-manifest.mjs <source-root> <archive> <manifest>");
+  const publish = process.argv[2] === "--publish";
+  const args = process.argv.slice(publish ? 3 : 2);
+  if (args.length !== (publish ? 5 : 3)) {
+    console.error(
+      "usage: sidecar-archive-manifest.mjs [--publish] <source-root> <temporary-archive> [archive] <manifest> [temporary-manifest]",
+    );
     process.exit(2);
   }
-  const manifest = await writeSidecarArchiveManifest(sourceRoot, archivePath, outputPath);
+  const manifest = publish
+    ? await publishSidecarArchive(args[0], args[1], args[2], args[3], args[4])
+    : await writeSidecarArchiveManifest(args[0], args[1], args[2]);
   console.log(
     `==> Windows sidecar archive: ${manifest.fileCount} files, ${manifest.unpackedBytes} bytes expanded, ${manifest.archiveBytes} bytes compressed`,
   );

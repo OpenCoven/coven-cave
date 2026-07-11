@@ -97,9 +97,9 @@ async function main() {
     const archive = path.join(archiveDir, "server.tar.gz");
     const manifest = JSON.parse(await readFile(path.join(archiveDir, "manifest.json"), "utf8"));
     assert.equal(manifest.schemaVersion, 1);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 50_000);
-    assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 256 * 1024 * 1024);
-    assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes <= 768 * 1024 * 1024);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount < 5_000);
+    assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
+    assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
     const extraction = spawnSync("tar", ["-xzf", archive, "-C", extractedSidecarRoot], {
       encoding: "utf8",
@@ -110,6 +110,33 @@ async function main() {
     sidecarRoot = extractedSidecarRoot;
   }
   const sidecarServer = path.join(sidecarRoot, "server.mjs");
+  for (const requiredPath of [
+    ".agents/skills/run-cave-app/SKILL.md",
+    ".next/BUILD_ID",
+    "marketplace/catalog.json",
+    "marketplace/marketplace.json",
+    "marketplace/plugins/github/plugin.json",
+    "marketplace/plugins/prompt-pack-essentials/plugin.json",
+    "public/sandbox/react-runtime.js",
+    "public/sandbox/tailwind.js",
+    "vault.yaml",
+    "workflows/release-review.yaml",
+  ]) {
+    await access(path.join(sidecarRoot, requiredPath));
+  }
+  for (const forbiddenRoot of [
+    ".beads",
+    ".claude",
+    ".codex",
+    "apps",
+    "docs",
+    "marketplace/craft-sources",
+    "screenshots",
+    "src",
+    "tests",
+  ]) {
+    await assert.rejects(access(path.join(sidecarRoot, forbiddenRoot)), { code: "ENOENT" });
+  }
   await access(sidecarServer);
   await access(bundledNode);
 
@@ -171,6 +198,60 @@ async function main() {
     assert.equal(meta.format, "png");
     assert.equal(meta.width, 256, "avatar should be downscaled to the packaged route max dimension");
     assert.equal(meta.height, 128, "avatar should preserve aspect ratio during sidecar transcode");
+
+    const marketplaceResponse = await fetch(`${baseUrl}/api/marketplace`, {
+      headers: { "x-coven-cave-token": token },
+    });
+    assert.equal(marketplaceResponse.status, 200, "packaged marketplace API must load its bundled catalog");
+    const marketplace = await marketplaceResponse.json();
+    assert.ok(marketplace.ok && marketplace.plugins.length > 0, "packaged marketplace catalog must not be empty");
+
+    const promptPackResponse = await fetch(`${baseUrl}/api/marketplace/pack-prompts?id=prompt-pack-essentials`, {
+      headers: { "x-coven-cave-token": token },
+    });
+    assert.equal(promptPackResponse.status, 200, "packaged prompt packs must resolve from marketplace/plugins");
+    const promptPack = await promptPackResponse.json();
+    assert.ok(promptPack.ok && promptPack.prompts.length > 0, "packaged prompt pack content must not be empty");
+
+    const installResponse = await fetch(`${baseUrl}/api/marketplace/install`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: baseUrl,
+        "x-coven-cave-token": token,
+      },
+      body: JSON.stringify({ id: "github" }),
+    });
+    assert.equal(installResponse.status, 200, "packaged marketplace install must read the retained plugin manifest");
+    assert.equal((await installResponse.json()).ok, true);
+    const uninstallResponse = await fetch(`${baseUrl}/api/marketplace/uninstall`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: baseUrl,
+        "x-coven-cave-token": token,
+      },
+      body: JSON.stringify({ id: "github" }),
+    });
+    assert.equal(uninstallResponse.status, 200, "packaged marketplace uninstall must resolve the retained catalog");
+    assert.equal((await uninstallResponse.json()).ok, true);
+
+    const craftPlanResponse = await fetch(`${baseUrl}/api/marketplace/crafts/plan?id=seekers-lens`, {
+      headers: { "x-coven-cave-token": token },
+    });
+    assert.equal(craftPlanResponse.status, 200, "craft install planning must not depend on excluded craft sources");
+    assert.equal((await craftPlanResponse.json()).ok, true);
+
+    const workflowsResponse = await fetch(`${baseUrl}/api/workflows`, {
+      headers: { "x-coven-cave-token": token },
+    });
+    assert.equal(workflowsResponse.status, 200, "packaged workflows API must load its bundled seeds");
+    const workflows = await workflowsResponse.json();
+    assert.ok(workflows.ok && workflows.workflows.length > 0, "packaged workflow seeds must not be empty");
+
+    const sandboxResponse = await fetch(`${baseUrl}/sandbox/react-runtime.js`);
+    assert.equal(sandboxResponse.status, 200, "packaged sandbox runtime must be served from public assets");
+    assert.match(await sandboxResponse.text(), /generated; do not edit/);
     console.log(`sidecar-runtime-smoke: ok on ${process.platform}/${process.arch} (${baseUrl})`);
   } catch (err) {
     console.error(output.dump());

@@ -6,11 +6,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [src, baseConfigSource, windowsConfigSource, manifestSource] = await Promise.all([
+const [src, baseConfigSource, windowsConfigSource, manifestSource, closureSource] = await Promise.all([
   readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
+  readFile(new URL("./sidecar-runtime-closure.mjs", import.meta.url), "utf8"),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
@@ -18,17 +19,49 @@ const windowsConfig = JSON.parse(windowsConfigSource);
 // Must use locked pnpm install (frozen lockfile prevents supply chain attacks)
 assert.match(src, /pnpm install --prod --frozen-lockfile/, "sidecar must install from locked pnpm lockfile");
 
-// Must dereference symlinks when copying node_modules (-L flag)
-assert.match(src, /cp -aL.*node_modules/, "node_modules copy must dereference symlinks (-aL) to prevent symlink attacks");
-
 // Must NOT use npm install (unlocked, not reproducible)
 assert.doesNotMatch(src, /(?<!p)npm install(?! --lockfile-version)/, "sidecar must not use unlocked npm install");
 
 // PNPM_STAGE must be used as the source for the final node_modules
 assert.match(src, /PNPM_STAGE.*node_modules/, "final node_modules must come from PNPM_STAGE (locked install)");
 
-// Security: must not blindly copy symlinks from STANDALONE into bundle
-assert.match(src, /cp -aL/, "all node_modules copies must dereference symlinks");
+// Security: dependency links are resolved only when their target remains in
+// the locked workspace/staging roots. The resulting runtime must contain no
+// links before it reaches the archive or platform signer.
+assert.match(closureSource, /realpath\(source\)/, "dependency links must be resolved before copying");
+assert.match(closureSource, /sidecar dependency link escapes its allowed roots/, "dependency links must be confined");
+assert.match(closureSource, /sidecar runtime must not contain links/, "assembled runtime must reject surviving links");
+
+// Runtime size: assemble the union of Next's NFT traces and explicit dynamic
+// packages/data, never the standalone repository root or full prod install.
+assert.match(src, /sidecar-runtime-closure\.mjs/, "sidecar must use the traced runtime closure assembler");
+assert.doesNotMatch(src, /cp -aL "\$PNPM_STAGE\/node_modules" "\$DEST\/node_modules"/, "sidecar must not graft every production dependency");
+assert.match(closureSource, /\.nft\.json/, "runtime closure must consume Next file traces");
+for (const runtimeRoot of [
+  ".agents/skills",
+  "marketplace/catalog.json",
+  "marketplace/exports",
+  "marketplace/marketplace.json",
+  "marketplace/plugins",
+  "public",
+  "workflows",
+  "vault.yaml",
+]) {
+  assert.match(closureSource, new RegExp(runtimeRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime allowlist must retain ${runtimeRoot}`);
+}
+for (const forbiddenRoot of [
+  ".beads",
+  ".claude",
+  ".codex",
+  "marketplace/craft-sources",
+  "screenshots",
+  "src",
+  "tests",
+]) {
+  assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
+}
+assert.match(closureSource, /fileCount: 4_999/, "runtime closure must stay below 5,000 files");
+assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are
 // useful only while developing or debugging the build machine.
@@ -103,9 +136,12 @@ assert.ok(
 );
 assert.match(src, /WINDOWS_ARCHIVE/, "Windows sidecar must be emitted as a tar.gz archive");
 assert.match(src, /sidecar-archive-manifest\.mjs/, "archive generation must emit its integrity and size manifest");
-assert.match(manifestSource, /archiveBytes: 256 \* 1024 \* 1024/, "archive size must have a 256 MiB hard budget");
-assert.match(manifestSource, /unpackedBytes: 768 \* 1024 \* 1024/, "expanded runtime must have a 768 MiB hard budget");
-assert.match(manifestSource, /fileCount: 50_000/, "archive entry count must have a hard budget");
+assert.match(src, /\.server\.tar\.gz\.\$\$\.tmp/, "archive generation must use a same-directory staging path");
+assert.match(src, /sidecar-archive-manifest\.mjs" --publish/, "verified archive publication must use the atomic publisher");
+assert.match(manifestSource, /rename\(temporaryArchivePath, archivePath\)[\s\S]*rename\(temporaryManifestPath, manifestPath\)/, "archive must publish only after verification and manifest must publish last");
+assert.match(manifestSource, /archiveBytes: 80 \* 1024 \* 1024/, "archive size must stay within the 80 MiB target");
+assert.match(manifestSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "expanded runtime must stay strictly below the 200 MiB target");
+assert.match(manifestSource, /fileCount: 4_999/, "archive must stay below 5,000 files");
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");
 assert.match(
   src,
