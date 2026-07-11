@@ -1646,8 +1646,12 @@ fn shell_open_path(path: String) -> Result<(), String> {
 fn shell_pick_directory() -> Result<Option<String>, String> {
     #[cfg(target_os = "macos")]
     {
+        // `tell app "System Events" ... activate` pulls the picker to the
+        // foreground so it isn't summoned behind Cave's window (issue #2614b).
         let output = std::process::Command::new("osascript")
             .args([
+                "-e",
+                "tell application \"System Events\" to activate",
                 "-e",
                 "POSIX path of (choose folder with prompt \"Choose a folder for CovenCave\")",
             ])
@@ -1666,7 +1670,12 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
 
     #[cfg(target_os = "windows")]
     {
-        let script = r#"Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose a folder for CovenCave'; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($d.SelectedPath) }"#;
+        // A bare FolderBrowserDialog has no owner window, so Windows opens it
+        // *behind* every other window, unfocused, with no taskbar entry — it
+        // looks like the click did nothing (issue #2614b). Give it a TopMost,
+        // ShowInTaskbar owner form (created off-screen) and pass that form as
+        // the ShowDialog owner so the picker is summoned to the foreground.
+        let script = r#"Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.TopMost = $true; $owner.ShowInTaskbar = $false; $owner.StartPosition = 'Manual'; $owner.Location = New-Object System.Drawing.Point(-32000, -32000); $owner.Size = New-Object System.Drawing.Size(1, 1); $owner.Show(); $owner.Activate(); $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Choose a folder for CovenCave'; $result = $d.ShowDialog($owner); $owner.Close(); if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($d.SelectedPath) }"#;
         let output = std::process::Command::new("powershell.exe")
             .args(["-NoProfile", "-Sta", "-Command", script])
             .output()
@@ -1688,6 +1697,7 @@ fn shell_pick_directory() -> Result<Option<String>, String> {
             .args([
                 "--file-selection",
                 "--directory",
+                "--modal",
                 "--title",
                 "Choose a folder for CovenCave",
             ])
@@ -1761,6 +1771,30 @@ mod shell_open_tests {
         assert_eq!(super::normalize_picked_directory("").unwrap(), None);
         assert!(super::normalize_picked_directory("relative/path").is_err());
         assert!(super::normalize_picked_directory(&file!()).is_err());
+    }
+
+    // #2614b: the native folder picker must be summoned to the foreground, not
+    // opened behind Cave's window. Guard the parenting/activation on each
+    // platform's picker invocation so a future edit can't silently regress it.
+    #[test]
+    fn folder_picker_is_summoned_to_the_foreground() {
+        let src = include_str!("lib.rs");
+        // Windows: the FolderBrowserDialog gets a TopMost owner form passed to
+        // ShowDialog so it can't open buried/unfocused.
+        assert!(
+            src.contains("$owner.TopMost = $true") && src.contains("$d.ShowDialog($owner)"),
+            "the Windows folder picker must own its dialog with a TopMost form (foreground)",
+        );
+        // macOS: activate before `choose folder` so it comes to the front.
+        assert!(
+            src.contains("tell application \\\"System Events\\\" to activate"),
+            "the macOS folder picker must activate System Events before choosing",
+        );
+        // Linux: the zenity picker runs modal.
+        assert!(
+            src.contains("--file-selection") && src.contains("--modal"),
+            "the Linux (zenity) folder picker must run modal",
+        );
     }
 }
 

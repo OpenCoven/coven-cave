@@ -181,3 +181,27 @@ assert.doesNotMatch(
   /projectRoot: activeProjectRoot,/,
   "ChatView must not echo the raw activeProjectRoot (session cwd) as an explicit projectRoot",
 );
+
+// ── #2618: a failed chat send keeps the user in-chat with the message preserved,
+// and the coven-CLI-missing case offers a soft "Open Setup" link (overlay, not a
+// hard navigation to the wizard). ──────────────────────────────────────────────
+assert.match(
+  source,
+  /setLastFailedSend\(request\);/,
+  "a failed send preserves the request so the composer message can be retried",
+);
+assert.match(
+  source,
+  /const covenMissing = useMemo\(\s*\(\) => \/coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
+  "the error strip detects the coven-CLI-missing failure class",
+);
+assert.match(
+  source,
+  /onOpenSetup=\{\(\) => window\.dispatchEvent\(new CustomEvent\("cave:onboarding-open"\)\)\}/,
+  "Open Setup opens the wizard as a soft overlay event, never a route change",
+);
+assert.doesNotMatch(
+  source,
+  /router\.(push|replace)\([`"'][^`"']*onboard/i,
+  "a send failure must never hard-navigate the router to onboarding",
+);

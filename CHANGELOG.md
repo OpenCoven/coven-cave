@@ -11,6 +11,10 @@ breaking config changes; patch releases stay additive.
 - **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-and-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keeps it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937).
 - **Chat: split panes** — drag a conversation from the thread rail onto the chat surface to snap it left / right / above / below the current chat as a resizable pane. Each secondary pane carries a slim header (title · open as main · ✕); opening a pane's thread as the primary chat collapses it back out of the strip. Desktop full-width chat only.
 
+### Fixes
+- **Folder picker is summoned to the foreground** — the native "choose a folder" dialog no longer opens hidden behind the window. On Windows the `FolderBrowserDialog` now gets a `TopMost` owner form so it comes forward focused; macOS activates System Events before `choose folder`; Linux runs zenity modal (#2614).
+- **A failed chat send keeps you in the conversation** — when the coven CLI can't be resolved from the app's environment, the send failure now surfaces as an inline error strip with your message preserved for one-click Retry and a soft "Open Setup" link (wizard overlay, not a hard navigation) instead of eating the message and bouncing to Setup (#2618).
+
 ## [0.0.174] - 2026-07-11
 
 > 💬 **Copilot chats natively, cleaner Windows packaging, and the Grimoire becomes Memories.** Copilot (and other manifest adapters) now render their replies correctly in chat, the packaged Windows sidecar runtime is pruned and MSI publication is gated, and the knowledge surface is renamed Memories.
