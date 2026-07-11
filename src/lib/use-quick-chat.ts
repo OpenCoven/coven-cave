@@ -9,6 +9,11 @@
 // starts a fresh thread; `newThread()` clears the current one on demand.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CaveProject } from "@/lib/cave-projects-types";
+import {
+  stripPreviewOnlyAttachmentFieldsKeepingImages,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
 import {
   COMMAND_CONTROL_DEFAULTS,
   type CommandResponseSpeed,
@@ -17,6 +22,7 @@ import {
 import { resolveQuickChatTarget, type QuickChatTarget } from "@/lib/quick-chat";
 import { streamFamiliarText } from "@/lib/familiar-stream";
 import type { Familiar } from "@/lib/types";
+import { useProjects } from "@/lib/use-projects";
 
 const LAST_FAMILIAR_KEY = "cave.quick-chat.last-familiar";
 
@@ -46,10 +52,24 @@ export type QuickChatMessage = {
   id: string;
   role: QuickChatRole;
   text: string;
+  /** Files that rode with a user turn (shown as a chip line in the bubble). */
+  attachments?: ChatAttachment[];
   /** Assistant turn still streaming in. */
   pending?: boolean;
   /** Per-turn error (the familiar failed / reported an error). */
   error?: string | null;
+  /** Local note (slash-command output like /help) — rendered as an assistant
+   *  turn but never sent to the daemon, never a regenerate anchor, and never
+   *  a reply-recommendation trigger. */
+  local?: boolean;
+};
+
+/** A message parked while a reply streams — auto-sent (in order) when the
+ *  in-flight turn settles naturally. Stop parks the queue. */
+export type QueuedQuickChatMessage = {
+  id: string;
+  text: string;
+  attachments?: ChatAttachment[];
 };
 
 export type UseQuickChat = {
@@ -57,6 +77,10 @@ export type UseQuickChat = {
   selectedFamiliarId: string | null;
   setSelectedFamiliarId: (id: string | null) => void;
   selectedFamiliar: Familiar | null;
+  projects: CaveProject[];
+  projectsLoading: boolean;
+  selectedProjectRoot: string | null;
+  setSelectedProjectRoot: (root: string | null) => void;
   draft: string;
   setDraft: (value: string) => void;
   /** The conversation so far — user + streamed familiar turns. */
@@ -71,7 +95,23 @@ export type UseQuickChat = {
   setThinkingEffort: (value: CommandThinkingEffort) => void;
   responseSpeed: CommandResponseSpeed;
   setResponseSpeed: (value: CommandResponseSpeed) => void;
-  send: () => Promise<void>;
+  /** Send the draft (plus any staged attachments). While a reply is already
+   *  streaming the message is QUEUED instead of dropped, and auto-sends when
+   *  the turn settles naturally. */
+  send: (attachments?: ChatAttachment[]) => Promise<void>;
+  /** Send an explicit text through the same pipeline as `send` (slash-command
+   *  dispatch — e.g. a resolved skill invocation). Clears the draft. */
+  sendText: (raw: string, attachments?: ChatAttachment[]) => Promise<void>;
+  /** Messages waiting behind the in-flight turn, in send order. */
+  queued: QueuedQuickChatMessage[];
+  removeQueued: (id: string) => void;
+  /** Append a local assistant-styled note (slash-command output). Never
+   *  touches the daemon session. */
+  note: (text: string) => void;
+  /** Per-thread model override set via /model; cleared by newThread and when
+   *  the thread's familiar changes. */
+  modelOverride: string | null;
+  setModelOverride: (id: string | null) => void;
   cancel: () => void;
   /** Clear the conversation (keeps the familiar + control choices). */
   newThread: () => void;
@@ -96,6 +136,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const enabled = options?.enabled ?? true;
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(null);
+  const [selectedProjectRoot, setSelectedProjectRoot] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<QuickChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +170,8 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // without threading it through a state updater.
   const selectedIdRef = useRef<string | null>(selectedFamiliarId);
   selectedIdRef.current = selectedFamiliarId;
+  const selectedProjectRootRef = useRef<string | null>(selectedProjectRoot);
+  selectedProjectRootRef.current = selectedProjectRoot;
   // Roster-load bookkeeping: fire once (latched on `enabled`), abort via the
   // effect's own cleanup. `rosterLoadedRef` marks a COMPLETED load so the
   // cleanup can tell "hide mid-fetch" (un-latch, the re-run must refetch)
@@ -137,6 +180,37 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const rosterLoadedRef = useRef(false);
 
   const nextId = useCallback((prefix: string) => `${prefix}-${msgSeqRef.current++}`, []);
+  const { projects, loading: projectsLoading } = useProjects({ familiarId: selectedFamiliarId });
+
+  // Per-thread /model override — ref-mirrored so deliver() reads the latest
+  // without re-identity, cleared whenever the thread resets or swaps familiar
+  // (the override belongs to this thread's harness).
+  const [modelOverride, setModelOverrideState] = useState<string | null>(null);
+  const modelOverrideRef = useRef<string | null>(null);
+  const setModelOverride = useCallback((id: string | null) => {
+    modelOverrideRef.current = id;
+    setModelOverrideState(id);
+  }, []);
+
+  // Local assistant-styled note (slash-command output like /help). Marked
+  // `local` so it never anchors regenerate or a reply recommendation.
+  const note = useCallback(
+    (text: string) => {
+      setMessages((prev) => [...prev, { id: nextId("n"), role: "assistant" as const, text, local: true }]);
+    },
+    [nextId],
+  );
+
+  // Messages queued behind an in-flight turn (ref-mirrored: the drain runs
+  // inside the send chain, where state would be stale).
+  const [queued, setQueued] = useState<QueuedQuickChatMessage[]>([]);
+  const queuedRef = useRef<QueuedQuickChatMessage[]>([]);
+  const removeQueued = useCallback((id: string) => {
+    queuedRef.current = queuedRef.current.filter((item) => item.id !== id);
+    setQueued(queuedRef.current);
+  }, []);
+  // Files that rode with the last user turn, so regenerate() re-sends them.
+  const lastUserAttachmentsRef = useRef<ChatAttachment[]>([]);
 
   // Clear the conversation; keeps the familiar + control choices intact.
   const newThread = useCallback(() => {
@@ -145,6 +219,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     sessionIdRef.current = null;
     threadFamiliarRef.current = null;
     lastUserPromptRef.current = "";
+    lastUserAttachmentsRef.current = [];
+    modelOverrideRef.current = null;
+    queuedRef.current = [];
+    setQueued([]);
+    setModelOverrideState(null);
     setSessionId(null);
     setMessages([]);
     setError(null);
@@ -219,13 +298,25 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
     [familiars, selectedFamiliarId],
   );
+  useEffect(() => {
+    if (!selectedProjectRootRef.current) return;
+    if (projects.some((project) => project.root === selectedProjectRootRef.current)) return;
+    selectedProjectRootRef.current = null;
+    setSelectedProjectRoot(null);
+  }, [projects]);
 
   // Stream one reply for a resolved target, appending a pending assistant turn
   // and filling it as tokens arrive. `resume` continues the current daemon
-  // session so follow-ups keep their context.
+  // session so follow-ups keep their context. Returns how the turn ended so
+  // the send chain knows whether to drain the queue: "done" is a natural
+  // completion; "stopped" is an abort or a failure (both park the queue).
   const deliver = useCallback(
-    async (target: QuickChatTarget, resume: boolean) => {
-      if (!target.familiarId) return;
+    async (
+      target: QuickChatTarget,
+      resume: boolean,
+      attachments: ChatAttachment[] = [],
+    ): Promise<"done" | "stopped"> => {
+      if (!target.familiarId) return "stopped";
       const assistantId = nextId("a");
       const controller = new AbortController();
       abortRef.current = controller;
@@ -240,9 +331,21 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         result = await streamFamiliarText({
           familiarId: target.familiarId,
           prompt: target.prompt,
+          projectRoot: selectedProjectRoot ?? undefined,
+          // Staged files: the bridge composes the prompt (text inlined, image
+          // payloads written to temp files the harness can Read) — send-body
+          // stripping mirrors the main chat composer.
+          ...(attachments.length
+            ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(attachments) }
+            : {}),
           sessionId: resume ? sessionIdRef.current ?? undefined : undefined,
           reasoningEffort: thinkingEffort,
           responseSpeed,
+          // /model pick — session-scoped so the resumed thread stays on the
+          // chosen model (re-sent per turn; idempotent on the bridge).
+          ...(modelOverrideRef.current
+            ? { modelOverride: modelOverrideRef.current, modelOverrideScope: "session" as const }
+            : {}),
           signal: controller.signal,
           // Capture the backing session the moment the bridge announces it —
           // if the user stops the stream mid-turn, the thread stays resumable
@@ -271,7 +374,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           ),
         );
         setSendState("idle");
-        return;
+        return "stopped";
       }
 
       if (abortRef.current === controller) abortRef.current = null;
@@ -283,41 +386,100 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
         ),
       );
       setSendState("done");
+      return "done";
     },
-    [nextId, responseSpeed, thinkingEffort],
+    [nextId, responseSpeed, selectedProjectRoot, thinkingEffort],
   );
 
-  const send = useCallback(async () => {
-    // One turn in flight at a time — a second Send/Enter while streaming would
-    // race the abort bookkeeping and duplicate turns.
-    if (abortRef.current) return;
-    const target = resolveQuickChatTarget(draft, familiars, selectedFamiliarId);
-    setError(target.error);
-    if (target.error || !target.familiarId) return;
+  // Full send pipeline for an explicit text — `send()` feeds it the draft;
+  // slash dispatch (skill invocations) feeds it a built prompt directly.
+  // Self-reference (assigned below) so the queue drain re-enters the pipeline
+  // without a stale closure.
+  const sendTextRef = useRef<(raw: string, attachments?: ChatAttachment[]) => Promise<void>>(
+    async () => {},
+  );
+  const sendText = useCallback(
+    async (raw: string, attachments: ChatAttachment[] = []) => {
+      // A turn is already streaming: QUEUE the message instead of dropping it
+      // (the old behavior) — it auto-sends, in order, when the reply settles
+      // naturally. Stop parks the queue, so a cancel never fires a surprise
+      // follow-up; the next manual send resumes draining.
+      if (abortRef.current) {
+        if (!raw.trim() && attachments.length === 0) return;
+        const item: QueuedQuickChatMessage = {
+          id: nextId("q"),
+          text: raw,
+          ...(attachments.length ? { attachments } : {}),
+        };
+        queuedRef.current = [...queuedRef.current, item];
+        setQueued(queuedRef.current);
+        setDraft("");
+        return;
+      }
+      const target = resolveQuickChatTarget(raw, familiars, selectedFamiliarId);
+      // Attachment-only sends are legal — the bridge builds a "review the
+      // attached files" prompt server-side. Only the empty-prompt error is
+      // forgiven; an unknown @mention or an empty roster still surfaces.
+      const blocking =
+        target.error && !(target.familiarId && attachments.length > 0) ? target.error : null;
+      setError(blocking);
+      if (blocking || !target.familiarId) return;
 
-    // A leading @mention (or picker change) that swaps familiar starts a fresh
-    // thread — a resumed session belongs to the previous familiar.
-    const sameFamiliar = threadFamiliarRef.current === target.familiarId;
-    const resume = sameFamiliar && sessionIdRef.current != null;
-    if (!sameFamiliar) {
-      sessionIdRef.current = null;
-      setSessionId(null);
-      if (threadFamiliarRef.current) setMessages([]);
-    }
-    threadFamiliarRef.current = target.familiarId;
-    // Targeting a familiar by @mention is as deliberate as picking it in the
-    // dropdown — stop following the workspace-active familiar afterwards.
-    if (target.mention) userPickedRef.current = true;
+      // A leading @mention (or picker change) that swaps familiar starts a fresh
+      // thread — a resumed session belongs to the previous familiar.
+      const sameFamiliar = threadFamiliarRef.current === target.familiarId;
+      const resume = sameFamiliar && sessionIdRef.current != null;
+      if (!sameFamiliar) {
+        sessionIdRef.current = null;
+        setSessionId(null);
+        if (threadFamiliarRef.current) setMessages([]);
+        // A /model pick belongs to the previous thread's harness.
+        modelOverrideRef.current = null;
+        setModelOverrideState(null);
+      }
+      threadFamiliarRef.current = target.familiarId;
+      // Targeting a familiar by @mention is as deliberate as picking it in the
+      // dropdown — stop following the workspace-active familiar afterwards.
+      if (target.mention) userPickedRef.current = true;
 
-    const userText = draft.trim();
-    lastUserPromptRef.current = draft;
-    setDraft("");
-    setSelectedFamiliarId(target.familiarId);
-    writeLastFamiliar(target.familiarId);
-    setMessages((prev) => [...prev, { id: nextId("u"), role: "user", text: userText }]);
+      const userText = raw.trim();
+      lastUserPromptRef.current = raw;
+      lastUserAttachmentsRef.current = attachments;
+      setDraft("");
+      setSelectedFamiliarId(target.familiarId);
+      writeLastFamiliar(target.familiarId);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextId("u"),
+          role: "user",
+          text: userText,
+          ...(attachments.length ? { attachments } : {}),
+        },
+      ]);
 
-    await deliver(target, resume);
-  }, [deliver, draft, familiars, nextId, selectedFamiliarId]);
+      const status = await deliver(target, resume, attachments);
+      // Natural completion drains the next queued message; a Stop or a failed
+      // turn parks the queue (its chips stay visible for remove-or-resume).
+      if (status === "done") {
+        const [next, ...rest] = queuedRef.current;
+        if (next) {
+          queuedRef.current = rest;
+          setQueued(rest);
+          await sendTextRef.current(next.text, next.attachments ?? []);
+        }
+      }
+    },
+    [deliver, familiars, nextId, selectedFamiliarId],
+  );
+  sendTextRef.current = sendText;
+
+  const send = useCallback(
+    async (attachments: ChatAttachment[] = []) => {
+      await sendText(draft, attachments);
+    },
+    [draft, sendText],
+  );
 
   const regenerate = useCallback(() => {
     const prompt = lastUserPromptRef.current;
@@ -336,7 +498,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       return prev.slice(0, cut);
     });
     const resume = threadFamiliarRef.current === target.familiarId && sessionIdRef.current != null;
-    void deliver(target, resume);
+    void deliver(target, resume, lastUserAttachmentsRef.current);
   }, [deliver, familiars, selectedFamiliarId, sendState]);
 
   const cancel = useCallback(() => {
@@ -358,12 +520,24 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     },
     [newThread],
   );
+  const pickProjectRoot = useCallback(
+    (root: string | null) => {
+      if (selectedProjectRootRef.current !== root) newThread();
+      selectedProjectRootRef.current = root;
+      setSelectedProjectRoot(root);
+    },
+    [newThread],
+  );
 
   return {
     familiars,
     selectedFamiliarId,
     setSelectedFamiliarId: pickFamiliar,
     selectedFamiliar,
+    projects,
+    projectsLoading,
+    selectedProjectRoot,
+    setSelectedProjectRoot: pickProjectRoot,
     draft,
     setDraft,
     messages,
@@ -377,6 +551,12 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     responseSpeed,
     setResponseSpeed,
     send,
+    sendText,
+    queued,
+    removeQueued,
+    note,
+    modelOverride,
+    setModelOverride,
     cancel,
     newThread,
     regenerate,

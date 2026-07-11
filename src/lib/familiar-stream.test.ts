@@ -49,6 +49,20 @@ describe("streamFamiliarText", () => {
     assert.equal(JSON.parse(bodies[1]).sessionId, "sess-9", "resume run includes sessionId");
   });
 
+  it("includes projectRoot in the request body only when provided", async () => {
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+      bodies.push(init.body ?? "");
+      return sseResponse([frame({ kind: "done" })]);
+    }) as typeof fetch;
+
+    await streamFamiliarText({ familiarId: "nova", prompt: "p" });
+    await streamFamiliarText({ familiarId: "nova", prompt: "p", projectRoot: "/tmp/project" });
+
+    assert.equal(JSON.parse(bodies[0]).projectRoot, undefined, "default quick chat omits projectRoot");
+    assert.equal(JSON.parse(bodies[1]).projectRoot, "/tmp/project", "project-scoped quick chat includes projectRoot");
+  });
+
   it("forwards command controls and model override fields when provided", async () => {
     let body = "";
     globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {

@@ -59,6 +59,42 @@ assert.match(
   "accent marks presence only — the sparkle tints while loading, never at rest",
 );
 
+// ── EnhanceControl: one combined rectangle, not two floating rounds ──────────
+// The sparkle + caret live inside a single hairline control-radius rectangle
+// split by a hairline divider — minimal, and height-matched to the hosting
+// composer's Send button via the size prop.
+assert.match(
+  source,
+  /inline-flex items-stretch overflow-hidden rounded-\[var\(--radius-control\)\] border border-\[var\(--border-hairline\)\]/,
+  "the control is one bordered control-radius rectangle wrapping both segments",
+);
+assert.match(
+  source,
+  /border-l border-\[var\(--border-hairline\)\]/,
+  "the caret segment joins through a hairline divider, not its own outline",
+);
+{
+  const controlSrc = source.slice(
+    source.indexOf("export function EnhanceControl"),
+    source.indexOf("export function EnhanceStrip"),
+  );
+  assert.doesNotMatch(
+    controlSrc,
+    /rounded-full/,
+    "no rounded-full inside the control — the pill geometry belongs to the strip only",
+  );
+}
+assert.match(
+  source,
+  /size = "md",/,
+  "the height prop defaults to the 30px composer rows; quick chat opts into sm",
+);
+assert.match(
+  source,
+  /size === "sm" \? "h-\[26px\]" : "h-\[30px\]"/,
+  'sm matches the 26px Button size="sm" Send; md the 30px icon-button rows',
+);
+
 // ── EnhanceStrip: one status row, four phases ────────────────────────────────
 assert.match(source, /if \(state\.phase === "idle"\) return null/, "the strip renders nothing at rest");
 assert.match(source, /role="status"/, "the strip is a status live region");

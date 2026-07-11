@@ -35,6 +35,8 @@ type TabDescriptor = {
   id: number;
   /** Familiar the tab opens on — inherited from the active tab at creation. */
   initialFamiliarId: string | null;
+  /** New chats opened from "+" start with agent selection visible. */
+  showAgentPicker: boolean;
 };
 
 type TabReport = {
@@ -65,7 +67,7 @@ export function TrayQuickChat() {
   }, []);
 
   const seqRef = useRef(2);
-  const [tabs, setTabs] = useState<TabDescriptor[]>([{ id: 1, initialFamiliarId: null }]);
+  const [tabs, setTabs] = useState<TabDescriptor[]>([{ id: 1, initialFamiliarId: null, showAgentPicker: false }]);
   const [activeId, setActiveId] = useState(1);
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -86,7 +88,7 @@ export function TrayQuickChat() {
   const addTab = useCallback(() => {
     const inherited = reportsRef.current[activeIdRef.current]?.familiar?.id ?? null;
     const id = seqRef.current++;
-    setTabs((prev) => [...prev, { id, initialFamiliarId: inherited }]);
+    setTabs((prev) => [...prev, { id, initialFamiliarId: inherited, showAgentPicker: true }]);
     setActiveId(id);
   }, []);
 
@@ -101,7 +103,7 @@ export function TrayQuickChat() {
     if (next.length === 0) {
       // Closing the last chat closes the quick chat itself; a fresh tab
       // (keeping the familiar) waits behind it for the next summon.
-      const fresh = { id: seqRef.current++, initialFamiliarId: dropped?.familiar?.id ?? null };
+      const fresh = { id: seqRef.current++, initialFamiliarId: dropped?.familiar?.id ?? null, showAgentPicker: false };
       setTabs([fresh]);
       setActiveId(fresh.id);
       void hideTrayWindow();
@@ -202,6 +204,7 @@ export function TrayQuickChat() {
             tabId={tab.id}
             active={tab.id === activeId}
             initialFamiliarId={tab.initialFamiliarId}
+            showAgentPicker={tab.showAgentPicker}
             onReport={handleReport}
           />
         ))}
@@ -217,11 +220,13 @@ function QuickChatTabPane({
   tabId,
   active,
   initialFamiliarId,
+  showAgentPicker,
   onReport,
 }: {
   tabId: number;
   active: boolean;
   initialFamiliarId: string | null;
+  showAgentPicker: boolean;
   onReport: (id: number, report: TabReport) => void;
 }) {
   const {
@@ -229,6 +234,10 @@ function QuickChatTabPane({
     selectedFamiliarId,
     setSelectedFamiliarId,
     selectedFamiliar,
+    projects,
+    projectsLoading,
+    selectedProjectRoot,
+    setSelectedProjectRoot,
     draft,
     setDraft,
     messages,
@@ -241,12 +250,31 @@ function QuickChatTabPane({
     responseSpeed,
     setResponseSpeed,
     send,
+    sendText,
+    queued,
+    removeQueued,
+    note,
+    modelOverride,
+    setModelOverride,
     cancel,
+    newThread,
     regenerate,
   } = useQuickChat({ preferredFamiliarId: initialFamiliarId });
 
   const sending = sendState === "sending";
   const { composerRef, pickSuggestion } = useSuggestionPicker(setDraft);
+
+  // The agent picker exists to choose a familiar — once the user picks one,
+  // the choice is made, so the picker dismisses instead of lingering until
+  // the first message.
+  const [pickerDismissed, setPickerDismissed] = useState(false);
+  const pickFamiliar = useCallback(
+    (id: string | null) => {
+      setSelectedFamiliarId(id);
+      if (id) setPickerDismissed(true);
+    },
+    [setSelectedFamiliarId],
+  );
 
   useEffect(() => {
     onReport(tabId, { familiar: selectedFamiliar, sessionId, sending });
@@ -282,12 +310,17 @@ function QuickChatTabPane({
         loading={loading}
         familiars={familiars}
         selectedFamiliarId={selectedFamiliarId}
-        onPickFamiliar={setSelectedFamiliarId}
+        onPickFamiliar={pickFamiliar}
+        projects={projects}
+        projectsLoading={projectsLoading}
+        selectedProjectRoot={selectedProjectRoot}
+        onPickProjectRoot={setSelectedProjectRoot}
         thinkingEffort={thinkingEffort}
         onThinkingEffortChange={setThinkingEffort}
         responseSpeed={responseSpeed}
         onResponseSpeedChange={setResponseSpeed}
         sending={sending}
+        showFamiliarPicker={showAgentPicker && !pickerDismissed && messages.length === 0}
       />
 
       <QuickChatThread
@@ -301,14 +334,25 @@ function QuickChatTabPane({
         error={error}
         draft={draft}
         onDraftChange={setDraft}
-        onSend={() => void send()}
+        onSend={(attachments) => void send(attachments)}
         onCancel={cancel}
         sending={sending}
         disabled={loading}
+        queued={queued}
+        onRemoveQueued={removeQueued}
         familiar={selectedFamiliar}
         inputId={`quick-chat-draft-${tabId}`}
         composerRef={composerRef}
         autoFocus={active}
+        messages={messages}
+        active={active}
+        // Slash commands (/help, /clear, /new, /model, /skill, /prompt) — the
+        // composer dispatches; these hand it the thread-owning hook methods.
+        onNewThread={newThread}
+        onLocalNote={note}
+        onSendText={(text) => void sendText(text)}
+        modelOverride={modelOverride}
+        onModelOverrideChange={setModelOverride}
         leading={
           <div className="flex min-w-0 items-center gap-1.5">
             <IconButton

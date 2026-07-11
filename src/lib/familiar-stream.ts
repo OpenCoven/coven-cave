@@ -1,3 +1,4 @@
+import type { ChatAttachment } from "./chat-attachments";
 import type { SessionOrigin } from "./types";
 // Client helper: stream a one-shot prompt to a familiar through the chat bridge
 // (`/api/chat/send`, SSE) and return the concatenated assistant text. This is the
@@ -14,7 +15,12 @@ import { parseSseFrame } from "@/lib/canvas-generate";
 export async function streamFamiliarText(opts: {
   familiarId: string;
   prompt: string;
+  /** Staged files riding with the prompt. The bridge owns composition (text
+   *  inlined, images written to temp files the harness can Read) — pass them
+   *  through pre-stripped (see stripPreviewOnlyAttachmentFieldsKeepingImages). */
+  attachments?: ChatAttachment[];
   sessionId?: string;
+  projectRoot?: string;
   reasoningEffort?: string;
   responseSpeed?: string;
   modelOverride?: string;
@@ -39,7 +45,9 @@ export async function streamFamiliarText(opts: {
       body: JSON.stringify({
         familiarId: opts.familiarId,
         prompt: opts.prompt,
+        ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
         ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+        ...(opts.projectRoot ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
         ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
