@@ -200,6 +200,8 @@ export const SUITES = {
     "src/components/chat-list-collapse.test.ts",
     "src/components/chat-router-hide-archived.test.ts",
     "src/components/chat-router-switching.test.ts",
+    "src/components/chat-split-host.test.ts",
+    "src/lib/chat-split.test.ts",
     "src/components/chat-thread-rail.test.ts",
     "src/components/chat-rail-modern-redesign.test.ts",
     "src/components/message-bubble-markdown.test.ts",
