@@ -2153,6 +2153,129 @@ textarea.required-inputs-control {
    Class prefix `.ui-` continues the issue-#22 convention.
    ============================================================ */
 
+/* ---- Field family ------------------------------------------- */
+.ui-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ui-field__label-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ui-field__label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+}
+
+.ui-field__optional {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.ui-field__description,
+.ui-field__error {
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+}
+
+.ui-field__description {
+  color: var(--text-muted);
+}
+
+.ui-field__error {
+  color: var(--color-danger);
+}
+
+.ui-field[data-invalid="true"] .ui-field__label {
+  color: var(--color-danger);
+}
+
+.ui-text-input,
+.ui-text-area {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-base);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.ui-text-input {
+  min-height: var(--space-8);
+  padding: 0 var(--space-3);
+}
+
+.ui-text-area {
+  min-height: calc(var(--space-10) * 2);
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+  line-height: var(--leading-normal);
+}
+
+.ui-text-input::placeholder,
+.ui-text-area::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.ui-text-input:hover:not(:disabled),
+.ui-text-area:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--foreground) 36%, transparent);
+}
+
+.ui-text-input:focus-visible,
+.ui-text-area:focus-visible {
+  border-color: var(--ring-focus);
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: var(--ring-offset-inset);
+}
+
+.ui-text-input[aria-invalid="true"],
+.ui-text-area[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+
+.ui-text-input[aria-invalid="true"]:focus-visible,
+.ui-text-area[aria-invalid="true"]:focus-visible {
+  outline-color: var(--color-danger);
+}
+
+.ui-text-input:disabled,
+.ui-text-area:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+}
+
+.ui-text-input:read-only:not(:disabled),
+.ui-text-area:read-only:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .ui-text-input,
+  .ui-text-area {
+    min-height: var(--touch-target);
+    font-size: 16px;
+  }
+}
+
 /* ---- Button ------------------------------------------------- */
 .ui-btn {
   display: inline-flex;
@@ -3063,26 +3186,6 @@ textarea.required-inputs-control {
   line-height: 1;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
-}
-
-/* ---- AvatarLightbox trigger -------------------------------- */
-/* Shared reset for the "click to enlarge" avatar button (AvatarLightbox). The
-   caller owns the inline avatar inside; this strips all button chrome so the
-   avatar looks identical whether or not it is expandable, and only adds the
-   zoom cursor. Focus styling comes from the composed `.focus-ring` utility. */
-.cave-avatar-lightbox-trigger {
-  display: inline-flex;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  line-height: 0;
-  border-radius: inherit;
-  cursor: zoom-in;
-  -webkit-appearance: none;
-  appearance: none;
 }
 
 /* ---- ThinkingIndicator ------------------------------------- */
@@ -11095,7 +11198,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-table__col-state { width: 13%; }
 .fa-thread-table__col-detail { width: 33%; }
 .fa-thread-table__col-count { width: 9%; }
-.fa-thread-table__col-actions { width: 84px; }
+.fa-thread-table__col-actions { width: 168px; }
 .fa-thread-table thead th {
   position: sticky;
   top: 0;
@@ -12253,6 +12356,29 @@ details[open] > .cave-edit-card__summary::before {
   background: color-mix(in oklch, var(--accent-presence, var(--accent)) 6%, transparent);
   font-size: 11.5px;
   color: var(--text-secondary);
+}
+.quick-chat-queued__steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.quick-chat-queued__steer[aria-disabled="true"] {
+  cursor: default;
+}
+.quick-chat-queued__steer:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+  border-radius: calc(var(--radius-control) - 2px);
 }
 .quick-chat-queued__text {
   flex: 1 1 auto;

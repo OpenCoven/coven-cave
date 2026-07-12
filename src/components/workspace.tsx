@@ -6,6 +6,7 @@ import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed } from "@/lib/inbox-feed";
 import { sameSessionList } from "@/lib/session-list-equal";
+import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
@@ -2278,6 +2279,7 @@ export function Workspace() {
       }}
       onDeleteSession={async (session) => {
         await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        invalidateConversation(session.id);
         await loadSessions();
       }}
       scheduledCount={scheduleNeedsCount}

@@ -154,8 +154,38 @@ pub struct PtyExitEvent {
 }
 
 #[tauri::command]
-pub fn pty_start(app: AppHandle, webview: Webview, options: StartOptions) -> Result<(), String> {
+pub async fn pty_start(
+    app: AppHandle,
+    webview: Webview,
+    options: StartOptions,
+) -> Result<(), String> {
+    // Authenticate against the caller's current main-WebView URL before any
+    // blocking work is dispatched. The worker receives no Webview handle or
+    // authority-bearing renderer state.
     ensure_trusted_pty_caller(&webview)?;
+
+    // Tauri dispatches synchronous commands inline from WebView2's
+    // WebResourceRequested callback on Windows. ConPTY creation and process
+    // startup can block there, freezing the native message pump along with the
+    // renderer. A panic in that call stack is worse: it would cross the COM
+    // callback's non-unwinding ABI and abort the entire process.
+    //
+    // Keep all fallible/blocking PTY startup work on the runtime's dedicated
+    // blocking pool. Awaiting the JoinHandle also turns a worker panic into a
+    // normal command error instead of letting it escape through WebView2.
+    run_pty_start_worker(move || pty_start_blocking(app, options)).await
+}
+
+async fn run_pty_start_worker<F>(start: F) -> Result<(), String>
+where
+    F: FnOnce() -> Result<(), String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(start)
+        .await
+        .map_err(|error| format!("PTY startup worker failed: {error}"))?
+}
+
+fn pty_start_blocking(app: AppHandle, options: StartOptions) -> Result<(), String> {
     let thread_id = options.thread_id.clone();
     info!("pty_start: thread_id={} project_root={:?} cols={:?} rows={:?}",
         thread_id, options.project_root, options.cols, options.rows);
@@ -637,6 +667,19 @@ fn augmented_path() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pty_start_worker_returns_dependency_panics_as_errors() {
+        let result = tauri::async_runtime::block_on(run_pty_start_worker(|| {
+            panic!("simulated ConPTY dependency panic")
+        }));
+
+        let error = result.expect_err("a blocking-worker panic must not escape the IPC task");
+        assert!(
+            error.contains("PTY startup worker failed"),
+            "unexpected worker error: {error}"
+        );
+    }
 
     #[test]
     fn start_options_rejects_renderer_supplied_process_authority() {

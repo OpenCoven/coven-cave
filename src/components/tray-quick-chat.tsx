@@ -253,6 +253,7 @@ function QuickChatTabPane({
     sendText,
     queued,
     removeQueued,
+    steerQueued,
     note,
     modelOverride,
     setModelOverride,
@@ -297,6 +298,9 @@ function QuickChatTabPane({
       window.location.href = `/#chat-${encodeURIComponent(sessionId)}`;
     }
   }, [selectedFamiliarId, sessionId]);
+  const hintText = selectedFamiliar
+    ? `Thinking: ${thinkingEffort} · Speed: ${responseSpeed} · Model: ${modelOverride ?? "Runtime managed"}`
+    : "@id switches familiars · ⌘N new chat";
 
   return (
     <section
@@ -340,6 +344,7 @@ function QuickChatTabPane({
         disabled={loading}
         queued={queued}
         onRemoveQueued={removeQueued}
+        onSteerQueued={steerQueued}
         familiar={selectedFamiliar}
         inputId={`quick-chat-draft-${tabId}`}
         composerRef={composerRef}
@@ -364,7 +369,7 @@ function QuickChatTabPane({
               onClick={() => void openFullSession()}
             />
             <p className="min-w-0 truncate text-xs text-[var(--fg-muted)]">
-              @id switches familiars · ⌘N new chat
+              {hintText}
             </p>
           </div>
         }

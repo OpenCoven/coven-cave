@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -288,7 +288,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   );
 
   const familiarScopedFiles = useMemo(
-    () => fileEntries.filter((entry) => entry.familiarId == null || entry.familiarId === effectiveFamiliarFilter),
+    // Only the selected familiar's own files — shared/global pools and other
+    // familiars' files are excluded from this per-familiar view.
+    () => fileEntries.filter((entry) => entry.familiarId === effectiveFamiliarFilter),
     [fileEntries, effectiveFamiliarFilter],
   );
 
@@ -608,20 +610,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   )
                 ) : groupMode === "none" ? (
                   <ul className="divide-y divide-[var(--border-hairline)]">
-                    {pagedRows.map((row, i) => {
-                      const prev = pagedRows[i - 1];
-                      const startsShared = row.ownership === "shared" && (!prev || prev.ownership === "owned");
-                      return (
-                        <Fragment key={row.rowId}>
-                          {startsShared ? (
-                            <li className="memory-shared-divider sticky top-0 z-[1] border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] backdrop-blur">
-                              Coven-wide memory · shared across all familiars
-                            </li>
-                          ) : null}
-                          {renderRow(row)}
-                        </Fragment>
-                      );
-                    })}
+                    {pagedRows.map(renderRow)}
                   </ul>
                 ) : (
                   <div>

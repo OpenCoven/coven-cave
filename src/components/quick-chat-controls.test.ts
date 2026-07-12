@@ -55,6 +55,23 @@ assert.match(
   /<QuickChatSelect[\s\S]*label="Project"[\s\S]*onChange=\{\(next\) => onPickProjectRoot\(/,
   "the shared controls row includes project selection for quick chat",
 );
+// Once a project is picked the thread is locked to it — the menu collapses
+// into a read-only badge that names the selection (dropdown only when unset).
+assert.match(
+  source,
+  /selectedProjectRoot \? \(\s*<span[\s\S]*?aria-label=\{`Project: \$\{selectedProjectName\} \(locked for this chat\)`\}[\s\S]*?\) : \(\s*<QuickChatSelect[\s\S]*?label="Project"/,
+  "a selected project renders as a locked read-only badge instead of the picker menu",
+);
+assert.match(
+  source,
+  /title=\{selectedProjectRoot\}/,
+  "the locked project badge reveals the full root path on hover",
+);
+assert.match(
+  source,
+  /ph:lock-simple/,
+  "the locked project badge carries a lock glyph so the fixed context is legible",
+);
 assert.match(
   source,
   /projectsLoading && projects\.length === 0[\s\S]*label: "Loading projects…"/,
@@ -254,6 +271,11 @@ assert.match(
   /aria-label="Queued messages"[\s\S]*?onRemoveQueued\(item\.id\)/,
   "queued messages render as a labelled chip list with per-item remove",
 );
+assert.match(
+  source,
+  /aria-label="Queued messages"[\s\S]*?onSteerQueued\?\.\(item\.id\)/,
+  "queued messages can be steered with keyboard/select (Enter on the steer button)",
+);
 
 // ── The hook side of queueing + attachments (use-quick-chat) ─────────────────
 {
@@ -292,6 +314,11 @@ assert.match(
     hook,
     /queuedRef\.current = \[\];\s*\n\s*setQueued\(\[\]\);/,
     "newThread clears the parked queue with the rest of the thread",
+  );
+  assert.match(
+    hook,
+    /const steerQueued = useCallback\(\(id: string\) => \{[\s\S]*?void sendTextRef\.current\(next\.text, next\.attachments \?\? \[\]\);/,
+    "steering a queued message reorders it (or immediately resumes it) through the normal send pipeline",
   );
   assert.match(
     hook,

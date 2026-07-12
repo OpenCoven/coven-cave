@@ -93,6 +93,27 @@ fn browser_bounds_within_client(
     Ok(BrowserBounds::Visible { x, y, w, h })
 }
 
+/// Realize a new native browser child at its full intended size but outside
+/// the main window. WRY creates its `WRY_WEBVIEW` container HWND before
+/// WebView2 environment/controller initialization finishes. If that async COM
+/// callback stalls, Tauri has no registered Webview handle to hide yet; an
+/// in-viewport container would therefore remain above the app and intercept
+/// input. Creation is fail-closed offscreen and reconciliation seats the child
+/// only after `add_child` has returned and the newest intent is still visible.
+fn offscreen_browser_creation_bounds(
+    client_w: f64,
+    client_h: f64,
+    w: f64,
+    h: f64,
+) -> Result<(f64, f64), String> {
+    match browser_bounds_within_client(client_w, client_h, OFFSCREEN_X, OFFSCREEN_Y, w, h)? {
+        BrowserBounds::Hidden { w, h } => Ok((w, h)),
+        BrowserBounds::Visible { .. } => {
+            Err("offscreen browser creation unexpectedly produced visible bounds".to_string())
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct BrowserNavigationIntent {
     sequence: u64,
@@ -580,17 +601,38 @@ struct BrowserScrollEvent {
     scroll_y: f64,
 }
 
+#[derive(Debug)]
+enum EnsureBrowserError {
+    WebView2EnvironmentCallbackTimedOut,
+    Other(String),
+}
+
+impl From<String> for EnsureBrowserError {
+    fn from(error: String) -> Self {
+        Self::Other(error)
+    }
+}
+
+impl std::fmt::Display for EnsureBrowserError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WebView2EnvironmentCallbackTimedOut => {
+                formatter.write_str("main WebView2 environment callback timed out")
+            }
+            Self::Other(error) => formatter.write_str(error),
+        }
+    }
+}
+
 fn ensure_browser(
     app: &AppHandle,
     event_tracker: Arc<Mutex<BrowserEventTracker>>,
     label: &str,
-    x: f64,
-    y: f64,
     w: f64,
     h: f64,
     url: &str,
     read_only_url: Option<&str>,
-) -> Result<bool, String> {
+) -> Result<bool, EnsureBrowserError> {
     if app.webviews().keys().any(|existing| existing == label) {
         return Ok(false);
     }
@@ -603,11 +645,7 @@ fn ensure_browser(
         .inner_size()
         .map_err(|e| e.to_string())?
         .to_logical::<f64>(scale);
-    let bounds = browser_bounds_within_client(client.width, client.height, x, y, w, h)?;
-    let (x, y, w, h, hidden) = match bounds {
-        BrowserBounds::Hidden { w, h } => (OFFSCREEN_X, OFFSCREEN_Y, w, h, true),
-        BrowserBounds::Visible { x, y, w, h } => (x, y, w, h, false),
-    };
+    let (w, h) = offscreen_browser_creation_bounds(client.width, client.height, w, h)?;
 
     let parsed_url = Url::parse(url).map_err(|e| e.to_string())?;
     let read_only_target = read_only_url.and_then(|raw| Url::parse(raw).ok());
@@ -617,6 +655,11 @@ fn ensure_browser(
     let load_finished_for_event = Arc::clone(&initial_load_finished);
     let tracker_for_load = Arc::clone(&event_tracker);
     let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed_url))
+        // Tauri defaults child WebViews to focused. A cold tab would therefore
+        // call WebView2 MoveFocus while it was still offscreen, stealing the
+        // main renderer's input focus immediately after a Cave control click.
+        // Let an actual click inside the visible child focus it instead.
+        .focused(false)
         .background_color(tauri::webview::Color(12, 12, 14, 255)) // dark bg — no white flash
         .on_page_load(
         move |webview, payload| {
@@ -822,16 +865,49 @@ fn ensure_browser(
         url_without_fragment(next_url) == target_without_fragment.as_str()
     });
 
-    main.add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
+    // A fresh Windows environment performs another blocking
+    // CreateCoreWebView2EnvironmentWithOptions wait inside WRY's nested message
+    // pump. Reuse the already-running main environment so child creation only
+    // needs a controller and cannot conflict with the main profile/options.
+    #[cfg(target_os = "windows")]
+    let builder = with_main_webview2_environment(app, builder)?;
 
-    if hidden {
-        if let Some(webview) = app.get_webview(label) {
-            hide_webview(&webview)?;
-        }
+    main.add_child(
+        builder,
+        LogicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y),
+        LogicalSize::new(w, h),
+    )
+    .map_err(|e| e.to_string())?;
+
+    if let Some(webview) = app.get_webview(label) {
+        hide_webview(&webview)?;
     }
 
     Ok(true)
+}
+
+#[cfg(target_os = "windows")]
+fn with_main_webview2_environment<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    builder: WebviewBuilder<R>,
+) -> Result<WebviewBuilder<R>, EnsureBrowserError> {
+    let main = app
+        .get_webview("main")
+        .ok_or_else(|| "main webview missing".to_string())?;
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    main.with_webview(move |platform| {
+        let _ = sender.send(builder.with_environment(platform.environment()));
+    })
+    .map_err(|error| error.to_string())?;
+    match receiver.recv_timeout(Duration::from_secs(5)) {
+        Ok(builder) => Ok(builder),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Err(EnsureBrowserError::WebView2EnvironmentCallbackTimedOut)
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err(EnsureBrowserError::Other(
+            "main WebView2 environment callback disconnected".to_string(),
+        )),
+    }
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -839,6 +915,79 @@ fn ensure_browser(
 struct BrowserLifecycleErrorEvent {
     label: String,
     error: String,
+}
+
+#[derive(Debug)]
+enum BrowserReconcileError {
+    WebView2EnvironmentCallbackTimedOut { revision: u64 },
+    Other(String),
+}
+
+impl BrowserReconcileError {
+    fn environment_callback_timeout_revision(&self) -> Option<u64> {
+        match self {
+            Self::WebView2EnvironmentCallbackTimedOut { revision } => Some(*revision),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+impl From<String> for BrowserReconcileError {
+    fn from(error: String) -> Self {
+        Self::Other(error)
+    }
+}
+
+impl std::fmt::Display for BrowserReconcileError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WebView2EnvironmentCallbackTimedOut { .. } => {
+                formatter.write_str("main WebView2 environment callback timed out")
+            }
+            Self::Other(error) => formatter.write_str(error),
+        }
+    }
+}
+
+const WEBVIEW2_ENVIRONMENT_CALLBACK_RETRY_LIMIT: u8 = 1;
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct EnvironmentCallbackTimeoutRetryState {
+    revision: Option<u64>,
+    retries_used: u8,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum EnvironmentCallbackTimeoutAction {
+    ReconcileNewestIntent,
+    RetryTimedOutIntent,
+    Stop,
+}
+
+impl EnvironmentCallbackTimeoutRetryState {
+    fn action(
+        &mut self,
+        timed_out_revision: u64,
+        newer_intent_pending: bool,
+    ) -> EnvironmentCallbackTimeoutAction {
+        if newer_intent_pending {
+            return EnvironmentCallbackTimeoutAction::ReconcileNewestIntent;
+        }
+        if self.revision != Some(timed_out_revision) {
+            self.revision = Some(timed_out_revision);
+            self.retries_used = 0;
+        }
+        if self.retries_used < WEBVIEW2_ENVIRONMENT_CALLBACK_RETRY_LIMIT {
+            self.retries_used += 1;
+            EnvironmentCallbackTimeoutAction::RetryTimedOutIntent
+        } else {
+            EnvironmentCallbackTimeoutAction::Stop
+        }
+    }
+
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
 }
 
 // Park the webview offscreen at its CURRENT size. Do not shrink it to 1×1:
@@ -1036,7 +1185,7 @@ fn reconcile_browser(
     app: &AppHandle,
     state: &BrowserLifecycleState,
     label: &str,
-) -> Result<(), String> {
+) -> Result<(), BrowserReconcileError> {
     let worker_lock = worker_lock_for_label(state, label)?;
     let _worker = worker_lock
         .lock()
@@ -1061,12 +1210,6 @@ fn reconcile_browser(
             let bounds = snapshot.bounds.ok_or_else(|| {
                 "browser navigation is missing a bounded viewport intent".to_string()
             })?;
-            let (initial_x, initial_y) = if snapshot.visibility == BrowserVisibility::Visible {
-                (bounds.x, bounds.y)
-            } else {
-                (OFFSCREEN_X, OFFSCREEN_Y)
-            };
-
             // Coalesce commands that arrived before the expensive create call.
             if !navigation_is_current(state, label, navigation.sequence) {
                 continue;
@@ -1084,13 +1227,19 @@ fn reconcile_browser(
                 app,
                 Arc::clone(&event_tracker),
                 label,
-                initial_x,
-                initial_y,
                 bounds.w,
                 bounds.h,
                 &navigation.url,
                 navigation.read_only_url.as_deref(),
-            )?;
+            )
+            .map_err(|error| match error {
+                EnsureBrowserError::WebView2EnvironmentCallbackTimedOut => {
+                    BrowserReconcileError::WebView2EnvironmentCallbackTimedOut {
+                        revision: snapshot.revision,
+                    }
+                }
+                EnsureBrowserError::Other(error) => BrowserReconcileError::Other(error),
+            })?;
             let webview = app
                 .get_webview(label)
                 .ok_or_else(|| "browser webview missing after creation".to_string())?;
@@ -1148,7 +1297,9 @@ fn reconcile_browser(
             return Ok(());
         }
     }
-    Err("browser lifecycle did not settle after 16 intent revisions".to_string())
+    Err("browser lifecycle did not settle after 16 intent revisions"
+        .to_string()
+        .into())
 }
 
 fn schedule_browser_reconcile(app: AppHandle, state: BrowserLifecycleState, label: String) {
@@ -1163,28 +1314,50 @@ fn schedule_browser_reconcile(app: AppHandle, state: BrowserLifecycleState, labe
     if signal.running.swap(true, Ordering::SeqCst) {
         return;
     }
-    tauri::async_runtime::spawn_blocking(move || loop {
-        signal.dirty.store(false, Ordering::SeqCst);
-        if let Err(error) = reconcile_browser(&app, &state, &label) {
-            log::warn!("browser lifecycle reconciliation failed for {label}: {error}");
-            let _ = app.emit(
-                "browser:lifecycle-error",
-                BrowserLifecycleErrorEvent {
-                    label: label.clone(),
-                    error,
-                },
-            );
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut environment_timeout_retry = EnvironmentCallbackTimeoutRetryState::default();
+        loop {
+            signal.dirty.store(false, Ordering::SeqCst);
+            let timeout_revision = match reconcile_browser(&app, &state, &label) {
+                Ok(()) => {
+                    environment_timeout_retry.reset();
+                    None
+                }
+                Err(error) => {
+                    let timeout_revision = error.environment_callback_timeout_revision();
+                    if timeout_revision.is_none() {
+                        environment_timeout_retry.reset();
+                    }
+                    let error = error.to_string();
+                    log::warn!("browser lifecycle reconciliation failed for {label}: {error}");
+                    let _ = app.emit(
+                        "browser:lifecycle-error",
+                        BrowserLifecycleErrorEvent {
+                            label: label.clone(),
+                            error,
+                        },
+                    );
+                    timeout_revision
+                }
+            };
+            let newer_intent_pending = signal.dirty.swap(false, Ordering::SeqCst);
+            if let Some(revision) = timeout_revision {
+                match environment_timeout_retry.action(revision, newer_intent_pending) {
+                    EnvironmentCallbackTimeoutAction::ReconcileNewestIntent
+                    | EnvironmentCallbackTimeoutAction::RetryTimedOutIntent => continue,
+                    EnvironmentCallbackTimeoutAction::Stop => {}
+                }
+            } else if newer_intent_pending {
+                continue;
+            }
+            signal.running.store(false, Ordering::SeqCst);
+            if signal.dirty.swap(false, Ordering::SeqCst)
+                && !signal.running.swap(true, Ordering::SeqCst)
+            {
+                continue;
+            }
+            break;
         }
-        if signal.dirty.swap(false, Ordering::SeqCst) {
-            continue;
-        }
-        signal.running.store(false, Ordering::SeqCst);
-        if signal.dirty.swap(false, Ordering::SeqCst)
-            && !signal.running.swap(true, Ordering::SeqCst)
-        {
-            continue;
-        }
-        break;
     });
 }
 
@@ -1536,9 +1709,10 @@ pub fn browser_report_scroll(
 mod lifecycle_tests {
     use super::{
         advance_scope_barrier, browser_bounds_within_client, effective_browser_intent,
-        record_bounds_intent, record_navigation_intent, record_scope_intent,
-        record_visibility_intent, BrowserBounds, BrowserBoundsIntent, BrowserEventTracker,
-        BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility, Url,
+        offscreen_browser_creation_bounds, record_bounds_intent, record_navigation_intent,
+        record_scope_intent, record_visibility_intent, BrowserBounds, BrowserBoundsIntent,
+        BrowserEventTracker, BrowserLifecycleInner, BrowserScopeAction, BrowserVisibility,
+        EnvironmentCallbackTimeoutAction, EnvironmentCallbackTimeoutRetryState, Url,
         MAX_TRACKED_BROWSER_URLS, USER_NAVIGATION_MARKER_TTL,
     };
     use std::time::{Duration, Instant};
@@ -1857,5 +2031,57 @@ mod lifecycle_tests {
                 Ok(BrowserBounds::Hidden { .. })
             ));
         }
+    }
+
+    #[test]
+    fn native_child_creation_is_always_realized_offscreen_at_full_size() {
+        assert_eq!(
+            offscreen_browser_creation_bounds(1000.0, 700.0, 800.0, 600.0),
+            Ok((800.0, 600.0)),
+        );
+        assert_eq!(
+            offscreen_browser_creation_bounds(1000.0, 700.0, 5000.0, 5000.0),
+            Ok((1000.0, 700.0)),
+        );
+    }
+
+    #[test]
+    fn environment_callback_timeout_retries_once_per_unchanged_revision() {
+        let mut retry = EnvironmentCallbackTimeoutRetryState::default();
+
+        assert_eq!(
+            retry.action(41, false),
+            EnvironmentCallbackTimeoutAction::RetryTimedOutIntent
+        );
+        assert_eq!(
+            retry.action(41, false),
+            EnvironmentCallbackTimeoutAction::Stop
+        );
+
+        assert_eq!(
+            retry.action(42, false),
+            EnvironmentCallbackTimeoutAction::RetryTimedOutIntent
+        );
+        assert_eq!(
+            retry.action(42, false),
+            EnvironmentCallbackTimeoutAction::Stop
+        );
+    }
+
+    #[test]
+    fn environment_callback_timeout_prioritizes_a_newer_dirty_intent() {
+        let mut retry = EnvironmentCallbackTimeoutRetryState::default();
+
+        assert_eq!(
+            retry.action(41, true),
+            EnvironmentCallbackTimeoutAction::ReconcileNewestIntent
+        );
+        assert_eq!(
+            retry.action(42, false),
+            EnvironmentCallbackTimeoutAction::RetryTimedOutIntent
+        );
+
+        retry.reset();
+        assert_eq!(retry, EnvironmentCallbackTimeoutRetryState::default());
     }
 }

@@ -8,7 +8,7 @@ import { Icon } from "@/lib/icon";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
-  buildThreadSignalDiscussionPrompt,
+  buildThreadSignalResolutionPrompt,
   THREAD_SIGNALS_EMPTY_STATE,
   type ThreadSignalsAggregate,
   type ThreadSignalReviewItem,
@@ -25,6 +25,8 @@ type ThreadSignalTableRow = {
   detail: string;
   count?: number;
   severity?: "critical" | "warning" | "info";
+  /** Review-item kind for launching a resolution thread; omitted for purely informational rows. */
+  kind?: ThreadSignalReviewItem["kind"];
 };
 
 type ThreadSignalTableSection = {
@@ -100,6 +102,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         state: "needs definition",
         detail: item.reason,
         severity: "warning",
+        kind: "skill-clarity",
       })),
     },
     {
@@ -113,6 +116,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         state: "blocked",
         detail: item.reason,
         severity: "critical",
+        kind: "skill-access",
       })),
     },
     {
@@ -126,6 +130,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         state: item.currentState,
         detail: item.notes || "Reported as necessary for successful work.",
         severity: item.currentState === "missing" ? "critical" : item.currentState === "degraded" ? "warning" : "info",
+        kind: "capability",
       })),
     },
     {
@@ -139,6 +144,7 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         state: item.importance,
         detail: item.detail,
         severity: item.importance === "blocking" ? "critical" : "warning",
+        kind: "capability",
       })),
     },
     {
@@ -153,23 +159,35 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
         detail: blocker.detail || "Reported as a repeated blocker.",
         count: blocker.frequency,
         severity: blocker.crit || blocker.impact === "blocking" ? "critical" : blocker.impact === "high" ? "warning" : "info",
+        kind: "blocker",
       })),
     },
   ];
 }
 
-/** Open a new chat with this familiar, primed to discuss the selected topic. */
-function discussReviewItem(familiarId: string, item: ThreadSignalReviewItem) {
+/** Launch a new working thread with this familiar, primed with an auto-sent prompt to resolve the signal. */
+function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem) {
   const analyticsPath = `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics`;
   window.dispatchEvent(
     new CustomEvent("cave:agents-new-chat", {
       detail: {
         familiarId,
-        initialPrompt: `${buildThreadSignalDiscussionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
+        initialPrompt: `${buildThreadSignalResolutionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
         origin: "chat" as const,
       },
     }),
   );
+}
+
+/** Shape a table row into a review item so it can launch the same resolution thread. */
+function resolveRow(familiarId: string, row: ThreadSignalTableRow) {
+  if (!row.kind) return;
+  launchResolutionThread(familiarId, {
+    kind: row.kind,
+    severity: row.severity ?? "info",
+    title: row.signal,
+    detail: `${row.detail}${row.count ? ` (reported ${row.count}x)` : ""} — status: ${row.state}.`,
+  });
 }
 
 /** Shape a signal row into the task card the board API accepts. */
@@ -201,6 +219,7 @@ const TABLE_COLUMNS: { key: SortKey; label: string }[] = [
 
 /**
  * The signal summary as a real data table: sortable columns, row selection,
+ * per-row "Resolve" that launches a working thread primed to fix the signal,
  * and per-row / bulk conversion of signals into task cards on the board
  * (POST /api/board). Grouped by category by default; picking a sort column
  * flattens the groups into one comparable list.
@@ -324,6 +343,18 @@ function ThreadSignalsTable({
         <td><span className="fa-thread-table__detail">{row.detail}</span></td>
         <td><span className="board-table-cell-time">{row.count ? `${row.count}x` : "-"}</span></td>
         <td className="fa-thread-table__actions">
+          {row.kind ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              leadingIcon="ph:chat-circle-dots"
+              onClick={() => resolveRow(familiarId, row)}
+              aria-label={`Launch a thread to resolve ${row.signal}`}
+              title="Launch a new thread with this familiar, primed to resolve this signal"
+            >
+              Resolve
+            </Button>
+          ) : null}
           {isAdded ? (
             <span className="fa-thread-table__added" title="A task card exists on the board for this signal">
               <Icon name="ph:check-circle" width={13} aria-hidden /> Task
@@ -414,7 +445,7 @@ function ThreadSignalsTable({
                   Reports
                 </Button>
               </th>
-              <th className="fa-thread-table__actions-head">Task</th>
+              <th className="fa-thread-table__actions-head">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -485,9 +516,9 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
                 <Button
                   variant="ghost"
                   className="fa-thread-review-item"
-                  onClick={() => discussReviewItem(familiarId, item)}
-                  title={`Discuss "${item.title}" with this familiar`}
-                  aria-label={`Discuss ${item.title}`}
+                  onClick={() => launchResolutionThread(familiarId, item)}
+                  title={`Launch a thread to resolve "${item.title}"`}
+                  aria-label={`Resolve ${item.title}`}
                   leadingIcon={item.severity === "critical" ? "ph:warning-circle" : "ph:info"}
                   trailingIcon="ph:chat-circle-dots"
                 >

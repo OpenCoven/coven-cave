@@ -428,8 +428,32 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const harnessPrompt = buildPromptWithRuntimeScope\(/,
+  /const scopedPrompt = buildPromptWithRuntimeScope\(/,
   "Every chat harness prompt should carry the runtime filesystem boundary",
+);
+
+assert.match(
+  chatRoute,
+  /const harnessPrompt = buildPromptWithBoundaryReminder\(scopedPrompt, body\.sessionId\)/,
+  "The harness prompt should carry the corrective boundary reminder when the previous turn went out of bounds",
+);
+
+assert.match(
+  chatRoute,
+  /boundarySentinel\?\.observe\(block\.name, block\.input\)/,
+  "Envelope tool_use blocks should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /if \(!isPost\) boundarySentinel\?\.observe\(name, rest\)/,
+  "pre_tool_use hook lines should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /recordBoundaryViolations\(boundarySessionId, boundaryViolations\)/,
+  "Boundary violations should be recorded to steer the conversation's next turn",
 );
 
 assert.match(

@@ -31,6 +31,17 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
+#[cfg(all(desktop, target_os = "windows"))]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, HANDLE, HWND, LPARAM, LRESULT, WAIT_OBJECT_0, WPARAM},
+    System::Threading::{
+        CreateEventW, GetCurrentProcess, SetEvent, TerminateProcess, WaitForSingleObject, INFINITE,
+    },
+    UI::{
+        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+        WindowsAndMessaging::{SC_CLOSE, WM_CLOSE, WM_NCDESTROY, WM_SYSCOMMAND},
+    },
+};
 #[cfg(desktop)]
 const QUICK_CHAT_WINDOW_LABEL: &str = "quick-chat";
 #[cfg(desktop)]
@@ -891,6 +902,142 @@ fn shutdown_owned_processes(app: &tauri::AppHandle) {
     pty::terminate_all_owned_processes();
 }
 
+// This hook sits below Tao/Tauri's event dispatch. WRY waits for WebView2
+// environment/controller creation inside a nested Windows message pump. A
+// WM_CLOSE received there is otherwise buffered by Tao until the active event
+// callback returns; if WebView2 never completes, Tauri's CloseRequested handler
+// can never run. The hook only signals a process-lifetime kernel event. Two
+// waiters are pre-spawned during setup: one performs bounded owned-process
+// cleanup and requests a normal Tauri exit; the other terminates this process
+// after the deadline if the event loop remains wedged. Kill-on-close Job
+// Objects then reap every owned process tree. Quick Chat and every non-Windows
+// window keep their existing lifecycle.
+#[cfg(all(desktop, target_os = "windows"))]
+const WINDOWS_MAIN_CLOSE_SUBCLASS_ID: usize = 0x4341_5645;
+#[cfg(all(desktop, target_os = "windows"))]
+const WINDOWS_MAIN_CLOSE_EXIT_DEADLINE: Duration = Duration::from_millis(1200);
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn signal_windows_main_close(event: HANDLE) -> bool {
+    unsafe { SetEvent(event) != 0 }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn is_windows_main_close_message(message: u32, wparam: WPARAM) -> bool {
+    message == WM_CLOSE || (message == WM_SYSCOMMAND && (wparam & 0xfff0) == SC_CLOSE as usize)
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn terminate_current_process_now() -> ! {
+    unsafe {
+        TerminateProcess(GetCurrentProcess(), 0);
+    }
+    std::process::abort();
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn run_windows_main_close_hard_deadline(event: HANDLE) -> ! {
+    let wait = unsafe { WaitForSingleObject(event, INFINITE) };
+    if wait != WAIT_OBJECT_0 {
+        std::process::abort();
+    }
+    thread::sleep(WINDOWS_MAIN_CLOSE_EXIT_DEADLINE);
+    terminate_current_process_now();
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+unsafe extern "system" fn windows_main_close_subclass(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    subclass_id: usize,
+    reference_data: usize,
+) -> LRESULT {
+    if is_windows_main_close_message(message, wparam) {
+        if !signal_windows_main_close(reference_data as HANDLE) {
+            terminate_current_process_now();
+        }
+        // Consume the native close here so neither a JavaScript listener nor a
+        // nested WRY message pump can defer it. The pre-spawned cleanup waiter
+        // owns graceful app.exit; the hard waiter owns the deadline.
+        return 0;
+    }
+
+    if message == WM_NCDESTROY {
+        // The event is deliberately process-lifetime: the watchdog may still
+        // be waiting on it while the HWND is torn down through another path.
+        unsafe {
+            RemoveWindowSubclass(hwnd, Some(windows_main_close_subclass), subclass_id);
+        }
+    }
+
+    unsafe { DefSubclassProc(hwnd, message, wparam, lparam) }
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn install_windows_main_close_fallback(app: &tauri::App) -> Result<(), String> {
+    let main = app
+        .get_window("main")
+        .ok_or_else(|| "main window missing while installing close fallback".to_string())?;
+    let hwnd = main.hwnd().map_err(|error| error.to_string())?.0 as HWND;
+    let close_event = unsafe {
+        CreateEventW(
+            std::ptr::null(),
+            1, // manual-reset: repeated SC_CLOSE/WM_CLOSE messages stay once-only
+            0,
+            std::ptr::null(),
+        )
+    };
+    if close_event.is_null() {
+        return Err("could not create authoritative Windows close event".to_string());
+    }
+
+    let cleanup_event_bits = close_event as usize;
+    let cleanup_app = app.handle().clone();
+    let cleanup_waiter = thread::Builder::new()
+        .name("cave-close-cleanup".to_string())
+        .spawn(move || {
+            let event = cleanup_event_bits as HANDLE;
+            if unsafe { WaitForSingleObject(event, INFINITE) } == WAIT_OBJECT_0 {
+                shutdown_owned_processes(&cleanup_app);
+                cleanup_app.exit(0);
+            }
+        });
+    if cleanup_waiter.is_err() {
+        unsafe { CloseHandle(close_event) };
+        return Err("could not start authoritative Windows close cleanup".to_string());
+    }
+
+    let hard_event_bits = close_event as usize;
+    let hard_waiter = thread::Builder::new()
+        .name("cave-close-hard-deadline".to_string())
+        .spawn(move || {
+            let event = hard_event_bits as HANDLE;
+            run_windows_main_close_hard_deadline(event);
+        });
+    if hard_waiter.is_err() {
+        // A cleanup waiter is already blocked on this process-lifetime event.
+        // Wake it before failing setup; it will reap owned jobs and request exit.
+        let _ = signal_windows_main_close(close_event);
+        return Err("could not start authoritative Windows close hard deadline".to_string());
+    }
+
+    let installed = unsafe {
+        SetWindowSubclass(
+            hwnd,
+            Some(windows_main_close_subclass),
+            WINDOWS_MAIN_CLOSE_SUBCLASS_ID,
+            close_event as usize,
+        )
+    };
+    if installed == 0 {
+        let _ = signal_windows_main_close(close_event);
+        return Err("could not install authoritative Windows close fallback".to_string());
+    }
+    Ok(())
+}
+
 #[cfg(desktop)]
 fn find_free_port() -> Option<u16> {
     TcpListener::bind("127.0.0.1:0")
@@ -1502,6 +1649,136 @@ mod tests {
         assert_eq!(value["progress"], 85);
         assert_eq!(value["canRetry"], false);
         assert_eq!(value["canCancel"], true);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn raw_main_close_fallback_recognizes_only_native_close_messages() {
+        assert!(is_windows_main_close_message(WM_CLOSE, 0));
+        assert!(is_windows_main_close_message(
+            WM_SYSCOMMAND,
+            SC_CLOSE as usize
+        ));
+        assert!(is_windows_main_close_message(
+            WM_SYSCOMMAND,
+            SC_CLOSE as usize | 0x000f
+        ));
+        assert!(!is_windows_main_close_message(WM_SYSCOMMAND, 0xf020));
+        assert!(!is_windows_main_close_message(WM_NCDESTROY, 0));
+        assert!(!is_windows_main_close_message(0, SC_CLOSE as usize));
+
+        let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+        assert!(!event.is_null());
+        assert!(signal_windows_main_close(event));
+        assert!(signal_windows_main_close(event));
+        assert_eq!(unsafe { WaitForSingleObject(event, 0) }, WAIT_OBJECT_0);
+        unsafe { CloseHandle(event) };
+    }
+
+    #[cfg(target_os = "windows")]
+    const WINDOWS_CLOSE_WATCHDOG_HELPER_EVENT: &str =
+        "COVEN_CAVE_WINDOWS_CLOSE_WATCHDOG_HELPER_EVENT";
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_close_watchdog_helper_process() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::System::Threading::{OpenEventW, SYNCHRONIZATION_SYNCHRONIZE};
+
+        let Some(event_name) = std::env::var_os(WINDOWS_CLOSE_WATCHDOG_HELPER_EVENT) else {
+            return;
+        };
+        let event_name = std::ffi::OsStr::new(&event_name)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let event = unsafe { OpenEventW(SYNCHRONIZATION_SYNCHRONIZE, 0, event_name.as_ptr()) };
+        assert!(!event.is_null(), "open parent close event");
+        println!("COVEN_CAVE_CLOSE_WATCHDOG_READY");
+        use std::io::Write as _;
+        std::io::stdout().flush().expect("flush helper readiness");
+        run_windows_main_close_hard_deadline(event);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn close_hard_deadline_terminates_the_exact_stalled_process() {
+        use std::io::{BufRead, BufReader};
+        use std::os::windows::{ffi::OsStrExt, process::CommandExt};
+        use std::process::{Command, Stdio};
+        use std::sync::mpsc;
+
+        let event_name = format!(
+            "Local\\CovenCave-close-watchdog-test-{}-{}",
+            std::process::id(),
+            sidecar_auth_token()
+        );
+        let wide_event_name = std::ffi::OsStr::new(&event_name)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect::<Vec<_>>();
+        let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, wide_event_name.as_ptr()) };
+        assert!(!event.is_null(), "create named close event");
+
+        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "tests::windows_close_watchdog_helper_process",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(WINDOWS_CLOSE_WATCHDOG_HELPER_EVENT, &event_name)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .creation_flags(0x08000000)
+            .spawn()
+            .expect("spawn stalled close-watchdog helper");
+        let exact_pid = child.id();
+        let stdout = child.stdout.take().expect("helper stdout");
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let reader = thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if line.contains("COVEN_CAVE_CLOSE_WATCHDOG_READY") {
+                    let _ = ready_tx.send(());
+                    break;
+                }
+            }
+        });
+
+        if ready_rx.recv_timeout(Duration::from_secs(10)).is_err() {
+            let _ = child.kill();
+            let _ = child.wait();
+            unsafe { CloseHandle(event) };
+            panic!("watchdog helper {exact_pid} did not become ready");
+        }
+
+        let started = Instant::now();
+        assert!(signal_windows_main_close(event));
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("inspect watchdog helper") {
+                break status;
+            }
+            if started.elapsed() >= Duration::from_secs(5) {
+                let _ = child.kill();
+                let _ = child.wait();
+                unsafe { CloseHandle(event) };
+                panic!("watchdog did not terminate exact helper pid {exact_pid}");
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        reader.join().expect("join helper output reader");
+        unsafe { CloseHandle(event) };
+
+        assert_eq!(status.code(), Some(0));
+        assert!(
+            started.elapsed() >= WINDOWS_MAIN_CLOSE_EXIT_DEADLINE,
+            "hard exit fired before its cleanup grace period"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "hard exit exceeded its bounded deadline"
+        );
     }
 
     #[test]
@@ -2229,6 +2506,9 @@ pub fn run() {
                     fatal_exit(&format!("failed to build main window: {}", e));
                 }
             }
+
+            #[cfg(target_os = "windows")]
+            install_windows_main_close_fallback(app).map_err(std::io::Error::other)?;
 
             // Status bar / system-tray menu — quick access to inbox + reminder
             // creation when CovenCave is in the background. Menu actions either

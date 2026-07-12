@@ -155,6 +155,7 @@ export async function collectTracedDependencies(projectRoot) {
 
   const packageRoots = new Map();
   const resolvedPackageRoots = new Map();
+  let resolvedNodeModulesRoot = null;
   for (const traceFile of traceFiles) {
     const trace = JSON.parse(await readFile(traceFile, "utf8"));
     if (!Array.isArray(trace.files)) {
@@ -178,7 +179,11 @@ export async function collectTracedDependencies(projectRoot) {
         resolvedPackageRoot = await realpath(sourcePackageRoot);
         resolvedPackageRoots.set(sourcePackageRoot, resolvedPackageRoot);
       }
-      if (!isInside(path.join(projectRoot, "node_modules"), resolvedPackageRoot)) {
+      if (!resolvedNodeModulesRoot) {
+        // realpath both sides: projectRoot may sit under a symlink (e.g. /var -> /private/var on macOS)
+        resolvedNodeModulesRoot = await realpath(path.join(projectRoot, "node_modules"));
+      }
+      if (!isInside(resolvedNodeModulesRoot, resolvedPackageRoot)) {
         throw new Error(`traced dependency resolves outside node_modules: ${sourcePackageRoot} -> ${resolvedPackageRoot}`);
       }
       const previousRoot = packageRoots.get(parts.packageName);

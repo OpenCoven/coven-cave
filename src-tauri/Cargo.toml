@@ -62,7 +62,7 @@ fs2 = "0.4.3"
 sha2 = "0.10"
 tar = "0.4"
 zstd = "0.13"
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
 # behind the transparent webview on macOS (the only platform we apply it on;

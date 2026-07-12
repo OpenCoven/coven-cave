@@ -1055,7 +1055,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
           />
         ) : (
-          <div ref={surfaceRef} className="absolute inset-0" />
+          <div ref={surfaceRef} data-native-browser-viewport className="absolute inset-0" />
         )}
       </div>
       <footer

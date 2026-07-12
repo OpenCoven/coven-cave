@@ -165,7 +165,8 @@ jobs:
 
       # Same assertions on every OS; per-OS branches run for real on their host
       # and are explicit skips elsewhere (see the suite). No silent no-ops.
-      - run: pnpm test:conformance
+      - name: Run cross-environment conformance
+        run: pnpm test:conformance
 
   conformance-required:
     name: Cross-environment required
@@ -228,14 +229,101 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked sidecar_archive
 
-      # The updater clears Tauri's resource table immediately before
-      # launching msiexec. Exercise the native Drop guard on Windows so an
-      # update cannot strand the packaged Node process tree.
-      - name: Test Windows updater sidecar cleanup
+      # Exercise the same native browser reducer and kernel-owned process-tree
+      # paths used by the desktop shell. Each filter is its own step because
+      # PowerShell does not stop after a failed native command by default. The
+      # output guard also rejects Cargo's successful "0 tests" result when a
+      # cfg gate or renamed test makes a filter stale.
+      - name: Test Windows native Browser lifecycle reducer
         if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
-          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture
-          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib tests::dropping_application_cleanup_guard_stops_and_reaps_sidecar -- --exact --nocapture
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib browser::lifecycle_tests -- --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. [1-9][0-9]* passed;') {
+            throw 'Browser lifecycle filter completed without running any tests.'
+          }
+
+      - name: Test Windows PTY callback isolation
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib pty::tests::pty_start_worker_returns_dependency_panics_as_errors -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'PTY callback-isolation filter did not run exactly one test.'
+          }
+
+      - name: Test Windows owned-process Job Object lifecycle
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib windows_process_job::tests -- --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. [1-9][0-9]* passed;') {
+            throw 'Job Object lifecycle filter completed without running any tests.'
+          }
+
+      - name: Test Windows raw main close fallback
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::raw_main_close_fallback_recognizes_only_native_close_messages -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Raw main close fallback filter did not run exactly one test.'
+          }
+
+      - name: Test Windows close hard deadline
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::close_hard_deadline_terminates_the_exact_stalled_process -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Close hard-deadline filter did not run exactly one test.'
+          }
+
+      - name: Test Windows idempotent sidecar cleanup
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::sidecar_cleanup_is_idempotent_when_no_child_is_running -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Idempotent sidecar cleanup filter did not run exactly one test.'
+          }
+
+      - name: Test Windows sidecar descendant cleanup
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib tests::sidecar_state_terminates_root_and_descendant_within_deadline -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'Sidecar descendant cleanup filter did not run exactly one test.'
+          }
 
       - name: Test Windows upgrade diagnostics fixture
         if: matrix.os == 'windows-latest'

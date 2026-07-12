@@ -2,6 +2,120 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
+const WINDOWS_NATIVE_RUST_STEPS = [
+  {
+    name: "Test Windows native Browser lifecycle reducer",
+    filter: "browser::lifecycle_tests",
+    exact: false,
+  },
+  {
+    name: "Test Windows PTY callback isolation",
+    filter: "pty::tests::pty_start_worker_returns_dependency_panics_as_errors",
+    exact: true,
+  },
+  {
+    name: "Test Windows owned-process Job Object lifecycle",
+    filter: "windows_process_job::tests",
+    exact: false,
+  },
+  {
+    name: "Test Windows raw main close fallback",
+    filter: "tests::raw_main_close_fallback_recognizes_only_native_close_messages",
+    exact: true,
+  },
+  {
+    name: "Test Windows close hard deadline",
+    filter: "tests::close_hard_deadline_terminates_the_exact_stalled_process",
+    exact: true,
+  },
+  {
+    name: "Test Windows idempotent sidecar cleanup",
+    filter: "tests::sidecar_cleanup_is_idempotent_when_no_child_is_running",
+    exact: true,
+  },
+  {
+    name: "Test Windows sidecar descendant cleanup",
+    filter: "tests::sidecar_state_terminates_root_and_descendant_within_deadline",
+    exact: true,
+  },
+];
+
+function getWorkflowJob(workflow, name) {
+  const lines = workflow.split(/\r?\n/);
+  const marker = `  ${name}:`;
+  const matches = lines.flatMap((line, index) => (line === marker ? [index] : []));
+  assert.equal(matches.length, 1, `workflow must define exactly one ${name} job`);
+  const start = matches[0];
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^  [A-Za-z0-9_-]+:\s*$/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+function getNamedWorkflowStep(job, name) {
+  const lines = job.split(/\r?\n/);
+  const marker = `- name: ${name}`;
+  const matches = lines.flatMap((line, index) =>
+    line.trim() === marker ? [index] : [],
+  );
+  assert.equal(matches.length, 1, `workflow job must define exactly one ${name} step`);
+  const start = matches[0];
+  const indentation = lines[start].match(/^\s*/)?.[0] ?? "";
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (lines[index].startsWith(`${indentation}- `)) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join("\n");
+}
+
+function assertWindowsNativeRustStep(job, expected) {
+  const step = getNamedWorkflowStep(job, expected.name);
+  assert.match(step, /^\s+if: matrix\.os == 'windows-latest'$/m);
+  assert.match(step, /^\s+shell: pwsh$/m);
+  assert.equal(
+    step.match(/\bcargo test\b/g)?.length,
+    1,
+    `${expected.name} must execute exactly one Cargo test command`,
+  );
+
+  const command = [
+    "cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib",
+    expected.filter,
+    expected.exact ? "-- --exact --nocapture" : "-- --nocapture",
+    "2>&1",
+  ].join(" ");
+  assert.ok(step.includes(command), `${expected.name} must use its exact test filter`);
+
+  const capture = step.indexOf("$testOutput = @(& cargo test");
+  const exitCapture = step.indexOf("$testExitCode = $LASTEXITCODE", capture);
+  const exitGuard = step.indexOf(
+    "if ($testExitCode -ne 0) { exit $testExitCode }",
+    exitCapture,
+  );
+  const summaryCapture = step.indexOf('$testSummary = $testOutput -join "`n"', exitGuard);
+  const summaryGuard = expected.exact
+    ? "if ($testSummary -notmatch '(?m)^test result: ok\\. 1 passed; 0 failed;')"
+    : "if ($testSummary -notmatch '(?m)^test result: ok\\. [1-9][0-9]* passed;')";
+  const summaryCheck = step.indexOf(summaryGuard, summaryCapture);
+  const zeroTestFailure = step.indexOf("throw ", summaryCheck);
+  assert.ok(
+    capture >= 0 &&
+      exitCapture > capture &&
+      exitGuard > exitCapture &&
+      summaryCapture > exitGuard &&
+      summaryCheck > summaryCapture &&
+      zeroTestFailure > summaryCheck,
+    `${expected.name} must preserve Cargo's exit code and fail when no tests ran`,
+  );
+}
+
 test("release bundle includes and prefers a bundled Node runtime", async () => {
   const [tauriConfig, windowsConfig, bundleScript, launcher] = await Promise.all([
     readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
@@ -121,6 +235,50 @@ test("Windows native close remains authoritative when the WebView is unresponsiv
     /#\[cfg\(target_os = "windows"\)\][\s\S]*WindowEvent::CloseRequested[\s\S]*window\.label\(\) == "main"[\s\S]*shutdown_owned_processes\(window\.app_handle\(\)\)[\s\S]*window\.app_handle\(\)\.exit\(0\)/,
     "the Windows title-bar close must exit natively without waiting for a wedged JS close listener",
   );
+  assert.match(
+    launcher,
+    /CreateEventW[\s\S]*cave-close-cleanup[\s\S]*cave-close-hard-deadline[\s\S]*SetWindowSubclass/,
+    "the cleanup and hard-deadline waiters must exist before the main HWND hook is installed",
+  );
+  assert.match(
+    launcher,
+    /message == WM_CLOSE[\s\S]*WM_SYSCOMMAND[\s\S]*SC_CLOSE[\s\S]*signal_windows_main_close/,
+    "the raw main-HWND hook must claim direct and system-menu close messages below Tauri",
+  );
+  assert.match(
+    launcher,
+    /WINDOWS_MAIN_CLOSE_EXIT_DEADLINE[\s\S]*TerminateProcess\(GetCurrentProcess\(\), 0\)/,
+    "the hard close deadline must bypass ExitProcess DLL-detach deadlocks",
+  );
+  const callback = launcher.match(
+    /unsafe extern "system" fn windows_main_close_subclass\([\s\S]*?\n\}/,
+  )?.[0];
+  assert.ok(callback, "the raw main-HWND close callback must exist");
+  assert.doesNotMatch(
+    callback,
+    /thread::|shutdown_owned_processes|AppHandle|Mutex|\.spawn\(|log::/,
+    "the HWND callback must not allocate, spawn, lock, log, or enter Tauri",
+  );
+});
+
+test("Windows native Browser children fail closed before WebView2 registration", async () => {
+  const browser = await readFile(new URL("./src/browser.rs", import.meta.url), "utf8");
+
+  assert.match(
+    browser,
+    /with_main_webview2_environment\(app, builder\)[\s\S]*LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)[\s\S]*hide_webview/,
+    "a child must reuse the main environment and remain offscreen/hidden until registration finishes",
+  );
+  assert.match(
+    browser,
+    /WebviewBuilder::new\(label, WebviewUrl::External\(parsed_url\)\)[\s\S]*?\.focused\(false\)[\s\S]*?\.background_color/,
+    "an offscreen child must not steal focus from the main Cave renderer during creation",
+  );
+  assert.match(
+    browser,
+    /recv_timeout\(Duration::from_secs\(5\)\)/,
+    "main-environment dispatch must fail closed instead of pinning a Browser worker forever",
+  );
 });
 
 test("Windows owned process trees use bounded kernel Job Object cleanup", async () => {
@@ -182,6 +340,51 @@ test("Windows owned process trees use bounded kernel Job Object cleanup", async 
   );
 });
 
+test("Windows native Rust regression filters are isolated and cannot pass with zero tests", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+
+  for (const expected of WINDOWS_NATIVE_RUST_STEPS) {
+    assertWindowsNativeRustStep(sidecarRuntimeJob, expected);
+  }
+  assert.doesNotMatch(
+    sidecarRuntimeJob,
+    /dropping_application_cleanup_guard_stops_and_reaps_sidecar/,
+    "Windows CI must not silently pass a cleanup filter that is cfg-disabled on Windows",
+  );
+});
+
+test("Windows conformance runs the native harness parser and DryRun fixture", async () => {
+  const workflow = await readFile(
+    new URL("../.github/workflows/ci.yml", import.meta.url),
+    "utf8",
+  );
+  const { SUITES } = await import(new URL("../scripts/run-tests.mjs", import.meta.url));
+  const conformanceJob = getWorkflowJob(workflow, "conformance");
+  const conformanceStep = getNamedWorkflowStep(
+    conformanceJob,
+    "Run cross-environment conformance",
+  );
+  const harnessTest = "scripts/windows-native-browser-regression.test.mjs";
+
+  assert.match(
+    conformanceJob,
+    /^\s+os: \[ubuntu-latest, windows-latest, macos-latest\]$/m,
+    "the conformance matrix must retain a real Windows runner",
+  );
+  assert.match(conformanceStep, /^\s+run: pnpm test:conformance$/m);
+  assert.deepEqual(
+    Object.entries(SUITES).flatMap(([suite, files]) =>
+      files.flatMap((file) => (file === harnessTest ? [suite] : [])),
+    ),
+    ["conformance"],
+    "the native harness fixture must run once in conformance and nowhere else",
+  );
+});
+
 test("Windows release reports and enforces bounded MSI tables", async () => {
   const [workflow, budget] = await Promise.all([
     readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
@@ -239,8 +442,17 @@ test("Windows upgrade diagnostics preserve the legacy-bridge evidence", async ()
   );
   assert.match(fixtureTest, /legacy-expanded-msi-bridge/);
   assert.match(fixtureTest, /msiLog\.actions/);
-  assert.match(workflow, /Test Windows updater sidecar cleanup[\s\S]*cargo test[^\n]*cleanup/);
-  assert.match(workflow, /Test Windows upgrade diagnostics fixture/);
+  const sidecarRuntimeJob = getWorkflowJob(workflow, "sidecar-runtime");
+  const diagnosticsStep = getNamedWorkflowStep(
+    sidecarRuntimeJob,
+    "Test Windows upgrade diagnostics fixture",
+  );
+  assert.match(diagnosticsStep, /^\s+if: matrix\.os == 'windows-latest'$/m);
+  assert.match(diagnosticsStep, /^\s+shell: powershell$/m);
+  assert.match(
+    diagnosticsStep,
+    /^\s+run: \.\\scripts\\windows-upgrade-diagnostics\.test\.ps1$/m,
+  );
   assert.match(changelog, /\[0\.0\.173\][\s\S]*#2911/);
   assert.match(changelog, /v0\.0\.172.*v0\.0\.173 is the one-time legacy bridge/);
   assert.match(guide, /archive-to-archive/);
