@@ -66,6 +66,12 @@ assert.match(
 
 assert.match(
   source,
+  /const p = covenHome\(\)/,
+  "onboarding status checks an explicit COVEN_HOME instead of assuming ~/.coven",
+);
+
+assert.match(
+  source,
   /tool\.outdated[\s\S]{0,240}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
   "startup should require the latest coven CLI version, not just any installed version",
 );

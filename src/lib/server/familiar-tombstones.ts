@@ -1,6 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+import { covenHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "./atomic-write";
 import {
   normalizeTombstones,
@@ -9,14 +9,15 @@ import {
 } from "@/lib/familiar-removal";
 
 /**
- * ~/.coven/cave-removed-familiars.json — tombstones for removed familiars.
+ * $COVEN_HOME/cave-removed-familiars.json (defaulting to ~/.coven) — tombstones
+ * for removed familiars.
  * DELETE /api/familiars/[id] snapshots an entry here BEFORE mutating
  * familiars.toml / cave-config.json; POST /api/familiars/removed restores
  * from it, and the roster GET hides tombstoned ids until the daemon has
  * re-read familiars.toml.
  */
 function storePath(): string {
-  return path.join(homedir(), ".coven", "cave-removed-familiars.json");
+  return path.join(covenHome(), "cave-removed-familiars.json");
 }
 
 export async function readTombstones(now = Date.now()): Promise<RemovedFamiliarTombstone[]> {

@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { saveConfig, type FamiliarBinding } from "@/lib/cave-config";
+import { covenHome } from "@/lib/coven-paths";
 import { buildFamiliarsToml, familiarsTomlContainsId } from "@/lib/onboarding-familiars";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readTombstones, takeTombstone } from "@/lib/server/familiar-tombstones";
@@ -17,7 +17,8 @@ export const runtime = "nodejs";
  *   POST /api/familiars/removed {id}   → restore the tombstoned familiar
  *
  * Restore re-appends the snapshotted `[[familiar]]` block to
- * ~/.coven/familiars.toml and re-saves the cave-config.json binding, so the
+ * `$COVEN_HOME/familiars.toml` (defaulting to `~/.coven`) and re-saves the
+ * cave-config.json binding, so the
  * familiar comes back exactly as removed (workspace files never moved).
  */
 export async function GET() {
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const familiarsToml = path.join(homedir(), ".coven", "familiars.toml");
+  const familiarsToml = path.join(covenHome(), "familiars.toml");
   let existing = "";
   try {
     existing = await readFile(familiarsToml, "utf8");

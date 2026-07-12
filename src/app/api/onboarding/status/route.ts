@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher } from "@/lib/coven-bin";
+import { covenHome } from "@/lib/coven-paths";
 import {
   openCovenToolStatuses,
   type OpenCovenToolStatus,
@@ -157,14 +158,17 @@ async function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
 }
 
 async function checkCovenHome(): Promise<Step> {
-  const p = path.join(homedir(), ".coven");
+  const p = covenHome();
   try {
     const s = await stat(p);
     if (s.isDirectory()) return { ok: true, detail: p };
   } catch {
     /* missing */
   }
-  return { ok: false, hint: "Cave can create ~/.coven for you." };
+  return {
+    ok: false,
+    hint: process.env.COVEN_HOME ? `Cave can create ${p} for you.` : "Cave can create ~/.coven for you.",
+  };
 }
 
 async function checkDaemon(): Promise<Step> {

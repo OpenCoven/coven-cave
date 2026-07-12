@@ -887,6 +887,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/app/api/familiars/route.test.ts",
   "src/app/api/prompts/route.test.ts",
   "src/app/api/marketplace/pack-prompts-route.test.ts",
   "src/lib/cave-backdrop.test.ts",

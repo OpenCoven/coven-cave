@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
-import { callDaemon } from "@/lib/coven-daemon";
+import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
+import { covenHome } from "@/lib/coven-paths";
 import {
   explicitFamiliarIdsFromToml,
   filterInstallSeedFamiliars,
@@ -34,7 +34,7 @@ export type DaemonFamiliar = {
 };
 
 export async function GET() {
-  const covenDir = path.join(homedir(), ".coven");
+  const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
   const [res, config, removedIds, explicitIds] = await Promise.all([
     callDaemon<(DaemonFamiliar & { emoji?: string; icon?: string })[]>({
@@ -48,7 +48,7 @@ export async function GET() {
   ]);
   if (!res.ok) {
     return NextResponse.json(
-      { ok: false, error: res.error ?? `daemon http ${res.status}`, familiars: [] },
+      { ok: false, error: extractDaemonError(res) ?? `daemon http ${res.status}`, familiars: [] },
       { status: 503 },
     );
   }
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const covenDir = path.join(homedir(), ".coven");
+  const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
   const adaptersDir = path.join(covenDir, "adapters");
 

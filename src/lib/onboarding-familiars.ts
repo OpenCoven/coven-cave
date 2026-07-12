@@ -119,7 +119,9 @@ export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): strin
     `role = ${tomlString(draft.role)}`,
   ];
 
-  if (draft.description) lines.push(`description = ${tomlString(draft.description)}`);
+  // Coven's registry schema requires this field. Keep blank user input explicit
+  // so both onboarding and the in-app creator produce daemon-readable TOML.
+  lines.push(`description = ${tomlString(draft.description)}`);
   lines.push(`harness = ${tomlString(draft.harness)}`);
   lines.push(`model = ${tomlString(draft.model)}`);
   if (draft.openclawAgentId) lines.push(`openclaw_agent = ${tomlString(draft.openclawAgentId)}`);

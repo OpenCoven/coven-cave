@@ -1,7 +1,7 @@
 import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { covenHome } from "./coven-paths.ts";
 import {
   type ChatAutoArchivePolicy,
   extendUntilIso,
@@ -15,8 +15,13 @@ import {
 } from "@/lib/familiar-runtime";
 import type { UserProfile } from "@/lib/user-profile-shared";
 
-const CONFIG_PATH = path.join(homedir(), ".coven", "cave-config.json");
-const STATE_PATH = path.join(homedir(), ".coven", "cave-state.json");
+function configPath(): string {
+  return path.join(covenHome(), "cave-config.json");
+}
+
+function statePath(): string {
+  return path.join(covenHome(), "cave-state.json");
+}
 
 const DEFAULT_CONFIG: CaveConfig = {
   version: 1,
@@ -228,7 +233,7 @@ export type CaveState = {
 
 export async function loadConfig(): Promise<CaveConfig> {
   try {
-    const raw = await readFile(CONFIG_PATH, "utf8");
+    const raw = await readFile(configPath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveConfig>;
     return {
       version: parsed.version ?? 1,
@@ -444,8 +449,8 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
           })
         : current.chatAutoArchive,
   };
-  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeJsonAtomic(CONFIG_PATH, updated);
+  await mkdir(path.dirname(configPath()), { recursive: true });
+  await writeJsonAtomic(configPath(), updated);
   return updated;
   });
 }
@@ -475,8 +480,8 @@ export async function installMarketplacePlugin(
       },
     },
   };
-  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeJsonAtomic(CONFIG_PATH, updated);
+  await mkdir(path.dirname(configPath()), { recursive: true });
+  await writeJsonAtomic(configPath(), updated);
   return installedAt;
   });
 }
@@ -490,8 +495,8 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
     ...cfg,
     marketplace: { installed },
   };
-  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeJsonAtomic(CONFIG_PATH, updated);
+  await mkdir(path.dirname(configPath()), { recursive: true });
+  await writeJsonAtomic(configPath(), updated);
   });
 }
 
@@ -518,7 +523,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
 
 export async function loadState(): Promise<CaveState> {
   try {
-    const raw = await readFile(STATE_PATH, "utf8");
+    const raw = await readFile(statePath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveState>;
     return {
       sessionFamiliar: parsed.sessionFamiliar ?? {},
@@ -537,8 +542,8 @@ export async function loadState(): Promise<CaveState> {
 }
 
 async function saveState(state: CaveState): Promise<void> {
-  await mkdir(path.dirname(STATE_PATH), { recursive: true });
-  await writeJsonAtomic(STATE_PATH, state);
+  await mkdir(path.dirname(statePath()), { recursive: true });
+  await writeJsonAtomic(statePath(), state);
 }
 
 // In-process serialization of cave-state.json mutations. Without this, two
@@ -840,7 +845,7 @@ export async function upsertRoleConfig(
   } else {
     cfg.roles.push({ id: roleId, familiar, active, activatedAt: active ? now : undefined });
   }
-  await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeJsonAtomic(CONFIG_PATH, cfg);
+  await mkdir(path.dirname(configPath()), { recursive: true });
+  await writeJsonAtomic(configPath(), cfg);
   });
 }

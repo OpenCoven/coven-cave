@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { loadConfig, saveConfig } from "@/lib/cave-config";
+import { covenHome } from "@/lib/coven-paths";
 import {
   displayNameFromTomlBlock,
   removeFamiliarBlockFromToml,
@@ -17,7 +17,8 @@ export const runtime = "nodejs";
  * Remove ("detach") a familiar — the undo-safe half of the dual-track
  * lifecycle. Archive (client-side, cave-familiar-archive.ts) hides a familiar
  * but leaves it registered; Remove strips its `[[familiar]]` block from
- * ~/.coven/familiars.toml and drops its cave-config.json binding, which is
+ * `$COVEN_HOME/familiars.toml` (defaulting to `~/.coven`) and drops its
+ * cave-config.json binding, which is
  * what a mistaken OpenClaw-agent binding actually needs.
  *
  * Safety model:
@@ -34,7 +35,7 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
 
-  const familiarsToml = path.join(homedir(), ".coven", "familiars.toml");
+  const familiarsToml = path.join(covenHome(), "familiars.toml");
   let toml: string | null = null;
   try {
     toml = await readFile(familiarsToml, "utf8");

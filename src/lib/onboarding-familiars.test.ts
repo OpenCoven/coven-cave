@@ -58,6 +58,39 @@ assert.deepEqual(localDraft, {
   runtime: undefined,
 });
 
+// Legacy Ash/Briar-shaped drafts omitted a description and produced TOML the
+// daemon could not deserialize. A blank description must remain explicit.
+for (const familiar of [
+  {
+    id: "ash",
+    displayName: "Ash",
+    glyph: "ph:flask-fill",
+    role: "Familiar",
+    harness: "codex",
+    model: "openai/gpt-5.5",
+  },
+  {
+    id: "briar",
+    displayName: "Briar",
+    glyph: "ph:code-fill",
+    role: "Familiar",
+    harness: "codex",
+    model: "openai/gpt-5.5",
+  },
+]) {
+  const legacyDraft = normalizeFamiliarDraft(familiar);
+  const legacyToml = buildFamiliarsToml(legacyDraft);
+
+  assert.equal(legacyDraft.description, "", `${familiar.id} defaults its missing description to an empty string`);
+  assert.match(legacyToml, /description = ""/, `${familiar.id} writes an explicit blank description`);
+  assert.match(legacyToml, new RegExp(`id = "${familiar.id}"`));
+  assert.match(legacyToml, new RegExp(`display_name = "${familiar.displayName}"`));
+  assert.match(legacyToml, new RegExp(`emoji = "${familiar.glyph}"`));
+  assert.match(legacyToml, new RegExp(`role = "${familiar.role}"`));
+  assert.match(legacyToml, new RegExp(`harness = "${familiar.harness}"`));
+  assert.match(legacyToml, new RegExp(`model = "${familiar.model}"`));
+}
+
 assert.equal(normalizeFamiliarDraft({ displayName: "Solo" }).harness, "codex");
 
 const hermesDraft = normalizeFamiliarDraft({

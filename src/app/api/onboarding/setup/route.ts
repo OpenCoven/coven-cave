@@ -1,6 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import {
   loadConfig,
@@ -18,6 +17,7 @@ import {
   adapterManifestScaffoldForHarness,
   isTrustedOnboardingHarness,
 } from "@/lib/harness-adapters";
+import { covenHome } from "@/lib/coven-paths";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
 
 export const dynamic = "force-dynamic";
@@ -69,8 +69,7 @@ export async function POST(req: Request) {
   const model =
     (draft?.model ?? body.model ?? defaultModelForRuntime(harness)).trim() || defaultModelForRuntime(harness);
 
-  const home = homedir();
-  const covenDir = path.join(home, ".coven");
+  const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
   const configJson = path.join(covenDir, "cave-config.json");
   const conversationsDir = path.join(covenDir, "cave-conversations");
