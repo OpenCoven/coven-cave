@@ -120,8 +120,8 @@ assert.match(
 );
 assert.match(
   source,
-  /rounded-full border border-\[var\(--border-hairline\)\]/,
-  "strip actions use the 999px pill + hairline language",
+  /rounded-\[var\(--radius-pill\)\] border border-\[var\(--border-hairline\)\]/,
+  "strip actions use the pill token + hairline language (tracks the corner radius setting)",
 );
 
 // ── All three composers mount the shared pair ────────────────────────────────

@@ -109,11 +109,12 @@ assert.match(css, /\.cave-runtime-chip__logo \{[\s\S]*?color: var\(--accent-pres
 assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, "chip styles stay on semantic tokens — no hardcoded hex");
 
 // ── Standardized radius ──────────────────────────────────────────────────────
-// The chip sits between fully round icon buttons (attach/voice/options/send
-// are rounded-full circles), so it must be a pill — the squarer
-// --radius-control made it read as a different control family.
-assert.match(css, /\.cave-composer-runtime-chip \{[\s\S]*?border-radius: 999px;/, "the runtime chip is a pill, matching the round composer icon buttons");
+// The chip sits between the pill composer icon buttons (attach/voice/options/
+// send), so it must share their curvature — via the --radius-pill token, which
+// tracks the corner radius appearance setting (999px by default, squared at
+// `sharp`). The squarer --radius-control made it read as a different family.
+assert.match(css, /\.cave-composer-runtime-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the runtime chip uses the pill token, matching the composer icon buttons");
 const hostCss = readFileSync(new URL("../styles/composer-host-chip.css", import.meta.url), "utf8");
-assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: 999px;/, "the host chip matches the same pill radius");
+assert.match(hostCss, /\.cave-composer-host-chip \{[\s\S]*?border-radius: var\(--radius-pill\);/, "the host chip matches the same pill token");
 
 console.log("composer-runtime-chip.test.ts: ok");

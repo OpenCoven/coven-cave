@@ -11,6 +11,7 @@ import {
   mergedChatAutoArchiveDecisions,
 } from "@/lib/merged-chat-auto-archive";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
+import { sweepAutoArchive } from "@/lib/chat-auto-archive-sweep";
 import {
   localConversationSessionRows,
   mergeSessionRows,
@@ -245,6 +246,32 @@ async function scopeForFamiliar(
   return scopeSessionsToFamiliarProjects(sessions, projects, permitted);
 }
 
+/**
+ * Auto-archive sweep, piggybacked on the session list read. Sessions due per
+ * the configured policy are archived in cave state; the rows returned by this
+ * request already reflect the sweep (dropped from the active view, stamped
+ * `archived_at` in the archived view). Best-effort — sweep failures never
+ * break the listing.
+ */
+async function applyAutoArchiveSweep(
+  sessions: SessionRow[],
+  state: CaveState,
+  includeArchived: boolean,
+): Promise<SessionRow[]> {
+  const swept = await sweepAutoArchive(sessions, state);
+  if (swept.size === 0) return sessions;
+  const next: SessionRow[] = [];
+  for (const row of sessions) {
+    const archivedAt = swept.get(row.id);
+    if (!archivedAt) {
+      next.push(row);
+    } else if (includeArchived) {
+      next.push({ ...row, archived_at: archivedAt });
+    }
+  }
+  return next;
+}
+
 async function computeSessionsList(
   includeArchived: boolean,
   familiarId: string | null,
@@ -256,7 +283,11 @@ async function computeSessionsList(
   ]);
   const localConversations = await listConversations();
   if (!res.ok || !res.data) {
-    const localSessions = localConversationSessionRows(localConversations, state, includeArchived);
+    const localSessions = await applyAutoArchiveSweep(
+      localConversationSessionRows(localConversations, state, includeArchived),
+      state,
+      includeArchived,
+    );
     if (localSessions.length > 0) {
       return {
         payload: {
@@ -284,13 +315,17 @@ async function computeSessionsList(
     return isTrueProjectCwd(projectRoot);
   }
 
-  const sessions = mergeSessionRows({
-    daemonSessions: res.data,
-    localConversations,
+  const sessions = await applyAutoArchiveSweep(
+    mergeSessionRows({
+      daemonSessions: res.data,
+      localConversations,
+      state,
+      includeArchived,
+      isValidDaemonProjectRoot: isKnownProjectOrValidDir,
+    }),
     state,
     includeArchived,
-    isValidDaemonProjectRoot: isKnownProjectOrValidDir,
-  });
+  );
 
   const scoped = await scopeForFamiliar(sessions, projects, familiarId);
   return {

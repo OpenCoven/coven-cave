@@ -254,7 +254,7 @@
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
@@ -454,7 +454,7 @@
   height: 26px;
   padding: 0;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-panel) 82%, transparent);
   color: var(--text-secondary);
   cursor: pointer;
@@ -717,7 +717,7 @@
   background: none;
   color: var(--text-muted);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .cave-code-collapse-btn:hover {
   color: var(--text-secondary);
@@ -903,7 +903,7 @@
   font-size: 10px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   padding: 0.2em 0.6em;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   background: oklch(0.2 0.012 280 / 92%);
   color: var(--code-chrome-ink-faint);
@@ -993,7 +993,7 @@
   .cave-bubble-actions .cave-copy-btn-bubble {
     min-width: 44px;
     min-height: 36px;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
   }
 }
 
@@ -1038,7 +1038,7 @@
   letter-spacing: 0.04em;
   padding: 0.2em 0.8em;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--code-chrome-ink-faint);
   cursor: pointer;
@@ -1704,7 +1704,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   height: 22px;
   margin-left: auto;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -2054,7 +2054,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1px solid color-mix(in oklch, var(--color-danger) 35%, transparent);
   background: transparent;
   padding: 1px 6px;
@@ -2078,7 +2078,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-hairline);
   background: transparent;
   padding: 1px 6px;
@@ -2351,7 +2351,7 @@ details[open] > .cave-tool-summary::before {
   margin-top: 7px;
   padding: 2px 7px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
   color: var(--text-muted);
   font-size: 10px;
@@ -2626,7 +2626,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
@@ -2810,7 +2810,7 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-back-button {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .cave-chat-meta-line--streaming {
@@ -2846,7 +2846,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 5px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-surface) 72%, transparent);
   padding: 0 7px;
   color: var(--text-secondary);
@@ -2929,7 +2929,7 @@ details[open] > .cave-tool-summary::before {
   width: 100%;
   padding: 5px 7px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-primary);
   font-size: 11px;
@@ -2981,7 +2981,7 @@ details[open] > .cave-tool-summary::before {
   min-width: 0;
   padding: 5px 7px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -2991,7 +2991,7 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-model-popover__custom-apply {
   padding: 5px 10px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 10.5px;
@@ -3059,7 +3059,7 @@ details[open] > .cave-tool-summary::before {
   min-height: 24px;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   transition:
@@ -3215,7 +3215,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-hairline);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   line-height: 1;
   transition:
@@ -3314,7 +3314,7 @@ details[open] > .cave-tool-summary::before {
   height: 16px;
   flex-shrink: 0;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
@@ -4162,8 +4162,9 @@ details[open] > .cave-tool-summary::before {
     min-width: var(--touch-target);
     min-height: var(--touch-target);
     /* Match the capsule runtime/host chips — the utility row reads as one
-       family of controls at every breakpoint. */
-    border-radius: 999px;
+       family of controls at every breakpoint. Tracks the corner radius
+       appearance setting via the shared pill token. */
+    border-radius: var(--radius-pill);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -4521,6 +4522,20 @@ details[open] > .cave-tool-summary::before {
 /* ── Familiar inline card (avatar click → in-thread expand) ──────────────── */
 .cave-linear-turn-avatar { position: relative; }
 
+/* The expanded card mounts INSIDE the circular avatar cell, whose
+   `overflow: hidden` (needed to crop photo avatars) was clipping the whole
+   card down to the 48px circle — only its backdrop and close × peeked
+   through. When the cell hosts the interactive button, move the photo crop
+   onto the button itself and let the cell overflow so the card can escape. */
+.cave-linear-turn-avatar:has(> .cave-linear-turn-avatar-btn) {
+  overflow: visible;
+}
+
+.cave-linear-turn-avatar.is-selected {
+  /* Lift the open card above the following turns. */
+  z-index: 30;
+}
+
 .cave-linear-turn-avatar-btn {
   display: inline-flex;
   width: 100%;
@@ -4531,7 +4546,8 @@ details[open] > .cave-tool-summary::before {
   border: 0;
   background: transparent;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: inherit;
+  overflow: hidden;
 }
 .cave-linear-turn-avatar-btn:focus-visible {
   outline: 2px solid var(--accent, #7c93ff);
@@ -4539,8 +4555,12 @@ details[open] > .cave-tool-summary::before {
 }
 
 .familiar-inline-card {
-  position: relative;
-  margin-top: 8px;
+  /* Popover below the avatar — absolute so the fixed-width avatar grid cell
+     (52/64px) neither clips nor stretches around it. */
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
   width: min(320px, 78vw);
   padding: 12px;
   border: 1px solid var(--border-hairline, #2a2a2a);
@@ -4593,7 +4613,7 @@ details[open] > .cave-tool-summary::before {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 12px; padding: 4px 8px;
   border: 1px solid var(--border-hairline, #2a2a2a);
-  border-radius: 8px; background: var(--bg-base, #111);
+  border-radius: var(--radius-control); background: var(--bg-base, #111);
   color: var(--text-primary, #eee); cursor: pointer;
 }
 .familiar-inline-card__actions button:hover { background: var(--bg-hover, #1c1c1c); }
@@ -4805,7 +4825,7 @@ details[open] > .cave-tool-summary::before {
   width: 32px;
   height: 32px;
   flex: 0 0 auto;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -4952,7 +4972,7 @@ details[open] > .cave-tool-summary::before {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
   color: var(--text-muted);

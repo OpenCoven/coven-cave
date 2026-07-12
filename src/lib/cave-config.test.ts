@@ -17,6 +17,8 @@ try {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionKeep: {},
+    sessionArchiveExtendedUntil: {},
     sessionOwned: {},
     mergedPrAutoArchived: {},
     travel: {
@@ -45,6 +47,10 @@ try {
   await config.summonSessionLocal("session-1");
   state = await config.loadState();
   assert.deepEqual(state.sessionArchived, {});
+  // Summon leaves a grace extension so the next auto-archive sweep skips the
+  // freshly restored chat.
+  const summonGraceUntil = state.sessionArchiveExtendedUntil["session-1"];
+  assert.ok(Date.parse(summonGraceUntil) > Date.now(), "summon writes a future grace deadline");
 
   // Merged-PR auto-archive: archives + records the one-shot (session, PR) pair,
   // and summoning afterwards clears the archive but keeps the record.
@@ -66,12 +72,42 @@ try {
   const sacrificedAt = await config.sacrificeSessionLocal("session-1");
   assert.ok(Number.isFinite(Date.parse(sacrificedAt)));
 
+  // Keep / extend / batch auto-archive primitives.
+  assert.equal(await config.setSessionKeepLocal("session-2", true), true);
+  state = await config.loadState();
+  assert.ok(state.sessionKeep["session-2"], "keep mark persisted");
+  assert.equal(await config.setSessionKeepLocal("session-2", false), false);
+  state = await config.loadState();
+  assert.deepEqual(state.sessionKeep, {});
+
+  const until = new Date(Date.now() + 86_400_000).toISOString();
+  assert.equal(await config.extendSessionAutoArchiveLocal("session-2", until), until);
+  state = await config.loadState();
+  assert.equal(state.sessionArchiveExtendedUntil["session-2"], until);
+
+  const swept = await config.autoArchiveSessionsLocal(["session-1", "session-2", "session-3"]);
+  assert.deepEqual(
+    [...swept.keys()].sort(),
+    ["session-2", "session-3"],
+    "batch archive skips sacrificed sessions and stamps the rest",
+  );
+  state = await config.loadState();
+  assert.equal(state.sessionArchived["session-2"], swept.get("session-2"));
+  const rearchive = await config.autoArchiveSessionsLocal(["session-2"]);
+  assert.equal(rearchive.size, 0, "already-archived sessions are not restamped");
+  await config.summonSessionLocal("session-2");
+  await config.summonSessionLocal("session-3");
+
   const raw = await readFile(path.join(tempHome, ".coven", "cave-state.json"), "utf8");
-  assert.deepEqual(JSON.parse(raw), {
+  const rawState = JSON.parse(raw);
+  // Summon grace timestamps vary per run; the shape checks above cover them.
+  delete rawState.sessionArchiveExtendedUntil;
+  assert.deepEqual(rawState, {
     sessionFamiliar: { "session-1": "cody" },
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
+    sessionKeep: {},
     sessionOwned: {},
     mergedPrAutoArchived: { "session-1": "OpenCoven/coven-cave#42" },
     travel: {

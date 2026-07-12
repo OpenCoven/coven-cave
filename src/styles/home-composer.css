@@ -375,7 +375,7 @@
   padding: 0 11px 0 8px;
   font-size: 11px;
   border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
 }
 

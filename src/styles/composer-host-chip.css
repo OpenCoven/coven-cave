@@ -18,9 +18,10 @@
   line-height: 1;
   cursor: pointer;
   border: 1px solid var(--border-hairline);
-  /* Pill radius — matches the runtime chip and the fully round icon buttons
-     it sits between in the composer control row (see composer-runtime-chip.css). */
-  border-radius: 999px;
+  /* Pill radius — matches the runtime chip and the pill icon buttons it sits
+     between in the composer control row (see composer-runtime-chip.css).
+     Tracks the corner radius appearance setting. */
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
 }

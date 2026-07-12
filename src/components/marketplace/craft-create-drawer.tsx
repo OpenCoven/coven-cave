@@ -138,7 +138,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
+    <div className="craft-create-drawer__backdrop" onClick={onClose}>
       <div
         ref={ref}
         role="dialog"
@@ -148,42 +148,42 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
         className="craft-create-drawer"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Craft authoring</p>
-            <h2 className="text-[18px] font-semibold text-[var(--text-primary)]">Create Craft</h2>
-            <p className="text-[12px] text-[var(--text-muted)]">Extract a reusable bundle from a familiar&apos;s roles.</p>
+        <div className="craft-create-drawer__header">
+          <div className="craft-create-drawer__headline">
+            <p className="craft-create-drawer__eyebrow">Craft authoring</p>
+            <h2 className="craft-create-drawer__title">Create Craft</h2>
+            <p className="craft-create-drawer__subtitle">Extract a reusable bundle from a familiar&apos;s roles.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <button type="button" onClick={onClose} aria-label="Close" className="focus-ring craft-create-drawer__close">
             <Icon name="ph:x" width={16} />
           </button>
         </div>
 
         {error ? (
-          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          <p role="alert" className="craft-create-drawer__alert">
             {error}
           </p>
         ) : null}
 
-        <label className="grid gap-1 text-[12px] text-[var(--text-muted)]">
+        <label className="craft-create-drawer__field">
           <span>Familiar</span>
           <StandardSelect
             label="Familiar"
             value={familiar}
             onChange={chooseFamiliar}
             options={familiarOptions}
-            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[13px] text-[var(--text-primary)]"
+            className="focus-ring craft-create-drawer__select"
           />
         </label>
 
-        <section className="grid gap-2" aria-label="Roles to extract">
-          <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">Roles</h3>
+        <section className="craft-create-drawer__roles" aria-label="Roles to extract">
+          <h3>Roles</h3>
           {!loaded ? (
-            <p className="text-[12px] text-[var(--text-muted)]">Loading roles...</p>
+            <p className="craft-create-drawer__status">Loading roles...</p>
           ) : visibleRoles.length === 0 ? (
-            <p className="text-[12px] text-[var(--text-muted)]">No roles found for this familiar.</p>
+            <p className="craft-create-drawer__status">No roles found for this familiar.</p>
           ) : (
-            <div className="grid gap-2">
+            <div className="craft-create-drawer__role-list">
               {visibleRoles.map((role) => (
                 <label key={`${role.familiar}:${role.id}`} className="craft-create-drawer__role">
                   <input
@@ -211,7 +211,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
           </div>
         </section>
 
-        <div className="mt-auto flex justify-end gap-2 border-t border-[var(--border-hairline)] pt-3">
+        <div className="craft-create-drawer__actions">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
           <Button
             variant="primary"

@@ -287,8 +287,8 @@
     if (hyphens === "on") html.style.setProperty("--cave-reading-hyphens", "auto");
 
     var RADII = {
-      sharp: ["0.125rem","2px","4px"],
-      round: ["0.875rem","12px","16px"]
+      sharp: ["0.125rem","2px","4px","4px"],
+      round: ["0.875rem","12px","16px","999px"]
     };
     var radiusLevel = String(stored("cave:corner-radius", appearance.cornerRadius || "default"));
     var radii = RADII[radiusLevel];
@@ -296,6 +296,7 @@
       html.style.setProperty("--radius", radii[0]);
       html.style.setProperty("--radius-control", radii[1]);
       html.style.setProperty("--radius-card", radii[2]);
+      html.style.setProperty("--radius-pill", radii[3]);
     }
 
     var backdropRaw = initialized ? backdrop : stored("cave:backdrop:v1", backdrop);

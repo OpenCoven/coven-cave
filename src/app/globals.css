@@ -99,6 +99,9 @@
   --radius-control: 8px;
   --radius-card: 12px;
   --radius-panel: 16px;
+  /* Signature pill (composer icon buttons + chips). Scales with the corner
+     radius appearance setting: `sharp` overrides it to a squared value. */
+  --radius-pill: 999px;
 
   /* ---- Spacing ---- */
   --space-1: 4px;
@@ -13191,6 +13194,14 @@ details[open] > .cave-edit-card__summary::before {
 .craft-dossier__footer > div { display: flex; min-width: 160px; flex: 1; flex-direction: column; }
 .craft-dossier__footer strong { color: var(--text-primary); font-size: 11px; }
 .craft-dossier__footer span { color: var(--text-muted); font-size: 9.5px; }
+.craft-create-drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--backdrop-scrim);
+}
 .craft-create-drawer {
   display: flex;
   width: min(520px, 100vw);
@@ -13203,6 +13214,77 @@ details[open] > .cave-edit-card__summary::before {
   padding: 18px;
   box-shadow: -16px 0 48px color-mix(in oklch, black 18%, transparent);
 }
+.craft-create-drawer__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.craft-create-drawer__headline { min-width: 0; }
+.craft-create-drawer__eyebrow {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.craft-create-drawer__title {
+  margin: 1px 0 2px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+}
+.craft-create-drawer__subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.craft-create-drawer__close {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 4px;
+}
+.craft-create-drawer__close:hover { color: var(--text-primary); }
+.craft-create-drawer__alert {
+  margin: 0;
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+  font-size: 12px;
+  padding: 8px 10px;
+}
+.craft-create-drawer__field {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.craft-create-drawer__select {
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.craft-create-drawer__roles { display: grid; gap: 8px; }
+.craft-create-drawer__roles h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+.craft-create-drawer__status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.craft-create-drawer__role-list { display: grid; gap: 8px; }
 .craft-create-drawer__role {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -13230,6 +13312,15 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 11px;
   font-style: normal;
   line-height: 1.35;
+}
+.craft-create-drawer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  border-top: 1px solid var(--border-hairline);
+  padding-top: 12px;
 }
 .craft-draft-ledger {
   display: grid;

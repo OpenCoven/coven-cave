@@ -118,7 +118,7 @@ export function ComposerOptionsMenu({
       <button
         ref={anchorRef}
         type="button"
-        className="cave-composer-icon-button composer-options__trigger focus-ring relative grid h-[30px] w-[30px] place-items-center rounded-full border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+        className="cave-composer-icon-button composer-options__trigger focus-ring relative grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
         disabled={disabled}
         aria-haspopup="dialog"
         aria-expanded={open}

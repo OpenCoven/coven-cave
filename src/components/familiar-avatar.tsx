@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
 import { AvatarLightbox } from "./ui/avatar-lightbox";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -16,9 +16,12 @@ type Props = {
   title?: string;
   /** When true, clicking the avatar opens a full-size preview modal. */
   expandable?: boolean;
+  /** Footer actions inside the expanded preview (e.g. an "Edit" link) —
+   *  forwarded to AvatarLightbox. Only meaningful with `expandable`. */
+  expandFooterActions?: ReactNode;
 };
 
-export function FamiliarAvatar({ familiar, size = "md", className, title, expandable }: Props) {
+export function FamiliarAvatar({ familiar, size = "md", className, title, expandable, expandFooterActions }: Props) {
   const px = PX[size];
   // Prefer the avatar image over the glyph, and try EVERY available image source
   // before ever falling back to the glyph. The glyph is the last resort — it
@@ -63,7 +66,7 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
 
   if (expandable && hasImage) {
     return (
-      <AvatarLightbox src={currentSrc} label={familiar.display_name}>
+      <AvatarLightbox src={currentSrc} label={familiar.display_name} footerActions={expandFooterActions}>
         {imgEl}
       </AvatarLightbox>
     );

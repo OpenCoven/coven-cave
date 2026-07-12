@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadConfig, saveConfig } from "@/lib/cave-config";
 import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
 
-const ALLOWED_TOP_LEVEL_KEYS = new Set(["addons", "defaults", "familiars", "roles", "marketplace", "multiHost"]);
+const ALLOWED_TOP_LEVEL_KEYS = new Set(["addons", "defaults", "familiars", "roles", "marketplace", "multiHost", "chatAutoArchive"]);
 type ConfigPatchBody = Record<string, unknown>;
 
 async function pathExists(targetPath: string): Promise<boolean> {
