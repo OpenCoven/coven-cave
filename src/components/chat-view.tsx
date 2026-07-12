@@ -38,6 +38,7 @@ import {
 } from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
+import { createSmartTaskFromChat } from "@/lib/chat-task-autofill";
 import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
@@ -1867,6 +1868,7 @@ function LinkedContextRow({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [creatingTask, setCreatingTask] = useState(false);
   const { announce } = useAnnouncer();
   const task = linkedContext?.task ?? null;
   const tasks = linkedContext?.tasks ?? (task ? [task] : []);
@@ -1930,6 +1932,33 @@ function LinkedContextRow({
     });
   };
 
+  // One-click smart chat → task handoff: creates a board card auto-filled from
+  // the conversation (title, priority, due date, subtasks, links, GitHub links
+  // — see chat-task-autofill.ts) and links it to this chat via onAssigned, the
+  // same path the picker uses, so the task chip appears immediately.
+  const createTaskFromConversation = async () => {
+    if (!handoff || !sessionId || creatingTask) return;
+    setCreatingTask(true);
+    try {
+      const result = await createSmartTaskFromChat({ sessionId, context: handoff });
+      if (!result.ok || !result.card) throw new Error(result.error ?? "Failed to create task");
+      onAssigned(result.card);
+      const filled = [
+        result.card.steps?.length ? `${result.card.steps.length} subtasks` : null,
+        result.card.priority !== "medium" ? `priority ${result.card.priority}` : null,
+        result.card.endDate ? `due ${result.card.endDate}` : null,
+        result.card.github?.length ? `${result.card.github.length} GitHub links` : null,
+      ].filter(Boolean);
+      announce(
+        `Task "${result.card.title}" created from this chat${filled.length ? ` with ${filled.join(", ")}` : ""}.`,
+      );
+    } catch {
+      announce("Couldn't create a task from this chat — check your connection.", "assertive");
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
   return (
     <div className="cave-chat-linked-context">
       {tasks.map((t) => (
@@ -1950,6 +1979,19 @@ function LinkedContextRow({
           ) : null}
         </span>
       ))}
+      {canLink && handoff ? (
+        <button
+          type="button"
+          onClick={() => void createTaskFromConversation()}
+          disabled={creatingTask}
+          title="Create a task from this conversation — auto-fills title, subtasks, priority, due date, and links"
+          aria-label="Create a task from this conversation"
+          className="cave-chat-linked-chip cave-chat-linked-chip--create-task focus-ring inline-flex items-center gap-1 border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-60"
+        >
+          <Icon name="ph:kanban" width={11} className="shrink-0 text-[var(--accent-presence)]" />
+          {creatingTask ? "Creating…" : "Create task"}
+        </button>
+      ) : null}
       {canLink ? (
         <span className="relative inline-flex">
           <button

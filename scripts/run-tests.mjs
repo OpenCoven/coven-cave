@@ -60,6 +60,8 @@ export const SUITES = {
     "src/lib/cave-projects.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/project-permissions.test.ts",
+    "src/lib/project-icon-prompt.test.ts",
+    "src/lib/project-icon-image-provider.test.ts",
     "src/lib/permissions-console.test.ts",
     "src/lib/project-status.test.ts",
     "src/lib/github-checks.test.ts",
@@ -410,6 +412,8 @@ export const SUITES = {
     "src/components/chat-linked-context.test.ts",
     "src/components/chat-task-handoff-wiring.test.ts",
     "src/lib/chat-task-handoff.test.ts",
+    "src/components/chat-task-create-button-wiring.test.ts",
+    "src/lib/chat-task-autofill.test.ts",
     "src/components/group-chat-view.test.ts",
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
@@ -648,6 +652,7 @@ export const SUITES = {
     "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
+    "src/app/api/projects/icon/route.test.ts",
     "src/app/api/chat/model-state/route.test.ts",
     "src/app/api/prompt/enhance/route.test.ts",
     "src/app/api/prompts/route.test.ts",
@@ -935,6 +940,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/quick-chat.test.ts",
   "src/lib/command-controls.test.ts",
   "src/lib/travel-network-drop-proof.test.ts",
+  "src/lib/chat-task-autofill.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

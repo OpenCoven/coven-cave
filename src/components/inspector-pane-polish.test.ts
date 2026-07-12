@@ -6,26 +6,34 @@ import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(resolve(here, "./inspector-pane.tsx"), "utf8");
+const chatSurface = readFileSync(resolve(here, "./chat-surface.tsx"), "utf8");
 
-test("outer tab nav uses the shared underline Tabs, labelled, natural-width", () => {
-  assert.match(src, /<Tabs[\s\S]{0,420}ariaLabel="Inspector sections"/, "outer nav uses shared Tabs");
-  assert.match(src, /variant="underline"/, "outer nav is underline");
-  // Natural-width sm tabs: `fill` split the 260px sidebar into equal thirds
-  // and shredded "Automations" — content-hugging tabs keep every label whole.
-  assert.match(src, /<Tabs[\s\S]{0,420}size="sm"/, "outer tabs use compact density");
-  assert.doesNotMatch(src, /<Tabs\s*\n\s*variant="underline"\s*\n\s*fill\b/, "outer tabs no longer stretch-fill the row");
+test("inspector sections are promoted to the chat right panel — no nested strip", () => {
+  // The pane is a controlled section body: the chat right panel owns the
+  // top-level tabs (Familiar / Analytics / Automations), so the old
+  // tab-strip-inside-a-tab-strip is gone from the pane itself.
+  assert.doesNotMatch(src, /ariaLabel="Inspector sections"/, "no nested section strip in the pane");
+  assert.match(src, /tab\?: Tab/, "the pane takes its section as a controlled prop");
+  assert.match(
+    chatSurface,
+    /INSPECTOR_SECTIONS[\s\S]{0,300}\{ id: "familiar", label: "Familiar" \},\s*\{ id: "analytics", label: "Analytics" \},\s*\{ id: "inbox", label: "Automations" \},/,
+    "chat right panel declares the promoted section tabs",
+  );
+  assert.match(chatSurface, /<InspectorPane[\s\S]{0,400}tab=\{section\}/, "chat right panel drives the pane's section");
+  // Debug is demoted to an icon toggle beside close, not a co-equal section.
+  assert.match(chatSurface, /right-panel-tab--icon[\s\S]{0,300}ph:bug-bold/, "debug is an icon toggle");
 });
 
 test("inbox badge is softened from danger to warning tone", () => {
   assert.doesNotMatch(
-    src,
+    chatSurface,
     /bg-\[var\(--color-danger\)\] px-1 text-\[9px\] font-bold text-white/,
     "old red danger pill removed",
   );
   assert.match(
-    src,
+    chatSurface,
     /bg-\[color-mix\(in_oklch,var\(--color-warning\)_28%,transparent\)\]/,
-    "warning-tinted soft badge present",
+    "warning-tinted soft badge present on the Automations tab",
   );
 });
 
