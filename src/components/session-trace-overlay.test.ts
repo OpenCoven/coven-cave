@@ -46,4 +46,12 @@ describe("SessionTraceOverlay", () => {
   it("keeps an empty session honest — no fake rows", () => {
     assert.match(source, /No events recorded for this session\./);
   });
+
+  it("treats the daemon's 404 as a calm no-log state, not a raw error", () => {
+    // Chat-only sessions and pruned logs 404 on the daemon — expected, so the
+    // overlay renders an empty state and suppresses the alert callout for it.
+    assert.match(source, /const noEventLog = error !== null && \/\\b404\\b\/\.test\(error\)/);
+    assert.match(source, /No event log for this session\./);
+    assert.match(source, /\{error && !noEventLog \? \(/, "the alert callout is reserved for real failures");
+  });
 });

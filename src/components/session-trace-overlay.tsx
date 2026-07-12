@@ -73,6 +73,10 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
   }, [load]);
 
   const lastSeq = events.length > 0 ? events[events.length - 1].seq : 0;
+  // The daemon 404s sessions it has no event log for (chat-only sessions, or
+  // logs pruned by `coven sacrifice`). That's an expected no-data state, not a
+  // failure — render it as a calm empty state instead of a raw error callout.
+  const noEventLog = error !== null && /\b404\b/.test(error);
 
   return (
     <Modal
@@ -103,7 +107,7 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
           </button>
         </div>
 
-        {error ? (
+        {error && !noEventLog ? (
           <div className="retro-callout" role="alert">
             <Icon name="ph:warning-circle" aria-hidden />
             <span>{error}</span>
@@ -112,6 +116,13 @@ export function SessionTraceOverlay({ target, onClose }: { target: TraceTarget; 
 
         {loading ? (
           <SkeletonRows count={6} />
+        ) : noEventLog ? (
+          <EmptyState
+            compact
+            icon="ph:tree-structure"
+            headline="No event log for this session."
+            subtitle="The daemon isn't tracking events for it — it may predate event logging or its log was pruned."
+          />
         ) : events.length === 0 ? (
           <EmptyState
             compact
