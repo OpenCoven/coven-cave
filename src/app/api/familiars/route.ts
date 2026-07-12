@@ -4,6 +4,10 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
+import {
+  explicitFamiliarIdsFromToml,
+  filterInstallSeedFamiliars,
+} from "@/lib/familiar-roster-guard";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import {
   buildFamiliarsToml,
@@ -30,12 +34,17 @@ export type DaemonFamiliar = {
 };
 
 export async function GET() {
-  const [res, config, removedIds] = await Promise.all([
+  const covenDir = path.join(homedir(), ".coven");
+  const familiarsToml = path.join(covenDir, "familiars.toml");
+  const [res, config, removedIds, explicitIds] = await Promise.all([
     callDaemon<(DaemonFamiliar & { emoji?: string; icon?: string })[]>({
       path: "/api/v1/familiars",
     }),
     loadConfig(),
     removedFamiliarIds().catch(() => new Set<string>()),
+    readFile(familiarsToml, "utf8")
+      .then(explicitFamiliarIdsFromToml)
+      .catch(() => new Set<string>()),
   ]);
   if (!res.ok) {
     return NextResponse.json(
@@ -56,7 +65,7 @@ export async function GET() {
   // in-memory roster until it re-reads familiars.toml — hide tombstoned ids so
   // Remove takes effect immediately in every client.
   const familiars = await Promise.all(
-    (res.data ?? [])
+    filterInstallSeedFamiliars(res.data ?? [], explicitIds)
       .filter((f) => !removedIds.has(f.id))
       .map(async (f) => {
       const configEntry = config.familiars[f.id] ?? {};

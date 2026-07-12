@@ -24,6 +24,16 @@ assert.match(
   /autoSelfReport: configEntry\.autoSelfReport \?\? false/,
   "Familiars API should expose per-familiar auto self-report config with a false default",
 );
+assert.match(
+  source,
+  /filterInstallSeedFamiliars\(/,
+  "Familiars API should hide the known first-install default roster before the picker sees it",
+);
+assert.match(
+  source,
+  /explicitFamiliarIdsFromToml/,
+  "Familiars API should distinguish user-authored familiar ids from daemon fallback defaults",
+);
 
 // ── POST: in-app "create a familiar" write path ──────────────────────────────
 // Source-text guards (same pattern as src/app/api/onboarding/setup/route.test.ts).

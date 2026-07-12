@@ -80,6 +80,28 @@ assert.match(
   "Summon must be disabled when the id is taken or a rite is incomplete",
 );
 assert.match(source, /NAME_POOL/, "the name stage offers suggested names");
+{
+  const poolMatch = source.match(/const NAME_POOL = \[([\s\S]*?)\] as const;/);
+  assert.ok(poolMatch, "NAME_POOL should stay a literal array so reserved-name filtering is reviewable");
+  const poolSource = poolMatch[1] ?? "";
+  for (const reserved of ["Nova", "Kitty", "Cody", "Sage", "Astra", "Echo", "Salem"]) {
+    assert.doesNotMatch(
+      poolSource,
+      new RegExp(`"${reserved}"`),
+      `name dice must not suggest internal Coven familiar name ${reserved}`,
+    );
+  }
+}
+assert.doesNotMatch(
+  source,
+  /placeholder="e\.g\. Nova"/,
+  "the default name example must not show an internal Coven familiar name",
+);
+assert.doesNotMatch(
+  source,
+  /Math\.random\(\) \* pool\.length\)\] \?\? "Nova"/,
+  "empty suggestion fallback must not use an internal Coven familiar name",
+);
 
 // ── Form: shared glyph component, best-effort adornments ────────────────────
 assert.match(

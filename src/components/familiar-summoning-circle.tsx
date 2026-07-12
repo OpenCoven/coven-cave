@@ -16,6 +16,7 @@ import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
 import { clearSummoningDraft, readSummoningDraft, saveSummoningDraft } from "@/lib/summoning-draft";
 import { setGlyphOverride } from "@/lib/cave-glyph-overrides";
+import { filterInternalCovenNameSuggestions } from "@/lib/familiar-roster-guard";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 /**
@@ -96,9 +97,9 @@ const AURA_PRESETS: { label: string; color: string }[] = [
 
 // The name dice. Short, familiar-shaped names; the user can always type their own.
 const NAME_POOL = [
-  "Nova", "Wren", "Salem", "Ember", "Onyx", "Sage", "Luna", "Rook",
+  "Wren", "Ember", "Onyx", "Luna", "Rook",
   "Hazel", "Fenn", "Moss", "Thistle", "Juniper", "Ivy", "Basil", "Clove",
-  "Nyx", "Ash", "Briar", "Echo", "Pip", "Marlow", "Quill", "Vesper",
+  "Nyx", "Ash", "Briar", "Pip", "Marlow", "Quill", "Vesper",
 ] as const;
 
 const STAGES = [
@@ -460,10 +461,10 @@ function SummoningRite({
     stage === 0 ? vesselComplete : stage === 1 ? nameComplete : stage === 2;
 
   const suggestName = useCallback(() => {
-    const pool = NAME_POOL.filter(
+    const pool = filterInternalCovenNameSuggestions(NAME_POOL).filter(
       (n) => n !== name && !existing.has(slugifyFamiliarId(n)),
     );
-    const pick = pool[Math.floor(Math.random() * pool.length)] ?? "Nova";
+    const pick = pool[Math.floor(Math.random() * pool.length)] ?? "Wren";
     setName(pick);
   }, [name, existing]);
 
@@ -999,7 +1000,7 @@ function StageName({
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Nova"
+            placeholder="e.g. Wren"
             className={inputClass}
           />
           <Button

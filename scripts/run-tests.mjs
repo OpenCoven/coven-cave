@@ -57,6 +57,7 @@ export const SUITES = {
     "scripts/coven-hfr-export.test.mjs",
     "src/lib/screen-magnification.test.ts",
     "src/lib/no-builtin-familiar-roster.test.ts",
+    "src/lib/familiar-roster-guard.test.ts",
     "src/lib/cave-projects.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
     "src/lib/project-permissions.test.ts",
