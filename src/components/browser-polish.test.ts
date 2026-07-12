@@ -295,7 +295,8 @@ assert.match(
   "Windows atomically applies clamped bounds before revealing WebView2",
 );
 assert.match(rustBrowser, /fn browser_bounds_within_client[\s\S]{0,900}!x\.is_finite\(\)[\s\S]{0,500}browser bounds must be finite/, "invalid browser bounds fail closed");
-assert.match(rustBrowser, /fn ensure_browser[\s\S]{0,1200}browser_bounds_within_client[\s\S]*main\.add_child/, "first-created WebViews use the same bounded geometry policy");
+assert.match(rustBrowser, /fn ensure_browser[\s\S]{0,1200}offscreen_browser_creation_bounds[\s\S]*main\.add_child/, "first-created WebViews use the same bounded geometry policy");
+assert.match(rustBrowser, /fn offscreen_browser_creation_bounds[\s\S]{0,600}browser_bounds_within_client/, "offscreen creation bounds are derived from the bounded geometry policy");
 assert.match(rustBrowser, /fn show_webview_at[\s\S]{0,1200}browser_bounds_within_client[\s\S]*set_bounds/, "existing WebViews use the bounded geometry policy");
 
 // Settings URLs survive the lazy Browser chunk and are cleared only after
