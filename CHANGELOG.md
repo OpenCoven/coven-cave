@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.179] - 2026-07-12
+
+> 🧹 **Chat housekeeping, familiar lifecycle, and updater polish.** Chats gain an automatic archive policy and a centered quick-chat notch, familiars get a discoverable Remove entry and a cleaner picker, the copilot harness renders tool calls, and the update banner leads with the native installer.
+
+### Features
+- **Chat: automatic archive policy** — a configurable policy sweeps stale chat sessions into the archive automatically, with session list/detail support and a settings surface (#2995).
+- **Quick-chat: centered notch** — an optional centered notch that expands into quick chat (#2981).
+- **Familiars: discoverable Remove entry** — the familiar detail panel gains a per-familiar overflow menu with Edit in Studio and Remove familiar…, routing to the canonical lifecycle confirm with undo and restore (#2993).
+
+### Fixes
+- **Chat: copilot harness tool calls** — tool calls on the copilot harness render via its JSONL stream instead of staying invisible (#2985).
+- **Updater: native retry before browser fallback** — when the native update check fails, the banner now recommends retrying the signed native installer before falling back to the browser (#2986).
+- **Familiars: cleaner defaults** — internal Coven familiar names no longer appear in the summoning circle's name dice, and the generated first-install roster is filtered from the picker (#2994).
+- **Secrets: one GitHub token** — `GITHUB_PAT` is the single source of truth for the GitHub token; the duplicate `GITHUB_PERSONAL_ACCESS_TOKEN` vault entry is collapsed into it (#2989).
+- **Linux: leaner AppImage** — libmount is stripped from the AppImage bundle (#2987).
+
 ## [0.0.178] - 2026-07-12
 
 > 🪄 **Craft authoring, GitHub event subscriptions, and chat reliability.** Cave can now create local draft Crafts from familiar roles, subscribe to GitHub repository activity, keep pinned chats synchronized across surfaces, and render captured Codex output events reliably on the Windows harness path.
