@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Security
+- **Chat: runtime filesystem boundary gains a non-blocking sentinel** — the send route now watches streamed tool calls for user-space paths outside the granted roots. Violations never interrupt the turn: they surface as a progress notice on the turn and append a corrective boundary reminder to the conversation's next harness prompt so the familiar self-corrects (observe → surface → steer).
+
 ## [0.0.175] - 2026-07-11
 
 > 🪟 **Faster, quieter Windows packaging plus a batch of chat/board/desktop polish.** The Windows sidecar runtime now ships content-addressed and zstd-compressed with prepared background updates and a startup-progress surface, quick-chat gains attachments + message queueing, chat threads split into panes, and a run of picker/board/pairing fixes land.
