@@ -36,12 +36,11 @@ import {
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
 import {
-  PINNED_SESSIONS_KEY,
   isSessionPinned,
-  readPinnedSessions,
   sortPinnedFirst,
-  togglePinnedSession,
+  toggleStoredPinnedSession,
 } from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import {
   applyManualOrder,
   mergeVisibleOrder,
@@ -261,9 +260,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     });
   }, []);
   const [unreadsOnly, setUnreadsOnly] = useState(false);
-  // Pins are Cave-local UI state (localStorage), same idiom as the project
-  // sidebar persistence below — the daemon never learns about them.
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  // Pins are Cave-local UI state (localStorage) shared across every chat
+  // surface through one subscribable store — the daemon never learns about
+  // them, and no surface holds a private copy that could clobber another's.
+  const pinnedIds = usePinnedSessions();
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   // Archived rows are excluded server-side by /api/sessions/list; the toggle
   // opts into them with its own includeArchived fetch (the workspace's list
@@ -401,7 +401,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     );
     const storedSelection = readPersisted<unknown>(PROJECT_SIDEBAR_KEYS.selected, "all");
     setSelection(typeof storedSelection === "string" ? storedSelection : "all");
-    setPinnedIds(readPinnedSessions());
     setSessionOrder(readSessionOrder());
     setSidebarHydrated(true);
   }, [sessionsLoaded, sidebarGroups]);
@@ -418,9 +417,6 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   useEffect(() => {
     if (sidebarHydrated) window.localStorage.setItem(PROJECT_SIDEBAR_KEYS.selected, JSON.stringify(selection));
   }, [sidebarHydrated, selection]);
-  useEffect(() => {
-    if (sidebarHydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
-  }, [sidebarHydrated, pinnedIds]);
 
   // Archived sessions only load while the toggle is on; archive/unarchive
   // bumps archiveNonce so the opt-in list refetches after each change.
@@ -603,7 +599,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   const togglePin = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+    toggleStoredPinnedSession(sessionId);
   };
 
   const setSessionArchived = async (e: React.MouseEvent, sessionId: string, archived: boolean) => {

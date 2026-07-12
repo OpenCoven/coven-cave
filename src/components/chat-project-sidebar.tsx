@@ -10,11 +10,10 @@ import { sessionRailTitle } from "@/lib/session-rail-title";
 import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
 import { relativeTime } from "@/lib/relative-time";
 import {
-  PINNED_SESSIONS_KEY,
   isSessionPinned,
-  readPinnedSessions,
-  togglePinnedSession,
+  toggleStoredPinnedSession,
 } from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import {
   applyManualOrder,
   partitionPinnedFirst,
@@ -349,20 +348,16 @@ export function ChatProjectSidebar({
   onOpenProjectsTab,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  // Pins come from the shared cross-surface store; the manual drag order is
+  // still local (this rail is its only writer).
+  const pinnedIds = usePinnedSessions();
   const [order, setOrder] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
 
-  // UI prefs (pins + manual order) load after mount so SSR markup and the
-  // first client render agree — same idiom as the chat list's persistence.
+  // The manual order loads after mount so SSR markup and the first client
+  // render agree — same idiom as the chat list's persistence.
   useEffect(() => {
-    setPinnedIds(readPinnedSessions());
     setOrder(readSessionOrder());
-    setHydrated(true);
   }, []);
-  useEffect(() => {
-    if (hydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
-  }, [hydrated, pinnedIds]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -424,7 +419,7 @@ export function ChatProjectSidebar({
   }
 
   function togglePin(sessionId: string) {
-    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+    toggleStoredPinnedSession(sessionId);
   }
 
   // Folder-tree DnD: reorder a chat within its project, or drop it onto another
