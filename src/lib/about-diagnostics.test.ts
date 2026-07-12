@@ -16,6 +16,8 @@ const diagnostics = buildSafeToolDiagnostics({
     compatible: true,
     minimumVersion: "0.0.54",
     path: "C:\\Users\\timot\\AppData\\Roaming\\npm\\coven.cmd",
+    executablePath: "C:\\Users\\Timothy Gregg\\AppData\\Roaming\\npm\\node_modules\\@opencoven\\cli\\bin\\coven.js",
+    packagePath: "C:\\Users\\Timothy Gregg\\AppData\\Roaming\\npm\\node_modules\\@opencoven\\cli",
     installCommand: "npm i -g @opencoven/cli@latest",
   }],
   checking: false,
@@ -37,10 +39,28 @@ assert.match(diagnostics, /excluded/, "diagnostics disclose what is omitted");
 assert.match(diagnostics, /outputCaptured/, "diagnostics identify that output existed without copying it");
 assert.match(diagnostics, /http:\/\/localhost:3000\/settings\/?/, "the route remains useful without its query values");
 assert.doesNotMatch(diagnostics, /ghp_|access_token|C:\\Users\\timot|\/home\/timot|npm i -g|raw output/, "secrets, queries, local paths, commands, and raw output are excluded");
+assert.doesNotMatch(
+  diagnostics,
+  /executablePath|packagePath|Timothy Gregg/,
+  "future machine-local tool path fields are excluded by an explicit diagnostics allowlist",
+);
 assert.match(
   sanitizeAboutDiagnosticText(`https://example.invalid/path?secret=${secret} C:\\Users\\timot\\x`),
   /\[redacted\]|\[local path omitted\]/,
   "freeform result text is redacted before inclusion",
 );
+
+for (const text of [
+  "failed at /Users/Timothy Gregg/.npmrc after update",
+  "failed at C:\\Users\\Timothy Gregg\\secret.log after update",
+]) {
+  const sanitized = sanitizeAboutDiagnosticText(text);
+  assert.match(sanitized, /\[local path omitted\]/, "local paths with spaces are identified");
+  assert.doesNotMatch(
+    sanitized,
+    /Timothy|Gregg|npmrc|secret\.log|after update/,
+    "diagnostics fail closed at a local path instead of leaking its whitespace-delimited suffix",
+  );
+}
 
 console.log("about-diagnostics.test.ts: ok");

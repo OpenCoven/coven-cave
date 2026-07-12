@@ -12,6 +12,8 @@ type ToolDiagnostic = {
   compatible: boolean;
   minimumVersion: string;
   path?: string | null;
+  executablePath?: string | null;
+  packagePath?: string | null;
   installCommand?: string;
 };
 
@@ -23,7 +25,7 @@ type InstallJobDiagnostic = {
 
 type InstallResultDiagnostic = { ok: boolean; detail: string };
 
-const LOCAL_PATH = /(?:\b[A-Za-z]:\\|(?:\/Users|\/home|\/private|\/var|\/tmp)\/)[^\s"'`<>{}\]\[,)]+/g;
+const LOCAL_PATH_START = /(^|[\s"'`(<\[])(?:[A-Za-z]:\\|\/(?:Users|home|private|var|tmp)\/)/i;
 
 function withoutQueryOrFragment(value: string): string {
   try {
@@ -39,7 +41,11 @@ function withoutQueryOrFragment(value: string): string {
 /** Remove secrets, URL query values, and machine-local paths from short status text. */
 export function sanitizeAboutDiagnosticText(value: string): string {
   const querySafe = value.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => withoutQueryOrFragment(url));
-  return redactSecretText(querySafe.replace(LOCAL_PATH, "[local path omitted]")).slice(0, 280);
+  const localPath = LOCAL_PATH_START.exec(querySafe);
+  const pathSafe = localPath
+    ? `${querySafe.slice(0, localPath.index)}${/\s/.test(localPath[1] ?? "") ? localPath[1] : ""}[local path omitted]`
+    : querySafe;
+  return redactSecretText(pathSafe).slice(0, 280);
 }
 
 /**
@@ -59,7 +65,18 @@ export function buildSafeToolDiagnostics(input: {
   sidecarTokenPresent: boolean;
   tauriInternalsPresent: boolean;
 }): string {
-  const tools = input.tools.map(({ path: _path, installCommand: _installCommand, ...tool }) => tool);
+  const tools = input.tools.map((tool) => ({
+    id: tool.id,
+    label: tool.label,
+    packageName: tool.packageName,
+    binary: tool.binary,
+    installed: tool.installed,
+    current: tool.current,
+    latest: tool.latest,
+    outdated: tool.outdated,
+    compatible: tool.compatible,
+    minimumVersion: tool.minimumVersion,
+  }));
   const installJobs = Object.fromEntries(
     Object.entries(input.installJobs).map(([id, job]) => [
       id,
