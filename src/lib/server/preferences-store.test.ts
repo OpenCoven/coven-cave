@@ -164,7 +164,7 @@ try {
     () => store.patchPreferences({ appearance: { theme: { id: "<script>" } } }),
     schema.PreferencesValidationError,
   );
-  assert.doesNotMatch(await readFile(preferencesFile, "utf8"), /authToken|must-never-persist|<script>/);
+  assert.doesNotMatch(await readFile(preferencesFile, "utf8"), /authToken|must-never-persist|<script>/i);
 
   // A malformed file is recoverable, but is preserved for support before the
   // first successful replacement. It must never yield a partially parsed state.
