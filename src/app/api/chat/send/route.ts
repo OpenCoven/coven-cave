@@ -35,6 +35,13 @@ import {
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import {
+  buildCopilotStreamArgs,
+  copilotIdentityPreamble,
+  copilotStreamSpec,
+  CopilotTextAssembler,
+  parseCopilotChatEvent,
+} from "@/lib/copilot-stream";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -1367,6 +1374,19 @@ export async function POST(req: Request) {
           ),
         )
       : [];
+  // Copilot tool visibility (cave-yesg): `coven run copilot --stream-json`
+  // launches the CLI one-shot (`-s -p`) and pipes raw prose, so tool calls
+  // never surface as structured events. When the registry manifest declares
+  // copilot's JSONL stream mode, spawn the CLI directly with those args and
+  // parse its event stream instead. Local runtimes only — SSH runtimes go
+  // through `coven run` on the remote host. Null keeps the passthrough
+  // fallback (and every other adapter keeps it unconditionally).
+  const copilotStream =
+    !sshRuntime && binding.harness === "copilot" ? copilotStreamSpec() : null;
+  // The copilot session id Cave chose for the CURRENT attempt: the resume
+  // target, or a pre-assigned fresh id (copilot events don't echo the id
+  // until the final result frame, so the stream handler announces this one).
+  let copilotSessionHint: string | null = null;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1383,6 +1403,25 @@ export async function POST(req: Request) {
         prompt,
         sessionId: resumeSessionId,
         model: forwardModel,
+      });
+    }
+    if (copilotStream) {
+      copilotSessionHint = resumeSessionId ?? crypto.randomUUID();
+      // The direct spawn bypasses `coven run --familiar`, so mirror coven's
+      // identity preamble here — without it the familiar answers as the
+      // generic Copilot CLI.
+      const identity = copilotIdentityPreamble(
+        body.familiarId,
+        binding.display_name,
+        binding.role,
+      );
+      return buildCopilotStreamArgs({
+        spec: copilotStream,
+        prompt: identity ? `${identity}\n\n${prompt}` : prompt,
+        resumeSessionId,
+        newSessionId: resumeSessionId ? null : copilotSessionHint,
+        model: cleanModelId(desiredModel),
+        permissionMode: body.permissionMode === "read" ? "read" : "full",
       });
     }
     const a = ["run", binding.harness, "--stream-json"];
@@ -1418,10 +1457,13 @@ export async function POST(req: Request) {
   // "No conversation found with session ID: <uuid>" when the requested
   // conversation vanished from Claude's local store. Coven itself emits
   // "session <uuid> not found in local store" when the requested --continue
-  // id exists only in Cave's local transcript store. In these cases we retry
+  // id exists only in Cave's local transcript store. Copilot emits "No
+  // session, task, or name matched '<id>'" on `--resume` misses — including
+  // every conversation recorded before the direct-stream path existed, whose
+  // harnessSessionId lives only in coven's store. In these cases we retry
   // once without the resume flag so the chat starts fresh instead of erroring.
   const RESUME_ERR_RE =
-    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store/i;
+    /thread\/resume failed|no rollout found|code\s*-32600|Session ID \S+ is already in use|No conversation found with session ID|session\s+\S+\s+not found in local store|No session, task, or name matched/i;
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
@@ -1517,6 +1559,115 @@ export async function POST(req: Request) {
       // model field arrives (older CLIs omit it → honest `pending`).
       let confirmedModel: string | null = null;
 
+      // Dedups copilot's streamed text deltas against the full-content
+      // assistant.message frame that follows them.
+      const copilotText = new CopilotTextAssembler();
+
+      const announceSession = (id: string) => {
+        sessionId = id;
+        // The client tracks the STABLE conversation id — on resumed
+        // turns the harness mints a fresh internal id, which must not
+        // leak out as a "new session" (it fragmented every continued
+        // chat into one sidebar entry per turn).
+        const announcedId = body.sessionId ?? id;
+        push({ kind: "session", sessionId: announcedId });
+        // Title the session from the user's prompt as soon as the id
+        // exists. The daemon's own title derives from the harness
+        // prompt — i.e. the identity-canon preamble — and is what the
+        // UI would otherwise show until the transcript save runs.
+        void setDefaultSessionTitleIfMissing(
+          announcedId,
+          chatTitleFromPrompt(promptText) ?? defaultChatTitleForSession(announcedId),
+        ).catch(() => undefined);
+      };
+
+      // Copilot JSONL stream (cave-yesg): the CLI's own event schema, not
+      // claude stream-json. Text arrives as message deltas + a full-content
+      // message frame (deduped by CopilotTextAssembler); tool calls arrive as
+      // toolRequests / execution_start / execution_complete keyed on a native
+      // toolCallId, which maps onto the tracker's envelope lifecycle so live
+      // chips, textOffset interleaving, and persistedTools all work exactly
+      // as they do for claude. Non-JSON stdout is never assistant text on
+      // this protocol — it only feeds the empty-response diagnostic tail.
+      const handleCopilotLine = (line: string, isJson: boolean) => {
+        if (isJson) {
+          try {
+            const ev = parseCopilotChatEvent(JSON.parse(line));
+            if (!ev) return;
+            if (!confirmedModel && ev.kind !== "result") {
+              const echoed = cleanModelId(ev.model);
+              if (echoed) confirmedModel = echoed;
+            }
+            // Copilot only echoes the session id on the final result frame;
+            // announce the id Cave launched with as soon as the stream is
+            // live so the client can adopt the conversation immediately.
+            if (!sessionId && copilotSessionHint) announceSession(copilotSessionHint);
+            switch (ev.kind) {
+              case "text_delta": {
+                const text = copilotText.delta(ev.messageId, ev.text);
+                if (text) {
+                  assistantText += text;
+                  push({ kind: "assistant_chunk", text });
+                }
+                break;
+              }
+              case "message": {
+                const text = copilotText.message(ev.messageId, ev.content);
+                if (text) {
+                  assistantText += text;
+                  push({ kind: "assistant_chunk", text });
+                }
+                // Tool requests announce calls before execution starts; the
+                // tracker links the later execution_start onto the same id.
+                for (const req of ev.toolRequests) {
+                  boundarySentinel?.observe(req.name, req.input);
+                  const toolEv = toolTracker.envelopeToolUse(
+                    req.toolCallId,
+                    req.name,
+                    formatToolInputValue(req.input),
+                    assistantText.length,
+                  );
+                  if (toolEv) push({ kind: "tool_use", ...toolEv });
+                }
+                break;
+              }
+              case "tool_start": {
+                boundarySentinel?.observe(ev.toolName, ev.input);
+                const toolEv = toolTracker.envelopeToolUse(
+                  ev.toolCallId,
+                  ev.toolName,
+                  formatToolInputValue(ev.input),
+                  assistantText.length,
+                );
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                break;
+              }
+              case "tool_end": {
+                const toolEv = toolTracker.envelopeToolResult(
+                  ev.toolCallId,
+                  ev.output,
+                  ev.isError,
+                );
+                if (toolEv) push({ kind: "tool_use", ...toolEv });
+                break;
+              }
+              case "result": {
+                if (!sessionId && ev.sessionId) announceSession(ev.sessionId);
+                result = {
+                  duration_ms: ev.durationMs,
+                  is_error: ev.isError,
+                };
+                break;
+              }
+            }
+            return;
+          } catch {
+            /* not valid JSON after all — fall through to the error tail */
+          }
+        }
+        recordStdoutErrorTail(resolveBackspaces(stripAnsi(line)));
+      };
+
       const handleLine = (rawLine: string) => {
         // stdout is split on bare \n; external adapters (copilot) emit CRLF,
         // and a trailing \r would both fail the endsWith("}") JSON sniff and
@@ -1525,6 +1676,10 @@ export async function POST(req: Request) {
         if (!line) return;
         if (RESUME_ERR_RE.test(line)) resumeFailed = true;
         const isJson = line.startsWith("{") && line.endsWith("}");
+        if (copilotStream) {
+          handleCopilotLine(line, isJson);
+          return;
+        }
         if (isJson) {
           try {
             const ev = JSON.parse(line) as {
@@ -1710,7 +1865,12 @@ export async function POST(req: Request) {
                 });
               })()
             : (() => {
-                const { command, fixedArgs } = covenLaunchCommand();
+                // Copilot stream turns spawn the adapter binary directly with
+                // its manifest-declared JSONL args; everything else goes
+                // through `coven run`.
+                const { command, fixedArgs } = copilotStream
+                  ? { command: copilotStream.executable, fixedArgs: [] as string[] }
+                  : covenLaunchCommand();
                 return spawn(command, [...fixedArgs, ...spawnArgs], {
                   // Spawn IN the familiar's workspace when no project root was
                   // supplied, so coven's project-root resolver picks that dir as
@@ -1768,7 +1928,9 @@ export async function POST(req: Request) {
                 message:
                   sshRuntime
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
-                    : "coven CLI not found on PATH. Open Setup to install it, then try again.",
+                    : copilotStream
+                      ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
+                      : "coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
               push({ kind: "error", message: err.message });
@@ -1821,6 +1983,7 @@ export async function POST(req: Request) {
         jsonBuf = "";
         result = {};
         toolTracker = new ToolCallTracker();
+        copilotText.reset();
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;

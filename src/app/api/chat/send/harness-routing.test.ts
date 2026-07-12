@@ -1206,4 +1206,60 @@ assert.match(
 
 console.log("model parity routing tests passed");
 
+// ── Copilot JSONL stream wiring (cave-yesg) ──────────────────────────────────
+// `coven run copilot --stream-json` launches the CLI one-shot and pipes raw
+// prose, so tool calls never reach the chat. Copilot chats must spawn the CLI
+// directly with its manifest-declared stream args and parse its JSONL events;
+// every other adapter (and SSH runtimes) keeps the coven run path.
+
+assert.match(
+  chatRoute,
+  /import \{[\s\S]*?copilotStreamSpec,[\s\S]*?\} from "@\/lib\/copilot-stream";/,
+  "Chat send should source copilot stream wiring from the shared copilot-stream lib",
+);
+
+assert.match(
+  chatRoute,
+  /const copilotStream =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? copilotStreamSpec\(\) : null;/,
+  "The copilot stream path is gated to local copilot chats and falls back to passthrough when the manifest stops declaring stream mode",
+);
+
+assert.match(
+  chatRoute,
+  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: covenLaunchCommand\(\);/,
+  "Copilot stream turns spawn the adapter binary directly; everything else spawns coven",
+);
+
+assert.match(
+  chatRoute,
+  /if \(copilotStream\) \{\s*\n\s*handleCopilotLine\(line, isJson\);\s*\n\s*return;/,
+  "Copilot stdout routes through the copilot JSONL handler, never the AssistantFilter (raw JSON frames must not leak into the bubble)",
+);
+
+assert.match(
+  chatRoute,
+  /copilotIdentityPreamble\(\s*\n?\s*body\.familiarId,/,
+  "The direct copilot spawn bypasses `coven run --familiar`, so the route must mirror coven's identity preamble itself",
+);
+
+assert.match(
+  chatRoute,
+  /No session, task, or name matched/,
+  "Copilot --resume misses (e.g. pre-stream conversations whose harnessSessionId lives in coven's store) must trigger the transparent fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
+  /copilotText\.reset\(\);/,
+  "The resume retry must clear per-attempt copilot text-dedup state alongside the tracker",
+);
+
+assert.match(
+  chatRoute,
+  /const a = \["run", binding\.harness, "--stream-json"\];/,
+  "Adapters without a Cave-known stream protocol keep the coven run passthrough fallback",
+);
+
+console.log("copilot stream routing tests passed");
+
 console.log("harness-routing tests passed");
