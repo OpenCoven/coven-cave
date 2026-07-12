@@ -374,3 +374,14 @@ export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {
   cachedPath = null;
   return covenSpawnEnv();
 }
+
+/**
+ * Drop both executable and PATH discovery caches after a global CLI install.
+ * A long-running desktop Cave process otherwise keeps launching the binary it
+ * resolved before npm rewrote its shim or registered a new global bin dir.
+ */
+export function refreshCovenBin(): string {
+  cachedBin = null;
+  cachedPath = null;
+  return covenBin();
+}

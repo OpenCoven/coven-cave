@@ -49,6 +49,11 @@ assert.match(src, /Review tools/, "tool update banner sends users to the setting
 assert.match(shell, /OpenCovenToolsBannerTrigger/, "Shell imports and mounts the OpenCoven tools banner trigger");
 assert.match(src, /sidecarTokenPresent/, "diagnostics include whether the sidecar auth bridge captured a token");
 assert.match(src, /Check tools/, "component offers a manual re-check");
+assert.match(src, /function daemonLifecycleText/, "tool updates translate daemon lifecycle phases for the About panel");
+assert.match(src, /Updating CLI; local daemon will restart afterward/, "About panel shows CLI update and restart progress");
+assert.match(src, /Local daemon restarted and healthy/, "About panel surfaces final verified daemon health");
+assert.match(src, /local daemon remained stopped/, "an intentionally stopped daemon is not presented as a failed restart");
+assert.match(src, /Daemon: \{daemonLifecycleText\(daemon\)\}/, "About panel renders lifecycle health beside the update result");
 assert.match(
   src,
   /const toolActionBtn =[\s\S]*settings-tool-action/,

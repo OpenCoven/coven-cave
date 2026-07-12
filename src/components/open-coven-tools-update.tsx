@@ -29,6 +29,21 @@ type InstallJobView = {
   ok?: boolean;
   binaryPath?: string | null;
   error?: string;
+  daemon?: {
+    wasRunning: boolean;
+    phase:
+      | "checking"
+      | "not-running"
+      | "stopping"
+      | "stopped"
+      | "stop-failed"
+      | "installing"
+      | "restarting"
+      | "healthy"
+      | "recovery-failed";
+    health: "running" | "stopped" | "unknown";
+    detail?: string;
+  };
 };
 
 type InstallResult = {
@@ -49,6 +64,42 @@ function formatElapsed(ms: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+
+function daemonLifecycleText(daemon: NonNullable<InstallJobView["daemon"]>): string {
+  switch (daemon.phase) {
+    case "checking":
+      return "Checking local daemon health";
+    case "not-running":
+      return daemon.health === "stopped"
+        ? "Local daemon was already stopped; it will remain stopped"
+        : "Local daemon state was unavailable; Cave will not start it automatically";
+    case "stopping":
+      return "Stopping local daemon before the CLI update";
+    case "stopped":
+      return "Local daemon stopped; preparing the CLI update";
+    case "stop-failed":
+      return "Local daemon is still running; update was not started";
+    case "installing":
+      return "Updating CLI; local daemon will restart afterward";
+    case "restarting":
+      return "Refreshing CLI environment and restarting local daemon";
+    case "healthy":
+      return "Local daemon restarted and healthy";
+    case "recovery-failed":
+      return "Local daemon recovery failed";
+  }
+}
+
+function successfulInstallDetail(
+  target: InstallTarget,
+  job: InstallJobView,
+): string {
+  const location = job.binaryPath ? `updated at ${job.binaryPath}` : "updated";
+  if (target !== "coven-cli" || !job.daemon) return location;
+  if (job.daemon.phase === "healthy") return `${location}; local daemon restarted and healthy`;
+  if (job.daemon.phase === "not-running") return `${location}; local daemon remained stopped`;
+  return `${location}; daemon health: ${job.daemon.health}`;
 }
 
 function isInstallTarget(id: string): id is InstallTarget {
@@ -270,9 +321,7 @@ export function OpenCovenToolsUpdate() {
               [target]: json.ok
                 ? {
                     ok: true,
-                    detail: json.binaryPath
-                      ? `updated at ${json.binaryPath}`
-                      : "updated",
+                    detail: successfulInstallDetail(target, json),
                   }
                 : { ok: false, detail: json.error ?? "update failed" },
             }));
@@ -403,6 +452,7 @@ export function OpenCovenToolsUpdate() {
         const job = installJobs[tool.id];
         const busy = job?.status === "running";
         const result = installResults[tool.id];
+        const daemon = job?.daemon;
         return (
           <div key={tool.id} className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
@@ -424,6 +474,19 @@ export function OpenCovenToolsUpdate() {
                   {result.detail}
                 </p>
               ) : null}
+              {daemon ? (
+                <p
+                  className={`mt-1 text-[11px] ${
+                    daemon.health === "running"
+                      ? "text-[var(--color-success)]"
+                      : daemon.phase === "recovery-failed" || daemon.phase === "stop-failed"
+                        ? "text-[var(--color-danger)]"
+                        : "text-[var(--text-muted)]"
+                  }`}
+                >
+                  Daemon: {daemonLifecycleText(daemon)}
+                </p>
+              ) : null}
               {busy && job?.tail ? (
                 <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
                   {job.tail}
@@ -434,7 +497,7 @@ export function OpenCovenToolsUpdate() {
               {busy ? (
                 <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
                   <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
-                  Updating... {formatElapsed(job.elapsedMs)}
+                  {daemon ? daemonLifecycleText(daemon) : "Updating..."} {formatElapsed(job.elapsedMs)}
                 </span>
               ) : tool.outdated || toolNeedsCompatibilityUpdate(tool) ? (
                 <Button

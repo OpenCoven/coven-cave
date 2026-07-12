@@ -46,6 +46,11 @@ assert.match(
   /export function refreshCovenSpawnEnv\(\)[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(\)/,
   "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
 );
+assert.match(
+  source,
+  /export function refreshCovenBin\(\)[\s\S]*cachedBin = null;[\s\S]*cachedPath = null;[\s\S]*return covenBin\(\)/,
+  "CLI updates clear executable and PATH caches before daemon recovery",
+);
 
 assert.deepEqual(
   covenLaunchCommandForBinary("/usr/local/bin/coven", "darwin"),
