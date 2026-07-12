@@ -128,8 +128,8 @@ test("missing npm, registry errors, and malformed versions remain explicit failu
 });
 
 test("npm found only via the refreshed environment runs the query with that environment", async () => {
-  const staleEnv: NodeJS.ProcessEnv = { PATH: "/stale" };
-  const refreshedEnv: NodeJS.ProcessEnv = { PATH: "/refreshed" };
+  const staleEnv: NodeJS.ProcessEnv = { NODE_ENV: "test", PATH: "/stale" };
+  const refreshedEnv: NodeJS.ProcessEnv = { NODE_ENV: "test", PATH: "/refreshed" };
   const seen: NodeJS.ProcessEnv[] = [];
   const result = await checkNpmLatestVersion(OPEN_COVEN_TOOLS[0], {
     now: () => checkedAt,
