@@ -412,6 +412,8 @@ export const SUITES = {
     "src/components/chat-linked-context.test.ts",
     "src/components/chat-task-handoff-wiring.test.ts",
     "src/lib/chat-task-handoff.test.ts",
+    "src/components/chat-task-create-button-wiring.test.ts",
+    "src/lib/chat-task-autofill.test.ts",
     "src/components/group-chat-view.test.ts",
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
@@ -938,6 +940,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/quick-chat.test.ts",
   "src/lib/command-controls.test.ts",
   "src/lib/travel-network-drop-proof.test.ts",
+  "src/lib/chat-task-autofill.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
