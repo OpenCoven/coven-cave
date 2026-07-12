@@ -14,6 +14,7 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import {
+  chatSummaryTitle,
   chatTitleFromPrompt,
   defaultChatTitleForSession,
 } from "@/lib/cave-chat-titles";
@@ -83,6 +84,12 @@ import {
   resolveLocalRuntimeCwd,
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
+import {
+  buildPromptWithBoundaryReminder,
+  createBoundarySentinel,
+  formatBoundaryNotice,
+  recordBoundaryViolations,
+} from "@/lib/chat-boundary-sentinel";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
@@ -377,6 +384,34 @@ async function setDefaultSessionTitleIfMissing(sessionId: string, title: string)
   const state = await loadState();
   if (state.sessionTitles[sessionId]) return;
   await setSessionTitle(sessionId, title);
+}
+
+/** Auto-name a thread from its first user/assistant exchange with a short
+ *  summary title. Only fires while the stored title is still one of the
+ *  auto-derived defaults (prompt-derived or "New chat") — a manual rename,
+ *  even one made mid-stream, always wins. Best effort: failures leave the
+ *  default title in place. */
+async function autoNameSessionFromFirstExchange(
+  sessionId: string,
+  promptText: string,
+  assistantText: string,
+): Promise<void> {
+  try {
+    const summary = chatSummaryTitle({ userText: promptText, assistantText });
+    if (!summary) return;
+    const autoDefaults = new Set(
+      [chatTitleFromPrompt(promptText), defaultChatTitleForSession(sessionId)].filter(
+        (t): t is string => Boolean(t),
+      ),
+    );
+    const state = await loadState();
+    const current = state.sessionTitles[sessionId];
+    if (current && !autoDefaults.has(current)) return;
+    if (current === summary) return;
+    await setSessionTitle(sessionId, summary);
+  } catch {
+    /* best effort */
+  }
 }
 
 function sse(event: StreamEvent): Uint8Array {
@@ -929,6 +964,9 @@ function openClawChatResponse(args: {
           );
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
+          if (!existing && !isError) {
+            await autoNameSessionFromFirstExchange(sessionId, args.promptText, assistantText);
+          }
           pushProgress("save-transcript", "Transcript saved", "done");
         }
 
@@ -1139,6 +1177,20 @@ export async function POST(req: Request) {
   const runtimeScope: RuntimeScope = sshRuntime
     ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
     : { kind: "local", root: familiarCwd ?? cwd, allowedProjectRoots: grantedProjectRoots };
+  // Boundary sentinel: watches the harness's streamed tool calls for paths
+  // outside the granted roots. Never blocks the stream — violations surface
+  // as a progress notice at turn end and steer the NEXT turn via a prompt
+  // reminder (see chat-boundary-sentinel.ts). SSH runtimes stream remote
+  // paths that can't be classified against local roots, so they skip it.
+  const boundarySentinel = sshRuntime
+    ? null
+    : createBoundarySentinel({
+        allowedRoots: [
+          familiarCwd ?? cwd,
+          ...grantedProjectRoots,
+          ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+        ],
+      });
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
@@ -1191,7 +1243,7 @@ export async function POST(req: Request) {
   const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
 
   const taskContext = await taskContextForSession(body.sessionId);
-  const harnessPrompt = buildPromptWithRuntimeScope(
+  const scopedPrompt = buildPromptWithRuntimeScope(
     buildPromptWithCovenIdentityCanon(
       buildTaskAwarePrompt(
         buildPromptWithKnowledgeVault(
@@ -1216,6 +1268,10 @@ export async function POST(req: Request) {
     ),
     runtimeScope,
   );
+  // The boundary reminder rides OUTSIDE the runtime-scope wrapper: it refers
+  // back to the boundary block ("listed above") and only exists when the
+  // conversation's previous turn strayed out of the granted roots.
+  const harnessPrompt = buildPromptWithBoundaryReminder(scopedPrompt, body.sessionId);
 
   if (binding.harness === "openclaw" && !sshRuntime) {
     return openClawChatResponse({
@@ -1462,6 +1518,7 @@ export async function POST(req: Request) {
                   assistantText += block.text;
                   push({ kind: "assistant_chunk", text: block.text });
                 } else if (block.type === "tool_use" && block.id && block.name) {
+                  boundarySentinel?.observe(block.name, block.input);
                   const toolEv = toolTracker.envelopeToolUse(
                     block.id,
                     block.name,
@@ -1506,6 +1563,7 @@ export async function POST(req: Request) {
           const isPost = trimmed.startsWith("hook: post_tool_use");
           const name = toolMatch[1];
           const rest = (toolMatch[2] ?? "").trim();
+          if (!isPost) boundarySentinel?.observe(name, rest);
           const toolEv = isPost
             ? toolTracker.hookEnd(
                 name,
@@ -1713,6 +1771,25 @@ export async function POST(req: Request) {
         push({ kind: "assistant_chunk", text: diagnostic });
       }
 
+      // Boundary sentinel readout: one non-blocking notice per turn listing
+      // the out-of-boundary paths the harness touched, plus a recorded
+      // reminder that steers the conversation's next turn. Nothing here
+      // interrupts or fails the turn — enforcement is observe → surface →
+      // steer, not kill.
+      const boundaryViolations = boundarySentinel?.violations() ?? [];
+      if (boundaryViolations.length > 0) {
+        const boundarySessionId = body.sessionId ?? sessionId;
+        if (boundarySessionId) {
+          recordBoundaryViolations(boundarySessionId, boundaryViolations);
+        }
+        pushProgress(
+          "boundary-sentinel",
+          `Touched ${boundaryViolations.length === 1 ? "a path" : `${boundaryViolations.length} paths`} outside the granted roots`,
+          "error",
+          formatBoundaryNotice(boundaryViolations),
+        );
+      }
+
       // Agent-produced inline attachments: pull `coven:attachment` marker
       // blocks out of the reply, resolve+read the referenced files (allowlist
       // -guarded, size-capped), and strip the markers from the text. Stream the
@@ -1810,6 +1887,9 @@ export async function POST(req: Request) {
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
+        if (!existing && !result.is_error && !cancelledByUser) {
+          await autoNameSessionFromFirstExchange(finalSessionId, promptText, cleanedAssistantText);
+        }
         pushProgress("save-transcript", "Transcript saved", "done");
       }
 
