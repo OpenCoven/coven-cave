@@ -2154,10 +2154,11 @@ mod tests {
         assert_eq!(partial.collapsed_width, NOTCH_COLLAPSED_WIDTH);
 
         // Out-of-range custom sizes clamp instead of wedging the window.
-        let wild: NotchConfig =
-            serde_json::from_str(r#"{"collapsedHeight":1.0,"expandedWidth":10000.0}"#)
-                .expect("wild config")
-                .sanitized();
+        let wild = serde_json::from_str::<NotchConfig>(
+            r#"{"collapsedHeight":1.0,"expandedWidth":10000.0}"#,
+        )
+        .expect("wild config")
+        .sanitized();
         assert_eq!(wild.collapsed_height, 20.0);
         assert_eq!(wild.expanded_width, 900.0);
     }
