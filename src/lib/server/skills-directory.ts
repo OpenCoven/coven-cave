@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import fallbackDirectory from "@/app/api/skills/directory/fallback.json" with { type: "json" };
 import { covenHome } from "@/lib/coven-paths";
 import {
   dedupeByRealPath,
@@ -95,16 +95,6 @@ type RawSkillsShEntry = {
   weeklyInstalls?: unknown;
   isOfficial?: unknown;
 };
-
-const DIRECTORY_FALLBACK_PATH = path.join(
-  process.cwd(),
-  "src",
-  "app",
-  "api",
-  "skills",
-  "directory",
-  "fallback.json",
-);
 
 const SKILLS_SH_DIRECTORY_URL = "https://www.skills.sh/";
 const SKILLS_SH_SEARCH_URL = "https://www.skills.sh/api/search";
@@ -368,19 +358,13 @@ function uniqueEntries(entries: SkillDirectoryEntry[]): SkillDirectoryEntry[] {
 }
 
 async function readFallbackEntries(): Promise<SkillDirectoryEntry[]> {
-  try {
-    const raw = await readFile(DIRECTORY_FALLBACK_PATH, "utf8");
-    const parsed = JSON.parse(raw) as { entries?: unknown };
-    if (!Array.isArray(parsed?.entries)) return [];
-    const out: SkillDirectoryEntry[] = [];
-    for (const item of parsed.entries) {
-      const normalized = normalizeRawEntry(item as RawDirectoryEntry);
-      if (normalized) out.push(normalized);
-    }
-    return out;
-  } catch {
-    return [];
+  if (!Array.isArray(fallbackDirectory.entries)) return [];
+  const out: SkillDirectoryEntry[] = [];
+  for (const item of fallbackDirectory.entries) {
+    const normalized = normalizeRawEntry(item as RawDirectoryEntry);
+    if (normalized) out.push(normalized);
   }
+  return out;
 }
 
 async function readLiveEntries(): Promise<SkillDirectoryEntry[]> {

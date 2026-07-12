@@ -199,16 +199,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Slice B runtime proof for #1990: build the OS-specific packaged Node
-      # sidecar on each target, boot the bundled server with sidecar auth, and
-      # prove a seeded raster familiar avatar transcodes through the real HTTP
-      # route. This catches native sharp/libvips prune and packaged-server boot
-      # regressions that pure conformance assertions cannot.
+      # Build the exact OS-specific packaged tree, then report archive metrics
+      # and exercise bundled Node through node-pty, sharp/libvips through the
+      # avatar route, and the explicit marketplace/workflow/public payload.
       - name: Build packaged sidecar bundle
         shell: bash
         run: bash scripts/sidecar-bundle.sh
 
-      - run: pnpm test:sidecar-runtime
+      - name: Smoke native modules and explicit packaged data
+        run: pnpm test:sidecar-runtime
 
   sidecar-runtime-required:
     name: Sidecar runtime required

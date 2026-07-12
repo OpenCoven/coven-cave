@@ -33,26 +33,55 @@ const nextConfig: NextConfig = {
   // by the familiar avatar route (#2010) — must stay external so Next doesn't
   // trace/strip its platform-specific `.node` binaries out of the bundle.
   serverExternalPackages: ["node-pty", "sharp"],
-  // Next.js file tracing otherwise sucks the entire src-tauri/target/
-  // (multi-GB) into the standalone bundle. Exclude noisy siblings.
+  // Dynamic filesystem scans operate on user-selected/home paths at runtime,
+  // but @vercel/nft conservatively resolves them against the repository while
+  // building. Without a global exclusion every server route inherits most of
+  // the checkout (source, docs, marketplace, agent metadata). Runtime data is
+  // copied explicitly by sidecar-bundle.sh; compiled code lives under .next.
   outputFileTracingExcludes: {
-    "*": [
-      "./src-tauri/**/*",
-      "./release/**/*",
+    "/*": [
+      "./.agents/**/*",
+      "./.beads/**/*",
+      "./.claude/**/*",
+      "./.codex/**/*",
       "./.git/**/*",
-      "./scripts/**/*",
       "./.worktrees/**/*",
+      "./apps/**/*",
+      "./assets/**/*",
+      "./automations/**/*",
+      "./docs/**/*",
+      "./marketplace/**/*",
+      "./release/**/*",
+      "./screenshots/**/*",
+      "./scripts/**/*",
+      "./src/**/*",
+      "./src-tauri/**/*",
       "./tests/**/*",
-      "./src/**/*.test.*",
-      "./apps/**/*.test.*",
-      "./apps/ios/**/build/**/*",
+      "./workflows/**/*",
+      "./AGENTS.md",
+      "./CHANGELOG.md",
+      "./CLAUDE.md",
+      "./CONTRIBUTING.md",
+      "./CONTRIBUTORS.md",
+      "./LICENSE*",
+      "./PATENTS",
+      "./PROVENANCE.md",
+      "./README.md",
+      "./SECURITY.md",
+      "./next.config.ts",
+      "./playwright.config.ts",
+      "./pnpm-lock.yaml",
+      "./pnpm-workspace.yaml",
+      "./postcss.config.mjs",
+      "./tsconfig.json",
+      "./vitest.config.ts",
     ],
   },
   // Next's tracer misses runtime-required packages that go through its
   // own require-hook (e.g. @swc/helpers/_/_interop_require_default).
   // Force-include the offenders so server.js can boot.
   outputFileTracingIncludes: {
-    "*": [
+    "/*": [
       "./node_modules/@swc/helpers/**/*",
       "./node_modules/node-pty/**/*",
     ],

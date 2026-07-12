@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   matchDirectoryEntry,
@@ -9,6 +10,18 @@ import {
   remoteSkillMarkdownUrl,
   remoteSkillMarkdownUrls,
 } from "@/lib/server/skills-directory";
+
+const skillsDirectorySource = readFileSync(new URL("./skills-directory.ts", import.meta.url), "utf8");
+assert.match(
+  skillsDirectorySource,
+  /import fallbackDirectory from ["'][^"']*fallback\.json["']/,
+  "the packaged skills fallback must compile into the server instead of depending on a traced src/ path",
+);
+assert.doesNotMatch(
+  skillsDirectorySource,
+  /DIRECTORY_FALLBACK_PATH|process\.cwd\(\)[\s\S]*fallback\.json/,
+  "the packaged skills fallback must not read process.cwd()/src at runtime",
+);
 
 const escapedHtml = String.raw`<script>self.__next_f.push([1,"{\"skills\":[{\"source\":\"vercel-labs/skills\",\"skillId\":\"find-skills\",\"name\":\"find-skills\",\"installs\":2300000,\"weeklyInstalls\":[1,2,3,4,5,6,7,8],\"isOfficial\":true},{\"source\":\"anthropics/skills\",\"skillId\":\"frontend-design\",\"name\":\"frontend-design\",\"installs\":624300,\"weeklyInstalls\":[10,11]}],\"totalSkills\":9631}"])</script>`;
 const escaped = parseSkillsShDirectoryHtml(escapedHtml);

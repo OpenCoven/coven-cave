@@ -1,0 +1,15 @@
+{
+  "name": "@opencoven/cave-sidecar-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@next/env": "16.2.9",
+    "@swc/helpers": "0.5.15",
+    "next": "16.2.9",
+    "node-pty": "1.1.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "sharp": "0.34.5",
+    "ws": "8.21.0"
+  }
+}

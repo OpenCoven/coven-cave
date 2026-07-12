@@ -16,6 +16,8 @@ src-tauri/resources/server/*
 !src-tauri/resources/server/placeholder.txt
 src-tauri/resources/node/*
 !src-tauri/resources/node/placeholder.txt
+src-tauri/resources/server.tar.gz
+src-tauri/resources/server-manifest.json
 
 # Notarized release artifacts
 release/

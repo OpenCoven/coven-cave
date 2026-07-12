@@ -1,0 +1,9 @@
+{
+  "bundle": {
+    "resources": [
+      "resources/node/**/*",
+      "resources/server.tar.gz",
+      "resources/server-manifest.json"
+    ]
+  }
+}

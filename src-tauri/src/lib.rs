@@ -11,9 +11,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(desktop)]
 use std::path::{Path, PathBuf};
 #[cfg(desktop)]
-use std::process::{Child, Command, Stdio};
-#[cfg(desktop)]
-use std::sync::Mutex;
+use std::process::{Command, Stdio};
 #[cfg(desktop)]
 use std::thread;
 #[cfg(desktop)]
@@ -25,6 +23,13 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
+
+#[cfg(desktop)]
+mod sidecar_process;
+#[cfg(desktop)]
+mod sidecar_runtime;
+#[cfg(desktop)]
+use sidecar_process::{stop_sidecar, SidecarCleanupResource, SidecarState};
 
 #[cfg(desktop)]
 const QUICK_CHAT_WINDOW_LABEL: &str = "quick-chat";
@@ -482,9 +487,6 @@ fn sidecar_auth_token() -> String {
     OsRng.fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
-
-#[cfg(desktop)]
-struct SidecarState(Mutex<Option<Child>>);
 
 #[cfg(desktop)]
 fn find_free_port() -> Option<u16> {
@@ -1012,7 +1014,7 @@ pub fn run() {
             shell_pick_directory,
             set_traffic_lights_visible,
         ])
-        .manage(SidecarState(Mutex::new(None)))
+        .manage(SidecarState::default())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -1028,6 +1030,10 @@ pub fn run() {
             // release artifacts; process provides relaunch() after install.
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             app.handle().plugin(tauri_plugin_process::init())?;
+
+            app.resources_table().add(SidecarCleanupResource::new(
+                app.state::<SidecarState>().0.clone(),
+            ));
 
             check_app_translocation();
 
@@ -1046,11 +1052,30 @@ pub fn run() {
                 Ok(d) => d,
                 Err(e) => fatal_exit(&format!("could not resolve resource dir: {}", e)),
             };
+            let app_local_data_dir = match app.path().app_local_data_dir() {
+                Ok(d) => d,
+                Err(e) => fatal_exit(&format!("could not resolve app-local data dir: {}", e)),
+            };
+            let server_dir_root = match sidecar_runtime::resolve_server_dir(
+                &resource_dir,
+                &app_local_data_dir,
+            ) {
+                Ok(path) => path,
+                Err(e) => fatal_exit(&format!(
+                    "could not prepare the bundled sidecar runtime: {}\n\nResources: {}\nCache: {}",
+                    e,
+                    resource_dir.join("resources").display(),
+                    app_local_data_dir.join("sidecar").display(),
+                )),
+            };
+            log::info!(
+                "[cave] sidecar runtime ready at {}",
+                server_dir_root.display()
+            );
             // Prefer the custom server (server.ts → server.mjs): it carries
             // the /api/pty-ws terminal websocket bridge. server.js is Next's
             // generated standalone entrypoint, kept as a fallback for old
             // bundles — it serves the app but has no terminal bridge.
-            let server_dir_root = resource_dir.join("resources").join("server");
             let server_mjs = server_dir_root.join("server.mjs");
             let server_js = server_dir_root.join("server.js");
             let server_entry = if server_mjs.exists() {
@@ -1213,6 +1238,10 @@ pub fn run() {
                         tail
                     })
                     .unwrap_or_else(|| "(could not read sidecar log)".to_string());
+                stop_sidecar(
+                    &app.state::<SidecarState>().0,
+                    "sidecar readiness timeout",
+                );
                 fatal_exit(&format!(
                     "Sidecar (node {}) did not become ready on port {} within 20s.\n\nLast lines from {}:\n{}",
                     node.display(),
@@ -1278,6 +1307,10 @@ pub fn run() {
                 }
             }
             if let Err(e) = main_window.build() {
+                stop_sidecar(
+                    &app.state::<SidecarState>().0,
+                    "main window startup failure",
+                );
                 fatal_exit(&format!("failed to build main window: {}", e));
             }
 
@@ -1387,10 +1420,7 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
                     if let Some(state) = window.app_handle().try_state::<SidecarState>() {
-                        if let Some(mut child) = state.0.lock().expect("sidecar lock").take() {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                        }
+                        stop_sidecar(&state.0, "main window destroyed");
                     }
                 }
             }

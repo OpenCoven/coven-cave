@@ -36,7 +36,8 @@ name: Release
 #
 # The macOS leg intentionally uses scripts/release.sh instead of tauri-action
 # because it assembles + notarizes the DMG in a more reliable way for this
-# repository. Linux and Windows still ship via tauri-action on the tag-push.
+# repository. Linux still ships via tauri-action. Windows builds locally, then
+# passes MSI metrics and a timed upgrade gate before any artifact is uploaded.
 
 on:
   push:
@@ -220,14 +221,8 @@ jobs:
 
       - name: Build with tauri-action
         if: >-
-          (
-            matrix.family == 'linux' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
-          ) ||
-          (
-            matrix.family == 'windows' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
-          )
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -247,16 +242,103 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
-      - name: Sign Linux/Windows updater artifact
+      - name: Build Windows MSI locally
         if: >-
-          (
-            matrix.family == 'linux' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
-          ) ||
-          (
-            matrix.family == 'windows' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
-          )
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          pnpm exec tauri build -vv --bundles msi --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          if ($LASTEXITCODE -ne 0) { throw "Local Windows Tauri build failed" }
+          $msi = Get-ChildItem "src-tauri/target/release/bundle/msi" -Filter "*.msi" -File |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          if ($null -eq $msi) { throw "Local Windows build produced no MSI" }
+          "WINDOWS_MSI=$($msi.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Built $($msi.FullName) ($($msi.Length) bytes)"
+
+      - name: Collect Windows installer metrics
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $validation = Join-Path $env:RUNNER_TEMP "windows-validation"
+          New-Item -ItemType Directory -Force -Path $validation | Out-Null
+          $metrics = Join-Path $validation "installer-metrics.json"
+          $adminImage = Join-Path $env:RUNNER_TEMP "windows-administrative-image"
+          $adminLog = Join-Path $validation "administrative-install.log"
+          & ./scripts/windows-installer-metrics.ps1 `
+            -MsiPath $env:WINDOWS_MSI `
+            -OutputJson $metrics `
+            -OutputDirectory $adminImage `
+            -AdminLog $adminLog
+          Remove-Item -LiteralPath $adminImage -Recurse -Force
+          "WINDOWS_VALIDATION_DIR=$validation" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WINDOWS_METRICS=$metrics" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Enforce Windows installer budgets
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: pwsh
+        run: node scripts/windows-installer-budget.mjs $env:WINDOWS_METRICS
+
+      - name: Smoke previous-to-current Windows upgrade
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          & ./scripts/windows-upgrade-smoke.ps1 `
+            -CurrentMsi $env:WINDOWS_MSI `
+            -CurrentTag $env:RELEASE_TAG `
+            -OutputDirectory $env:WINDOWS_VALIDATION_DIR `
+            -MaxSeconds 300
+
+      - name: Upload Windows validation diagnostics
+        if: >-
+          always() &&
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-msi-validation-${{ env.RELEASE_TAG }}
+          path: ${{ runner.temp }}/windows-validation
+          if-no-files-found: error
+
+      - name: Sign validated Windows updater artifact
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          pnpm exec tauri signer sign $env:WINDOWS_MSI
+          if ($LASTEXITCODE -ne 0) { throw "Failed to sign validated Windows MSI" }
+          if (-not (Test-Path -LiteralPath "$env:WINDOWS_MSI.sig")) { throw "Windows MSI signature was not produced" }
+
+      - name: Upload validated Windows artifacts
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.msi.sig
+
+      - name: Sign Linux updater artifact
+        if: >-
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -264,9 +346,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          mapfile -t artifacts < <(find src-tauri/target/release/bundle -type f \( -name '*.AppImage' -o -name '*.msi' -o -name '*.msi.zip' -o -name '*.nsis.zip' -o -name '*-setup.exe' \) | sort)
+          mapfile -t artifacts < <(find src-tauri/target/release/bundle -type f -name '*.AppImage' | sort)
           if [ "${#artifacts[@]}" -eq 0 ]; then
-            echo "::error::No Linux/Windows updater artifact found to sign"
+            echo "::error::No Linux updater artifact found to sign"
             exit 1
           fi
           for artifact in "${artifacts[@]}"; do

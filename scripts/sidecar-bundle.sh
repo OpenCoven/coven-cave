@@ -23,10 +23,96 @@ esac
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/src-tauri/resources/server"
 BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
+SERVER_ARCHIVE="$ROOT/src-tauri/resources/server.tar.gz"
+SERVER_MANIFEST="$ROOT/src-tauri/resources/server-manifest.json"
 STATIC="$ROOT/.next/static"
 PUBLIC="$ROOT/public"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
 trap 'rm -rf "$PNPM_STAGE"' EXIT
+FORBIDDEN_RUNTIME_ROOTS=(
+  .agents
+  .beads
+  .claude
+  .codex
+  apps
+  automations
+  docs
+  screenshots
+  scripts
+  src
+  tests
+)
+ALLOWED_RUNTIME_ROOTS=(
+  .next
+  assets
+  marketplace
+  node_modules
+  public
+  workflows
+)
+ALLOWED_RUNTIME_FILES=(
+  package.json
+  server.js
+  server.mjs
+  vault.yaml
+)
+
+copy_runtime_tree() {
+  local source="$1"
+  local relative="$2"
+  if [ ! -d "$source" ]; then
+    echo "ERROR: required runtime tree missing: $source" >&2
+    exit 1
+  fi
+  rm -rf "$DEST/$relative"
+  mkdir -p "$DEST/$relative"
+  cp -aL "$source/." "$DEST/$relative/"
+  echo "==> copied explicit runtime tree $relative/"
+}
+
+copy_runtime_file() {
+  local source="$1"
+  local relative="$2"
+  if [ ! -f "$source" ]; then
+    echo "ERROR: required runtime file missing: $source" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$DEST/$relative")"
+  cp "$source" "$DEST/$relative"
+  echo "==> copied explicit runtime file $relative"
+}
+
+assert_runtime_layout() {
+  local link forbidden entry name allowed candidate
+  link="$(find "$DEST" -type l -print -quit)"
+  if [ -n "$link" ]; then
+    echo "ERROR: sidecar runtime must be self-contained; symlink remains: $link" >&2
+    exit 1
+  fi
+  for forbidden in "${FORBIDDEN_RUNTIME_ROOTS[@]}"; do
+    if [ -e "$DEST/$forbidden" ]; then
+      echo "ERROR: repository-only path leaked into sidecar runtime: $forbidden" >&2
+      exit 1
+    fi
+  done
+  while IFS= read -r -d '' entry; do
+    name="$(basename "$entry")"
+    allowed=0
+    if [ -d "$entry" ]; then
+      for candidate in "${ALLOWED_RUNTIME_ROOTS[@]}"; do
+        [ "$name" = "$candidate" ] && allowed=1
+      done
+    elif [ -f "$entry" ]; then
+      for candidate in "${ALLOWED_RUNTIME_FILES[@]}"; do
+        [ "$name" = "$candidate" ] && allowed=1
+      done
+    fi
+    if [ "$allowed" != "1" ]; then
+      echo "ERROR: unexpected top-level sidecar runtime entry: $name" >&2
+      exit 1
+    fi
+  done < <(find "$DEST" -mindepth 1 -maxdepth 1 -print0)
+}
 
 fix_node_pty_spawn_helpers() {
   local base="$1"
@@ -188,6 +274,7 @@ copy_node_shared_runtime() {
 
   mkdir -p "$dest_dir/lib"
   cp "$lib_path" "$dest_dir/lib/$lib_name"
+  chmod u+rw "$dest_dir/lib/$lib_name" 2>/dev/null || true
   chmod +r "$dest_dir/lib/$lib_name" 2>/dev/null || true
   echo "==> bundled Node shared runtime $lib_name"
 }
@@ -216,38 +303,39 @@ fi
 rm -rf "$BUNDLED_NODE_DIR"
 mkdir -p "$BUNDLED_NODE_DIR/bin"
 cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
+chmod u+rw "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
 copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
 "$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
 printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
-# Next.js + pnpm leaves a node_modules full of pnpm-style symlinks
-# (.pnpm/* paths) that don't survive the copy into the .app bundle. Recreate
-# production deps from the committed pnpm lockfile in a staging dir, then copy
-# them with symlinks dereferenced so release bundles keep locked integrity data.
-echo "==> installing locked prod deps with pnpm in staging dir"
-cp "$ROOT/package.json" "$PNPM_STAGE/package.json"
-cp "$ROOT/pnpm-lock.yaml" "$PNPM_STAGE/pnpm-lock.yaml"
-if [ -f "$ROOT/.npmrc" ]; then
-  cp "$ROOT/.npmrc" "$PNPM_STAGE/.npmrc"
-fi
-(
-  cd "$PNPM_STAGE" && pnpm install --prod --frozen-lockfile \
-    --config.node-linker=hoisted --ignore-scripts
-) >&2
+# Deploy the dedicated runtime workspace package from the already-installed,
+# frozen workspace graph. This keeps browser-only root dependencies out of the
+# sidecar while preserving the committed pnpm lockfile as the integrity source.
+echo "==> deploying allowlisted sidecar runtime from workspace lockfile"
+pnpm --dir "$ROOT" \
+  --prefer-offline \
+  --config.node-linker=hoisted \
+  --filter @opencoven/cave-sidecar-runtime \
+  --prod deploy "$PNPM_STAGE" >&2
 prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 
 echo "==> copying standalone tree → $DEST"
 rm -rf "$DEST"
 mkdir -p "$DEST"
-# Skip the standalone's broken pnpm-style node_modules; we'll bring in the
-# locked, dereferenced pnpm one instead.
-(cd "$STANDALONE" && find . -mindepth 1 -maxdepth 1 ! -name node_modules \
-   -exec cp -a {} "$DEST/" \;)
+# The dedicated runtime package owns externals, and explicit data copies below
+# own non-code assets. Only the compiled Next tree and its two launch metadata
+# files are accepted from NFT output; this prevents broad dynamic traces from
+# copying repository roots or test/build files into the installer.
+copy_runtime_tree "$STANDALONE/.next" ".next"
+copy_runtime_file "$STANDALONE/package.json" "package.json"
+copy_runtime_file "$STANDALONE/server.js" "server.js"
 
-echo "==> grafting locked node_modules → $DEST/node_modules"
+echo "==> grafting allowlisted node_modules → $DEST/node_modules"
 cp -aL "$PNPM_STAGE/node_modules" "$DEST/node_modules"
+rm -rf "$DEST/node_modules/.pnpm"
+prune_foreign_native_packages "$DEST/node_modules"
 fix_node_pty_spawn_helpers "$DEST/node_modules"
 
 # The standalone tree's server.js is Next's generated entrypoint — it serves
@@ -262,66 +350,20 @@ if [ ! -f "$ROOT/server.mjs" ]; then
 fi
 cp "$ROOT/server.mjs" "$DEST/server.mjs"
 
-# But Next.js's compiled server.js can require the standalone's own internal
-# next package layout. Merge any package the standalone shipped that the
-# locked production install did not include (rare, but cheap to do).
-if [ -d "$STANDALONE/node_modules" ]; then
-  echo "==> backfilling any pnpm-only packages from standalone"
-  (cd "$STANDALONE/node_modules" && find . -maxdepth 2 -mindepth 1 -type d \
-     ! -path "./.pnpm*" -print0 2>/dev/null \
-     | while IFS= read -r -d '' pkg; do
-        rel="${pkg#./}"
-        if [ ! -e "$DEST/node_modules/$rel" ]; then
-          mkdir -p "$DEST/node_modules/$(dirname "$rel")"
-          cp -aL "$STANDALONE/node_modules/$rel" \
-            "$DEST/node_modules/$rel" 2>/dev/null || true
-        fi
-      done)
-fi
-
 if [ -d "$STATIC" ]; then
   mkdir -p "$DEST/.next/static"
   echo "==> copying .next/static → $DEST/.next/static"
   cp -a "$STATIC/." "$DEST/.next/static/"
 fi
 
-# Next.js + pnpm also drops symlinks under .next/node_modules/ that point at
-# ../../node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg> (e.g. shiki,
-# oniguruma-to-es). After we swap in the locked top-level node_modules
-# above, those symlinks dangle, and Tauri's resource glob rejects the bundle
-# with `resource path doesn't exist`. Resolve each into a real directory.
-if [ -d "$DEST/.next/node_modules" ]; then
-  echo "==> resolving dangling pnpm symlinks in .next/node_modules"
-  while IFS= read -r link; do
-    # Only patch dangling symlinks (non-dangling ones are fine as-is).
-    if [ -e "$link" ]; then
-      continue
-    fi
-    # Strip the trailing -<16hex> webpack-content-hash suffix
-    pkg="$(basename "$link" | sed -E 's/-[a-f0-9]{16}$//')"
-    src=""
-    if [ -d "$PNPM_STAGE/node_modules/$pkg" ]; then
-      src="$PNPM_STAGE/node_modules/$pkg"
-    elif [ -d "$ROOT/node_modules/$pkg" ]; then
-      src="$ROOT/node_modules/$pkg"
-    fi
-    if [ -n "$src" ] && [ -d "$src" ]; then
-      rm -f "$link"
-      cp -aL "$src" "$link"
-      echo "    resolved $(basename "$link") ← $pkg"
-    else
-      echo "    ! could not resolve $(basename "$link") (pkg=$pkg)" >&2
-    fi
-  done < <(find "$DEST/.next/node_modules" -mindepth 1 -maxdepth 1 -type l)
-fi
-
-if [ -d "$PUBLIC" ]; then
-  mkdir -p "$DEST/public"
-  echo "==> copying public/ → $DEST/public"
-  cp -a "$PUBLIC/." "$DEST/public/"
-fi
+copy_runtime_tree "$ROOT/marketplace" "marketplace"
+copy_runtime_tree "$ROOT/workflows" "workflows"
+copy_runtime_tree "$ROOT/assets" "assets"
+copy_runtime_tree "$PUBLIC" "public"
+copy_runtime_file "$ROOT/vault.yaml" "vault.yaml"
 
 prune_sidecar_nonruntime_files "$DEST"
+assert_runtime_layout
 
 # Sanity check
 for must in node_modules/@next/env node_modules/@swc/helpers/_; do
@@ -331,15 +373,24 @@ for must in node_modules/@next/env node_modules/@swc/helpers/_; do
   fi
 done
 
-# Sharp must actually load from the bundle, or familiar raster avatars 404 in
-# the packaged app (#2010). The prune keeps only the build-host-arch native
-# binary, and release bundles are built on the matching host (same constraint
-# as @next/swc and node-pty), so requiring it here exercises the real load
-# path and fails fast if @img/sharp-<target> or libvips went missing.
-if ! (cd "$DEST" && node -e "require('sharp')") >&2 2>&1; then
-  echo "==> ! sharp failed to load from sidecar bundle — raster avatars will 404 (#2010)" >&2
-  echo "    expected @img/sharp-<build-target> native binary under $DEST/node_modules/@img" >&2
+# Load every external/custom-server dependency from the final root, using the
+# bundled Node executable that users receive rather than the build-shell Node.
+if ! (cd "$DEST" && "$BUNDLED_NODE_DIR/bin/$NODE_NAME" --input-type=module -e '
+  import { createRequire } from "node:module";
+  const require = createRequire(new URL("./server.mjs", import.meta.url));
+  for (const id of [
+    "next",
+    "node-pty",
+    "sharp",
+    "@next/env",
+    "@swc/helpers/_/_interop_require_default",
+    "ws",
+  ]) require(id);
+') >&2 2>&1; then
+  echo "==> ! an allowlisted dependency failed to load from the sidecar runtime" >&2
   exit 1
 fi
+
+node "$ROOT/scripts/sidecar-archive.mjs" "$DEST" "$SERVER_ARCHIVE" "$SERVER_MANIFEST"
 
 echo "==> sidecar bundle ready ($(du -sh "$DEST" | cut -f1))"

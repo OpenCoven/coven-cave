@@ -1,3 +1,7 @@
+packages:
+  - sidecar-runtime
+
+injectWorkspacePackages: true
 strictDepBuilds: false
 minimumReleaseAge: 4320
 saveExact: true

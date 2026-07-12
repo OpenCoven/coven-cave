@@ -41,6 +41,47 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
   );
 });
 
+test("Windows bundles the server as bounded archive resources", async () => {
+  const [defaultConfig, windowsConfig] = await Promise.all([
+    readFile(new URL("./tauri.conf.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("./tauri.windows.conf.json", import.meta.url), "utf8").then(JSON.parse),
+  ]);
+
+  assert.ok(
+    defaultConfig.bundle.resources.includes("resources/server/**/*"),
+    "macOS/Linux must retain the expanded server so native modules can be signed",
+  );
+  assert.deepEqual(
+    windowsConfig.bundle.resources,
+    ["resources/node/**/*", "resources/server.tar.gz", "resources/server-manifest.json"],
+    "Windows must expose a bounded archive+manifest instead of thousands of MSI resources",
+  );
+  assert.ok(
+    windowsConfig.bundle.resources.every((resource) => !resource.includes("resources/server/**/*")),
+    "Windows must never recursively expand the server into WiX components",
+  );
+});
+
+test("packaged launcher resolves the server archive into app-local cache", async () => {
+  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+
+  assert.match(
+    launcher,
+    /app\.path\(\)\.app_local_data_dir\(\)/,
+    "launcher must place extracted runtime files in the writable app-local data directory",
+  );
+  assert.match(
+    launcher,
+    /sidecar_runtime::resolve_server_dir\(\s*&resource_dir,\s*&app_local_data_dir,?\s*\)/,
+    "launcher must resolve either the expanded runtime or verified archive cache before spawning Node",
+  );
+  assert.match(
+    launcher,
+    /could not prepare the bundled sidecar runtime/,
+    "archive verification and extraction failures must have an actionable startup diagnostic",
+  );
+});
+
 test("clean release runners have resource glob placeholders", async () => {
   const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
 
@@ -143,6 +184,34 @@ test("Windows packaged sidecar starts without a console window", async () => {
     launcher,
     /cmd\.creation_flags\(0x08000000\)/,
     "Windows launcher must use CREATE_NO_WINDOW for the Node sidecar process",
+  );
+});
+
+test("Tauri cleanup stops and reaps the Node sidecar before updater exit", async () => {
+  const [launcher, lifecycle] = await Promise.all([
+    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+    readFile(new URL("./src/sidecar_process.rs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(
+    lifecycle,
+    /impl Drop for SidecarCleanupResource[\s\S]*stop_sidecar/,
+    "the cleanup resource must synchronously stop the child when Tauri clears its resource table",
+  );
+  assert.match(
+    launcher,
+    /resources_table\(\)\.add\(SidecarCleanupResource::new/,
+    "the sidecar cleanup guard must be owned by Tauri's application resource table",
+  );
+  assert.match(
+    launcher,
+    /WindowEvent::Destroyed[\s\S]*stop_sidecar/,
+    "normal window shutdown must use the same idempotent sidecar cleanup path",
+  );
+  assert.match(
+    launcher,
+    /sidecar readiness timeout[\s\S]*fatal_exit/,
+    "startup timeout must reap Node before fatal process exit bypasses destructors",
   );
 });
 
