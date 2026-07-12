@@ -67,7 +67,7 @@ The check command fails if generated packages or exports are missing or stale.
 
 ## Local Install State
 
-Cave records local marketplace installs in `~/.coven/cave-config.json` under `marketplace.installed`. This records which package the user chose so Cave can layer configuration, export application, and harness setup on top. It never stores raw secrets — see Configuration & Validation below.
+Cave records local marketplace installs in `~/.coven/cave/config.json` under `marketplace.installed`. This records which package the user chose so Cave can layer configuration, export application, and harness setup on top. It never stores raw secrets — see Configuration & Validation below.
 
 ## Configuration & Validation
 

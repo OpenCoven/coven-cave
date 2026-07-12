@@ -7,10 +7,10 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { covenHome } from "@/lib/coven-paths";
+import { caveHome } from "@/lib/coven-paths";
 import { REGISTRY_VERSION } from "@/lib/salem/happy-paths";
 
-export const FEEDBACK_PATH = path.join(covenHome(), "cave-salem-pathfinder.json");
+export const FEEDBACK_PATH = path.join(caveHome(), "salem-pathfinder.json");
 
 export type SalemPathfinderFeedback = {
   pathId: string;

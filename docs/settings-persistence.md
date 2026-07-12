@@ -8,9 +8,9 @@ authoritative store for desktop preferences.
 ## Canonical store
 
 Non-secret UI preferences are stored in the app-owned JSON file
-`~/.coven/cave-preferences.json`. `COVEN_PREFERENCES_PATH` may redirect it for
+`~/.coven/cave/preferences.json`. `COVEN_PREFERENCES_PATH` may redirect it for
 tests. Backdrop image bytes are stored separately at
-`~/.coven/cave-backdrop.jpg` (or `COVEN_BACKDROP_PATH`) and the JSON file holds
+`~/.coven/cave/backdrop.jpg` (or `COVEN_BACKDROP_PATH`) and the JSON file holds
 only its safe metadata.
 
 The sidecar exposes a typed, loopback-only `GET`/`PATCH /api/preferences`

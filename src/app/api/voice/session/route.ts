@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { caveHome } from "../../../../lib/coven-paths.ts";
 import { resolveSecret } from "../../../../lib/vault.ts";
 import { getVoiceProvider } from "../../../../lib/voice/registry.ts";
 import { hydrateForVoiceCall } from "../../../../lib/voice/hydrate-instructions.ts";
@@ -31,7 +31,7 @@ type FamiliarRecord = {
 async function loadFamiliar(id: string): Promise<FamiliarRecord | null> {
   try {
     const raw = await readFile(
-      path.join(homedir(), ".coven", "cave-config.json"),
+      path.join(caveHome(), "config.json"),
       "utf8",
     );
     const parsed = JSON.parse(raw) as { familiars?: Record<string, FamiliarRecord> };

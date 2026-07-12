@@ -11,7 +11,8 @@ const home = await mkdtemp(path.join(tmpdir(), "space-usage-"));
 await mkdir(path.join(home, "memory", "kitty"), { recursive: true });
 await writeFile(path.join(home, "memory", "kitty", "a.md"), "hello", "utf8"); // 5 B
 await writeFile(path.join(home, "memory", "note.md"), "hi", "utf8"); // 2 B
-await writeFile(path.join(home, "cave-board.json"), "{}", "utf8"); // 2 B top-level state
+await mkdir(path.join(home, "cave"), { recursive: true });
+await writeFile(path.join(home, "cave", "board.json"), "{}", "utf8"); // 2 B cave app state
 
 const outside = await mkdtemp(path.join(tmpdir(), "space-usage-outside-"));
 await writeFile(path.join(outside, "big.bin"), "x".repeat(4096), "utf8");
@@ -36,8 +37,9 @@ assert.equal(memory.truncated, false, "small area is not truncated");
 assert.equal(memory.relPath, "~/.coven/memory", "area shows a home-relative path");
 
 const state = byId.get("state");
-assert.equal(state.files, 1, "state counts only top-level files (no recursion into area dirs)");
-assert.equal(state.bytes, 2, "state sums only top-level files");
+assert.equal(state.files, 1, "state counts only top-level cave files (no recursion into subdirs)");
+assert.equal(state.bytes, 2, "state sums only top-level cave files");
+assert.equal(state.relPath, "~/.coven/cave", "state area points at the cave home");
 
 const knowledge = byId.get("knowledge");
 assert.equal(knowledge.files, 1, "symlinked dir is not followed");

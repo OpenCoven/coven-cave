@@ -1,9 +1,9 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-const PREFS_PATH = path.join(homedir(), ".coven", "cave-inbox-prefs.json");
+const PREFS_PATH = path.join(caveHome(), "inbox-prefs.json");
 
 export type SoundMode = "default" | "silent" | "named";
 

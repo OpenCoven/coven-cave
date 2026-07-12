@@ -15,6 +15,7 @@ import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
+import { CaveHomeMigrationBannerTrigger } from "@/components/cave-home-migration-banner";
 import { useIsMobile } from "@/lib/use-viewport";
 import { isMacDesktopShell } from "@/lib/tauri-platform";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
@@ -640,6 +641,7 @@ function ShellInner({
         <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
           <UpdateBannerTrigger />
           <OpenCovenToolsBannerTrigger />
+          <CaveHomeMigrationBannerTrigger />
           <ShellBannerStrip />
           <DetailSplitHost
             primary={detail}

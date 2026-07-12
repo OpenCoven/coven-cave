@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { covenHome } from "@/lib/coven-paths";
+import { caveHome } from "@/lib/coven-paths";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
 
 // Paired-phone signal (golden path 5, cave-i74f). Pairing success used to be
@@ -13,7 +13,7 @@ import { writeJsonAtomic } from "@/lib/server/atomic-write";
 type MobilePairedState = { lastSeenAt: number };
 
 export function mobilePairedPath(): string {
-  return path.join(covenHome(), "cave-mobile-paired.json");
+  return path.join(caveHome(), "mobile-paired.json");
 }
 
 /** Record that a paired device just authenticated (token refresh succeeded).

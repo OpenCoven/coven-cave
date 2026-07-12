@@ -11,6 +11,7 @@ export {
 } from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
 import { dedupeProjectsByRoot as dedupeByRoot } from "./cave-projects-types.ts";
+import { caveHome } from "./coven-paths.ts";
 
 type ProjectsFile = {
   version: 1;
@@ -20,7 +21,7 @@ type ProjectsFile = {
 function projectsFilePath(): string {
   return (
     process.env.CAVE_PROJECTS_PATH_OVERRIDE ??
-    path.join(homedir(), ".coven", "cave-projects.json")
+    path.join(caveHome(), "projects.json")
   );
 }
 

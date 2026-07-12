@@ -9,9 +9,9 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { covenHome } from "@/lib/coven-paths";
+import { caveHome } from "@/lib/coven-paths";
 
-export const MESSAGE_FEEDBACK_PATH = path.join(covenHome(), "cave-message-feedback.json");
+export const MESSAGE_FEEDBACK_PATH = path.join(caveHome(), "message-feedback.json");
 
 export type MessageFeedbackVote = "up" | "down";
 

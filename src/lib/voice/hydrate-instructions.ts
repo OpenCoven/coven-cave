@@ -1,7 +1,7 @@
 import { loadConversation } from "../cave-conversations.ts";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "../coven-paths.ts";
 
 export type Hydrated = {
   instructions: string;
@@ -17,7 +17,7 @@ type FamiliarConfigRecord = {
 };
 
 async function loadFamiliar(familiarId: string): Promise<FamiliarConfigRecord | null> {
-  const configPath = path.join(homedir(), ".coven", "cave-config.json");
+  const configPath = path.join(caveHome(), "config.json");
   try {
     const raw = await readFile(configPath, "utf8");
     const parsed = JSON.parse(raw) as { familiars?: Record<string, FamiliarConfigRecord> };

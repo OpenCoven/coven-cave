@@ -7,7 +7,7 @@ import path from "node:path";
 // updateCard applies intent ops against the CURRENT card under the board lock —
 // the regression the 2026-07-02 board audit flagged: full-array PATCHes computed
 // from stale render state silently clobbered concurrent element edits. Isolated
-// to a temp home so it never touches the real ~/.coven/cave-board.json.
+// to a temp home so it never touches the real ~/.coven/cave/board.json.
 
 const tmpHome = await mkdtemp(path.join(tmpdir(), "cave-board-ops-"));
 process.env.HOME = tmpHome;

@@ -1,6 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import {
@@ -46,7 +46,7 @@ export {
   type CardStatus,
 } from "@/lib/cave-board-types";
 
-const BOARD_PATH = path.join(homedir(), ".coven", "cave-board.json");
+const BOARD_PATH = path.join(caveHome(), "board.json");
 
 /**
  * Old cards predate the lifecycle machine. Map their column `status` to the

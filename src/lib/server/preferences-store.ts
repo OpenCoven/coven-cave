@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { copyFile, mkdir, open, readFile, readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { covenHome } from "@/lib/coven-paths";
+import { caveHome } from "@/lib/coven-paths";
 import {
   applyPreferencesPatch,
   createDefaultPreferences,
@@ -18,12 +18,12 @@ import { writeJsonAtomic } from "@/lib/server/atomic-write";
 
 export function preferencesPath(): string {
   const override = process.env.COVEN_PREFERENCES_PATH?.trim();
-  return override || path.join(covenHome(), "cave-preferences.json");
+  return override || path.join(caveHome(), "preferences.json");
 }
 
 function legacyThemePath(): string {
   const override = process.env.COVEN_THEME_PATH?.trim();
-  return override || path.join(covenHome(), "cave-theme.json");
+  return override || path.join(caveHome(), "theme.json");
 }
 
 type DiskState = "valid" | "missing" | "malformed";

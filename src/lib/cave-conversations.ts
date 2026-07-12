@@ -1,12 +1,12 @@
 import { mkdir, readFile, writeFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 
-const CONV_DIR = path.join(homedir(), ".coven", "cave-conversations");
+const CONV_DIR = path.join(caveHome(), "conversations");
 
 export type ChatTurn = {
   id: string;

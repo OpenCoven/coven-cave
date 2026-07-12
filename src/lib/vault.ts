@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
@@ -61,14 +61,14 @@ function isBundle(): boolean {
  * rewrites this file) must target a writable per-user location. Writing into
  * the bundle breaks its signature seal → Gatekeeper rejects the app and the
  * in-place auto-updater can no longer replace it. In bundle mode the file lives
- * under `<covenHome>/cave/`, seeded once from the bundle's shipped map.
+ * under `caveHome()`, seeded once from the bundle's shipped map.
  *
  * Resolution (first hit wins): `COVEN_VAULT_FILE` → bundle path → `<cwd>/vault.yaml`.
  */
 function vaultYamlPath(): string {
   const override = process.env.COVEN_VAULT_FILE?.trim();
   if (override) return override;
-  if (isBundle()) return join(covenHome(), "cave", "vault.yaml");
+  if (isBundle()) return join(caveHome(), "vault.yaml");
   return join(process.cwd(), "vault.yaml");
 }
 

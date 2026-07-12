@@ -12,16 +12,16 @@ const FAMILIAR_ID = "milo";
 const SESSION_ID = "sess-route";
 
 function writeFamiliar(record: Record<string, unknown>) {
-  const dir = join(TMP, ".coven");
+  const dir = join(TMP, ".coven", "cave");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
-    join(dir, "cave-config.json"),
+    join(dir, "config.json"),
     JSON.stringify({ familiars: { [FAMILIAR_ID]: record } }),
   );
 }
 
 function writeSession(turns: any[] = []) {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, `${SESSION_ID}.json`), JSON.stringify({
     sessionId: SESSION_ID, familiarId: FAMILIAR_ID, harness: "claude",

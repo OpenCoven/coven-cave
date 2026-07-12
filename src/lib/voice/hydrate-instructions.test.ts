@@ -14,7 +14,7 @@ const FAMILIAR_ID = "milo";
 const SESSION_ID = "sess-1";
 
 function writeConvFile(turns: Array<{ role: string; text: string }>) {
-  const dir = join(TMP, ".coven", "cave-conversations");
+  const dir = join(TMP, ".coven", "cave", "conversations");
   mkdirSync(dir, { recursive: true });
   const conv = {
     sessionId: SESSION_ID,
@@ -33,10 +33,10 @@ function writeConvFile(turns: Array<{ role: string; text: string }>) {
 }
 
 function writeFamiliarConfig(familiar: Record<string, unknown>) {
-  const dir = join(TMP, ".coven");
+  const dir = join(TMP, ".coven", "cave");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
-    join(dir, "cave-config.json"),
+    join(dir, "config.json"),
     JSON.stringify({ familiars: { [FAMILIAR_ID]: familiar } }),
   );
 }

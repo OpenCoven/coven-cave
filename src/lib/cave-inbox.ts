@@ -1,11 +1,11 @@
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import type { DailyReportPayload } from "./daily-report-facts.ts";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
-const INBOX_PATH = path.join(homedir(), ".coven", "cave-inbox.json");
+const INBOX_PATH = path.join(caveHome(), "inbox.json");
 
 export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";
