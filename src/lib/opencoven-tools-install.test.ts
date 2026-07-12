@@ -63,4 +63,22 @@ assert.equal(
   "mixed missing/outdated tools get a neutral update label",
 );
 
+assert.deepEqual(
+  openCovenToolActionTargets([
+    { id: "coven-cli", label: "coven CLI", installed: true, outdated: false },
+    codeReady,
+  ]),
+  [],
+  "when both tools are current, there are no actionable install targets",
+);
+
+assert.equal(
+  openCovenToolsPrimaryActionLabel([
+    { id: "coven-cli", label: "coven CLI", installed: true, outdated: false },
+    codeReady,
+  ]),
+  "OpenCoven tools ready",
+  "primary action label reflects that no installs or updates are needed",
+);
+
 console.log("opencoven-tools-install.test.ts: ok");
