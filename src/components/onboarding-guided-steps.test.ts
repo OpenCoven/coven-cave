@@ -307,6 +307,24 @@ assert.match(
 
 assert.match(
   source,
+  /openCovenToolActionTargets\(tools\)/,
+  "the startup tools step derives one-click targets from the reported tool status",
+);
+
+assert.match(
+  source,
+  /<CommandRow command=\{manualInstallCommand\}/,
+  "the startup tools step shows a manual command matching the needed OpenCoven tools",
+);
+
+assert.match(
+  source,
+  /for \(const target of actionTargets\) onInstall\(target\)/,
+  "the startup tools CTA installs or updates only the OpenCoven tools that need action",
+);
+
+assert.match(
+  source,
   /const covenCodeReady =[\s\S]{0,180}installed[\s\S]{0,80}!.*outdated/,
   "startup should require the latest Coven Code version before treating it as ready",
 );

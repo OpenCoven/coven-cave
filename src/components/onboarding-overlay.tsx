@@ -17,6 +17,11 @@ import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry"
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { openExternalUrl } from "@/lib/open-external";
 import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
+import {
+  openCovenToolActionTargets,
+  openCovenToolsInstallCommand,
+  openCovenToolsPrimaryActionLabel,
+} from "@/lib/opencoven-tools-install";
 
 // Guided onboarding: one numbered path from "nothing installed" to "ready to
 // summon". Every step carries its own instructions, a one-click action where
@@ -138,7 +143,6 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
 // error instead of an empty runtime grid polling silently forever.
 const HARNESS_RETRY_BUDGET = 15;
 
-const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
 const OPENCLAW_AGENT_ROOT = "~/.openclaw/agents";
 const OPENCLAW_WORKSPACE_ROOT = "~/.openclaw/workspace";
 
@@ -192,7 +196,6 @@ const PLATFORM_COPY: Record<
   PlatformId,
   {
     label: string;
-    installCommand: string;
     nodeSetup: string[];
     caveInstall: string[];
     cliInstall: string[];
@@ -202,7 +205,6 @@ const PLATFORM_COPY: Record<
 > = {
   windows: {
     label: "Windows",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     warning:
       "The Windows build isn't code-signed yet, so Smart App Control blocks it when enabled. Check Windows Security > App & browser control: if Smart App Control is On, turn it off before downloading. On most PCs it's already Off and nothing is needed.",
     warningLink: {
@@ -221,14 +223,13 @@ const PLATFORM_COPY: Record<
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure coven.exe is on PATH after the global npm install.",
-      "Click Re-check after Windows can run coven from a new terminal.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Make sure coven.exe and coven-code are on PATH after the global npm install.",
+      "Click Re-check after Windows can run both tools from a new terminal.",
     ],
   },
   linux: {
     label: "Linux",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org or your package manager (e.g. sudo apt install nodejs npm).",
       "Open a new terminal so PATH updates apply.",
@@ -240,14 +241,13 @@ const PLATFORM_COPY: Record<
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure coven is on PATH after the global npm install.",
-      "If your desktop shell has an older PATH, restart Cave after installing the CLI.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Make sure coven and coven-code are on PATH after the global npm install.",
+      "If your desktop shell has an older PATH, restart Cave after installing the tools.",
     ],
   },
   mac: {
     label: "macOS",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org, or run brew install node.",
       "Open a new terminal so PATH updates apply.",
@@ -259,14 +259,13 @@ const PLATFORM_COPY: Record<
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure a terminal can run coven after the global npm install.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Make sure a terminal can run coven and coven-code after the global npm install.",
       "Click Re-check here after install.",
     ],
   },
   unknown: {
     label: "Your platform",
-    installCommand: COVEN_CLI_INSTALL_COMMAND,
     nodeSetup: [
       "Install Node.js LTS from https://nodejs.org.",
       "Open a new terminal so PATH updates apply.",
@@ -278,8 +277,8 @@ const PLATFORM_COPY: Record<
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the coven CLI with npm: npm i -g @opencoven/cli@latest.",
-      "Make sure coven is on PATH.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Make sure coven and coven-code are on PATH.",
       "Click Re-check here after install.",
     ],
   },
@@ -1677,32 +1676,40 @@ function StepCovenCli({
   // client-side now, so per-target busy is enough to coordinate them.
   const covenCodeJob = installJobs["coven-code"];
   const covenCodeJobRunning = covenCodeJob?.status === "running";
+  const actionTargets = openCovenToolActionTargets(tools);
+  const manualInstallCommand = openCovenToolsInstallCommand(tools);
+  const primaryActionLabel = openCovenToolsPrimaryActionLabel(tools);
+  const installBusy = busy || covenCodeJobRunning;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
         Cave needs two OpenCoven tools — the <strong>coven CLI</strong> (powers
-        everything) and <strong>Coven Code</strong> (required). Install both with
-        one click — Cave runs them one after another so they never collide — or
-        copy the command to run it yourself.
+        everything) and <strong>Coven Code</strong> (required). Use the main
+        action to install or update whichever tools need attention — Cave runs
+        npm installs one after another so they never collide — or copy the
+        matching command to run it yourself.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="primary"
-          loading={busy || covenCodeJobRunning}
+          loading={installBusy}
           leadingIcon="ph:arrow-down-bold"
           onClick={() => {
-            onInstall("coven-cli");
-            onInstall("coven-code");
+            for (const target of actionTargets) onInstall(target);
           }}
-          disabled={busy || covenCodeJobRunning}
+          disabled={installBusy || actionTargets.length === 0}
         >
-          {busy || covenCodeJobRunning ? "Installing…" : "Install both tools"}
+          {installBusy ? "Installing…" : primaryActionLabel}
         </Button>
-        <span className="text-[11px] text-[var(--text-muted)]">
-          or run it yourself:
-        </span>
+        {actionTargets.length > 0 ? (
+          <span className="text-[11px] text-[var(--text-muted)]">
+            or run it yourself:
+          </span>
+        ) : null}
       </div>
-      <CommandRow command={platformCopy.installCommand} onCopy={onCopy} />
+      {actionTargets.length > 0 ? (
+        <CommandRow command={manualInstallCommand} onCopy={onCopy} />
+      ) : null}
       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
       <InstallResultNote result={installResults["coven-cli"]} />
       {tools.length > 0 ? (
