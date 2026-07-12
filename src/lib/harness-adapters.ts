@@ -123,6 +123,19 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
   ...REGISTRY_ADAPTERS,
 ];
 
+// The familiar creation flow can only complete local/SSH summoning for the
+// runtimes it has explicit setup/copy/model behavior for today. OpenClaw is a
+// separate agent vessel, and registry additions stay hidden here until the
+// circle grows first-class support for their install and binding flow.
+export const SUMMONABLE_LOCAL_HARNESS_IDS = [
+  "codex",
+  "claude",
+  "copilot",
+  "hermes",
+] as const;
+
+const SUMMONABLE_LOCAL_HARNESSES = new Set<string>(SUMMONABLE_LOCAL_HARNESS_IDS);
+
 const TRUSTED_ONBOARDING_HARNESSES = new Set(
   COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),
 );
@@ -167,6 +180,10 @@ export function canonicalHarnessId(harness: string): string {
 
 export function isTrustedChatHarness(harness: string): boolean {
   return TRUSTED_CHAT_HARNESSES.has(canonicalHarnessId(harness));
+}
+
+export function isSummonableLocalHarness(harness: string): boolean {
+  return SUMMONABLE_LOCAL_HARNESSES.has(canonicalHarnessId(harness));
 }
 
 // The single display-label authority for runtime/harness ids: curated Cave

@@ -10,7 +10,7 @@ import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS, isSummonableLocalHarness } from "@/lib/harness-adapters";
 import { slugifyFamiliarId } from "@/lib/onboarding-familiars";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { setFamiliarOverride } from "@/lib/cave-familiar-overrides";
@@ -278,9 +278,9 @@ function SummoningRite({
   const [vessel, setVessel] = useState<VesselKind | null>(draftVessel);
   const [harnesses, setHarnesses] = useState<HarnessReport[] | null>(null);
   const [harness, setHarness] = useState<string | null>(
-    draft?.harness && COMPATIBILITY_ADAPTERS.some((a) => a.id === draft.harness)
+    draft?.harness && isSummonableLocalHarness(draft.harness)
       ? draft.harness
-      : defaultHarness && COMPATIBILITY_ADAPTERS.some((a) => a.id === defaultHarness)
+      : defaultHarness && isSummonableLocalHarness(defaultHarness)
         ? defaultHarness
         : null,
   );
@@ -341,14 +341,14 @@ function SummoningRite({
         const json = (await res.json()) as { ok?: boolean; harnesses?: (HarnessReport & { binary?: string })[] };
         if (cancelled) return;
         if (res.ok && json.ok !== false && (json.harnesses ?? []).length > 0) {
-          setHarnesses(json.harnesses!.filter((h) => h.chatSupported));
+          setHarnesses(json.harnesses!.filter((h) => h.chatSupported && isSummonableLocalHarness(h.id)));
           return;
         }
         throw new Error("empty");
       } catch {
         if (!cancelled)
           setHarnesses(
-            COMPATIBILITY_ADAPTERS.filter((a) => a.chatSupported !== false).map((a) => ({
+            COMPATIBILITY_ADAPTERS.filter((a) => a.chatSupported !== false && isSummonableLocalHarness(a.id)).map((a) => ({
               id: a.id,
               label: a.label,
               chatSupported: true,

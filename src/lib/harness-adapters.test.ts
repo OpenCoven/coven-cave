@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   COMPATIBILITY_ADAPTERS,
+  SUMMONABLE_LOCAL_HARNESS_IDS,
   mergeAdapterReports,
   adapterSetupState,
   runtimeSourceSetupState,
@@ -9,6 +10,7 @@ import {
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
   covenRunSupportsAddDirFlag,
+  isSummonableLocalHarness,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
   openClawAdapterReport,
@@ -93,6 +95,19 @@ const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
     assert.ok(isTrustedOnboardingHarness(adapter.id), `${adapter.id} passes the onboarding trust gate`);
   }
 }
+
+assert.deepEqual(
+  SUMMONABLE_LOCAL_HARNESS_IDS,
+  ["codex", "claude", "copilot", "hermes"],
+  "the summoning circle's local/SSH runtime choices must only include creation-ready local runtimes",
+);
+assert.equal(isSummonableLocalHarness("codex"), true);
+assert.equal(isSummonableLocalHarness("claude"), true);
+assert.equal(isSummonableLocalHarness("copilot"), true);
+assert.equal(isSummonableLocalHarness("hermes"), true);
+assert.equal(isSummonableLocalHarness("openclaw"), false, "OpenClaw is summoned through the dedicated agent vessel");
+assert.equal(isSummonableLocalHarness("coven-code"), false, "Coven Code is an app/tool install, not a familiar runtime choice");
+assert.equal(isSummonableLocalHarness("opencode"), false, "registry runtimes stay hidden until the creation flow has explicit support");
 
 assert.deepEqual(openClawAdapterReport(2), {
   id: "openclaw",
