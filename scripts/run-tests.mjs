@@ -808,6 +808,7 @@ export const SUITES = {
     "src/lib/mobile-token-refresh.test.ts",
     "scripts/ios-app-store-assets.test.mjs",
     "scripts/ios-chat-restyle.test.mjs",
+    "scripts/ios-modern-polish.test.mjs",
     "scripts/ios-hide-generated-sessions.test.mjs",
     "scripts/ios-code-browser-files.test.mjs",
     "scripts/ios-code-viewer.test.mjs",
