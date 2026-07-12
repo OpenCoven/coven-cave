@@ -30,6 +30,7 @@ import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-reso
 import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
+import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }
@@ -792,6 +793,8 @@ function FamiliarDetailPanel({
   onOpenUrl,
 }: AgentDetailPanelProps) {
   const [tab, setTab] = useState<DetailTab>("memory");
+  // Session trace overlay — the daemon event timeline behind one session.
+  const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
   const familiarSessions = useMemo(
     () =>
       sessions
@@ -932,11 +935,11 @@ function FamiliarDetailPanel({
             ) : (
               <ul className="divide-y divide-[var(--border-hairline)] rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25">
                 {familiarSessions.map((s) => (
-                  <li key={s.id}>
+                  <li key={s.id} className="flex items-stretch">
                     <button
                       type="button"
                       onClick={() => onOpenSession(s.id)}
-                      className="focus-ring-inset flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
+                      className="focus-ring-inset flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left hover:bg-[var(--bg-raised)]"
                     >
                       <Icon name="ph:terminal-window" width={13} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
                       <span className="min-w-0 flex-1">
@@ -949,6 +952,16 @@ function FamiliarDetailPanel({
                       </span>
                       <RelativeTime iso={s.updated_at} className="shrink-0 text-[10px] text-[var(--text-muted)]" />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setTraceTarget({ id: s.id, title: s.title })}
+                      className="focus-ring-inset flex shrink-0 items-center gap-1 border-l border-[var(--border-hairline)] px-2 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                      title="Trace this session's daemon events"
+                      aria-label={`Trace ${s.title || s.id}`}
+                    >
+                      <Icon name="ph:tree-structure" width={12} aria-hidden />
+                      Trace
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -956,6 +969,10 @@ function FamiliarDetailPanel({
           </div>
         )}
       </div>
+
+      {traceTarget ? (
+        <SessionTraceOverlay target={traceTarget} onClose={() => setTraceTarget(null)} />
+      ) : null}
     </section>
   );
 }

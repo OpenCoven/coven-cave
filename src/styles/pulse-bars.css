@@ -43,3 +43,26 @@
 .pulse-bars--tips .pulse-bars__day:hover {
   background: color-mix(in oklch, var(--foreground) 14%, transparent);
 }
+
+/* Interactive variant — days are toggle buttons that drill into that day's
+   sessions. Reset the button chrome to the bar shape, then make hover/selected
+   states legible: selection reads as a solid presence ring, not color alone. */
+.pulse-bars--interactive .pulse-bars__day {
+  appearance: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.pulse-bars--interactive .pulse-bars__day:hover {
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+.pulse-bars--interactive .pulse-bars__day:focus-visible {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 1px;
+}
+.pulse-bars--interactive .pulse-bars__day.is-selected {
+  box-shadow: 0 0 0 2px var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}

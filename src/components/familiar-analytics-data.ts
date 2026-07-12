@@ -81,8 +81,14 @@ export type FamiliarAnalyticsModel = {
   modelFeedback: MessageFeedbackRollup;
   /** Per-day session counts for the trailing 14 days (oldest first). */
   sessionPulse: PulseDay[];
+  /** This familiar's sessions, newest first, capped for the drill-through list. */
+  recentSessions: SessionRow[];
   errors: string[];
 };
+
+/** Cap on the drill-through session list — enough history to trace without
+ *  turning the analytics page into a full session browser. */
+const RECENT_SESSIONS_CAP = 40;
 
 const EMPTY_SNAPSHOT: RetroRunsSnapshot = {
   generatedAt: new Date(0).toISOString(),
@@ -229,6 +235,9 @@ export function buildFamiliarAnalyticsModel(
     responseConfidenceRollup: aggregateResponseConfidenceEvents(data.responseConfidenceEvents),
     modelFeedback: data.modelFeedback,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
+    recentSessions: [...familiarSessions]
+      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+      .slice(0, RECENT_SESSIONS_CAP),
     errors: data.errors,
   };
 }

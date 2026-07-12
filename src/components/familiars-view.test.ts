@@ -294,3 +294,27 @@ assert.doesNotMatch(
   /fetch\([^)]*\/api\/familiars\/[^)]*\{\s*method:\s*"DELETE"/,
   "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle tab",
 );
+
+// Sessions tab: each row keeps its open-in-chat primary action AND gains a
+// Trace action that opens the daemon event timeline (SessionTraceOverlay) —
+// buttons are siblings, never nested (invalid HTML + broken AT semantics).
+assert.match(
+  source,
+  /import \{ SessionTraceOverlay, type TraceTarget \} from "@\/components\/session-trace-overlay"/,
+  "Sessions tab wires the shared trace overlay",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => setTraceTarget\(\{ id: s\.id, title: s\.title \}\)\}/,
+  "each session row can open its trace",
+);
+assert.match(
+  source,
+  /aria-label=\{`Trace \$\{s\.title \|\| s\.id\}`\}/,
+  "the trace button names its session for AT",
+);
+assert.match(
+  source,
+  /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{\(\) => setTraceTarget\(null\)\} \/>\s*\) : null\}/,
+  "the overlay renders from panel state and closes cleanly",
+);
