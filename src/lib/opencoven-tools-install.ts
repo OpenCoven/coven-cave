@@ -43,15 +43,15 @@ export function openCovenToolsPrimaryActionLabel(
   tools: readonly OpenCovenToolInstallStatus[],
 ): string {
   if (tools.length === 0) return "Install both tools";
-  const actions = tools.filter((tool) =>
-    openCovenToolActionTargets(tools).includes(tool.id),
-  );
-  if (actions.length === 0) return "OpenCoven tools ready";
+  const targets = openCovenToolActionTargets(tools);
+  if (targets.length === 0) return "OpenCoven tools ready";
+  const targetIds = new Set(targets);
+  const actions = tools.filter((tool) => targetIds.has(tool.id));
+
   if (actions.length === 1) {
     const [tool] = actions;
     return `${tool.outdated ? "Update" : "Install"} ${tool.label}`;
   }
   if (actions.every((tool) => !tool.installed)) return "Install both tools";
-  if (actions.every((tool) => tool.outdated)) return "Update OpenCoven tools";
   return "Update OpenCoven tools";
 }
