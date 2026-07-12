@@ -684,6 +684,7 @@ export const SUITES = {
     "src/app/api/marketplace/pack-prompts-route.test.ts",
     "src/app/api/app/latest-release/route.test.ts",
     "src/app/api/opencoven-tools/status/route.test.ts",
+    "src/lib/opencoven-tools-status.test.ts",
     "src/app/api/daemon/status/route.test.ts",
     "src/app/api/daemon/capabilities/route.test.ts",
     "src/app/api/travel/client/route.test.ts",
