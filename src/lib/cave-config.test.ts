@@ -18,6 +18,7 @@ try {
     sessionArchived: {},
     sessionSacrificed: {},
     sessionOwned: {},
+    mergedPrAutoArchived: {},
     travel: {
       manualOffline: false,
       hubUnreachableSince: null,
@@ -45,6 +46,19 @@ try {
   state = await config.loadState();
   assert.deepEqual(state.sessionArchived, {});
 
+  // Merged-PR auto-archive: archives + records the one-shot (session, PR) pair,
+  // and summoning afterwards clears the archive but keeps the record.
+  const mergedAt = await config.archiveSessionsForMergedPrs([
+    { sessionId: "session-1", prKey: "OpenCoven/coven-cave#42" },
+  ]);
+  state = await config.loadState();
+  assert.equal(state.sessionArchived["session-1"], mergedAt);
+  assert.deepEqual(state.mergedPrAutoArchived, { "session-1": "OpenCoven/coven-cave#42" });
+  await config.summonSessionLocal("session-1");
+  state = await config.loadState();
+  assert.deepEqual(state.sessionArchived, {});
+  assert.deepEqual(state.mergedPrAutoArchived, { "session-1": "OpenCoven/coven-cave#42" });
+
   assert.equal(await config.setSessionTitle("session-1", "  "), null);
   state = await config.loadState();
   assert.deepEqual(state.sessionTitles, {});
@@ -59,6 +73,7 @@ try {
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
     sessionOwned: {},
+    mergedPrAutoArchived: { "session-1": "OpenCoven/coven-cave#42" },
     travel: {
       manualOffline: false,
       hubUnreachableSince: null,

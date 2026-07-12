@@ -3,8 +3,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
-import { loadState } from "@/lib/cave-config";
+import { archiveSessionsForMergedPrs, loadState, type CaveState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
+import { branchPrCache } from "@/lib/branch-pr-context";
+import {
+  MERGED_AUTO_ARCHIVE_DISABLE_ENV,
+  mergedChatAutoArchiveDecisions,
+} from "@/lib/merged-chat-auto-archive";
+import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
 import {
   localConversationSessionRows,
   mergeSessionRows,
@@ -176,8 +182,51 @@ function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
     const enriched: SessionRow = { ...session };
     if (gitContext) enriched.git = gitContext;
     if (diff) enriched.diff = diff;
+    // PR context for the thread's branch — synchronous read from the
+    // stale-while-revalidate cache (never blocks the poll; see
+    // branch-pr-context.ts). Powers the chat list's PR-status signal and the
+    // merged-chat auto-archive sweep.
+    if (branch) {
+      const pr = branchPrCache.get(root, branch);
+      if (pr) enriched.pullRequest = pr;
+    }
     return enriched;
   });
+}
+
+/**
+ * Merged-chat auto-archive sweep, piggybacked on the session list read: any
+ * unarchived, non-active session whose branch PR is merged gets archived in
+ * cave state, and the rows returned by this request already reflect it
+ * (dropped from the active view, stamped `archived_at` in the archived view).
+ * One-shot per (session, PR) — summoning the chat later sticks. Best-effort:
+ * a sweep failure never breaks the listing.
+ */
+async function applyMergedPrAutoArchive(
+  sessions: SessionRow[],
+  state: CaveState,
+  includeArchived: boolean,
+): Promise<SessionRow[]> {
+  try {
+    if (process.env[MERGED_AUTO_ARCHIVE_DISABLE_ENV] === "1") return sessions;
+    const decisions = mergedChatAutoArchiveDecisions(
+      sessions,
+      state.mergedPrAutoArchived ?? {},
+    );
+    if (decisions.length === 0) return sessions;
+    const archivedAt = await archiveSessionsForMergedPrs(decisions);
+    // Clear any pending "ready to archive" nudges for the swept chats.
+    await Promise.allSettled(decisions.map((d) => resolveArchiveNudges(d.sessionId)));
+    const archivedIds = new Set(decisions.map((d) => d.sessionId));
+    const next: SessionRow[] = [];
+    for (const row of sessions) {
+      if (!archivedIds.has(row.id)) next.push(row);
+      else if (includeArchived) next.push({ ...row, archived_at: archivedAt });
+    }
+    return next;
+  } catch {
+    return sessions;
+  }
 }
 
 /**
@@ -214,8 +263,12 @@ async function computeSessionsList(
           ok: true,
           degraded: true,
           error: res.error ?? `daemon http ${res.status}`,
-          sessions: enrichSessionsWithGitContext(
-            await scopeForFamiliar(localSessions, projects, familiarId),
+          sessions: await applyMergedPrAutoArchive(
+            enrichSessionsWithGitContext(
+              await scopeForFamiliar(localSessions, projects, familiarId),
+            ),
+            state,
+            includeArchived,
           ),
         },
       };
@@ -240,7 +293,16 @@ async function computeSessionsList(
   });
 
   const scoped = await scopeForFamiliar(sessions, projects, familiarId);
-  return { payload: { ok: true, sessions: enrichSessionsWithGitContext(scoped) } };
+  return {
+    payload: {
+      ok: true,
+      sessions: await applyMergedPrAutoArchive(
+        enrichSessionsWithGitContext(scoped),
+        state,
+        includeArchived,
+      ),
+    },
+  };
 }
 
 async function cachedSessionsList(

@@ -7608,6 +7608,35 @@ a.mobile-handoff__link:hover {
   }
 }
 
+/* PR-status badge — replaces the status dot when a thread's work reached a
+   pull request. GitHub's own state colors: open green, merged the presence
+   accent (matching the composer chip), closed red, draft muted. */
+.chat-list-pr-badge {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 -2px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-success);
+}
+.chat-list-pr-badge:hover {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+.chat-list-pr-badge[data-pr-state="merged"] {
+  color: var(--accent-presence);
+}
+.chat-list-pr-badge[data-pr-state="closed"] {
+  color: var(--color-danger);
+}
+.chat-list-pr-badge[data-pr-state="draft"] {
+  color: var(--text-muted);
+}
+
 /* Capabilities inspector metadata collapses into one dense row whenever the
    expanded row has enough width, then wraps by whole field on narrower panes. */
 .capability-meta-row {

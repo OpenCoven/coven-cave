@@ -36,6 +36,7 @@ const DEFAULT_STATE: CaveState = {
   sessionArchived: {},
   sessionSacrificed: {},
   sessionOwned: {},
+  mergedPrAutoArchived: {},
   travel: {
     manualOffline: false,
     hubUnreachableSince: null,
@@ -67,6 +68,7 @@ function defaultState(): CaveState {
     sessionArchived: {},
     sessionSacrificed: {},
     sessionOwned: {},
+    mergedPrAutoArchived: {},
     travel: defaultTravelState(),
   };
 }
@@ -200,6 +202,9 @@ export type CaveState = {
   sessionSacrificed: Record<string, string>;
   /** Sessions created through Cave's browser-facing session API. */
   sessionOwned: Record<string, string>;
+  /** Session → PR key ("owner/repo#N") whose merge already auto-archived it
+   *  once. Makes the merged-chat sweep one-shot: summoning the chat sticks. */
+  mergedPrAutoArchived: Record<string, string>;
   /** Travel/offline authority state for laptop Cave when the server hub drops. */
   travel: CaveTravelState;
 };
@@ -493,6 +498,7 @@ export async function loadState(): Promise<CaveState> {
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
+      mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
       travel: normalizeTravelState(parsed.travel),
     };
   } catch {
@@ -706,6 +712,24 @@ export async function summonSessionLocal(sessionId: string): Promise<void> {
   await updateState((state) => {
     delete state.sessionArchived[sessionId];
   });
+}
+
+/**
+ * Archive a batch of sessions whose pull requests just merged, recording each
+ * (session, PR) pair so the sweep is one-shot — summoning the chat later won't
+ * be undone by the next poll. Returns the archive timestamp used.
+ */
+export async function archiveSessionsForMergedPrs(
+  entries: Array<{ sessionId: string; prKey: string }>,
+): Promise<string> {
+  const at = new Date().toISOString();
+  await updateState((state) => {
+    for (const { sessionId, prKey } of entries) {
+      if (!state.sessionArchived[sessionId]) state.sessionArchived[sessionId] = at;
+      state.mergedPrAutoArchived[sessionId] = prKey;
+    }
+  });
+  return at;
 }
 
 /**

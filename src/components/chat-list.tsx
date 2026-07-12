@@ -9,6 +9,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
+import { sessionPrStatus } from "@/lib/session-pr-status";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -74,6 +75,9 @@ type Props = {
   onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
   onSessionsChanged?: () => void;
+  /** Open a URL in the in-app browser (the PR-status badge's click-through).
+   *  Falls back to a new tab when absent. */
+  onOpenUrl?: (url: string) => void;
   /** false while the workspace's first /api/sessions/list fetch is in
    *  flight — gates the list on a skeleton instead of flashing the
    *  "no chats yet" empty state. Defaults true for callers that load
@@ -237,7 +241,7 @@ function ChatListSection({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
+export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, onOpenUrl, sessionsLoaded = true, sessionsError = false, compact = false }: Props) {
   useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
   // Scope the project rail to what the active familiar is granted; with no
   // active familiar (all-familiars view) this loads every project as before.
@@ -1107,6 +1111,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                 <ul className="divide-y divide-[var(--border-hairline)]">
                   {rows.map((s, idx) => {
                     const st = statusStyle(s.status);
+                    const prStatus = sessionPrStatus(s.pullRequest);
                     const rel = relativeTime(s.updated_at);
                     const project = repoName(s.project_root ?? "");
                     const isActive = activeId === s.id;
@@ -1197,13 +1202,36 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </button>
                           )}
 
-                          {/* Status dot (top-aligned) */}
-                          <span className="chat-list-status-dot mt-[5px] shrink-0">
-                            <span
-                              className={`block h-2 w-2 rounded-full ${st.dot}`}
-                              title={st.label}
-                            />
-                          </span>
+                          {/* Status signal (top-aligned): the GitHub PR-status
+                              icon when the thread's work reached a pull
+                              request, else the plain session-status dot.
+                              Clicking the PR badge opens the PR (in-app
+                              browser when wired) without opening the chat. */}
+                          {prStatus ? (
+                            <span className="chat-list-status-dot mt-[3px] shrink-0">
+                              <button
+                                type="button"
+                                className="chat-list-pr-badge focus-ring"
+                                data-pr-state={prStatus.key}
+                                title={`Open ${prStatus.label}`}
+                                aria-label={`Open pull request (${prStatus.label})`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onOpenUrl) onOpenUrl(prStatus.url);
+                                  else window.open(prStatus.url, "_blank", "noopener,noreferrer");
+                                }}
+                              >
+                                <Icon name={prStatus.icon} width={12} aria-hidden />
+                              </button>
+                            </span>
+                          ) : (
+                            <span className="chat-list-status-dot mt-[5px] shrink-0">
+                              <span
+                                className={`block h-2 w-2 rounded-full ${st.dot}`}
+                                title={st.label}
+                              />
+                            </span>
+                          )}
 
                           {/* Content */}
                           <span className="chat-list-row-content flex min-w-0 flex-1 flex-col gap-0.5">

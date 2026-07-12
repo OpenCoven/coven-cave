@@ -473,6 +473,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessionsError={sessionsError}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
+        onOpenUrl={onOpenUrl}
         onOpen={(sessionId, familiarId, findQuery) => {
           const next = selectFamiliarForChat(familiarId);
           setView({ kind: "chat", sessionId, familiarId: next?.id ?? familiarId ?? null });

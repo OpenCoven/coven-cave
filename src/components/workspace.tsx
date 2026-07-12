@@ -242,7 +242,10 @@ function attachGitHubTaskContext(sessions: SessionRow[], data: unknown): Session
       git: task.branch
         ? { ...(session.git ?? {}), branch: task.branch }
         : session.git,
-      pullRequest: {
+      // The sessions list's server-side enrichment (gh pr view) carries the
+      // real PR state (open/merged/closed/draft) — never clobber it with the
+      // GitHub task's lifecycle word.
+      pullRequest: session.pullRequest ?? {
         repo: task.repo,
         number: task.prNumber,
         url: task.prUrl,
