@@ -135,6 +135,29 @@ function skip(reason: string): void {
   );
 
   // Host branch — the genuinely per-OS assertion.
+  // Coven Code's npm target is extensionless. It must resolve from its own
+  // shim, never by inferring the Coven CLI's conventional JavaScript path.
+  const codeShimScript = path.join(shimDir, "node_modules", "@opencoven", "coven-code", "bin", "coven-code");
+  mkdirSync(path.dirname(codeShimScript), { recursive: true });
+  writeFileSync(codeShimScript, "console.log('coven-code');\n");
+  const codeShim = path.join(shimDir, "coven-code.cmd");
+  writeFileSync(
+    codeShim,
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\coven-code\\bin\\coven-code" %*\r\n',
+  );
+  assert.deepEqual(
+    covenLaunchCommandForBinary(codeShim, "win32"),
+    { command: process.execPath, fixedArgs: [codeShimScript] },
+    "win32 npm shims resolve extensionless Coven Code targets from their own package",
+  );
+
+  const missingShim = path.join(shimDir, "missing.cmd");
+  assert.deepEqual(
+    covenLaunchCommandForBinary(missingShim, "win32"),
+    { command: missingShim, fixedArgs: [], unresolvedWindowsShim: true },
+    "unreadable Windows shims are explicit unknown targets rather than another package's fallback",
+  );
+
   if (process.platform === "win32") {
     // On a real Windows runner, a .cmd path must resolve to node + script using
     // the host's actual filesystem + path semantics.
