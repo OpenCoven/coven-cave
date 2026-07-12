@@ -333,8 +333,9 @@ assert.match(pane, /if \(h\.stack\[h\.idx\] === evUrl\) \{/, "page-load history 
 // ───────── Correctness: listen() unlisten race + perf throttle ─────────
 assert.match(pane, /then\(\(fn\) => \{ if \(cancelled\) fn\(\); else unlisten/, "async listen() unlistens if the effect was already torn down");
 assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| \(!force && now - lastRun < 100\)\) return;/, "the fallback bounds loop is throttled + idle-gated");
-assert.match(pane, /new ResizeObserver\(reconcileImmediately\)/, "resizes reconcile native bounds immediately");
-assert.match(pane, /new MutationObserver\(reconcileImmediately\)/, "overlay DOM changes immediately reconcile visibility");
+assert.match(pane, /forceReconcilePending = true/, "urgent bounds changes are coalesced into the next animation frame");
+assert.match(pane, /new ResizeObserver\(scheduleImmediateReconcile\)/, "resizes schedule a coalesced native bounds reconcile");
+assert.match(pane, /new MutationObserver\(scheduleImmediateReconcile\)/, "overlay DOM changes schedule a coalesced visibility reconcile");
 assert.match(pane, /visibilitychange[\s\S]{0,300}hideAll\(\)/, "backgrounding immediately hides native webviews");
 
 // ───────── a11y: tab strip is a real tablist ─────────

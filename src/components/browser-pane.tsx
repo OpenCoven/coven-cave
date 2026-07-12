@@ -476,6 +476,7 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     let hidden = false;
     let last = { x: 0, y: 0, w: 0, h: 0 };
     let lastRun = 0;
+    let forceReconcilePending = false;
 
     const hideAll = () => {
       tabIds.forEach((id) => {
@@ -530,16 +531,18 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     };
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
-      reconcile(now);
+      const force = forceReconcilePending;
+      forceReconcilePending = false;
+      reconcile(now, force);
     };
     raf = requestAnimationFrame(tick);
 
-    const reconcileImmediately = () => {
-      reconcile(performance.now(), true);
+    const scheduleImmediateReconcile = () => {
+      forceReconcilePending = true;
     };
-    const resizeObserver = new ResizeObserver(reconcileImmediately);
+    const resizeObserver = new ResizeObserver(scheduleImmediateReconcile);
     resizeObserver.observe(surface);
-    const mutationObserver = new MutationObserver(reconcileImmediately);
+    const mutationObserver = new MutationObserver(scheduleImmediateReconcile);
     mutationObserver.observe(document.body, {
       childList: true,
       subtree: true,
@@ -551,19 +554,19 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
         hidden = true;
         hideAll();
       } else {
-        reconcileImmediately();
+        scheduleImmediateReconcile();
       }
     };
-    window.addEventListener("resize", reconcileImmediately);
-    window.addEventListener("scroll", reconcileImmediately, true);
+    window.addEventListener("resize", scheduleImmediateReconcile);
+    window.addEventListener("scroll", scheduleImmediateReconcile, true);
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       mutationObserver.disconnect();
-      window.removeEventListener("resize", reconcileImmediately);
-      window.removeEventListener("scroll", reconcileImmediately, true);
+      window.removeEventListener("resize", scheduleImmediateReconcile);
+      window.removeEventListener("scroll", scheduleImmediateReconcile, true);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       hideAll();
     };
