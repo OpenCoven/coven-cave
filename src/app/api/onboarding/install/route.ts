@@ -12,6 +12,7 @@ import {
   refreshCovenSpawnEnv,
 } from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
+import { installHermesShim } from "@/lib/hermes-shim";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -579,6 +580,23 @@ export async function POST(req: Request) {
           const installed = await commandPath(target.binary);
           const installedPath = installed.path;
           const ok = code === 0 && !!installedPath && !job.error;
+
+          // Hermes has no positional prompt slot, so the harness's
+          // `-- "<prompt>"` convention needs the `hermes-coven` shim to remap
+          // it onto `-q`. Install the shim next to the freshly-installed
+          // `hermes` binary so chat works out of the box. Best-effort: a shim
+          // failure never fails the Hermes install itself.
+          if (ok && targetName === "hermes" && installedPath) {
+            const shim = await installHermesShim(installedPath);
+            appendOutput(
+              job,
+              shim.ok
+                ? `Installed hermes-coven shim at ${shim.path}\n`
+                : `Note: could not install hermes-coven shim (${shim.error}); ` +
+                    `chat may fail until it is installed manually.\n`,
+            );
+          }
+
           job.status = "done";
           job.finishedAt = Date.now();
           job.ok = ok;
