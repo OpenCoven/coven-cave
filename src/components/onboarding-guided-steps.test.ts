@@ -380,7 +380,25 @@ assert.match(
 assert.match(
   source,
   /disabled=\{busy \|\|/,
-  "the disable rule is per-target (own busy state), not a global lock",
+  "runtime controls stay disabled for their own in-progress install",
+);
+
+assert.match(
+  source,
+  /const refreshNpmLane = useCallback/,
+  "onboarding polls the server-owned global npm lane across client surfaces",
+);
+
+assert.match(
+  source,
+  /Other npm updates are disabled until it finishes/,
+  "onboarding clearly explains the shared npm lock",
+);
+
+assert.match(
+  source,
+  /disabled=\{toolBusy \|\| toolBlockedByNpm\}/,
+  "onboarding disables other OpenCoven npm actions while a global update runs",
 );
 
 assert.match(

@@ -89,6 +89,9 @@ async function tick(): Promise<void> {
         status: "fired",
         firedAt: nowIso,
         updatedAt: nowIso,
+        // A (re)fire is a fresh demand for attention — a snoozed reminder the
+        // user read last time must come back unread.
+        readAt: null,
       };
       file.items[i] = updated;
       out.push(updated);
@@ -105,6 +108,7 @@ async function tick(): Promise<void> {
             snoozeUntil: null,
             createdAt: nowIso,
             updatedAt: nowIso,
+            readAt: null,
           };
           file.items.push(sibling);
         }

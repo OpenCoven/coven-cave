@@ -10,6 +10,22 @@ breaking config changes; patch releases stay additive.
 ### Features
 - **Onboarding: hand-held first run through the first chat** — the setup wizard now shows a three-beat journey strip (Set up Cave → Summon a familiar → First chat) so it never reads as a dead-ended infra checklist; completing setup surfaces an above-the-fold success banner, and the finish CTA keeps its promise by opening the Summoning Circle directly (decided on the wizard's own fresh status, immune to the workspace's slower daemon poll). In the circle, the name stage gains one-click identity templates (Code reviewer, Research assistant, Project planner, Writing partner) that fill the role and required description, and the success stage hands keyboard focus to "Begin the first conversation" so Enter completes the funnel (cave-uvv7).
 
+## [0.0.182] - 2026-07-12
+
+> 🧼 **The open-issue sweep, plus Hermes chat out of the box.** Every open UI issue from the queue lands fixed — the drifting comment pill, overflowing Salem answers, the stranded post-summon error screen, and the silent Enhance button — alongside working Hermes-familiar chat on fresh machines and a chat-tab home for the inspector.
+
+### Features
+- **Onboarding: hermes-coven shim auto-installs** — installing Hermes through the Cave now wires the `hermes-coven` shim automatically, so Hermes-familiar chat works out of the box with no manual shim step (#3025).
+- **Chat: inspector lives in chat tabs** — finishes the inspector-into-chat-tabs migration, so session inspection happens in a chat page tab instead of a separate inspector pane (#3022).
+
+### Fixes
+- **Chat: comment pill tracks its selection** — the floating Comment affordance repositions with the live selection on scroll/resize instead of hovering over unrelated prose (#3024).
+- **Search: long Salem answers scroll** — the Ask Salem answer region caps its height inside the palette instead of overflowing the viewport (#3024).
+- **Chat: roster errors self-heal** — a transient familiar-roster failure (e.g. right after summoning your first familiar) now retries automatically instead of stranding an error screen behind a manual Retry (#3024).
+- **Tasks: Enhance reports its outcome** — the top-bar Enhance button now states what happened (enhanced count, nothing to do, or failure) instead of finishing silently (#3024).
+- **Chat: stranded "created" sessions are reaped** — daemon session rows left in "created" when the harness spawn dies pre-handshake are cleaned up instead of accumulating (#3023).
+- **Runtimes: Hermes 1.0.1 sync** — registry sync picks up the hermes-coven shim and the `-q` prompt fix, unbreaking Hermes-familiar chat (#3021).
+
 ## [0.0.181] - 2026-07-12
 
 > 🔍 **Trace what your familiars actually did.** Familiar analytics gains a session trace timeline (the daemon event stream finally has a surface), a Recent sessions drill-through list, a clickable 14-day pulse, and live auto-refresh — plus hardened cave-home migration and GitHub chat-launch fixes.

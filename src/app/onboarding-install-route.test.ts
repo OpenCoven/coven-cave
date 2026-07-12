@@ -21,8 +21,14 @@ assert.match(
 
 assert.match(
   route,
-  /void \(async \(\) => \{\s*try \{[\s\S]*?const child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*finishInstallJobError\(job, err\);/,
-  "fire-and-forget installer task should catch synchronous spawn failures",
+  /void runInstallJob\(targetName, target, plan, job, npmLease\);/,
+  "POST should hand the background installer to the shared lifecycle runner",
+);
+
+assert.match(
+  route,
+  /async function runInstallJob\([\s\S]*?child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*fail\(err\);/,
+  "the background lifecycle runner should catch synchronous spawn failures",
 );
 
 assert.doesNotMatch(

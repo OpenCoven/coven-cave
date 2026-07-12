@@ -4626,6 +4626,64 @@ details[open] > .cave-tool-summary::before {
 .familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary, #ddd); }
 .familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }
+.familiar-inline-card__memory-stale {
+  margin-left: 6px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 1px 4px; border-radius: var(--radius-control);
+  color: var(--warning, #fbbf24); border: 1px solid color-mix(in srgb, var(--warning, #fbbf24) 45%, transparent);
+}
+
+/* ── Insight layer (cave-ck70) ─────────────────────────────────────────────
+   Trust/health one-liner, activity meta, live workload and state-driven
+   actions derived by familiar-card-insights from the analytics model. */
+.familiar-inline-card__insight {
+  font-size: 12px; line-height: 1.4; padding: 6px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  color: var(--text-primary, #ddd); background: var(--bg-base, #111);
+}
+.familiar-inline-card__insight[data-tone="good"] {
+  border-color: color-mix(in srgb, #4ade80 35%, transparent);
+  background: color-mix(in srgb, #4ade80 8%, transparent);
+}
+.familiar-inline-card__insight[data-tone="warn"] {
+  border-color: color-mix(in srgb, #fbbf24 35%, transparent);
+  background: color-mix(in srgb, #fbbf24 8%, transparent);
+}
+.familiar-inline-card__insight[data-tone="bad"] {
+  border-color: color-mix(in srgb, #f87171 35%, transparent);
+  background: color-mix(in srgb, #f87171 8%, transparent);
+}
+
+.familiar-inline-card__meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.familiar-inline-card__meta-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-secondary, #999);
+}
+.familiar-inline-card__signal {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 1px 6px; border-radius: var(--radius-pill, 999px);
+  color: var(--text-secondary, #999); border: 1px solid var(--border-hairline, #2a2a2a);
+}
+.familiar-inline-card__signal[data-severity="warn"] { color: #fbbf24; border-color: color-mix(in srgb, #fbbf24 45%, transparent); }
+.familiar-inline-card__signal[data-severity="crit"] { color: #f87171; border-color: color-mix(in srgb, #f87171 45%, transparent); }
+
+.familiar-inline-card__workload-head { font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__workload-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.familiar-inline-card__workload-item {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font-size: 12px; padding: 4px 6px; text-align: left;
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: var(--radius-control); background: var(--bg-base, #111);
+  color: var(--text-primary, #ddd); cursor: pointer;
+}
+.familiar-inline-card__workload-item:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__workload-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.familiar-inline-card__workload-time { font-size: 10px; color: var(--text-secondary, #777); flex-shrink: 0; }
+
+.familiar-inline-card__actions button.familiar-inline-card__action-contextual {
+  color: var(--accent, #7c93ff);
+  border-color: color-mix(in srgb, var(--accent, #7c93ff) 40%, transparent);
+}
 
 /* ── New-chat launch surface ───────────────────────────────────────────────
    Shown when a chat is opened without a resolved familiar. Replaces the old

@@ -50,6 +50,32 @@ export function groupInboxFeed(items: readonly InboxItem[]): InboxFeedGroups {
   return { needsYou, active, resolved };
 }
 
+/**
+ * Unread = a fired notification the user hasn't acknowledged yet (readAt is
+ * stamped by "Mark all read" / opening the item, cleared by the scheduler on
+ * refire). Items that predate readAt count as unread — matching the old badge
+ * that counted every fired item.
+ */
+export function isInboxItemUnread(item: InboxItem): boolean {
+  return item.status === "fired" && !item.readAt;
+}
+
+/**
+ * What the bell badge shows: unread fired notifications plus anything still
+ * waiting on a reply (response-needed clears by replying, not by reading).
+ * ONE definition feeds the badge and the bell list so they can never disagree
+ * — the old badge counted polled escalations while the list showed inbox
+ * items, and the two routinely diverged.
+ */
+export function unreadInboxCount(items: readonly InboxItem[]): number {
+  let count = 0;
+  for (const item of items) {
+    if (isInboxItemUnread(item)) count++;
+    else if (item.kind === "response-needed" && item.status === "pending") count++;
+  }
+  return count;
+}
+
 /** Human label for an inbox item kind (used by the feed's kind badge). */
 export function inboxKindLabel(kind: ItemKind): string {
   switch (kind) {
