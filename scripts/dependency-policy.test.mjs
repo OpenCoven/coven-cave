@@ -39,6 +39,60 @@ assert.equal(
   "pnpm minimumReleaseAge must require packages to be at least 3 days old",
 );
 
+assert.deepEqual(
+  workspaceConfig.minimumReleaseAgeExclude,
+  ["@opencoven/coven-code"],
+  "only the newly published internal Code package bypasses the age quarantine",
+);
+
+const rootPnpmConfig = packageJson.pnpm ?? {};
+const workspaceOnlyBuiltDependencies = workspaceConfig.onlyBuiltDependencies ?? [];
+const rootOnlyBuiltDependencies = rootPnpmConfig.onlyBuiltDependencies ?? [];
+const enabledAllowBuildPatterns = (config) =>
+  Object.entries(config.allowBuilds ?? {})
+    .filter(([, allowed]) => allowed === true)
+    .map(([pattern]) => pattern);
+const effectiveAllowedBuildPatterns = [
+  ...new Set([
+    ...workspaceOnlyBuiltDependencies,
+    ...enabledAllowBuildPatterns(workspaceConfig),
+    ...rootOnlyBuiltDependencies,
+    ...enabledAllowBuildPatterns(rootPnpmConfig),
+  ]),
+].sort();
+
+assert.deepEqual(
+  effectiveAllowedBuildPatterns,
+  ["@tauri-apps/cli", "esbuild", "node-pty", "sharp", "unrs-resolver"].sort(),
+  "pnpm build-script allow policy must match the complete approved pattern set",
+);
+assert.equal(
+  Boolean(workspaceConfig.dangerouslyAllowAllBuilds),
+  false,
+  "pnpm workspace policy must not truthily allow every dependency build script",
+);
+assert.equal(
+  Boolean(rootPnpmConfig.dangerouslyAllowAllBuilds),
+  false,
+  "root package pnpm policy must not truthily allow every dependency build script",
+);
+assert.equal(
+  workspaceConfig.onlyBuiltDependenciesFile == null,
+  true,
+  "pnpm workspace policy must not load build-script permissions from an external allowlist file",
+);
+assert.equal(
+  rootPnpmConfig.onlyBuiltDependenciesFile == null,
+  true,
+  "root package pnpm policy must not load build-script permissions from an external allowlist file",
+);
+
+assert.equal(
+  effectiveAllowedBuildPatterns.includes("@opencoven/coven-code"),
+  false,
+  "Coven Code postinstall must not download binaries during ordinary pnpm install",
+);
+
 assert.equal(
   workspaceConfig.saveExact,
   true,

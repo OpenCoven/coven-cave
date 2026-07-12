@@ -50,6 +50,12 @@ importers:
       '@milkdown/react':
         specifier: 7.21.2
         version: 7.21.2(@codemirror/language@6.12.3)(@codemirror/state@6.7.0)(@codemirror/view@6.43.1)(prosemirror-model@1.25.9)(prosemirror-state@1.4.4)(prosemirror-view@1.42.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@6.0.3)
+      '@opencoven/cli':
+        specifier: 0.0.53
+        version: 0.0.53
+      '@opencoven/coven-code':
+        specifier: 0.5.1
+        version: 0.5.1
       '@tailwindcss/browser':
         specifier: 4.3.1
         version: 4.3.1
@@ -937,6 +943,31 @@ packages:
 
   '@ocavue/utils@1.7.0':
     resolution: {integrity: sha512-yEk9ATNBjTZTtuVFMB/MAIF6zJBvJ2+lVNQvK2+O+ggEBGTgx2tp27d4FPgmD5bRsNHHP3D0SleQia/bvIeV8w==}
+
+  '@opencoven/cli-linux-x64@0.0.53':
+    resolution: {integrity: sha512-3QHFYXYYUynXyJEvw+NjSwLU3tKzg5rgJZtrcyMl3hxp/GpiFYfs+uBJu9AqZI3WIRjOVHSkILmFbCyT1JaMxw==}
+    cpu: [x64]
+    os: [linux]
+
+  '@opencoven/cli-macos@0.0.53':
+    resolution: {integrity: sha512-eNkBnhPqLWLKSkEOek5kpRwFVywxaopdjZsRPTks/uyA+mzSOF9HAY1YkEp9Xy6vcxjrhzTOpNJAlwq+sT1pKQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@opencoven/cli-windows@0.0.53':
+    resolution: {integrity: sha512-yMI+uzoE5Byky4h3+FM7fZRhrH6/Pjnp5Sz0HJvjl64Bm0kJ1AAkjxZ8XImgymUkmyirL0jTeJ3li0QYLD0vbA==}
+    cpu: [x64]
+    os: [win32]
+
+  '@opencoven/cli@0.0.53':
+    resolution: {integrity: sha512-I4OHOtsZYf3ISCLRmNnqVlI9OsV6UNfLoPAg/PtnYiVzqvNad4UoZH9p34o+Ica/mR4Upzne4ekQn5MXukdJ2A==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  '@opencoven/coven-code@0.5.1':
+    resolution: {integrity: sha512-4VR0E8/E85C/KBYzjjFdIrwy34W7Su0RdeBRsmaog8psHkHYELKrklAnzY/y7RG3oaoViW08KNC2yN7sHBosSQ==}
+    engines: {node: '>=16'}
+    hasBin: true
 
   '@oxc-project/types@0.133.0':
     resolution: {integrity: sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA==}
@@ -3966,6 +3997,23 @@ snapshots:
     optional: true
 
   '@ocavue/utils@1.7.0': {}
+
+  '@opencoven/cli-linux-x64@0.0.53':
+    optional: true
+
+  '@opencoven/cli-macos@0.0.53':
+    optional: true
+
+  '@opencoven/cli-windows@0.0.53':
+    optional: true
+
+  '@opencoven/cli@0.0.53':
+    optionalDependencies:
+      '@opencoven/cli-linux-x64': 0.0.53
+      '@opencoven/cli-macos': 0.0.53
+      '@opencoven/cli-windows': 0.0.53
+
+  '@opencoven/coven-code@0.5.1': {}
 
   '@oxc-project/types@0.133.0': {}
 

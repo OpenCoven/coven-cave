@@ -43,7 +43,8 @@
     "longDescription": "CovenCave is the OpenCoven desktop control room for managing familiars, local agent sessions, workflows, memory, tools, and release-ready automation from one native Tauri app.",
     "resources": [
       "resources/server/**/*",
-      "resources/node/**/*"
+      "resources/node/**/*",
+      "resources/tools/**/*"
     ],
     "icon": [
       "icons/32x32.png",

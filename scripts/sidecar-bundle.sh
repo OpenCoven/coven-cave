@@ -11,18 +11,27 @@
 # so a simple branch on that variable is enough.
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DEST="$ROOT/src-tauri/resources/server"
+BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
+BUNDLED_TOOLS_DIR="$ROOT/src-tauri/resources/tools"
+
 case "${TAURI_PLATFORM:-}" in
   ios|android)
     echo "==> sidecar-bundle.sh: skipping for mobile target ($TAURI_PLATFORM)"
     echo "    mobile-Tauri builds rely on the user's remote Tailscale daemon;"
     echo "    no bundled Node sidecar is shipped. See docs/mobile-tailscale.md."
+    rm -rf "$DEST" "$BUNDLED_NODE_DIR" "$BUNDLED_TOOLS_DIR"
+    mkdir -p "$DEST" "$BUNDLED_NODE_DIR" "$BUNDLED_TOOLS_DIR"
+    printf "generated at release build time\n" > "$DEST/placeholder.txt"
+    printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
+    : > "$BUNDLED_NODE_DIR/.cargo-check-placeholder"
+    printf "Generated native tools and their manifest are staged here during release builds.\n" \
+      > "$BUNDLED_TOOLS_DIR/placeholder.txt"
     exit 0
     ;;
 esac
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$ROOT/src-tauri/resources/server"
-BUNDLED_NODE_DIR="$ROOT/src-tauri/resources/node"
 STATIC="$ROOT/.next/static"
 PUBLIC="$ROOT/public"
 PNPM_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/coven-cave-sidecar-pnpm.XXXXXX")"
@@ -132,7 +141,12 @@ prune_sidecar_nonruntime_files() {
     "$dest/node_modules/@playwright" \
     "$dest/node_modules/@types" \
     "$dest/node_modules/playwright" \
-    "$dest/node_modules/playwright-core"
+    "$dest/node_modules/playwright-core" \
+    "$dest/node_modules/@opencoven/cli" \
+    "$dest/node_modules/@opencoven/cli-macos" \
+    "$dest/node_modules/@opencoven/cli-linux-x64" \
+    "$dest/node_modules/@opencoven/cli-windows" \
+    "$dest/node_modules/@opencoven/coven-code"
 
   find "$dest" -type f \( \
     -name '*.map' -o \
@@ -235,6 +249,12 @@ fi
   cd "$PNPM_STAGE" && pnpm install --prod --frozen-lockfile \
     --config.node-linker=hoisted --ignore-scripts
 ) >&2
+
+echo "==> staging Cave-owned native tools"
+node "$ROOT/scripts/stage-core-tools.mjs" \
+  --node-modules "$PNPM_STAGE/node_modules" \
+  --dest "$BUNDLED_TOOLS_DIR"
+
 prune_foreign_native_packages "$PNPM_STAGE/node_modules"
 fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"
 

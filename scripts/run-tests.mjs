@@ -48,11 +48,14 @@ export const SUITES = {
     "src/components/update-available.test.ts",
     "src-tauri/permissions/desktop-permissions.test.mjs",
     "src-tauri/release-runtime.test.mjs",
+    "scripts/sidecar-runtime-smoke.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",
     "src/lib/hfr-trace-export.test.ts",
     "scripts/coven-hfr-export.test.mjs",
+    "scripts/core-tools-target.test.mjs",
+    "scripts/stage-core-tools.test.mjs",
     "src/lib/screen-magnification.test.ts",
     "src/lib/no-builtin-familiar-roster.test.ts",
     "src/lib/cave-projects.test.ts",
@@ -833,6 +836,7 @@ export const SUITES = {
   // the matrix is where per-OS behavior is verified.
   conformance: [
     "scripts/cross-environment.test.ts",
+    "scripts/stage-core-tools-windows-conformance.test.mjs",
   ],
 };
 

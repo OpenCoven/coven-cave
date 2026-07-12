@@ -69,6 +69,8 @@
     "@lezer/highlight": "1.2.3",
     "@milkdown/crepe": "7.21.2",
     "@milkdown/react": "7.21.2",
+    "@opencoven/cli": "0.0.53",
+    "@opencoven/coven-code": "0.5.1",
     "@tailwindcss/browser": "4.3.1",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.3.3",

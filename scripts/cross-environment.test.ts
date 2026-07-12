@@ -21,6 +21,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { resolveCoreToolsTarget } from "./core-tools-target.mjs";
 import { resolveSidecarTarget } from "./sidecar-target.mjs";
 import { covenLaunchCommandForBinary } from "../src/lib/coven-bin.ts";
 import { tailnetDiscoveryProof } from "../src/lib/mobile-handoff.ts";
@@ -93,7 +94,70 @@ function skip(reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Contract B — coven launch command resolution (the #2011 .cmd-spawn class).
+// Contract B — bundled core-tools release target resolution. This pins the
+// public staging contract on every matrix OS without duplicating its resolver.
+// ---------------------------------------------------------------------------
+{
+  assert.deepEqual(resolveCoreToolsTarget({ platform: "darwin", arch: "arm64" }), {
+    supported: true,
+    target: "darwin-aarch64",
+    cli: {
+      kind: "package",
+      packageName: "@opencoven/cli-macos",
+      binary: "bin/coven",
+    },
+    codeArchive: "coven-code-macos-aarch64.tar.gz",
+    outputNames: { coven: "coven", covenCode: "coven-code" },
+  });
+
+  assert.deepEqual(resolveCoreToolsTarget({ platform: "darwin", arch: "x64" }), {
+    supported: true,
+    target: "darwin-x86_64",
+    cli: {
+      kind: "source",
+      repository: "https://github.com/OpenCoven/coven.git",
+      tag: "v0.0.53",
+      tagObject: "c390d3b69445b0769032d08b672afec83d71dcd8",
+      commit: "a36fc5cb76bbafe7a0fbef888b68f22ad56106f5",
+      binary: "target/release/coven",
+    },
+    codeArchive: "coven-code-macos-x86_64.tar.gz",
+    outputNames: { coven: "coven", covenCode: "coven-code" },
+  });
+
+  assert.deepEqual(resolveCoreToolsTarget({ platform: "linux", arch: "x64" }), {
+    supported: true,
+    target: "linux-x86_64",
+    cli: {
+      kind: "package",
+      packageName: "@opencoven/cli-linux-x64",
+      binary: "bin/coven",
+    },
+    codeArchive: "coven-code-linux-x86_64.tar.gz",
+    outputNames: { coven: "coven", covenCode: "coven-code" },
+  });
+
+  assert.deepEqual(resolveCoreToolsTarget({ platform: "win32", arch: "x64" }), {
+    supported: true,
+    target: "windows-x86_64",
+    cli: {
+      kind: "package",
+      packageName: "@opencoven/cli-windows",
+      binary: "bin/coven.exe",
+    },
+    codeArchive: "coven-code-windows-x86_64.zip",
+    outputNames: { coven: "coven.exe", covenCode: "coven-code.exe" },
+  });
+
+  assert.deepEqual(resolveCoreToolsTarget({ platform: "linux", arch: "arm64" }), {
+    supported: false,
+    platform: "linux",
+    arch: "arm64",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Contract C — coven launch command resolution (the #2011 .cmd-spawn class).
 // The forced-platform table runs identically on every OS; the host branch
 // exercises the REAL process.platform path on each runner.
 // ---------------------------------------------------------------------------
@@ -153,7 +217,7 @@ function skip(reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Contract C — path / line-ending semantics that diverge per OS, asserted for
+// Contract D — path / line-ending semantics that diverge per OS, asserted for
 // real against the running platform.
 // ---------------------------------------------------------------------------
 {
@@ -176,7 +240,7 @@ function skip(reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Contract D — live Tailscale/MagicDNS host discovery when the runner has a
+// Contract E — live Tailscale/MagicDNS host discovery when the runner has a
 // connected Tailscale daemon. CI runners are not joined to a private tailnet, so
 // they print an explicit skip; developer/release hosts that have Tailscale
 // available prove the real platform network stack instead of silently no-oping.

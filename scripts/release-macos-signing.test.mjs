@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -20,11 +21,157 @@ const sidecarTargetModule = readFileSync(
   "utf8",
 );
 
+function extractShellFunction(name) {
+  const match = releaseScript.match(new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, "m"));
+  assert.ok(match, `${name} shell helper must exist`);
+  return match[0];
+}
+
 test("macOS release signing includes node-pty spawn-helper Mach-O files", () => {
   assert.match(
     releaseScript,
     /-name "\*\.node" -o -name "spawn-helper" -o -perm \+111/,
   );
+});
+
+test("macOS release signs bundled Cave tools before refreshing and sealing their manifest", () => {
+  assert.match(
+    releaseScript,
+    /TOOLS_DIR="\$APP_PATH\/Contents\/Resources\/resources\/tools"/,
+    "the signing flow must address the tools inside the built app",
+  );
+  assert.match(
+    releaseScript,
+    /require_executable\(\) \{[\s\S]*\[ -f "\$1" \][\s\S]*\[ -x "\$1" \]/,
+  );
+  assert.match(
+    releaseScript,
+    /BUNDLED_NODE="\$APP_PATH\/Contents\/Resources\/resources\/node\/bin\/node"/,
+  );
+  assert.match(releaseScript, /COVEN_BIN="\$TOOLS_DIR\/bin\/coven"/);
+  assert.match(releaseScript, /COVEN_CODE_BIN="\$TOOLS_DIR\/bin\/coven-code"/);
+  assert.match(releaseScript, /require_executable "\$BUNDLED_NODE"/);
+  assert.match(releaseScript, /require_executable "\$COVEN_BIN"/);
+  assert.match(releaseScript, /require_executable "\$COVEN_CODE_BIN"/);
+
+  const findStart = releaseScript.indexOf('find "$APP_PATH" \\');
+  const innerSigningEnd = releaseScript.indexOf('done < "$NATIVE_FILES_TMP"', findStart);
+  assert.ok(findStart >= 0 && innerSigningEnd > findStart, "inner signing loop must be bounded");
+  const innerSigning = releaseScript.slice(findStart, innerSigningEnd);
+  assert.match(
+    innerSigning,
+    /-perm \+111/,
+    "the whole app executable scan must discover both bundled tools",
+  );
+  assert.match(
+    innerSigning,
+    /"\$f" = "\$BUNDLED_NODE"[\s\S]*"\$f" = "\$COVEN_BIN"[\s\S]*"\$f" = "\$COVEN_CODE_BIN"[\s\S]*continue/,
+    "required runtime executables must be excluded from generic signing",
+  );
+  assert.match(
+    innerSigning,
+    /if ! retry 3 10 codesign --force --options runtime --timestamp \\\s+--sign "\$SIGNING_IDENTITY" "\$f"[\s\S]*exit 1/,
+    "generic nested signing failures must also remain fatal",
+  );
+  assert.doesNotMatch(innerSigning, /NODE_ENTITLEMENTS/);
+
+  const requiredSignHelper = extractShellFunction("sign_and_verify_required_runtime");
+  assert.match(
+    requiredSignHelper,
+    /retry 3 10 codesign --force --options runtime --timestamp[\s\S]*--entitlements "\$entitlements"/,
+    "the helper must support Node's JIT entitlements",
+  );
+  assert.match(
+    requiredSignHelper,
+    /else[\s\S]*retry 3 10 codesign --force --options runtime --timestamp[\s\S]*--sign "\$SIGNING_IDENTITY" "\$executable"/,
+    "ordinary tools must use hardened runtime without JIT entitlements",
+  );
+  assert.match(
+    requiredSignHelper,
+    /codesign --verify --strict --verbose=2 "\$executable"/,
+    "each required runtime executable must be verified after signing",
+  );
+  assert.match(requiredSignHelper, /return 1/);
+
+  const nodeSign = releaseScript.indexOf(
+    'sign_and_verify_required_runtime "$BUNDLED_NODE" "bundled Node" "$NODE_ENTITLEMENTS"',
+    innerSigningEnd,
+  );
+  const covenSign = releaseScript.indexOf(
+    'sign_and_verify_required_runtime "$COVEN_BIN" "bundled Coven"',
+    innerSigningEnd,
+  );
+  const covenCodeSign = releaseScript.indexOf(
+    'sign_and_verify_required_runtime "$COVEN_CODE_BIN" "bundled Coven Code"',
+    innerSigningEnd,
+  );
+  assert.ok(nodeSign > innerSigningEnd, "bundled Node must be signed explicitly");
+  assert.ok(covenSign > nodeSign, "bundled Coven must be signed explicitly without JIT");
+  assert.ok(covenCodeSign > covenSign, "bundled Coven Code must be signed explicitly without JIT");
+  assert.match(releaseScript, /trap 'rm -f "\$NATIVE_FILES_TMP"' EXIT/);
+  assert.match(releaseScript, /trap - EXIT/);
+
+  const refreshCommand = 'node scripts/stage-core-tools.mjs --refresh-manifest "$TOOLS_DIR"';
+  const refresh = releaseScript.indexOf(refreshCommand);
+  const finalCodesign = releaseScript.indexOf(
+    "retry 3 15 codesign --force --options runtime --timestamp",
+    refresh,
+  );
+  assert.ok(refresh >= 0, "the signed tool manifest must be refreshed in the built app");
+  assert.ok(
+    covenCodeSign < refresh && refresh < finalCodesign,
+    "required signing and verification must finish before refresh and final app sealing",
+  );
+
+  assert.doesNotMatch(releaseScript, /\bsudo\b/, "release must not elevate to install tools globally");
+  assert.doesNotMatch(
+    releaseScript,
+    /\b(?:npm|pnpm|bun)\s+(?:install|add)\s+(?:-g|--global)\b/,
+    "release must not install a global Cave runtime",
+  );
+  assert.doesNotMatch(
+    releaseScript,
+    /command -v (?:coven|coven-code)|\b(?:which|where)\s+(?:coven|coven-code)\b/,
+    "release must not search for a fallback Cave runtime",
+  );
+});
+
+test("required runtime signing failures stop before manifest refresh", () => {
+  const helper = extractShellFunction("sign_and_verify_required_runtime");
+
+  for (const failPhase of ["sign", "verify"]) {
+    const script = `
+set -euo pipefail
+retry() {
+  shift 2
+  "$@"
+}
+codesign() {
+  if [ "$FAIL_PHASE" = "sign" ] && [ "$1" = "--force" ]; then
+    return 41
+  fi
+  if [ "$FAIL_PHASE" = "verify" ] && [ "$1" = "--verify" ]; then
+    return 42
+  fi
+  return 0
+}
+SIGNING_IDENTITY="test identity"
+${helper}
+sign_and_verify_required_runtime "/bundle/coven" "bundled Coven"
+echo "REFRESH_SENTINEL"
+`;
+    const result = spawnSync("bash", ["-c", script], {
+      encoding: "utf8",
+      env: { ...process.env, FAIL_PHASE: failPhase },
+    });
+
+    assert.notEqual(result.status, 0, `${failPhase} failure must exit nonzero`);
+    assert.doesNotMatch(
+      result.stdout,
+      /REFRESH_SENTINEL/,
+      `${failPhase} failure must stop before manifest refresh`,
+    );
+  }
 });
 
 test("sidecar bundle restores executable mode for node-pty spawn-helper", () => {

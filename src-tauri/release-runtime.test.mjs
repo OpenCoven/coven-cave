@@ -41,12 +41,200 @@ test("release bundle includes and prefers a bundled Node runtime", async () => {
   );
 });
 
+test("packaged sidecar requires the complete bundled Cave runtime without fallback", async () => {
+  const [tauriConfig, launcher] = await Promise.all([
+    readFile(new URL("./tauri.conf.json", import.meta.url), "utf8"),
+    readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(
+    tauriConfig,
+    /"resources\/tools\/\*\*\/\*"/,
+    "Tauri resources must include the staged Cave tools runtime",
+  );
+  assert.match(
+    launcher,
+    /fn bundled_tools_dir\(resource_dir: &Path\) -> PathBuf/,
+    "launcher must compose the bundled tools directory from the Tauri resource root",
+  );
+  assert.match(
+    launcher,
+    /fn bundled_tool_path\(resource_dir: &Path, stem: &str\) -> PathBuf/,
+    "launcher must compose platform-specific bundled tool paths",
+  );
+  assert.match(
+    launcher,
+    /bundled_tools_dir\(resource_dir\)\.join\("bin"\)\.join\(name\)/,
+    "bundled tools must live under resources/tools/bin",
+  );
+  assert.match(
+    launcher,
+    /bundled_tools_dir\(&resource_dir\)\.join\("tools-manifest\.json"\)/,
+    "packaged launcher must use the bundled tools manifest",
+  );
+  assert.match(
+    launcher,
+    /fn packaged_sidecar_path\([\s\S]*inherited_path: Option<&OsStr>[\s\S]*\) -> Result<OsString, std::env::JoinPathsError>/,
+    "packaged PATH construction must remain lossless",
+  );
+  assert.match(
+    launcher,
+    /let mut entries = vec!\[tools_bin\.to_path_buf\(\), node_bin_dir\.to_path_buf\(\)\]/,
+    "packaged PATH must start with tools/bin and bundled Node/bin",
+  );
+  assert.match(launcher, /std::env::split_paths\(inherited\)/);
+  assert.match(launcher, /!entry\.as_os_str\(\)\.is_empty\(\)/);
+  assert.match(launcher, /std::env::join_paths\(entries\)/);
+
+  const setupStart = launcher.indexOf("let main_url: tauri::Url");
+  const packagedStart = launcher.indexOf("#[cfg(not(debug_assertions))]", setupStart);
+  const packagedEnd = launcher.indexOf("// Capture sidecar logs", packagedStart);
+  assert.ok(setupStart >= 0, "desktop sidecar setup branch must exist");
+  assert.ok(packagedStart >= 0, "packaged runtime must have an explicit release-only branch");
+  assert.ok(packagedEnd > packagedStart, "packaged runtime branch must be statically bounded");
+  const packagedBranch = launcher.slice(packagedStart, packagedEnd);
+
+  for (const pathName of ["coven_bin", "coven_code_bin", "tools_manifest"]) {
+    assert.match(
+      packagedBranch,
+      new RegExp(
+        `if !${pathName}\\.is_absolute\\(\\) \\|\\| !${pathName}\\.is_file\\(\\) \\{[\\s\\S]*?${pathName}\\.display\\(\\)`,
+      ),
+      `${pathName} must be an absolute regular file and report its missing path`,
+    );
+  }
+  assert.match(
+    packagedBranch,
+    /bundled Cave runtime is incomplete/,
+    "an incomplete packaged runtime must fail with an actionable fatal message",
+  );
+  assert.match(
+    packagedBranch,
+    /let inherited_path = std::env::var_os\("PATH"\)/,
+    "packaged PATH must preserve the OS-native inherited value",
+  );
+  assert.match(
+    packagedBranch,
+    /packaged_sidecar_path\(\s*&tools_bin,\s*node_bin_dir,\s*inherited_path\.as_deref\(\),?\s*\)/,
+  );
+  assert.match(
+    packagedBranch,
+    /could not construct bundled Cave runtime PATH/,
+    "a join failure must fatal-exit instead of falling back to lossy formatting",
+  );
+  assert.doesNotMatch(
+    packagedBranch,
+    /tools_bin\.display\(\)[\s\S]*path_sep/,
+    "packaged PATH must not use display/string concatenation",
+  );
+  assert.doesNotMatch(
+    packagedBranch,
+    /\bfind_(?:node|coven)\s*\(/,
+    "packaged runtime must never call development well-known/global resolvers",
+  );
+  assert.match(
+    launcher,
+    /#\[cfg\(all\(desktop, debug_assertions\)\)\]\s*fn find_node\(/,
+    "the Node fallback resolver must compile only for development",
+  );
+  assert.match(
+    launcher,
+    /#\[cfg\(all\(desktop, debug_assertions\)\)\]\s*fn find_coven\(/,
+    "the Coven fallback resolver must compile only for development",
+  );
+  assert.match(launcher, /\.env\("COVEN_BIN", &coven_bin\)/);
+  assert.match(launcher, /\.env\("COVEN_CODE_BIN", &coven_code_bin\)/);
+  assert.match(launcher, /\.env\("PATH", &augmented_path\)/);
+  assert.match(
+    launcher,
+    /\.env\("COVEN_CAVE_TOOLS_MANIFEST", &tools_manifest\)/,
+  );
+});
+
+test("sidecar runtime smoke uses only explicitly staged Cave tools", async () => {
+  const smoke = await readFile(
+    new URL("../scripts/sidecar-runtime-smoke.mjs", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    smoke,
+    /const toolsRoot = path\.join\(root, "src-tauri", "resources", "tools"\)/,
+  );
+  assert.match(smoke, /process\.platform === "win32" \? "coven\.exe" : "coven"/);
+  assert.match(
+    smoke,
+    /process\.platform === "win32" \? "coven-code\.exe" : "coven-code"/,
+  );
+  assert.match(smoke, /const toolsManifest = path\.join\(toolsRoot, "tools-manifest\.json"\)/);
+  assert.match(smoke, /async function requireRegularFile\(file\)/);
+  assert.match(smoke, /await access\(file\)[\s\S]*await stat\(file\)[\s\S]*\.isFile\(\)/);
+  assert.match(smoke, /spawnProcess\(binary, \["--version"\]/);
+  assert.match(smoke, /const TOOL_PROBE_TIMEOUT_MS = 10_000/);
+  assert.match(smoke, /const GRACEFUL_TERMINATION_WAIT_MS = 2_000/);
+  assert.match(smoke, /const FORCED_TERMINATION_WAIT_MS = 1_000/);
+  assert.match(
+    smoke,
+    /export function hasExactlyOneExpectedVersionToken\(output, expectedVersion\)/,
+  );
+  assert.match(
+    smoke,
+    /matchAll\(SEMVER_TOKEN_PATTERN\)/,
+    "version validation must inspect every standalone semantic-version token",
+  );
+  assert.match(
+    smoke,
+    /tokens\.length === 1 && tokens\[0\] === normalizeVersionToken\(expectedVersion\)/,
+    "version validation must accept exactly one token and reject conflicts",
+  );
+  assert.match(
+    smoke,
+    /!hasExactlyOneExpectedVersionToken\(output, expectedVersion\)/,
+    "the live probe must use the exactly-one-token parser",
+  );
+  assert.match(smoke, /export function probeVersion\(binary, expectedVersion,/);
+  assert.match(smoke, /spawnProcess = spawn/);
+  assert.match(smoke, /probeTimeoutMs = TOOL_PROBE_TIMEOUT_MS/);
+  assert.match(smoke, /gracefulWaitMs = GRACEFUL_TERMINATION_WAIT_MS/);
+  assert.match(smoke, /forcedWaitMs = FORCED_TERMINATION_WAIT_MS/);
+  assert.match(smoke, /timedOut = true/);
+  assert.match(
+    smoke,
+    /await terminateAndReapChild\(child, \{[\s\S]*gracefulWaitMs[\s\S]*forcedWaitMs/,
+    "probe timeouts must finish bounded termination and reaping before rejection",
+  );
+  assert.match(smoke, /child\.kill\("SIGKILL"\)/);
+  assert.match(
+    smoke,
+    /pathToFileURL\(path\.resolve\(process\.argv\[1\]\)\)\.href === import\.meta\.url/,
+    "helper imports must not execute the real smoke",
+  );
+  assert.match(smoke, /if \(isDirectExecution\) await main\(\)/);
+  assert.match(smoke, /await probeVersion\(covenBin, "0\.0\.53"\)/);
+  assert.match(smoke, /await probeVersion\(covenCodeBin, "0\.5\.1"\)/);
+  assert.match(
+    smoke,
+    /\$\{toolsBin\}\$\{path\.delimiter\}\$\{process\.env\.PATH\}/,
+    "smoke child PATH must put staged tools first and preserve the inherited PATH",
+  );
+  assert.match(smoke, /COVEN_BIN: covenBin/);
+  assert.match(smoke, /COVEN_CODE_BIN: covenCodeBin/);
+  assert.match(smoke, /COVEN_CAVE_TOOLS_MANIFEST: toolsManifest/);
+  assert.match(smoke, /PATH: childPath/);
+  assert.doesNotMatch(
+    smoke,
+    /command -v|npm root|\bwhich\b|\bwhere(?:\.exe)?\b/,
+    "smoke must not resolve a global or well-known Cave runtime",
+  );
+});
+
 test("clean release runners have resource glob placeholders", async () => {
   const gitignore = await readFile(new URL("../.gitignore", import.meta.url), "utf8");
 
   await Promise.all([
     access(new URL("./resources/server/placeholder.txt", import.meta.url)),
     access(new URL("./resources/node/placeholder.txt", import.meta.url)),
+    access(new URL("./resources/tools/placeholder.txt", import.meta.url)),
   ]);
 
   assert.match(
@@ -58,6 +246,11 @@ test("clean release runners have resource glob placeholders", async () => {
     gitignore,
     /!src-tauri\/resources\/node\/placeholder\.txt/,
     "node placeholder must be tracked so resources/node/**/* matches in clean CI",
+  );
+  assert.match(
+    gitignore,
+    /!src-tauri\/resources\/tools\/placeholder\.txt/,
+    "tools placeholder must be tracked so resources/tools/**/* matches in clean CI",
   );
 });
 
@@ -172,9 +365,10 @@ test("macOS release signing preserves bundled Node JIT entitlement", async () =>
   );
   assert.match(
     releaseScript,
-    /--entitlements "\$NODE_ENTITLEMENTS"/,
+    /sign_and_verify_required_runtime "\$BUNDLED_NODE" "bundled Node" "\$NODE_ENTITLEMENTS"/,
     "bundled Node must be re-signed with its JIT entitlements instead of plain hardened runtime",
   );
+  assert.match(releaseScript, /--entitlements "\$entitlements"/);
   assert.match(
     nodeEntitlements,
     /com\.apple\.security\.cs\.allow-jit/,

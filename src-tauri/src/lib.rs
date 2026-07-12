@@ -5,6 +5,8 @@
 #[cfg(desktop)]
 use rand::{rngs::OsRng, RngCore};
 #[cfg(desktop)]
+use std::ffi::{OsStr, OsString};
+#[cfg(desktop)]
 use std::net::TcpListener;
 #[cfg(all(desktop, target_os = "windows"))]
 use std::os::windows::process::CommandExt;
@@ -262,10 +264,58 @@ fn bundled_node_path(resource_dir: &Path) -> PathBuf {
         .join("node")
 }
 
+#[cfg(desktop)]
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn bundled_tools_dir(resource_dir: &Path) -> PathBuf {
+    resource_dir.join("resources").join("tools")
+}
+
+#[cfg(desktop)]
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn bundled_tool_path(resource_dir: &Path, stem: &str) -> PathBuf {
+    let name = if cfg!(target_os = "windows") {
+        format!("{}.exe", stem)
+    } else {
+        stem.to_string()
+    };
+    bundled_tools_dir(resource_dir).join("bin").join(name)
+}
+
+#[cfg(desktop)]
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn packaged_sidecar_path(
+    tools_bin: &Path,
+    node_bin_dir: &Path,
+    inherited_path: Option<&OsStr>,
+) -> Result<OsString, std::env::JoinPathsError> {
+    let mut entries = vec![tools_bin.to_path_buf(), node_bin_dir.to_path_buf()];
+    match inherited_path {
+        Some(inherited) => entries.extend(
+            std::env::split_paths(inherited)
+                .filter(|entry| !entry.as_os_str().is_empty()),
+        ),
+        None => {
+            #[cfg(target_os = "windows")]
+            entries.extend([
+                PathBuf::from(r"C:\Windows\system32"),
+                PathBuf::from(r"C:\Windows"),
+            ]);
+            #[cfg(not(target_os = "windows"))]
+            entries.extend([
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/bin"),
+                PathBuf::from("/usr/sbin"),
+                PathBuf::from("/sbin"),
+            ]);
+        }
+    }
+    std::env::join_paths(entries)
+}
+
 /// Find a usable `node` binary. Release builds include a Node runtime under
 /// bundled resources so clean user machines can boot the sidecar. Development
 /// builds can still fall back to common local Node installs.
-#[cfg(desktop)]
+#[cfg(all(desktop, debug_assertions))]
 fn find_node(resource_dir: &Path) -> Option<PathBuf> {
     let bundled = bundled_node_path(resource_dir);
     if bundled.exists() {
@@ -396,7 +446,7 @@ fn find_node(resource_dir: &Path) -> Option<PathBuf> {
 /// Find the `coven` CLI on disk so API routes spawned from the sidecar can
 /// reach it. Same GUI-launch PATH problem as `find_node`. Returns the full
 /// path to the binary so callers can prepend its parent directory to PATH.
-#[cfg(desktop)]
+#[cfg(all(desktop, debug_assertions))]
 fn find_coven() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     {
@@ -565,6 +615,135 @@ fn node_arg_path(path: &Path) -> PathBuf {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    #[test]
+    fn bundled_tools_dir_is_relative_to_the_tauri_resource_root() {
+        let resource_dir = Path::new("/opt/CovenCave/resources");
+
+        assert_eq!(
+            bundled_tools_dir(resource_dir),
+            resource_dir.join("resources").join("tools")
+        );
+    }
+
+    #[test]
+    fn bundled_tool_path_uses_the_platform_executable_name() {
+        let resource_dir = Path::new("/opt/CovenCave/resources");
+        let executable = if cfg!(target_os = "windows") {
+            "coven.exe"
+        } else {
+            "coven"
+        };
+
+        assert_eq!(
+            bundled_tool_path(resource_dir, "coven"),
+            resource_dir
+                .join("resources")
+                .join("tools")
+                .join("bin")
+                .join(executable)
+        );
+    }
+
+    #[test]
+    fn bundled_tools_manifest_is_relative_to_the_tools_dir() {
+        let resource_dir = Path::new("/opt/CovenCave/resources");
+
+        assert_eq!(
+            bundled_tools_dir(resource_dir).join("tools-manifest.json"),
+            resource_dir
+                .join("resources")
+                .join("tools")
+                .join("tools-manifest.json")
+        );
+    }
+
+    #[test]
+    fn packaged_sidecar_path_orders_tools_node_and_inherited_entries() {
+        let tools_bin = Path::new("bundled-tools-bin");
+        let node_bin = Path::new("bundled-node-bin");
+        let inherited = std::env::join_paths([
+            Path::new("inherited-one"),
+            Path::new("inherited-two"),
+        ])
+        .expect("valid inherited PATH");
+
+        let joined = packaged_sidecar_path(tools_bin, node_bin, Some(inherited.as_os_str()))
+            .expect("valid packaged PATH");
+
+        assert_eq!(
+            std::env::split_paths(&joined).collect::<Vec<_>>(),
+            vec![
+                tools_bin.to_path_buf(),
+                node_bin.to_path_buf(),
+                PathBuf::from("inherited-one"),
+                PathBuf::from("inherited-two"),
+            ]
+        );
+    }
+
+    #[test]
+    fn packaged_sidecar_path_drops_an_explicit_empty_inherited_path() {
+        let tools_bin = Path::new("bundled-tools-bin");
+        let node_bin = Path::new("bundled-node-bin");
+
+        let joined = packaged_sidecar_path(
+            tools_bin,
+            node_bin,
+            Some(std::ffi::OsStr::new("")),
+        )
+        .expect("valid packaged PATH");
+
+        assert_eq!(
+            std::env::split_paths(&joined).collect::<Vec<_>>(),
+            vec![tools_bin.to_path_buf(), node_bin.to_path_buf()]
+        );
+    }
+
+    #[test]
+    fn packaged_sidecar_path_uses_platform_defaults_when_path_is_unset() {
+        let tools_bin = Path::new("bundled-tools-bin");
+        let node_bin = Path::new("bundled-node-bin");
+        let mut expected = vec![tools_bin.to_path_buf(), node_bin.to_path_buf()];
+        if cfg!(target_os = "windows") {
+            expected.extend([
+                PathBuf::from(r"C:\Windows\system32"),
+                PathBuf::from(r"C:\Windows"),
+            ]);
+        } else {
+            expected.extend([
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/bin"),
+                PathBuf::from("/usr/sbin"),
+                PathBuf::from("/sbin"),
+            ]);
+        }
+
+        let joined = packaged_sidecar_path(tools_bin, node_bin, None)
+            .expect("valid packaged PATH with defaults");
+
+        assert_eq!(std::env::split_paths(&joined).collect::<Vec<_>>(), expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn packaged_sidecar_path_preserves_non_unicode_inherited_entries() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
+        let invalid = std::ffi::OsString::from_vec(b"inherited-\xff".to_vec());
+        let inherited = std::env::join_paths([PathBuf::from(invalid.clone())])
+            .expect("valid non-Unicode inherited PATH");
+
+        let joined = packaged_sidecar_path(
+            Path::new("bundled-tools-bin"),
+            Path::new("bundled-node-bin"),
+            Some(inherited.as_os_str()),
+        )
+        .expect("valid packaged PATH");
+        let entries = std::env::split_paths(&joined).collect::<Vec<_>>();
+
+        assert_eq!(entries[2].as_os_str().as_bytes(), invalid.as_os_str().as_bytes());
+    }
 
     #[test]
     fn sidecar_auth_token_is_256_bit_hex() {
@@ -1075,12 +1254,108 @@ pub fn run() {
             let mobile_access_token = sidecar_auth_token();
             log::info!("[cave] starting sidecar on port {}", port);
 
-            let node = match find_node(&resource_dir) {
-                Some(p) => p,
-                None => fatal_exit(
-                    "Could not find a `node` binary. Install Node.js from \
-                     https://nodejs.org and re-launch CovenCave.",
-                ),
+            // GUI launches often inherit a stripped PATH. Development may use
+            // the existing well-known/global runtime resolvers, while release
+            // builds are constrained to the verified resources in the app.
+
+            #[cfg(debug_assertions)]
+            let (node, augmented_path) = {
+                // PATH separator is ':' on Unix and ';' on Windows.
+                let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+                let default_path = if cfg!(target_os = "windows") {
+                    std::env::var("PATH")
+                        .unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
+                } else {
+                    std::env::var("PATH")
+                        .unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
+                };
+                let node = match find_node(&resource_dir) {
+                    Some(p) => p,
+                    None => fatal_exit(
+                        "Could not find a `node` binary. Install Node.js from \
+                         https://nodejs.org and re-launch CovenCave.",
+                    ),
+                };
+                let mut augmented_path = default_path;
+                if let Some(dir) = node.parent() {
+                    augmented_path =
+                        format!("{}{}{}", dir.display(), path_sep, augmented_path);
+                }
+                match find_coven() {
+                    Some(coven) => {
+                        log::info!("[cave] using coven at {}", coven.display());
+                        if let Some(dir) = coven.parent() {
+                            augmented_path =
+                                format!("{}{}{}", dir.display(), path_sep, augmented_path);
+                        }
+                    }
+                    None => log::warn!(
+                        "[cave] `coven` CLI not found on disk — onboarding will prompt install"
+                    ),
+                }
+                (node, augmented_path)
+            };
+
+            #[cfg(not(debug_assertions))]
+            let (node, augmented_path, coven_bin, coven_code_bin, tools_manifest) = {
+                let node = bundled_node_path(&resource_dir);
+                let tools_dir = bundled_tools_dir(&resource_dir);
+                let tools_bin = tools_dir.join("bin");
+                let coven_bin = bundled_tool_path(&resource_dir, "coven");
+                let coven_code_bin = bundled_tool_path(&resource_dir, "coven-code");
+                let tools_manifest = bundled_tools_dir(&resource_dir).join("tools-manifest.json");
+
+                if !node.is_absolute() || !node.is_file() {
+                    fatal_exit(&format!(
+                        "bundled Cave runtime is incomplete: required file missing at {}",
+                        node.display()
+                    ));
+                }
+                if !coven_bin.is_absolute() || !coven_bin.is_file() {
+                    fatal_exit(&format!(
+                        "bundled Cave runtime is incomplete: required file missing at {}",
+                        coven_bin.display()
+                    ));
+                }
+                if !coven_code_bin.is_absolute() || !coven_code_bin.is_file() {
+                    fatal_exit(&format!(
+                        "bundled Cave runtime is incomplete: required file missing at {}",
+                        coven_code_bin.display()
+                    ));
+                }
+                if !tools_manifest.is_absolute() || !tools_manifest.is_file() {
+                    fatal_exit(&format!(
+                        "bundled Cave runtime is incomplete: required file missing at {}",
+                        tools_manifest.display()
+                    ));
+                }
+
+                let node_bin_dir = match node.parent() {
+                    Some(dir) => dir,
+                    None => fatal_exit(&format!(
+                        "bundled Cave runtime is incomplete: bundled Node path has no parent: {}",
+                        node.display()
+                    )),
+                };
+                let inherited_path = std::env::var_os("PATH");
+                let augmented_path = match packaged_sidecar_path(
+                    &tools_bin,
+                    node_bin_dir,
+                    inherited_path.as_deref(),
+                ) {
+                    Ok(path) => path,
+                    Err(error) => fatal_exit(&format!(
+                        "could not construct bundled Cave runtime PATH: {}",
+                        error
+                    )),
+                };
+                (
+                    node,
+                    augmented_path,
+                    coven_bin,
+                    coven_code_bin,
+                    tools_manifest,
+                )
             };
             log::info!("[cave] using node at {}", node.display());
 
@@ -1129,35 +1404,6 @@ pub fn run() {
             let server_js_arg = node_arg_path(&server_entry);
             let server_dir_arg = node_arg_path(server_dir);
 
-            // GUI launches often inherit a stripped PATH. Prepend the
-            // directories holding `node` and `coven` so the sidecar's API
-            // routes can spawn them by name. Missing `coven` is non-fatal —
-            // onboarding surfaces it.
-            //
-            // PATH separator is ':' on Unix and ';' on Windows.
-            let path_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
-            let default_path = if cfg!(target_os = "windows") {
-                std::env::var("PATH").unwrap_or_else(|_| "C:\\Windows\\system32;C:\\Windows".into())
-            } else {
-                std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin:/usr/sbin:/sbin".into())
-            };
-            let mut augmented_path = default_path;
-            if let Some(dir) = node.parent() {
-                augmented_path = format!("{}{}{}", dir.display(), path_sep, augmented_path);
-            }
-            match find_coven() {
-                Some(coven) => {
-                    log::info!("[cave] using coven at {}", coven.display());
-                    if let Some(dir) = coven.parent() {
-                        augmented_path =
-                            format!("{}{}{}", dir.display(), path_sep, augmented_path);
-                    }
-                }
-                None => log::warn!(
-                    "[cave] `coven` CLI not found on disk — onboarding will prompt install"
-                ),
-            }
-
             let mut cmd = Command::new(&node);
             cmd.arg(&server_js_arg)
                 .current_dir(&server_dir_arg)
@@ -1168,6 +1414,11 @@ pub fn run() {
                 .env("COVEN_CAVE_BUNDLE", "1")
                 .env("COVEN_CAVE_AUTH_TOKEN", &auth_token)
                 .env("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token);
+
+            #[cfg(not(debug_assertions))]
+            cmd.env("COVEN_BIN", &coven_bin)
+                .env("COVEN_CODE_BIN", &coven_code_bin)
+                .env("COVEN_CAVE_TOOLS_MANIFEST", &tools_manifest);
 
             if let Some(out) = stdout_log {
                 cmd.stdout(Stdio::from(out));

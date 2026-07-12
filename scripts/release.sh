@@ -25,6 +25,12 @@ require_tool() {
 require_file() {
   [ -f "$1" ] || { echo "Missing required file: $1" >&2; exit 1; }
 }
+require_executable() {
+  [ -f "$1" ] && [ -x "$1" ] || {
+    echo "Missing or non-executable required file: $1" >&2
+    exit 1
+  }
+}
 require_value() {
   local value="$1"
   local label="${2:-required value}"
@@ -46,6 +52,31 @@ retry() {
     sleep "$delay"
     n=$((n + 1))
   done
+}
+sign_and_verify_required_runtime() {
+  local executable="$1"
+  local label="$2"
+  local entitlements="${3:-}"
+
+  if [ -n "$entitlements" ]; then
+    if ! retry 3 10 codesign --force --options runtime --timestamp \
+      --entitlements "$entitlements" \
+      --sign "$SIGNING_IDENTITY" "$executable" >/dev/null 2>&1; then
+      echo "    ! failed to sign $label with required entitlements: $executable" >&2
+      return 1
+    fi
+  else
+    if ! retry 3 10 codesign --force --options runtime --timestamp \
+      --sign "$SIGNING_IDENTITY" "$executable" >/dev/null 2>&1; then
+      echo "    ! failed to sign $label: $executable" >&2
+      return 1
+    fi
+  fi
+
+  if ! codesign --verify --strict --verbose=2 "$executable" >/dev/null 2>&1; then
+    echo "    ! signature verification failed for $label: $executable" >&2
+    return 1
+  fi
 }
 print_notary_log() {
   local submission_id="$1"
@@ -314,12 +345,19 @@ if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
   exit 1
 fi
 echo "    found: $APP_PATH"
+TOOLS_DIR="$APP_PATH/Contents/Resources/resources/tools"
+BUNDLED_NODE="$APP_PATH/Contents/Resources/resources/node/bin/node"
+COVEN_BIN="$TOOLS_DIR/bin/coven"
+COVEN_CODE_BIN="$TOOLS_DIR/bin/coven-code"
 
 # Users without system Node depend entirely on the bundled runtime — a DMG
 # missing it would install fine and then fatal-exit on launch. Fail the
 # release instead of shipping that.
-require_file "$APP_PATH/Contents/Resources/resources/node/bin/node"
+require_executable "$BUNDLED_NODE"
+require_executable "$COVEN_BIN"
+require_executable "$COVEN_CODE_BIN"
 echo "    bundled Node runtime present"
+echo "    bundled Cave tools present"
 
 echo "==> Signing every native binary inside the bundle"
 # Apple deprecated --deep; sign inner native binaries explicitly so each one
@@ -328,26 +366,35 @@ echo "==> Signing every native binary inside the bundle"
 # spawn-helper Mach-O files, and any nested executable files that aren't
 # already symlinks, including the bundled Node runtime staged for the sidecar.
 NATIVE_FILES_TMP=$(mktemp)
+trap 'rm -f "$NATIVE_FILES_TMP"' EXIT
 find "$APP_PATH" \
   \( -name "*.dylib" -o -name "*.so" -o -name "*.node" -o -name "spawn-helper" -o -perm +111 \) \
   -type f -print > "$NATIVE_FILES_TMP"
 NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"
 while IFS= read -r f; do
-  if [ "$f" = "$APP_PATH/Contents/Resources/resources/node/bin/node" ]; then
-    retry 3 10 codesign --force --options runtime --timestamp \
-      --entitlements "$NODE_ENTITLEMENTS" \
-      --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
-        echo "    ! failed to sign bundled Node with entitlements: $f" >&2
-      }
-  else
-    retry 3 10 codesign --force --options runtime --timestamp \
-      --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
-        echo "    ! failed to sign: $f" >&2
-      }
+  if [ "$f" = "$BUNDLED_NODE" ] || \
+    [ "$f" = "$COVEN_BIN" ] || \
+    [ "$f" = "$COVEN_CODE_BIN" ]; then
+    continue
+  fi
+  if ! retry 3 10 codesign --force --options runtime --timestamp \
+    --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1; then
+    echo "    ! failed to sign: $f" >&2
+    exit 1
   fi
 done < "$NATIVE_FILES_TMP"
-rm "$NATIVE_FILES_TMP"
+
+sign_and_verify_required_runtime "$BUNDLED_NODE" "bundled Node" "$NODE_ENTITLEMENTS"
+sign_and_verify_required_runtime "$COVEN_BIN" "bundled Coven"
+sign_and_verify_required_runtime "$COVEN_CODE_BIN" "bundled Coven Code"
+
+rm -f "$NATIVE_FILES_TMP"
+trap - EXIT
+
+# codesign mutates Mach-O bytes, so refresh the staged tool hashes only after
+# every inner executable has been signed and before the app envelope is sealed.
+node scripts/stage-core-tools.mjs --refresh-manifest "$TOOLS_DIR"
 
 echo "==> Sealing the .app envelope"
 retry 3 15 codesign --force --options runtime --timestamp \
