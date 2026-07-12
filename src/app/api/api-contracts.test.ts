@@ -165,6 +165,7 @@ const contracts: RouteContract[] = [
   { route: "/skills/file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/skills/eval-loop/[familiarId]", methods: ["GET"], kind: "json" },
   { route: "/skills/directory", methods: ["GET"], kind: "json" },
+  { route: "/skills/build", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/directory/[slug]", methods: ["GET"], kind: "json" },
   { route: "/skills/directory/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/directory/use", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },

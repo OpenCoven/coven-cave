@@ -127,7 +127,7 @@ assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives
 assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
-for (const id of ["browse", "crafts", "skills", "capabilities"]) {
+for (const id of ["browse", "crafts", "skills", "build", "capabilities"]) {
   assert.match(
     marketplaceView,
     new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
@@ -136,10 +136,14 @@ for (const id of ["browse", "crafts", "skills", "capabilities"]) {
 }
 assert.doesNotMatch(marketplaceView, /marketplace-panel-roles/, "no roles tabpanel while the section is hidden");
 
-// One search field, scoped per section; the self-contained Capabilities
-// surface owns its own search so the hub hides the shared one there.
+// One search field, scoped per section; the self-contained Capabilities and
+// Build surfaces own their flows so the hub hides the shared search there.
 assert.match(marketplaceView, /aria-label=\{SEARCH_LABEL\[section\]\}/, "the search input names the active section");
-assert.match(marketplaceView, /\{section !== "capabilities" \? \(\s*\n\s*<SearchInput/, "the shared search hides on the Capabilities section");
+assert.match(
+  marketplaceView,
+  /\{section !== "capabilities" && section !== "build" \? \(\s*\n\s*<SearchInput/,
+  "the shared search hides on the Capabilities and Build sections",
+);
 
 // The store rail cross-links into the setup sections, so Browse stays aware of
 // what your familiars already have.

@@ -104,6 +104,7 @@ export const ICON_NAMES = [
   "ph:thumbs-down",
   "ph:wrench-bold",
   "ph:wrench",
+  "ph:hammer",
   "ph:brain",
   "ph:x",
   "ph:x-bold",
