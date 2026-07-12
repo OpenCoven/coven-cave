@@ -104,6 +104,63 @@ try {
     );
   }
 
+  // Directory conflict → per-file merge (cave-lzx3): legacy-only children move
+  // losslessly, same-name children keep the destination copy and hold the
+  // legacy dir open for review. Finder junk never blocks the drain.
+  {
+    await rm(path.join(covenDir, "cave-conversations"), { recursive: true, force: true });
+    await mkdir(path.join(covenDir, "cave-conversations"));
+    await writeFile(path.join(covenDir, "cave-conversations", "sess-legacy.json"), '{"side":"legacy"}', "utf8");
+    await writeFile(path.join(covenDir, "cave-conversations", "sess-both.json"), '{"side":"legacy"}', "utf8");
+    await writeFile(path.join(covenDir, "cave-conversations", ".DS_Store"), "junk", "utf8");
+    await writeFile(path.join(caveDir, "conversations", "sess-both.json"), '{"side":"cave"}', "utf8");
+
+    const result = await migrateCaveHome();
+    assert.deepEqual(
+      result.merged,
+      [{ legacy: "cave-conversations", files: 1, collisions: 1 }],
+      "dir merge reports moved children and collisions",
+    );
+    assert.equal(
+      await readFile(path.join(caveDir, "conversations", "sess-legacy.json"), "utf8"),
+      '{"side":"legacy"}',
+      "legacy-only conversation is recovered into the destination",
+    );
+    assert.equal(
+      await readFile(path.join(caveDir, "conversations", "sess-both.json"), "utf8"),
+      '{"side":"cave"}',
+      "destination wins per colliding child",
+    );
+    assert.equal(
+      await pathKind(path.join(covenDir, "cave-conversations")),
+      "dir",
+      "collision holds the legacy dir open for review",
+    );
+    assert.ok(result.skipped.includes("cave-conversations"), "colliding dir stays skipped");
+    assert.equal(
+      await pathKind(path.join(covenDir, "cave-conversations", ".DS_Store")),
+      "missing",
+      "Finder junk is dropped, never migrated",
+    );
+  }
+
+  // Once collisions are resolved the next run drains the dir and bridges it.
+  {
+    await rm(path.join(covenDir, "cave-conversations", "sess-both.json"));
+    const result = await migrateCaveHome();
+    assert.ok(result.moved.includes("cave-conversations"), "drained dir counts as moved");
+    assert.equal(
+      await pathKind(path.join(covenDir, "cave-conversations")),
+      "symlink",
+      "drained legacy dir is replaced by the compat bridge",
+    );
+    assert.equal(
+      await readFile(path.join(covenDir, "cave-conversations", "sess-legacy.json"), "utf8"),
+      '{"side":"legacy"}',
+      "legacy path resolves through the bridge",
+    );
+  }
+
   // The manifest never claims daemon-owned ledgers.
   for (const entry of CAVE_HOME_MIGRATIONS) {
     assert.ok(
