@@ -70,6 +70,69 @@ export function chatTitleFromPrompt(prompt: string | null | undefined): string |
   return `${trimmed.trimEnd()}…`;
 }
 
+// --- Auto-naming: short summary titles -------------------------------------
+
+export const MAX_SUMMARY_TITLE_LENGTH = 48;
+
+// Question/request lead-ins that frame a topic without being part of it.
+// Stripped once from the front of an already filler-cleaned prompt so
+// "What's the best way to cache sessions" → "Best way to cache sessions".
+// Anchored and conservative — if stripping leaves nothing meaningful the
+// caller keeps the unstripped text.
+const QUESTION_LEAD_IN_RE =
+  /^(?:what(?:['’]s| is| are)(?: the)?|how (?:do|can|would|should) (?:i|we|you)|how to|why (?:is|are|does|do|did)|where (?:is|are|can|do)|when (?:is|are|does|do|should)|who (?:is|are)|is there (?:a|any) way to|tell me about|explain(?: to me)?|show me(?: how to)?)\b[\s,:;\-–—]*/i;
+
+function clampAtWordBoundary(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const slice = text.slice(0, maxLen - 1);
+  const lastSpace = slice.lastIndexOf(" ");
+  const trimmed = lastSpace >= maxLen * 0.6 ? slice.slice(0, lastSpace) : slice;
+  return `${trimmed.trimEnd().replace(/[,;:\-–—]$/, "")}…`;
+}
+
+/** First markdown heading (h1–h3) in the opening lines of an assistant reply,
+ *  cleaned of markdown syntax and edge emoji. Assistant headings are often a
+ *  genuine summary of a long ask ("# Retry policy options"). Null when the
+ *  reply doesn't open with a usable heading. */
+export function titleFromAssistantReply(assistantText: string | null | undefined): string | null {
+  if (typeof assistantText !== "string") return null;
+  const lines = assistantText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  for (const line of lines) {
+    const match = /^#{1,3}\s+(.+)$/.exec(line);
+    if (!match) continue;
+    const cleaned = stripLeadingTrailingEmoji(match[1].replace(/[*_`#]+/g, "").trim());
+    if (cleaned.length >= 3 && cleaned.length <= 80) {
+      return clampAtWordBoundary(cleaned, MAX_SUMMARY_TITLE_LENGTH);
+    }
+  }
+  return null;
+}
+
+/** Short summary title for a chat thread, derived from its first exchange.
+ *  Pure heuristic (no model call, matching the prompt-enhancer convention):
+ *  the filler-cleaned user prompt when it already fits; otherwise an opening
+ *  assistant heading when one exists; otherwise the cleaned prompt with its
+ *  question lead-in stripped, clamped at a word boundary. Null when nothing
+ *  meaningful can be derived — callers keep their current title. */
+export function chatSummaryTitle(input: {
+  userText?: string | null;
+  assistantText?: string | null;
+}): string | null {
+  const normalized = normalizeChatTitle(input.userText);
+  const cleaned = normalized ? cleanPromptForTitle(normalized) : null;
+  if (cleaned && cleaned.length <= MAX_SUMMARY_TITLE_LENGTH) return cleaned;
+  const fromReply = titleFromAssistantReply(input.assistantText);
+  if (fromReply) return fromReply;
+  if (!cleaned) return null;
+  const stripped = cleaned.replace(QUESTION_LEAD_IN_RE, "").trim();
+  const topic = stripped.length >= 3 ? stripped.charAt(0).toUpperCase() + stripped.slice(1) : cleaned;
+  return clampAtWordBoundary(topic, MAX_SUMMARY_TITLE_LENGTH);
+}
+
 // Matches the current header ("Coven identity canon:") and legacy variants
 // with a parenthetical before the colon ("Coven identity canon (binding):"),
 // which ~17 historical sessions still carry. A colon-less title like

@@ -51,9 +51,13 @@ type SentinelOptions = {
 const MAX_VIOLATIONS = 8;
 
 /** Absolute-path tokens inside command strings / serialized payloads.
- *  Accepts `~/…` (expanded against home) and `/…`; stops at whitespace,
- *  quotes, and shell metacharacters. */
-const PATH_TOKEN_RE = /(?:^|[\s"'`=(:,[{])(~\/[^\s"'`;|&<>)\]}]+|\/[^\s"'`;|&<>)\]}]+)/g;
+ *  Accepts `~/…` / `~\…` (expanded against home), drive-letter paths
+ *  (`C:\…`, `C:/…`), and `/…`; stops at whitespace, quotes, and shell
+ *  metacharacters. Drive-letter tokens only classify on Windows hosts —
+ *  `path.isAbsolute` rejects them under POSIX, which is correct because the
+ *  sentinel guards the host the server runs on. */
+const PATH_TOKEN_RE =
+  /(?:^|[\s"'`=(:,[{])(~[\\/][^\s"'`;|&<>)\]}]+|[A-Za-z]:[\\/][^\s"'`;|&<>)\]}]+|\/[^\s"'`;|&<>)\]}]+)/g;
 
 /** Input keys that carry a single filesystem path verbatim. */
 const PATH_KEY_RE = /^(?:file_?path|path|notebook_?path|target_?file|cwd|directory|dir|filename)$/i;
@@ -100,7 +104,10 @@ export function createBoundarySentinel(options: SentinelOptions): BoundarySentin
 
   const classify = (tool: string, rawPath: string) => {
     if (found.length >= MAX_VIOLATIONS) return;
-    const expanded = rawPath.startsWith("~/") ? path.join(home, rawPath.slice(2)) : rawPath;
+    const expanded =
+      rawPath.startsWith("~/") || rawPath.startsWith("~\\")
+        ? path.join(home, rawPath.slice(2))
+        : rawPath;
     if (!path.isAbsolute(expanded)) return;
     const candidate = normalizeRoot(trimPathToken(expanded));
     // Bare "/" and single-segment roots ("/usr") are never user data.
