@@ -280,7 +280,14 @@ fn notch_url_from_main(mut url: Url) -> Option<Url> {
 /// follower's first tick).
 #[cfg(desktop)]
 fn notch_position(app: &tauri::AppHandle, width: f64) -> (f64, f64) {
-    if let Ok(Some(monitor)) = app.primary_monitor() {
+    // Open on the monitor the mouse is on, centered on its top bar; fall back
+    // to the primary monitor when the cursor monitor can't be resolved.
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|cursor| app.monitor_from_point(cursor.x, cursor.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
         let scale = monitor.scale_factor();
         let position = monitor.position();
         let size = monitor.size();
@@ -352,10 +359,20 @@ fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
             .expanded
             .store(expanded, std::sync::atomic::Ordering::Relaxed);
     }
-    let monitor = window
-        .current_monitor()
-        .ok()
-        .flatten()
+    // Pick the target monitor. When the notch is *not* pinned (follow_mouse),
+    // it opens on whatever screen the mouse is currently on. When pinned
+    // (follow_mouse == false), it stays on its current monitor. Fall back to
+    // the window's current monitor, then the primary, if the cursor monitor
+    // can't be resolved.
+    let cursor_monitor = if config.follow_mouse {
+        app.cursor_position()
+            .ok()
+            .and_then(|cursor| app.monitor_from_point(cursor.x, cursor.y).ok().flatten())
+    } else {
+        None
+    };
+    let monitor = cursor_monitor
+        .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| app.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
         return;
@@ -368,21 +385,11 @@ fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
     let monitor_x = monitor.position().x as f64;
     let monitor_w = monitor.size().width as f64;
     let width_px = width * monitor.scale_factor();
-    let center_x = if expanded || config.follow_mouse {
-        window
-            .outer_position()
-            .ok()
-            .map(|position| {
-                let current_w = window
-                    .outer_size()
-                    .map(|size| size.width as f64)
-                    .unwrap_or(width_px);
-                position.x as f64 + current_w / 2.0
-            })
-            .unwrap_or(monitor_x + monitor_w / 2.0)
-    } else {
-        monitor_x + monitor_w / 2.0
-    };
+    // Always center on the exact horizontal middle of the target monitor's top
+    // bar. Expanding must NOT anchor over a drifted follow-mouse pill position
+    // — the panel (and the re-centered collapsed pill) belongs dead-center. The
+    // mouse-follower resumes carrying the collapsed pill afterward if enabled.
+    let center_x = monitor_x + monitor_w / 2.0;
     let x = notch_follow_x(center_x, monitor_x, monitor_w, width_px);
     let y = monitor.position().y as f64;
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
@@ -2138,6 +2145,24 @@ mod tests {
         assert_eq!(notch_follow_x(-1900.0, -2000.0, 2000.0, 200.0), -2000.0);
         // A pill wider than the monitor pins to the left edge, no panic.
         assert_eq!(notch_follow_x(100.0, 0.0, 150.0, 200.0), 0.0);
+    }
+
+    #[test]
+    fn notch_centers_exactly_on_the_monitor_middle() {
+        // When opened as a notch it must sit dead-center on the target
+        // monitor's top bar. Centering on `monitor_x + monitor_w/2` yields a
+        // window whose own center equals the monitor's center, on any monitor.
+        for (monitor_x, monitor_w, width) in [
+            (0.0, 1000.0, 200.0),
+            (0.0, 1512.0, 480.0),
+            (-2000.0, 2000.0, 640.0),
+            (1512.0, 3840.0, 900.0),
+        ] {
+            let center_x = monitor_x + monitor_w / 2.0;
+            let x = notch_follow_x(center_x, monitor_x, monitor_w, width);
+            // The window's center lands exactly on the monitor's center.
+            assert_eq!(x + width / 2.0, monitor_x + monitor_w / 2.0);
+        }
     }
 
     #[test]
