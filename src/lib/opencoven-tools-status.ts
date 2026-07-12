@@ -2,13 +2,13 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { compareSemver } from "@/lib/app-update";
+import { compareSemver } from "./app-update.ts";
 import {
   covenLaunchCommandForBinary,
   covenSpawnEnv,
   pickWindowsLauncher,
   refreshCovenSpawnEnv,
-} from "@/lib/coven-bin";
+} from "./coven-bin.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -139,7 +139,12 @@ async function installedTool(tool: ToolSpec): Promise<InstalledTool | null> {
   // Node refuses to execFile a .cmd directly (EINVAL since the batch-file
   // hardening); convert npm cmd-shims to a direct `node <script>` exec so
   // the version probe works on Windows instead of silently reporting null.
-  const { command, fixedArgs } = covenLaunchCommandForBinary(path);
+  const { command, fixedArgs, unresolvedWindowsShim } = covenLaunchCommandForBinary(path);
+  if (unresolvedWindowsShim) {
+    // The .cmd exists, so retain its displayed path, but a parser failure must
+    // never probe a different launcher or execute the batch file via a shell.
+    return { path, version: null };
+  }
   try {
     const { stdout, stderr } = await execFileAsync(command, [...fixedArgs, ...tool.versionArgs], {
       env: covenSpawnEnv(),

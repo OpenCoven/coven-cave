@@ -5,7 +5,14 @@ import { Button } from "@/components/ui/button";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
 import { openInAppBrowserUrl } from "@/lib/open-external";
-import { pickDownloadUrl, type UpdateStatus } from "@/lib/app-update";
+import {
+  classifyFallbackReleaseCheck,
+  pickDownloadUrl,
+  resolveFallbackAfterNative,
+  type FallbackReleaseCheck,
+  type UpdateStatus,
+} from "@/lib/app-update";
+import { relativeTime } from "@/lib/relative-time";
 import {
   prepareNativeUpdate,
   releasePreparedUpdate,
@@ -43,6 +50,7 @@ function markDismissed(version: string): void {
 type NativeCheckResult =
   | { kind: "available"; update: NativeUpdateHandle }
   | { kind: "current" }
+  | { kind: "not-applicable" }
   | { kind: "failed"; message: string };
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -55,7 +63,7 @@ function errorMessage(err: unknown, fallback: string): string {
  * installer fallback.
  */
 async function checkNativeUpdate(owner: symbol): Promise<NativeCheckResult> {
-  if (!isTauri()) return { kind: "current" };
+  if (!isTauri()) return { kind: "not-applicable" };
   const checkEpoch = nativeUpdateCoordinator.beginCheck();
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
@@ -86,13 +94,16 @@ async function installPreparedUpdate(update: NativeUpdateHandle): Promise<void> 
 }
 
 /** Lightweight fallback: ask the server route what the latest release is. */
-async function fetchFallbackStatus(): Promise<UpdateStatus | null> {
+async function fetchFallbackStatus(): Promise<FallbackReleaseCheck> {
   try {
     const res = await fetch("/api/app/latest-release", { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as UpdateStatus;
-  } catch {
-    return null;
+    const body = await res.json().catch(() => null);
+    return classifyFallbackReleaseCheck(res.ok, body, res.status);
+  } catch (err) {
+    return {
+      kind: "unavailable",
+      message: errorMessage(err, "release check could not be reached"),
+    };
   }
 }
 
@@ -122,8 +133,8 @@ function openReleasePageInBrowser(): void {
 }
 
 type Resolved =
-  | { kind: "current" }
-  | { kind: "unknown"; message: string }
+  | { kind: "current"; source: "native" | "release"; checkedAt: string }
+  | { kind: "unavailable"; message: string }
   | { kind: "native"; version: string; update: NativeUpdateHandle }
   | { kind: "native-unavailable"; version: string; url: string; message: string }
   | { kind: "fallback"; version: string; url: string };
@@ -134,20 +145,35 @@ async function resolveUpdate(owner: symbol): Promise<Resolved> {
   if (native.kind === "available") {
     return { kind: "native", version: native.update.version, update: native.update };
   }
-  const fb = await fetchFallbackStatus();
-  if (fb?.available && fb.latest) {
-    const url = await resolveDownloadUrl(fb);
-    if (native.kind === "failed") {
-      return { kind: "native-unavailable", version: fb.latest, url, message: native.message };
+  if (native.kind === "current") {
+    // A successful signed-updater check is authoritative. Do not turn it into
+    // an unknown result merely because the optional GitHub metadata lookup is
+    // unavailable as well.
+    return { kind: "current", source: "native", checkedAt: new Date().toISOString() };
+  }
+
+  const combined = resolveFallbackAfterNative(
+    native.kind === "failed" ? native.message : null,
+    await fetchFallbackStatus(),
+  );
+  if (combined.kind === "available") {
+    const url = await resolveDownloadUrl(combined.status);
+    if (combined.nativeUpdaterFailed) {
+      return {
+        kind: "native-unavailable",
+        version: combined.status.latest!,
+        url,
+        message: native.kind === "failed" ? native.message : "Native updater check failed",
+      };
     }
-    return { kind: "fallback", version: fb.latest, url };
+    return { kind: "fallback", version: combined.status.latest!, url };
   }
-  if (native.kind === "failed" && !fb) {
-    // BOTH checks failed (true offline): currency is unknowable. Affirming
-    // "Up to date" here sent offline users away confident (cave-lsk4).
-    return { kind: "unknown", message: native.message };
+  if (combined.kind === "current") {
+    return { kind: "current", source: "release", checkedAt: combined.status.checkedAt };
   }
-  return { kind: "current" };
+  // A 200 release-route error body is deliberately classified as unavailable
+  // here. No unsuccessful check can fall through to the confirmed-current UI.
+  return combined;
 }
 
 // The cave is a long-running control-room app and releases ship several times
@@ -180,14 +206,14 @@ export function UpdateBannerTrigger() {
     const runCheck = () => {
       if (busy) return;
       void resolveUpdate(owner).then((r) => {
-        // "unknown" (both checks unreachable) stays quiet here — the periodic
+        // "unavailable" (both checks unreachable) stays quiet here — the periodic
         // banner must not nag about connectivity; the Settings row reports it
         // honestly on an explicit check (cave-lsk4).
         if (cancelled) {
           if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
           return;
         }
-        if (busy || r.kind === "current" || r.kind === "unknown") {
+        if (busy || r.kind === "current" || r.kind === "unavailable") {
           if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
           return;
         }
@@ -382,8 +408,8 @@ export function UpdateBannerTrigger() {
 
 type RowState =
   | { phase: "checking" }
-  | { phase: "current" }
-  | { phase: "unknown"; message: string }
+  | { phase: "current"; checkedAt: string; source: "native" | "release" }
+  | { phase: "unavailable"; message: string; stale: LastKnownUpdate | null }
   | { phase: "available"; r: Extract<Resolved, { kind: "native" | "fallback" }> }
   | { phase: "native-unavailable"; r: Extract<Resolved, { kind: "native-unavailable" }> }
   | { phase: "preparing"; version: string; stage: PreparationProgress["phase"]; pct: number }
@@ -392,30 +418,44 @@ type RowState =
   | { phase: "installing"; version: string }
   | { phase: "failed"; version: string; message: string };
 
+type LastKnownUpdate =
+  | { kind: "current"; checkedAt: string }
+  | { kind: "available"; version: string; checkedAt: string };
+
 /**
- * Desktop-only row for Settings ▸ About. Native updater when available
- * (download + verify, then restart to install), else opens the release
- * installer in Cave's Browser surface.
+ * Settings ▸ About row. Desktop uses the signed native updater when available;
+ * the web surface truthfully renders the same release-route fallback state.
  */
 export function UpdateSettingsRow() {
-  const isDesktop = useIsTauriDesktop();
   const [state, setState] = useState<RowState>({ phase: "checking" });
   const mounted = useRef(true);
   const activeCancellation = useRef<CancellationSignal | null>(null);
   const preparedUpdate = useRef<NativeUpdateHandle | null>(null);
   const owner = useRef(Symbol("update-settings")).current;
+  const lastKnown = useRef<LastKnownUpdate | null>(null);
+  const checkSequence = useRef(0);
 
   const check = useCallback(() => {
+    const sequence = ++checkSequence.current;
     setState({ phase: "checking" });
     void resolveUpdate(owner).then((r) => {
+      if (sequence !== checkSequence.current) return;
       if (!mounted.current) {
         if (r.kind === "native") void nativeUpdateCoordinator.release(owner);
         return;
       }
-      if (r.kind === "current") setState({ phase: "current" });
-      else if (r.kind === "unknown") setState({ phase: "unknown", message: r.message });
-      else if (r.kind === "native-unavailable") setState({ phase: "native-unavailable", r });
-      else setState({ phase: "available", r });
+      if (r.kind === "current") {
+        lastKnown.current = { kind: "current", checkedAt: r.checkedAt };
+        setState({ phase: "current", checkedAt: r.checkedAt, source: r.source });
+      } else if (r.kind === "unavailable") {
+        setState({ phase: "unavailable", message: r.message, stale: lastKnown.current });
+      } else if (r.kind === "native-unavailable") {
+        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
+        setState({ phase: "native-unavailable", r });
+      } else {
+        lastKnown.current = { kind: "available", version: r.version, checkedAt: new Date().toISOString() };
+        setState({ phase: "available", r });
+      }
     });
   }, []);
 
@@ -424,15 +464,22 @@ export function UpdateSettingsRow() {
     const unsubscribe = nativeUpdateCoordinator.subscribe((snapshot) => {
       if (!mounted.current || activeCancellation.current || preparedUpdate.current) return;
       if (snapshot.update) {
+        lastKnown.current = {
+          kind: "available",
+          version: snapshot.update.version,
+          checkedAt: new Date().toISOString(),
+        };
         setState({
           phase: "available",
           r: { kind: "native", version: snapshot.update.version, update: snapshot.update },
         });
       } else {
-        setState({ phase: "current" });
+        const checkedAt = new Date().toISOString();
+        lastKnown.current = { kind: "current", checkedAt };
+        setState({ phase: "current", checkedAt, source: "native" });
       }
     });
-    if (isDesktop) check();
+    check();
     return () => {
       mounted.current = false;
       unsubscribe();
@@ -444,9 +491,7 @@ export function UpdateSettingsRow() {
         void nativeUpdateCoordinator.release(owner);
       }
     };
-  }, [isDesktop, check]);
-
-  if (!isDesktop) return null;
+  }, [check]);
 
   const prepare = (update: NativeUpdateHandle, version: string) => {
     if (activeCancellation.current || preparedUpdate.current) return;
@@ -637,7 +682,7 @@ export function UpdateSettingsRow() {
         </Button>
       </>
     );
-  } else if (state.phase === "unknown") {
+  } else if (state.phase === "unavailable") {
     // Both the native check and the fallback fetch failed — we could not
     // verify anything, so don't claim currency (cave-lsk4).
     control = (
@@ -645,6 +690,11 @@ export function UpdateSettingsRow() {
         <span className="text-[12px] text-[var(--color-warning)]" title={state.message}>
           Couldn&apos;t check — you may be offline
         </span>
+        {state.stale ? (
+          <span className="text-[11px] text-[var(--text-muted)]">
+            Last known {state.stale.kind === "current" ? "current" : `v${state.stale.version} available`} · {relativeTime(state.stale.checkedAt)}
+          </span>
+        ) : null}
         <Button
           variant="secondary"
           size="xs"
@@ -658,7 +708,9 @@ export function UpdateSettingsRow() {
   } else {
     control = (
       <>
-        <span className="text-[12px] text-[var(--text-muted)]">Up to date</span>
+        <span className="text-[12px] text-[var(--text-muted)]" title={state.checkedAt}>
+          Up to date · confirmed {relativeTime(state.checkedAt)}
+        </span>
         <Button
           variant="secondary"
           size="xs"

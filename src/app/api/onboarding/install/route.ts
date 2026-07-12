@@ -6,6 +6,12 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
 import {
+  globalNpmInstallOwner,
+  releaseGlobalNpmInstall,
+  reserveGlobalNpmInstall,
+  type NpmInstallLease,
+} from "@/lib/server/global-npm-install-lane";
+import {
   covenBin,
   covenSpawnEnv,
   pickWindowsLauncher,
@@ -267,6 +273,9 @@ type InstallJob = {
   code?: number | null;
   binaryPath?: string | null;
   error?: string;
+  /** Cancels preparation or the spawned process; never exposed to clients. */
+  cancel?: () => void;
+  cancelRequested?: boolean;
 };
 
 /** Last ~8 KB of installer output is plenty for a progress tail and keeps
@@ -281,6 +290,57 @@ const globalScope = globalThis as unknown as {
 };
 const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
   new Map());
+
+type NpmLaneView = {
+  npmBusy: boolean;
+  npmBusyTarget: InstallTarget | null;
+  npmBusyLabel: string | null;
+  npmJob?: ReturnType<typeof jobView>;
+};
+
+/**
+ * The lease intentionally lives outside the jobs map. A request can spend time
+ * on target-specific preparation before it reserves the npm tree, and the
+ * final reservation has to be atomic across every npm target.
+ */
+function activeNpmInstallTarget(): InstallTarget | null {
+  const owner = globalNpmInstallOwner();
+  if (!owner || !isInstallTarget(owner)) return null;
+  const job = jobs.get(owner);
+  if (job?.status === "running" && job.kind === "npm") return owner;
+  // Recovery after HMR/reload: a completed or orphaned job must never leave
+  // the process-wide lease stuck. This only clears the same owner, so it
+  // cannot release a newer reservation.
+  releaseGlobalNpmInstall(owner);
+  return null;
+}
+
+function npmLaneView(): NpmLaneView {
+  const target = activeNpmInstallTarget();
+  if (!target) {
+    return { npmBusy: false, npmBusyTarget: null, npmBusyLabel: null };
+  }
+  const job = jobs.get(target);
+  return {
+    npmBusy: true,
+    npmBusyTarget: target,
+    npmBusyLabel: INSTALL_TARGETS[target].label,
+    ...(job ? { npmJob: jobView(job) } : {}),
+  };
+}
+
+function npmBusyResponse(owner: InstallTarget) {
+  return NextResponse.json(
+    {
+      ok: false,
+      retryable: true,
+      code: "npm_install_in_progress",
+      error: `${INSTALL_TARGETS[owner].label} is updating the shared global npm directory. Wait for it to finish, then retry.`,
+      ...npmLaneView(),
+    },
+    { status: 409, headers: { "Retry-After": "2" } },
+  );
+}
 
 function appendOutput(job: InstallJob, chunk: string) {
   job.output = (job.output + chunk).slice(-OUTPUT_CAP);
@@ -425,14 +485,201 @@ function installStartErrorMessage(err: unknown): string {
   return message || "install failed to start";
 }
 
-function finishInstallJobError(job: InstallJob, err: unknown) {
+function finishInstallJobError(
+  job: InstallJob,
+  err: unknown,
+  npmLease?: NpmInstallLease,
+) {
+  if (job.status !== "running") return;
   job.status = "done";
   job.finishedAt = Date.now();
   job.ok = false;
   job.error = installStartErrorMessage(err);
+  job.cancel = undefined;
+  npmLease?.release();
+}
+
+function finishInstallJob(
+  job: InstallJob,
+  result: {
+    ok: boolean;
+    code: number | null;
+    binaryPath: string | null;
+    error?: string;
+  },
+  npmLease?: NpmInstallLease,
+) {
+  if (job.status !== "running") return;
+  job.status = "done";
+  job.finishedAt = Date.now();
+  job.ok = result.ok;
+  job.code = result.code;
+  job.binaryPath = result.binaryPath;
+  if (result.error) job.error = result.error;
+  job.cancel = undefined;
+  npmLease?.release();
+}
+
+/**
+ * Run one already-reserved install job. The lease is released from every
+ * terminal path (spawn error, normal close, cancellation, and the timeout
+ * watchdog), rather than from client polling.
+ */
+async function runInstallJob(
+  targetName: InstallTarget,
+  target: (typeof INSTALL_TARGETS)[InstallTarget],
+  plan: SpawnPlan,
+  job: InstallJob,
+  npmLease?: NpmInstallLease,
+) {
+  let child: ReturnType<typeof spawn> | undefined;
+  let timer: NodeJS.Timeout | undefined;
+  let killTimer: NodeJS.Timeout | undefined;
+  let forceFinishTimer: NodeJS.Timeout | undefined;
+  let terminationRequested = false;
+
+  const clearTimers = () => {
+    if (timer) clearTimeout(timer);
+    if (killTimer) clearTimeout(killTimer);
+    if (forceFinishTimer) clearTimeout(forceFinishTimer);
+  };
+  const fail = (err: unknown) => {
+    clearTimers();
+    finishInstallJobError(job, err, npmLease);
+  };
+  const requestTermination = (reason: string) => {
+    if (!child || terminationRequested) return;
+    terminationRequested = true;
+    if (timer) clearTimeout(timer);
+    appendOutput(job, `${reason}\n`);
+    child.kill("SIGTERM");
+    killTimer = setTimeout(() => child?.kill("SIGKILL"), 10_000);
+    // A misbehaving child must not keep the UI or the npm lane stuck forever.
+    // SIGKILL/TerminateProcess has already been requested at this point; this
+    // watchdog only settles the in-memory job if Node never emits `close`.
+    forceFinishTimer = setTimeout(
+      () => fail(new Error(job.error ?? reason)),
+      11_000,
+    );
+  };
+
+  job.cancel = () => {
+    if (job.status !== "running" || job.cancelRequested) return;
+    job.cancelRequested = true;
+    job.error = "install cancelled";
+    if (!child) {
+      appendOutput(job, "Cancellation requested during preparation.\n");
+      return;
+    }
+    requestTermination("Cancellation requested; stopping installer...");
+  };
+
+  try {
+    try {
+      await prepareForInstall(targetName, target, job);
+    } catch (err) {
+      appendOutput(
+        job,
+        `Preparation warning: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+
+    if (job.cancelRequested) {
+      fail(new Error("install cancelled"));
+      return;
+    }
+
+    child = spawn(plan.command, plan.args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: covenSpawnEnv(),
+      shell: plan.shell,
+    });
+    child.stdout?.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+    child.stderr?.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+    timer = setTimeout(() => {
+      job.error = `install timed out after ${target.timeoutMs / 1000}s`;
+      requestTermination(`${job.error}; stopping installer...`);
+    }, target.timeoutMs);
+    child.on("error", (err) => fail(err));
+    child.on("close", (code, signal) => {
+      if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      void (async () => {
+        if (job.status !== "running") return;
+        if (job.cancelRequested) {
+          fail(new Error("install cancelled"));
+          return;
+        }
+        const installed = await commandPath(target.binary);
+        const installedPath = installed.path;
+        const ok = code === 0 && !!installedPath && !job.error;
+
+        // Hermes has no positional prompt slot, so Cave installs its adapter
+        // shim beside a successful Hermes binary. This is best-effort: a shim
+        // write failure must not turn a completed installer into a failed job.
+        if (ok && targetName === "hermes" && installedPath) {
+          try {
+            const shim = await installHermesShim(installedPath);
+            appendOutput(
+              job,
+              shim.ok
+                ? `Installed hermes-coven shim at ${shim.path}\n`
+                : `Note: could not install hermes-coven shim (${shim.error}); ` +
+                  "chat may fail until it is installed manually.\n",
+            );
+          } catch (err) {
+            appendOutput(
+              job,
+              `Note: could not install hermes-coven shim (${err instanceof Error ? err.message : String(err)}); chat may fail until it is installed manually.\n`,
+            );
+          }
+        }
+        clearTimers();
+        finishInstallJob(
+          job,
+          {
+            ok,
+            code,
+            binaryPath: installedPath,
+            ...(!ok && !job.error
+              ? {
+                  error: installed.error
+                    ? `Could not verify ${target.binary} on PATH after install: ${installed.error}`
+                    : installFailureHint(targetName, job.output) ??
+                      (code === 0
+                        ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
+                        : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`),
+                }
+              : {}),
+          },
+          npmLease,
+        );
+      })().catch((err) => fail(err));
+    });
+  } catch (err) {
+    fail(err);
+  }
 }
 
 export async function GET(req: Request) {
+  const target = new URL(req.url).searchParams.get("target");
+  // Client surfaces poll this lightweight lane view so a job started from a
+  // different surface/window disables its own npm actions immediately.
+  if (target === null) {
+    return NextResponse.json({ status: "idle", ...npmLaneView() });
+  }
+  if (!isInstallTarget(target)) {
+    return NextResponse.json(
+      { ok: false, error: "unknown install target" },
+      { status: 400 },
+    );
+  }
+  const job = jobs.get(target);
+  if (!job) return NextResponse.json({ status: "idle", ...npmLaneView() });
+  return NextResponse.json({ ...jobView(job), ...npmLaneView() });
+}
+
+export async function DELETE(req: Request) {
   const target = new URL(req.url).searchParams.get("target");
   if (!isInstallTarget(target)) {
     return NextResponse.json(
@@ -441,8 +688,19 @@ export async function GET(req: Request) {
     );
   }
   const job = jobs.get(target);
-  if (!job) return NextResponse.json({ status: "idle" });
-  return NextResponse.json(jobView(job));
+  if (!job || job.status !== "running") {
+    return NextResponse.json(
+      { ok: false, error: "no running install for this target", ...npmLaneView() },
+      { status: 409 },
+    );
+  }
+  job.cancel?.();
+  return NextResponse.json({
+    ok: true,
+    cancelling: true,
+    ...jobView(job),
+    ...npmLaneView(),
+  });
 }
 
 export async function POST(req: Request) {
@@ -471,20 +729,12 @@ export async function POST(req: Request) {
     return NextResponse.json(jobView(existing));
   }
 
-  // Concurrent `npm install -g` calls race the global tree; script installers
-  // (Hermes) are independent and may run alongside anything.
+  // This early check keeps the ordinary busy path quick. The authoritative,
+  // atomic reservation comes *after* spawnPlanFor below, because that function
+  // awaits target preparation and two requests can pass this check together.
   if (target.kind === "npm") {
-    for (const [otherName, other] of jobs) {
-      if (other.status === "running" && other.kind === "npm") {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: `wait for ${INSTALL_TARGETS[otherName].label} to finish`,
-          },
-          { status: 409 },
-        );
-      }
-    }
+    const activeTarget = activeNpmInstallTarget();
+    if (activeTarget) return npmBusyResponse(activeTarget);
   }
 
   const plan = await spawnPlanFor(target);
@@ -535,6 +785,20 @@ export async function POST(req: Request) {
     return NextResponse.json(jobView(recheck));
   }
 
+  // This is the atomic boundary. It comes after every asynchronous plan
+  // lookup/preparation step and covers every npm allowlist target, rather than
+  // only the requested target. Script installers intentionally do not reserve
+  // it and may continue under the existing independent-installer policy.
+  const reservation =
+    target.kind === "npm" ? reserveGlobalNpmInstall(targetName) : null;
+  if (reservation && !reservation.ok) {
+    const owner = isInstallTarget(reservation.owner)
+      ? reservation.owner
+      : targetName;
+    return npmBusyResponse(owner);
+  }
+  const npmLease = reservation?.ok ? reservation.lease : undefined;
+
   const job: InstallJob = {
     status: "running",
     kind: target.kind,
@@ -543,82 +807,10 @@ export async function POST(req: Request) {
   };
   jobs.set(targetName, job);
 
-  void (async () => {
-    try {
-      try {
-        await prepareForInstall(targetName, target, job);
-      } catch (err) {
-        appendOutput(
-          job,
-          `Preparation warning: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
-      }
-
-      const child = spawn(plan.command, plan.args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: covenSpawnEnv(),
-        shell: plan.shell,
-      });
-      child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-      child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-      let killTimer: NodeJS.Timeout | undefined;
-      const timer = setTimeout(() => {
-        // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
-        job.error = `install timed out after ${target.timeoutMs / 1000}s`;
-        child.kill("SIGTERM");
-        killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-      }, target.timeoutMs);
-      child.on("error", (e) => {
-        clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        finishInstallJobError(job, e);
-      });
-      child.on("close", (code, signal) => {
-        clearTimeout(timer);
-        if (killTimer) clearTimeout(killTimer);
-        void (async () => {
-          const installed = await commandPath(target.binary);
-          const installedPath = installed.path;
-          const ok = code === 0 && !!installedPath && !job.error;
-
-          // Hermes has no positional prompt slot, so the harness's
-          // `-- "<prompt>"` convention needs the `hermes-coven` shim to remap
-          // it onto `-q`. Install the shim next to the freshly-installed
-          // `hermes` binary so chat works out of the box. Best-effort: a shim
-          // failure never fails the Hermes install itself.
-          if (ok && targetName === "hermes" && installedPath) {
-            const shim = await installHermesShim(installedPath);
-            appendOutput(
-              job,
-              shim.ok
-                ? `Installed hermes-coven shim at ${shim.path}\n`
-                : `Note: could not install hermes-coven shim (${shim.error}); ` +
-                    `chat may fail until it is installed manually.\n`,
-            );
-          }
-
-          job.status = "done";
-          job.finishedAt = Date.now();
-          job.ok = ok;
-          job.code = code;
-          job.binaryPath = installedPath;
-          if (!ok && !job.error) {
-            job.error = installed.error
-              ? `Could not verify ${target.binary} on PATH after install: ${installed.error}`
-              : installFailureHint(targetName, job.output) ??
-                (code === 0
-                  ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-                  : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
-          }
-        })();
-      });
-    } catch (err) {
-      finishInstallJobError(job, err);
-    }
-  })();
+  void runInstallJob(targetName, target, plan, job, npmLease);
 
   return NextResponse.json(
-    { started: true, target: targetName },
+    { started: true, target: targetName, ...npmLaneView() },
     { status: 202 },
   );
 }

@@ -279,13 +279,25 @@ struct ChatView: View {
                                       operatorName: app.operatorDisplayName,
                                       operatorAvatarURL: app.operatorAvatarURL)
                         .id(message.id)
+                        // New bubbles settle in with a soft rise-and-fade
+                        // (native Messages behaviour) instead of popping;
+                        // deletions fade out. Driven by the count-keyed
+                        // animation below; Reduce Motion turns it off.
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
+                            removal: .opacity))
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 14)
+                .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Open at the latest message without the post-layout jump a
+            // proxy.scrollTo onAppear causes (the onAppear call stays as a
+            // backstop for restored offsets).
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             // Pull to re-sync a direct chat that may have advanced on another
             // device (no-op for groups / unsent threads, see ChatThread.reload).
             .refreshable {
@@ -324,6 +336,7 @@ struct ChatView: View {
                             .overlay(Circle().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
                     }
+                    .buttonStyle(.glassPress)
                     .padding(.trailing, 14)
                     .padding(.bottom, 10)
                     .transition(.scale.combined(with: .opacity))
@@ -331,11 +344,24 @@ struct ChatView: View {
                 }
             }
             .animation(.snappy(duration: 0.2), value: atBottom)
+            // Follow the stream only while the reader is parked at the bottom.
+            // Scrolling up to reread must never be yanked back down by each
+            // arriving token — the native Messages contract; returning to the
+            // bottom re-engages following via `atBottom`.
             .onChange(of: thread.messages.last?.text) { _, _ in
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                guard atBottom else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
+            // A new message reveals itself when it's the user's own send (you
+            // always watch your message leave) or when already at the bottom —
+            // otherwise the unread stays put behind the jump-to-latest button.
             .onChange(of: thread.messages.count) { _, _ in
-                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                guard atBottom || thread.messages.last?.role == .user else { return }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
         }
@@ -608,7 +634,11 @@ struct ChatView: View {
                     }
                 }
             }
+            .glassFill(.control, in: Capsule())
             .overlay(Capsule().strokeBorder(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1))
+            // The focused field earns the accent halo — the design language's
+            // one "active" cue — matching the drawer's search treatment.
+            .accentGlow(active: composerFocused || dictation.isRecording)
             .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
             .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
             .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)

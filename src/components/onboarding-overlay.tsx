@@ -105,6 +105,11 @@ type InstallResult = {
   detail: string;
 };
 
+type NpmLaneState = {
+  target: InstallTarget;
+  label: string;
+};
+
 /** Result of the codex OAuth port preflight (POST /api/onboarding/codex-port-preflight).
  *  The four outcomes mirror the route handler's response shape. UI consumes
  *  `ok` for color/icon and `detail` for the user-facing message. */
@@ -143,6 +148,10 @@ const ALL_INSTALL_TARGETS = Object.keys(INSTALL_TARGET_KIND) as InstallTarget[];
 const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
   (target) => INSTALL_TARGET_KIND[target] === "npm",
 );
+
+function isInstallTargetValue(value: string): value is InstallTarget {
+  return ALL_INSTALL_TARGETS.includes(value as InstallTarget);
+}
 
 // The "skip Coven Code" choice persists under COVEN_CODE_SKIP_KEY (shared
 // with the workspace auto-open gate via @/lib/onboarding-gate — cave-219) so
@@ -355,6 +364,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
+  const [npmLane, setNpmLane] = useState<NpmLaneState | null>(null);
   // Codex's `codex login` opens an OAuth callback server on port 1455 that
   // sometimes leaks as a stale process when the auth flow is killed mid-way.
   // The preflight POST identifies and clears the orphan; we display the
@@ -415,6 +425,30 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   }, []);
 
+  const refreshNpmLane = useCallback(async () => {
+    try {
+      const res = await fetch("/api/onboarding/install", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
+        npmJob?: InstallJobView;
+      };
+      const target = json.npmBusyTarget;
+      if (!json.npmBusy || !target || !isInstallTargetValue(target)) {
+        setNpmLane(null);
+        return;
+      }
+      setNpmLane({ target, label: json.npmBusyLabel ?? target });
+      if (json.npmJob?.status === "running") {
+        setInstallJobs((prev) => ({ ...prev, [target]: json.npmJob! }));
+      }
+    } catch {
+      /* Retain the last observed lane state until the next successful poll. */
+    }
+  }, []);
+
   useEffect(() => setPlatform(detectPlatform()), []);
 
   useEffect(() => {
@@ -455,12 +489,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     if (!open) return;
     void refresh();
     void loadHarnesses();
-    pollRef.current = setInterval(refresh, 2000);
+    void refreshNpmLane();
+    pollRef.current = setInterval(() => {
+      void refresh();
+      void refreshNpmLane();
+    }, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, refresh, loadHarnesses]);
+  }, [open, refresh, loadHarnesses, refreshNpmLane]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
@@ -579,7 +617,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         npmMissing?: boolean;
         hint?: string;
         error?: string;
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
       };
+      if (
+        json.npmBusy &&
+        json.npmBusyTarget &&
+        isInstallTargetValue(json.npmBusyTarget)
+      ) {
+        setNpmLane({
+          target: json.npmBusyTarget,
+          label: json.npmBusyLabel ?? json.npmBusyTarget,
+        });
+      }
       if (json.npmMissing) {
         setNodeHint(
           json.hint ??
@@ -647,7 +698,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     if (
       shouldQueueInstall({
         kind: INSTALL_TARGET_KIND[target],
-        npmBusy: anyNpmInstallRunning(installJobs),
+        npmBusy: npmLane !== null || anyNpmInstallRunning(installJobs),
         inFlight: installInFlightRef.current,
         queuedCount: installQueue.length,
       })
@@ -705,13 +756,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // Drain the npm queue one at a time as the lane frees up.
   useEffect(() => {
     const next = nextDrainTarget(installQueue, {
-      npmBusy: anyNpmInstallRunning(installJobs),
+      npmBusy: npmLane !== null || anyNpmInstallRunning(installJobs),
       inFlight: installInFlightRef.current,
     });
     if (next == null) return;
     setInstallQueue((q) => q.slice(1));
     void postInstall(next);
-  }, [installQueue, installJobs, postInstall]);
+  }, [installQueue, installJobs, npmLane, postInstall]);
 
   // Poll cadence is keyed on WHICH targets are running, not on the job map
   // itself — every poll stores a fresh view object, and keying on the map
@@ -1309,6 +1360,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installResults={installResults}
                             tools={status?.tools ?? []}
                             nodeHint={nodeHint}
+                            npmBusy={
+                              npmLane !== null || anyNpmInstallRunning(installJobs)
+                            }
+                            npmBusyLabel={npmLane?.label ?? "another npm update"}
                             covenCodeInstalled={covenCodeInstalled}
                             covenCodeSkipped={covenCodeSkipped}
                             onSkipCovenCode={skipCovenCode}
@@ -1343,6 +1398,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
+                            npmBusy={
+                              npmLane !== null || anyNpmInstallRunning(installJobs)
+                            }
+                            npmBusyLabel={npmLane?.label ?? "another npm update"}
                             harnessesStuck={
                               harnesses.length === 0 &&
                               harnessFailures >= HARNESS_RETRY_BUDGET
@@ -1662,6 +1721,8 @@ function StepCovenCli({
   installResults,
   tools,
   nodeHint,
+  npmBusy,
+  npmBusyLabel,
   covenCodeInstalled,
   covenCodeSkipped,
   onSkipCovenCode,
@@ -1673,6 +1734,8 @@ function StepCovenCli({
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   tools: OpenCovenToolStatus[];
   nodeHint: string | null;
+  npmBusy: boolean;
+  npmBusyLabel: string;
   covenCodeInstalled: boolean;
   covenCodeSkipped: boolean;
   onSkipCovenCode: () => void;
@@ -1689,7 +1752,8 @@ function StepCovenCli({
   const actionTargets = openCovenToolActionTargets(tools);
   const manualInstallCommand = openCovenToolsInstallCommand(tools);
   const primaryActionLabel = openCovenToolsPrimaryActionLabel(tools);
-  const installBusy = busy || covenCodeJobRunning;
+  const ownInstallBusy = busy || covenCodeJobRunning;
+  const installBusy = ownInstallBusy || npmBusy;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1699,6 +1763,11 @@ function StepCovenCli({
         npm installs one after another so they never collide — or copy the
         matching command to run it yourself.
       </p>
+      {npmBusy && !ownInstallBusy ? (
+        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+          {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="primary"
@@ -1709,7 +1778,11 @@ function StepCovenCli({
           }}
           disabled={installBusy || actionTargets.length === 0}
         >
-          {installBusy ? "Installing…" : primaryActionLabel}
+          {ownInstallBusy
+            ? "Installing…"
+            : npmBusy
+              ? `Waiting for ${npmBusyLabel}`
+              : primaryActionLabel}
         </Button>
         {actionTargets.length > 0 ? (
           <span className="text-[11px] text-[var(--text-muted)]">
@@ -1731,6 +1804,7 @@ function StepCovenCli({
             {tools.map((tool) => {
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
+              const toolBlockedByNpm = npmBusy && !toolBusy;
               const needsAction = !tool.installed || tool.outdated || !tool.compatible;
               const currentVerified =
                 tool.installed &&
@@ -1781,8 +1855,8 @@ function StepCovenCli({
                         <button
                           type="button"
                           onClick={() => onInstall(tool.id)}
-                          disabled={toolBusy}
-                          aria-busy={toolBusy}
+                          disabled={toolBusy || toolBlockedByNpm}
+                          aria-busy={toolBusy || toolBlockedByNpm}
                           className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
                         >
                           {toolBusy ? (
@@ -1792,6 +1866,8 @@ function StepCovenCli({
                           )}
                           {toolBusy && toolJob
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
+                            : toolBlockedByNpm
+                              ? `Waiting for ${npmBusyLabel}`
                             : tool.outdated || !tool.compatible
                               ? "Update"
                               : "Install"}
@@ -1838,6 +1914,8 @@ function StepRuntimes({
   installJobs,
   installResults,
   nodeHint,
+  npmBusy,
+  npmBusyLabel,
   harnessesStuck,
   onInstall,
   onCopy,
@@ -1851,6 +1929,8 @@ function StepRuntimes({
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
+  npmBusy: boolean;
+  npmBusyLabel: string;
   harnessesStuck: boolean;
   onInstall: (target: InstallTarget) => void;
   onCopy: (text: string) => Promise<boolean>;
@@ -1859,9 +1939,14 @@ function StepRuntimes({
   codexPortPreflightBusy: boolean;
   onCodexPortPreflight: () => void;
 }) {
-  const npmJobRunning = anyNpmInstallRunning(installJobs);
+  const npmJobRunning = npmBusy || anyNpmInstallRunning(installJobs);
   return (
     <div className="flex flex-col gap-3">
+      {npmBusy ? (
+        <p role="status" className="text-[11px] text-[var(--text-muted)]">
+          {npmBusyLabel} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
+        </p>
+      ) : null}
       {harnessesStuck ? (
         <div
           role="alert"

@@ -50,19 +50,23 @@ assert.doesNotMatch(
 // via the OS plugin instead of dead-ending on the release page.
 assert.match(src, /pickDownloadUrl/, "fallback resolves a direct platform installer download");
 assert.match(src, /@tauri-apps\/plugin-os/, "resolves the running platform/arch to pick an installer");
-assert.match(src, /resolveDownloadUrl\(fb\)/, "fallback download URL is the resolved installer, not the release page");
+assert.match(src, /resolveDownloadUrl\(combined\.status\)/, "fallback download URL is the resolved installer, not the release page");
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
 assert.match(src, /export function UpdateSettingsRow/, "exports the settings row");
 assert.match(src, /async function resolveUpdate/, "resolves native-first, then fallback");
 assert.match(src, /kind:\s*"native-unavailable"/, "preserves native updater check failures as a distinct update state");
-assert.match(src, /message:\s*native\.message/, "native updater check failures carry the underlying error message");
+assert.match(src, /native\.kind === "failed" \? native\.message/, "native updater check failures carry the underlying error message");
 assert.doesNotMatch(
   src,
   /async function checkNativeUpdate\([\s\S]*?catch\s*\{\s*return null;[\s\S]*?async function prepareNativeUpdate/,
   "native updater check failures must not be silently collapsed into the browser fallback path",
 );
+assert.match(src, /classifyFallbackReleaseCheck/, "HTTP-200 release error bodies are classified before rendering update state");
+assert.match(src, /kind: "unavailable"/, "failed native and fallback checks have a dedicated unavailable state");
+assert.match(src, /Last known/, "a failed recheck marks any retained update result as last-known data");
+assert.match(src, /confirmed \{relativeTime\(state\.checkedAt\)\}/, "only a completed successful check can render confirmed currency");
 
 // Banner: long-running desktops re-check periodically — a mount-only check
 // would leave always-on instances permanently unaware of new releases.
