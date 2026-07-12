@@ -4,10 +4,10 @@
  * Backdrop store — a user-chosen image behind the Chat and Home surfaces,
  * with an accent derived from the image so the app tints to match its vibe.
  *
- * Storage split: the image bytes live in IndexedDB (far too big for
- * localStorage); the small prefs INCLUDING the derived accent live in
- * localStorage under `cave:backdrop:v1`, so the accent can apply pre-paint
- * while the image itself fades in after the async IDB read.
+ * Canonical prefs and image bytes live behind the local app-owned preferences
+ * API, independent of the sidecar port. `cave:backdrop:v1` and the legacy
+ * IndexedDB record remain non-destructive mirrors/migration sources; the image
+ * still fades in after its asynchronous read.
  *
  * The accent override rides one custom property: setting `--accent-presence`
  * inline on <html> cascades through the existing color-mix chains
@@ -17,6 +17,16 @@
 
 import { useSyncExternalStore } from "react";
 import { contrastRatio, oklabToRgb, parseThemeColor, rgbToOklab } from "@/lib/theme-contrast";
+import {
+  readAppPreferences,
+  refreshAppPreferences,
+  subscribeAppPreferences,
+  updateAppPreferences,
+} from "@/lib/app-preferences";
+import {
+  createBackdropImageState,
+  type BackdropMigrationResult,
+} from "@/lib/backdrop-image-state";
 
 const PREFS_KEY = "cave:backdrop:v1";
 const DB_NAME = "cave-backdrop";
@@ -59,32 +69,20 @@ function notify() {
 
 export function readBackdropPrefs(): BackdropPrefs {
   if (cachedPrefs) return cachedPrefs;
-  if (typeof window === "undefined") return DEFAULT_PREFS;
-  try {
-    const raw = window.localStorage.getItem(PREFS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<BackdropPrefs>;
-      cachedPrefs = {
-        enabled: parsed.enabled === true,
-        intensity: clamp(Number(parsed.intensity ?? DEFAULT_PREFS.intensity), 0, 100),
-        matchAccent: parsed.matchAccent !== false,
-        accentSeed:
-          parsed.accentSeed && Number.isFinite(parsed.accentSeed.L)
-            ? { L: parsed.accentSeed.L, a: parsed.accentSeed.a, b: parsed.accentSeed.b }
-            : null,
-      };
-      return cachedPrefs;
-    }
-  } catch {
-    /* corrupt — fall through to defaults */
-  }
-  cachedPrefs = { ...DEFAULT_PREFS };
+  const central = readAppPreferences().appearance.backdrop;
+  cachedPrefs = {
+    enabled: central.enabled,
+    intensity: clamp(central.intensity, 0, 100),
+    matchAccent: central.matchAccent,
+    accentSeed: central.accentSeed ? { ...central.accentSeed } : null,
+  };
   return cachedPrefs;
 }
 
 export function writeBackdropPrefs(patch: Partial<BackdropPrefs>): BackdropPrefs {
   const next = { ...readBackdropPrefs(), ...patch };
   cachedPrefs = next;
+  updateAppPreferences({ appearance: { backdrop: next } });
   try {
     window.localStorage.setItem(PREFS_KEY, JSON.stringify(next));
   } catch {
@@ -128,7 +126,7 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
-export async function readBackdropImage(): Promise<Blob | null> {
+async function readLegacyBackdropImage(): Promise<Blob | null> {
   if (typeof indexedDB === "undefined") return null;
   const db = await openDb();
   try {
@@ -143,21 +141,116 @@ export async function readBackdropImage(): Promise<Blob | null> {
   }
 }
 
-export async function writeBackdropImage(blob: Blob | null): Promise<void> {
+async function writeLegacyBackdropImage(blob: Blob): Promise<void> {
   if (typeof indexedDB === "undefined") return;
   const db = await openDb();
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
-      if (blob) store.put(blob, IMAGE_KEY);
-      else store.delete(IMAGE_KEY);
+      store.put(blob, IMAGE_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("backdrop write failed"));
     });
   } finally {
     db.close();
   }
+}
+
+async function readCentralBackdropImage() {
+  const response = await fetch("/api/preferences/backdrop", { cache: "no-store" });
+  if (response.status === 404) return { kind: "missing" as const };
+  if (!response.ok) {
+    // In particular, 401/403 are auth failures rather than proof that no
+    // central image exists. The image state keeps them retryable.
+    throw new Error(`Could not read backdrop image (${response.status}).`);
+  }
+  return { kind: "found" as const, blob: await response.blob() };
+}
+
+async function persistCentralBackdropImage(blob: Blob | null): Promise<void> {
+  const response = await fetch("/api/preferences/backdrop", {
+    method: blob ? "PUT" : "DELETE",
+    ...(blob ? { headers: { "content-type": blob.type || "image/jpeg" }, body: blob } : {}),
+  });
+  if (!response.ok) throw new Error(`Could not persist backdrop image (${response.status}).`);
+  // Refresh the central tombstone/metadata before the image revision is
+  // published. In particular, a clear must not briefly fall back to the
+  // preserved legacy IndexedDB image while the layer is still enabled.
+  await refreshBackdropMetadata();
+}
+
+function backdropMigrationBlocked(): boolean {
+  const image = readAppPreferences().appearance.backdrop.image;
+  return image.present === false && Boolean(image.updatedAt);
+}
+
+const backdropImageState = createBackdropImageState({
+  readCentral: readCentralBackdropImage,
+  readLegacy: readLegacyBackdropImage,
+  persistCentral: persistCentralBackdropImage,
+  mirrorLegacy: writeLegacyBackdropImage,
+  migrationBlocked: backdropMigrationBlocked,
+});
+
+function imageMetadataFingerprint(): string {
+  const image = readAppPreferences().appearance.backdrop.image;
+  return `${image.present}:${image.mime ?? ""}:${image.updatedAt ?? ""}`;
+}
+
+let observedImageMetadata = imageMetadataFingerprint();
+let suppressImageMetadataInvalidation = 0;
+
+subscribeAppPreferences(() => {
+  cachedPrefs = null;
+  notify();
+
+  const nextImageMetadata = imageMetadataFingerprint();
+  if (nextImageMetadata !== observedImageMetadata) {
+    observedImageMetadata = nextImageMetadata;
+    if (suppressImageMetadataInvalidation === 0) {
+      // A different window/process replaced or cleared the central image.
+      backdropImageState.invalidateCentral();
+    }
+  }
+});
+
+async function refreshBackdropMetadata(): Promise<void> {
+  suppressImageMetadataInvalidation += 1;
+  try {
+    await refreshAppPreferences();
+    observedImageMetadata = imageMetadataFingerprint();
+  } finally {
+    suppressImageMetadataInvalidation -= 1;
+  }
+}
+
+/** Read the port-independent image, with a retryable legacy fallback. */
+export function readBackdropImage(): Promise<Blob | null> {
+  return backdropImageState.read();
+}
+
+/**
+ * Import the current origin's old IndexedDB record after authenticated app
+ * bootstrap. A true central 404 is the only state that permits upload; auth,
+ * network, server, and IndexedDB failures remain retryable. Legacy bytes are
+ * never deleted.
+ */
+export async function migrateLegacyBackdropImage(): Promise<BackdropMigrationResult> {
+  return backdropImageState.migrateLegacy();
+}
+
+export function useBackdropImageRevision(): number {
+  return useSyncExternalStore(
+    backdropImageState.subscribe,
+    backdropImageState.revision,
+    () => 0,
+  );
+}
+
+/** Persist centrally; keep the current-origin IDB record as a legacy mirror. */
+export async function writeBackdropImage(blob: Blob | null): Promise<void> {
+  await backdropImageState.write(blob);
 }
 
 // ── vibe extraction ──────────────────────────────────────────────────────────

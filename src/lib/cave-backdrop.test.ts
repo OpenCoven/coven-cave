@@ -4,7 +4,10 @@
 // layer/settings wiring.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import { dominantVibrantOklab, fitAccentToBackground } from "./cave-backdrop.ts";
+import { createBackdropImageState } from "./backdrop-image-state.ts";
+import { createDefaultPreferences } from "./preferences-schema.ts";
 import { parseThemeColor, contrastRatio } from "./theme-contrast.ts";
 
 // ── dominantVibrantOklab: picks the vibrant hue, ignores neutrals ────────────
@@ -31,6 +34,118 @@ function pixels(colors: Array<[number, number, number]>, repeat = 1): Uint8Clamp
   const seed = dominantVibrantOklab(data);
   assert.ok(seed, "a vibrant minority against neutral majority still yields a seed");
   assert.ok(seed.a > 0.05, `orange seed should sit in the +a half (got a=${seed.a.toFixed(3)})`);
+}
+
+// â”€â”€ durable image state: live replacement, migration, and retry semantics â”€â”€
+{
+  const oldImage = new Blob(["old"], { type: "image/jpeg" });
+  const replacement = new Blob(["replacement"], { type: "image/jpeg" });
+  const laterCentralImage = new Blob(["later"], { type: "image/jpeg" });
+  let central: Blob | null = oldImage;
+  let legacy: Blob | null = oldImage;
+  let tombstoned = false;
+  let revisions = 0;
+
+  const state = createBackdropImageState({
+    async readCentral() {
+      return central ? { kind: "found", blob: central } : { kind: "missing" };
+    },
+    async readLegacy() {
+      return legacy;
+    },
+    async persistCentral(blob) {
+      central = blob;
+      tombstoned = blob === null;
+    },
+    async mirrorLegacy(blob) {
+      legacy = blob;
+    },
+    migrationBlocked() {
+      return tombstoned;
+    },
+  });
+  state.subscribe(() => {
+    revisions += 1;
+  });
+
+  assert.equal(await state.read(), oldImage, "the initial central image is read");
+  await state.write(replacement);
+  assert.equal(revisions, 1, "replacing bytes publishes a live image revision");
+  assert.equal(await state.read(), replacement, "the replacement is immediately readable from the live cache");
+
+  await state.write(null);
+  assert.equal(legacy, replacement, "an explicit clear leaves legacy IndexedDB bytes intact");
+  assert.equal(await state.read(), null, "the canonical tombstone prevents legacy resurrection");
+
+  // A missing/null result is never cached forever. If a different process
+  // writes an image, the very next read can recover even before metadata sync.
+  central = laterCentralImage;
+  tombstoned = false;
+  assert.equal(await state.read(), laterCentralImage, "a later central image replaces a prior null result");
+}
+
+{
+  const legacy = new Blob(["legacy"], { type: "image/jpeg" });
+  let central: Blob | null = null;
+  let uploadAttempts = 0;
+  let failFirstUpload = true;
+  const state = createBackdropImageState({
+    async readCentral() {
+      return central ? { kind: "found", blob: central } : { kind: "missing" };
+    },
+    async readLegacy() {
+      return legacy;
+    },
+    async persistCentral(blob) {
+      uploadAttempts += 1;
+      if (failFirstUpload) {
+        failFirstUpload = false;
+        throw new Error("sidecar temporarily unavailable");
+      }
+      central = blob;
+    },
+    async mirrorLegacy() {
+      throw new Error("migration must not rewrite or delete the legacy source");
+    },
+    migrationBlocked() {
+      return false;
+    },
+  });
+
+  await assert.rejects(state.migrateLegacy(), /temporarily unavailable/);
+  assert.equal(
+    await state.migrateLegacy(),
+    "uploaded",
+    "a transient migration failure remains retryable",
+  );
+  assert.equal(uploadAttempts, 2);
+  assert.equal(central, legacy, "the second migration attempt imports the legacy bytes");
+  assert.equal(await state.migrateLegacy(), "already-complete", "a successful import is one-time");
+}
+
+{
+  const fallback = new Blob(["fallback"], { type: "image/jpeg" });
+  const recovered = new Blob(["central"], { type: "image/jpeg" });
+  let reads = 0;
+  const state = createBackdropImageState({
+    async readCentral() {
+      reads += 1;
+      if (reads === 1) throw new Error("401 is not absence");
+      return { kind: "found", blob: recovered };
+    },
+    async readLegacy() {
+      return fallback;
+    },
+    async persistCentral() {},
+    async mirrorLegacy() {},
+    migrationBlocked() {
+      return false;
+    },
+  });
+
+  assert.equal(await state.read(), fallback, "legacy bytes can render during a transient/auth failure");
+  assert.equal(await state.read(), recovered, "the next read retries instead of caching the fallback/null result");
+  assert.equal(reads, 2);
 }
 
 {
@@ -78,10 +193,17 @@ const css = await readFile(new URL("../styles/backdrop.css", import.meta.url), "
 const settings = await readFile(new URL("../components/settings-shell.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
 const backdropSettings = await readFile(new URL("../components/backdrop-settings.tsx", import.meta.url), "utf8");
+const bootstrapController = await readFile(
+  new URL("../components/preferences-bootstrap-controller.tsx", import.meta.url),
+  "utf8",
+);
+const bootScript = await readFile(new URL("../../public/scripts/theme-init.js", import.meta.url), "utf8");
 
-// Storage split: image bytes in IDB, prefs (incl. the seed) in localStorage.
-assert.match(lib, /indexedDB\.open\(DB_NAME, DB_VERSION\)/, "image bytes live in IndexedDB");
-assert.match(lib, /PREFS_KEY = "cave:backdrop:v1"/, "prefs persist under a stable versioned key");
+// The central API is canonical; old origin stores remain migration/mirror data.
+assert.match(lib, /indexedDB\.open\(DB_NAME, DB_VERSION\)/, "legacy image bytes remain available for migration");
+assert.match(lib, /PREFS_KEY = "cave:backdrop:v1"/, "legacy prefs remain a stable compatibility mirror");
+assert.match(lib, /response\.status === 404/, "only a real 404 is classified as a missing central image");
+assert.doesNotMatch(lib, /\.delete\(IMAGE_KEY\)/, "legacy backdrop bytes are never deleted during migration or clear");
 
 // The vibe rides exactly one custom property, so clearing restores the theme.
 assert.match(
@@ -97,6 +219,59 @@ assert.match(
 
 // The layer stays mounted and crossfades; only home/chat lift the opaque panes.
 assert.match(layer, /data-on=\{active \? "true" : "false"\}/, "the layer crossfades via data-on");
+assert.match(layer, /useBackdropImageRevision\(\)/, "the mounted layer subscribes to image replacements");
+assert.match(
+  layer,
+  /\[prefs\.enabled, imageRevision\]/,
+  "an enabled backdrop reloads when its durable bytes are replaced",
+);
+
+{
+  const preferences = createDefaultPreferences(true);
+  const seed = { L: 0.3, a: 0.12, b: 0.02 };
+  const background = "#15121b";
+  preferences.appearance.backdrop = {
+    ...preferences.appearance.backdrop,
+    enabled: true,
+    matchAccent: true,
+    accentSeed: seed,
+  };
+  preferences.appearance.theme.tokens = { "--bg-base": background };
+  const inline = new Map<string, string>();
+  const html = {
+    style: {
+      setProperty(name: string, value: string) { inline.set(name, String(value)); },
+      removeProperty(name: string) { inline.delete(name); },
+    },
+    setAttribute() {},
+    removeAttribute() {},
+  };
+  const storage = new Map<string, string>();
+  vm.runInNewContext(bootScript, {
+    document: {
+      documentElement: html,
+      getElementById: (id: string) => id === "cave-preferences-bootstrap"
+        ? { textContent: JSON.stringify(preferences) }
+        : null,
+    },
+    localStorage: {
+      getItem(key: string) { return storage.get(key) ?? null; },
+      setItem(key: string, value: string) { storage.set(key, String(value)); },
+      removeItem(key: string) { storage.delete(key); },
+    },
+    window: { matchMedia: () => ({ matches: true }) },
+  });
+  assert.equal(
+    inline.get("--accent-presence"),
+    fitAccentToBackground(seed, background),
+    "pre-paint and hydrated backdrop accent fitting produce the same CSS value",
+  );
+}
+assert.match(
+  layer,
+  /URL\.revokeObjectURL\(urlRef\.current\)/,
+  "the layer revokes its previous object URL before replacing or clearing it",
+);
 assert.match(layer, /root\.dataset\.backdropOn = "1"/, "the frontmost-surface flag rides <html>");
 assert.match(
   workspace,
@@ -137,6 +312,11 @@ assert.match(settings, /<BackdropSettings \/>/, "Appearance renders the backdrop
 assert.match(backdropSettings, /prepareBackdropImage\(file\)/, "picking an image downscales + derives the seed");
 assert.match(backdropSettings, /accent matched to the image/i, "the pick announces the vibe match to AT");
 assert.match(backdropSettings, /writeBackdropImage\(null\)/, "Clear removes the stored image");
+assert.match(
+  bootstrapController,
+  /await initializeAppPreferences\(\)[\s\S]*migrateLegacyBackdropImage\(\)/,
+  "legacy image migration runs after authenticated preference bootstrap even when Appearance is never opened",
+);
 assert.match(
   backdropSettings,
   /accept="image\/png,image\/jpeg,image\/webp,image\/avif,image\/heic,image\/heif"/,

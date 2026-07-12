@@ -56,7 +56,11 @@ async function requestAvatar(baseUrl, output) {
 }
 
 async function waitForAvatar(baseUrl, output) {
-  const deadline = Date.now() + (process.platform === "win32" ? 90_000 : 30_000);
+  // Cold Windows Defender/indexer scans of the freshly extracted ~5k-file
+  // runtime can delay Next's first listen beyond 90s even though the process is
+  // healthy. CI's sidecar job has a 40-minute bound; keep this per-launch wait
+  // generous enough to test the runtime instead of host scan speed.
+  const deadline = Date.now() + (process.platform === "win32" ? 180_000 : 30_000);
   while (Date.now() < deadline) {
     const res = await requestAvatar(baseUrl, output);
     if (!res) {
@@ -86,6 +90,49 @@ function attachOutput(child) {
     dump() {
       return lines.join("\n");
     },
+  };
+}
+
+function launchSidecar({ sidecarServer, sidecarRoot, covenHome, port }) {
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(bundledNode, [sidecarServer], {
+    cwd: sidecarRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      HOSTNAME: "127.0.0.1",
+      PORT: String(port),
+      COVEN_CAVE_BUNDLE: "1",
+      COVEN_CAVE_AUTH_TOKEN: token,
+      COVEN_HOME: covenHome,
+      NEXT_TELEMETRY_DISABLED: "1",
+    },
+  });
+  return { baseUrl, child, output: attachOutput(child) };
+}
+
+async function stopSidecar(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill();
+  const exited = await Promise.race([
+    waitForExit(child).then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 2_000)),
+  ]);
+  if (!exited && child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGKILL");
+    await Promise.race([
+      waitForExit(child),
+      new Promise((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+  }
+}
+
+function authenticatedHeaders(baseUrl, contentType) {
+  return {
+    ...(contentType ? { "content-type": contentType } : {}),
+    origin: baseUrl,
+    "x-coven-cave-token": token,
   };
 }
 
@@ -169,23 +216,13 @@ async function main() {
     .jpeg({ quality: 86 })
     .toFile(path.join(avatarDir, "smoke.jpg"));
 
-  const port = await reservePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const child = spawn(bundledNode, [sidecarServer], {
-    cwd: sidecarRoot,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
-      HOSTNAME: "127.0.0.1",
-      PORT: String(port),
-      COVEN_CAVE_BUNDLE: "1",
-      COVEN_CAVE_AUTH_TOKEN: token,
-      COVEN_HOME: covenHome,
-      NEXT_TELEMETRY_DISABLED: "1",
-    },
+  const firstPort = await reservePort();
+  let { baseUrl, child, output } = launchSidecar({
+    sidecarServer,
+    sidecarRoot,
+    covenHome,
+    port: firstPort,
   });
-  const output = attachOutput(child);
 
   try {
     const earlyExit = Promise.race([
@@ -219,22 +256,14 @@ async function main() {
 
     const installResponse = await fetch(`${baseUrl}/api/marketplace/install`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: baseUrl,
-        "x-coven-cave-token": token,
-      },
+      headers: authenticatedHeaders(baseUrl, "application/json"),
       body: JSON.stringify({ id: "github" }),
     });
     assert.equal(installResponse.status, 200, "packaged marketplace install must read the retained plugin manifest");
     assert.equal((await installResponse.json()).ok, true);
     const uninstallResponse = await fetch(`${baseUrl}/api/marketplace/uninstall`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        origin: baseUrl,
-        "x-coven-cave-token": token,
-      },
+      headers: authenticatedHeaders(baseUrl, "application/json"),
       body: JSON.stringify({ id: "github" }),
     });
     assert.equal(uninstallResponse.status, 200, "packaged marketplace uninstall must resolve the retained catalog");
@@ -256,16 +285,143 @@ async function main() {
     const sandboxResponse = await fetch(`${baseUrl}/sandbox/react-runtime.js`);
     assert.equal(sandboxResponse.status, 200, "packaged sandbox runtime must be served from public assets");
     assert.match(await sandboxResponse.text(), /generated; do not edit/);
-    console.log(`sidecar-runtime-smoke: ok on ${process.platform}/${process.arch} (${baseUrl})`);
+
+    // Regression for random WebView origins: write the full representative
+    // preference set through one sidecar port, stop that process completely,
+    // then prove a fresh sidecar on another OS-assigned port restores it.
+    const preferencePatch = {
+      appearance: {
+        theme: {
+          id: "tide",
+          modePreference: "light",
+          resolvedMode: "light",
+          tokens: { "--background": "#112233", "--foreground": "#f8fafc" },
+        },
+        fonts: { serif: "eb-garamond", sans: "source-sans-3", mono: "source-code-pro" },
+        screenScale: 125,
+        reading: {
+          leading: "relaxed",
+          tracking: "wide",
+          align: "justify",
+          width: "narrow",
+          weight: "medium",
+          hyphens: "on",
+        },
+        datetime: { clock: "24h", date: "ddmm", density: "verbose" },
+        recentColors: ["#112233", "#aabbcc"],
+        cornerRadius: "round",
+        backdrop: {
+          enabled: true,
+          intensity: 67,
+          matchAccent: false,
+          accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
+        },
+      },
+      general: { newsHeadlines: false },
+      phone: { mobileMode: false },
+    };
+    const savePreferences = await fetch(`${baseUrl}/api/preferences`, {
+      method: "PATCH",
+      headers: authenticatedHeaders(baseUrl, "application/json"),
+      body: JSON.stringify(preferencePatch),
+    });
+    assert.equal(savePreferences.status, 200, `preference PATCH failed: ${await savePreferences.text()}`);
+
+    const backdropBytes = await sharp({
+      create: {
+        width: 24,
+        height: 16,
+        channels: 3,
+        background: { r: 12, g: 85, b: 120 },
+      },
+    }).png().toBuffer();
+    const saveBackdrop = await fetch(`${baseUrl}/api/preferences/backdrop`, {
+      method: "PUT",
+      headers: authenticatedHeaders(baseUrl, "image/png"),
+      body: backdropBytes,
+    });
+    assert.equal(saveBackdrop.status, 200, `backdrop PUT failed: ${await saveBackdrop.text()}`);
+
+    await stopSidecar(child);
+    const secondPort = await reservePort();
+    assert.notEqual(secondPort, firstPort, "restart regression must exercise a different loopback port");
+    ({ baseUrl, child, output } = launchSidecar({
+      sidecarServer,
+      sidecarRoot,
+      covenHome,
+      port: secondPort,
+    }));
+    const secondEarlyExit = Promise.race([
+      waitForExit(child).then((exit) => {
+        throw new Error(`restarted sidecar exited before restore: ${JSON.stringify(exit)}\n${output.dump()}`);
+      }),
+      new Promise((_, reject) => child.once("error", reject)),
+    ]);
+    await Promise.race([waitForAvatar(baseUrl, output), secondEarlyExit]);
+
+    const restoredResponse = await fetch(`${baseUrl}/api/preferences`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(restoredResponse.status, 200, "restarted sidecar must expose persisted preferences");
+    const restored = (await restoredResponse.json()).preferences;
+    assert.equal(restored.initialized, true);
+    assert.deepEqual(restored.appearance.theme.id, preferencePatch.appearance.theme.id);
+    assert.deepEqual(restored.appearance.theme.modePreference, preferencePatch.appearance.theme.modePreference);
+    assert.deepEqual(restored.appearance.theme.tokens, preferencePatch.appearance.theme.tokens);
+    assert.deepEqual(restored.appearance.fonts, preferencePatch.appearance.fonts);
+    assert.equal(restored.appearance.screenScale, preferencePatch.appearance.screenScale);
+    assert.deepEqual(restored.appearance.reading, preferencePatch.appearance.reading);
+    assert.deepEqual(restored.appearance.datetime, preferencePatch.appearance.datetime);
+    assert.deepEqual(restored.appearance.recentColors, preferencePatch.appearance.recentColors);
+    assert.equal(restored.appearance.cornerRadius, preferencePatch.appearance.cornerRadius);
+    assert.equal(restored.appearance.backdrop.enabled, true);
+    assert.equal(restored.appearance.backdrop.intensity, 67);
+    assert.equal(restored.appearance.backdrop.matchAccent, false);
+    assert.deepEqual(restored.appearance.backdrop.accentSeed, preferencePatch.appearance.backdrop.accentSeed);
+    assert.equal(restored.appearance.backdrop.image.present, true);
+    assert.equal(restored.appearance.backdrop.image.mime, "image/png");
+    assert.deepEqual(restored.general, preferencePatch.general);
+    assert.deepEqual(restored.phone, preferencePatch.phone);
+
+    const documentResponse = await fetch(baseUrl, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(documentResponse.status, 200, "a normal reload should render from canonical preferences");
+    const documentHtml = await documentResponse.text();
+    const bootstrapMatch = documentHtml.match(
+      /<script id="cave-preferences-bootstrap" type="application\/json">([\s\S]*?)<\/script>/,
+    );
+    assert.ok(bootstrapMatch, "the restarted document must contain the pre-paint preference bootstrap");
+    const documentPreferences = JSON.parse(bootstrapMatch[1]);
+    assert.equal(documentPreferences.appearance.theme.id, preferencePatch.appearance.theme.id);
+    assert.deepEqual(documentPreferences.appearance.fonts, preferencePatch.appearance.fonts);
+    assert.equal(documentPreferences.appearance.screenScale, preferencePatch.appearance.screenScale);
+
+    const localhostUrl = `http://localhost:${secondPort}`;
+    const localhostResponse = await fetch(`${localhostUrl}/api/preferences`, {
+      headers: authenticatedHeaders(localhostUrl),
+    });
+    assert.equal(localhostResponse.status, 200, "localhost should share the same app-owned preferences in dev-compatible access");
+    assert.equal(
+      (await localhostResponse.json()).preferences.appearance.theme.id,
+      preferencePatch.appearance.theme.id,
+    );
+
+    const restoredBackdrop = await fetch(`${baseUrl}/api/preferences/backdrop`, {
+      headers: authenticatedHeaders(baseUrl),
+    });
+    assert.equal(restoredBackdrop.status, 200, "restarted sidecar must restore backdrop bytes");
+    assert.deepEqual(Buffer.from(await restoredBackdrop.arrayBuffer()), backdropBytes);
+
+    console.log(
+      `sidecar-runtime-smoke: ok on ${process.platform}/${process.arch} ` +
+      `(preferences survived ${firstPort} -> ${secondPort})`,
+    );
   } catch (err) {
     console.error(output.dump());
     throw err;
   } finally {
-    child.kill();
-    await Promise.race([
-      waitForExit(child),
-      new Promise((resolve) => setTimeout(resolve, 2_000)),
-    ]);
+    await stopSidecar(child);
     await rm(covenHome, { recursive: true, force: true });
     if (extractedSidecarRoot) {
       await rm(extractedSidecarRoot, { recursive: true, force: true });

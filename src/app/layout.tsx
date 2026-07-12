@@ -21,6 +21,9 @@ import { PwaRegister } from "@/components/pwa-register";
 import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
 import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
 import { PerfOverlay } from "@/components/perf/perf-overlay";
+import { PreferencesBootstrapController } from "@/components/preferences-bootstrap-controller";
+import { createDefaultPreferences } from "@/lib/preferences-schema";
+import { loadPreferences } from "@/lib/server/preferences-store";
 
 export const metadata: Metadata = {
   title: "CovenCave",
@@ -55,11 +58,12 @@ export const viewport: Viewport = {
 
 export const dynamic = "force-dynamic";
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const preferences = await loadPreferences().catch(() => createDefaultPreferences(false));
   return (
     <html
       lang="en"
@@ -70,7 +74,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <ThemeScript />
+        <ThemeScript preferences={preferences} />
       </head>
       <body className="h-full flex flex-col">
         <DevCacheResetScript />
@@ -78,6 +82,7 @@ export default function RootLayout({
         <ShellBannersProvider>
           <LiveRegionProvider>
             <ConfirmProvider>
+            <PreferencesBootstrapController />
             <SidecarAuthMonitor />
             <ScreenMagnificationController />
             <ReadingLeadingController />

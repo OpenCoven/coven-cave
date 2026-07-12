@@ -22,6 +22,10 @@ const fontSettings = await readFile(
   new URL("./settings-fonts.tsx", import.meta.url),
   "utf8",
 );
+const appearanceRestore = await readFile(
+  new URL("../lib/appearance-restore.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   settings,
@@ -73,8 +77,8 @@ assert.match(
 
 assert.match(
   layout,
-  /<head>\s*<ThemeScript \/>[\s\S]*<\/head>/,
-  "Root layout should mount ThemeScript in <head> so persisted theme background applies before paint",
+  /<head>\s*<ThemeScript preferences=\{preferences\} \/>[\s\S]*<\/head>/,
+  "Root layout should pass the canonical server preference snapshot to ThemeScript before paint",
 );
 
 assert.match(
@@ -345,8 +349,8 @@ assert.match(
 );
 assert.match(
   themeBootScript,
-  /localStorage\.getItem\("cave:corner-radius"\)[\s\S]*--radius-control/,
-  "ThemeScript should apply the saved corner radius before paint (no flash)",
+  /appearance\.cornerRadius[\s\S]*--radius-control/,
+  "ThemeScript should apply the canonical corner radius before paint (no flash)",
 );
 
 assert.match(
@@ -361,10 +365,39 @@ assert.match(
   "Global CSS should magnify the app via rem-based root font scaling (not an app-wide zoom, which broke getBoundingClientRect math)",
 );
 
+assert.doesNotMatch(
+  settings,
+  /THEME_OWNED_APPEARANCE_KEYS\s*=/,
+  "Selecting a preset must not carry a destructive list of independent appearance preferences",
+);
+
 assert.match(
   settings,
-  /THEME_OWNED_APPEARANCE_KEYS[\s\S]*localStorage\.removeItem\(key\)/,
-  "Selecting a preset theme should clear stale typography/radius/reading overrides so theme-owned structure applies",
+  /function applyPreset\(theme: PresetTheme\) \{[\s\S]{0,500}clearCustomThemeVariables\(\)[\s\S]{0,500}updateAppPreferences\(\{ appearance: \{ theme: \{ id: theme, custom: null \} \} \}\)[\s\S]{0,500}reapplyIndependentAppearance\(\)/,
+  "Selecting a preset should persist only the theme selection and then re-layer independent choices",
+);
+
+assert.match(
+  appearanceRestore,
+  /for \(const group of \[custom\.cssVars\.theme, custom\.cssVars\.light, custom\.cssVars\.dark\]\)[\s\S]*root\.style\.removeProperty\(name\)/,
+  "theme switching should remove only CSS variables introduced by the previous custom theme",
+);
+
+for (const independentApply of [
+  "applyFontPair", "applyScreenScale", "applyReadingLeading", "applyReadingTracking",
+  "applyReadingAlign", "applyReadingWidth", "applyReadingWeight", "applyReadingHyphens",
+  "applyCornerRadius", "applyBackdropToDocument",
+]) {
+  assert.ok(
+    appearanceRestore.includes(independentApply),
+    `preset/custom switches should reapply ${independentApply}`,
+  );
+}
+
+assert.doesNotMatch(
+  settings,
+  /localStorage\.removeItem\("cave:(?:font|screen-scale|reading|corner-radius|backdrop)/,
+  "theme selection must never delete independent saved appearance settings",
 );
 
 assert.match(
@@ -378,6 +411,16 @@ assert.match(
   settings,
   /async function persistThemeTokens\(\): Promise<boolean>/,
   "persistThemeTokens returns a result so the Resync button can report success",
+);
+assert.match(
+  settings,
+  /persistThemeTokens\(\)[\s\S]{0,300}await flushAppPreferences\(\)[\s\S]{0,500}tokenOnly: true,[\s\S]{0,200}expectedSelectionRevision: preferences\.appearance\.theme\.selectionRevision/,
+  "token-only publication must wait for canonical selection persistence and carry its revision",
+);
+assert.match(
+  settings,
+  /if \(res\.status === 409\) await refreshAppPreferences\(\)/,
+  "a stale token publisher should refresh the winning canonical selection",
 );
 assert.match(settings, /Resync to phone/, "Appearance exposes a manual Resync to phone button");
 assert.match(

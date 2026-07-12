@@ -34,6 +34,8 @@ export function normalizeReadingWeight(value: unknown): ReadingWeight {
 }
 
 export function readReadingWeight(): ReadingWeight {
+  const central = normalizeReadingWeight(readAppPreferences().appearance.reading.weight);
+  if (central !== DEFAULT_READING_WEIGHT || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_READING_WEIGHT;
   try {
     return normalizeReadingWeight(window.localStorage.getItem(READING_WEIGHT_KEY));
@@ -46,9 +48,12 @@ export function readReadingWeight(): ReadingWeight {
  * Apply the level: set `--cave-reading-weight` on <html> (or remove it for the
  * default so the inherited 400 applies) and persist the choice.
  */
-export function applyReadingWeight(level: ReadingWeight) {
+export function applyReadingWeight(level: ReadingWeight, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeReadingWeight(level);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { reading: { weight: normalized } } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_READING_WEIGHT) {
     root.style.removeProperty("--cave-reading-weight");
@@ -62,3 +67,4 @@ export function applyReadingWeight(level: ReadingWeight) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";
