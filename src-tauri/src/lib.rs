@@ -2743,9 +2743,20 @@ pub fn run() {
                     // and the choice persists across restarts. The notch's
                     // own dock button (notch:dock-to-tray) is the way back.
                     "notch_mode" => {
-                        save_notch_mode(app, true);
-                        show_notch_from_main(app);
-                        set_tray_visible(app, false);
+                        let Some(url) = app
+                            .get_webview_window("main")
+                            .and_then(|window| window.url().ok())
+                            .and_then(notch_url_from_main)
+                        else {
+                            focus_main_window(app);
+                            return;
+                        };
+
+                        show_notch_window(app, &url);
+                        if app.get_webview_window(NOTCH_WINDOW_LABEL).is_some() {
+                            save_notch_mode(app, true);
+                            set_tray_visible(app, false);
+                        }
                     }
                     "show_app" => focus_main_window(app),
                     "quit" => {
