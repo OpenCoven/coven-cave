@@ -415,7 +415,9 @@ export function Workspace() {
       { duration: 120, easing: "ease-out" },
     );
   }, [mode]);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Chat's right panel (Inspector sections / Debug / Changes) starts closed;
+  // rightPanel is its single owner — the legacy open/closed boolean channel
+  // is retired (cave-liut).
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
@@ -2346,12 +2348,10 @@ export function Workspace() {
         familiarsError={familiarsError}
         onRetryFamiliars={() => void loadFamiliars()}
         inboxItems={inboxItemsWithEphemeral}
-        inspectorOpen={inspectorOpen}
         rightPanel={rightPanel}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
-        onSetInspectorOpen={setInspectorOpen}
         onSetRightPanel={setRightPanel}
         onSetActiveFamiliar={setActiveId}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}

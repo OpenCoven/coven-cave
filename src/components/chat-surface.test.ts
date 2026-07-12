@@ -57,16 +57,18 @@ assert.doesNotMatch(
   "ChatSurface should not reintroduce the busy GitHub-style hero/composer cards",
 );
 
+// The chat surface no longer hosts a memory scope — familiar memory lives in
+// the Familiars surface and the Grimoire editor, and the inspector's Memory
+// tab remains only on the companion RailInspector (cave-liut).
 assert.match(
   chatSurface,
-  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
-  "ChatSurface should derive all familiars when the generic Familiars scope is selected",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven"/,
+  "ChatSurface scope union should not include the dead memory scope",
 );
-
-assert.match(
+assert.doesNotMatch(
   chatSurface,
-  /<FamiliarsMemoryView[\s\S]*familiars=\{scopedFamiliars\}[\s\S]*activeFamiliar=\{activeFamiliar\}[\s\S]*lockToFamiliar/,
-  "ChatSurface memory should stay locked to the selected familiar",
+  /FamiliarsMemoryView/,
+  "ChatSurface should not mount FamiliarsMemoryView — memory is not a chat scope",
 );
 
 assert.doesNotMatch(
@@ -230,9 +232,42 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /scope === "memory" \? \([\s\S]*?\) : \(\s*<Group\s+className="flex min-h-0 min-w-0 flex-1"\s+orientation="horizontal"/,
-  "ChatSurface non-memory branch (conversation) should use remaining height below the tab bar instead of h-full",
+  /scope === "coven" \? \([\s\S]*?\) : \(\s*<Group\s+className="flex min-h-0 min-w-0 flex-1"\s+orientation="horizontal"/,
+  "ChatSurface conversation branch should use remaining height below the tab bar instead of h-full",
 );
+
+// cave-liut regression guards — the inspector-into-chat-tabs migration contract:
+// 1) rightPanel is the single channel; the legacy inspectorOpen boolean fallback
+//    is gone from both sides of the ChatSurface prop seam.
+assert.doesNotMatch(
+  chatSurface,
+  /inspectorOpen|onSetInspectorOpen/,
+  "ChatSurface must not keep the legacy inspectorOpen fallback — rightPanel is the only right-panel channel",
+);
+assert.match(
+  chatSurface,
+  /rightPanel: RightPanelKind \| null;/,
+  "ChatSurface should require the rightPanel prop (no optional legacy fallback)",
+);
+// 2) The inspector's active section is owned by ChatSurface, not RightPanel, so
+//    it survives panel close/reopen and the desktop-sidebar ↔ mobile-sheet
+//    remount (only one RightPanel mounts at a time).
+assert.match(
+  chatSurface,
+  /const \[inspectorSection, setInspectorSection\] =\s*\n?\s*useState<Exclude<InspectorSection, "memory">>\("familiar"\)/,
+  "ChatSurface owns the inspector section so it persists across panel close/reopen",
+);
+assert.doesNotMatch(
+  chatSurface,
+  /const \[section, setSection\] = useState/,
+  "RightPanel must not re-own section state — a breakpoint remount would reset it",
+);
+const rightPanelMounts = chatSurface.match(/<RightPanel\b/g) ?? [];
+const sectionWired = chatSurface.match(/section=\{inspectorSection\}/g) ?? [];
+const sectionSetterWired = chatSurface.match(/onSetSection=\{setInspectorSection\}/g) ?? [];
+assert.equal(rightPanelMounts.length, 2, "RightPanel mounts exactly twice (desktop sidebar + narrow sheet)");
+assert.equal(sectionWired.length, 2, "both RightPanel mounts receive the lifted inspector section");
+assert.equal(sectionSetterWired.length, 2, "both RightPanel mounts receive the section setter");
 
 assert.match(
   workspace,

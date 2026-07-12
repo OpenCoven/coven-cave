@@ -16,8 +16,16 @@ assert.match(
   "Chat mode should mount ChatSurface with fully wired familiar Inbox controls",
 );
 
+// cave-liut: the chat right panel starts closed and rightPanel is its single
+// owner — the legacy inspectorOpen boolean channel is retired.
 assert.match(
   workspace,
-  /const \[inspectorOpen,\s*setInspectorOpen\] = useState\(false\);/,
-  "Agents mode should start with the inspector collapsed so the brain toggle is visible",
+  /const \[rightPanel,\s*setRightPanel\] = useState<RightPanelKind \| null>\(null\);/,
+  "Chat mode should start with the right panel collapsed, owned by rightPanel alone",
+);
+
+assert.doesNotMatch(
+  workspace,
+  /inspectorOpen|setInspectorOpen/,
+  "Workspace must not keep the retired inspectorOpen boolean beside rightPanel",
 );
