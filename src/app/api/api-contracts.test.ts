@@ -96,6 +96,7 @@ const contracts: RouteContract[] = [
   { route: "/inbox/[id]/done", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/inbox/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/[id]/snooze", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/inbox/bulk", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/daily-summary", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty", localOriginGuard: true },
   { route: "/inbox/prefs", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },

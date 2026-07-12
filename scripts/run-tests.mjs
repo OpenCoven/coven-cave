@@ -62,6 +62,7 @@ export const SUITES = {
     "src/lib/familiar-roster-guard.test.ts",
     "src/lib/cave-projects.test.ts",
     "src/lib/cave-inbox-prefs.test.ts",
+    "src/lib/cave-inbox-bulk.test.ts",
     "src/lib/project-permissions.test.ts",
     "src/lib/project-icon-prompt.test.ts",
     "src/lib/project-icon-image-provider.test.ts",
@@ -899,6 +900,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/cave-inbox-bulk.test.ts",
   "src/app/api/prompts/route.test.ts",
   "src/app/api/marketplace/pack-prompts-route.test.ts",
   "src/lib/cave-backdrop.test.ts",

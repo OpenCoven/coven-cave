@@ -34,4 +34,38 @@ assert.match(
   "toggleMute takes the lock once and reads+writes atomically via the unlocked patch",
 );
 
+// Kind muting (cave-uu2d) follows the same atomicity contract as familiar muting.
+assert.match(
+  src,
+  /export function toggleMuteKind\([\s\S]*?return withPrefsLock\(async \(\) => \{[\s\S]*?loadPrefs\(\)[\s\S]*?patchPrefsUnlocked\(/,
+  "toggleMuteKind takes the lock once and reads+writes atomically via the unlocked patch",
+);
+
+// mutedKinds is validated on BOTH load and patch — a hand-edited prefs file or
+// a stale client can't persist kinds the delivery gate doesn't know (and
+// response-needed must never be mutable: a reply request clears by replying).
+// The kind list lives in the PURE shape module so the client bell can import
+// the value without dragging fs/promises into the browser bundle.
+const shapeSrc = readFileSync(new URL("./inbox-prefs-shape.ts", import.meta.url), "utf8");
+assert.match(
+  shapeSrc,
+  /MUTABLE_KINDS = \["reminder", "agent", "daily-summary"\] as const/,
+  "response-needed is not a mutable kind",
+);
+assert.doesNotMatch(
+  shapeSrc,
+  /from "node:|require\("node:/,
+  "the prefs shape module must stay free of node: imports (client components import it)",
+);
+assert.match(
+  src,
+  /mutedKinds: Array\.isArray\(parsed\.mutedKinds\)[\s\S]*?MUTABLE_KINDS as readonly string\[\]\)\.includes/,
+  "loadPrefs filters mutedKinds to known kinds",
+);
+assert.match(
+  src,
+  /mutedKinds: patch\.mutedKinds[\s\S]*?MUTABLE_KINDS as readonly string\[\]\)\.includes/,
+  "patchPrefs filters mutedKinds to known kinds",
+);
+
 console.log("cave-inbox-prefs.test.ts: ok");

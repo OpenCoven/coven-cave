@@ -22,6 +22,13 @@ export type Toast = {
 type Props = {
   toasts: Toast[];
   onDismiss: (id: string) => void;
+  /**
+   * Auto-hide timeout. Distinct from onDismiss (the explicit ✕): expiry means
+   * the user may never have seen the toast, so the caller must NOT resolve or
+   * acknowledge the underlying item — it stays unread in the bell. Falls back
+   * to onDismiss when absent.
+   */
+  onExpire?: (id: string) => void;
   onSnooze: (toast: Toast, untilIso: string) => void;
   onOpen?: (toast: Toast) => void;
 };
@@ -38,7 +45,7 @@ const KIND_ACCENT: Record<NonNullable<Toast["kind"]>, string> = {
   reminder: "var(--color-warning)",
 };
 
-export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) {
+export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen }: Props) {
   // Hover or focus anywhere inside a toast pauses its auto-hide (WCAG 2.2.1) —
   // content stopped vanishing mid-read. Unpausing re-arms the full window,
   // the generous simple option (no per-toast remaining-time bookkeeping).
@@ -54,11 +61,12 @@ export function InboxToastStack({ toasts, onDismiss, onSnooze, onOpen }: Props) 
 
   useEffect(() => {
     if (toasts.length === 0) return;
+    const expire = onExpire ?? onDismiss;
     const timers = toasts
       .filter((t) => !pausedIds.has(t.id))
-      .map((t) => setTimeout(() => onDismiss(t.id), AUTO_DISMISS_MS));
+      .map((t) => setTimeout(() => expire(t.id), AUTO_DISMISS_MS));
     return () => timers.forEach(clearTimeout);
-  }, [toasts, pausedIds, onDismiss]);
+  }, [toasts, pausedIds, onDismiss, onExpire]);
 
   if (toasts.length === 0) return null;
 
