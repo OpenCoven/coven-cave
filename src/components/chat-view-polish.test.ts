@@ -651,10 +651,15 @@ assert.match(
   /addEventListener\("cave:chat-rename", onRename\)[\s\S]{0,80}setEditing\(true\)|onRename = \(\) => setEditing\(true\)/,
   "ChatTitleEditable enters edit mode when the overflow menu fires cave:chat-rename",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /aria-label="Rename chat"/,
-  "The persistent pencil button is removed — the title is clean, rename is one click away in the menu",
+  /aria-label="Rename chat"[\s\S]{0,200}setEditing\(true\)/,
+  "Chat title carries an explicit, labeled rename button — click-to-rename and the overflow item alone are not discoverable",
+);
+assert.match(
+  source,
+  /aria-label="Rename chat"[\s\S]{0,400}ph:pencil-simple/,
+  "The title's rename button uses the same pencil icon as the overflow menu item",
 );
 
 // — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —

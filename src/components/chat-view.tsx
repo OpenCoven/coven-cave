@@ -1300,9 +1300,9 @@ function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
-  // The rename affordance now lives in the session overflow menu (Codex/ChatGPT
-  // idiom — a clean title, secondary actions one click away). The menu fires
-  // this event; clicking the title itself still enters edit mode directly.
+  // Rename has three entry points into the same edit mode: the pencil button
+  // beside the title, clicking the title text, and the session overflow menu —
+  // which lives outside this component and reaches it via this window event.
   useEffect(() => {
     const onRename = () => setEditing(true);
     window.addEventListener("cave:chat-rename", onRename);
@@ -1340,9 +1340,12 @@ function ChatTitleEditable({
     ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
     : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold leading-tight text-[var(--text-primary)] outline-none";
 
+  // No flex-1 on the title button itself — the wrapper carries the stretch so
+  // the pencil sits flush against the title text instead of drifting to the
+  // far edge of the free space.
   const buttonClassName = headline
-    ? "block w-full truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
-    : "min-w-0 flex-1 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
+    ? "min-w-0 flex-1 truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
+    : "min-w-0 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
 
   if (editing) {
     return (
@@ -1371,17 +1374,34 @@ function ChatTitleEditable({
   }
 
   return (
-    <button
-      type="button"
-      className={buttonClassName}
-      title={`${display} — click to rename`}
-      onClick={(e) => {
-        e.stopPropagation();
-        setEditing(true);
-      }}
-    >
-      {display}
-    </button>
+    <span className={headline ? "flex w-full min-w-0 items-center gap-1.5" : "flex min-w-0 flex-1 items-center gap-1"}>
+      <button
+        type="button"
+        className={buttonClassName}
+        title={`${display} — click to rename`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        {display}
+      </button>
+      {/* Explicit rename affordance — click-to-rename on the title alone is
+          invisible; the pencil makes renaming discoverable without opening
+          the overflow menu. */}
+      <button
+        type="button"
+        title="Rename chat"
+        aria-label="Rename chat"
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
+      >
+        <Icon name="ph:pencil-simple" width={11} aria-hidden />
+      </button>
+    </span>
   );
 }
 
