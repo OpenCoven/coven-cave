@@ -76,6 +76,59 @@ export function displayNameFromTomlBlock(block: string): string | null {
   return unescaped || null;
 }
 
+function unescapeTomlBasicString(value: string): string | null {
+  let output = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character !== "\\") {
+      output += character;
+      continue;
+    }
+
+    const escape = value[index + 1];
+    if (!escape) return null;
+    index += 1;
+    const simple: Record<string, string> = {
+      b: "\b",
+      t: "\t",
+      n: "\n",
+      f: "\f",
+      r: "\r",
+      '"': '"',
+      "\\": "\\",
+    };
+    if (escape in simple) {
+      output += simple[escape];
+      continue;
+    }
+
+    const digits = escape === "u" ? 4 : escape === "U" ? 8 : 0;
+    if (!digits) return null;
+    const hex = value.slice(index + 1, index + 1 + digits);
+    if (!new RegExp(`^[0-9a-fA-F]{${digits}}$`).test(hex)) return null;
+    const codePoint = Number.parseInt(hex, 16);
+    if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return null;
+    output += String.fromCodePoint(codePoint);
+    index += digits;
+  }
+  return output;
+}
+
+/** True when a tombstoned block can be restored without violating the roster schema. */
+export function hasNonemptyDescriptionFromTomlBlock(block: string): boolean {
+  const multilineBasic = /^\s*description\s*=\s*"""([\s\S]*?)"""\s*(?:#.*)?$/m.exec(block);
+  if (multilineBasic) return (unescapeTomlBasicString(multilineBasic[1]) ?? "").trim().length > 0;
+
+  const multilineLiteral = /^\s*description\s*=\s*'''([\s\S]*?)'''\s*(?:#.*)?$/m.exec(block);
+  if (multilineLiteral) return multilineLiteral[1].trim().length > 0;
+
+  const basic = /^\s*description\s*=\s*"((?:[^"\\]|\\.)*)"\s*(?:#.*)?$/m.exec(block);
+  if (basic) return (unescapeTomlBasicString(basic[1]) ?? "").trim().length > 0;
+
+  const literal = /^\s*description\s*=\s*'([^']*)'\s*(?:#.*)?$/m.exec(block);
+  return literal ? literal[1].trim().length > 0 : false;
+}
+
 /** Age out tombstones past the restore window and cap the list, newest first. */
 export function pruneTombstones(
   entries: RemovedFamiliarTombstone[],

@@ -56,7 +56,26 @@ export function slugifyFamiliarId(value: string): string {
 }
 
 function tomlString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/[\\"\b\t\n\f\r\u0000-\u001f\u007f]/g, (character) => {
+    switch (character) {
+      case "\\":
+        return "\\\\";
+      case '"':
+        return '\\"';
+      case "\b":
+        return "\\b";
+      case "\t":
+        return "\\t";
+      case "\n":
+        return "\\n";
+      case "\f":
+        return "\\f";
+      case "\r":
+        return "\\r";
+      default:
+        return `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`;
+    }
+  })}"`;
 }
 
 export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): OnboardingFamiliarDraft {

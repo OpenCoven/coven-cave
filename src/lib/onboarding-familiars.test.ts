@@ -99,6 +99,23 @@ assert.deepEqual(hermesDraft, {
 assert.match(buildFamiliarsToml(hermesDraft), /description = "Plans and coordinates work\."/);
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
 
+const escapedDescriptionToml = buildFamiliarsToml(
+  normalizeFamiliarDraft({
+    displayName: "Escaped",
+    description: 'First line\nSecond line\twith a quote " and a slash \\.',
+  }),
+);
+assert.match(
+  escapedDescriptionToml,
+  /description = "First line\\nSecond line\\twith a quote \\" and a slash \\\\."/,
+  "control characters and quotes are escaped into a valid TOML basic string",
+);
+assert.doesNotMatch(
+  escapedDescriptionToml,
+  /description = "First line\nSecond line/,
+  "a multiline description never creates a multiline TOML basic string",
+);
+
 
 assert.throws(
   () =>

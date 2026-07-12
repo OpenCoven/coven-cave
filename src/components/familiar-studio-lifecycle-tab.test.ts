@@ -114,6 +114,13 @@ assert.match(source, /onRosterChanged\?\.\(\)/);
   // Restore refuses to clobber a re-created id (duplicate [[familiar]] blocks —
   // the daemon only reads the first) and keeps the tombstone for later.
   assert.match(removedRoute, /familiarsTomlContainsId/);
+  assert.match(removedRoute, /hasNonemptyDescriptionFromTomlBlock/);
+  const descriptionValidationAt = removedRoute.lastIndexOf("hasNonemptyDescriptionFromTomlBlock");
+  assert.ok(descriptionValidationAt > 0, "restore validates its tombstone description");
+  assert.ok(
+    descriptionValidationAt < removedRoute.indexOf("await takeTombstone(id)"),
+    "restore validates a tombstone description before consuming it",
+  );
   assert.match(removedRoute, /status: 409/);
 }
 

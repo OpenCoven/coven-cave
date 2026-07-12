@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 const {
   removeFamiliarBlockFromToml,
   displayNameFromTomlBlock,
+  hasNonemptyDescriptionFromTomlBlock,
   pruneTombstones,
   normalizeTombstones,
   TOMBSTONE_MAX_ENTRIES,
@@ -11,7 +12,7 @@ const {
 
 const HEADER = "# User familiars for this Coven.\n";
 const block = (id, name) =>
-  `[[familiar]]\nid = "${id}"\ndisplay_name = "${name}"\nrole = "Familiar"\nharness = "codex"\nmodel = "gpt-5.2-codex"\n`;
+  `[[familiar]]\nid = "${id}"\ndisplay_name = "${name}"\nrole = "Familiar"\ndescription = "Helps with familiar work."\nharness = "codex"\nmodel = "gpt-5.2-codex"\n`;
 const THREE = `${HEADER}\n${block("ada", "Ada")}\n${block("bel", "Bel")}\n${block("cyra", "Cyra")}`;
 
 // Remove the middle block: neighbors and the header survive byte-for-byte order.
@@ -87,6 +88,29 @@ const THREE = `${HEADER}\n${block("ada", "Ada")}\n${block("bel", "Bel")}\n${bloc
     'The "Best"',
   );
   assert.equal(displayNameFromTomlBlock('[[familiar]]\nid = "x"\n'), null);
+}
+
+// Restores must never reintroduce a registry record that the daemon cannot
+// parse because its required description is missing or blank.
+{
+  assert.equal(hasNonemptyDescriptionFromTomlBlock(block("ada", "Ada")), true);
+  assert.equal(
+    hasNonemptyDescriptionFromTomlBlock('[[familiar]]\nid = "x"\ndescription = "   "\n'),
+    false,
+  );
+  assert.equal(
+    hasNonemptyDescriptionFromTomlBlock('[[familiar]]\nid = "x"\ndescription = "\\n"\n'),
+    false,
+  );
+  assert.equal(
+    hasNonemptyDescriptionFromTomlBlock('[[familiar]]\nid = "x"\ndescription = "\\u0020"\n'),
+    false,
+  );
+  assert.equal(hasNonemptyDescriptionFromTomlBlock('[[familiar]]\nid = "x"\n'), false);
+  assert.equal(
+    hasNonemptyDescriptionFromTomlBlock("[[familiar]]\nid = 'x'\ndescription = 'Restores safely.'\n"),
+    true,
+  );
 }
 
 // Tombstone pruning: age out past the window, cap the list, newest first.

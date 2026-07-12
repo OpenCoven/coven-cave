@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { saveConfig, type FamiliarBinding } from "@/lib/cave-config";
 import { buildFamiliarsToml, familiarsTomlContainsId } from "@/lib/onboarding-familiars";
+import { hasNonemptyDescriptionFromTomlBlock } from "@/lib/familiar-removal";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { readTombstones, takeTombstone } from "@/lib/server/familiar-tombstones";
 
@@ -47,6 +48,16 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { ok: false, error: `Nothing to restore for "${id}".` },
       { status: 404 },
+    );
+  }
+
+  // Older tombstones can contain the same description-less block that broke
+  // the daemon roster. Keep the tombstone so the user can recreate it with a
+  // description; never restore a registry record Coven cannot parse.
+  if (entry.tomlBlock && !hasNonemptyDescriptionFromTomlBlock(entry.tomlBlock)) {
+    return NextResponse.json(
+      { ok: false, error: `"${id}" needs a description before it can be restored.` },
+      { status: 409 },
     );
   }
 
