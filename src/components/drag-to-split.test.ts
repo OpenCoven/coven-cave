@@ -64,20 +64,68 @@ test("Shell hosts the split inside the detail main with a drop zone", () => {
   assert.match(src, /enableDrop=\{!isMobile\}/, "drop zone is desktop-only");
 });
 
-test("workspace owns split state and the drop handler, and reuses renderSurface", () => {
+test("workspace normalizes primary and secondary panes through one renderer", () => {
   const src = read("./workspace.tsx");
-  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<SplitTarget\[\]>\(\[\]\)/);
+  assert.match(src, /normalizeWorkspacePaneRequest/, "all raw page ids pass through the request normalizer");
+  assert.match(src, /workspacePaneRequestKey/, "primary and secondary identity uses canonical page + variant");
+  assert.match(src, /const \[primaryPaneRequest, setPrimaryPaneRequest\] = useState<WorkspacePaneRequest>/);
+  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<WorkspacePaneRequest\[\]>\(\[\]\)/);
   assert.match(src, /const openSplitPage = useCallback/);
   assert.match(src, /addSecondaryWorkspaceTile/, "workspace appends split pages up to the secondary tile cap");
-  assert.match(src, /const renderSurface = \(mode: CaveMode\): ReactNode =>/);
-  assert.match(src, /\{renderSurface\(mode\)\}/, "primary uses renderSurface");
-  assert.match(src, /renderSurface\(target\.mode\)/, "secondary tiles reuse the same machinery");
+  assert.match(src, /const renderPaneRequest = \(request: WorkspacePaneRequest\): ReactNode =>/);
+  assert.match(src, /detail=\{renderPaneRequest\(primaryPaneRequest\)\}/, "primary uses the normalized renderer");
+  assert.match(src, /content: renderPaneRequest\(request\)/, "secondary tiles use the normalized renderer");
+  assert.match(src, /<WorkspacePanePage[\s\S]*instanceId=\{request\.instanceId\}/, "every renderer result receives the standard pane root");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
-  assert.match(src, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
-  // Far-edge collapse promotes a page split to the primary via setMode.
+  assert.match(src, /openSplitPage\("salem", "right"\)/, "Salem uses the same normalized split path");
+  // Far-edge collapse promotes the complete request, retaining aliases and instance identity.
   assert.match(src, /const promoteSplitTile = useCallback/, "workspace owns the promote handler");
-  assert.match(src, /if \(target\?\.kind === "page"\) setMode\(target\.mode\)/, "promoting a page switches the primary mode");
+  assert.match(src, /setPrimaryPaneRequest\(target\)/, "promotion carries the complete normalized request");
   assert.match(src, /onPromoteSplitTile=\{promoteSplitTile\}/, "promote handler is passed to Shell");
+  assert.doesNotMatch(src, /\bSplitTarget\b/, "the divergent legacy split-target union is removed");
+  assert.doesNotMatch(src, /\bm as WorkspaceMode\b/, "raw drag strings are never asserted into a mode");
+});
+
+test("workspace renderer covers every canonical page without a Home fallback", () => {
+  const src = read("./workspace.tsx");
+  for (const pageId of [
+    "agents",
+    "home",
+    "chat",
+    "board",
+    "inbox",
+    "browser",
+    "github",
+    "marketplace",
+    "flow",
+    "submissions",
+    "grimoire",
+    "settings",
+    "dashboard",
+    "salem",
+    "memory",
+    "terminal",
+  ]) {
+    assert.match(src, new RegExp(`case ["']${pageId}["']:`), `renderer explicitly handles ${pageId}`);
+  }
+  assert.match(src, /isRoleSurfaceMode\(request\.pageId\)/, "dynamic role pages are handled before the static switch");
+  assert.match(src, /case "flow":[\s\S]{0,180}<FlowView/, "Flow mounts its registered lazy surface");
+  assert.match(src, /case "settings":[\s\S]{0,180}<SettingsShell embedded/, "Settings mounts in embedded mode");
+  assert.match(src, /case "dashboard":[\s\S]{0,180}<DashboardSurface/, "Dashboard mounts its client adapter");
+  assert.match(src, /case "terminal":[\s\S]{0,300}paneInstanceId=\{request\.instanceId\}/, "Terminal sessions are pane-instance scoped");
+  assert.doesNotMatch(src, /const WORKSPACE_MODE_TITLES: Record/, "titles come from the registry");
+  assert.doesNotMatch(src, /const SURFACE_ORDER: WorkspaceMode\[\]/, "keyboard order comes from registry definitions");
+  assert.doesNotMatch(src, /renderRegisteredPage[\s\S]*default:[\s\S]{0,240}<HomeComposer/, "unknown renderer cases never masquerade as Home");
+});
+
+test("workspace deep links retain requested aliases and reject unknown pages before mutation", () => {
+  const src = read("./workspace.tsx");
+  assert.match(src, /params\.get\("mode"\)[\s\S]*workspacePageDefinition/, "mode deep links are registry validated");
+  assert.match(src, /params\.get\("split"\)[\s\S]*workspacePageDefinition/, "split deep links are registry validated");
+  assert.match(src, /params\.get\("splitSide"\)/, "split side is parsed explicitly");
+  assert.match(src, /params\.set\("mode", primaryPaneRequest\.requestedPageId\)/, "primary aliases serialize by requested id");
+  assert.match(src, /params\.set\("split", splitTargets\[0\]\.requestedPageId\)/, "secondary aliases serialize by requested id");
+  assert.match(src, /const request = normalizeWorkspacePaneRequest\(nextPaneInstanceId\(\), pageId\);[\s\S]{0,120}if \(!request\) return;[\s\S]{0,120}setSplitSide/, "unknown split ids return before any split mutation");
 });
 
 test("the right companion (agent) panel is no longer mounted", () => {

@@ -6,6 +6,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const paletteNavigation = await readFile(new URL("../lib/workspace-palette-navigation.ts", import.meta.url), "utf8");
 
 // workspace-sidebar.tsx feature assertions
 assert.match(workspaceSidebar, /deriveChatProjectGroups\(applyProjectOverrides/, "should group by project with overrides");
@@ -50,5 +51,11 @@ assert.match(workspaceSidebar, /aria-label="Search projects and threads"/, "sear
 // chat-view wiring (unchanged — just verify it still exists)
 assert.match(chatView, /setProjectAccessRoot/, "chat-view should capture failing project root on 403");
 assert.match(chatView, /async function handleAddProject/, "chat-view should implement add-project recovery");
+
+assert.match(workspace, /WORKSPACE_DAILY_PAGE_DEFINITIONS/, "keyboard navigation derives its daily order from registry metadata");
+assert.doesNotMatch(workspace, /const SURFACE_ORDER: WorkspaceMode\[\]/, "workspace has no duplicate keyboard order");
+assert.doesNotMatch(workspace, /\bas CaveMode\b|\bas WorkspaceMode\b/, "workspace rejects arbitrary strings instead of asserting navigation types");
+assert.match(paletteNavigation, /CURRENT_WORKSPACE_PALETTE_PAGE_DEFINITIONS[\s\S]*WORKSPACE_PALETTE_PAGE_DEFINITIONS/, "palette routes directly from the registry list");
+assert.doesNotMatch(paletteNavigation, /id !== "flow"/, "Flow is no longer temporarily excluded once its renderer exists");
 
 console.log("workspace-sidebar-wiring.test.ts passed");

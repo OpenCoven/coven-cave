@@ -8,7 +8,6 @@ import { groupInboxFeed } from "@/lib/inbox-feed";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
-import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { isRoutableWorkspacePaletteMode } from "@/lib/workspace-palette-navigation";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
@@ -55,14 +54,19 @@ import {
   BrowserPane,
   CalendarView,
   FamiliarWorkQueueView,
+  FlowView,
   GitHubView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
+import { DashboardSurface } from "@/components/dashboard/dashboard-surface";
+import { RailTerminalPanel } from "@/components/rail-terminal-panel";
+import { SettingsShell } from "@/components/settings-shell";
+import { WorkspacePanePage } from "@/components/workspace-pane-page";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
@@ -89,7 +93,6 @@ import {
   isRoleSurfaceMode,
   parseRoleSurfaceMode,
   roleSurfaceMode,
-  type RoleSurfaceMode,
 } from "@/lib/role-surfaces";
 import { useRoleSurfaceSession } from "@/lib/use-role-surfaces";
 import { RoleSurfaceHost } from "@/components/role-surface-host";
@@ -113,12 +116,17 @@ import {
   addSecondaryWorkspaceTile,
   removeSecondaryWorkspaceTile,
 } from "@/lib/workspace-tiles";
-
-type WorkspaceMode = WorkspaceModeFromDaemon;
-
-// Everything the primary detail pane can show: the built-in workspace modes
-// plus registered Role Surfaces via the generic `surface:<id>` mode.
-type CaveMode = WorkspaceMode | RoleSurfaceMode;
+import {
+  WORKSPACE_DAILY_PAGE_DEFINITIONS,
+  WORKSPACE_PALETTE_PAGE_DEFINITIONS,
+  workspacePageDefinition,
+  type WorkspacePageId,
+} from "@/lib/workspace-page-registry";
+import {
+  normalizeWorkspacePaneRequest,
+  workspacePaneRequestKey,
+  type WorkspacePaneRequest,
+} from "@/lib/workspace-pane-request";
 
 type WorkspaceTauriInternals = {
   invoke?: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -130,51 +138,19 @@ function closeAllNativeBrowserWebviews(): void {
   void internals?.invoke?.("browser_close_all");
 }
 
-// What the drag-to-split secondary pane is showing: either a draggable page
-// (a workspace mode) or one of the companion surfaces (Salem / Memory /
-// Browser) that were re-homed here when the right rail was removed.
-type SplitTarget =
-  | { kind: "page"; mode: WorkspaceMode }
-  | { kind: "salem" }
-  | { kind: "memory" }
-  | { kind: "browser" };
+const INITIAL_PRIMARY_PANE_REQUEST = normalizeWorkspacePaneRequest(
+  "workspace-pane-primary",
+  "chat",
+);
+if (!INITIAL_PRIMARY_PANE_REQUEST) throw new Error("The Chat workspace page must be registered");
 
-const SPLIT_COMPANION_TITLES: Record<Exclude<SplitTarget["kind"], "page">, string> = {
-  salem: "Salem",
-  memory: "Memory",
-  browser: "Browser",
-};
-
-function splitTargetKey(target: SplitTarget): string {
-  return target.kind === "page" ? `page:${target.mode}` : target.kind;
-}
-
-function splitTargetTitle(target: SplitTarget): string {
-  return target.kind === "page" ? WORKSPACE_MODE_TITLES[target.mode] : SPLIT_COMPANION_TITLES[target.kind];
-}
-
-// CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
-// title, so the detail pane carries a visually-hidden h1 naming the active
-// surface. Labels mirror the sidebar's vocabulary.
-const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
-  agents: "Familiars",
-  home: "Home",
-  chat: "Familiars",
-  groupchat: "Group Chat",
-  board: "Tasks",
-  calendar: "Schedules",
-  inbox: "Schedules",
-  browser: "Browser",
-  github: "GitHub",
-  roles: "Roles",
-  marketplace: "Marketplace",
-  flow: "Flow",
-  submissions: "Submissions",
-  capabilities: "Capabilities",
-  "familiar-work-queue": "Queue",
-  journal: "Journal",
-  grimoire: "Grimoire",
-};
+// Registry metadata owns shortcut membership and order. Browser remains the
+// fifth on-demand shortcut while the four daily destinations retain their
+// exact registry order.
+const WORKSPACE_SHORTCUT_PAGE_DEFINITIONS = Object.freeze([
+  ...WORKSPACE_DAILY_PAGE_DEFINITIONS,
+  ...WORKSPACE_PALETTE_PAGE_DEFINITIONS.filter(({ id }) => id === "browser"),
+]);
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
 // thread, same in-app hash idiom as `#card-<id>`.
@@ -199,32 +175,20 @@ function clearChatHash() {
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
 }
 
-// Mode deep links: workspace modes live inside this SPA shell and aren't
-// URL-addressable on their own. A `?mode=<WorkspaceMode>` query param lets
-// external links land directly on a surface.
-// Only modes the shell can actually render are honoured — validated against
-// WORKSPACE_MODE_TITLES, which is keyed by every WorkspaceMode — so unknown
-// values are ignored silently.
-function readModeParam(): WorkspaceMode | null {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("mode");
-  if (raw && Object.prototype.hasOwnProperty.call(WORKSPACE_MODE_TITLES, raw)) {
-    return raw as WorkspaceMode;
-  }
-  return null;
-}
-
-function clearModeParam() {
-  if (typeof window === "undefined") return;
+function readWorkspaceDeepLink(): {
+  mode: WorkspacePageId | null;
+  split: WorkspacePageId | null;
+  splitSide: "left" | "right";
+} {
+  if (typeof window === "undefined") return { mode: null, split: null, splitSide: "right" };
   const params = new URLSearchParams(window.location.search);
-  if (!params.has("mode")) return;
-  params.delete("mode");
-  const query = params.toString();
-  window.history.replaceState(
-    null,
-    "",
-    window.location.pathname + (query ? `?${query}` : "") + window.location.hash,
-  );
+  const modeRaw = params.get("mode");
+  const mode = modeRaw ? workspacePageDefinition(modeRaw)?.id ?? null : null;
+  const splitRaw = params.get("split");
+  const split = splitRaw ? workspacePageDefinition(splitRaw)?.id ?? null : null;
+  const splitSideRaw = params.get("splitSide");
+  const splitSide = splitSideRaw === "left" ? "left" : "right";
+  return { mode, split, splitSide };
 }
 
 function readMobileModeEnabled() {
@@ -310,44 +274,47 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // Chat-first boot (cave-hsa6): the app opens on the conversation — the chat
-  // surface with the thread sidebar (a fresh session lands on the task-aware
-  // empty state). Home stays one step away (⌘1 / nav / the chat Back control,
-  // whose lastNonChatMode below still defaults to "home"). Deep links (?mode=,
-  // #chat-…) and cave:navigate-mode override this as before.
-  const [mode, setModeRaw] = useState<CaveMode>("chat");
-  // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
-  // route straight into Grimoire's Journal tab (see the setMode `journal` branch)
-  // and so the choice persists across Grimoire remounts within a session.
-  const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
-  // Group Chat retired its standalone page — it's now a tab inside the Chat
-  // surface. Any request for the legacy `groupchat` mode (nav, deep link,
-  // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
-  // tab, so `mode` is never actually "groupchat" and the surface never flashes.
-  const setMode = useCallback((next: CaveMode) => {
-    if (next === "groupchat") {
-      // Set the latch synchronously so a freshly-mounting ChatSurface opens the
-      // Group tab on mount; the event covers an already-mounted ChatSurface.
-      markCovenTabPending();
-      setModeRaw("chat");
-      window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT)), 0);
-      return;
+  const paneInstanceSequenceRef = useRef(0);
+  const nextPaneInstanceId = useCallback(() => {
+    const randomUUID = globalThis.crypto?.randomUUID;
+    if (typeof randomUUID === "function") {
+      try {
+        return `workspace-pane-${randomUUID.call(globalThis.crypto)}`;
+      } catch {
+        // Some embedded webviews expose crypto without implementing randomUUID.
+      }
     }
-    if (next === "journal") {
-      // Journal is now a tab inside the Grimoire surface. Every entry point
-      // (sidebar row, ⌘K palette, ?mode= deep link, cave:navigate-mode,
-      // dashboard links) funnels through setMode, so opening Grimoire on its
-      // Journal tab here covers them all. (Per-familiar journals still live in
-      // Settings → Familiars → Journal.)
-      setGrimoireView("journal");
-      setModeRaw("grimoire");
-      return;
-    }
-    setModeRaw(next);
+    paneInstanceSequenceRef.current += 1;
+    return `workspace-pane-fallback-${paneInstanceSequenceRef.current}`;
   }, []);
-  // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
-  // Its back control returns to the surface the user came from.
-  const [lastNonChatMode, setLastNonChatMode] = useState<CaveMode>("home");
+
+  // The normalized request is the primary-page authority. Its canonical id is
+  // still exposed as `mode` below for legacy session/navigation effects, while
+  // aliases and supplemental pages retain their full requested identity.
+  const [primaryPaneRequest, setPrimaryPaneRequest] = useState<WorkspacePaneRequest>(
+    INITIAL_PRIMARY_PANE_REQUEST,
+  );
+  const mode = primaryPaneRequest.pageId;
+  // Which tab the Grimoire surface shows. Lifted here so the Journal nav row can
+  // retain an explicit choice when the default Grimoire request is active.
+  const [grimoireView, setGrimoireView] = useState<GrimoireViewKind>("docs");
+  const setMode = useCallback((pageId: string) => {
+    const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), pageId);
+    if (!request) return;
+    setPrimaryPaneRequest((current) =>
+      request.variant === "default" &&
+      workspacePaneRequestKey(current) === workspacePaneRequestKey(request)
+        ? current
+        : request,
+    );
+  }, [nextPaneInstanceId]);
+
+  const initialHomeRequest = normalizeWorkspacePaneRequest("workspace-pane-last-home", "home");
+  if (!initialHomeRequest) throw new Error("The Home workspace page must be registered");
+  // Chat's back action retains the complete prior request, including companion
+  // pages and alias variants that cannot be represented by a legacy mode alone.
+  const [lastNonChatPaneRequest, setLastNonChatPaneRequest] =
+    useState<WorkspacePaneRequest>(initialHomeRequest);
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -364,7 +331,7 @@ export function Workspace() {
   const daemonHealthyStreakRef = useRef(0);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
 
-  // ── Mode-transition crossfade ──────────────────────────────────────────
+  // ── Page-transition crossfade ──────────────────────────────────────────
   // The `.cave-mode-fade` CSS animation only plays on the wrapper's *initial*
   // mount. Re-firing it on a mode switch would need `key={mode}` on the
   // wrapper, which is deliberately forbidden — the key remounts keepalive
@@ -391,19 +358,26 @@ export function Workspace() {
       [{ opacity: 0 }, { opacity: 1 }],
       { duration: 120, easing: "ease-out" },
     );
-  }, [mode]);
+  }, [primaryPaneRequest.instanceId]);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
-  // Drag-to-split: up to three secondary surfaces opened beside the primary
-  // one (four visible pages total). Targets are draggable pages or companion
-  // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
-  // `splitSide` preserves the familiar 2-page left/right snap behavior.
-  const [splitTargets, setSplitTargets] = useState<SplitTarget[]>([]);
+  // Drag-to-split: up to three normalized secondary requests beside the
+  // normalized primary (four visible pages total).
+  const [splitTargets, setSplitTargets] = useState<WorkspacePaneRequest[]>([]);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
-  const addSplitTarget = useCallback((target: SplitTarget, side: "left" | "right" = "right") => {
-    setSplitSide(side);
-    setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, splitTargetKey));
-  }, []);
+  const [workspaceDeepLinkHydrated, setWorkspaceDeepLinkHydrated] = useState(false);
+  const openSplitPage = useCallback(
+    (pageId: string, side: "left" | "right") => {
+      const request = normalizeWorkspacePaneRequest(nextPaneInstanceId(), pageId);
+      if (!request) return;
+      if (workspacePaneRequestKey(request) === workspacePaneRequestKey(primaryPaneRequest)) return;
+      setSplitSide(side);
+      setSplitTargets((current) =>
+        addSecondaryWorkspaceTile(current, request, workspacePaneRequestKey),
+      );
+    },
+    [nextPaneInstanceId, primaryPaneRequest],
+  );
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
@@ -474,17 +448,21 @@ export function Workspace() {
   sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const primaryPaneRequestRef = useRef(primaryPaneRequest);
+  primaryPaneRequestRef.current = primaryPaneRequest;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
   useEffect(() => {
-    if (mode !== "chat") setLastNonChatMode(mode);
-  }, [mode]);
+    if (primaryPaneRequest.pageId !== "chat") {
+      setLastNonChatPaneRequest(primaryPaneRequest);
+    }
+  }, [primaryPaneRequest]);
 
   const exitChatMode = useCallback(() => {
-    setMode(lastNonChatMode === "chat" ? "home" : lastNonChatMode);
+    setPrimaryPaneRequest(lastNonChatPaneRequest);
     shellRef.current?.dismissNavMobile();
-  }, [lastNonChatMode]);
+  }, [lastNonChatPaneRequest]);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -640,11 +618,11 @@ export function Workspace() {
     // Salem was re-homed from the (removed) right rail into the drag-to-split
     // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
-      addSplitTarget({ kind: "salem" });
+      openSplitPage("salem", "right");
     };
     window.addEventListener("cave:salem-open", openSalem);
     return () => window.removeEventListener("cave:salem-open", openSalem);
-  }, [addSplitTarget]);
+  }, [openSplitPage]);
 
   // Cross-surface "create a familiar" bridge. The dock (and any deep surface
   // that can't reach openOnboarding directly) announces intent and the
@@ -657,17 +635,51 @@ export function Workspace() {
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
 
-  // `?mode=<WorkspaceMode>` deep link: external links can land directly on a
-  // surface. Runs once on mount,
-  // mirrors the hash deep-link idiom — switch then strip the param so reloads
-  // and back/forward stay clean.
+  // Registry-backed workspace deep links. Hydration stays effect-driven so the
+  // server and first client render agree; once applied, state is serialized by
+  // requested id so aliases such as Group and Journal round-trip exactly.
   useEffect(() => {
-    const target = readModeParam();
-    if (!target) return;
-    setMode(target);
-    clearModeParam();
+    const deepLink = readWorkspaceDeepLink();
+    const deepLinkPrimary = deepLink.mode
+      ? normalizeWorkspacePaneRequest(nextPaneInstanceId(), deepLink.mode)
+      : null;
+    const resolvedPrimary = deepLinkPrimary ?? primaryPaneRequestRef.current;
+    if (deepLinkPrimary) setPrimaryPaneRequest(deepLinkPrimary);
+
+    if (deepLink.split) {
+      const splitRequest = normalizeWorkspacePaneRequest(nextPaneInstanceId(), deepLink.split);
+      if (
+        splitRequest &&
+        workspacePaneRequestKey(splitRequest) !== workspacePaneRequestKey(resolvedPrimary)
+      ) {
+        setSplitSide(deepLink.splitSide);
+        setSplitTargets((current) =>
+          addSecondaryWorkspaceTile(current, splitRequest, workspacePaneRequestKey),
+        );
+      }
+    }
+    setWorkspaceDeepLinkHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!workspaceDeepLinkHydrated) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("mode", primaryPaneRequest.requestedPageId);
+    if (splitTargets.length > 0) {
+      params.set("split", splitTargets[0].requestedPageId);
+      params.set("splitSide", splitSide);
+    } else {
+      params.delete("split");
+      params.delete("splitSide");
+    }
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname + (query ? `?${query}` : "") + window.location.hash,
+    );
+  }, [primaryPaneRequest, splitSide, splitTargets, workspaceDeepLinkHydrated]);
 
   // File/diff links target ChatSurface's code rail. ChatSurface only mounts in
   // chat mode, so preserve event detail from non-chat surfaces until it mounts.
@@ -788,7 +800,7 @@ export function Workspace() {
 
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
-  // click replaces the scope with just that familiar (today's behavior).
+    // click replaces the scope with just that familiar (today's behavior).
   const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
     setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
@@ -796,18 +808,10 @@ export function Workspace() {
     // select restores that familiar's last-viewed surface.
     if (opts?.multi) return;
     const last = getLastSurface(id);
-    // Guard against retired/unknown persisted modes (e.g. the removed
-    // "projects" standalone surface). Only restore if the stored string is
-    // still a valid WorkspaceMode; otherwise fall back to the default.
-    const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
-    if (last === "flow") setMode("inbox");
-    // "journal" persists from before the page retired; restoring it would
-    // hard-navigate to Settings on a mere familiar select. Stay put instead.
-    else if (last === "journal") { /* no-op */ }
-    // A persisted Role Surface mode restores too — if this familiar no longer
-    // holds the role, the visibility effect below falls back generically.
-    else if (last && (VALID_MODES.has(last) || isRoleSurfaceMode(last))) setMode(last as CaveMode);
-  }, []);
+    // The normalizer rejects retired/unknown persisted ids before any primary
+    // state changes. Registered aliases and role rooms retain their variants.
+    if (last) setMode(last);
+  }, [setMode]);
 
   const selectFamiliar = useCallback((id: string) => {
     selectFamiliarScope(id);
@@ -1473,15 +1477,11 @@ export function Workspace() {
         }
         return;
       }
-      if (targetMode === "flow") {
-        setMode("inbox");
-        return;
-      }
-      setMode(targetMode as WorkspaceMode);
+      setMode(targetMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
-  }, [openFamiliarSession]);
+  }, [openFamiliarSession, setMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1583,20 +1583,13 @@ export function Workspace() {
   }, [startFamiliarChat]);
 
   useEffect(() => {
-    // ⌘1..⌘5 in the order surfaces appear top-to-bottom in the left sidebar
-    // (Work group, then Tools group). ⌘9 is Projects; Journal/Roles/Workflows
-    // are unshortcut.
-    const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "chat", "board", "inbox", "browser",
-    ];
-
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
       const alt = e.altKey;
 
       // ⌘1..⌘9 -> sidebar surface
       if (meta && !alt && /^[1-9]$/.test(e.key)) {
-        // ⌘9 -> Projects tab inside chat surface (no SURFACE_ORDER lookup needed)
+        // ⌘9 -> Projects tab inside chat surface (outside the page-cycle list)
         if (e.key === "9") {
           e.preventDefault();
           setMode("chat");
@@ -1604,25 +1597,29 @@ export function Workspace() {
           return;
         }
         const idx = parseInt(e.key, 10) - 1;
-        const target = SURFACE_ORDER[idx];
+        const target = WORKSPACE_SHORTCUT_PAGE_DEFINITIONS[idx];
         if (target) {
           e.preventDefault();
-          setMode(target);
+          setMode(target.id);
         }
         return;
       }
 
-      // ⌘[ / ⌘] -> previous / next surface, cycling through SURFACE_ORDER in the
+      // ⌘[ / ⌘] -> previous / next surface, cycling through registry metadata in the
       // same top-to-bottom order as ⌘1..⌘8 (wraps at the ends). From an off-list
       // surface (Journal/Roles/Workflows), ⌘] lands on the first surface and ⌘[
       // on the last.
       if (meta && !alt && (e.key === "[" || e.key === "]")) {
         e.preventDefault();
         const step = e.key === "]" ? 1 : -1;
-        const cur = SURFACE_ORDER.indexOf(mode as WorkspaceMode);
+        const cur = WORKSPACE_SHORTCUT_PAGE_DEFINITIONS.findIndex(
+          ({ id }) => id === primaryPaneRequest.requestedPageId || id === primaryPaneRequest.pageId,
+        );
         const base = cur === -1 ? (step === 1 ? -1 : 0) : cur;
-        const next = (base + step + SURFACE_ORDER.length) % SURFACE_ORDER.length;
-        setMode(SURFACE_ORDER[next]);
+        const next =
+          (base + step + WORKSPACE_SHORTCUT_PAGE_DEFINITIONS.length) %
+          WORKSPACE_SHORTCUT_PAGE_DEFINITIONS.length;
+        setMode(WORKSPACE_SHORTCUT_PAGE_DEFINITIONS[next].id);
         return;
       }
 
@@ -1665,7 +1662,7 @@ export function Workspace() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [familiars, activeId, mode, selectFamiliar, startFamiliarChat, nextRouter]);
+  }, [familiars, activeId, mode, nextRouter, primaryPaneRequest, selectFamiliar, setMode, startFamiliarChat]);
 
   const showFamiliarChatList = useCallback(() => {
     setPendingChatAction({ kind: "list", nonce: Date.now() });
@@ -1748,49 +1745,48 @@ export function Workspace() {
     }
   }, [openFamiliarSession, openReminderLink]);
 
-  // Open a page in the split beside the current surface (drag-to-split drop).
-  const openSplitPage = useCallback(
-    (m: string, side: "left" | "right") => {
-      if (!m || m === mode) return;
-      addSplitTarget({ kind: "page", mode: m as WorkspaceMode }, side);
-    },
-    [addSplitTarget, mode],
-  );
-
   const closeSplit = useCallback(() => {
     // Tell Salem it's undocking so it can pause, mirroring the old rail teardown.
     setSplitTargets((prev) => {
-      if (prev.some((target) => target.kind === "salem")) window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+      if (prev.some((request) => request.pageId === "salem")) {
+        window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+      }
       return [];
     });
   }, []);
 
   const closeSplitTile = useCallback((id: string) => {
     setSplitTargets((prev) => {
-      const closing = prev.find((target) => splitTargetKey(target) === id);
-      if (closing?.kind === "salem") window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-      return removeSecondaryWorkspaceTile(prev, id, splitTargetKey);
+      const closing = prev.find((request) => workspacePaneRequestKey(request) === id);
+      if (closing?.pageId === "salem") {
+        window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+      }
+      return removeSecondaryWorkspaceTile(prev, id, workspacePaneRequestKey);
     });
   }, []);
 
-  // Promote a split tile to the sole surface (its divider was dragged past the
-  // far edge, collapsing the primary). Only page tiles map to a primary mode —
-  // switching to it makes the redundant-split effect below clear the tile.
-  // Companion tiles (Salem / Memory / Browser) have no primary mode, so they
-  // stay put (the host leaves them at max width instead).
+  // Promotion carries the entire request, so supplemental pages, companions,
+  // aliases, and contextual instance identity all survive the transition.
   const promoteSplitTile = useCallback(
     (id: string) => {
-      const target = splitTargets.find((t) => splitTargetKey(t) === id);
-      if (target?.kind === "page") setMode(target.mode);
+      const target = splitTargets.find((request) => workspacePaneRequestKey(request) === id);
+      if (!target) return;
+      setPrimaryPaneRequest(target);
+      setSplitTargets((current) =>
+        removeSecondaryWorkspaceTile(current, id, workspacePaneRequestKey),
+      );
     },
     [splitTargets],
   );
 
-  // Page splits showing the same page as the primary are redundant — clear them
-  // (e.g. the user navigated the primary surface to a page in the split).
+  // Exact canonical page+variant duplicates are redundant. Different aliases
+  // of one canonical surface remain valid neighbors.
   useEffect(() => {
-    setSplitTargets((prev) => prev.filter((target) => target.kind !== "page" || target.mode !== mode));
-  }, [mode]);
+    const primaryKey = workspacePaneRequestKey(primaryPaneRequest);
+    setSplitTargets((current) =>
+      current.filter((request) => workspacePaneRequestKey(request) !== primaryKey),
+    );
+  }, [primaryPaneRequest]);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {

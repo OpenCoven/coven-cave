@@ -31,10 +31,10 @@ assert.doesNotMatch(
   /\{ id: "inbox",[^}]*\blabel:/,
   "Sidebar presentation does not duplicate the registry-owned Schedules title",
 );
-assert.match(
+assert.doesNotMatch(
   workspace,
-  /inbox: "Schedules"/,
-  "Workspace title map should call the surface Schedules",
+  /const WORKSPACE_MODE_TITLES: Record/,
+  "Workspace consumes the registry title instead of keeping a duplicate title map",
 );
 assert.match(
   mobileTabs,
@@ -109,7 +109,8 @@ assert.doesNotMatch(sidebar, /\{ id: "flow", iconName:/, "Flow nav is hidden fro
 assert.doesNotMatch(automations, /listFlows\(\)/, "Schedules does not load flow docs");
 assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Schedules does not run flows");
 assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Schedules does not route into Flow");
-assert.doesNotMatch(workspace, /mode === "flow" \?\s*\(\s*<FlowView/, "Persisted Flow mode does not render FlowView on the active branch");
-assert.match(workspace, /targetMode === "flow"[\s\S]{0,80}setMode\("inbox"\)/, "Flow navigation events normalize to Schedules");
+assert.match(workspace, /case "flow":[\s\S]{0,180}<FlowView/, "Flow renders its own registered lazy surface");
+assert.doesNotMatch(workspace, /targetMode === "flow"[\s\S]{0,80}setMode\("inbox"\)/, "Flow navigation no longer redirects to Schedules");
+assert.doesNotMatch(workspace, /default:[\s\S]{0,240}<HomeComposer/, "an unhandled page never falls through to Home");
 
 console.log("schedules-tabs.test.ts: ok");

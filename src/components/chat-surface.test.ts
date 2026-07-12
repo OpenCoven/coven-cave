@@ -115,8 +115,20 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /useState<FamiliarsScope>\("conversation"\)/,
-  "ChatSurface should default the scope to conversation so the ChatList shows when Chat is selected",
+  /initialScope\?: FamiliarsScope/,
+  "ChatSurface should accept an explicit initial scope for alias pane requests",
+);
+
+assert.match(
+  chatSurface,
+  /useState<FamiliarsScope>\(initialScope\)/,
+  "ChatSurface should initialize directly from the normalized request variant",
+);
+
+assert.match(
+  workspace,
+  /initialScope=\{request\.variant === "group" \? "coven" : "conversation"\}/,
+  "Workspace should map Chat and Group variants without timeout-event races",
 );
 
 assert.doesNotMatch(
