@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { Button } from "@/components/ui/button";
 import { Popover } from "@/components/ui/popover";
 import { Icon } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -258,17 +259,19 @@ export function SettingsFamiliarPicker({ familiars, value, onChange, onSummon }:
 
           {onSummon ? (
             <div className="familiar-studio-picker__footer">
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="lg"
+                fullWidth
                 className="familiar-studio-picker__summon"
                 onClick={() => {
                   resetAndClose();
                   onSummon();
                 }}
+                leadingIcon="ph:magic-wand-fill"
               >
-                <Icon name="ph:magic-wand-fill" width={14} aria-hidden />
                 Summon familiar
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>

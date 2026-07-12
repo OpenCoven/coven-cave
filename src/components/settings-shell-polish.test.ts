@@ -162,8 +162,13 @@ assert.match(
 // theme is unrecoverable once cleared).
 assert.match(
   source,
-  /aria-label=\{resetCustomArmed \? `Really discard \$\{customData\.name\}\? Click again to confirm` : `Discard \$\{customData\.name\}`\}/,
-  "the custom-theme discard button names the theme and confirms via a second click",
+  /resetCustomArmed \? \([\s\S]*?aria-label=\{`Really discard \$\{customData\.name\}\? Click again to confirm`\}/,
+  "the armed custom-theme discard button names the theme and confirms via a second click",
+);
+assert.match(
+  source,
+  /<IconButton[\s\S]*?aria-label=\{`Discard \$\{customData\.name\}`\}/,
+  "the idle custom-theme discard icon button names the theme",
 );
 assert.match(source, /setResetCustomArmed\(false\), 4000\)/, "arming auto-disarms after a beat");
 
@@ -338,8 +343,13 @@ assert.match(
 );
 assert.match(
   dashboardCss,
-  /\.settings-switch \{[\s\S]{0,400}?border-radius: 999px/,
-  "the minimal switch is a pill track",
+  /\.settings-switch \{[\s\S]{0,400}?border-radius: var\(--radius-pill\)/,
+  "the minimal switch track follows the selected pill radius",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-switch__knob \{[\s\S]{0,220}?border-radius: var\(--radius-pill\)/,
+  "the minimal switch knob follows the selected pill radius",
 );
 assert.match(
   dashboardCss,

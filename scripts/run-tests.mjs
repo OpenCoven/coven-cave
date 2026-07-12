@@ -472,6 +472,7 @@ export const SUITES = {
     "src/components/right-sidebar-fit.test.ts",
     "src/components/salem/salem.test.ts",
     "src/components/settings-shell-polish.test.ts",
+    "src/components/settings-action-buttons.test.ts",
     "src/components/settings-section-tabs.test.ts",
     "src/components/settings-overview.test.ts",
     "src/components/theme-script.test.ts",

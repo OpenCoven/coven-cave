@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import { Modal } from "./ui/modal";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
 import { useFamiliarImages } from "@/lib/cave-familiar-images";
@@ -151,13 +152,13 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
                   className="rounded-md object-cover"
                 />
               </button>
-              <button
-                type="button"
+              <Button
+                variant="danger-ghost"
+                size="xs"
                 onClick={() => removeImageConfirm.trigger(clear)}
-                className="familiar-studio-look__remove"
               >
                 {removeImageConfirm.armed ? "Really remove?" : "Remove image"}
-              </button>
+              </Button>
             </>
           ) : (
             <span className="familiar-studio-look__hint">
@@ -230,22 +231,22 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
             aria-label="Custom accent color"
             className="familiar-studio-look__custom"
           />
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => pickColor(null)}
             disabled={!currentColor}
-            className="familiar-studio-look__reset"
           >
             Reset
-          </button>
+          </Button>
         </div>
         <div className="familiar-studio-look__palette-actions">
-          <button type="button" onClick={applyPaletteByFamiliar}>
+          <Button variant="secondary" size="xs" onClick={applyPaletteByFamiliar}>
             Palette by familiar
-          </button>
-          <button type="button" onClick={applyPaletteByHarness}>
+          </Button>
+          <Button variant="secondary" size="xs" onClick={applyPaletteByHarness}>
             Palette by runtime
-          </button>
+          </Button>
         </div>
         <p className="familiar-studio-look__note">
           Pastels follow the current theme accent. Use same-runtime scope for a
