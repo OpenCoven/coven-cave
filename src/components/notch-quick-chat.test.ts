@@ -43,6 +43,100 @@ assert.match(
   "the notch window floats frameless above other windows without a taskbar entry",
 );
 
+// ── Follow the mouse ─────────────────────────────────────────────────────────
+// The collapsed pill glides along the top strip after the cursor, hopping
+// monitors with it; expanded panels stay put and the toggle makes ticks free.
+assert.match(
+  shell,
+  /fn spawn_notch_mouse_follower\(app: &tauri::AppHandle\)/,
+  "a follower thread drives the mouse-chasing pill",
+);
+assert.match(
+  shell,
+  /fn notch_follow_tick\(app: &tauri::AppHandle\) \{[\s\S]{0,400}if !config\.follow_mouse \{\s*\n\s*return;/,
+  "ticks are free when follow-mouse is customized off",
+);
+assert.match(
+  shell,
+  /if state\.expanded\.load\(std::sync::atomic::Ordering::Relaxed\) \{\s*\n\s*return;/,
+  "an expanded panel never chases the mouse",
+);
+assert.match(
+  shell,
+  /monitor_from_point\(cursor\.x, cursor\.y\)/,
+  "the pill follows the cursor across monitors",
+);
+assert.match(
+  shell,
+  /fn notch_follow_x\(center_x: f64, monitor_x: f64, monitor_w: f64, width: f64\) -> f64/,
+  "the chase clamps inside the monitor span",
+);
+
+// ── Fit inside the top bar ───────────────────────────────────────────────────
+// The collapsed pill sizes itself into the menu-bar strip (monitor work-area
+// delta) and macOS lifts the window to status level so the bar can't paint
+// over it.
+assert.match(
+  shell,
+  /fn menu_bar_strip_height\(monitor: &tauri::Monitor\) -> Option<f64>/,
+  "the shell measures the reserved top strip from the monitor work area",
+);
+assert.match(
+  shell,
+  /fn notch_collapsed_size\(config: &NotchConfig, strip_height: Option<f64>\)/,
+  "the collapsed pill squeezes into the strip when fit-menu-bar is on",
+);
+assert.match(
+  shell,
+  /setLevel: 25isize/,
+  "macOS lifts the notch to status-window level so it shows inside the menu bar",
+);
+
+// ── Customizations ───────────────────────────────────────────────────────────
+// Follow/fit (and hand-editable sizes) persist as notch-config.json; the page
+// toggles patch the shell through notch:config and the URL seeds the initial
+// state (the page has no invoke permissions).
+assert.match(
+  shell,
+  /struct NotchConfig \{[\s\S]{0,400}follow_mouse: bool,[\s\S]{0,200}fit_menu_bar: bool,/,
+  "the notch behaviors are a config struct, not hardcoded",
+);
+assert.match(
+  shell,
+  /dir\.join\("notch-config\.json"\)/,
+  "customizations persist in the app config dir",
+);
+assert.match(
+  shell,
+  /app\.listen\("notch:config", move \|event\| \{\s*\n\s*apply_notch_config_patch\(&notch_config_handle, event\.payload\(\)\);/,
+  "notch:config patches persist and re-apply geometry",
+);
+assert.match(
+  shell,
+  /fn notch_url_with_config\(mut url: Url, config: &NotchConfig, strip_height: Option<f64>\)/,
+  "the shell seeds the page's presentation state through the URL",
+);
+assert.match(
+  component,
+  /void emitNotch\("notch:config", \{ followMouse \}\);/,
+  "the follow-mouse toggle patches the shell config",
+);
+assert.match(
+  component,
+  /void emitNotch\("notch:config", \{ fitMenuBar \}\);/,
+  "the fit-menu-bar toggle patches the shell config",
+);
+assert.match(
+  component,
+  /readPresentation\(window\.location\.search\)/,
+  "the page reads its initial presentation from the shell-seeded URL",
+);
+assert.match(
+  css,
+  /width: var\(--notch-pill-w, 190px\);\s*\n\s*height: var\(--notch-pill-h, 38px\);/,
+  "the pill sizes from shell-provided variables so it shrinks into the strip",
+);
+
 // ── Expand/collapse geometry stays in Rust ──────────────────────────────────
 // The page emits intents; the shell resizes between the two fixed states. The
 // notch webview is granted nothing but core:event:allow-emit.
@@ -214,7 +308,7 @@ assert.match(
 assert.match(component, /get\("glass"\) === "1"/, "the page reads the glass handshake from the window URL");
 assert.match(
   shell,
-  /fn show_notch_window\(app: &tauri::AppHandle, notch_url: &Url\)[\s\S]{0,600}append_pair\("glass", "1"\)/,
+  /fn show_notch_window\(app: &tauri::AppHandle, notch_url: &Url\)[\s\S]{0,1800}append_pair\("glass", "1"\)/,
   "only the macOS shell that opened the window transparent sends ?glass=1",
 );
 

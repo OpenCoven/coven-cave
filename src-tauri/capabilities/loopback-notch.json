@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "loopback-notch",
-  "description": "lets the trusted loopback notch webview emit its intent events (notch:expand / notch:collapse / notch:detach / notch:dock-to-tray) — the Rust shell owns window geometry and tray visibility, so the notch page needs no window permissions",
+  "description": "lets the trusted loopback notch webview emit its intent events (notch:expand / notch:collapse / notch:detach / notch:dock-to-tray) and its notch:config customization patches (follow-mouse / fit-menu-bar) — the Rust shell owns window geometry, tray visibility, and config persistence, so the notch page needs no window permissions",
   "platforms": [
     "linux",
     "macOS",
