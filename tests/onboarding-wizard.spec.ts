@@ -43,6 +43,51 @@ const DAEMON_DOWN_VETERAN_STATUS = {
   tools: [],
 };
 
+// Every step healthy but the roster empty — the state the finish CTA's
+// "summon your familiar" promise is about. Coven Code must be present and
+// current in tools[]: the wizard ANDs it into effectiveComplete.
+const COMPLETE_NO_FAMILIARS_STATUS = {
+  ok: true,
+  complete: true,
+  steps: {
+    covenCli: { ok: true, detail: "0.0.60" },
+    covenHome: { ok: true, detail: "~/.coven" },
+    git: { ok: true, optional: true, detail: "/usr/bin/git" },
+    adapters: { ok: true, detail: "Codex" },
+    daemon: { ok: true, detail: "running" },
+    familiars: { ok: false, optional: true, detail: "no familiars" },
+    binding: { ok: false, optional: true, detail: "no binding configured" },
+  },
+  tools: [
+    {
+      id: "coven-cli",
+      label: "Coven CLI",
+      packageName: "@opencoven/cli",
+      binary: "coven",
+      installed: true,
+      path: "/usr/local/bin/coven",
+      current: "0.0.60",
+      latest: "0.0.60",
+      outdated: false,
+      compatible: true,
+      minimumVersion: "0.0.50",
+    },
+    {
+      id: "coven-code",
+      label: "Coven Code",
+      packageName: "@opencoven/coven-code",
+      binary: "coven-code",
+      installed: true,
+      path: "/usr/local/bin/coven-code",
+      current: "0.0.60",
+      latest: "0.0.60",
+      outdated: false,
+      compatible: true,
+      minimumVersion: "0.0.50",
+    },
+  ],
+};
+
 async function gotoApp(page: Page, status: unknown, opts?: { dismissed?: boolean }) {
   await page.route("**/api/onboarding/status**", (r) => r.fulfill({ json: status }));
   await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [] } }));
@@ -107,5 +152,34 @@ test.describe("onboarding wizard", () => {
     await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
     await page.waitForTimeout(1_000);
     await expect(wizard(page)).toHaveCount(0);
+  });
+
+  test("shows the first-run journey strip with setup as the current beat", async ({ page }) => {
+    await gotoApp(page, FRESH_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+    const strip = wizard(page).getByLabel("First-run journey");
+    await expect(strip).toBeVisible();
+    await expect(strip.getByText("Set up Cave")).toBeVisible();
+    await expect(strip.getByText("Summon a familiar")).toBeVisible();
+    await expect(strip.getByText("First chat")).toBeVisible();
+    await expect(strip.locator('[aria-current="step"]')).toHaveText(/Set up Cave/);
+  });
+
+  test("completed setup surfaces an above-the-fold banner whose CTA opens the Summoning Circle", async ({ page }) => {
+    // Complete machines never auto-open; drive the wizard via the manual-open
+    // event every setup entry point dispatches.
+    await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS);
+    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:onboarding-open")));
+    await expect(wizard(page)).toBeVisible({ timeout: 15_000 });
+
+    // The banner renders at the top — reachable without scrolling a long page.
+    await expect(wizard(page).getByText("Setup complete — Cave is ready.")).toBeVisible();
+
+    // Its CTA keeps the promise: the Summoning Circle itself opens (not just
+    // the Familiars roster with a second button to find).
+    await wizard(page).getByRole("button", { name: "Summon your familiar", exact: true }).click();
+    await expect(wizard(page)).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Summoning circle" })).toBeVisible({ timeout: 15_000 });
   });
 });

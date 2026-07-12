@@ -17,6 +17,7 @@ import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry"
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { openExternalUrl } from "@/lib/open-external";
 import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   openCovenToolActionTargets,
   openCovenToolsInstallCommand,
@@ -382,12 +383,24 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // completed setup once should get the lightweight daemon banner after
   // that, not the first-run flow. (Escape stays session-only on purpose: an
   // accidental Esc mid-setup shouldn't permanently hide the guide.)
+  //
+  // When the daemon is up and the roster is empty, the CTA's promise
+  // ("summon your familiar") is kept literally: requestSummonFamiliar()
+  // walks to the Familiars surface AND opens the Summoning Circle. This
+  // decision uses the wizard's own 2s-fresh status instead of the
+  // workspace's 5s daemonRunning poll, which can lag a just-auto-started
+  // daemon and silently drop the walk (closeOnboarding keeps its gate as a
+  // harmless second net). Skip/Escape stay non-pushy: no circle for them.
+  const statusRef = useRef<OnboardingStatus | null>(null);
+  statusRef.current = status;
   const finishOnboarding = useCallback(() => {
     try {
       localStorage.setItem("cave:onboarding:dismissed", "1");
     } catch {
       /* private mode */
     }
+    const s = statusRef.current?.steps;
+    if (s?.daemon.ok && !s.familiars.ok) requestSummonFamiliar();
     onDismiss();
   }, [onDismiss]);
 
@@ -1072,6 +1085,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const requiredSteps = steps.filter((s) => !s.optional);
   const ready = requiredSteps.filter((s) => s.ok).length;
   const total = requiredSteps.length;
+  // The wizard stops at infrastructure; the roster may already be populated
+  // when a veteran re-opens it. Gates the finish CTA's "summon" promise and
+  // the journey strip's second beat.
+  const hasFamiliars = status?.steps.familiars.ok === true;
 
   return (
     <div
@@ -1139,6 +1156,50 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             </div>
           </div>
         </header>
+
+        {/* Journey strip: the wizard is beat one of a three-beat first run.
+            Without it the page reads as a dead-ended infra checklist — users
+            can't see that a 30-second summoning and a first chat follow. */}
+        <JourneyStrip
+          setupDone={effectiveComplete}
+          familiarDone={hasFamiliars}
+        />
+
+        {effectiveComplete ? (
+          // The finish CTA lives in the footer of a long scrolling page; when
+          // the last step ticks, the counter reads 4/4 but the next action is
+          // below the fold. Surface it above the fold the moment setup
+          // completes so "now what?" never happens.
+          <section
+            role="status"
+            className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)] p-4"
+          >
+            <div className="flex items-start gap-3">
+              <Icon
+                name="ph:check-circle-fill"
+                width={18}
+                className="mt-0.5 shrink-0 text-[var(--color-success)]"
+              />
+              <div>
+                <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                  Setup complete — Cave is ready.
+                </div>
+                <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  {hasFamiliars
+                    ? "Your familiars are waiting on the roster."
+                    : "One step left: summon your first familiar, then start chatting."}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={finishOnboarding}
+              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
+            >
+              <Icon name="ph:rocket-launch-bold" />
+              {hasFamiliars ? "Open Cave" : "Summon your familiar"}
+            </button>
+          </section>
+        ) : null}
 
         {platformCopy.warning ? (
           <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_50%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)] p-4 text-[13px] text-[var(--color-warning)]">
@@ -1494,7 +1555,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
             >
               <Icon name="ph:rocket-launch-bold" />
-              Open Cave — summon your familiar
+              {hasFamiliars ? "Open Cave" : "Open Cave — summon your familiar"}
             </button>
           ) : (
             <span className="text-[11px] text-[var(--text-muted)]">
@@ -1508,6 +1569,64 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 }
 
 // ── Step bodies ───────────────────────────────────────────────────────────────
+
+/** The three-beat first-run journey: infrastructure (this wizard) → summon a
+ *  familiar (the in-app circle) → first chat. Orientation only — beats light
+ *  up as phases complete but are not interactive. The chat beat has no "done"
+ *  signal here by design: the wizard closes before it can happen. */
+function JourneyStrip({
+  setupDone,
+  familiarDone,
+}: {
+  setupDone: boolean;
+  familiarDone: boolean;
+}) {
+  const beats: { label: string; icon: IconName; done: boolean }[] = [
+    { label: "Set up Cave", icon: "ph:gear-six", done: setupDone },
+    { label: "Summon a familiar", icon: "ph:sparkle-bold", done: familiarDone },
+    { label: "First chat", icon: "ph:chat-circle-dots", done: false },
+  ];
+  const activeIndex = beats.findIndex((beat) => !beat.done);
+  return (
+    <ol
+      aria-label="First-run journey"
+      className="mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-2"
+    >
+      {beats.map((beat, index) => {
+        const isActive = index === activeIndex;
+        return (
+          <li key={beat.label} className="flex items-center gap-1.5">
+            {index > 0 ? (
+              <Icon
+                name="ph:caret-right"
+                width={11}
+                className="text-[var(--text-muted)]"
+                aria-hidden
+              />
+            ) : null}
+            <span
+              aria-current={isActive ? "step" : undefined}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                beat.done
+                  ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
+                  : isActive
+                    ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] font-medium text-[var(--text-primary)]"
+                    : "border-[var(--border-hairline)] text-[var(--text-muted)]"
+              }`}
+            >
+              {beat.done ? (
+                <Icon name="ph:check-bold" width={11} />
+              ) : (
+                <Icon name={beat.icon} width={11} />
+              )}
+              {beat.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.floor(Math.max(0, ms) / 1000);

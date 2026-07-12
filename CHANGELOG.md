@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Features
+- **Onboarding: hand-held first run through the first chat** — the setup wizard now shows a three-beat journey strip (Set up Cave → Summon a familiar → First chat) so it never reads as a dead-ended infra checklist; completing setup surfaces an above-the-fold success banner, and the finish CTA keeps its promise by opening the Summoning Circle directly (decided on the wizard's own fresh status, immune to the workspace's slower daemon poll). In the circle, the name stage gains one-click identity templates (Code reviewer, Research assistant, Project planner, Writing partner) that fill the role and required description, and the success stage hands keyboard focus to "Begin the first conversation" so Enter completes the funnel (cave-uvv7).
+
 ## [0.0.181] - 2026-07-12
 
 > 🔍 **Trace what your familiars actually did.** Familiar analytics gains a session trace timeline (the daemon event stream finally has a surface), a Recent sessions drill-through list, a clickable 14-day pulse, and live auto-refresh — plus hardened cave-home migration and GitHub chat-launch fixes.

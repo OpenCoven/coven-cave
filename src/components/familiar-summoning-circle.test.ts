@@ -243,4 +243,50 @@ assert.match(
   "the familiar detail panel opens the Enhancement Rite",
 );
 
+// ── cave-uvv7: identity presets on the name stage ────────────────────────────
+// The required "What it does" prose is where first-time users stall; a preset
+// fills role + description in one click. Names stay personal — presets never
+// set them.
+assert.match(
+  source,
+  /const IDENTITY_PRESETS: \{ label: string; icon: IconName; role: string; description: string \}\[\]/,
+  "identity presets carry a label, icon, role, and description",
+);
+for (const label of ["Code reviewer", "Research assistant", "Project planner", "Writing partner"]) {
+  assert.match(
+    source,
+    new RegExp(`label: "${label}"`),
+    `identity preset "${label}" exists`,
+  );
+}
+assert.match(
+  source,
+  /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]*?setRole\(preset\.role\);\s*setDescription\(preset\.description\);/,
+  "clicking a preset fills role and description",
+);
+assert.doesNotMatch(
+  source,
+  /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]{0,1200}setName\(/,
+  "presets never touch the name — it stays personal",
+);
+assert.match(
+  source,
+  /aria-pressed=\{active\}/,
+  "the active preset is exposed via aria-pressed",
+);
+
+// ── cave-uvv7: the success stage hands focus to the next step ───────────────
+// The Summon button unmounts with the form panel; without an explicit
+// hand-off, keyboard users tab-hunt for "Begin the first conversation".
+assert.match(
+  source,
+  /const primaryRef = useRef<HTMLButtonElement \| null>\(null\);\s*useEffect\(\(\) => \{\s*primaryRef\.current\?\.focus\(\);\s*\}, \[\]\);/,
+  "the success stage focuses its primary action on mount",
+);
+assert.match(
+  source,
+  /<Button ref=\{primaryRef\} variant="primary" leadingIcon="ph:chat-circle-dots" onClick=\{onStartChat\}>/,
+  "the focused primary action is Begin the first conversation when chat is wired",
+);
+
 console.log("familiar-summoning-circle.test.ts: ok");

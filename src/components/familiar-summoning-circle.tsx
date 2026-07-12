@@ -109,6 +109,41 @@ const STAGES = [
   { key: "summon", numeral: "IV", title: "The summoning", hint: "Read the incantation, then call." },
 ] as const;
 
+// One-click identity templates for the name stage. The required "What it
+// does" prose is where first-time users stall (the name has Suggest; the
+// description had nothing) — a preset fills role + description in one click,
+// editable after. Names stay personal, so presets never touch them.
+const IDENTITY_PRESETS: { label: string; icon: IconName; role: string; description: string }[] = [
+  {
+    label: "Code reviewer",
+    icon: "ph:git-branch-bold",
+    role: "Code reviewer",
+    description:
+      "Reviews changes for bugs, regressions, and unclear code, and suggests focused fixes with reasoning.",
+  },
+  {
+    label: "Research assistant",
+    icon: "ph:magnifying-glass",
+    role: "Researcher",
+    description:
+      "Digs into questions, compares sources and trade-offs, and reports findings with clear summaries.",
+  },
+  {
+    label: "Project planner",
+    icon: "ph:kanban",
+    role: "Planner",
+    description:
+      "Breaks goals into small, ordered tasks, tracks what's blocked, and keeps the board tidy.",
+  },
+  {
+    label: "Writing partner",
+    icon: "ph:pencil-line-bold",
+    role: "Editor",
+    description:
+      "Drafts, tightens, and restructures prose while keeping the writer's voice and intent.",
+  },
+];
+
 type StageIndex = 0 | 1 | 2 | 3;
 
 /** Object URL for a picked file, revoked when the file changes or on unmount. */
@@ -1028,6 +1063,36 @@ function StageName({
         </p>
       </div>
       <div>
+        <span className={`${labelClass}`} id="summon-preset-label">
+          Start from a template <span className="font-normal text-[var(--text-muted)]">(optional)</span>
+        </span>
+        <div role="group" aria-labelledby="summon-preset-label" className="summoning-chiprow">
+          {IDENTITY_PRESETS.map((preset) => {
+            const active = role === preset.role && description === preset.description;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                aria-pressed={active}
+                onClick={() => {
+                  // Templates overwrite role + description (that's what
+                  // picking a template means); the name stays personal.
+                  setRole(preset.role);
+                  setDescription(preset.description);
+                }}
+                className={`focus-ring summoning-chip${active ? " summoning-chip--active" : ""}`}
+              >
+                <Icon name={preset.icon} width={12} />
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+          Fills the role and description below — edit anything after.
+        </p>
+      </div>
+      <div>
         <label className={labelClass} htmlFor="summon-role">Role</label>
         <input
           id="summon-role"
@@ -1273,6 +1338,14 @@ function SummonSuccess({
   onStartChat?: () => void;
   onDone: () => void;
 }) {
+  // The Summon button the user just pressed unmounted with the form panel;
+  // without an explicit hand-off, focus falls to the dialog body and keyboard
+  // users tab-hunt. Land it on the primary next step so Enter completes the
+  // funnel: Summon ⏎ → Begin the first conversation ⏎.
+  const primaryRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    primaryRef.current?.focus();
+  }, []);
   return (
     <div className="summoning-success" role="status">
       <h2 className="summoning-success__title">
@@ -1285,11 +1358,15 @@ function SummonSuccess({
       </p>
       <div className="summoning-success__actions">
         {onStartChat ? (
-          <Button variant="primary" leadingIcon="ph:chat-circle-dots" onClick={onStartChat}>
+          <Button ref={primaryRef} variant="primary" leadingIcon="ph:chat-circle-dots" onClick={onStartChat}>
             Begin the first conversation
           </Button>
         ) : null}
-        <Button variant={onStartChat ? "secondary" : "primary"} onClick={onDone}>
+        <Button
+          ref={onStartChat ? undefined : primaryRef}
+          variant={onStartChat ? "secondary" : "primary"}
+          onClick={onDone}
+        >
           Done
         </Button>
       </div>
