@@ -260,7 +260,18 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     void (async () => {
       try {
         const res = await fetch("/api/familiars", { signal: controller.signal });
-        if (!res.ok) throw new Error(`Failed to load familiars (${res.status}).`);
+        if (!res.ok) {
+          // Prefer the route's actionable message (e.g. the hub-auth 401
+          // "reconnect to refresh your token" hint) over a bare status code.
+          let message = `Failed to load familiars (${res.status}).`;
+          try {
+            const body = (await res.clone().json()) as { error?: string };
+            if (body?.error) message = body.error;
+          } catch {
+            // non-JSON body — keep the status-code fallback
+          }
+          throw new Error(message);
+        }
         const json = await res.json();
         if (controller.signal.aborted) return;
         const next = (json?.familiars ?? []) as Familiar[];

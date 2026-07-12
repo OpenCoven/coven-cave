@@ -47,6 +47,23 @@ export async function GET() {
       .catch(() => new Set<string>()),
   ]);
   if (!res.ok) {
+    // Auth failures (401/403) mean the hub/daemon rejected our access token
+    // — typically a stale or missing token after a hub reconnect. Surface
+    // that distinctly and actionably instead of collapsing every daemon
+    // failure into a bare 503/401 code in the notch ("Failed to load
+    // familiars (401)"), which tells the user nothing about how to recover.
+    if (res.status === 401 || res.status === 403) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Not authorized to load familiars — the Coven hub rejected this Cave's access token. Reconnect to the hub (or re-run setup) to refresh it.",
+          reason: "unauthorized",
+          familiars: [],
+        },
+        { status: res.status },
+      );
+    }
     return NextResponse.json(
       { ok: false, error: res.error ?? `daemon http ${res.status}`, familiars: [] },
       { status: 503 },
