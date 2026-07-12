@@ -52,6 +52,12 @@ assert.match(
 
 assert.match(
   source,
+  /minimumVersion: "0\.0\.54"/,
+  "coven CLI compatibility floor includes the Windows Codex connection fixes",
+);
+
+assert.match(
+  source,
   /Promise\.all\(OPEN_COVEN_TOOLS\.map\(toolStatus\)\)/,
   "GET reports all allowlisted OpenCoven tools together",
 );

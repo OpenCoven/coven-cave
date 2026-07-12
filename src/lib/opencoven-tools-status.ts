@@ -17,7 +17,7 @@ export const OPEN_COVEN_TOOLS = [
     packageName: "@opencoven/cli",
     binary: "coven",
     versionArgs: ["--version"],
-    minimumVersion: "0.0.49",
+    minimumVersion: "0.0.54",
     installCommand: "npm i -g @opencoven/cli@latest",
   },
   {

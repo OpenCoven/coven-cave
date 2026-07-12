@@ -34,14 +34,13 @@
       }
 
       .mark {
-        width: 48px;
-        height: 48px;
-        display: grid;
-        place-items: center;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        background: rgba(255, 255, 255, 0.07);
-        font-size: 26px;
-        font-weight: 700;
+        width: 56px;
+        height: 56px;
+        display: block;
+        border-radius: 14px;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.16),
+          0 18px 42px rgba(0, 0, 0, 0.35);
       }
 
       h1 {
@@ -125,7 +124,7 @@
   </head>
   <body>
     <main>
-      <div class="mark" aria-hidden="true">C</div>
+      <img class="mark" src="./cave-icon.png" alt="CovenCave" />
       <h1>Starting CovenCave</h1>
       <p>
         The application runtime is being verified and prepared. The first start after an update can

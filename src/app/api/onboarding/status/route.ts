@@ -60,10 +60,12 @@ function checkCovenCli(tool: OpenCovenToolStatus | undefined): Step {
       hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
     };
   }
-  if (tool.outdated) {
+  if (tool.outdated || !tool.compatible) {
     const detail =
       tool.current && tool.latest
         ? `Update available: ${tool.current} -> ${tool.latest}`
+        : tool.current
+          ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
         : "Update available";
     return {
       ok: false,

@@ -66,6 +66,8 @@ type OpenCovenToolStatus = {
   current: string | null;
   latest: string | null;
   outdated: boolean;
+  compatible: boolean;
+  minimumVersion: string;
   checkedAt?: string;
 };
 
@@ -956,7 +958,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // can never permanently strand onboarding (see covenCodeSkipped).
   const covenCodeTool = status?.tools?.find((t) => t.id === "coven-code");
   const covenCodeInstalled = !!covenCodeTool?.installed;
-  const covenCodeReady = !!covenCodeTool?.installed && !covenCodeTool.outdated;
+  const covenCodeReady =
+    !!covenCodeTool?.installed && !covenCodeTool.outdated && covenCodeTool.compatible;
   const covenCodeSatisfied = covenCodeReady || covenCodeSkipped;
   // Server `complete` already requires every other step; AND-in the Coven Code
   // requirement so the finish CTA only appears once both tools are handled.
@@ -1642,6 +1645,7 @@ function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
 function openCovenToolStatusText(tool: OpenCovenToolStatus): string {
   if (!tool.installed) return "Not found";
   if (!tool.current) return "Version unknown";
+  if (!tool.compatible) return "Needs update";
   if (tool.outdated) return "Update available";
   return "Up to date";
 }
@@ -1721,7 +1725,7 @@ function StepCovenCli({
             {tools.map((tool) => {
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
-              const needsAction = !tool.installed || tool.outdated;
+              const needsAction = !tool.installed || tool.outdated || !tool.compatible;
               const result = installResults[tool.id];
               const isCovenCode = tool.id === "coven-code";
               const showSkip = isCovenCode && !tool.installed && !covenCodeSkipped;
@@ -1747,12 +1751,12 @@ function StepCovenCli({
                     <div className="flex shrink-0 items-center gap-2">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-                          tool.installed && !tool.outdated
+                          tool.installed && !tool.outdated && tool.compatible
                             ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
                             : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)]"
                         }`}
                       >
-                        {tool.installed && !tool.outdated ? (
+                        {tool.installed && !tool.outdated && tool.compatible ? (
                           <Icon name="ph:check-bold" />
                         ) : (
                           <Icon name="ph:warning-fill" />
@@ -1774,7 +1778,7 @@ function StepCovenCli({
                           )}
                           {toolBusy && toolJob
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
-                            : tool.outdated
+                            : tool.outdated || !tool.compatible
                               ? "Update"
                               : "Install"}
                         </button>

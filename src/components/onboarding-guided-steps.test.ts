@@ -313,6 +313,18 @@ assert.match(
 
 assert.match(
   source,
+  /const needsAction = !tool\.installed \|\| tool\.outdated \|\| !tool\.compatible/,
+  "the startup tools step treats below-floor tools as actionable updates",
+);
+
+assert.match(
+  source,
+  /if \(!tool\.compatible\) return "Needs update"/,
+  "the startup tools step warns when an installed tool is below the Cave compatibility floor",
+);
+
+assert.match(
+  source,
   /<CommandRow command=\{manualInstallCommand\}/,
   "the startup tools step shows a manual command matching the needed OpenCoven tools",
 );

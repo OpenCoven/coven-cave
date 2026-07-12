@@ -260,10 +260,10 @@ function windowsShimTargetFromFile(shimPath: string): string | null {
   const binDir = path.dirname(shimPath);
   try {
     const shim = readFileSync(shimPath, "utf-8");
-    const quotedTargets = shim.matchAll(/"(%(?:~?dp0)%?)[\\/]*([^"]+\.[cm]?js)"/gi);
+    const quotedTargets = shim.matchAll(/"(%(?:~?dp0)%?)[\\/]*([^"]+)"/gi);
     for (const match of quotedTargets) {
       const relativeTarget = match[2]?.replace(/[\\/]+/g, path.sep);
-      if (!relativeTarget) continue;
+      if (!relativeTarget || relativeTarget.includes("%")) continue;
       const candidate = path.resolve(binDir, relativeTarget);
       if (existsSync(candidate)) return candidate;
     }

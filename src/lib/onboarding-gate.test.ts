@@ -20,9 +20,10 @@ const allStepsOk = {
   familiars: { ok: true },
 };
 
-const covenCodeReady = { id: "coven-code", installed: true, outdated: false };
-const covenCodeMissing = { id: "coven-code", installed: false, outdated: false };
-const covenCodeOutdated = { id: "coven-code", installed: true, outdated: true };
+const covenCodeReady = { id: "coven-code", installed: true, outdated: false, compatible: true };
+const covenCodeMissing = { id: "coven-code", installed: false, outdated: false, compatible: false };
+const covenCodeOutdated = { id: "coven-code", installed: true, outdated: true, compatible: true };
+const covenCodeBelowFloor = { id: "coven-code", installed: true, outdated: false, compatible: false };
 
 function payload(overrides: Partial<OnboardingStatusPayload>): OnboardingStatusPayload {
   return { complete: true, steps: allStepsOk, tools: [covenCodeReady], ...overrides };
@@ -47,6 +48,11 @@ assert.equal(
   "server complete but Coven Code outdated → auto-open",
 );
 assert.equal(
+  shouldAutoOpenOnboarding(payload({ tools: [covenCodeBelowFloor] }), false),
+  true,
+  "server complete but Coven Code below the Cave floor → auto-open",
+);
+assert.equal(
   shouldAutoOpenOnboarding(payload({ tools: [] }), false),
   true,
   "server complete but Coven Code not reported → auto-open (matches wizard's unsatisfied state)",
@@ -61,6 +67,7 @@ assert.equal(
 assert.equal(isCovenCodeSatisfied(payload({ tools: [covenCodeMissing] }), true), true);
 assert.equal(isCovenCodeSatisfied(payload({}), false), true);
 assert.equal(isCovenCodeSatisfied(payload({ tools: [covenCodeOutdated] }), false), false);
+assert.equal(isCovenCodeSatisfied(payload({ tools: [covenCodeBelowFloor] }), false), false);
 
 // ── Incomplete payloads keep the pre-existing structural/daemon rules ────────
 assert.equal(
