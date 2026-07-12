@@ -274,3 +274,23 @@ assert.match(source, /role="tabpanel"[\s\S]{0,120}?aria-labelledby=\{`familiar-d
 assert.doesNotMatch(source, /aria-current=\{tab === id \? "page"/, "old aria-current=page tab pattern is gone");
 
 console.log("familiars-view: all assertions passed");
+
+// The detail panel header carries a per-familiar overflow menu — the
+// discoverable entry points for Edit-in-Studio and Remove. Remove must ROUTE
+// to the Studio lifecycle tab (the canonical confirm + undo + tombstone flow),
+// never confirm or DELETE from this surface.
+assert.match(
+  source,
+  /aria-label=\{`\$\{familiar\.display_name\} options`\}[\s\S]{0,600}openFamiliarStudio\(familiar\.id, "identity"\)/,
+  "Detail panel overflow menu opens the familiar's Studio (Edit in Studio)",
+);
+assert.match(
+  source,
+  /danger[\s\S]{0,200}openFamiliarStudio\(familiar\.id, "lifecycle"\)[\s\S]{0,120}Remove familiar/,
+  "Remove familiar routes to the Studio lifecycle tab where the canonical confirm lives",
+);
+assert.doesNotMatch(
+  source,
+  /fetch\([^)]*\/api\/familiars\/[^)]*\{\s*method:\s*"DELETE"/,
+  "FamiliarsView never performs the destructive DELETE itself — that stays in the lifecycle tab",
+);

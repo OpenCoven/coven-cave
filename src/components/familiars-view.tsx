@@ -28,6 +28,8 @@ import {
 } from "@/components/familiars-view-stats";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
+import { useFamiliarStudio } from "@/lib/familiar-studio-context";
+import { Popover, PopoverBody, PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 
 type CovenMemoryResponse =
   | { ok: true; entries: CovenMemoryEntry[] }
@@ -715,6 +717,64 @@ type AgentDetailPanelProps = {
   onOpenUrl: (url: string) => void;
 };
 
+// Per-familiar overflow menu on the detail panel header. Remove routes to the
+// Studio lifecycle tab rather than confirming here — the destructive flow
+// (confirm copy, undo toast, tombstone coupling) lives only in
+// familiar-studio-lifecycle-tab.tsx, and this menu is the discoverable
+// entry point the Familiars surface lacked.
+function FamiliarPanelMenu({ familiar }: { familiar: ResolvedFamiliar }) {
+  const { openFamiliarStudio } = useFamiliarStudio();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+        aria-label={`${familiar.display_name} options`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Familiar options"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="ph:dots-three-vertical" width={14} aria-hidden />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={200}
+        ariaLabel="Familiar options"
+      >
+        <PopoverBody>
+          <PopoverItem
+            icon="ph:pencil-simple"
+            onSelect={() => {
+              setOpen(false);
+              openFamiliarStudio(familiar.id, "identity");
+            }}
+          >
+            Edit in Studio
+          </PopoverItem>
+          <PopoverSeparator />
+          <PopoverItem
+            icon="ph:trash"
+            danger
+            onSelect={() => {
+              setOpen(false);
+              openFamiliarStudio(familiar.id, "lifecycle");
+            }}
+          >
+            Remove familiar…
+          </PopoverItem>
+        </PopoverBody>
+      </Popover>
+    </>
+  );
+}
+
 function FamiliarDetailPanel({
   familiar,
   familiars,
@@ -788,6 +848,7 @@ function FamiliarDetailPanel({
             <Icon name="ph:magic-wand-fill" width={12} />
             Enhance
           </button>
+          <FamiliarPanelMenu familiar={familiar} />
           <button
             type="button"
             onClick={onClose}
