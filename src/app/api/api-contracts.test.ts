@@ -67,6 +67,7 @@ const contracts: RouteContract[] = [
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
   { route: "/github/checks", methods: ["GET"], kind: "json" },
   { route: "/github/repos", methods: ["GET"], kind: "json" },
+  { route: "/github/subscriptions", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/github/user", methods: ["GET"], kind: "json" },
   { route: "/flows", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },

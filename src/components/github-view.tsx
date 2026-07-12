@@ -56,6 +56,7 @@ import {
   type PopoverMode,
 } from "@/components/github-action-popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -2322,6 +2323,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [showPatModal, setShowPatModal] = useState(false);
+  const [showSubsModal, setShowSubsModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -2634,6 +2636,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         />
       )}
 
+      {showSubsModal && (
+        <GithubSubscriptionsModal
+          hasPat={patStatus?.hasPat ?? false}
+          onConnectPat={() => {
+            setShowSubsModal(false);
+            setShowPatModal(true);
+          }}
+          onClose={() => setShowSubsModal(false)}
+        />
+      )}
+
       {/* ── Header ── */}
       <header className="github-surface-header gh-compact-header">
         <div className="gh-compact-meta">
@@ -2770,6 +2783,13 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             }}
             title="Refresh (⌘R)"
             aria-label="Refresh GitHub activity"
+          />
+          <IconButton
+            icon="ph:bell-ringing"
+            size="sm"
+            onClick={() => setShowSubsModal(true)}
+            title="Event subscriptions — opened PRs, CI completions"
+            aria-label="Event subscriptions"
           />
           <OverflowMenu ariaLabel="More GitHub options">
             <PopoverLabel>Group rows</PopoverLabel>

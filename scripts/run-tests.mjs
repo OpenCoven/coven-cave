@@ -65,6 +65,7 @@ export const SUITES = {
     "src/lib/permissions-console.test.ts",
     "src/lib/project-status.test.ts",
     "src/lib/github-checks.test.ts",
+    "src/lib/github-subscriptions.test.ts",
     "src/lib/beads-pr-management.test.ts",
     "src/lib/beads-pr-patrol.test.ts",
     "src/lib/beads-work-queue.test.ts",
