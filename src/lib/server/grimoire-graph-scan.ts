@@ -106,13 +106,13 @@ export async function scanGrimoireGraph(): Promise<{ graph: DocGraph; meta: Grim
 
   // Resolution index spans the ENTIRE corpus, scanned or not.
   const index: WikiDocIndex = {
-    knowledge: knowledge.map((k) => ({ id: k.id, title: k.title })),
+    knowledge: knowledge.map((k) => ({ id: k.id, collection: k.collection, title: k.title })),
     memory: memoryEntries.map((m) => ({ path: m.fullPath })),
     journal: journalDays.map((j) => ({ date: j.date })),
   };
 
   const docs: GraphSourceDoc[] = knowledge.map((k) => ({
-    ref: { kind: "knowledge", id: k.id },
+    ref: { kind: "knowledge", id: k.id, ...(k.collection ? { collection: k.collection } : {}) },
     title: k.title,
     markdown: k.body,
     tags: k.tags,

@@ -7,13 +7,13 @@ import {
   extendUntilIso,
   normalizeChatAutoArchivePolicy,
   SUMMON_GRACE_DAYS,
-} from "@/lib/chat-auto-archive";
+} from "./chat-auto-archive.ts";
 import {
   type FamiliarRuntime,
   isSshRuntime,
   normalizeFamiliarRuntime,
-} from "@/lib/familiar-runtime";
-import type { UserProfile } from "@/lib/user-profile-shared";
+} from "./familiar-runtime.ts";
+import type { UserProfile } from "./user-profile-shared.ts";
 
 const CONFIG_PATH = path.join(caveHome(), "config.json");
 const STATE_PATH = path.join(caveHome(), "state.json");
@@ -67,6 +67,40 @@ function defaultConfig(): CaveConfig {
     multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
     remoteHosts: [],
   };
+}
+
+export async function recordKnowledgePackSeed(
+  packId: string,
+  target: { target: "vault" | "project"; root?: string },
+): Promise<string> {
+  return withConfigLock(async () => {
+    const cfg = await loadConfig();
+    const seededAt = new Date().toISOString();
+    const nextEntry: KnowledgePackSeedEntry = {
+      id: packId,
+      target: target.target,
+      ...(target.root ? { root: target.root } : {}),
+      seededAt,
+    };
+    const existing = cfg.marketplace.knowledgePacks ?? [];
+    const knowledgePacks = [
+      ...existing.filter(
+        (entry) =>
+          !(entry.id === nextEntry.id && entry.target === nextEntry.target && (entry.root ?? "") === (nextEntry.root ?? "")),
+      ),
+      nextEntry,
+    ];
+    const updated: CaveConfig = {
+      ...cfg,
+      marketplace: {
+        ...cfg.marketplace,
+        knowledgePacks,
+      },
+    };
+    await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
+    await writeJsonAtomic(CONFIG_PATH, updated);
+    return seededAt;
+  });
 }
 
 function defaultState(): CaveState {
@@ -142,6 +176,13 @@ export type MarketplaceInstallMetadata = Pick<
   "runtime" | "verifiedAt" | "craftVersion"
 >;
 
+export type KnowledgePackSeedEntry = {
+  id: string;
+  target: "vault" | "project";
+  root?: string;
+  seededAt: string;
+};
+
 export type CaveMultiHostConfig = {
   mode: "local" | "hub";
   hubUrl: string;
@@ -194,6 +235,7 @@ export type CaveConfig = {
   };
   marketplace: {
     installed: Record<string, MarketplaceInstallEntry>;
+    knowledgePacks?: KnowledgePackSeedEntry[];
   };
   multiHost: CaveMultiHostConfig;
   /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
@@ -248,6 +290,21 @@ export async function loadConfig(): Promise<CaveConfig> {
       },
       marketplace: {
         installed: parsed.marketplace?.installed ?? {},
+        knowledgePacks: Array.isArray(parsed.marketplace?.knowledgePacks)
+          ? parsed.marketplace.knowledgePacks.flatMap((entry): KnowledgePackSeedEntry[] => {
+              if (!entry || typeof entry !== "object") return [];
+              const seed = entry as Partial<KnowledgePackSeedEntry>;
+              if (typeof seed.id !== "string" || !seed.id.trim()) return [];
+              if (seed.target !== "vault" && seed.target !== "project") return [];
+              if (typeof seed.seededAt !== "string" || !Number.isFinite(Date.parse(seed.seededAt))) return [];
+              return [{
+                id: seed.id,
+                target: seed.target,
+                ...(typeof seed.root === "string" && seed.root.trim() ? { root: seed.root } : {}),
+                seededAt: seed.seededAt,
+              }];
+            })
+          : [],
       },
       multiHost: normalizeMultiHostConfig(parsed.multiHost),
       remoteHosts: normalizeRemoteHosts(parsed.remoteHosts),
@@ -417,6 +474,7 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
         ...current.marketplace.installed,
         ...(patch.marketplace?.installed ?? {}),
       },
+      knowledgePacks: patch.marketplace?.knowledgePacks ?? current.marketplace.knowledgePacks ?? [],
     },
     multiHost: normalizeMultiHostConfig({
       ...current.multiHost,
@@ -462,6 +520,7 @@ export async function installMarketplacePlugin(
   const updated: CaveConfig = {
     ...cfg,
     marketplace: {
+      ...cfg.marketplace,
       installed: {
         ...cfg.marketplace.installed,
         [pluginName]: {
@@ -488,7 +547,7 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
   delete installed[pluginName];
   const updated: CaveConfig = {
     ...cfg,
-    marketplace: { installed },
+    marketplace: { ...cfg.marketplace, installed },
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);

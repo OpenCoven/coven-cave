@@ -1,0 +1,107 @@
+// @ts-nocheck
+import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import {
+  buildPromptWithKnowledgeVault,
+  deleteKnowledgeEntry,
+  isValidCollectionId,
+  listCollections,
+  listKnowledgeEntries,
+  readCollectionMeta,
+  readKnowledgeEntry,
+  writeCollectionMeta,
+  writeKnowledgeEntry,
+} from "./knowledge-vault.ts";
+
+const scratchRoot = path.join(process.cwd(), ".test-artifacts", "knowledge-vault-collections");
+await rm(scratchRoot, { recursive: true, force: true });
+await mkdir(scratchRoot, { recursive: true });
+const prev = process.env.COVEN_KNOWLEDGE_DIR;
+process.env.COVEN_KNOWLEDGE_DIR = scratchRoot;
+
+try {
+  assert.equal(isValidCollectionId("characters"), true);
+  for (const bad of ["../x", "a/b", ".", ""]) {
+    assert.equal(isValidCollectionId(bad), false, `${bad} is rejected as a collection id`);
+    await assert.rejects(
+      () => writeKnowledgeEntry({ id: "entry", collection: bad, title: "Entry", tags: [], scope: "global", enabled: true, body: "x" }),
+      /invalid knowledge collection/,
+    );
+  }
+  await assert.rejects(
+    () => writeKnowledgeEntry({ id: "../x", collection: "characters", title: "Bad", tags: [], scope: "global", enabled: true, body: "x" }),
+    /invalid knowledge id/,
+  );
+
+  await writeKnowledgeEntry({ id: "root-note", title: "Root", tags: [], scope: "global", enabled: true, body: "root body" });
+  await writeKnowledgeEntry({
+    id: "schema",
+    collection: "characters",
+    title: "Schema",
+    tags: [],
+    scope: "global",
+    enabled: true,
+    extra: { type: "character", status: "draft", flags: ["featured"], title: "ignored" },
+    body: "schema body",
+  });
+  assert.deepEqual((await readKnowledgeEntry("schema", "characters"))?.extra, {
+    type: "character",
+    status: "draft",
+    flags: ["featured"],
+  }, "reserved keys in extra are stripped before persistence");
+  await writeKnowledgeEntry({ id: "hero", collection: "characters", title: "Hero", tags: ["world"], scope: "global", enabled: true, body: "hero body" });
+  await writeKnowledgeEntry({ id: "seed", collection: "characters", title: "Seed", tags: [], scope: "global", enabled: false, body: "seed body" });
+  await writeFile(path.join(scratchRoot, "characters", "collection.yml"), "name: Characters\nsummary: characters index\n", "utf8");
+  await writeFile(path.join(scratchRoot, "characters", "ignored.txt"), "nope", "utf8");
+  await mkdir(path.join(scratchRoot, "bad.dir"), { recursive: true });
+  await writeFile(path.join(scratchRoot, "bad.dir", "x.md"), "bad", "utf8");
+
+  const all = await listKnowledgeEntries();
+  assert.deepEqual(
+    all.map((entry) => entry.collection ? `${entry.collection}/${entry.id}` : entry.id).sort(),
+    ["characters/hero", "characters/schema", "characters/seed", "root-note"],
+    "list mixes root entries and one-level collection entries",
+  );
+  assert.deepEqual(
+    (await listKnowledgeEntries("characters")).map((entry) => `${entry.collection}/${entry.id}`).sort(),
+    ["characters/hero", "characters/schema", "characters/seed"],
+    "collection filter returns only that collection",
+  );
+  assert.equal((await readKnowledgeEntry("hero", "characters"))?.collection, "characters");
+  assert.equal(await deleteKnowledgeEntry("hero", "characters"), true);
+  assert.equal(await readKnowledgeEntry("hero", "characters"), null);
+
+  await writeCollectionMeta("characters", {
+    name: "Characters",
+    description: "People in the story",
+    entityType: "character",
+    storyQuestion: "Who matters?",
+    fields: [{ key: "role", label: "Role" }],
+    pack: { id: "worldbuilding", version: "1.0.0" },
+    summary: "Characters — People in the story",
+  });
+  assert.deepEqual(await readCollectionMeta("characters"), {
+    name: "Characters",
+    description: "People in the story",
+    entityType: "character",
+    storyQuestion: "Who matters?",
+    fields: [{ key: "role", label: "Role" }],
+    pack: { id: "worldbuilding", version: "1.0.0" },
+    summary: "Characters — People in the story",
+  });
+  const collections = await listCollections();
+  assert.deepEqual(collections, [{ id: "characters", meta: await readCollectionMeta("characters"), count: 2 }]);
+
+  const prompt = buildPromptWithKnowledgeVault("User prompt", await listKnowledgeEntries(), collections);
+  assert.match(prompt, /Collections index/);
+  assert.match(prompt, /- characters: Characters — People in the story/);
+  assert.match(prompt, /root body/);
+  assert.doesNotMatch(prompt, /seed body/, "disabled seeded entries stay out of the prompt block");
+} finally {
+  if (prev === undefined) delete process.env.COVEN_KNOWLEDGE_DIR;
+  else process.env.COVEN_KNOWLEDGE_DIR = prev;
+  await rm(scratchRoot, { recursive: true, force: true });
+}
+
+console.log("knowledge-vault-collections.test.ts: ok");

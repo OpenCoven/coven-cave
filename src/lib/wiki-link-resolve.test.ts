@@ -5,7 +5,9 @@ const { resolveWikiLinkTarget, resolveOutgoingLinks, docRefKey } = await import(
 const index = {
   knowledge: [
     { id: "api-style-guide", title: "API Style Guide" },
+    { id: "api-style-guide", collection: "lore", title: "API Style Guide" },
     { id: "no-title-entry", title: null },
+    { id: "mara", collection: "characters", title: "Mara" },
   ],
   memory: [{ path: "personal/2024.md" }, { path: "/abs/root/notes.md" }],
   journal: [{ date: "2026-07-07" }],
@@ -16,6 +18,9 @@ assert.deepEqual(resolveWikiLinkTarget("api-style-guide", index), { kind: "knowl
 assert.deepEqual(resolveWikiLinkTarget("API Style Guide", index), { kind: "knowledge", id: "api-style-guide" }, "by title");
 assert.deepEqual(resolveWikiLinkTarget("api style GUIDE".replace(" style", " Style"), index), { kind: "knowledge", id: "api-style-guide" }, "title is case-insensitive");
 assert.deepEqual(resolveWikiLinkTarget("no-title-entry", index), { kind: "knowledge", id: "no-title-entry" }, "a titleless entry still resolves by id");
+assert.deepEqual(resolveWikiLinkTarget("characters/mara", index), { kind: "knowledge", id: "mara", collection: "characters" }, "collection/id resolves exactly");
+assert.deepEqual(resolveWikiLinkTarget("Mara", index), { kind: "knowledge", id: "mara", collection: "characters" }, "plain titles can resolve to collection entries");
+assert.deepEqual(resolveWikiLinkTarget("lore/api-style-guide", index), { kind: "knowledge", id: "api-style-guide", collection: "lore" }, "collection/id disambiguates duplicate ids");
 
 // ── memory: by basename, by relative path, extension optional ───────────────
 assert.deepEqual(resolveWikiLinkTarget("2024", index), { kind: "memory", path: "personal/2024.md" }, "by file basename");
@@ -41,6 +46,7 @@ assert.equal(links[2].ref, null, "an unresolved link keeps ref=null");
 
 // ── docRefKey ───────────────────────────────────────────────────────────────
 assert.equal(docRefKey({ kind: "knowledge", id: "x" }), "knowledge:x");
+assert.equal(docRefKey({ kind: "knowledge", id: "x", collection: "characters" }), "knowledge:characters/x");
 assert.equal(docRefKey({ kind: "memory", path: "a/b.md" }), "memory:a/b.md");
 assert.equal(docRefKey({ kind: "journal", date: "2026-07-07" }), "journal:2026-07-07");
 

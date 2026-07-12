@@ -1409,6 +1409,18 @@
       "category": "Knowledge & Docs"
     },
     {
+      "name": "worldbuilding",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/worldbuilding"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Knowledge Packs"
+    },
+    {
       "name": "prompt-pack-essentials",
       "source": {
         "source": "local",

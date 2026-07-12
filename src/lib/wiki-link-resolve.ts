@@ -4,19 +4,19 @@
 // journal days), so no server round-trip or full-vault index is needed to turn
 // a doc's outgoing links into navigable references.
 
-import { extractWikiLinks, type WikiLink } from "./wiki-link-parser";
+import { extractWikiLinks, type WikiLink } from "./wiki-link-parser.ts";
 
 /** A resolved reference — the same shape the Grimoire deep-link bridge uses
  *  (`grimoire-link.ts` / `GrimoireSelection`), minus the transient drafts. */
 export type WikiDocRef =
-  | { kind: "knowledge"; id: string }
+  | { kind: "knowledge"; id: string; collection?: string }
   | { kind: "memory"; path: string }
   | { kind: "journal"; date: string };
 
 /** Minimal doc metadata the resolver matches against — a subset of the
  *  navigator's loaded lists, so callers pass what they already have. */
 export type WikiDocIndex = {
-  knowledge: readonly { id: string; title?: string | null }[];
+  knowledge: readonly { id: string; collection?: string; title?: string | null }[];
   memory: readonly { path: string }[];
   journal: readonly { date: string }[];
 };
@@ -61,11 +61,18 @@ export function resolveWikiLinkTarget(target: string, index: WikiDocIndex): Wiki
     if (day) return { kind: "journal", date: day.date };
   }
 
-  // 2) Knowledge — by slug id, then by human title.
+  // 2) Knowledge — optional collection/id, then slug id, then human title.
+  const slash = target.trim().split("/");
+  if (slash.length === 2 && slash[0] && slash[1]) {
+    const collection = norm(slash[0]);
+    const id = norm(slash[1]);
+    const byCollectionId = index.knowledge.find((k) => k.collection && norm(k.collection) === collection && norm(k.id) === id);
+    if (byCollectionId) return { kind: "knowledge", id: byCollectionId.id, collection: byCollectionId.collection };
+  }
   const byId = index.knowledge.find((k) => norm(k.id) === t);
-  if (byId) return { kind: "knowledge", id: byId.id };
+  if (byId) return { kind: "knowledge", id: byId.id, ...(byId.collection ? { collection: byId.collection } : {}) };
   const byTitle = index.knowledge.find((k) => k.title && norm(k.title) === t);
-  if (byTitle) return { kind: "knowledge", id: byTitle.id };
+  if (byTitle) return { kind: "knowledge", id: byTitle.id, ...(byTitle.collection ? { collection: byTitle.collection } : {}) };
 
   // 3) Memory — by file basename, then by full relative path (extension optional).
   const tNoExt = norm(stripExt(target));
@@ -89,7 +96,7 @@ export function resolveOutgoingLinks(markdown: string, index: WikiDocIndex): Res
 /** A stable string key for a doc ref (dedupe / comparison / graph node ids). */
 export function docRefKey(ref: WikiDocRef): string {
   return ref.kind === "knowledge"
-    ? `knowledge:${ref.id}`
+    ? `knowledge:${ref.collection ? `${ref.collection}/` : ""}${ref.id}`
     : ref.kind === "memory"
       ? `memory:${ref.path}`
       : `journal:${ref.date}`;

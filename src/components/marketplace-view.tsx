@@ -82,6 +82,7 @@ const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
   { id: "mcp", label: "MCP servers" },
   { id: "skill", label: "Skills" },
   { id: "prompt", label: "Prompts" },
+  { id: "knowledge-pack", label: "Knowledge packs" },
   { id: "craft", label: "Crafts" },
 ];
 

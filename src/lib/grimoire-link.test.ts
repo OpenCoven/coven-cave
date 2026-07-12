@@ -7,6 +7,7 @@ import { grimoireHash, GRIMOIRE_HASH_PREFIX } from "./grimoire-link.ts";
 
 assert.equal(GRIMOIRE_HASH_PREFIX, "#grimoire:", "prefix matches the grimoire-view deep-link format");
 assert.equal(grimoireHash("knowledge", "my-entry"), "#grimoire:knowledge:my-entry");
+assert.equal(grimoireHash("knowledge", "characters/my-entry"), "#grimoire:knowledge:characters%2Fmy-entry");
 assert.equal(grimoireHash("journal", "2026-07-07"), "#grimoire:journal:2026-07-07");
 assert.equal(
   grimoireHash("memory", "/Users/x/.coven/memory/notes.md"),

@@ -18,6 +18,7 @@ CATALOG = MARKETPLACE / "catalog.json"
 PLUGIN_ROOT = MARKETPLACE / "plugins"
 EXPORT_ROOT = MARKETPLACE / "exports"
 CRAFT_SCHEMA_VERSION = "opencoven.craft.v1"
+KNOWLEDGE_PACK_SCHEMA_VERSION = "opencoven.knowledge-pack.v1"
 SUPPORTED_CRAFT_LICENSES = {
     "Apache-2.0",
     "BSD-2-Clause",
@@ -26,6 +27,7 @@ SUPPORTED_CRAFT_LICENSES = {
     "MIT",
 }
 RESOURCE_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+FRONTMATTER_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 CONTENT_HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -180,6 +182,139 @@ def validate_craft(
         raise ValueError(f'Craft "{name}" visibility must be public or hidden')
 
 
+def validate_knowledge_pack(plugin: dict[str, Any], marketplace_dir: Path) -> None:
+    name = plugin.get("name", "<unnamed>")
+    pack = plugin.get("knowledgePack")
+    if not isinstance(pack, dict):
+        raise ValueError(f'Knowledge Pack "{name}" is missing its knowledgePack specification')
+    if pack.get("schemaVersion") != KNOWLEDGE_PACK_SCHEMA_VERSION:
+        raise ValueError(f'Knowledge Pack "{name}" must use schemaVersion {KNOWLEDGE_PACK_SCHEMA_VERSION}')
+
+    default_root = pack.get("defaultRoot")
+    if default_root is not None and (
+        not isinstance(default_root, str) or not RESOURCE_ID_RE.fullmatch(default_root)
+    ):
+        raise ValueError(f'Knowledge Pack "{name}" defaultRoot must be a slug id')
+
+    folders = pack.get("folders")
+    if not isinstance(folders, list) or not folders:
+        raise ValueError(f'Knowledge Pack "{name}" folders must be a non-empty list')
+    folder_ids: set[str] = set()
+    folder_template_ids: set[str] = set()
+    for folder in folders:
+        if not isinstance(folder, dict):
+            raise ValueError(f'Knowledge Pack "{name}" folders must contain objects')
+        folder_id = _require_text(folder, "id", f'Knowledge Pack "{name}" folder')
+        if not RESOURCE_ID_RE.fullmatch(folder_id):
+            raise ValueError(f'invalid Knowledge Pack folder id "{folder_id}"')
+        if folder_id in folder_ids:
+            raise ValueError(f'duplicate Knowledge Pack folder id "{folder_id}"')
+        folder_ids.add(folder_id)
+        _require_text(folder, "name", f'Knowledge Pack "{name}" folder "{folder_id}"')
+        _require_text(folder, "description", f'Knowledge Pack "{name}" folder "{folder_id}"')
+        _require_text(folder, "entityType", f'Knowledge Pack "{name}" folder "{folder_id}"')
+        if folder.get("storyQuestion") is not None:
+            _require_text(folder, "storyQuestion", f'Knowledge Pack "{name}" folder "{folder_id}"')
+        fields = folder.get("fields")
+        if not isinstance(fields, list):
+            raise ValueError(f'Knowledge Pack folder "{folder_id}" fields must be a list')
+        field_keys: set[str] = set()
+        for field in fields:
+            if not isinstance(field, dict):
+                raise ValueError(f'Knowledge Pack folder "{folder_id}" fields must contain objects')
+            key = _require_text(field, "key", f'Knowledge Pack folder "{folder_id}" field')
+            if not FRONTMATTER_KEY_RE.fullmatch(key):
+                raise ValueError(f'invalid Knowledge Pack field key "{key}"')
+            if key in field_keys:
+                raise ValueError(f'duplicate Knowledge Pack field key "{key}"')
+            field_keys.add(key)
+            _require_text(field, "label", f'Knowledge Pack folder "{folder_id}" field "{key}"')
+            if field.get("description") is not None:
+                _require_text(field, "description", f'Knowledge Pack folder "{folder_id}" field "{key}"')
+            if field.get("options") is not None:
+                _string_list(
+                    field.get("options"),
+                    f'Knowledge Pack folder "{folder_id}" field "{key}" options',
+                )
+        template_ids = _string_list(
+            folder.get("templates"),
+            f'Knowledge Pack folder "{folder_id}" templates',
+            allow_empty=True,
+        )
+        folder_template_ids.update(template_ids)
+
+    templates = pack.get("templates")
+    if not isinstance(templates, list) or not templates:
+        raise ValueError(f'Knowledge Pack "{name}" templates must be a non-empty list')
+    template_ids: set[str] = set()
+    pack_sources_root = (marketplace_dir / "pack-sources").resolve()
+    for template in templates:
+        if not isinstance(template, dict):
+            raise ValueError(f'Knowledge Pack "{name}" templates must contain objects')
+        template_id = _require_text(template, "id", f'Knowledge Pack "{name}" template')
+        if not RESOURCE_ID_RE.fullmatch(template_id):
+            raise ValueError(f'invalid Knowledge Pack template id "{template_id}"')
+        if template_id in template_ids:
+            raise ValueError(f'duplicate Knowledge Pack template id "{template_id}"')
+        template_ids.add(template_id)
+        folder_id = _require_text(template, "folder", f'Knowledge Pack "{name}" template "{template_id}"')
+        if folder_id not in folder_ids:
+            raise ValueError(f'Knowledge Pack template "{template_id}" references missing folder "{folder_id}"')
+        _require_text(template, "name", f'Knowledge Pack "{name}" template "{template_id}"')
+        if template.get("description") is not None:
+            _require_text(template, "description", f'Knowledge Pack "{name}" template "{template_id}"')
+        source_path = _safe_relative_path(
+            template.get("sourcePath"),
+            "Knowledge Pack template source path",
+            required_prefix="pack-sources",
+        )
+        source_file = (marketplace_dir / Path(*source_path.parts)).resolve()
+        try:
+            source_file.relative_to(pack_sources_root)
+        except ValueError as exc:
+            raise ValueError(f'unsafe Knowledge Pack template source path: {template.get("sourcePath")!r}') from exc
+        if not source_file.is_file():
+            raise ValueError(f'Knowledge Pack template source file does not exist: {template.get("sourcePath")}')
+    missing_folder_templates = sorted(folder_template_ids - template_ids)
+    if missing_folder_templates:
+        raise ValueError(
+            f'Knowledge Pack "{name}" folders reference missing templates: {", ".join(missing_folder_templates)}'
+        )
+
+    skills = pack.get("skills")
+    if not isinstance(skills, list) or not skills:
+        raise ValueError(f'Knowledge Pack "{name}" skills must be a non-empty list')
+    skill_ids: set[str] = set()
+    for skill in skills:
+        if not isinstance(skill, dict):
+            raise ValueError(f'Knowledge Pack "{name}" skills must contain objects')
+        skill_id = _require_text(skill, "id", f'Knowledge Pack "{name}" skill')
+        if not RESOURCE_ID_RE.fullmatch(skill_id):
+            raise ValueError(f'invalid Knowledge Pack skill id "{skill_id}"')
+        if skill_id in skill_ids:
+            raise ValueError(f'duplicate Knowledge Pack skill id "{skill_id}"')
+        skill_ids.add(skill_id)
+        source_path = _safe_relative_path(
+            skill.get("sourcePath"),
+            "Knowledge Pack skill source path",
+            required_prefix="pack-sources",
+        )
+        source_file = (marketplace_dir / Path(*source_path.parts)).resolve()
+        try:
+            source_file.relative_to(pack_sources_root)
+        except ValueError as exc:
+            raise ValueError(f'unsafe Knowledge Pack skill source path: {skill.get("sourcePath")!r}') from exc
+        if source_file.name != "SKILL.md" or not source_file.is_file():
+            raise ValueError(f'Knowledge Pack skill source SKILL.md does not exist: {skill.get("sourcePath")}')
+
+    workflow_ids = _string_list(pack.get("workflows", []), f'Knowledge Pack "{name}" workflows', allow_empty=True)
+    for workflow_id in workflow_ids:
+        if not RESOURCE_ID_RE.fullmatch(workflow_id):
+            raise ValueError(f'invalid Knowledge Pack workflow id "{workflow_id}"')
+        if not (ROOT / "workflows" / f"{workflow_id}.yaml").is_file():
+            raise ValueError(f'Knowledge Pack workflow does not exist: workflows/{workflow_id}.yaml')
+
+
 def validate_catalog(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> dict[str, Any]:
     plugins = catalog.get("plugins")
     if not isinstance(plugins, list):
@@ -194,8 +329,16 @@ def validate_catalog(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLAC
     for plugin in plugins:
         if plugin.get("kind") == "craft":
             validate_craft(plugin, plugins_by_name, marketplace_dir)
+            if plugin.get("knowledgePack") is not None:
+                raise ValueError(f'Plugin "{plugin["name"]}" has Knowledge Pack metadata with kind "craft"')
+        elif plugin.get("kind") == "knowledge-pack":
+            validate_knowledge_pack(plugin, marketplace_dir)
+            if plugin.get("craft") is not None:
+                raise ValueError(f'Plugin "{plugin["name"]}" has Craft metadata with kind "knowledge-pack"')
         elif plugin.get("craft") is not None:
             raise ValueError(f'Plugin "{plugin["name"]}" has Craft metadata without kind "craft"')
+        elif plugin.get("knowledgePack") is not None:
+            raise ValueError(f'Plugin "{plugin["name"]}" has Knowledge Pack metadata without kind "knowledge-pack"')
     return catalog
 
 
@@ -330,6 +473,8 @@ def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
         manifest["craft"] = plugin["craft"]
         if plugin["craft"].get("mcpServers"):
             manifest["mcpServers"] = plugin["craft"]["mcpServers"]
+    if plugin.get("kind") == "knowledge-pack":
+        manifest["kind"] = "knowledge-pack"
     return manifest
 
 
@@ -381,6 +526,38 @@ def codex_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def knowledge_pack_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
+    pack = plugin["knowledgePack"]
+    manifest: dict[str, Any] = {
+        "schemaVersion": pack["schemaVersion"],
+        "id": plugin["name"],
+        "displayName": plugin["displayName"],
+        "description": plugin["description"],
+        "version": plugin["version"],
+    }
+    if pack.get("defaultRoot"):
+        manifest["defaultRoot"] = pack["defaultRoot"]
+    manifest.update(
+        {
+            "folders": pack["folders"],
+            "templates": [
+                {
+                    "id": template["id"],
+                    "folder": template["folder"],
+                    "name": template["name"],
+                    **({"description": template["description"]} if template.get("description") else {}),
+                    "path": f"templates/{template['id']}.md",
+                }
+                for template in pack["templates"]
+            ],
+            "skills": [skill["id"] for skill in pack["skills"]],
+            "prompts": [prompt["id"] for prompt in plugin.get("prompts", [])],
+            "workflows": pack.get("workflows", []),
+        }
+    )
+    return manifest
+
+
 def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> dict[Path, str]:
     files: dict[Path, str] = {}
     plugin_root = marketplace_dir / "plugins"
@@ -407,6 +584,24 @@ def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) 
             files[package_dir / "assets" / "UPSTREAM_LICENSE.txt"] = license_source.read_text(encoding="utf-8")
             if craft.get("mcpServers"):
                 files[package_dir / ".mcp.json"] = dump_json({"mcpServers": craft["mcpServers"]})
+            files[package_dir / ".codex-plugin" / "plugin.json"] = dump_json(codex_manifest(plugin))
+            continue
+        if plugin.get("kind") == "knowledge-pack":
+            pack = plugin["knowledgePack"]
+            files[package_dir / "pack.json"] = dump_json(knowledge_pack_manifest(plugin))
+            for template in pack["templates"]:
+                source = marketplace_dir / Path(*PurePosixPath(template["sourcePath"]).parts)
+                files[package_dir / "templates" / f"{template['id']}.md"] = source.read_bytes()
+            for skill in pack["skills"]:
+                source = marketplace_dir / Path(*PurePosixPath(skill["sourcePath"]).parts)
+                source_root = source.parent
+                for source_file in source_root.rglob("*"):
+                    if not source_file.is_file():
+                        continue
+                    relative = source_file.relative_to(source_root)
+                    files[package_dir / "skills" / skill["id"] / relative] = source_file.read_bytes()
+            for prompt in plugin.get("prompts", []):
+                files[package_dir / "prompts" / f"{prompt['id']}.md"] = prompt_markdown(prompt)
             files[package_dir / ".codex-plugin" / "plugin.json"] = dump_json(codex_manifest(plugin))
             continue
         # Some marketplace skill packs carry hand-authored, long-form SKILL.md
@@ -443,7 +638,11 @@ def marketplace_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLA
                 },
                 "trust": plugin["trust"],
                 "roleAffinity": plugin.get("roleAffinity", []),
-                **({"kind": "craft", "craft": plugin["craft"]} if plugin.get("kind") == "craft" else {}),
+                **(
+                    {"kind": "craft", "craft": plugin["craft"]}
+                    if plugin.get("kind") == "craft"
+                    else {"kind": "knowledge-pack"} if plugin.get("kind") == "knowledge-pack" else {}
+                ),
             })
             for plugin in plugins
         ],
@@ -490,10 +689,10 @@ def expected_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE)
     return files
 
 
-def managed_craft_roots(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> set[Path]:
-    """Craft packages are fully generated, so their file sets are authoritative.
+def managed_package_roots(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) -> set[Path]:
+    """Craft and Knowledge Pack packages are fully generated, so their file sets are authoritative.
 
-    Include previously generated Craft roots no longer present in the catalog;
+    Include previously generated roots no longer present in the catalog;
     their root Cave manifest identifies them without treating legacy/manual
     plugin packages as generator-owned.
     """
@@ -501,7 +700,7 @@ def managed_craft_roots(catalog: dict[str, Any], marketplace_dir: Path = MARKETP
     roots = {
         plugin_root / plugin["name"]
         for plugin in catalog["plugins"]
-        if plugin.get("kind") == "craft"
+        if plugin.get("kind") in {"craft", "knowledge-pack"}
     }
     if plugin_root.is_dir():
         for candidate in plugin_root.iterdir():
@@ -512,7 +711,7 @@ def managed_craft_roots(catalog: dict[str, Any], marketplace_dir: Path = MARKETP
                 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 continue
-            if isinstance(manifest, dict) and manifest.get("kind") == "craft":
+            if isinstance(manifest, dict) and manifest.get("kind") in {"craft", "knowledge-pack"}:
                 roots.add(candidate)
     return roots
 
@@ -600,16 +799,16 @@ def main() -> int:
         catalog_path = (args.catalog or (marketplace_dir / "catalog.json")).resolve()
         catalog = load_catalog(catalog_path, marketplace_dir)
         files = expected_files(catalog, marketplace_dir)
-        craft_roots = managed_craft_roots(catalog, marketplace_dir)
+        managed_roots = managed_package_roots(catalog, marketplace_dir)
         if args.check:
-            problems = check_files(files, marketplace_dir.parent, craft_roots)
+            problems = check_files(files, marketplace_dir.parent, managed_roots)
             if problems:
                 for problem in problems:
                     print(problem, file=sys.stderr)
                 return 1
             print(f"marketplace_ok files={len(files)} plugins={len(catalog['plugins'])}")
             return 0
-        write_files(files, craft_roots)
+        write_files(files, managed_roots)
         print(f"marketplace_synced files={len(files)} plugins={len(catalog['plugins'])}")
         return 0
     except Exception as exc:
