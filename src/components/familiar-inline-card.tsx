@@ -12,6 +12,15 @@ import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import type { Familiar } from "@/lib/types";
 import {
+  loadFamiliarAnalyticsData,
+  buildFamiliarAnalyticsModel,
+} from "@/components/familiar-analytics-data";
+import {
+  deriveFamiliarCardInsights,
+  type FamiliarCardInsights,
+  type CardAction,
+} from "@/lib/familiar-card-insights";
+import {
   pickFamiliarMemory,
   formatRelTime,
   statusMeta,
@@ -64,6 +73,44 @@ function loadMemoryEntries(): Promise<RawMemoryEntry[] | null> {
       });
   }
   return memoryCache;
+}
+
+// Insight layer (cave-ck70): reuse the analytics loader + model builder the
+// full analytics view already has, reduced to card-sized judgment aids by
+// deriveFamiliarCardInsights. Cached per familiar for cheap re-opens; a load
+// that yields no familiar (daemon down, roster fetch failed) resolves null
+// and CLEARS the cache so the next open retries (cave-2ex2 discipline).
+const insightsCache = new Map<string, Promise<FamiliarCardInsights | null>>();
+function loadCardInsights(familiarId: string): Promise<FamiliarCardInsights | null> {
+  let cached = insightsCache.get(familiarId);
+  if (!cached) {
+    cached = loadFamiliarAnalyticsData(familiarId)
+      .then((data) => {
+        const model = buildFamiliarAnalyticsModel(data);
+        if (!model.familiar) throw new Error("familiar roster unavailable");
+        return deriveFamiliarCardInsights(model);
+      })
+      .catch(() => {
+        insightsCache.delete(familiarId);
+        return null;
+      });
+    insightsCache.set(familiarId, cached);
+  }
+  return cached;
+}
+
+function useCardInsights(id: string): FamiliarCardInsights | null {
+  const [insights, setInsights] = useState<FamiliarCardInsights | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadCardInsights(id).then((value) => {
+      if (alive) setInsights(value);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+  return insights;
 }
 
 function useFamiliarStatus(id: string): { info: FamiliarStatusInfo | null; failed: boolean } {
@@ -128,12 +175,34 @@ export function FamiliarInlineCard({
   const { openFamiliarStudio } = useFamiliarStudio();
   const { info, failed: statusFailed } = useFamiliarStatus(familiar.id);
   const { entries, loading, failed: memoryFailed } = useFamiliarMemory(familiar.id);
+  const insights = useCardInsights(familiar.id);
 
   const meta = statusMeta(info?.status);
 
   function act(fn: () => void) {
     fn();
     onClose();
+  }
+
+  function openSession(sessionId: string) {
+    act(() => window.dispatchEvent(new CustomEvent("cave:agents-open-session", { detail: { sessionId } })));
+  }
+
+  function runCardAction(action: CardAction) {
+    switch (action.kind) {
+      case "resume-session":
+        if (action.sessionId) openSession(action.sessionId);
+        break;
+      case "fix-contract":
+        act(() => openFamiliarStudio(familiar.id, "contract"));
+        break;
+      case "review-heals":
+        act(() => window.location.assign(`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`));
+        break;
+      case "refresh-memory":
+        act(() => openFamiliarStudio(familiar.id, "memory"));
+        break;
+    }
   }
 
   return (
@@ -191,7 +260,82 @@ export function FamiliarInlineCard({
         )}
       </div>
 
+      {/* Trust & health one-liner — should I hand this familiar the task? */}
+      {insights ? (
+        <div className="familiar-inline-card__insight" data-tone={insights.insight.tone}>
+          {insights.insight.text}
+        </div>
+      ) : null}
+
+      {/* Activity meta: 7-day pulse, thumbs approval, top attention signal. */}
+      {insights && (insights.sessionsLast7d > 0 || insights.feedback || insights.topSignal) ? (
+        <div className="familiar-inline-card__meta">
+          {insights.sessionsLast7d > 0 ? (
+            <span className="familiar-inline-card__meta-item">
+              <Icon name="ph:heartbeat" width={12} aria-hidden /> {insights.sessionsLast7d} session
+              {insights.sessionsLast7d === 1 ? "" : "s"} · 7d
+            </span>
+          ) : null}
+          {insights.feedback ? (
+            <span
+              className="familiar-inline-card__meta-item"
+              title={insights.feedback.topModel ? `most-rated model: ${insights.feedback.topModel}` : undefined}
+            >
+              <Icon name="ph:thumbs-up" width={12} aria-hidden /> {Math.round(insights.feedback.approval * 100)}% of{" "}
+              {insights.feedback.total} rated
+            </span>
+          ) : null}
+          {insights.topSignal ? (
+            <span className="familiar-inline-card__signal" data-severity={insights.topSignal.severity}>
+              <Icon name="ph:warning-circle" width={12} aria-hidden /> {insights.topSignal.label}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Live workload — WHAT it's doing, not just an "N active" count. */}
+      {insights && insights.runningSessions.length > 0 ? (
+        <div className="familiar-inline-card__workload">
+          <div className="familiar-inline-card__workload-head">Working on</div>
+          <ul className="familiar-inline-card__workload-list">
+            {insights.runningSessions.map((s) => (
+              <li key={s.id}>
+                <button type="button" className="familiar-inline-card__workload-item" onClick={() => openSession(s.id)}>
+                  <Icon name="ph:play" width={12} aria-hidden />
+                  <span className="familiar-inline-card__workload-title">{s.title}</span>
+                  <span className="familiar-inline-card__workload-time">{formatRelTime(s.updatedAt)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="familiar-inline-card__actions">
+        {/* State-driven quick actions ride ahead of the static row. */}
+        {insights?.actions.map((action) => (
+          <button
+            key={action.kind}
+            type="button"
+            className="familiar-inline-card__action-contextual"
+            onClick={() => runCardAction(action)}
+          >
+            <Icon
+              name={
+                action.kind === "resume-session"
+                  ? "ph:play"
+                  : action.kind === "fix-contract"
+                    ? "ph:shield-warning"
+                    : action.kind === "review-heals"
+                      ? "ph:wrench"
+                      : "ph:arrows-clockwise"
+              }
+              width={13}
+              aria-hidden
+            />{" "}
+            {action.label}
+          </button>
+        ))}
         <button
           type="button"
           onClick={() =>
@@ -235,7 +379,10 @@ export function FamiliarInlineCard({
           <ul className="familiar-inline-card__memory-list">
             {entries.map((m) => (
               <li key={m.fullPath} className="familiar-inline-card__memory-item">
-                <span className="familiar-inline-card__memory-title">{m.title}</span>
+                <span className="familiar-inline-card__memory-title">
+                  {m.title}
+                  {m.stale ? <span className="familiar-inline-card__memory-stale">stale</span> : null}
+                </span>
                 {m.excerpt ? <span className="familiar-inline-card__memory-excerpt">{m.excerpt}</span> : null}
                 <span className="familiar-inline-card__memory-time">{formatRelTime(m.modified)}</span>
               </li>
