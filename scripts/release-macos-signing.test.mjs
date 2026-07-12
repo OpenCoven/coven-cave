@@ -95,15 +95,18 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
   );
 });
 
-test("Linux AppImage strips bundled GLib so host GLib is used at runtime", () => {
-  assert.match(releaseWorkflow, /name: Strip bundled GLib from AppImage/);
+test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-compatible", () => {
+  assert.match(releaseWorkflow, /name: Strip bundled GLib\/libmount from AppImage/);
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
+  assert.match(releaseWorkflow, /libmount\.so\.1\*/);
+  assert.match(releaseWorkflow, /libblkid\.so\.1\*/);
+  assert.match(releaseWorkflow, /libuuid\.so\.1\*/);
   assert.match(releaseWorkflow, /appimagetool squashfs-root/);
   assert.match(releaseWorkflow, /gh release upload "\$RELEASE_TAG" "\$APPIMAGE" --clobber/);
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
     releaseWorkflow.indexOf("name: Sign Linux/Windows updater artifact") <
-      releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage"),
+      releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage"),
     "GLib strip must run after initial signing so the repacked artifact is the final signed version",
   );
   assert(

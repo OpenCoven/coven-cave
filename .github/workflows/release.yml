@@ -340,12 +340,13 @@ jobs:
             gh release upload "$RELEASE_TAG" "${artifact}.sig" --clobber
           done
 
-      # Strip bundled GLib from the AppImage so the host system's GLib is used
-      # at runtime. The host's libayatana-appindicator3 (loaded via dlopen by
-      # Tauri's tray icon) is compiled against the host GLib, so the symbols
-      # must match. By removing GLib from the bundle, the dynamic linker falls
-      # through to the system GLib, which always matches the dlopen'd libraries.
-      - name: Strip bundled GLib from AppImage
+      # Strip bundled GLib and util-linux mount libraries from the AppImage so
+      # the host system's copies are used at runtime. The host's
+      # libayatana-appindicator3/GVFS stack (loaded via dlopen by GTK/GIO and
+      # Tauri's tray icon) is compiled against the host GLib/libmount ABI, so
+      # those symbols must match. By removing these libraries from the bundle,
+      # the dynamic linker falls through to the coherent host library set.
+      - name: Strip bundled GLib/libmount from AppImage
         if: >-
           matrix.family == 'linux' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
@@ -371,18 +372,22 @@ jobs:
           "$APPIMAGE" --appimage-extract >/dev/null 2>&1
           echo "Extracted $APPIMAGE"
 
-          # ── 2. Remove bundled GLib ──
+          # ── 2. Remove bundled GLib/libmount ──
           # The main binary was compiled against GLib 2.72 and works with any
-          # host GLib >= 2.72.  By deleting GLib from the bundle, dlopen'd
-          # host libraries (libayatana-appindicator3, GVFS) resolve against
-          # the host GLib and see matching symbols.
+          # host GLib >= 2.72. By deleting GLib and util-linux's mount stack
+          # from the bundle, dlopen'd host libraries (libayatana-appindicator3,
+          # GVFS, GIO) resolve against host GLib/libmount and see matching
+          # versioned symbols such as MOUNT_2_40.
           find squashfs-root/usr/lib \
             \( -name 'libglib-2.0*' \
                -o -name 'libgio-2.0*' \
                -o -name 'libgobject-2.0*' \
                -o -name 'libgmodule-2.0*' \
-               -o -name 'libgthread-2.0*' \) \
-            -delete -print | sed 's/^/🧹 Removed GLib: /'
+               -o -name 'libgthread-2.0*' \
+               -o -name 'libmount.so.1*' \
+               -o -name 'libblkid.so.1*' \
+               -o -name 'libuuid.so.1*' \) \
+            -delete -print | sed 's/^/🧹 Removed host-ABI library: /'
 
           # ── 3. Re-pack into AppImage ──
           # Download appimagetool (portable, no FUSE needed with
@@ -394,7 +399,7 @@ jobs:
 
           APPIMAGE_EXTRACT_AND_RUN=1 \
             /tmp/appimagetool squashfs-root "$APPIMAGE"
-          echo "✅ $APPIMAGE repacked without bundled GLib"
+          echo "✅ $APPIMAGE repacked without bundled GLib/libmount"
           rm -rf squashfs-root /tmp/appimagetool
 
           # ── 4. Re-upload and re-sign the updater artifact ──
@@ -403,7 +408,7 @@ jobs:
           # replaced with the stripped AppImage outputs.
           gh release upload "$RELEASE_TAG" "$APPIMAGE" --clobber
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "Re-signing ${APPIMAGE} after GLib strip"
+            echo "Re-signing ${APPIMAGE} after GLib/libmount strip"
             pnpm exec tauri signer sign "$APPIMAGE"
             gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber
           fi
