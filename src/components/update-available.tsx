@@ -196,6 +196,8 @@ export function UpdateBannerTrigger() {
           return;
         }
 
+        if (r.kind !== "native-unavailable") nativeRetryFailed.delete(r.version);
+
         const recommendNativeRetry =
           r.kind === "native-unavailable" && !nativeRetryFailed.has(r.version);
         pushBanner({
