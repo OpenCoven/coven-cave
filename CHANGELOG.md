@@ -7,6 +7,27 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.180] - 2026-07-12
+
+> 🔌 **OpenCoven tools clarity: correct coven-code install path, cleaner harness versions, and GPT-5.6 models.** Every coven-code surface now points at the scoped `@opencoven/coven-code` package (min 0.6.0) instead of the deprecated bare squat, harness version probes ignore log noise, the notch centers correctly across monitors, and familiar auth failures explain how to recover.
+
+### Features
+- **Models: GPT-5.6 Codex models** — adds the GPT-5.6 Codex model family (`gpt-5.6-sol`/`-terra`/`-luna`) and moves the default familiar model to `gpt-5.6-sol` (#3007).
+- **Cave: dedicated cave home with startup migration** — a dedicated cave home directory with an automatic startup migration and a one-click migration banner (#3005).
+
+### Fixes
+- **Onboarding: coven-code installs only as `@opencoven/coven-code`** — the bare `coven-code` npm package is a different, deprecated package (stuck at 0.0.22); every install/status/update surface now targets the scoped `@opencoven/coven-code` exclusively, with a 0.6.0 compatibility floor (#3013).
+- **Runtimes: corrected coven-code install hint** — synced the registry so the install hint points at `@opencoven/coven-code` (the old `@opencoven/coven` does not exist on npm) (#3014, #3015).
+- **Harnesses: skip log noise in version probes** — version detection ignores leading timestamp/log-level lines (e.g. OpenCode's `WARN FZF not found`) instead of reporting them as the version (#3006).
+- **Notch: exact-center on the mouse's screen** — the quick-chat notch always centers on the top-bar middle and opens on whatever monitor the cursor is on unless pinned (#3009).
+- **Familiars: actionable hub-auth error** — a 401/403 loading familiars now explains that the hub rejected this Cave's token and to reconnect, instead of a bare status code (#3008).
+- **Onboarding: require descriptions for new familiars** — new familiars must carry a description (#3002).
+- **Onboarding: quiet npm "Unknown env config" warnings** — npm config warnings no longer leak into Tools output (#3001).
+- **Startup: sidecar cache validation** — validates the sidecar cache on startup (#3010).
+
+### Chores
+- **Copy: capitalize "Coven CLI"** — consistent "Coven CLI" casing across prose (#3012).
+
 ## [0.0.179] - 2026-07-12
 
 > 🧹 **Chat housekeeping, familiar lifecycle, and updater polish.** Chats gain an automatic archive policy and a centered quick-chat notch, familiars get a discoverable Remove entry and a cleaner picker, the copilot harness renders tool calls, and the update banner leads with the native installer.
