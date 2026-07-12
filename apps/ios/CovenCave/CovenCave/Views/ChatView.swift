@@ -39,8 +39,10 @@ struct ChatView: View {
     @State private var dictation = SpeechDictation()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
+    @State private var draftPersistenceTask: Task<Void, Never>?
     /// How many images one message can carry.
     private let maxAttachments = 4
+    private let draftPersistenceDelay: UInt64 = 250_000_000
     // Composer "+" menu and the attach destinations it fans out to.
     @State private var showActionMenu = false
     @State private var showPhotosPicker = false
@@ -82,6 +84,29 @@ struct ChatView: View {
         return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+
+    private func writeDraftPersistence(_ value: String, key: String) {
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+    }
+
+    private func scheduleDraftPersistence(_ value: String) {
+        draftPersistenceTask?.cancel()
+        draftPersistenceTask = Task { [draftKey] in
+            try? await Task.sleep(nanoseconds: draftPersistenceDelay)
+            guard !Task.isCancelled else { return }
+            writeDraftPersistence(value, key: draftKey)
+        }
+    }
+
+    private func flushDraftPersistence() {
+        draftPersistenceTask?.cancel()
+        draftPersistenceTask = nil
+        writeDraftPersistence(draft, key: draftKey)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -214,13 +239,14 @@ struct ChatView: View {
             app.markFamiliarViewed(thread.familiarIds)
         }
         // Persist every edit per-thread; send() clears the draft, which removes
-        // the stored copy here so a sent message leaves nothing behind.
+        // the stored copy here so a sent message leaves nothing behind. Debounce
+        // the UserDefaults write: doing synchronous persistence for every
+        // character makes the iOS composer visibly hitch on long chats.
         .onChange(of: draft) { _, value in
-            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                UserDefaults.standard.removeObject(forKey: draftKey)
-            } else {
-                UserDefaults.standard.set(value, forKey: draftKey)
-            }
+            scheduleDraftPersistence(value)
+        }
+        .onDisappear {
+            flushDraftPersistence()
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
