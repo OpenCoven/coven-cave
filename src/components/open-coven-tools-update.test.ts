@@ -49,6 +49,15 @@ assert.match(src, /Review tools/, "tool update banner sends users to the setting
 assert.match(shell, /OpenCovenToolsBannerTrigger/, "Shell imports and mounts the OpenCoven tools banner trigger");
 assert.match(src, /sidecarTokenPresent/, "diagnostics include whether the sidecar auth bridge captured a token");
 assert.match(src, /Check tools/, "component offers a manual re-check");
+assert.match(src, /lastSuccessfulCheckedAt/, "tool checks retain a visible successful-check timestamp");
+assert.match(src, /Stale data from/, "failed rechecks explicitly mark retained tool rows as stale");
+assert.match(src, /Last known/, "each retained tool row identifies last-known data");
+assert.match(src, /TOOL_UPDATE_RECHECK_EVENT/, "a completed in-page update requests a banner revalidation");
+assert.match(src, /window\.dispatchEvent\(new Event\(TOOL_UPDATE_RECHECK_EVENT\)\)/, "successful in-page updates revalidate the banner");
+assert.match(src, /dismissBanner\(TOOL_UPDATE_BANNER_ID\)/, "a clean recheck dismisses an obsolete update banner");
+assert.match(src, /Copy diagnostics \(safe\)/, "the copy control discloses that diagnostics are sanitized");
+assert.match(src, /paths, raw output, URL queries, and secrets are omitted or redacted/, "the UI discloses copied-diagnostics redaction");
+assert.doesNotMatch(src, /updated at \$\{json\.binaryPath\}/, "successful tool updates do not retain local binary paths in UI state");
 assert.match(
   src,
   /const toolActionBtn =[\s\S]*settings-tool-action/,
