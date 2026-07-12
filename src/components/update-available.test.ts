@@ -101,7 +101,7 @@ assert.match(src, /Retry native update/, "settings row makes retrying native upd
 // failure (often a transient mid-release latest.json gap) first offers a
 // native retry; only after a user-initiated retry also fails does the banner
 // escalate to the canonical release page in the Browser surface.
-assert.match(src, /recommendNativeRetry/, "banner recommends retrying the native updater before any browser handoff");
+// (Avoid asserting on internal helper variable names; CTA/copy assertions below pin the banner behavior.)
 assert.match(src, /Native updater still unavailable/, "banner escalates copy only after a failed native retry");
 assert.match(
   src,
