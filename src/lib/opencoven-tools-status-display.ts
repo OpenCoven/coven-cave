@@ -54,8 +54,8 @@ export function latestCheckText(tool: OpenCovenToolDisplayStatus, stale = false)
 export function toolStatusText(tool: OpenCovenToolDisplayStatus, stale = false): string {
   if (!tool.installed) return "Not found";
   if (!tool.current) return "Version unknown";
-  if (stale || !hasVerifiedLatestVersion(tool)) return "Couldn't verify latest version";
   if (!tool.compatible) return "Needs update";
+  if (stale || !hasVerifiedLatestVersion(tool)) return "Couldn't verify latest version";
   if (tool.outdated) return "Update available";
   return "Up to date";
 }
