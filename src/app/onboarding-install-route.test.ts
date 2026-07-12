@@ -19,6 +19,12 @@ assert.match(
   "install route should turn process exhaustion into a user-facing retryable job error",
 );
 
+assert.doesNotMatch(
+  route,
+  /â€”/,
+  "installer recovery copy must not expose a mojibake em dash",
+);
+
 assert.match(
   route,
   /void \(async \(\) => \{\s*try \{[\s\S]*?const child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*await finishInstallJob\(targetName, target, job, \{[\s\S]*?launchError: err,/,

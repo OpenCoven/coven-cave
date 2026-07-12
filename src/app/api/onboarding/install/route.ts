@@ -479,7 +479,7 @@ function installerOutcomeError(
   if (code === 0 && installed.path) return null;
   return installFailureHint(targetName, output) ??
     (code === 0
-      ? `${target.binary} still is not on PATH after install â€” open a new terminal or restart Cave, then re-check.`
+      ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
       : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
 }
 
