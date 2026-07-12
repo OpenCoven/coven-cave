@@ -7,7 +7,7 @@ import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
 import { GroupChatView } from "@/components/group-chat-view";
-import { InspectorPane } from "@/components/inspector-pane";
+import { InspectorPane, type Tab as InspectorSection } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
@@ -107,6 +107,16 @@ type Props = {
 
 // ── Right panel (inspector / chat) ────────────────────────────────────────────
 
+/** The Inspector's sections, promoted to the right panel's own top-level tabs.
+ *  The pane no longer owns a nested tab strip — this panel drives which section
+ *  it renders. Memory stays out — it lives in the Familiars surface, not the
+ *  chat-side panel. */
+const INSPECTOR_SECTIONS: { id: Exclude<InspectorSection, "memory">; label: string }[] = [
+  { id: "familiar", label: "Familiar" },
+  { id: "analytics", label: "Analytics" },
+  { id: "inbox", label: "Automations" },
+];
+
 function RightPanel({
   panel,
   activeFamiliar,
@@ -127,6 +137,13 @@ function RightPanel({
   onInboxItemChanged: () => void | Promise<void>;
 }) {
   const primaryPanel: Exclude<RightPanelKind, "changes"> = panel === "debug" ? "debug" : "inspector";
+  const [section, setSection] = useState<Exclude<InspectorSection, "memory">>("familiar");
+
+  // Fired-reminder count for the active familiar — surfaces on the Automations
+  // tab as a soft warning-tinted badge (softened from the old red danger pill).
+  const inboxBadge = activeFamiliar
+    ? inboxItems.filter((i) => i.familiarId === activeFamiliar.id && i.status === "fired").length
+    : 0;
 
   return (
     // CHAT-D13-05: this panel renders inside the shell's <main>, where a
@@ -137,21 +154,39 @@ function RightPanel({
       <Group className="right-panel-split" orientation="vertical">
         <Panel id="right-panel-primary" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
           <div className="right-panel-tabs">
+            {INSPECTOR_SECTIONS.map((sec) => (
+              <button
+                key={sec.id}
+                type="button"
+                className={`right-panel-tab${primaryPanel === "inspector" && section === sec.id ? " right-panel-tab--active" : ""}`}
+                onClick={() => {
+                  setSection(sec.id);
+                  onSetPanel("inspector");
+                }}
+              >
+                {sec.label}
+                {sec.id === "inbox" && inboxBadge > 0 ? (
+                  <span
+                    className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
+                    aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
+                  >
+                    {inboxBadge}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+            {/* Debug is diagnostics, not a co-equal section — a quiet icon
+                toggle beside the close control (same demotion vocabulary as
+                the Group icon in the scope-tab strip). */}
             <button
               type="button"
-              className={`right-panel-tab${primaryPanel === "inspector" ? " right-panel-tab--active" : ""}`}
-              onClick={() => onSetPanel("inspector")}
-            >
-              <Icon name="ph:brain-bold" width={13} />
-              Inspector
-            </button>
-            <button
-              type="button"
-              className={`right-panel-tab${primaryPanel === "debug" ? " right-panel-tab--active" : ""}`}
+              className={`right-panel-tab right-panel-tab--icon${primaryPanel === "debug" ? " right-panel-tab--active" : ""}`}
+              aria-label="Debug"
+              aria-pressed={primaryPanel === "debug"}
+              title="Debug — session event stream"
               onClick={() => onSetPanel("debug")}
             >
               <Icon name="ph:bug-bold" width={13} />
-              Debug
             </button>
             <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
               <Icon name="ph:x-bold" width={11} />
@@ -166,7 +201,7 @@ function RightPanel({
                 onCreateReminder={onCreateReminder}
                 onOpenInboxItem={onOpenInboxItem}
                 onInboxItemChanged={onInboxItemChanged}
-                hideMemory
+                tab={section}
               />
             )}
             {primaryPanel === "debug" && <DebugPane />}
@@ -753,17 +788,17 @@ export function ChatSurface({
             </Panel>
             {showRightSidebar && (
               <>
-                {/* Defaults to 260px — wide enough that the Inspector's three
-                    section tabs (Familiar/Analytics/Automations) fit without
-                    shredding, still drag-resizable via the handle below and
-                    clamped so the chat thread keeps its 45% minSize. */}
+                {/* Defaults to 300px — wide enough that the flattened strip
+                    (Familiar/Analytics/Automations + the Debug icon and close)
+                    fits without shredding, still drag-resizable via the handle
+                    below and clamped so the chat thread keeps its 45% minSize. */}
                 <Separator className="shell-separator hidden lg:flex">
                   <SeparatorHandle orientation="col" />
                 </Separator>
                 <Panel
                   id="right-sidebar"
                   className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="260px"
+                  defaultSize="300px"
                   minSize="220px"
                   maxSize="480px"
                 >

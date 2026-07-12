@@ -6,10 +6,13 @@ import { describe, it } from "node:test";
 describe("Familiar analytics navigation wiring", () => {
   it("wires the inspector Analytics tab to FamiliarAnalyticsView", () => {
     const source = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
+    const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 
     assert.match(source, /import \{ FamiliarAnalyticsView \} from "@\/components\/familiar-analytics-view"/);
     assert.match(source, /type Tab = "memory" \| "familiar" \| "analytics" \| "inbox"/);
-    assert.match(source, /analytics: "Analytics"/);
+    // The Analytics label lives in the chat right panel's promoted section
+    // tabs now; the pane just renders the section it's told to.
+    assert.match(chatSurface, /\{ id: "analytics", label: "Analytics" \}/);
     assert.match(source, /tab === "analytics"[\s\S]*<FamiliarAnalyticsView familiarId=\{familiar\.id\} \/>/);
   });
 

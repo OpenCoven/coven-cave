@@ -18,7 +18,7 @@ import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
-type Tab = "memory" | "familiar" | "analytics" | "inbox";
+export type Tab = "memory" | "familiar" | "analytics" | "inbox";
 
 
 
@@ -52,24 +52,16 @@ type Props = {
   onCreateReminder?: (familiarId: string) => void;
   onOpenInboxItem?: (item: InboxItem) => void;
   onInboxItemChanged?: () => void | Promise<void>;
-  /** When true, drop the tab nav and outer border so the pane fits in 296px rail. */
+  /** When true, drop the outer border so the pane fits in the 296px rail. */
   compact?: boolean;
   /** When set, the Memory tab shows an "Open full memory →" footer button. */
   onOpenFullView?: () => void;
-  /** Drop the Memory tab entirely. The chat surface uses this — memory is not
-   *  part of a conversation, so it lives in the Familiars surface, not the
-   *  chat-side inspector. Defaults to false (the standalone inspector keeps it). */
-  hideMemory?: boolean;
+  /** Which section to render. The pane is a controlled section body — the
+   *  chat right panel promotes these sections to its own top-level tabs
+   *  (Familiar / Analytics / Automations), so there is no nested tab strip
+   *  here anymore. Defaults to memory for the compact rail variant. */
+  tab?: Tab;
 };
-
-const TAB_LABEL: Record<Tab, string> = {
-  memory: "Memory",
-  familiar: "Familiar",
-  analytics: "Analytics",
-  inbox: "Automations",
-};
-
-const INSPECTOR_TABS: Tab[] = ["memory", "familiar", "analytics", "inbox"];
 
 function InspectorEmpty({
   icon,
@@ -126,17 +118,8 @@ export function InspectorPane({
   onInboxItemChanged,
   compact = false,
   onOpenFullView,
-  hideMemory = false,
+  tab = "memory",
 }: Props) {
-  const [tab, setTab] = useState<Tab>(hideMemory ? "familiar" : "memory");
-  // If memory is hidden but the pane somehow lands on it (prop flip), fall back
-  // to the Familiar tab so the panel never renders an empty memory body.
-  useEffect(() => {
-    if (hideMemory && tab === "memory") setTab("familiar");
-  }, [hideMemory, tab]);
-
-  const visibleTabs = hideMemory ? INSPECTOR_TABS.filter((t) => t !== "memory") : INSPECTOR_TABS;
-
   const familiarInbox = useMemo(() => {
     if (!familiar) return [];
     return inboxItems
@@ -152,8 +135,6 @@ export function InspectorPane({
       });
   }, [inboxItems, familiar]);
 
-  const inboxBadge = familiarInbox.filter((i) => i.status === "fired").length;
-
   const shellClassName = compact
     ? "flex h-full min-h-0 flex-col bg-[var(--bg-base)]"
     : // Non-compact renders inside the chat right sidebar (.chat-right-aside),
@@ -163,46 +144,12 @@ export function InspectorPane({
 
   return (
     <aside className={shellClassName}>
-      {!compact && (
-        <Tabs
-          variant="underline"
-          // Natural-width tabs (no fill): the three section labels hug their
-          // content like the left rail's tabs instead of splitting the track
-          // into equal thirds and shredding "Automations" at narrow widths.
-          size="sm"
-          idPrefix="inspector"
-          ariaLabel="Inspector sections"
-          value={tab}
-          onChange={setTab}
-          items={visibleTabs.map((t) => ({
-            id: t,
-            label:
-              t === "inbox" && inboxBadge > 0 ? (
-                <>
-                  {TAB_LABEL[t]}
-                  <span
-                    className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
-                    aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
-                  >
-                    {inboxBadge}
-                  </span>
-                </>
-              ) : (
-                TAB_LABEL[t]
-              ),
-          }))}
-        />
-      )}
-
       <div
-        role="tabpanel"
-        id={`inspector-panel-${tab}`}
-        aria-labelledby={`inspector-tab-${tab}`}
         className={`min-h-0 flex-1 ${
           tab === "memory" ? "overflow-hidden" : "overflow-y-auto"
         }`}
       >
-        {tab === "memory" && !hideMemory ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
+        {tab === "memory" ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
         {tab === "familiar" ? <FamiliarCapabilityPanel familiar={familiar} /> : null}
         {tab === "analytics" && familiar ? <FamiliarAnalyticsView familiarId={familiar.id} /> : null}
         {tab === "inbox" ? (

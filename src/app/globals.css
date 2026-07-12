@@ -3539,6 +3539,14 @@ textarea.required-inputs-control {
   border-bottom-color: var(--accent-presence);
 }
 
+/* Icon-only tab (Debug): fixed footprint pushed to the right edge with the
+   close control — diagnostics, not a co-equal inspector section. */
+.right-panel-tab--icon {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 7px;
+}
+
 .right-panel-close {
   display: grid;
   place-items: center;

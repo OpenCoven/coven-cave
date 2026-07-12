@@ -8,8 +8,8 @@ const projectSidebar = await readFile(new URL("./chat-project-sidebar.tsx", impo
 
 assert.match(
   chatSurface,
-  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="260px"[\s\S]*minSize="220px"[\s\S]*maxSize="480px"/,
-  "ChatSurface right sidebar should default to 260px (Inspector section tabs fit untruncated) but be drag-resizable within a 220–480px band",
+  /Panel[\s\S]*id="right-sidebar"[\s\S]*defaultSize="300px"[\s\S]*minSize="220px"[\s\S]*maxSize="480px"/,
+  "ChatSurface right sidebar should default to 300px (promoted Inspector section tabs + Debug icon fit untruncated) but be drag-resizable within a 220–480px band",
 );
 
 // Drag-to-resize: an outer separator with a col handle sits before the right
@@ -38,7 +38,7 @@ assert.match(
 assert.match(
   projectSidebar,
   /chat-thread-rail[\s\S]*w-\[230px\]/,
-  "The internal left rail stays 230px (the right sidebar runs slightly wider at 260px so Inspector tabs fit)",
+  "The internal left rail stays 230px (the right sidebar runs slightly wider at 300px so Inspector tabs fit)",
 );
 
 // The aside mirrors the left sidebar's glass chrome: translucent bg + blur,

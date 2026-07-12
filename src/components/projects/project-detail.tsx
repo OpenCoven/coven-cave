@@ -128,7 +128,7 @@ export function ProjectDetail({
   const [nameDraft, setNameDraft] = useState(project.name);
   const [rootDraft, setRootDraft] = useState(project.root);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, setBusy] = useState<"name" | "root" | "color" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"name" | "root" | "color" | "delete" | "icon" | null>(null);
   const [copiedRoot, setCopiedRoot] = useState(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [imageStatus, setImageStatus] = useState<string | null>(null);
@@ -148,6 +148,44 @@ export function ProjectDetail({
   const pickImage = () => {
     setImageStatus(null);
     imageInputRef.current?.click();
+  };
+
+  // AI-generated icon: the server builds a distinct per-project prompt
+  // (deterministic hue/motif from the root, fresh composition per press) and
+  // the result lands in the same image store uploads use — so it renders in
+  // the chat sidebar, project picker, and board immediately.
+  const generateIcon = async () => {
+    setBusy("icon");
+    setImageStatus("Generating icon…");
+    announce(`Generating an icon for ${project.name}.`);
+    try {
+      const res = await fetch("/api/projects/icon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: project.name, root: project.root }),
+      });
+      const payload = (await res.json()) as
+        | { ok: true; dataUrl: string; mime: string }
+        | { ok: false; error?: string; hint?: string; providerMessage?: string };
+      if (!payload.ok) {
+        const reason = payload.hint ?? payload.providerMessage ?? "Couldn't generate an icon.";
+        setImageStatus(reason);
+        announce(reason, "assertive");
+        return;
+      }
+      const saved = await setProjectImage(project.root, {
+        dataUrl: payload.dataUrl,
+        mime: payload.mime,
+      });
+      setImageStatus(saved.ok ? null : saved.reason);
+      if (saved.ok) announce("Project icon generated.");
+      else announce(saved.reason, "assertive");
+    } catch {
+      setImageStatus("Couldn't generate an icon.");
+      announce("Couldn't generate an icon.", "assertive");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const copyRoot = async () => {
@@ -386,6 +424,14 @@ export function ProjectDetail({
             </PopoverItem>
             <PopoverItem icon="ph:image-bold" onSelect={pickImage}>
               {hasImage ? "Change image…" : "Set image…"}
+            </PopoverItem>
+            <PopoverItem
+              icon="ph:sparkle-bold"
+              disabled={busy === "icon"}
+              onSelect={() => void generateIcon()}
+              title="Generate a distinct AI icon for this project (uses your connected model's image provider — OPENAI_API_KEY or GOOGLE_API_KEY in Vault)"
+            >
+              {busy === "icon" ? "Generating icon…" : hasImage ? "Regenerate AI icon" : "Generate AI icon"}
             </PopoverItem>
             {hasImage ? (
               <PopoverItem
