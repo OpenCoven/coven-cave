@@ -6,12 +6,13 @@ import { lstat, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "no
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
+import { SIDECAR_RUNTIME_BUDGETS } from "./sidecar-runtime-closure.mjs";
 
 export const SIDECAR_ARCHIVE_SCHEMA_VERSION = 3;
 export const SIDECAR_ARCHIVE_BUDGETS = Object.freeze({
   archiveBytes: 80 * 1024 * 1024,
   unpackedBytes: 200 * 1024 * 1024 - 1,
-  fileCount: 5_200,
+  fileCount: SIDECAR_RUNTIME_BUDGETS.fileCount,
 });
 
 const TAR_BLOCK_BYTES = 512;
