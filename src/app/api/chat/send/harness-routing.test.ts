@@ -900,6 +900,12 @@ assert.match(
 );
 
 assert.match(
+  chatRoute,
+  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
+  "Coven stream-json output events must pass through the Codex assistant filter instead of being discarded as handled JSON",
+);
+
+assert.match(
   streamEvents,
   /kind: "done";[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
   "The done StreamEvent must carry optional usage and costUsd fields (CHAT-D12-02)",

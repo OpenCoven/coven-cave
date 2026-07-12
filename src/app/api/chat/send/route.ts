@@ -1528,6 +1528,7 @@ export async function POST(req: Request) {
               is_error?: boolean;
               total_cost_usd?: number;
               usage?: unknown;
+              text?: string;
               message?: {
                 content?: Array<{
                   type?: string;
@@ -1576,6 +1577,18 @@ export async function POST(req: Request) {
                 usage: parseStreamJsonUsage(ev.usage),
                 costUsd: parseCostUsd(ev.total_cost_usd),
               };
+            } else if (ev.type === "output" && typeof ev.text === "string") {
+              // Coven's Windows captured-piped Codex path wraps transcript
+              // bytes as stream-json `output` events so stdout remains a
+              // valid JSONL protocol. Preserve the original chunk boundaries:
+              // AssistantFilter buffers partial lines and exposes only the
+              // assistant phase after stripping Codex's startup transcript.
+              const cleaned = resolveBackspaces(stripAnsi(ev.text));
+              const filtered = assistantFilter.push(cleaned);
+              if (filtered) {
+                assistantText += filtered;
+                push({ kind: "assistant_chunk", text: filtered });
+              }
             } else if (
               ev.type === "assistant" &&
               Array.isArray(ev.message?.content)
