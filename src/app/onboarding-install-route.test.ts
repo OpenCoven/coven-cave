@@ -9,8 +9,8 @@ const route = readFileSync(
 
 assert.match(
   route,
-  /function finishInstallJobError\([\s\S]*?job\.status = "done";[\s\S]*?job\.ok = false;[\s\S]*?job\.error = installStartErrorMessage\(err\);/,
-  "install route should have a shared finalizer for start failures",
+  /async function finishInstallJob\([\s\S]*?launchError[\s\S]*?installStartErrorMessage\(launchError\)[\s\S]*?recoverDaemonAfterCliInstall\(targetName, job\)/,
+  "install route should finalize start failures through the daemon-recovery path",
 );
 
 assert.match(
@@ -21,8 +21,8 @@ assert.match(
 
 assert.match(
   route,
-  /void \(async \(\) => \{\s*try \{[\s\S]*?const child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*finishInstallJobError\(job, err\);/,
-  "fire-and-forget installer task should catch synchronous spawn failures",
+  /void \(async \(\) => \{\s*try \{[\s\S]*?const child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*await finishInstallJob\(targetName, target, job, \{[\s\S]*?launchError: err,/,
+  "fire-and-forget installer task should recover a daemon after synchronous spawn failures",
 );
 
 assert.doesNotMatch(
