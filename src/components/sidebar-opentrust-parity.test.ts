@@ -7,6 +7,8 @@ async function readSource(url: URL): Promise<string> {
 }
 
 const chrome = await readSource(new URL("./sidebar-chrome.tsx", import.meta.url));
+const quickSwitch = await readSource(new URL("./familiar-quick-switch.tsx", import.meta.url));
+const familiarSwitcher = await readSource(new URL("./familiar-switcher.tsx", import.meta.url));
 
 for (const exportName of [
   "SidebarBrand",
@@ -31,8 +33,14 @@ assert.match(chrome, /aria-label="Search"/, "icon search has an accessible name"
 assert.match(chrome, /href="\/dashboard"/, "utility navigation keeps Dashboard as a link");
 assert.match(
   chrome,
-  /<FamiliarQuickSwitch[\s\S]*?placement="top-start"[\s\S]*?labeled/,
+  /<FamiliarQuickSwitch[\s\S]*?placement="top-start"[\s\S]*?popoverClassName="sidebar-identity-popover"[\s\S]*?labeled/,
   "identity footer reuses the familiar switcher and opens upward",
+);
+assert.match(quickSwitch, /popoverClassName=\{popoverClassName\}/, "quick switch forwards sidepanel popover chrome");
+assert.match(
+  familiarSwitcher,
+  /className=\{\["familiar-switcher__popover", popoverClassName\]\.filter\(Boolean\)\.join\(" "\)\}/,
+  "familiar switcher composes instance chrome onto the shared Popover class",
 );
 assert.doesNotMatch(chrome, /OpenTrust|E53935|openclaw\.ai/, "Cave chrome does not copy OpenTrust product identity");
 
@@ -107,6 +115,16 @@ assert.match(sidebarCss, /\.sidebar-brand\s*\{[^}]*min-height:\s*48px/s, "brand 
 assert.match(sidebarCss, /\.sidebar-primary-action[\s\S]*?height:\s*32px/s, "primary action is 32px");
 assert.match(
   sidebarCss,
+  /\.sidebar-primary-action\s*\{[^}]*background:\s*var\(--accent-presence\);[^}]*color:\s*var\(--accent-presence-foreground\)/s,
+  "the primary action uses the foreground paired with the presence accent",
+);
+assert.match(
+  sidebarCss,
+  /\.cnav__mini-count\s*\{[^}]*background:\s*var\(--accent-presence\);[^}]*color:\s*var\(--accent-presence-foreground\)/s,
+  "scheduled-count ink uses the foreground paired with the presence accent",
+);
+assert.match(
+  sidebarCss,
   /\.sidebar-folder-row--active\s*\{[^}]*border-left:\s*3px solid var\(--accent-presence\)/s,
   "active destination has the leading accent",
 );
@@ -135,7 +153,17 @@ assert.match(
   /@media \(max-width: 1023px\)[\s\S]*?\.sidebar-primary-action[\s\S]*?min-height:\s*var\(--touch-target\)/s,
   "drawer controls retain touch targets",
 );
+assert.match(
+  sidebarCss,
+  /@media \(max-width: 1023px\)[\s\S]*?\.sidebar-search-action,\s*\.cnav__toolbar \.cnav__back\s*\{[^}]*min-width:\s*var\(--touch-target\)/s,
+  "drawer icon controls retain square touch targets",
+);
 assert.doesNotMatch(sidebarCss, /#E53935|openclaw\.ai/i, "sidebar styling uses Cave tokens only");
+assert.match(
+  sidebarCss,
+  /\.familiar-switcher__popover\.sidebar-identity-popover\s*\{[^}]*background:\s*color-mix\(in oklch, var\(--bg-elevated\) 96%, transparent\)/s,
+  "the sidepanel identity menu beats the later generic popover fill and stays legible over dense contextual lists",
+);
 assert.doesNotMatch(
   sidebarCss,
   /\.sidebar-(?:header|familiar-switch|familiar-filter|foot|version|action-row|action-stack)\b/,

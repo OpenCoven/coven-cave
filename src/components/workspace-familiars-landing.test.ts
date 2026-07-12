@@ -171,7 +171,7 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true, section: "tools" \}/,
   "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
 );
 

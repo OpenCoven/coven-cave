@@ -44,17 +44,17 @@ assert.match(
   "shell keeps a userOverrodeNavRef",
 );
 
-// (c) shell collapses via navRef.current?.collapse() and restores via
-//     navRef.current?.expand() inside the rail-visibility handler.
+// (c) shell collapses directly and restores through the explicit-width helper
+//     so a fresh rail does not reopen at the panel's 200px minimum.
 assert.match(
   shell,
-  /navRef\.current\?\.collapse\(\)/,
-  "shell collapses the nav via navRef.current?.collapse()",
+  /if \(navOpen\) \{[\s\S]*?collapseDesktopNav\(\)/,
+  "shell collapses the nav through the remembered-width-aware helper",
 );
 assert.match(
   shell,
-  /navRef\.current\?\.expand\(\)/,
-  "shell restores the nav via navRef.current?.expand()",
+  /if \(shouldRestore\) expandDesktopNav\(\)/,
+  "shell restores the nav at its remembered expanded width",
 );
 
 // (d) the restore is guarded by the user-override ref and !isMobile.

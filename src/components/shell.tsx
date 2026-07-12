@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { ForwardedRef } from "react";
 import { forwardRef } from "react";
 import {
@@ -52,8 +52,10 @@ const shellStorage = {
         // in the detail area. react-resizable-panels v4 persists each group as a
         // flat `{ "<panelId>": <percent>, … }` map (e.g. {"nav":26.5,"detail":73.5}).
         // Drop the layout — falling back to the default — when a panel is
-        // collapsed to ~0 or the panels don't sum to ~100% (a leftover layout
+        // truly zero-sized or the panels don't sum to ~100% (a leftover layout
         // from an old panel set under-fills the group and never re-expands).
+        // Small positive percentages are valid: a 48px rail is 2% at 2400px
+        // and less on wider displays.
         try {
           const parsed = JSON.parse(raw) as unknown;
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -62,8 +64,8 @@ const shellStorage = {
             );
             if (values.length >= 2) {
               const sum = values.reduce((a, b) => a + b, 0);
-              const anyCollapsed = values.some((v) => v > 0 && v <= 2);
-              if (anyCollapsed || sum < 98 || sum > 102) {
+              const anyZeroSized = values.some((v) => v === 0);
+              if (anyZeroSized || sum < 98 || sum > 102) {
                 window.localStorage.removeItem(key);
                 return null;
               }
@@ -126,6 +128,12 @@ const NAV_RAIL_PX = 48;
 const NAV_OPEN_PX = 256;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
+function expandNavPanel(panel: PanelImperativeHandle | null, openSizePx: number): void {
+  if (!panel) return;
+  panel.expand();
+  panel.resize(`${Math.round(openSizePx)}px`);
+}
+
 export type ShellHandle = {
   openNav: () => void;
   closeNav: () => void;
@@ -183,6 +191,8 @@ function ShellInner({
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
+  const navExpandedSizeRef = useRef(NAV_OPEN_PX);
+  const navCollapsePendingRef = useRef(false);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
@@ -204,6 +214,22 @@ function ShellInner({
   // that would write to the persisted desktop layout for no benefit.
   const isMobile = useIsMobile();
   const [mobileDrawer, setMobileDrawer] = useState<MobileDrawerSlot>(null);
+  const expandDesktopNav = useCallback(() => {
+    navCollapsePendingRef.current = false;
+    expandNavPanel(navRef.current, navExpandedSizeRef.current);
+  }, []);
+  const collapseDesktopNav = useCallback(() => {
+    const panel = navRef.current;
+    if (!panel) return;
+    navCollapsePendingRef.current = true;
+    panel.collapse();
+  }, []);
+  const toggleDesktopNav = useCallback(() => {
+    const panel = navRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) expandDesktopNav();
+    else collapseDesktopNav();
+  }, [collapseDesktopNav, expandDesktopNav]);
 
   // When the viewport crosses back to desktop, drop any open drawer state so
   // we don't end up with a stale [data-mobile-drawer] attribute applying to
@@ -254,12 +280,12 @@ function ShellInner({
     return {
       openNav: () => {
         if (isMobile) { setMobileDrawer("nav"); return; }
-        navRef.current?.expand();
+        expandDesktopNav();
         setNavOpen(true);
       },
       closeNav: () => {
         if (isMobile) { setMobileDrawer((c) => (c === "nav" ? null : c)); return; }
-        navRef.current?.collapse();
+        collapseDesktopNav();
         setNavOpen(false);
       },
       dismissNavMobile: () => {
@@ -267,10 +293,7 @@ function ShellInner({
       },
       toggleNav: () => {
         if (isMobile) { toggleDrawer("nav"); return; }
-        const panel = navRef.current;
-        if (!panel) return;
-        if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
-        else { panel.collapse(); setNavOpen(false); }
+        toggleDesktopNav();
       },
       openList: () => {
         if (isMobile) { setMobileDrawer("list"); return; }
@@ -288,7 +311,7 @@ function ShellInner({
         togglePanel(listRef.current);
       },
     };
-  }, [isMobile]);
+  }, [isMobile, collapseDesktopNav, expandDesktopNav, toggleDesktopNav]);
 
   const twoPane = !list;
   const hasBottom = !!bottom;
@@ -457,6 +480,7 @@ function ShellInner({
     if (railPct >= nav) return; // already at/under the rail
     minimizedGroupsRef.current.add(groupId);
     markShellMinimizeApplied(groupId);
+    navCollapsePendingRef.current = true;
     group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
   }, [settled, isMobile, groupId]);
 
@@ -472,7 +496,7 @@ function ShellInner({
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("nav");
-        else togglePanel(navRef.current);
+        else toggleDesktopNav();
         return;
       }
       const key = e.key.toLowerCase();
@@ -496,7 +520,7 @@ function ShellInner({
     // the Code sidebar's "Sessions" rail) reopen the panel without a panel ref.
     const onToggleLeft = () => {
       if (isMobile) toggleDrawerSlot("nav");
-      else togglePanel(navRef.current);
+      else toggleDesktopNav();
     };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
@@ -506,7 +530,7 @@ function ShellInner({
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasBottom, isMobile, panelShortcuts]);
+  }, [twoPane, hasBottom, isMobile, panelShortcuts, toggleDesktopNav]);
 
   // Couple the left nav to the code rail (desktop only — mobile nav is a
   // drawer, so this must never touch it). When the rail opens we soft-collapse
@@ -520,7 +544,7 @@ function ShellInner({
         // Rail became visible: collapse the nav only if it's currently open,
         // and remember we did it so we can restore later.
         if (navOpen) {
-          navRef.current?.collapse();
+          collapseDesktopNav();
           railAutoCollapsedNavRef.current = true;
           userOverrodeNavRef.current = false;
         }
@@ -534,11 +558,11 @@ function ShellInner({
         railAutoCollapsedNavRef.current && !userOverrodeNavRef.current && !isMobile;
       railAutoCollapsedNavRef.current = false;
       userOverrodeNavRef.current = false;
-      if (shouldRestore) navRef.current?.expand();
+      if (shouldRestore) expandDesktopNav();
     };
     window.addEventListener("cave:code-rail-visibility", onRailVisibility);
     return () => window.removeEventListener("cave:code-rail-visibility", onRailVisibility);
-  }, [isMobile, navOpen]);
+  }, [isMobile, navOpen, collapseDesktopNav, expandDesktopNav]);
 
   // User-override detection: if the nav becomes open WHILE the rail had
   // auto-collapsed it, that's the user deliberately re-expanding (via the
@@ -604,7 +628,11 @@ function ShellInner({
         collapsedSize={isMobile ? 0 : NAV_RAIL_PX}
         panelRef={navRef}
         onResize={(size) => {
-          setNavOpen((size.inPixels ?? 0) > NAV_OPEN_THRESHOLD_PX);
+          const width = size.inPixels ?? 0;
+          const open = width > NAV_OPEN_THRESHOLD_PX;
+          if (open && !navCollapsePendingRef.current) navExpandedSizeRef.current = width;
+          if (!open) navCollapsePendingRef.current = false;
+          setNavOpen(open);
         }}
       >
         {/* CHAT-D13-05: every complementary landmark carries a distinct
@@ -676,12 +704,6 @@ function ShellInner({
   // Nav toggle, hoisted into the top menu bar. It anchors the bar's left edge so
   // a single persistent control owns the nav panel regardless of its open state.
   // Desktop-only — below 1024px the mobile `.top-bar` carries its own toggle.
-  const toggleNavPanel = () => {
-    const panel = navRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
-    else { panel.collapse(); setNavOpen(false); }
-  };
   const navToggle = !isMobile ? (
     <button
       type="button"
@@ -689,7 +711,7 @@ function ShellInner({
       aria-label={navOpen ? "Collapse navigation to icons" : "Expand navigation"}
       aria-expanded={navOpen}
       title={navOpen ? `Collapse navigation (${leftPanelShortcutLabel})` : `Expand navigation (${leftPanelShortcutLabel})`}
-      onClick={toggleNavPanel}
+      onClick={toggleDesktopNav}
     >
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>

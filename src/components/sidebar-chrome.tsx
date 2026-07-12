@@ -112,6 +112,7 @@ export function SidebarIdentityFooter(props: SidebarFamiliarScopeProps) {
           responseNeeded={props.responseNeeded}
           onSelectFamiliar={props.onFamiliarScopeChange}
           placement="top-start"
+          popoverClassName="sidebar-identity-popover"
           labeled
         />
       </div>

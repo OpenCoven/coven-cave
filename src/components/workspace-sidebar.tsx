@@ -258,8 +258,8 @@ export function WorkspaceSidebar({
   }, [hydrated, pinnedIds]);
 
   const visibleSessions = useMemo(
-    () => filterVisibleChatSessions(sessions, activeFamiliarId ?? null),
-    [sessions, activeFamiliarId],
+    () => filterVisibleChatSessions(sessions, activeFamiliarId ?? null, selectedFamiliarIds),
+    [sessions, activeFamiliarId, selectedFamiliarIds],
   );
 
   const groups = useMemo(

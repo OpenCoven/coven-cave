@@ -106,7 +106,7 @@
   min-width: 0;
   padding: 0 10px;
   background: var(--accent-presence);
-  color: var(--accent-foreground);
+  color: var(--accent-presence-foreground);
   font-size: 13px;
   font-weight: 650;
 }
@@ -349,6 +349,10 @@
   background: transparent;
 }
 
+.familiar-switcher__popover.sidebar-identity-popover {
+  background: color-mix(in oklch, var(--bg-elevated) 96%, transparent);
+}
+
 /* Recent Activity remains contextual content in the standard host. */
 .recent-activity {
   display: flex;
@@ -586,7 +590,7 @@
   padding: 0 3px;
   border-radius: 999px;
   background: var(--accent-presence);
-  color: var(--accent-foreground);
+  color: var(--accent-presence-foreground);
   font-size: 8px;
   font-weight: 700;
   line-height: 1;
@@ -765,5 +769,10 @@
 
   .sidebar-brand {
     min-height: var(--touch-target);
+  }
+
+  .sidebar-search-action,
+  .cnav__toolbar .cnav__back {
+    min-width: var(--touch-target);
   }
 }

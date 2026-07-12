@@ -15,6 +15,8 @@ type Props = {
   onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   /** Menu placement of the switcher. */
   placement?: "bottom-start" | "bottom-end" | "top-start" | "top-end";
+  /** Optional instance-level popover chrome. */
+  popoverClassName?: string;
   /** Labels the switcher's trigger with the active familiar name. */
   labeled?: boolean;
 };
@@ -34,6 +36,7 @@ export function FamiliarQuickSwitch({
   responseNeeded,
   onSelectFamiliar,
   placement = "bottom-start",
+  popoverClassName,
   labeled = false,
 }: Props) {
   return (
@@ -46,6 +49,7 @@ export function FamiliarQuickSwitch({
         responseNeeded={responseNeeded}
         onSelectFamiliar={onSelectFamiliar}
         placement={placement}
+        popoverClassName={popoverClassName}
         labeled={labeled}
       />
     </div>

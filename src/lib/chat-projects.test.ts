@@ -55,6 +55,12 @@ assert.deepEqual(
   "specific familiar scope should still show only that familiar's chats",
 );
 
+assert.deepEqual(
+  filterVisibleChatSessions(sessions, null, new Set(["sage", "nova"])).map((s) => s.id),
+  ["beta", "old-alpha"],
+  "multi-familiar scope should include selected familiars and exclude every unselected familiar",
+);
+
 // Externally-generated sessions stay out of the chat lists: daemon-only runs
 // flagged `generated` (journal narratives, flows, automations, CLI) and
 // generator origins (canvas refines, cron/heartbeat automations). They remain

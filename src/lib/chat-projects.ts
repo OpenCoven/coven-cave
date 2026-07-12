@@ -1,6 +1,7 @@
 import type { SessionRow } from "./types.ts";
 import type { CaveProject } from "./cave-projects.ts";
 import { compareProjectsAlphabetically } from "./cave-projects-types.ts";
+import { familiarInScope } from "./familiar-multiselect.ts";
 
 export type ChatProject = CaveProject;
 export type { CaveProject };
@@ -150,11 +151,13 @@ export function isGeneratedChatSession(session: SessionRow): boolean {
 export function filterVisibleChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
+  scopeFamiliarIds?: ReadonlySet<string>,
 ): SessionRow[] {
   return sessions
     .filter((session) => !DEAD_CHAT_STATUSES.has(session.status))
     .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)
+    .filter((session) => !scopeFamiliarIds || familiarInScope(scopeFamiliarIds, session.familiarId))
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
 }
 

@@ -26,7 +26,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const railPct = nav \* \(NAV_RAIL_PX \/ NAV_OPEN_PX\);[\s\S]{0,160}?group\.setLayout\(\{ \.\.\.cur, nav: railPct, detail: cur\.detail \+ \(nav - railPct\) \}\)/,
+  /const cur = group\.getLayout\(\);[\s\S]{0,220}?const railPct = nav \* \(NAV_RAIL_PX \/ NAV_OPEN_PX\);[\s\S]{0,240}?group\.setLayout\(\{ \.\.\.cur, nav: railPct, detail: cur\.detail \+ \(nav - railPct\) \}\)/,
   "on settle, a fresh group is minimized by setting the whole layout (nav→rail, freed width→detail)",
 );
 assert.match(
@@ -59,6 +59,26 @@ assert.match(
 );
 assert.match(shell, /const NAV_RAIL_PX = 48/, "OpenTrust parity uses a 48px icon rail");
 assert.match(shell, /const NAV_OPEN_PX = 256/, "OpenTrust parity uses a 256px expanded panel");
+assert.match(
+  shell,
+  /const anyZeroSized = values\.some\(\(v\) => v === 0\);/,
+  "layout recovery rejects a truly zero-sized pane without rejecting a legitimate narrow rail percentage",
+);
+assert.doesNotMatch(
+  shell,
+  /values\.some\(\(v\) => v > 0 && v <= 2\)/,
+  "the 48px rail must survive persistence on 2400px-and-wider displays",
+);
+assert.match(
+  shell,
+  /function expandNavPanel\([\s\S]*?panel\.resize\(`\$\{Math\.round\(openSizePx\)\}px`\)/,
+  "expanding the default rail targets the intended pixel width instead of the panel minimum",
+);
+assert.doesNotMatch(
+  shell,
+  /navRef\.current\?\.expand\(\)|togglePanel\(navRef\.current\)|panel\.isCollapsed\(\)\) \{ panel\.expand\(\)/,
+  "every nav expansion path uses the explicit remembered width",
+);
 
 // Collapse-to-rail must survive the px conversion.
 assert.match(

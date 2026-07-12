@@ -38,6 +38,8 @@ type Props = {
    *  left-edge sidebar home); the mobile top bar passes "bottom-end" since its
    *  trigger sits at the right edge. */
   placement?: "bottom-start" | "bottom-end" | "top-start" | "top-end";
+  /** Optional instance-level popover chrome, composed with the shared class. */
+  popoverClassName?: string;
   /** Shows the current familiar name beside the avatar on surfaces with room. */
   labeled?: boolean;
 };
@@ -57,6 +59,7 @@ export function FamiliarSwitcher({
   responseNeeded,
   onSelectFamiliar,
   placement = "bottom-start",
+  popoverClassName,
   labeled = false,
 }: Props) {
   const { openFamiliarStudio, openFamiliarStudioListView } = useFamiliarStudio();
@@ -167,7 +170,7 @@ export function FamiliarSwitcher({
         anchorRef={triggerRef}
         placement={placement}
         minWidth={264}
-        className="familiar-switcher__popover"
+        className={["familiar-switcher__popover", popoverClassName].filter(Boolean).join(" ")}
         ariaLabel="Switch familiar"
       >
         <div className="familiar-switcher" role="dialog" aria-label="Familiars">

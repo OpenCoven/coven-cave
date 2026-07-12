@@ -64,8 +64,8 @@ assert.match(
 //    the project tiles and rows from that scoped set.
 assert.match(
   workspaceSidebar,
-  /filterVisibleChatSessions\(sessions, activeFamiliarId \?\? null\)/,
-  "WorkspaceSidebar must derive visibleSessions from the active familiar",
+  /filterVisibleChatSessions\(sessions, activeFamiliarId \?\? null, selectedFamiliarIds\)/,
+  "WorkspaceSidebar must derive visibleSessions from the single- or multi-familiar scope",
 );
 assert.match(
   workspaceSidebar,

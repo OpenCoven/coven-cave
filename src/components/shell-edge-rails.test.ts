@@ -85,9 +85,10 @@ assert.match(
 );
 assert.match(
   shell,
-  /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
-  "nav toggle collapses and expands the nav panel",
+  /const toggleDesktopNav = useCallback\(\(\) => \{[\s\S]*?panel\.isCollapsed\(\)\) expandDesktopNav\(\);[\s\S]*?else collapseDesktopNav\(\)/,
+  "nav toggle collapses and expands through the remembered-width callbacks",
 );
+assert.match(shell, /shell-top-toggle--nav[\s\S]*?onClick=\{toggleDesktopNav\}/, "the menu-bar control uses the shared nav toggle");
 // The old collapsed-only left edge rail and full-height corner floats are gone.
 assert.doesNotMatch(
   shell,
@@ -218,7 +219,7 @@ assert.match(
 );
 assert.match(
   shell,
-  /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
+  /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*toggleDesktopNav\(\)/,
   "left panel toggles from the resolved left-panel shortcut",
 );
 assert.doesNotMatch(
