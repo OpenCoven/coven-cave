@@ -13,6 +13,7 @@ import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { cancelHoverPrefetch, hoverPrefetchConversation, invalidateConversation } from "@/lib/conversation-cache";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
@@ -589,6 +590,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       }
       setConfirmDeleteId(null);
       setActiveId((current) => (current === sessionId ? null : current));
+      invalidateConversation(sessionId);
       onSessionsChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
@@ -668,7 +670,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           removed.map((s) =>
             fetch(`/api/chat/conversation/${encodeURIComponent(s.id)}`, { method: "DELETE" })
               .then((r) => r.json().catch(() => ({ ok: false })))
-              .then((j) => !!j.ok)
+              .then((j) => {
+                if (j.ok) invalidateConversation(s.id);
+                return !!j.ok;
+              })
               .catch(() => false),
           ),
         );
@@ -1144,6 +1149,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                           aria-current={!selectMode && isActive ? "true" : undefined}
                           tabIndex={0}
                           onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
+                          onMouseEnter={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
+                          onMouseLeave={cancelHoverPrefetch}
+                          onFocus={() => { if (!selectMode) hoverPrefetchConversation(s.id); }}
+                          onBlur={cancelHoverPrefetch}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || (selectMode && e.key === " ")) {
                               e.preventDefault();

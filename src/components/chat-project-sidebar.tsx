@@ -7,6 +7,7 @@ import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selectio
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { sessionRailTitle } from "@/lib/session-rail-title";
+import { cancelHoverPrefetch, hoverPrefetchConversation } from "@/lib/conversation-cache";
 import { relativeTime } from "@/lib/relative-time";
 import {
   PINNED_SESSIONS_KEY,
@@ -182,6 +183,10 @@ function ThreadRow({
         role="button"
         tabIndex={0}
         onClick={onOpen}
+        onMouseEnter={() => hoverPrefetchConversation(session.id)}
+        onMouseLeave={cancelHoverPrefetch}
+        onFocus={() => hoverPrefetchConversation(session.id)}
+        onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpen();
         }}
@@ -287,6 +292,10 @@ function FolderChatRow({
         role="button"
         tabIndex={0}
         onClick={onOpen}
+        onMouseEnter={() => hoverPrefetchConversation(session.id)}
+        onMouseLeave={cancelHoverPrefetch}
+        onFocus={() => hoverPrefetchConversation(session.id)}
+        onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
           if (e.key === "Enter") onOpen();
         }}

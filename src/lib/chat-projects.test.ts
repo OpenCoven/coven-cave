@@ -89,8 +89,26 @@ assert.deepEqual(
     { root: "/work/beta", defaultFamiliarId: "nova", sessionIds: ["beta"] },
     { root: null, defaultFamiliarId: "charm", sessionIds: ["scratch"] },
   ],
-  "project groups should be alphabetical by project label, with No project last, and expose the latest familiar for launch",
+  "project groups should order by latest chat activity, with No project last, and expose the latest familiar for launch",
 );
+
+// The project holding the most recent chat floats to the top — recency beats
+// the alphabet.
+{
+  const recencyGroups = deriveChatProjectGroups(
+    [
+      session("alpha-old", "/work/alpha", "2026-06-01T00:00:00.000Z", "cody"),
+      session("zeta-new", "/work/zeta", "2026-06-09T00:00:00.000Z", "nova"),
+      session("beta-mid", "/work/beta", "2026-06-05T00:00:00.000Z", "sage"),
+    ],
+    projects,
+  );
+  assert.deepEqual(
+    recencyGroups.map((group) => group.projectRoot),
+    ["/work/zeta", "/work/beta", "/work/alpha"],
+    "the latest chat's project tops the rail even when it sorts last alphabetically",
+  );
+}
 
 assert.equal(chatProjectName("/work/alpha", projects), "Alpha");
 assert.equal(chatProjectName("/Users/x/repos/coven-cave", projects), "coven-cave");
@@ -115,8 +133,8 @@ const worktreeGroups = deriveChatProjectGroups(
 );
 assert.deepEqual(
   worktreeGroups.map((group) => group.projectName),
-  ["feature-a/coven-cave", "feature-b/coven-cave"],
-  "duplicate worktree repo names should include the parent directory and sort alphabetically",
+  ["feature-b/coven-cave", "feature-a/coven-cave"],
+  "duplicate worktree repo names should include the parent directory and order by recency",
 );
 
 // Analytics-spawned discussion threads remain normal chat threads.

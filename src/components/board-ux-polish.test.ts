@@ -262,6 +262,14 @@ assert.match(table, /next\.delete\(holder\.key\);/, "the table un-collapses the 
 assert.match(gantt, /if \(selectedUnscheduled\) setShowUnscheduled\(true\);/, "the gantt reveals the unscheduled tray when the selection has no dates");
 assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tray items carry data-card-id so the scroll pass can reach them");
 
+// ── cave-iote remainder: the view-switch scroll no-ops when the selection's
+// node doesn't exist in the freshly mounted view — reveal it, then retry once.
+assert.match(view, /if \(attempts\+\+ === 0\) frame = requestAnimationFrame\(locate\);/, "a missing card node gets exactly one more frame (a reveal effect may still be mounting it)");
+assert.match(table, /groups\.find\(\(g\) => g\.cards\.some\(\(c\) => c\.id === selectedCardId\)\)/, "the table locates the group holding the selection");
+assert.match(table, /next\.delete\(holder\.key\);/, "the table un-collapses the selection's group at mount (done is collapsed by default)");
+assert.match(gantt, /if \(selectedUnscheduled\) setShowUnscheduled\(true\);/, "the gantt reveals the unscheduled tray when the selection has no dates");
+assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tray items carry data-card-id so the scroll pass can reach them");
+
 // ── Bulk-op patch failures reconcile ONCE, after the batch settles (cave-381s):
 // a failed patchCard used to `await load()` immediately, reverting the
 // optimistic state of sibling patches still in flight.

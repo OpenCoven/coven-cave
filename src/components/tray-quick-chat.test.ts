@@ -162,7 +162,17 @@ assert.match(
   /if \(id\) setPickerDismissed\(true\)/,
   "picking a familiar dismisses the agent picker — the selection UI goes away once the choice is made",
 );
+assert.match(
+  component,
+  /const hintText = selectedFamiliar\s*\?\s*`Thinking: \$\{thinkingEffort\} · Speed: \$\{responseSpeed\} · Model: \$\{modelOverride \?\? "Runtime managed"\}`\s*:\s*"@id switches familiars · ⌘N new chat";/,
+  "once a familiar is chosen, the composer hint area shows thinking/speed/model instead of the @id switch hint",
+);
 assert.match(component, /<QuickChatComposer/, "tray renders the shared composer");
+assert.match(
+  component,
+  /onSteerQueued=\{steerQueued\}/,
+  "tray wires queued-message steering into the shared composer",
+);
 assert.match(
   controls,
   /COMMAND_THINKING_OPTIONS/,
@@ -199,6 +209,38 @@ assert.match(
   workspace,
   /listen\("quick-chat:open-session"/,
   "the main workspace listens for quick chat open-session events",
+);
+
+// ── Closing the window actually works ────────────────────────────────────────
+// The header × (and closing the last tab) call getCurrentWindow().hide() from
+// the quick-chat webview. Tauri v2 denies any IPC the webview isn't granted a
+// capability for — and the catch-fallback window.close() is a no-op inside a
+// webview — so without an explicit allow-hide grant the close button silently
+// does nothing. Same story for the open-in-app emit(). Pin the grant.
+const quickChatCapability = JSON.parse(
+  readFileSync(new URL("../../src-tauri/capabilities/loopback-quick-chat.json", import.meta.url), "utf8"),
+);
+assert.deepEqual(
+  quickChatCapability.webviews,
+  ["quick-chat"],
+  "the quick-chat capability is scoped to the quick-chat webview only",
+);
+assert.ok(
+  quickChatCapability.permissions.includes("core:window:allow-hide"),
+  "the quick-chat webview may hide its own window (header × / last-tab close)",
+);
+assert.ok(
+  quickChatCapability.permissions.includes("core:event:allow-emit"),
+  "the quick-chat webview may emit the open-session hand-off event",
+);
+assert.ok(
+  Array.isArray(quickChatCapability.remote?.urls) && quickChatCapability.remote.urls.length > 0,
+  "the quick-chat capability stays restricted to trusted loopback origins",
+);
+assert.match(
+  component,
+  /getCurrentWindow\(\)\.hide\(\)/,
+  "the header close button hides the tray window via the Tauri window API",
 );
 
 console.log("tray-quick-chat.test.ts OK");

@@ -43,13 +43,25 @@ assert.match(
 );
 assert.match(
   controller,
-  /applyRemoteTheme\(snap\.themeId, mode\)/,
+  /applyRemoteTheme\(storage, snap\.themeId, mode\)/,
   "a differing remote preset is applied to the DOM",
 );
 assert.match(
   controller,
   /setAttribute\("data-theme", themeId\)[\s\S]*setAttribute\("data-mode", mode\)/,
   "applying a theme sets both data-theme and data-mode",
+);
+
+// ── Storage-disabled safety ──────────────────────────────────────────────────
+assert.match(
+  controller,
+  /const storage = getStorage\(\);\s*\n\s*if \(!storage\) return/,
+  "reconcile bails when localStorage is unavailable (null in restricted WebKit) instead of crashing",
+);
+assert.match(
+  controller,
+  /return window\.localStorage \?\? null/,
+  "getStorage treats a null window.localStorage as unavailable",
 );
 
 // ── Loop / clobber safety ────────────────────────────────────────────────────

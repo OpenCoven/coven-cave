@@ -14,6 +14,7 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import {
+  chatSummaryTitle,
   chatTitleFromPrompt,
   defaultChatTitleForSession,
 } from "@/lib/cave-chat-titles";
@@ -395,9 +396,6 @@ async function autoNameSessionFromFirstExchange(
   promptText: string,
 ): Promise<void> {
   try {
-    // main dropped the assistant-text summarizer (chatSummaryTitle); derive the
-    // auto-title from the first prompt, matching how every other call site here
-    // titles a session.
     const summary = chatTitleFromPrompt(promptText);
     if (!summary) return;
     const autoDefaults = new Set(

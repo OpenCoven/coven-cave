@@ -185,13 +185,25 @@ describe("aggregateThreadSignals", () => {
     );
   });
 
-  it("lets you select a review item to unlock a discussion on the topic", () => {
-    assert.match(source, /buildThreadSignalDiscussionPrompt/, "seeds the chat with a topic-specific prompt");
-    assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat with the familiar");
-    assert.match(source, /Analytics source: \$\{analyticsPath\}/, "ties the discussion back to the familiar analytics page");
-    assert.match(source, /origin: "chat"/, "thread signal discussions stay regular chat threads");
-    assert.doesNotMatch(source, /origin: "eval"/, "thread signal discussions are not routed through Evals");
-    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => discussReviewItem\(familiarId, item\)\}/, "each review item is a clickable button");
+  it("launches a resolution thread from a review item, primed with an auto-sent fix prompt", () => {
+    assert.match(source, /buildThreadSignalResolutionPrompt/, "seeds the thread with a resolution-directive prompt");
+    assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat thread with the familiar");
+    assert.match(source, /Analytics source: \$\{analyticsPath\}/, "ties the thread back to the familiar analytics page");
+    assert.match(source, /origin: "chat"/, "thread signal resolutions stay regular chat threads");
+    assert.doesNotMatch(source, /origin: "eval"/, "thread signal resolutions are not routed through Evals");
+    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => launchResolutionThread\(familiarId, item\)\}/, "each review item is a clickable button");
+    assert.match(source, /Launch a thread to resolve/, "the affordance says it launches a resolution thread");
+  });
+
+  it("launches a resolution thread from actionable table rows", () => {
+    assert.match(source, /function resolveRow\(familiarId: string, row: ThreadSignalTableRow\)/, "rows are shaped into review items");
+    assert.match(source, /if \(!row\.kind\) return;/, "purely informational rows (skills used most) cannot launch a resolution");
+    assert.match(source, /onClick=\{\(\) => resolveRow\(familiarId, row\)\}/, "row action launches the resolution thread");
+    assert.match(source, /kind: "blocker",/, "blocker rows carry a review kind");
+    assert.match(source, /kind: "skill-access",/, "access-gap rows carry a review kind");
+    assert.match(source, /kind: "skill-clarity",/, "clarity-gap rows carry a review kind");
+    assert.match(source, /kind: "capability",/, "capability rows carry a review kind");
+    assert.match(source, />\s*Resolve\s*<\/Button>/, "row affordance is labeled Resolve");
   });
 });
 

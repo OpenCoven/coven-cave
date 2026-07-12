@@ -12,20 +12,20 @@ const coven = [
 const files = [
   { fullPath: "/Users/x/.coven/echo/memory/old.md", relPath: "old.md", rootLabel: "echo",
     sourceKind: "coven-origin", sourceKindLabel: "Coven origin", size: 2048,
-    modified: "2026-01-01T00:00:00Z" },
+    modified: "2026-01-01T00:00:00Z", familiarId: "echo" },
   { fullPath: "/Users/x/.coven/echo/memory/new.md", relPath: "new.md", rootLabel: "echo",
     sourceKind: "runtime", sourceKindLabel: "Runtime memory", size: 100,
-    modified: "2026-06-13T11:30:00Z" },
+    modified: "2026-06-13T11:30:00Z", familiarId: "echo" },
 ];
 
-// Merges both sources, defaults to recency-desc. Owned (coven) rows come before shared (file) rows.
+// Merges both sources, defaults to recency-desc.
 {
   const rows = buildMemoryRows({ coven, files, familiarFilter: "echo", query: "",
     sourceFilter: "all", sortMode: "recent", staleOnly: false, now: NOW });
   assert.equal(rows.length, 3, "all three entries present");
-  assert.deepEqual(rows.map((r) => r.kind), ["agent", "file", "file"], "coven (owned) first, then files (shared) by recency");
-  assert.equal(rows[0].rowId, "coven:c1");
-  assert.equal(rows[1].rowId, "file:/Users/x/.coven/echo/memory/new.md");
+  assert.deepEqual(rows.map((r) => r.rowId),
+    ["file:/Users/x/.coven/echo/memory/new.md", "coven:c1", "file:/Users/x/.coven/echo/memory/old.md"],
+    "both kinds interleaved by recency");
   assert.ok(rows.every((r) => typeof r.title === "string" && r.title.length > 0));
 }
 
@@ -37,19 +37,19 @@ const files = [
   assert.equal(rows.find((r) => r.kind === "file").size, 100);
 }
 
-// Coven rows are scoped to the active familiar; files are not.
+// Both kinds are scoped to the active familiar.
 {
   const rows = buildMemoryRows({ coven, files, familiarFilter: "other", query: "",
     sourceFilter: "all", sortMode: "recent", staleOnly: false, now: NOW });
   assert.equal(rows.filter((r) => r.kind === "agent").length, 0, "coven filtered out for other familiar");
-  assert.equal(rows.filter((r) => r.kind === "file").length, 2, "files unaffected by familiar filter");
+  assert.equal(rows.filter((r) => r.kind === "file").length, 0, "files filtered out for other familiar too");
 }
 
-// sourceFilter narrows files only (coven is not a file source, so it survives). Owned (coven) before shared (file).
+// sourceFilter narrows files only (coven is not a file source, so it survives).
 {
   const rows = buildMemoryRows({ coven, files, familiarFilter: "echo", query: "",
     sourceFilter: "runtime", sortMode: "recent", staleOnly: false, now: NOW });
-  assert.deepEqual(rows.map((r) => r.rowId), ["coven:c1", "file:/Users/x/.coven/echo/memory/new.md"]);
+  assert.deepEqual(rows.map((r) => r.rowId), ["file:/Users/x/.coven/echo/memory/new.md", "coven:c1"]);
 }
 
 // query matches title across both kinds.
@@ -145,7 +145,7 @@ const grows = [
 
 console.log("memory-rows: all assertions passed");
 
-// ── Familiar isolation: file rows partition into owned / shared ──────────────
+// ── Familiar isolation: only the selected familiar's files survive ──────────
 {
   const coven = [
     { id: "c1", familiar_id: "salem", title: "Salem note", updated_at: "2026-06-10T00:00:00.000Z", excerpt: "x", path: "p", protection: "none" },
@@ -159,13 +159,7 @@ console.log("memory-rows: all assertions passed");
   const ids = rows.map((r) => r.rowId);
   assert.ok(!ids.includes("file:/w/echo/b.md"), "other-familiar file is dropped");
   assert.ok(ids.includes("file:/w/salem/a.md"), "owned file is kept");
-  assert.ok(ids.includes("file:/g/coven.md"), "shared (no-familiarId) file is kept");
-  const owned = rows.filter((r) => r.ownership === "owned").map((r) => r.rowId);
-  const shared = rows.filter((r) => r.ownership === "shared").map((r) => r.rowId);
-  assert.deepEqual(shared, ["file:/g/coven.md"], "no-familiarId file is shared");
-  assert.ok(owned.includes("coven:c1") && owned.includes("file:/w/salem/a.md"), "coven + matching-familiar file are owned");
-  const firstSharedIdx = rows.findIndex((r) => r.ownership === "shared");
-  const lastOwnedIdx = rows.map((r) => r.ownership).lastIndexOf("owned");
-  assert.ok(lastOwnedIdx < firstSharedIdx, "owned rows ordered before shared rows");
+  assert.ok(!ids.includes("file:/g/coven.md"), "ownerless shared-pool file is dropped from a familiar's view");
+  assert.deepEqual(ids.sort(), ["coven:c1", "file:/w/salem/a.md"], "only the familiar's own memories remain");
   console.log("memory-rows familiar-isolation: ok");
 }

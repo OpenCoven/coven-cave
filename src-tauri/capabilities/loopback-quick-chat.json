@@ -1,0 +1,24 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "loopback-quick-chat",
+  "description": "lets the trusted loopback quick-chat tray webview hide its own window (header ×, closing the last tab) and emit the open-session hand-off event to the main window",
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
+  "webviews": [
+    "quick-chat"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*",
+      "http://[\\:\\:1]:*/*"
+    ]
+  },
+  "permissions": [
+    "core:window:allow-hide",
+    "core:event:allow-emit"
+  ]
+}

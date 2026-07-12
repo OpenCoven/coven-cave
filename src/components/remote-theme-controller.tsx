@@ -35,6 +35,21 @@ import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 const SYNCED_KEY = "cave:theme:remote-synced-at";
 const POLL_MS = 10_000;
 
+/**
+ * `window.localStorage` can be `null` (not just throw) in restricted WebKit
+ * contexts — e.g. WKWebView with website data blocked, or Safari lockdown
+ * modes — so touching it unguarded crashes with "null is not an object".
+ * Without storage we can't track the synced baseline safely, so the
+ * controller no-ops entirely.
+ */
+function getStorage(): Storage | null {
+  try {
+    return window.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Mirror of settings-shell's THEME_SYNC_KEYS — the eight core tokens phones read.
 const THEME_SYNC_KEYS = [
   "--bg-base",
@@ -70,14 +85,14 @@ function clearCustomCssVars(html: HTMLElement) {
 }
 
 /** Apply a preset theme + light/dark mode to the DOM and persist the choice. */
-function applyRemoteTheme(themeId: string, mode: "light" | "dark") {
+function applyRemoteTheme(storage: Storage, themeId: string, mode: "light" | "dark") {
   const html = document.documentElement;
   clearCustomCssVars(html);
-  for (const key of THEME_OWNED_APPEARANCE_KEYS) localStorage.removeItem(key);
+  for (const key of THEME_OWNED_APPEARANCE_KEYS) storage.removeItem(key);
   html.setAttribute("data-theme", themeId);
   html.setAttribute("data-mode", mode);
-  localStorage.setItem(COVEN_THEME_KEY, themeId);
-  localStorage.setItem(COVEN_MODE_KEY, mode);
+  storage.setItem(COVEN_THEME_KEY, themeId);
+  storage.setItem(COVEN_MODE_KEY, mode);
 }
 
 /** Resolve the active theme's synced tokens to plain sRGB hex (canvas rasterise). */
@@ -129,6 +144,8 @@ export function RemoteThemeController() {
 
     async function reconcile() {
       if (cancelled || document.hidden) return;
+      const storage = getStorage();
+      if (!storage) return; // storage-disabled context — nothing to reconcile against
       let snap: { themeId?: string; mode?: string; updatedAt?: string };
       try {
         const res = await fetch("/api/theme", { cache: "no-store" });
@@ -142,14 +159,14 @@ export function RemoteThemeController() {
       if (!isPreset(snap.themeId)) return; // ignore custom / unknown remote ids
       const mode = snap.mode === "light" ? "light" : "dark";
 
-      const synced = localStorage.getItem(SYNCED_KEY) ?? "";
+      const synced = storage.getItem(SYNCED_KEY) ?? "";
       if (!synced) {
         // First reconcile on this client: take the desktop's own boot theme as
         // the baseline rather than adopting from the mirror. This avoids a race
         // where a stale published entry, read during the brief gap before a
         // fresh *local* pick finishes publishing, would revert that pick. Live
         // overrides (desktop already running, baseline set) are unaffected.
-        if (snap.updatedAt) localStorage.setItem(SYNCED_KEY, snap.updatedAt);
+        if (snap.updatedAt) storage.setItem(SYNCED_KEY, snap.updatedAt);
         return;
       }
       if (snap.updatedAt && snap.updatedAt <= synced) return; // already handled
@@ -157,19 +174,19 @@ export function RemoteThemeController() {
       const html = document.documentElement;
       if (snap.themeId === html.getAttribute("data-theme") && mode === html.getAttribute("data-mode")) {
         // Already matches (our own publish echoing back) — just record it.
-        if (snap.updatedAt) localStorage.setItem(SYNCED_KEY, snap.updatedAt);
+        if (snap.updatedAt) storage.setItem(SYNCED_KEY, snap.updatedAt);
         return;
       }
 
       // A genuine remote override — adopt it, then re-publish resolved tokens so
       // phone clients get this preset's exact palette.
-      applyRemoteTheme(snap.themeId, mode);
-      if (snap.updatedAt) localStorage.setItem(SYNCED_KEY, snap.updatedAt);
+      applyRemoteTheme(storage, snap.themeId, mode);
+      if (snap.updatedAt) storage.setItem(SYNCED_KEY, snap.updatedAt);
       window.dispatchEvent(
         new CustomEvent("cave:theme-changed", { detail: { themeId: snap.themeId, mode } }),
       );
       const newUpdatedAt = await republishTokens(snap.themeId, mode);
-      if (!cancelled && newUpdatedAt) localStorage.setItem(SYNCED_KEY, newUpdatedAt);
+      if (!cancelled && newUpdatedAt) storage.setItem(SYNCED_KEY, newUpdatedAt);
     }
 
     void reconcile();
