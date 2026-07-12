@@ -48,6 +48,21 @@ const QUICK_CHAT_WINDOW_LABEL: &str = "quick-chat";
 const QUICK_CHAT_WIDTH: f64 = 390.0;
 #[cfg(desktop)]
 const QUICK_CHAT_HEIGHT: f64 = 520.0;
+// The optional "centered notch" presentation of quick chat: a small
+// always-on-top pill hugging the top-center of the primary monitor that
+// expands in place into the quick chat surface. Geometry lives here (not in
+// the page) so the webview only ever asks for a state via events and the
+// shell owns monitor math.
+#[cfg(desktop)]
+const NOTCH_WINDOW_LABEL: &str = "notch";
+#[cfg(desktop)]
+const NOTCH_COLLAPSED_WIDTH: f64 = 190.0;
+#[cfg(desktop)]
+const NOTCH_COLLAPSED_HEIGHT: f64 = 38.0;
+#[cfg(desktop)]
+const NOTCH_EXPANDED_WIDTH: f64 = 420.0;
+#[cfg(desktop)]
+const NOTCH_EXPANDED_HEIGHT: f64 = 560.0;
 
 #[cfg(desktop)]
 fn coven_tray_icon() -> Image<'static> {
@@ -170,6 +185,165 @@ fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Url) {
             let _ = window.set_focus();
         }
         Err(e) => log::warn!("[cave] failed to open quick chat window: {}", e),
+    }
+}
+
+#[cfg(desktop)]
+fn notch_url_from_main(mut url: Url) -> Option<Url> {
+    let trusted_loopback = url.scheme() == "http"
+        && matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "::1"))
+        && url.port().is_some();
+    if !trusted_loopback {
+        return None;
+    }
+    url.set_path("/notch");
+    Some(url)
+}
+
+/// Top-center of the primary monitor for a notch window `width` wide — flush
+/// with the top edge so the pill reads as part of the menu-bar strip.
+#[cfg(desktop)]
+fn notch_position(app: &tauri::AppHandle, width: f64) -> (f64, f64) {
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let scale = monitor.scale_factor();
+        let position = monitor.position();
+        let size = monitor.size();
+        let screen_x = position.x as f64 / scale;
+        let screen_y = position.y as f64 / scale;
+        let screen_w = size.width as f64 / scale;
+        return (screen_x + (screen_w - width) / 2.0, screen_y);
+    }
+    (24.0, 0.0)
+}
+
+/// Resize + re-center the notch window for its collapsed or expanded state.
+/// Driven by the `notch:expand` / `notch:collapse` events the page emits —
+/// the webview never gets window-geometry permissions of its own.
+#[cfg(desktop)]
+fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
+    let Some(window) = app.get_webview_window(NOTCH_WINDOW_LABEL) else {
+        return;
+    };
+    let (width, height) = if expanded {
+        (NOTCH_EXPANDED_WIDTH, NOTCH_EXPANDED_HEIGHT)
+    } else {
+        (NOTCH_COLLAPSED_WIDTH, NOTCH_COLLAPSED_HEIGHT)
+    };
+    let (x, y) = notch_position(app, width);
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+    if expanded {
+        let _ = window.set_focus();
+    }
+}
+
+/// Whether the user opted into the notch presentation. A tiny marker file in
+/// the app config dir — survives restarts so the tray icon stays moved.
+#[cfg(desktop)]
+fn notch_mode_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("notch-mode"))
+}
+
+#[cfg(desktop)]
+fn load_notch_mode(app: &tauri::AppHandle) -> bool {
+    notch_mode_path(app)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .is_some_and(|contents| contents.trim() == "1")
+}
+
+#[cfg(desktop)]
+fn save_notch_mode(app: &tauri::AppHandle, enabled: bool) {
+    let Some(path) = notch_mode_path(app) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&path, if enabled { "1" } else { "0" }) {
+        log::warn!("[cave] could not persist notch mode: {}", e);
+    }
+}
+
+#[cfg(desktop)]
+fn set_tray_visible(app: &tauri::AppHandle, visible: bool) {
+    if let Some(tray) = app.tray_by_id("cave-tray") {
+        if let Err(e) = tray.set_visible(visible) {
+            log::warn!("[cave] could not toggle tray visibility: {}", e);
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn show_notch_from_main(app: &tauri::AppHandle) {
+    let Some(url) = app
+        .get_webview_window("main")
+        .and_then(|window| window.url().ok())
+        .and_then(notch_url_from_main)
+    else {
+        return;
+    };
+    show_notch_window(app, &url);
+}
+
+#[cfg(desktop)]
+fn show_notch_window(app: &tauri::AppHandle, notch_url: &Url) {
+    if let Some(window) = app.get_webview_window(NOTCH_WINDOW_LABEL) {
+        let _ = window.show();
+        return;
+    }
+
+    // Same glass handshake as the quick-chat tray window: only macOS gets a
+    // transparent window over vibrancy, and only then does the page drop its
+    // opaque background.
+    #[cfg(target_os = "macos")]
+    let notch_url = {
+        let mut glass_url = notch_url.clone();
+        glass_url.query_pairs_mut().append_pair("glass", "1");
+        glass_url
+    };
+
+    let (x, y) = notch_position(app, NOTCH_COLLAPSED_WIDTH);
+    let builder = WebviewWindowBuilder::new(
+        app,
+        NOTCH_WINDOW_LABEL,
+        WebviewUrl::External(notch_url.clone()),
+    )
+    .title("CovenCave Notch")
+    .inner_size(NOTCH_COLLAPSED_WIDTH, NOTCH_COLLAPSED_HEIGHT)
+    // The shell resizes it between the two fixed states; user resize would
+    // fight the collapse animation.
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .position(x, y)
+    // No native shadow — the window morphs between pill and panel shapes and
+    // a stale shadow outline betrays the resize.
+    .shadow(false)
+    .disable_drag_drop_handler();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true);
+
+    match builder.build() {
+        Ok(window) => {
+            #[cfg(target_os = "macos")]
+            {
+                use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                // 14.0 matches the notch pill/panel border radius in
+                // notch-quick-chat.css.
+                if let Err(e) =
+                    apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, Some(14.0))
+                {
+                    log::warn!("[cave] notch vibrancy unavailable: {}", e);
+                }
+            }
+            let _ = window.show();
+        }
+        Err(e) => log::warn!("[cave] failed to open notch window: {}", e),
     }
 }
 
@@ -1592,6 +1766,23 @@ mod tests {
     }
 
     #[test]
+    fn notch_url_requires_a_loopback_sidecar_origin() {
+        let sidecar = Url::parse("http://127.0.0.1:43123/?token=secret").expect("sidecar URL");
+        let notch = notch_url_from_main(sidecar).expect("trusted notch URL");
+
+        assert_eq!(notch.path(), "/notch");
+        assert_eq!(notch.query(), Some("token=secret"));
+        assert!(notch_url_from_main(
+            Url::parse("https://example.test/").expect("external URL")
+        )
+        .is_none());
+        assert!(notch_url_from_main(
+            Url::parse("tauri://localhost/startup.html").expect("local startup URL")
+        )
+        .is_none());
+    }
+
+    #[test]
     fn sidecar_port_wait_is_cancellable_and_detects_readiness() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind readiness fixture");
         let port = listener.local_addr().expect("fixture address").port();
@@ -2504,6 +2695,13 @@ pub fn run() {
                 MenuItem::with_id(app, "new_reminder", "New Reminder…", true, None::<&str>)?;
             let quick_chat =
                 MenuItem::with_id(app, "quick_chat", "Quick Chat…", true, None::<&str>)?;
+            let notch_mode = MenuItem::with_id(
+                app,
+                "notch_mode",
+                "Move to Centered Notch",
+                true,
+                None::<&str>,
+            )?;
             let show_app =
                 MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -2514,6 +2712,7 @@ pub fn run() {
                     &open_inbox,
                     &new_reminder,
                     &quick_chat,
+                    &notch_mode,
                     &separator,
                     &show_app,
                     &separator,
@@ -2539,6 +2738,15 @@ pub fn run() {
                         let _ = app.emit("tray:new-reminder", ());
                     }
                     "quick_chat" => show_quick_chat_from_main(app),
+                    // "Move" the menu-bar icon into the centered notch: the
+                    // notch window appears top-center, the tray icon hides,
+                    // and the choice persists across restarts. The notch's
+                    // own dock button (notch:dock-to-tray) is the way back.
+                    "notch_mode" => {
+                        save_notch_mode(app, true);
+                        show_notch_from_main(app);
+                        set_tray_visible(app, false);
+                    }
                     "show_app" => focus_main_window(app),
                     "quit" => {
                         #[cfg(target_os = "windows")]
@@ -2590,6 +2798,42 @@ pub fn run() {
             app.listen("quick-chat:open-session", move |_| {
                 focus_main_window(&app_handle);
             });
+
+            // Notch state machine — the notch webview only emits intents
+            // (capability loopback-notch.json grants it core:event:allow-emit
+            // and nothing else); the shell owns geometry and tray visibility.
+            let notch_expand_handle = app.handle().clone();
+            app.listen("notch:expand", move |_| {
+                set_notch_geometry(&notch_expand_handle, true);
+            });
+            let notch_collapse_handle = app.handle().clone();
+            app.listen("notch:collapse", move |_| {
+                set_notch_geometry(&notch_collapse_handle, false);
+            });
+            // Detach: fold the notch back up and pop the traditional floating
+            // quick-chat window with all its operations.
+            let notch_detach_handle = app.handle().clone();
+            app.listen("notch:detach", move |_| {
+                set_notch_geometry(&notch_detach_handle, false);
+                show_quick_chat_from_main(&notch_detach_handle);
+            });
+            // Dock: move the quick chat back to the menu bar — restore the
+            // tray icon, forget the preference, and close the notch window.
+            let notch_dock_handle = app.handle().clone();
+            app.listen("notch:dock-to-tray", move |_| {
+                save_notch_mode(&notch_dock_handle, false);
+                set_tray_visible(&notch_dock_handle, true);
+                if let Some(window) = notch_dock_handle.get_webview_window(NOTCH_WINDOW_LABEL) {
+                    let _ = window.close();
+                }
+            });
+
+            // Restore the notch presentation on launch when the user left it
+            // enabled — the tray icon stays "moved" until they dock it back.
+            if load_notch_mode(app.handle()) {
+                show_notch_from_main(app.handle());
+                set_tray_visible(app.handle(), false);
+            }
 
             Ok(())
         })
