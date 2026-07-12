@@ -126,6 +126,7 @@ export function NotchQuickChat() {
         id="notch-quick-chat-panel"
         className="notch-quick-chat__panel"
         aria-hidden={!expanded}
+        inert={!expanded || undefined}
       >
         <header className="notch-quick-chat__toolbar">
           <p className="min-w-0 flex-1 truncate text-xs text-[var(--fg-muted)]">
