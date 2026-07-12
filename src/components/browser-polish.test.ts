@@ -233,7 +233,7 @@ assert.match(pane, /const navigationArgs = withNativeBrowserSequence\([\s\S]{0,5
 for (const command of ["browser_set_bounds", "browser_hide", "browser_close", "browser_deactivate_all", "browser_reload"]) {
   assert.match(
     pane + nativeLifecycle,
-    new RegExp(`${command.replace("_", "_")}[\\s\\S]{0,220}withNativeBrowserSequence|withNativeBrowserSequence[\\s\\S]{0,220}${command}`),
+    new RegExp(`${command}[\\s\\S]{0,220}withNativeBrowserSequence|withNativeBrowserSequence[\\s\\S]{0,220}${command}`),
     `${command} includes a lifecycle sequence`,
   );
 }
