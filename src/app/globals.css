@@ -6430,83 +6430,212 @@ a.mobile-handoff__link:hover {
   text-transform: uppercase;
   color: var(--text-muted);
 }
-/* Avatar-chip picker — WRAPS so every familiar stays visible (the old
-   horizontal scroll silently clipped the roster's tail); the Summon
-   invitation chip rides the end of the flow. */
-.familiar-studio-inline__picker-row {
-  display: flex;
-  align-items: flex-start;
-  min-width: 0;
-}
-.familiar-studio-inline__picker {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: var(--space-2);
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.familiar-studio-inline__chip {
+/* A coven can grow without making the Settings header grow with it. The active
+   familiar's color is spent once: a quiet seam on the trigger/selected row. */
+.familiar-studio-picker__trigger {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  flex: 0 0 auto;
-  max-width: 220px;
-  padding: 6px 14px 6px 8px;
+  width: 100%;
+  min-height: 48px;
+  min-width: 0;
+  gap: 10px;
+  padding: 7px 10px 7px 7px;
   border: 1px solid var(--border-hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--bg-base);
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 72%, transparent);
   cursor: pointer;
-  scroll-snap-align: start;
-  transition: background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
+  text-align: left;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
-.familiar-studio-inline__chip:hover:not([data-active="true"]) {
+.familiar-studio-picker__trigger:hover {
   background: var(--bg-raised);
   border-color: var(--border-strong);
-  color: var(--text-primary);
 }
-.familiar-studio-inline__chip[data-active="true"] {
-  border-color: color-mix(in oklch, var(--chip-accent, var(--accent-presence)) 60%, var(--border-hairline));
-  background: color-mix(in oklch, var(--chip-accent, var(--accent-presence)) 14%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chip-accent, var(--accent-presence)) 32%, transparent);
-  color: var(--text-primary);
+.familiar-studio-picker__trigger:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
-.familiar-studio-inline__chip:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring-focus); }
-/* Summon — the dashed invitation chip (design language: dashed = invitation).
-   It matches the roster chips' shape so the create action reads as "the next
-   member of this row", quiet until hovered. */
-.familiar-studio-inline__chip--summon {
-  border-style: dashed;
-  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
-  background: transparent;
-  color: var(--text-secondary);
-}
-.familiar-studio-inline__chip--summon:hover {
-  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
-  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
-  color: var(--text-primary);
-}
-.familiar-studio-inline__summon-glyph {
+.familiar-studio-picker__trigger-avatar,
+.familiar-studio-picker__option-avatar {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
   flex: 0 0 auto;
-  border-radius: 999px;
-  color: var(--accent-presence);
-  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
 }
-.familiar-studio-inline__chip-text { display: flex; flex-direction: column; gap: 0; min-width: 0; text-align: left; }
-.familiar-studio-inline__chip-name {
-  font-size: var(--text-sm); font-weight: 550; color: var(--text-primary);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.familiar-studio-picker__trigger-copy,
+.familiar-studio-picker__option-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
 }
-.familiar-studio-inline__chip-role {
-  font-size: var(--text-2xs); color: var(--text-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.familiar-studio-picker__trigger-name,
+.familiar-studio-picker__option-name {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.familiar-studio-picker__trigger-role,
+.familiar-studio-picker__option-meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.familiar-studio-picker__option-meta span {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+.familiar-studio-picker__trigger-count {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+}
+.familiar-studio-picker__trigger-caret {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.familiar-studio-picker__popover {
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  background: var(--bg-elevated);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow-x: hidden;
+  padding: 0;
+}
+.familiar-studio-picker {
+  display: grid;
+  flex: 1 1 auto;
+  max-height: inherit;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+.familiar-studio-picker__search-shell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 8px 4px;
+  padding: 0 9px;
+  min-height: 36px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-muted);
+}
+.familiar-studio-picker__search-shell:focus-within {
+  border-color: color-mix(in oklch, var(--accent-presence) 58%, var(--border-hairline));
+  box-shadow: 0 0 0 2px var(--ring-focus-soft);
+}
+.familiar-studio-picker__search {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.familiar-studio-picker__search::placeholder { color: var(--text-muted); }
+.familiar-studio-picker__search::-webkit-search-cancel-button { opacity: 0.6; }
+.familiar-studio-picker__result-summary {
+  padding: 3px 11px 5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+}
+.familiar-studio-picker__results {
+  max-height: min(320px, 45vh);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 3px 5px 6px;
+  list-style: none;
+  scrollbar-gutter: stable;
+}
+.familiar-studio-picker__option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  gap: 9px;
+  padding: 5px 8px 5px 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+.familiar-studio-picker__option[data-highlighted] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.familiar-studio-picker__option[data-selected] {
+  background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 13%, transparent);
+  box-shadow: inset 2px 0 0 var(--familiar-accent, var(--accent-presence));
+  color: var(--text-primary);
+}
+.familiar-studio-picker__option[data-selected][data-highlighted] {
+  background: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 18%, var(--bg-hover));
+}
+.familiar-studio-picker__option:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: -2px;
+}
+.familiar-studio-picker__empty {
+  padding: 24px 12px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+.familiar-studio-picker__footer {
+  padding: 7px;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+}
+.familiar-studio-picker__summon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 36px;
+  gap: 7px;
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 48%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.familiar-studio-picker__summon:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 70%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+  color: var(--text-primary);
+}
+.familiar-studio-picker__summon:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 .familiar-studio-inline__detail {
   display: grid;
@@ -6516,9 +6645,37 @@ a.mobile-handoff__link:hover {
 }
 .familiar-studio-inline__body { max-height: 62vh; }
 
+/* When a short window or on-screen keyboard leaves only the popover's 120px
+   safety floor, preserve one complete 44px result without sacrificing the
+   fixed search and Summon controls. data-compact comes from Popover's
+   visual-viewport-aware height calculation (CSS media height still sees the
+   larger layout viewport on mobile). The count remains live for AT while its
+   visible copy yields the scarce vertical space. */
+.familiar-studio-picker__popover[data-compact] .familiar-studio-picker__search-shell {
+  min-height: 28px;
+  margin: 1px 5px;
+}
+.familiar-studio-picker__popover[data-compact] .familiar-studio-picker__result-summary {
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  line-height: 0;
+  opacity: 0;
+}
+.familiar-studio-picker__popover[data-compact] .familiar-studio-picker__results {
+  gap: 1px;
+  padding: 0 4px;
+}
+.familiar-studio-picker__popover[data-compact] .familiar-studio-picker__footer {
+  padding: 0 5px;
+  border-top: 0;
+}
+
 @media (max-width: 640px) {
   .familiar-studio-inline { grid-template-columns: 1fr; min-height: 0; }
   .familiar-studio-inline__selector { padding: var(--space-3); }
+  .familiar-studio-picker__summon { min-height: 44px; }
   .familiar-studio-inline__body { max-height: none; }
 }
 .familiar-studio-identity { display: flex; flex-direction: column; gap: var(--space-4); }

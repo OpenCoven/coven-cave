@@ -599,6 +599,7 @@ export const SUITES = {
     "src/app/daily-report-page.test.ts",
     "src/lib/icon-subset.test.ts",
     "src/lib/panel-shortcuts.test.ts",
+    "src/lib/settings-familiar-picker.test.ts",
     "src/components/familiar-studio-inline.test.ts",
     "src/lib/session-rail-title.test.ts",
     "src/lib/familiar-card-data.test.ts",

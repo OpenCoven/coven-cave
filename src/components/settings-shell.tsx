@@ -933,8 +933,8 @@ function FamiliarsSection({
 
   return (
     <>
-      {/* Summon lives inside the panel's familiar picker (dashed invitation
-          chip at the roster's end) — no floating action above the card. */}
+      {/* Summon lives in the familiar picker's fixed footer, alongside the
+          roster it extends instead of floating above the Studio. */}
       <FamiliarStudioInlinePanel
         familiars={rawFamiliars}
         resolved={familiars}

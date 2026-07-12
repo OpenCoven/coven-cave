@@ -21,6 +21,30 @@ assert.match(src, /spaceBelow|spaceAbove/, "compares room below vs above the anc
 assert.match(src, /Math\.min\(r\.left/, "clamps the left edge within the viewport");
 assert.match(src, /maxHeight/, "caps height (with overflowY:auto) so neither side overflows");
 
+// Complex pickers can keep their own header/footer fixed and give scrolling to
+// an inner results region. That must be opt-in so existing simple menus retain
+// the shared popover's default outer scrolling behavior.
+assert.match(
+  src,
+  /scrollStrategy\?: "popover" \| "content"/,
+  "popover exposes an opt-in inner-content scrolling strategy",
+);
+assert.match(
+  src,
+  /scrollStrategy === "content" \? "hidden" : "auto"/,
+  "content-owned scrolling disables the outer popover scroll container",
+);
+assert.match(
+  src,
+  /compactAtHeight\?: number/,
+  "composite children can react to the popover's computed visual-viewport height",
+);
+assert.match(
+  src,
+  /data-compact=\{compact \|\| undefined\}/,
+  "the popover exposes its computed compact state to descendant CSS",
+);
+
 // Visual-viewport awareness: the on-screen keyboard (iOS) shrinks the visible band
 // without changing window.innerHeight. The popover must measure against
 // window.visualViewport so it clamps inside the visible area instead of hiding
