@@ -447,6 +447,7 @@ export const SUITES = {
     "src/components/github-task-field.test.ts",
     "src/components/asana-task-field.test.ts",
     "src/lib/task-asana.test.ts",
+    "src/components/github-action-popover-chat-launch.test.ts",
     "src/components/github-view-polish.test.ts",
     "src/components/github-advanced.test.ts",
     "src/lib/issue-worktree.test.ts",
