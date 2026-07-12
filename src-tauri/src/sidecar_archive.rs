@@ -198,6 +198,13 @@ fn runtime_has_required_files(root: &Path) -> bool {
 }
 
 fn cache_is_ready(destination: &Path, manifest: &SidecarArchiveManifest) -> bool {
+    // The marker is written only after extraction has passed a full tree hash
+    // and is moved into this content-addressed destination atomically. Trust
+    // that durable commit record on later launches: re-hashing the runtime here
+    // makes every Windows startup read thousands of files before the sidecar can
+    // start (and is especially expensive under real-time antivirus scanning).
+    // Required entrypoints are still checked so common partial-cache damage is
+    // repaired automatically.
     if !runtime_has_required_files(destination) {
         return false;
     }
@@ -205,18 +212,14 @@ fn cache_is_ready(destination: &Path, manifest: &SidecarArchiveManifest) -> bool
         Ok(contents) => contents,
         Err(_) => return false,
     };
-    let marker_matches = match serde_json::from_str::<CompletionMarker>(&marker) {
+    match serde_json::from_str::<CompletionMarker>(&marker) {
         Ok(marker) => {
             marker.schema_version == MANIFEST_SCHEMA_VERSION
                 && marker.payload_sha256 == manifest.payload_sha256
                 && marker.tree_sha256 == manifest.tree_sha256
         }
         Err(_) => false,
-    };
-    if !marker_matches {
-        return false;
     }
-    tree_metrics(destination).is_ok_and(|(_, _, _, digest)| digest == manifest.tree_sha256)
 }
 
 fn lock_is_contended(error: &io::Error) -> bool {
@@ -1091,21 +1094,24 @@ mod tests {
     }
 
     #[test]
-    fn recovers_same_size_corruption_outside_required_paths() {
-        let root = test_root("content-corruption");
+    fn cache_hit_trusts_verified_marker_without_rehashing_runtime_tree() {
+        let root = test_root("constant-time-cache-hit");
         let (archive, manifest_path, _) = write_fixture(&root);
         let cache = root.join("cache");
         let runtime = prepare_runtime_from_files(&archive, &manifest_path, &cache)
             .expect("prepare initial runtime");
         let helper = runtime.join("node_modules/@swc/helpers/_/index");
         fs::write(&helper, b"corrupt").expect("corrupt non-sentinel file with same byte length");
+        fs::remove_file(&archive).expect("remove archive to require a cache hit");
 
-        let recovered = prepare_runtime_from_files(&archive, &manifest_path, &cache)
-            .expect("recover arbitrary cached-file corruption");
+        let reused = prepare_runtime_from_files(&archive, &manifest_path, &cache)
+            .expect("reuse runtime from its verified completion marker");
+        assert_eq!(reused, runtime);
         assert_eq!(
-            fs::read(recovered.join("node_modules/@swc/helpers/_/index"))
-                .expect("read recovered helper"),
-            b"fixture"
+            fs::read(reused.join("node_modules/@swc/helpers/_/index"))
+                .expect("read untouched helper"),
+            b"corrupt",
+            "cache hits must not traverse and re-hash unrelated runtime files"
         );
         fs::remove_dir_all(root).expect("remove test root");
     }
