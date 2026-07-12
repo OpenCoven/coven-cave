@@ -35,8 +35,8 @@ assert.deepEqual(
 
 assert.equal(
   openCovenToolsInstallCommand([]),
-  "npm i -g @opencoven/cli@latest coven-code@latest",
-  "fresh setup manual command installs both required OpenCoven tools",
+  "npm i -g @opencoven/cli@latest @opencoven/coven-code@latest",
+  "fresh setup manual command installs both required OpenCoven tools (scoped packages only)",
 );
 
 assert.deepEqual(

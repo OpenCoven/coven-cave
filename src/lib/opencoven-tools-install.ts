@@ -14,7 +14,9 @@ const OPEN_COVEN_TOOL_ORDER: OpenCovenToolInstallTarget[] = [
 
 const OPEN_COVEN_TOOL_PACKAGES: Record<OpenCovenToolInstallTarget, string> = {
   "coven-cli": "@opencoven/cli@latest",
-  "coven-code": "coven-code@latest",
+  // Scoped package only — bare "coven-code" is a different, deprecated
+  // npm package (see opencoven-tools-status.ts).
+  "coven-code": "@opencoven/coven-code@latest",
 };
 
 export function openCovenToolActionTargets(

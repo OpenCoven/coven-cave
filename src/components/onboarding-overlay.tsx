@@ -223,7 +223,7 @@ const PLATFORM_COPY: Record<
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure coven.exe and coven-code are on PATH after the global npm install.",
       "Click Re-check after Windows can run both tools from a new terminal.",
     ],
@@ -241,7 +241,7 @@ const PLATFORM_COPY: Record<
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure coven and coven-code are on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the tools.",
     ],
@@ -259,7 +259,7 @@ const PLATFORM_COPY: Record<
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure a terminal can run coven and coven-code after the global npm install.",
       "Click Re-check here after install.",
     ],
@@ -277,7 +277,7 @@ const PLATFORM_COPY: Record<
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure coven and coven-code are on PATH.",
       "Click Re-check here after install.",
     ],

@@ -41,7 +41,9 @@ const INSTALL_TARGETS = {
   "coven-code": {
     kind: "npm",
     label: "Coven Code",
-    packageName: "coven-code@latest",
+    // Scoped package only — bare "coven-code" is a different, deprecated
+    // npm package (see opencoven-tools-status.ts).
+    packageName: "@opencoven/coven-code@latest",
     binary: "coven-code",
     timeoutMs: 240_000,
   },

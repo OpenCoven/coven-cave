@@ -34,8 +34,8 @@ assert.match(
 
 assert.match(
   source,
-  /id: "coven-code"[\s\S]*packageName: "coven-code"[\s\S]*binary: "coven-code"/,
-  "the coven-code status checks the public coven-code package and coven-code binary",
+  /id: "coven-code"[\s\S]*packageName: "@opencoven\/coven-code"[\s\S]*binary: "coven-code"/,
+  "the coven-code status checks the SCOPED @opencoven/coven-code package and coven-code binary",
 );
 
 assert.match(

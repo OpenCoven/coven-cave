@@ -23,11 +23,16 @@ export const OPEN_COVEN_TOOLS = [
   {
     id: "coven-code",
     label: "Coven Code",
-    packageName: "coven-code",
+    // The SCOPED package only — bare "coven-code" on npm is a different,
+    // deprecated package (stuck at 0.0.22). The scoped package still ships
+    // the `coven-code` binary, so detection below is unchanged, and the
+    // 0.6.0 floor makes a lingering deprecated install read as incompatible
+    // and route users through the update flow.
+    packageName: "@opencoven/coven-code",
     binary: "coven-code",
     versionArgs: ["--version"],
-    minimumVersion: "0.0.22",
-    installCommand: "npm i -g coven-code@latest",
+    minimumVersion: "0.6.0",
+    installCommand: "npm i -g @opencoven/coven-code@latest",
   },
 ] as const;
 

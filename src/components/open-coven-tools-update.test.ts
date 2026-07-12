@@ -75,9 +75,11 @@ assert.match(
   "Primary Settings tool action should have a visible border and elevation",
 );
 assert.match(status, /minimumVersion: "0\.0\.49"/, "Coven CLI compatibility floor is explicit in the status source");
-assert.match(status, /minimumVersion: "0\.0\.22"/, "coven-code compatibility floor is explicit in the status source");
+assert.match(status, /minimumVersion: "0\.6\.0"/, "coven-code compatibility floor is 0.6.0 — older (including the deprecated bare package, stuck at 0.0.22) reads as incompatible");
 assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "Coven CLI exposes the exact update command");
-assert.match(status, /installCommand: "npm i -g coven-code@latest"/, "coven-code exposes the exact update command");
+assert.match(status, /installCommand: "npm i -g @opencoven\/coven-code@latest"/, "coven-code exposes the exact update command, scoped package only");
+assert.match(status, /packageName: "@opencoven\/coven-code"/, "coven-code status probes the SCOPED registry package for latest");
+assert.doesNotMatch(status, /packageName: "coven-code"/, "bare coven-code is a different, deprecated npm package — status must never probe it");
 assert.match(status, /const compatible =[\s\S]*!!installed\?\.version && compareSemver\(installed\.version, tool\.minimumVersion\) >= 0/, "compatibility compares installed version against the Cave minimum");
 assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");
 assert.match(settings, /<SettingsGroup label="OpenCoven tools">[\s\S]*<OpenCovenToolsUpdate \/>/, "About settings renders the OpenCoven tools group");
