@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
@@ -21,6 +22,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
 import type { CraftActionError } from "@/components/marketplace/craft-detail";
+import { CraftCreateDrawer } from "@/components/marketplace/craft-create-drawer";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
 import { SkillBrowser, type SkillBrowserEntry } from "@/components/skill-browser";
@@ -138,6 +140,7 @@ export function MarketplaceViewSurface({
   const [sort, setSort] = useState<SortKey>("recommended");
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [creatingCraft, setCreatingCraft] = useState(false);
   const [craftErrors, setCraftErrors] = useState<Record<string, CraftActionError | undefined>>({});
   // Ids with an install/uninstall in flight. A Set (not a scalar) so two
   // concurrent installs each keep their own busy state — with a scalar, the
@@ -762,6 +765,16 @@ export function MarketplaceViewSurface({
               <p className="craft-loadout-intro__eyebrow">Role loadouts</p>
               <h2 id="craft-loadout-heading">Equip a way of working</h2>
               <p>A Craft is a versioned bundle of skills, prompts, workflows, and runtime capabilities that a Role equips as one unit.</p>
+              <div className="mt-3">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leadingIcon="ph:package-bold"
+                  onClick={() => setCreatingCraft(true)}
+                >
+                  Create Craft
+                </Button>
+              </div>
             </div>
             <div className="craft-loadout-path" role="list" aria-label="Craft capability hierarchy">
               {[
@@ -868,6 +881,16 @@ export function MarketplaceViewSurface({
           onChanged={() => void load()}
         />
       ) : null}
+
+      <CraftCreateDrawer
+        open={creatingCraft}
+        onClose={() => setCreatingCraft(false)}
+        onCreated={(id) => {
+          setCreatingCraft(false);
+          void load().then(() => setSelected(id));
+          announce("Craft draft saved", "polite");
+        }}
+      />
 
       <SkillDetailDrawer
         skill={selectedSkill}

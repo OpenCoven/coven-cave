@@ -11,7 +11,10 @@ const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.t
 const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
 const marketplaceConfigure = await readFile(new URL("./marketplace/marketplace-configure.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
+const rolesRoute = [
+  await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8"),
+  await readFile(new URL("../lib/server/role-entries.ts", import.meta.url), "utf8"),
+].join("\n");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");

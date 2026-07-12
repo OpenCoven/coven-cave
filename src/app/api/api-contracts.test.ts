@@ -107,6 +107,7 @@ const contracts: RouteContract[] = [
   { route: "/marketplace", methods: ["GET"], kind: "json" },
   { route: "/marketplace/config", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/marketplace/crafts/drafts", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/marketplace/crafts/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/marketplace/crafts/plan", methods: ["GET"], kind: "json" },
   { route: "/marketplace/crafts/uninstall", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },

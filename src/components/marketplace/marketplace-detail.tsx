@@ -104,6 +104,9 @@ function detailDecisionItems(plugin: MarketplacePlugin) {
 }
 
 export function MarketplaceDetail(props: Props) {
+  if (props.plugin.kind === "craft" && props.plugin.draft) {
+    return <DraftCraftDetail plugin={props.plugin} onClose={props.onClose} />;
+  }
   if (props.plugin.kind === "craft") {
     return (
       <CraftDetail
@@ -118,6 +121,68 @@ export function MarketplaceDetail(props: Props) {
     );
   }
   return <StandardMarketplaceDetail {...props} />;
+}
+
+function DraftCraftDetail({ plugin, onClose }: { plugin: MarketplacePlugin; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(true, ref, { onEscape: onClose });
+  const craft = plugin.craft;
+  const skills = craft?.bundled.skills ?? [];
+  const prompts = craft?.bundled.prompts ?? [];
+  const workflows = craft?.bundled.workflows ?? [];
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${plugin.displayName} draft`}
+        tabIndex={-1}
+        className="flex h-full w-full max-w-lg flex-col gap-4 overflow-y-auto border-l border-[var(--border-hairline)] bg-[var(--bg-base)] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Local draft</p>
+            <h2 className="truncate text-[18px] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
+            <p className="text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+            <Icon name="ph:x" width={16} />
+          </button>
+        </div>
+
+        <div className="craft-draft-ledger" aria-label="Draft extraction ledger">
+          <DraftLedgerGroup title="Required components" items={craft?.components.required ?? []} />
+          <DraftLedgerGroup title="Capabilities" items={craft?.requiredCapabilities ?? []} />
+          <DraftLedgerGroup title="Skills" items={skills.map((item) => item.id)} />
+          <DraftLedgerGroup title="Prompts" items={prompts.map((item) => item.id)} />
+          <DraftLedgerGroup title="Workflows" items={workflows.map((item) => item.id)} />
+        </div>
+
+        <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[12px] text-[var(--text-muted)]">
+          Drafts are local and reversible. Review the extracted bundle before publishing or installing it as a versioned Craft.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DraftLedgerGroup({ title, items }: { title: string; items: string[] }) {
+  return (
+    <section>
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </div>
+      ) : (
+        <p>No entries</p>
+      )}
+    </section>
+  );
 }
 
 function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
