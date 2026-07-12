@@ -206,4 +206,10 @@ assert.match(
   "covenSpawnEnv wires the adapter dirs into every coven child process",
 );
 
+assert.match(
+  source,
+  /env\.NPM_CONFIG_LOGLEVEL = "error"/,
+  "covenSpawnEnv quiets npm warn-level 'Unknown env config' noise in spawned installs",
+);
+
 console.log("coven-bin.test.ts: ok");

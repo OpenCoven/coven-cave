@@ -354,6 +354,16 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
     process.env.COVEN_HARNESS_ADAPTER_DIRS,
     process.env.COVEN_HOME,
   );
+  // npm emits `npm warn Unknown env config <key>` to stderr for any config
+  // key it no longer recognizes (e.g. a stale `_jsr-registry`,
+  // `minimum-release-age`, or `manage-package-manager-versions` left in the
+  // user's ~/.npmrc or environment). We surface interleaved stdout+stderr in
+  // the Tools panel, so those benign warnings pollute the installer output.
+  // Quiet npm to error-level only — real failures still come through, the
+  // config-parse noise does not. Non-npm children ignore this variable.
+  if (env.NPM_CONFIG_LOGLEVEL === undefined && env.npm_config_loglevel === undefined) {
+    env.NPM_CONFIG_LOGLEVEL = "error";
+  }
   for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
     delete env[key];
   }
