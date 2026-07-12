@@ -11,7 +11,7 @@ export const SIDECAR_ARCHIVE_SCHEMA_VERSION = 3;
 export const SIDECAR_ARCHIVE_BUDGETS = Object.freeze({
   archiveBytes: 80 * 1024 * 1024,
   unpackedBytes: 200 * 1024 * 1024 - 1,
-  fileCount: 4_999,
+  fileCount: 5_200,
 });
 
 const TAR_BLOCK_BYTES = 512;

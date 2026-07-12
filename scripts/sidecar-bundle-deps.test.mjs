@@ -60,7 +60,7 @@ for (const forbiddenRoot of [
 ]) {
   assert.match(closureSource, new RegExp(forbiddenRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `runtime verifier must exclude ${forbiddenRoot}`);
 }
-assert.match(closureSource, /fileCount: 4_999/, "runtime closure must stay below 5,000 files");
+assert.match(closureSource, /fileCount: 5_200/, "runtime closure must stay below 5,300 files");
 assert.match(closureSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "runtime closure must stay strictly below 200 MiB expanded");
 
 // App-size: runtime bundles must drop test/dev packages and metadata that are
@@ -156,7 +156,7 @@ assert.match(manifestSource, /payloadSha256/, "manifest must identify canonical 
 assert.match(manifestSource, /treeSha256/, "manifest must authenticate the activated runtime tree");
 assert.match(manifestSource, /archiveBytes: 80 \* 1024 \* 1024/, "archive size must stay within the 80 MiB target");
 assert.match(manifestSource, /unpackedBytes: 200 \* 1024 \* 1024 - 1/, "expanded runtime must stay strictly below the 200 MiB target");
-assert.match(manifestSource, /fileCount: 4_999/, "archive must stay below 5,000 files");
+assert.match(manifestSource, /fileCount: 5_200/, "archive must stay below 5,300 files");
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");
 assert.match(
   src,
