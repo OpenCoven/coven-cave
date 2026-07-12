@@ -71,7 +71,7 @@ export function writeFontPref(slot: FontSlot, id: string): void {
   updateAppPreferences({ appearance: { fonts: { [slot]: value } } });
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(keyFor(slot), id);
+    window.localStorage.setItem(keyFor(slot), value);
   } catch {
     /* ignore */
   }
