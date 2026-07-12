@@ -172,6 +172,9 @@ export type MarketplacePlugin = {
   prompts?: string[];
   /** Versioned composition and provenance for kind "craft" entries. */
   craft?: CraftSpecification;
+  /** Local, unpublished Craft authoring draft created inside Cave. */
+  draft?: boolean;
+  draftId?: string;
 };
 
 export function isCraftInstallationVerified(

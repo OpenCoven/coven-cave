@@ -7,24 +7,33 @@ const card = await readFile(new URL("./marketplace-card.tsx", import.meta.url), 
 const detail = await readFile(new URL("./marketplace-detail.tsx", import.meta.url), "utf8");
 const craftDetailUrl = new URL("./craft-detail.tsx", import.meta.url);
 const css = await readFile(new URL("../../app/globals.css", import.meta.url), "utf8");
+const marketplaceRoute = await readFile(new URL("../../app/api/marketplace/route.ts", import.meta.url), "utf8");
 
 assert.match(view, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class Marketplace section");
 assert.match(view, /\{ id: "craft", label: "Crafts" \}/, "Browse can filter catalog entries by Craft kind");
 assert.match(view, /id="marketplace-panel-crafts"/, "Crafts section has a labelled tabpanel");
 assert.match(view, /selectSection\("crafts"\)/, "Browse setup rail links to Crafts");
 assert.match(view, /Familiar[\s\S]*Role[\s\S]*Craft[\s\S]*Capabilities/, "Crafts section explains the loadout hierarchy");
+assert.match(view, /Create Craft/, "Crafts section exposes local Craft creation");
+assert.match(view, /setCreatingCraft\(true\)/, "Create Craft opens the authoring drawer");
+assert.match(view, /<CraftCreateDrawer/, "Crafts page wires the familiar-to-Craft authoring flow");
+assert.match(view, /onCreated=\{\(id\) =>/, "new local drafts refresh and open for review");
 assert.match(view, /plugin\.kind === "craft"[\s\S]*\/api\/marketplace\/crafts\/install/, "Craft installs use the verified endpoint");
 assert.match(view, /plugin\.kind === "craft"[\s\S]*\/api\/marketplace\/crafts\/uninstall/, "Craft removal uses the verified endpoint");
 assert.match(view, /Craft installed and verified/, "successful verification has an accessible announcement");
 assert.match(view, /Craft removed/, "successful Craft removal has an accessible announcement");
+assert.match(marketplaceRoute, /readCraftDrafts/, "marketplace route includes local Craft drafts");
+assert.match(marketplaceRoute, /\.\.\.drafts\.map\(\(draft\) => draft\.plugin\)/, "draft Crafts bypass the public-catalog familiar-name sanitizer");
 
 assert.match(card, /plugin\.kind === "craft"[\s\S]*onOpen\(plugin\.id\)/, "Craft card actions open preview before installation");
 assert.match(card, /state === "added" \? "Manage" : "Preview"/, "Craft cards use explicit Preview and Manage states");
+assert.match(card, /plugin\.draft[\s\S]*"Draft"/, "local draft Crafts have a distinct card state");
 assert.match(card, /kind === "craft"[\s\S]*"Craft"/, "Craft cards have a distinct kind label");
 
 assert.equal(existsSync(craftDetailUrl), true, "Craft detail component exists");
 const craftDetail = await readFile(craftDetailUrl, "utf8");
 assert.match(detail, /plugin\.kind === "craft"[\s\S]*<CraftDetail/, "generic drawer delegates Craft state to the loadout detail");
+assert.match(detail, /plugin\.draft[\s\S]*<DraftCraftDetail/, "local draft Crafts open a draft review drawer instead of install planning");
 assert.match(craftDetail, /\/api\/marketplace\/crafts\/plan\?id=/, "drawer previews the exact install plan");
 assert.match(craftDetail, /fetch\("\/api\/roles"/, "drawer loads Roles for equipping and effective capability display");
 assert.match(craftDetail, /fetch\("\/api\/roles\/crafts"/, "Role picker uses the guarded attachment endpoint");
@@ -63,6 +72,8 @@ assert.match(
 );
 
 assert.match(css, /\.craft-loadout-path \{/, "Craft hierarchy has a stable visual hook");
+assert.match(css, /\.craft-create-drawer \{/, "Craft creation drawer has stable styling hooks");
+assert.match(css, /\.craft-draft-ledger \{/, "Craft draft extraction ledger has stable styling hooks");
 assert.match(css, /\.craft-dossier__ledger \{/, "Craft grouped contents use a stable dossier ledger");
 assert.match(css, /\.craft-role-row:focus-within \{/, "Role picker has a visible keyboard focus treatment");
 

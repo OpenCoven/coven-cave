@@ -11,6 +11,7 @@ const TRUST_LABEL: Record<string, string> = {
   "reference-local": "Reference",
   "preview-local": "Preview",
   "local-tool": "Local tool",
+  "local-draft": "Draft",
 };
 
 type Props = {
@@ -52,6 +53,7 @@ function addHelp(kind: MarketplacePlugin["kind"]) {
 }
 
 function setupEffortLabel(plugin: MarketplacePlugin) {
+  if (plugin.draft) return { icon: "ph:pencil-simple" as const, label: "Draft" };
   if (!plugin.available) return { icon: "ph:warning" as const, label: "Unavailable" };
   if (plugin.requiresSetup && !plugin.configured) {
     const fields = plugin.requiredConfig.length;
@@ -117,7 +119,17 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             </span>
           </span>
         </button>
-        {plugin.kind === "craft" && state !== "unavailable" ? (
+        {plugin.kind === "craft" && plugin.draft ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:pencil-simple"
+            onClick={() => onOpen(plugin.id)}
+            title="Review this local Craft draft"
+          >
+            Draft
+          </Button>
+        ) : plugin.kind === "craft" && state !== "unavailable" ? (
           <Button
             variant={state === "added" ? "secondary" : "primary"}
             size="sm"

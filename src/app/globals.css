@@ -13162,6 +13162,85 @@ details[open] > .cave-edit-card__summary::before {
 .craft-dossier__footer > div { display: flex; min-width: 160px; flex: 1; flex-direction: column; }
 .craft-dossier__footer strong { color: var(--text-primary); font-size: 11px; }
 .craft-dossier__footer span { color: var(--text-muted); font-size: 9.5px; }
+.craft-create-drawer {
+  display: flex;
+  width: min(520px, 100vw);
+  height: 100%;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  border-left: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  padding: 18px;
+  box-shadow: -16px 0 48px color-mix(in oklch, black 18%, transparent);
+}
+.craft-create-drawer__role {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px;
+}
+.craft-create-drawer__role:focus-within {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+.craft-create-drawer__role input { margin-top: 2px; }
+.craft-create-drawer__role strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.craft-create-drawer__role em {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+.craft-draft-ledger {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 9px;
+  background: var(--bg-panel);
+  padding: 12px;
+}
+.craft-draft-ledger h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.craft-draft-ledger p { margin: 0; color: var(--text-muted); font-size: 11px; }
+.craft-draft-ledger span {
+  display: inline-flex;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  padding: 4px 6px;
+}
+.craft-draft-ledger__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.craft-draft-ledger__stats span {
+  display: block;
+  min-width: 0;
+}
+.craft-draft-ledger__stats strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
 @media (max-width: 720px) {
   .craft-loadout-intro { grid-template-columns: 1fr; }
   .craft-loadout-path { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -13172,6 +13251,7 @@ details[open] > .cave-edit-card__summary::before {
   .craft-dossier__section:nth-child(n + 2) { border-top: 1px solid var(--border-hairline); }
   .craft-role-grid { grid-template-columns: 1fr; }
   .craft-role-list { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--border-hairline); }
+  .craft-draft-ledger__stats { grid-template-columns: 1fr; }
 }
 
 /* ── Skill Browser (Roles → Skills tab): rail · card list · SKILL.md detail ── */

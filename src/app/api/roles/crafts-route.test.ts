@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
-const roles = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const rolesRoute = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const rolesHelper = await readFile(new URL("../../../lib/server/role-entries.ts", import.meta.url), "utf8");
+const roles = `${rolesRoute}\n${rolesHelper}`;
 assert.match(roles, /crafts:\s*string\[\]/, "Roles response keeps the canonical attached Craft ids");
 assert.match(roles, /craftStates:\s*RoleCraftState\[\]/, "Roles response explains missing, stale, and ready Crafts");
 assert.match(roles, /effective:\s*RoleEffectiveComposition/, "Roles response exposes origin-labelled effective capabilities");
