@@ -18,12 +18,17 @@ assert.doesNotMatch(
 );
 assert.match(src, /\/api\/opencoven-tools\/status/, "component fetches OpenCoven tool version status");
 assert.match(src, /\/api\/onboarding\/install/, "component reuses the allowlisted background installer");
+assert.match(src, /const refreshNpmLane = useCallback/, "About polls the server-owned global npm lane");
+assert.match(src, /\/api\/onboarding\/install", \{ cache: "no-store" \}/, "About queries the global installer lane without a target");
+assert.match(src, /Other npm updates are disabled until it finishes/, "About explains the shared npm lock before a second update can start");
+assert.match(src, /disabled=\{blockedByGlobalNpm\}/, "About disables a different tool's update button while npm is busy");
+assert.match(src, /Updating in another Cave window/, "About distinguishes a job reattached from another client surface");
 assert.match(src, /tool\.outdated/, "update buttons are gated to outdated tools");
 assert.match(src, /tool\.compatible/, "tool rows distinguish update availability from Cave compatibility");
 assert.match(src, /tool\.minimumVersion/, "tool rows expose the minimum compatible version");
 assert.match(src, /tool\.installCommand/, "tool rows expose a copyable install/update command");
 assert.match(src, /Copy command/, "tool rows can copy the exact update command");
-assert.match(src, /Update \{tool\.label\}/, "outdated tools expose a clear update button");
+assert.match(src, /`Update \$\{tool\.label\}`/, "outdated tools expose a clear update button");
 assert.match(src, /function toolVersionText\(tool: ToolStatus\): string/, "tool version text is centralized");
 assert.match(src, /if \(!tool\.current\) return "Installed, version unknown"/, "installed tools with unknown versions should say the version is unknown");
 assert.match(src, /function toolStatusText\(tool: ToolStatus\): string/, "tool status text is centralized");
@@ -54,6 +59,15 @@ assert.match(src, /Updating CLI; local daemon will restart afterward/, "About pa
 assert.match(src, /Local daemon restarted and healthy/, "About panel surfaces final verified daemon health");
 assert.match(src, /local daemon remained stopped/, "an intentionally stopped daemon is not presented as a failed restart");
 assert.match(src, /Daemon: \{daemonLifecycleText\(daemon\)\}/, "About panel renders lifecycle health beside the update result");
+assert.match(src, /lastSuccessfulCheckedAt/, "tool checks retain a visible successful-check timestamp");
+assert.match(src, /Stale data from/, "failed rechecks explicitly mark retained tool rows as stale");
+assert.match(src, /Last known/, "each retained tool row identifies last-known data");
+assert.match(src, /TOOL_UPDATE_RECHECK_EVENT/, "a completed in-page update requests a banner revalidation");
+assert.match(src, /window\.dispatchEvent\(new Event\(TOOL_UPDATE_RECHECK_EVENT\)\)/, "successful in-page updates revalidate the banner");
+assert.match(src, /dismissBanner\(TOOL_UPDATE_BANNER_ID\)/, "a clean recheck dismisses an obsolete update banner");
+assert.match(src, /Copy diagnostics \(safe\)/, "the copy control discloses that diagnostics are sanitized");
+assert.match(src, /paths, raw output, URL queries, and secrets are omitted or redacted/, "the UI discloses copied-diagnostics redaction");
+assert.doesNotMatch(src, /updated at \$\{json\.binaryPath\}/, "successful tool updates do not retain local binary paths in UI state");
 assert.match(
   src,
   /const toolActionBtn =[\s\S]*settings-tool-action/,

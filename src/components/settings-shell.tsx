@@ -24,6 +24,7 @@ import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } fro
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
+import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
@@ -70,6 +71,7 @@ import type { CustomThemeData } from "@/lib/preferences-schema";
 
 type DaemonStatus = {
   running: boolean;
+  reason?: string;
   covenVersion?: string;
   apiVersion?: string;
   workspacePath?: string;
@@ -2232,21 +2234,89 @@ function MobileSection() {
 
 // ─── Section: About ───────────────────────────────────────────────────────────
 
-function AboutSection() {
-  const [version, setVersion] = useState<string | null>(null);
-  useEffect(() => {
-    fetch("/api/daemon/status", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j: DaemonStatus) => { if (j.covenVersion) setVersion(j.covenVersion); })
-      .catch(() => {});
+function AboutDaemonStatusRow() {
+  const [state, setState] = useState<AboutDaemonState>({ kind: "checking" });
+  const requestRef = useRef<AbortController | null>(null);
+
+  const refresh = useCallback(() => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
+    setState({ kind: "checking" });
+    void fetch("/api/daemon/status", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (controller.signal.aborted) return;
+        setState(classifyAboutDaemonStatus({
+          responseOk: response.ok,
+          payload,
+          checkedAt: new Date().toISOString(),
+        }));
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setState(classifyAboutDaemonStatus({
+          responseOk: false,
+          payload: null,
+          checkedAt: new Date().toISOString(),
+          error: error instanceof Error ? error.message : "status request failed",
+        }));
+      });
   }, []);
 
+  useEffect(() => {
+    refresh();
+    return () => requestRef.current?.abort();
+  }, [refresh]);
+
+  const detail =
+    state.kind === "running"
+      ? state.version ? `Running v${state.version}` : "Running (version unavailable)"
+      : state.kind === "stopped"
+        ? "Stopped"
+        : state.kind === "unreachable"
+          ? "Unreachable"
+          : state.kind === "failed-to-check"
+            ? "Failed to check"
+            : "Checking…";
+  const reason = state.kind === "checking" || state.kind === "running" ? null : state.reason;
+  const checkedAt = state.kind === "checking" ? null : state.checkedAt;
+  const tone =
+    state.kind === "running"
+      ? "text-[var(--color-success)]"
+      : state.kind === "checking"
+        ? "text-[var(--text-muted)]"
+        : state.kind === "stopped"
+          ? "text-[var(--color-warning)]"
+          : "text-[var(--color-danger)]";
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+      <span className="text-[12px] text-[var(--text-secondary)]">Daemon</span>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={`truncate text-right text-[12px] ${tone}`} title={reason ?? checkedAt ?? undefined}>
+          {detail}{checkedAt ? ` · checked ${relativeTime(checkedAt)}` : ""}
+        </span>
+        <Button variant="secondary" size="xs" onClick={refresh} disabled={state.kind === "checking"}>
+          {state.kind === "checking" ? "Checking…" : "Retry"}
+        </Button>
+      </div>
+      {reason ? (
+        <p className="basis-full text-right text-[11px] text-[var(--text-muted)]">
+          {reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function AboutSection() {
   return (
     <SettingsPage section="about" title="About" description="Version and build information.">
       <SettingsGroup label="CovenCave">
         <SettingsKV label="App version" value={APP_VERSION} />
         <UpdateSettingsRow />
-        <SettingsKV label="Daemon version" value={version ?? "—"} />
+        <AboutDaemonStatusRow />
         <SettingsKV label="Built with" value="Next.js · React · Tauri · Tailwind" />
       </SettingsGroup>
       <SettingsGroup label="OpenCoven tools">

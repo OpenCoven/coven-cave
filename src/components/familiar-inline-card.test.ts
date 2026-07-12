@@ -36,6 +36,23 @@ assert.match(
 // Deep memory peek + view-all link
 assert.match(src, /useFamiliarMemory/, "uses memory hook");
 assert.match(src, /openFamiliarStudio\(\s*familiar\.id\s*,\s*"memory"\s*\)/, "View all → memory tab");
+assert.match(src, /__memory-stale/, "stale memory entries carry a badge");
+
+// ── Insight layer (cave-ck70) ───────────────────────────────────────────────
+// Trust/health one-liner, activity meta, live workload, contextual actions —
+// derived by familiar-card-insights from the shared analytics model.
+assert.match(src, /useCardInsights/, "uses insights hook");
+assert.match(src, /deriveFamiliarCardInsights/, "derives insights from the analytics model");
+assert.match(src, /loadFamiliarAnalyticsData/, "reuses the analytics loader, not a bespoke fan-out");
+assert.match(src, /__insight/, "renders the trust/health insight line");
+assert.match(src, /data-tone=\{insights\.insight\.tone\}/, "insight line is tone-tinted");
+assert.match(src, /insightsCache\.delete/, "failed insight loads are NOT cached (cave-2ex2)");
+assert.match(src, /runningSessions\.map/, "live workload lists running sessions");
+assert.match(src, /cave:agents-open-session/, "workload rows open their session");
+assert.match(src, /openFamiliarStudio\(\s*familiar\.id\s*,\s*"contract"\s*\)/, "fix-contract action → contract tab");
+assert.match(src, /insights\?\.actions\.map/, "state-driven actions render ahead of the static row");
+assert.match(src, /sessionsLast7d/, "shows 7-day session pulse");
+assert.match(src, /topSignal/, "surfaces the top growth signal");
 
 // a11y + dismiss affordance
 assert.match(src, /aria-label="Close"/, "close button labelled");

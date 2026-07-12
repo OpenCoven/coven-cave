@@ -32,6 +32,80 @@ export type UpdateStatus = {
   error?: string;
 };
 
+/**
+ * A release-route response is only a usable check when it carries release
+ * metadata and does not report an upstream lookup error. The route deliberately
+ * returns HTTP 200 for GitHub/rate-limit failures so the settings surface can
+ * render a compact recovery state; callers must therefore inspect the body,
+ * not only `Response.ok`.
+ */
+export type FallbackReleaseCheck =
+  | { kind: "available"; status: UpdateStatus }
+  | { kind: "current"; status: UpdateStatus }
+  | { kind: "unavailable"; message: string };
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+export function classifyFallbackReleaseCheck(
+  responseOk: boolean,
+  payload: unknown,
+  httpStatus?: number,
+): FallbackReleaseCheck {
+  if (!responseOk) {
+    return { kind: "unavailable", message: `release check failed${httpStatus ? ` (HTTP ${httpStatus})` : ""}` };
+  }
+
+  const body = record(payload);
+  if (!body) return { kind: "unavailable", message: "release check returned an invalid response" };
+  if (typeof body.error === "string" && body.error.trim()) {
+    return { kind: "unavailable", message: body.error.trim() };
+  }
+
+  const latest = typeof body.latest === "string" && body.latest.trim() ? body.latest : null;
+  if (typeof body.available !== "boolean") {
+    return { kind: "unavailable", message: "release check did not include an availability result" };
+  }
+  const available = body.available;
+  const current = typeof body.current === "string" ? body.current : "";
+  const url = typeof body.url === "string" ? body.url : "";
+  const checkedAt = typeof body.checkedAt === "string" ? body.checkedAt : new Date().toISOString();
+  if (!latest || !current || !url) {
+    return { kind: "unavailable", message: "release check did not include a latest version" };
+  }
+
+  const status: UpdateStatus = {
+    current,
+    latest,
+    available,
+    url,
+    checkedAt,
+    ...(record(body.downloads) ? { downloads: body.downloads as DownloadUrls } : {}),
+  };
+  return available ? { kind: "available", status } : { kind: "current", status };
+}
+
+/** Combine the non-native release evidence without ever inferring currency from a failure. */
+export type CombinedFallbackReleaseCheck =
+  | { kind: "available"; status: UpdateStatus; nativeUpdaterFailed: boolean }
+  | { kind: "current"; status: UpdateStatus }
+  | { kind: "unavailable"; message: string };
+
+export function resolveFallbackAfterNative(
+  nativeUpdaterError: string | null,
+  fallback: FallbackReleaseCheck,
+): CombinedFallbackReleaseCheck {
+  if (fallback.kind === "available") {
+    return { kind: "available", status: fallback.status, nativeUpdaterFailed: Boolean(nativeUpdaterError) };
+  }
+  if (fallback.kind === "current") return fallback;
+  const nativeDetail = nativeUpdaterError ? `Native updater: ${nativeUpdaterError}. ` : "";
+  return { kind: "unavailable", message: `${nativeDetail}Release check: ${fallback.message}` };
+}
+
 /** Parse "1.2.3" or "v1.2.3" (ignoring any pre-release/build suffix) into [major, minor, patch]. */
 export function parseSemver(version: string): [number, number, number] | null {
   const m = /^\s*v?(\d+)\.(\d+)\.(\d+)/.exec(version);

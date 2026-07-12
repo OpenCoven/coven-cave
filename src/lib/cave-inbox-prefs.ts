@@ -2,20 +2,25 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+// Shape definitions live in inbox-prefs-shape.ts (pure, no node: imports) so
+// client components can import MUTABLE_KINDS without pulling fs/promises into
+// the browser bundle. Re-exported here so server consumers keep one import.
+import {
+  MUTABLE_KINDS,
+  type InboxPrefs,
+  type MutableKind,
+  type SoundMode,
+} from "./inbox-prefs-shape.ts";
+
+export { MUTABLE_KINDS };
+export type { InboxPrefs, MutableKind, SoundMode };
 
 const PREFS_PATH = path.join(caveHome(), "inbox-prefs.json");
-
-export type SoundMode = "default" | "silent" | "named";
-
-export type InboxPrefs = {
-  version: number;
-  mutedFamiliars: string[];
-  sound: { mode: SoundMode; name?: string };
-};
 
 const EMPTY: InboxPrefs = {
   version: 1,
   mutedFamiliars: [],
+  mutedKinds: [],
   sound: { mode: "default" },
 };
 
@@ -49,6 +54,11 @@ export async function loadPrefs(): Promise<InboxPrefs> {
       version: parsed.version ?? 1,
       mutedFamiliars: Array.isArray(parsed.mutedFamiliars)
         ? parsed.mutedFamiliars.filter((s): s is string => typeof s === "string")
+        : [],
+      mutedKinds: Array.isArray(parsed.mutedKinds)
+        ? parsed.mutedKinds.filter((k): k is MutableKind =>
+            (MUTABLE_KINDS as readonly string[]).includes(k as string),
+          )
         : [],
       sound:
         parsed.sound && typeof parsed.sound === "object"
@@ -88,6 +98,15 @@ async function patchPrefsUnlocked(
     mutedFamiliars: patch.mutedFamiliars
       ? Array.from(new Set(patch.mutedFamiliars.filter(Boolean)))
       : current.mutedFamiliars,
+    mutedKinds: patch.mutedKinds
+      ? Array.from(
+          new Set(
+            patch.mutedKinds.filter((k) =>
+              (MUTABLE_KINDS as readonly string[]).includes(k as string),
+            ),
+          ),
+        )
+      : current.mutedKinds,
   };
   await savePrefs(next);
   return next;
@@ -110,6 +129,18 @@ export function toggleMute(familiarId: string): Promise<InboxPrefs> {
     if (muted.has(familiarId)) muted.delete(familiarId);
     else muted.add(familiarId);
     return patchPrefsUnlocked({ mutedFamiliars: Array.from(muted) });
+  });
+}
+
+export function toggleMuteKind(kind: MutableKind): Promise<InboxPrefs> {
+  // Same atomicity contract as toggleMute: read the current set and write the
+  // flipped set under one lock acquisition, via the unlocked inner patch.
+  return withPrefsLock(async () => {
+    const current = await loadPrefs();
+    const muted = new Set(current.mutedKinds);
+    if (muted.has(kind)) muted.delete(kind);
+    else muted.add(kind);
+    return patchPrefsUnlocked({ mutedKinds: Array.from(muted) });
   });
 }
 

@@ -27,8 +27,20 @@ assert.doesNotMatch(
 
 assert.match(
   route,
-  /void \(async \(\) => \{\s*try \{[\s\S]*?const child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*await finishInstallJob\(targetName, target, job, \{[\s\S]*?launchError: err,/,
-  "fire-and-forget installer task should recover a daemon after synchronous spawn failures",
+  /void runInstallJob\(targetName, target, plan, job, npmLease\);/,
+  "POST should hand the background installer to the shared lifecycle runner",
+);
+
+assert.match(
+  route,
+  /async function runInstallJob\([\s\S]*?child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*await finish\(null, null, err\);/,
+  "the background lifecycle runner should recover a daemon after synchronous spawn failures",
+);
+
+assert.match(
+  route,
+  /async function finishInstallJob\([\s\S]*?recoverDaemonAfterCliInstall\(targetName, job\)[\s\S]*?finally \{[\s\S]*?npmLease\?\.release\(\);/,
+  "the shared npm lease should be released only after daemon recovery finishes",
 );
 
 assert.doesNotMatch(

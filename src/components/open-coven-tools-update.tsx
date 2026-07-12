@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
+import { buildSafeToolDiagnostics } from "@/lib/about-diagnostics";
+import { relativeTime } from "@/lib/relative-time";
 
 type InstallTarget = "coven-cli" | "coven-code";
 
@@ -20,6 +22,7 @@ type ToolStatus = {
   compatible: boolean;
   minimumVersion: string;
   installCommand: string;
+  checkedAt: string;
 };
 
 type InstallJobView = {
@@ -27,7 +30,6 @@ type InstallJobView = {
   elapsedMs: number;
   tail: string;
   ok?: boolean;
-  binaryPath?: string | null;
   error?: string;
   daemon?: {
     wasRunning: boolean;
@@ -51,8 +53,14 @@ type InstallResult = {
   detail: string;
 };
 
+type NpmLaneState = {
+  target: string;
+  label: string;
+};
+
 const SIDECAR_TOKEN_STORAGE_KEY = "coven-cave:sidecar-auth-token";
 const TOOL_UPDATE_BANNER_ID = "opencoven-tools-update";
+const TOOL_UPDATE_RECHECK_EVENT = "coven-cave:opencoven-tools-status-changed";
 const TOOL_DISMISS_KEY = (tools: ToolStatus[]) =>
   `coven-cave:tool-update:dismissed:${tools
     .map((tool) => `${tool.id}:${tool.latest ?? tool.current ?? tool.minimumVersion}`)
@@ -95,7 +103,7 @@ function successfulInstallDetail(
   target: InstallTarget,
   job: InstallJobView,
 ): string {
-  const location = job.binaryPath ? `updated at ${job.binaryPath}` : "updated";
+  const location = "updated";
   if (target !== "coven-cli" || !job.daemon) return location;
   if (job.daemon.phase === "healthy") return `${location}; local daemon restarted and healthy`;
   if (job.daemon.phase === "not-running") return `${location}; local daemon remained stopped`;
@@ -150,40 +158,34 @@ function buildDiagnosticsText({
   tools,
   checking,
   error,
+  lastSuccessfulCheckedAt,
   installJobs,
   installResults,
   href,
-  userAgent,
   sidecarTokenPresent,
   tauriInternalsPresent,
 }: {
   tools: ToolStatus[];
   checking: boolean;
   error: string | null;
+  lastSuccessfulCheckedAt: string | null;
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   href: string;
-  userAgent: string;
   sidecarTokenPresent: boolean;
   tauriInternalsPresent: boolean;
 }): string {
-  return JSON.stringify(
-    {
-      generatedAt: new Date().toISOString(),
-      surface: "Settings/About/OpenCoven tools",
-      location: href,
-      userAgent,
-      sidecarTokenPresent,
-      tauriInternalsPresent,
-      checking,
-      error,
-      tools,
-      installJobs,
-      installResults,
-    },
-    null,
-    2,
-  );
+  return buildSafeToolDiagnostics({
+    tools,
+    checking,
+    error,
+    lastSuccessfulCheckedAt,
+    installJobs,
+    installResults,
+    href,
+    sidecarTokenPresent,
+    tauriInternalsPresent,
+  });
 }
 
 export function OpenCovenToolsBannerTrigger() {
@@ -191,41 +193,50 @@ export function OpenCovenToolsBannerTrigger() {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/opencoven-tools/status", { cache: "no-store" })
-      .then(async (res) => {
-        if (!res.ok) return null;
-        return (await res.json()) as { ok?: boolean; tools?: ToolStatus[] };
-      })
-      .then((json) => {
-        if (cancelled || !json?.ok) return;
-        const tools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
-        const incompatibleTools = tools.filter(toolNeedsCompatibilityUpdate);
-        const outdatedTools = tools.filter((tool) => tool.compatible && tool.outdated);
-        const bannerTools = incompatibleTools.length > 0 ? incompatibleTools : outdatedTools;
-        if (bannerTools.length === 0 || dismissedToolBanner(bannerTools)) return;
-        const label = bannerTools.map((tool) => tool.label).join(", ");
-        const detail =
-          incompatibleTools.length > 0
-            ? `${label} must be updated for this Cave build.`
-            : `New ${label} release available.`;
-        pushBanner({
-          id: TOOL_UPDATE_BANNER_ID,
-          severity: incompatibleTools.length > 0 ? "warning" : "info",
-          title: detail,
-          cta: {
-            label: "Review tools",
-            onClick: () => {
-              window.location.assign("/settings#about");
+    const refreshBanner = () => {
+      void fetch("/api/opencoven-tools/status", { cache: "no-store" })
+        .then(async (res) => {
+          if (!res.ok) return null;
+          return (await res.json()) as { ok?: boolean; tools?: ToolStatus[] };
+        })
+        .then((json) => {
+          if (cancelled || !json?.ok) return;
+          const tools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
+          const incompatibleTools = tools.filter(toolNeedsCompatibilityUpdate);
+          const outdatedTools = tools.filter((tool) => tool.compatible && tool.outdated);
+          const bannerTools = incompatibleTools.length > 0 ? incompatibleTools : outdatedTools;
+          if (bannerTools.length === 0) {
+            dismissBanner(TOOL_UPDATE_BANNER_ID);
+            return;
+          }
+          if (dismissedToolBanner(bannerTools)) return;
+          const label = bannerTools.map((tool) => tool.label).join(", ");
+          const detail =
+            incompatibleTools.length > 0
+              ? `${label} must be updated for this Cave build.`
+              : `New ${label} release available.`;
+          pushBanner({
+            id: TOOL_UPDATE_BANNER_ID,
+            severity: incompatibleTools.length > 0 ? "warning" : "info",
+            title: detail,
+            cta: {
+              label: "Review tools",
+              onClick: () => {
+                window.location.assign("/settings#about");
+              },
             },
-          },
-          onDismiss: () => dismissToolBanner(bannerTools),
+            onDismiss: () => dismissToolBanner(bannerTools),
+          });
+        })
+        .catch(() => {
+          /* Update checks are best-effort. */
         });
-      })
-      .catch(() => {
-        /* Update checks are best-effort. */
-      });
+    };
+    refreshBanner();
+    window.addEventListener(TOOL_UPDATE_RECHECK_EVENT, refreshBanner);
     return () => {
       cancelled = true;
+      window.removeEventListener(TOOL_UPDATE_RECHECK_EVENT, refreshBanner);
       dismissBanner(TOOL_UPDATE_BANNER_ID);
     };
   }, [pushBanner, dismissBanner]);
@@ -234,9 +245,12 @@ export function OpenCovenToolsBannerTrigger() {
 }
 
 export function OpenCovenToolsUpdate() {
+  const { dismissBanner } = useShellBanners();
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastSuccessfulCheckedAt, setLastSuccessfulCheckedAt] = useState<string | null>(null);
+  const [lastCheckError, setLastCheckError] = useState<string | null>(null);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "copied" | "failed"
   >("idle");
@@ -247,9 +261,33 @@ export function OpenCovenToolsUpdate() {
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
+  const [npmLane, setNpmLane] = useState<NpmLaneState | null>(null);
   const mounted = useRef(true);
 
-  const load = useCallback(async () => {
+  const refreshNpmLane = useCallback(async () => {
+    try {
+      const res = await fetch("/api/onboarding/install", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
+      };
+      if (!mounted.current) return;
+      setNpmLane(
+        json.npmBusy && json.npmBusyTarget
+          ? {
+              target: json.npmBusyTarget,
+              label: json.npmBusyLabel ?? json.npmBusyTarget,
+            }
+          : null,
+      );
+    } catch {
+      /* A later poll will reconcile the shared lane. */
+    }
+  }, []);
+
+  const load = useCallback(async (): Promise<boolean> => {
     setChecking(true);
     setError(null);
     try {
@@ -263,24 +301,37 @@ export function OpenCovenToolsUpdate() {
         throw new Error(json.error ?? "tool check failed");
       }
       if (mounted.current) {
-        setTools((json.tools ?? []).filter((tool) => isInstallTarget(tool.id)));
+        const nextTools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
+        setTools(nextTools);
+        setLastSuccessfulCheckedAt(nextTools[0]?.checkedAt ?? new Date().toISOString());
+        setLastCheckError(null);
+        if (!nextTools.some((tool) => tool.outdated || toolNeedsCompatibilityUpdate(tool))) {
+          dismissBanner(TOOL_UPDATE_BANNER_ID);
+        }
       }
+      return true;
     } catch (err) {
       if (mounted.current) {
-        setError(err instanceof Error ? err.message : "tool check failed");
+        const message = err instanceof Error ? err.message : "tool check failed";
+        setError(message);
+        setLastCheckError(message);
       }
+      return false;
     } finally {
       if (mounted.current) setChecking(false);
     }
-  }, []);
+  }, [dismissBanner]);
 
   useEffect(() => {
     mounted.current = true;
     void load();
+    void refreshNpmLane();
+    const pollLane = setInterval(() => void refreshNpmLane(), 2000);
     return () => {
       mounted.current = false;
+      clearInterval(pollLane);
     };
-  }, [load]);
+  }, [load, refreshNpmLane]);
 
   const runningInstallKey = useMemo(
     () =>
@@ -325,7 +376,10 @@ export function OpenCovenToolsUpdate() {
                   }
                 : { ok: false, detail: json.error ?? "update failed" },
             }));
-            await load();
+            const refreshed = await load();
+            if (json.ok && refreshed) {
+              window.dispatchEvent(new Event(TOOL_UPDATE_RECHECK_EVENT));
+            }
           }
         } catch {
           /* transient poll failure; next tick retries */
@@ -360,7 +414,16 @@ export function OpenCovenToolsUpdate() {
         npmMissing?: boolean;
         hint?: string;
         error?: string;
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
       };
+      if (json.npmBusy && json.npmBusyTarget) {
+        setNpmLane({
+          target: json.npmBusyTarget,
+          label: json.npmBusyLabel ?? json.npmBusyTarget,
+        });
+      }
       if (!res.ok || json.npmMissing) {
         setInstallResults((prev) => ({
           ...prev,
@@ -411,10 +474,10 @@ export function OpenCovenToolsUpdate() {
         tools,
         checking,
         error,
+        lastSuccessfulCheckedAt,
         installJobs,
         installResults,
         href: window.location.href,
-        userAgent: navigator.userAgent,
         sidecarTokenPresent: Boolean(
           window.sessionStorage.getItem(SIDECAR_TOKEN_STORAGE_KEY),
         ),
@@ -440,27 +503,49 @@ export function OpenCovenToolsUpdate() {
       ? "Diagnostics copied"
       : diagnosticsStatus === "failed"
         ? "Diagnostics copy failed"
-        : error
-          ? `Check failed: ${error}`
-          : checking
-            ? "Checking tools..."
-            : "Version source: npm latest";
+        : checking
+          ? lastSuccessfulCheckedAt
+            ? `Checking tools — last known ${relativeTime(lastSuccessfulCheckedAt)}`
+            : "Checking tools..."
+          : lastCheckError
+            ? lastSuccessfulCheckedAt
+              ? `Stale data from ${relativeTime(lastSuccessfulCheckedAt)} — check failed: ${lastCheckError}`
+              : `Couldn't check tools: ${lastCheckError}`
+            : lastSuccessfulCheckedAt
+              ? `Checked ${relativeTime(lastSuccessfulCheckedAt)} · Version source: npm latest`
+              : error ?? "Version source: npm latest";
+  const stale = Boolean(lastCheckError && lastSuccessfulCheckedAt);
 
   return (
     <>
+      {npmLane ? (
+        <p
+          role="status"
+          className="px-4 pt-3 text-[11px] text-[var(--text-secondary)]"
+        >
+          {npmLane.label} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
+        </p>
+      ) : null}
       {tools.map((tool) => {
         const job = installJobs[tool.id];
         const busy = job?.status === "running";
+        const updatingElsewhere = !busy && npmLane?.target === tool.id;
+        const blockedByGlobalNpm = Boolean(npmLane && npmLane.target !== tool.id);
         const result = installResults[tool.id];
         const daemon = job?.daemon;
         return (
           <div key={tool.id} className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
               <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
-              <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
-                {toolVersionText(tool)}
-              </p>
-              {toolCompatibilityText(tool) ? (
+               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
+                 {toolVersionText(tool)}
+               </p>
+               {stale ? (
+                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                   Last known · {relativeTime(lastSuccessfulCheckedAt)}
+                 </p>
+               ) : null}
+               {toolCompatibilityText(tool) ? (
                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
                   {toolCompatibilityText(tool)}
                 </p>
@@ -499,22 +584,33 @@ export function OpenCovenToolsUpdate() {
                   <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
                   {daemon ? daemonLifecycleText(daemon) : "Updating..."} {formatElapsed(job.elapsedMs)}
                 </span>
+              ) : updatingElsewhere ? (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+                  <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
+                  Updating in another Cave window
+                </span>
               ) : tool.outdated || toolNeedsCompatibilityUpdate(tool) ? (
                 <Button
                   variant="primary"
                   size="xs"
                   onClick={() => void updateTool(tool.id)}
+                  disabled={blockedByGlobalNpm}
+                  title={
+                    blockedByGlobalNpm
+                      ? `Wait for ${npmLane?.label} to finish updating npm.`
+                      : undefined
+                  }
                   className={accentBtn}
                   leadingIcon="ph:arrow-down-bold"
                 >
-                  Update {tool.label}
+                  {blockedByGlobalNpm ? `Waiting for ${npmLane?.label}` : `Update ${tool.label}`}
                 </Button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
                   {toolStatusText(tool)}
                 </span>
               )}
-              {!busy ? (
+              {!busy && !updatingElsewhere ? (
                 <Button
                   variant="secondary"
                   size="xs"
@@ -531,9 +627,12 @@ export function OpenCovenToolsUpdate() {
         );
       })}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <span className="text-[12px] text-[var(--text-secondary)]">
-          {footerStatusText}
-        </span>
+        <div className="min-w-0">
+          <p className="text-[12px] text-[var(--text-secondary)]">{footerStatusText}</p>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            Diagnostics include tool/check summaries; paths, raw output, URL queries, and secrets are omitted or redacted.
+          </p>
+        </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button
             variant="secondary"
@@ -554,7 +653,7 @@ export function OpenCovenToolsUpdate() {
               ? "Copied"
               : diagnosticsStatus === "failed"
                 ? "Copy failed"
-                : "Copy diagnostics"}
+                : "Copy diagnostics (safe)"}
           </Button>
           <Button variant="secondary" size="xs" onClick={() => void load()} className={ghostBtn} disabled={checking}>
             Check tools

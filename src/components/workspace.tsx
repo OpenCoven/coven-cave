@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
-import { groupInboxFeed } from "@/lib/inbox-feed";
+import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -447,6 +447,7 @@ export function Workspace() {
   const [inboxPrefs, setInboxPrefs] = useState<InboxPrefs>({
     version: 1,
     mutedFamiliars: [],
+    mutedKinds: [],
     sound: { mode: "default" },
   });
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
@@ -997,9 +998,12 @@ export function Workspace() {
   // macOS system notifications. EventSource auto-reconnects on its own.
   useEffect(() => {
     const es = new EventSource("/api/inbox/stream");
+    // Quiet delivery, not suppression: muted items still land in the inbox and
+    // bell — they just skip the toast/native-notification/sound moment.
     const isMuted = (item: InboxItem) =>
-      !!item.familiarId &&
-      inboxPrefsRef.current.mutedFamiliars.includes(item.familiarId);
+      (!!item.familiarId &&
+        inboxPrefsRef.current.mutedFamiliars.includes(item.familiarId)) ||
+      (inboxPrefsRef.current.mutedKinds as readonly string[]).includes(item.kind);
     const sound = () => {
       const s = inboxPrefsRef.current.sound;
       if (s.mode === "silent") return null;
@@ -1511,13 +1515,32 @@ export function Workspace() {
     openReminderModal();
   }, [openReminderModal]);
 
+  // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
+  // the notification stays listed until dismissed/done. No-ops server-side on
+  // already-read items, so callers don't need to check. Skips synthetic ids
+  // (missed-batches, ephemeral response-needed rows, ad-hoc toasts).
+  const markInboxItemRead = useCallback((id: string | null | undefined) => {
+    if (!id || id.startsWith("missed-") || id.startsWith("eph:")) return;
+    void fetch("/api/inbox/bulk", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "read", ids: [id] }),
+    });
+  }, []);
+
+  // Explicit ✕ on a toast = "seen it" — mark read, keep it in the bell. The
+  // old handler POSTed /dismiss, which RESOLVED the item; combined with the
+  // auto-hide timer routing through the same handler, every notification that
+  // fired while you were present silently destroyed itself after 8 seconds.
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-    // Persist dismissal for real items. Skip synthetic ids (missed-batches,
-    // ephemeral response-needed rows).
-    if (!id.startsWith("missed-") && !id.startsWith("eph:")) {
-      void fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
-    }
+    markInboxItemRead(id);
+  }, [markInboxItemRead]);
+
+  // Auto-hide expiry: the user may never have seen the toast — remove the
+  // visual only, leave the item unread so the bell still carries it.
+  const expireToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const snoozeToast = useCallback((toast: Toast, untilIso: string) => {
@@ -1612,6 +1635,7 @@ export function Workspace() {
   }, [nextRouter, openFamiliarSession, openUrlInAppBrowser]);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
+    markInboxItemRead(item.id);
     const sessionId =
       item.sessionId ?? (item.link?.kind === "session" ? item.link.ref : null);
     if (sessionId) {
@@ -1620,7 +1644,7 @@ export function Workspace() {
     }
     if (item.familiarId) setActiveId(item.familiarId);
     setMode("inbox");
-  }, [openFamiliarSession]);
+  }, [openFamiliarSession, markInboxItemRead]);
 
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
@@ -1832,6 +1856,7 @@ export function Workspace() {
 
   const openToastTarget = useCallback((toast: Toast) => {
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+    markInboxItemRead(toast.itemId);
     if (toast.link) {
       openReminderLink(toast.link);
     } else if (toast.sessionId) {
@@ -1839,7 +1864,7 @@ export function Workspace() {
     } else {
       setMode("inbox");
     }
-  }, [openFamiliarSession, openReminderLink]);
+  }, [openFamiliarSession, openReminderLink, markInboxItemRead]);
 
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
@@ -2166,6 +2191,15 @@ export function Workspace() {
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
 
+  // The notification bell counts UNREAD notifications from the same items it
+  // lists (one definition, unreadInboxCount) — it used to show the polled
+  // escalations count above a list of inbox items, so badge and list routinely
+  // disagreed. Live via SSE, quieted by Mark read / opening items.
+  const notificationUnreadCount = useMemo(
+    () => unreadInboxCount(inboxItemsWithEphemeral),
+    [inboxItemsWithEphemeral],
+  );
+
   // Role Surfaces: build the shared context from the live session and resolve
   // which registered surfaces the active familiar should see. Entirely
   // registry-driven — the shell never branches on a specific role.
@@ -2276,9 +2310,10 @@ export function Workspace() {
       selectedFamiliarIds={scopeIds}
       onFamiliarScopeChange={selectFamiliarScope}
       responseNeeded={responseNeeded}
-      notificationBadgeCount={inboxBadgeCount}
+      notificationBadgeCount={notificationUnreadCount}
       onOpenInbox={() => setMode("inbox")}
       onOpenInboxItem={(item) => {
+        markInboxItemRead(item.id);
         if (item.sessionId) {
           openFamiliarSession(item.sessionId, item.familiarId);
         } else {
@@ -2632,8 +2667,9 @@ export function Workspace() {
               responseNeeded={responseNeeded}
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
-              inboxBadgeCount={inboxBadgeCount}
+              inboxBadgeCount={notificationUnreadCount}
               onOpenInboxItem={(item) => {
+                markInboxItemRead(item.id);
                 if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
                 else setMode("inbox");
               }}
@@ -2722,6 +2758,7 @@ export function Workspace() {
       <InboxToastStack
         toasts={toasts}
         onDismiss={dismissToast}
+        onExpire={expireToast}
         onSnooze={snoozeToast}
         onOpen={openToastTarget}
       />
