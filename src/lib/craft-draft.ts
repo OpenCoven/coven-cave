@@ -57,9 +57,10 @@ function compareStrings(a: string, b: string): number {
 }
 
 export function compareCraftDraftRoles(a: CraftDraftRoleInput, b: CraftDraftRoleInput): number {
-  const aName = (a.name.trim() || a.id).toLowerCase();
-  const bName = (b.name.trim() || b.id).toLowerCase();
-  return compareStrings(aName, bName) || compareStrings(a.id.toLowerCase(), b.id.toLowerCase());
+  const aName = (a.name.trim() || a.id.trim()).toLowerCase();
+  const bName = (b.name.trim() || b.id.trim()).toLowerCase();
+  return compareStrings(aName, bName)
+    || compareStrings(a.id.trim().toLowerCase(), b.id.trim().toLowerCase());
 }
 
 function titleCase(value: string): string {
