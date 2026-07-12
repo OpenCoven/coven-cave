@@ -7,6 +7,10 @@ const source = await readFile(
   new URL("../../../../lib/opencoven-tools-status.ts", import.meta.url),
   "utf8",
 );
+const state = await readFile(
+  new URL("../../../../lib/opencoven-tools-state.ts", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   route,
@@ -78,6 +82,30 @@ assert.match(
   source,
   /Promise\.all\(OPEN_COVEN_TOOLS\.map\(toolStatus\)\)/,
   "GET reports all allowlisted OpenCoven tools together",
+);
+
+assert.match(
+  source,
+  /const state = openCovenToolState\(/,
+  "GET derives a single truthful tool state from the binary, version, and npm checks",
+);
+
+assert.match(
+  source,
+  /state,\s*\n\s*minimumVersion/,
+  "GET includes the computed state in each tool payload",
+);
+
+assert.match(
+  state,
+  /if \(!tool\.installed\) return "missing";[\s\S]*?if \(!tool\.current\) return "version-unreadable";/,
+  "missing and unreadable binaries are never allowed to fall through as compatible/current",
+);
+
+assert.match(
+  state,
+  /if \(!tool\.latest\) return "latest-unknown";[\s\S]*?if \(tool\.outdated\) return "outdated";[\s\S]*?return "current";/,
+  "latest lookup failures are distinguished from a current tool",
 );
 
 console.log("opencoven-tools/status route.test.ts: ok");

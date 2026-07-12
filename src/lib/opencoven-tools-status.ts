@@ -4,6 +4,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { compareSemver } from "./app-update.ts";
 import {
+  openCovenToolState,
+  type OpenCovenToolState,
+} from "@/lib/opencoven-tools-state";
+import {
   covenLaunchCommandForBinary,
   covenSpawnEnv,
   pickWindowsLauncher,
@@ -95,6 +99,7 @@ export type OpenCovenToolStatus = {
   latestCheck: NpmLatestCheck;
   outdated: boolean;
   compatible: boolean;
+  state: OpenCovenToolState;
   minimumVersion: string;
   installCommand: string;
   checkedAt: string;
@@ -288,6 +293,14 @@ export function composeOpenCovenToolStatus(
     !!installed?.version && !!latest && compareSemver(latest, installed.version) > 0;
   const compatible =
     !!installed?.version && compareSemver(installed.version, tool.minimumVersion) >= 0;
+  const state = openCovenToolState({
+    installed: !!installed,
+    current: installed?.version ?? null,
+    latest,
+    outdated,
+    compatible,
+    minimumVersion: tool.minimumVersion,
+  });
 
   return {
     id: tool.id,
@@ -301,6 +314,7 @@ export function composeOpenCovenToolStatus(
     latestCheck,
     outdated,
     compatible,
+    state,
     minimumVersion: tool.minimumVersion,
     installCommand: tool.installCommand,
     checkedAt: latestCheck.checkedAt,
