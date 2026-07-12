@@ -14,7 +14,6 @@ import {
   setSessionTitle,
 } from "@/lib/cave-config";
 import {
-  chatSummaryTitle,
   chatTitleFromPrompt,
   defaultChatTitleForSession,
 } from "@/lib/cave-chat-titles";
@@ -394,10 +393,12 @@ async function setDefaultSessionTitleIfMissing(sessionId: string, title: string)
 async function autoNameSessionFromFirstExchange(
   sessionId: string,
   promptText: string,
-  assistantText: string,
 ): Promise<void> {
   try {
-    const summary = chatSummaryTitle({ userText: promptText, assistantText });
+    // main dropped the assistant-text summarizer (chatSummaryTitle); derive the
+    // auto-title from the first prompt, matching how every other call site here
+    // titles a session.
+    const summary = chatTitleFromPrompt(promptText);
     if (!summary) return;
     const autoDefaults = new Set(
       [chatTitleFromPrompt(promptText), defaultChatTitleForSession(sessionId)].filter(
@@ -965,7 +966,7 @@ function openClawChatResponse(args: {
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
           if (!existing && !isError) {
-            await autoNameSessionFromFirstExchange(sessionId, args.promptText, assistantText);
+            await autoNameSessionFromFirstExchange(sessionId, args.promptText);
           }
           pushProgress("save-transcript", "Transcript saved", "done");
         }
@@ -1888,7 +1889,7 @@ export async function POST(req: Request) {
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
         if (!existing && !result.is_error && !cancelledByUser) {
-          await autoNameSessionFromFirstExchange(finalSessionId, promptText, cleanedAssistantText);
+          await autoNameSessionFromFirstExchange(finalSessionId, promptText);
         }
         pushProgress("save-transcript", "Transcript saved", "done");
       }
