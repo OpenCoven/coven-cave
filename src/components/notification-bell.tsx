@@ -546,9 +546,10 @@ export function NotificationBell({
                       <BellBtn
                         primary
                         onClick={() => {
-                          // Opening acknowledges: quiet the badge without
-                          // resolving the item.
-                          if (unread) void markRead(it.id);
+                          // Opening acknowledges the item, but the parent's
+                          // onOpenItem handler already marks it read (every
+                          // open-path funnels through markInboxItemRead) — so
+                          // the bell must not POST a second, redundant read.
                           setOpen(false);
                           onOpenItem(it);
                         }}
