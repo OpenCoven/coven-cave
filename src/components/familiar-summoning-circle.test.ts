@@ -76,8 +76,28 @@ assert.match(
 assert.match(source, /idTaken/, "the circle computes whether the derived id is taken");
 assert.match(
   source,
-  /disabled=\{!vesselComplete \|\| !nameComplete \|\| idTaken \|\| submitting\}/,
-  "Summon must be disabled when the id is taken or a rite is incomplete",
+  /const descriptionComplete = description\.trim\(\)\.length > 0/,
+  "the circle requires a non-empty familiar description",
+);
+assert.match(
+  source,
+  /const identityComplete = nameComplete && descriptionComplete/,
+  "the identity stage requires both name and description",
+);
+assert.match(
+  source,
+  /disabled=\{!vesselComplete \|\| !identityComplete \|\| idTaken \|\| submitting\}/,
+  "Summon must be disabled when the id is taken or a required description is missing",
+);
+assert.match(
+  source,
+  /description: description\.trim\(\)/,
+  "the circle always sends the required description to the creation route",
+);
+assert.match(
+  source,
+  /htmlFor="summon-description">What it does \*</,
+  "the description input is visibly required",
 );
 assert.match(source, /NAME_POOL/, "the name stage offers suggested names");
 {

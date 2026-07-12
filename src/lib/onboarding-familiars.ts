@@ -66,6 +66,9 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   const id = slugifyFamiliarId(cleanText(input.id) || displayName);
   if (!id) throw new Error("Familiar id is required.");
 
+  const description = cleanText(input.description);
+  if (!description) throw new Error("Familiar description is required.");
+
   const openclawAgentId = slugifyFamiliarId(cleanText(input.openclawAgentId));
   const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
   if (!isTrustedOnboardingHarness(harness)) {
@@ -96,7 +99,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     id,
     displayName,
     role: cleanText(input.role) || "Familiar",
-    description: cleanText(input.description),
+    description,
     glyph: cleanText(input.glyph) || "ph:sparkle-fill",
     harness,
     model,
@@ -117,9 +120,9 @@ export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): strin
     `display_name = ${tomlString(draft.displayName)}`,
     `emoji = ${tomlString(draft.glyph)}`,
     `role = ${tomlString(draft.role)}`,
+    `description = ${tomlString(draft.description)}`,
   ];
 
-  if (draft.description) lines.push(`description = ${tomlString(draft.description)}`);
   lines.push(`harness = ${tomlString(draft.harness)}`);
   lines.push(`model = ${tomlString(draft.model)}`);
   if (draft.openclawAgentId) lines.push(`openclaw_agent = ${tomlString(draft.openclawAgentId)}`);

@@ -30,18 +30,31 @@ assert.deepEqual(draft, {
 const toml = buildFamiliarsToml(draft);
 assert.match(toml, /id = "riley-research"/);
 assert.match(toml, /display_name = "Riley Research"/);
+assert.match(toml, /description = "Finds evidence and summarizes it\."/);
 assert.match(toml, /harness = "openclaw"/);
 assert.match(toml, /model = "openai\/gpt-5.5"/);
 assert.match(toml, /openclaw_agent = "riley"/);
 
 assert.equal(
-  normalizeFamiliarDraft({ displayName: "Cody", openclawAgentId: "cody" }).id,
+  normalizeFamiliarDraft({
+    displayName: "Cody",
+    description: "Handles code tasks.",
+    openclawAgentId: "cody",
+  }).id,
   "cody",
 );
+
+for (const description of [undefined, "", "   \t\n"]) {
+  assert.throws(
+    () => normalizeFamiliarDraft({ displayName: "Descriptionless", description }),
+    /Familiar description is required\./,
+  );
+}
 
 const localDraft = normalizeFamiliarDraft({
   displayName: "Codex Local",
   role: "Code",
+  description: "Writes and reviews code.",
   harness: "codex",
   model: "local-codex",
 });
@@ -50,7 +63,7 @@ assert.deepEqual(localDraft, {
   id: "codex-local",
   displayName: "Codex Local",
   role: "Code",
-  description: "",
+  description: "Writes and reviews code.",
   glyph: "ph:sparkle-fill",
   harness: "codex",
   model: "local-codex",
@@ -58,11 +71,15 @@ assert.deepEqual(localDraft, {
   runtime: undefined,
 });
 
-assert.equal(normalizeFamiliarDraft({ displayName: "Solo" }).harness, "codex");
+assert.equal(
+  normalizeFamiliarDraft({ displayName: "Solo", description: "Works independently." }).harness,
+  "codex",
+);
 
 const hermesDraft = normalizeFamiliarDraft({
   displayName: "Hermes Local",
   role: "Planning",
+  description: "Plans and coordinates work.",
   harness: "hermes",
   model: "hermes-local",
 });
@@ -71,7 +88,7 @@ assert.deepEqual(hermesDraft, {
   id: "hermes-local",
   displayName: "Hermes Local",
   role: "Planning",
-  description: "",
+  description: "Plans and coordinates work.",
   glyph: "ph:sparkle-fill",
   harness: "hermes",
   model: "hermes-local",
@@ -79,6 +96,7 @@ assert.deepEqual(hermesDraft, {
   runtime: undefined,
 });
 
+assert.match(buildFamiliarsToml(hermesDraft), /description = "Plans and coordinates work\."/);
 assert.match(buildFamiliarsToml(hermesDraft), /harness = "hermes"/);
 
 
@@ -86,6 +104,7 @@ assert.throws(
   () =>
     normalizeFamiliarDraft({
       displayName: "Evil",
+      description: "Attempts an unsupported adapter.",
       harness: "attacker-adapter",
       model: "evil-local",
     }),
@@ -96,6 +115,7 @@ assert.throws(
 
 const sshDraft = normalizeFamiliarDraft({
   displayName: "Remote Codex",
+  description: "Runs code work on a remote host.",
   harness: "codex",
   model: "codex-remote",
   runtime: { kind: "ssh", host: "build-box", cwd: "/srv/work", command: "" },
@@ -115,6 +135,7 @@ assert.throws(
   () =>
     normalizeFamiliarDraft({
       displayName: "Half Remote",
+      description: "Has incomplete remote settings.",
       runtime: { kind: "ssh", host: "build-box", cwd: "" },
     }),
   /SSH runtime needs a host/,
@@ -125,6 +146,7 @@ assert.throws(
   () =>
     normalizeFamiliarDraft({
       displayName: "Bad Host",
+      description: "Uses an invalid remote host.",
       runtime: { kind: "ssh", host: "host name!", cwd: "/srv" },
     }),
   /SSH runtime needs a host/,
@@ -134,6 +156,7 @@ assert.throws(
 assert.equal(
   normalizeFamiliarDraft({
     displayName: "Local",
+    description: "Stays on this machine.",
     runtime: { kind: "local" },
   }).runtime,
   undefined,
@@ -144,7 +167,10 @@ assert.equal(
 {
   const manyDashes = "-".repeat(100_000);
   const start = Date.now();
-  normalizeFamiliarDraft({ displayName: manyDashes + "x" });
+  normalizeFamiliarDraft({
+    displayName: manyDashes + "x",
+    description: "Exercises the slugifier guard.",
+  });
   const elapsed = Date.now() - start;
   assert.ok(elapsed < 500, `slugify ReDoS guard: took ${elapsed}ms on long dash string (expected <500ms)`);
 }

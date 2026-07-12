@@ -438,9 +438,11 @@ function SummoningRite({
           ? agentId !== null
           : false;
   const nameComplete = name.trim().length > 0 && derivedId.length > 0 && !idTaken;
+  const descriptionComplete = description.trim().length > 0;
+  const identityComplete = nameComplete && descriptionComplete;
   const stageComplete: boolean[] = [
     vesselComplete,
-    nameComplete,
+    identityComplete,
     // The form always has a valid default; it counts once the user has seen it.
     maxVisited >= 2,
     summoned !== null,
@@ -458,7 +460,7 @@ function SummoningRite({
   );
 
   const canContinue =
-    stage === 0 ? vesselComplete : stage === 1 ? nameComplete : stage === 2;
+    stage === 0 ? vesselComplete : stage === 1 ? identityComplete : stage === 2;
 
   const suggestName = useCallback(() => {
     const pool = filterInternalCovenNameSuggestions(NAME_POOL).filter(
@@ -474,7 +476,7 @@ function SummoningRite({
       : model.trim() || (harness ? defaultModelForRuntime(harness) : "runtime default");
 
   async function handleSummon() {
-    if (!vesselComplete || !nameComplete || submitting) return;
+    if (!vesselComplete || !identityComplete || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -486,12 +488,8 @@ function SummoningRite({
             id: derivedId,
             displayName: name.trim(),
             glyph,
+            description: description.trim(),
             ...(role.trim() ? { role: role.trim() } : {}),
-            ...(description.trim()
-              ? { description: description.trim() }
-              : vessel === "ssh"
-                ? { description: `Remote familiar over SSH (${sshHost.trim()}).` }
-                : {}),
             ...(vessel === "openclaw" && selectedAgent
               ? { openclawAgentId: selectedAgent.id }
               : { harness }),
@@ -741,7 +739,7 @@ function SummoningRite({
                       variant="primary"
                       leadingIcon="ph:magic-wand-fill"
                       onClick={() => void handleSummon()}
-                      disabled={!vesselComplete || !nameComplete || idTaken || submitting}
+                      disabled={!vesselComplete || !identityComplete || idTaken || submitting}
                       loading={submitting}
                     >
                       {submitting ? "Summoning…" : "Summon"}
@@ -1040,12 +1038,14 @@ function StageName({
         />
       </div>
       <div>
-        <label className={labelClass} htmlFor="summon-description">What it does</label>
+        <label className={labelClass} htmlFor="summon-description">What it does *</label>
         <textarea
           id="summon-description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="A short description of this familiar’s focus."
+          required
+          aria-required="true"
           rows={3}
           className={`${inputClass} h-auto resize-y py-2`}
         />
