@@ -166,8 +166,8 @@ assert.match(
 );
 assert.match(
   source,
-  /<Button[\s\S]{0,140}loading=\{busy \|\| covenCodeJobRunning\}/,
-  "the Install-both CTA uses the primitive's loading state for its spinner",
+  /<Button[\s\S]{0,140}loading=\{installBusy\}/,
+  "the OpenCoven tools CTA uses the primitive's loading state for its spinner",
 );
 assert.doesNotMatch(
   source,

@@ -51,6 +51,7 @@ export const SUITES = {
     "src-tauri/permissions/desktop-permissions.test.mjs",
     "src-tauri/release-runtime.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
+    "src/lib/opencoven-tools-install.test.ts",
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",
     "src/lib/hfr-trace-export.test.ts",
