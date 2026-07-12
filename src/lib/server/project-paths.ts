@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { covenHome, covenWorkspaceRoot } from "@/lib/coven-paths";
+import { covenHome, caveHome, covenWorkspaceRoot } from "@/lib/coven-paths";
 
 function realpathOrResolve(value: string): string {
   const resolved = path.resolve(value);
@@ -23,7 +23,7 @@ function normalizeLegacyCovenWorkspacePath(value: string): string {
 }
 
 function caveProjectsFilePath(): string {
-  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(homedir(), ".coven", "cave-projects.json");
+  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(caveHome(), "projects.json");
 }
 
 function savedCaveProjectRoots(): string[] {

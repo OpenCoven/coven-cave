@@ -66,9 +66,9 @@ async function expectValidation(
 test("path is resolved at call-time from override or COVEN_HOME", () => {
   delete process.env.COVEN_BACKDROP_PATH;
   process.env.COVEN_HOME = path.join(root, "home-a");
-  assert.equal(backdropPath(), path.join(root, "home-a", "cave-backdrop.jpg"));
+  assert.equal(backdropPath(), path.join(root, "home-a", "cave", "backdrop.jpg"));
   process.env.COVEN_HOME = path.join(root, "home-b");
-  assert.equal(backdropPath(), path.join(root, "home-b", "cave-backdrop.jpg"));
+  assert.equal(backdropPath(), path.join(root, "home-b", "cave", "backdrop.jpg"));
 
   const override = path.join(root, "explicit", "image.jpg");
   process.env.COVEN_BACKDROP_PATH = `  ${override}  `;

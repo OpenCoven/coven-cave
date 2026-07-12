@@ -1,6 +1,6 @@
 import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import {
   type ChatAutoArchivePolicy,
@@ -15,8 +15,8 @@ import {
 } from "@/lib/familiar-runtime";
 import type { UserProfile } from "@/lib/user-profile-shared";
 
-const CONFIG_PATH = path.join(homedir(), ".coven", "cave-config.json");
-const STATE_PATH = path.join(homedir(), ".coven", "cave-state.json");
+const CONFIG_PATH = path.join(caveHome(), "config.json");
+const STATE_PATH = path.join(caveHome(), "state.json");
 
 const DEFAULT_CONFIG: CaveConfig = {
   version: 1,

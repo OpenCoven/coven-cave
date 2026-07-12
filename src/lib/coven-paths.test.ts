@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  caveHome,
   covenWorkspaceRoot,
   covenWorkspacesRoot,
   familiarIds,
@@ -13,6 +14,7 @@ import {
 
 const originalEnv = {
   COVEN_HOME: process.env.COVEN_HOME,
+  COVEN_CAVE_HOME: process.env.COVEN_CAVE_HOME,
   COVEN_WORKSPACES_ROOT: process.env.COVEN_WORKSPACES_ROOT,
   COVEN_WORKSPACE_ROOT: process.env.COVEN_WORKSPACE_ROOT,
   WORKSPACE_ROOT: process.env.WORKSPACE_ROOT,
@@ -48,10 +50,16 @@ assert.equal(workspaces.has("observer"), false);
 
 try {
   process.env.COVEN_HOME = "/tmp/coven-home";
+  delete process.env.COVEN_CAVE_HOME;
   delete process.env.COVEN_WORKSPACES_ROOT;
   delete process.env.COVEN_WORKSPACE_ROOT;
   delete process.env.WORKSPACE_ROOT;
   delete process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
+
+  assert.equal(caveHome(), "/tmp/coven-home/cave", "caveHome defaults to <covenHome>/cave");
+  process.env.COVEN_CAVE_HOME = "/tmp/custom-cave";
+  assert.equal(caveHome(), "/tmp/custom-cave", "COVEN_CAVE_HOME overrides caveHome");
+  delete process.env.COVEN_CAVE_HOME;
 
   assert.equal(covenWorkspacesRoot(), "/tmp/coven-home/workspaces");
   assert.equal(covenWorkspaceRoot(), "/tmp/coven-home/workspaces");

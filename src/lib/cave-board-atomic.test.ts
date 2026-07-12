@@ -12,7 +12,7 @@ import path from "node:path";
 //
 // BOARD_PATH derives from os.homedir(), which honors $HOME on POSIX. We point
 // HOME at a temp dir BEFORE importing the module, then HARD-GATE on the path so
-// a misconfigured run can never touch the real ~/.coven/cave-board.json.
+// a misconfigured run can never touch the real ~/.coven/cave/board.json.
 
 const tmpHome = await mkdtemp(path.join(tmpdir(), "cave-board-home-"));
 process.env.HOME = tmpHome;

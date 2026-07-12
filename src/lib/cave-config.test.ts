@@ -98,7 +98,7 @@ try {
   await config.summonSessionLocal("session-2");
   await config.summonSessionLocal("session-3");
 
-  const raw = await readFile(path.join(tempHome, ".coven", "cave-state.json"), "utf8");
+  const raw = await readFile(path.join(tempHome, ".coven", "cave", "state.json"), "utf8");
   const rawState = JSON.parse(raw);
   // Summon grace timestamps vary per run; the shape checks above cover them.
   delete rawState.sessionArchiveExtendedUntil;

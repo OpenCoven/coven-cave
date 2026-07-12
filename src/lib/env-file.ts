@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome } from "./coven-paths.ts";
 
 /**
  * Path to the writable `.env.local` that holds user-saved secrets (today, the
@@ -11,14 +11,14 @@ import { covenHome } from "./coven-paths.ts";
  * breaks its signature seal, which makes Gatekeeper reject the app and stops the
  * in-place auto-updater (same class of bug fixed for the Next cache, workflows,
  * and the vault map). So in bundle mode it resolves to a writable per-user file
- * under `<covenHome>/cave/`.
+ * under `caveHome()`.
  *
  * Resolution (first hit wins): `COVEN_CAVE_ENV_FILE` → bundle path → `<cwd>/.env.local`.
  */
 export function envLocalPath(): string {
   const override = process.env.COVEN_CAVE_ENV_FILE?.trim();
   if (override) return override;
-  if (process.env.COVEN_CAVE_BUNDLE === "1") return path.join(covenHome(), "cave", ".env.local");
+  if (process.env.COVEN_CAVE_BUNDLE === "1") return path.join(caveHome(), ".env.local");
   return path.join(process.cwd(), ".env.local");
 }
 

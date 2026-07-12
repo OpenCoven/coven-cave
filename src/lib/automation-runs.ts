@@ -1,13 +1,13 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import path from "node:path";
 
 /**
  * Local run-history store for Codex automations — records app-triggered
  * "run now" executions (the daemon's scheduled runs are separate). Newest-first,
- * capped, JSON on disk. Path: `~/.coven/cave-automation-runs.json`, overridable
+ * capped, JSON on disk. Path: `~/.coven/cave/automation-runs.json`, overridable
  * via `COVEN_AUTOMATION_RUNS_PATH` (tests).
  */
 export const AUTOMATION_RUNS_CAP = 200;
@@ -30,7 +30,7 @@ type RunsFile = { version: 1; runs: AutomationRunRecord[] };
 function runsPath(): string {
   const override = process.env.COVEN_AUTOMATION_RUNS_PATH?.trim();
   if (override) return override;
-  return path.join(homedir(), ".coven", "cave-automation-runs.json");
+  return path.join(caveHome(), "automation-runs.json");
 }
 
 async function loadRunsFile(): Promise<RunsFile> {

@@ -158,7 +158,7 @@ The witchiness operates on **two levels, deliberately dosed**:
 |---|---|
 | **familiar** | an agent. Its identity contract is `SOUL.md` + `IDENTITY.md` + **`ward.toml`** (guardrails) + memory |
 | **coven** | a multi-familiar group session; also the org/instance |
-| **cave** | this app — the local control room (`~/.coven`, `cave-state.json`) |
+| **cave** | this app — the local control room (`~/.coven/cave`, `state.json`) |
 | **sacrifice** | soft-delete a session (reversible; `sacrificedAt`) |
 | **summon** | restore/unarchive a session |
 | **ward** | a familiar's guardrail file |

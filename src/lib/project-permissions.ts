@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
+import { caveHome } from "./coven-paths.ts";
 
 import { loadProjects, projectForRoot } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
@@ -66,14 +66,14 @@ const DEFAULT_SUPREME_FAMILIAR_ID = "supreme";
 function permissionsFilePath(): string {
   return (
     process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE ??
-    path.join(homedir(), ".coven", "cave-project-permissions.json")
+    path.join(caveHome(), "project-permissions.json")
   );
 }
 
 function humanPermissionConfigPath(): string {
   return (
     process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE ??
-    path.join(homedir(), ".coven", "cave-permission-config.json")
+    path.join(caveHome(), "permission-config.json")
   );
 }
 

@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { covenHome } from "../coven-paths.ts";
+import { caveHome } from "../coven-paths.ts";
 import { writeFileAtomic } from "./atomic-write.ts";
 
 export const MAX_BACKDROP_BYTES = 8 * 1024 * 1024;
@@ -42,7 +42,7 @@ export class BackdropValidationError extends Error {
 /** Resolve at call-time; an empty override is treated as unset. */
 export function backdropPath(): string {
   const override = process.env.COVEN_BACKDROP_PATH?.trim();
-  return override || path.join(covenHome(), "cave-backdrop.jpg");
+  return override || path.join(caveHome(), "backdrop.jpg");
 }
 
 function hasPrefix(bytes: Uint8Array, prefix: readonly number[]): boolean {

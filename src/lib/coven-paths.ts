@@ -6,6 +6,19 @@ export function covenHome(): string {
   return process.env.COVEN_HOME || path.join(homedir(), ".coven");
 }
 
+/**
+ * Dedicated home for Coven Cave's own state: `<covenHome>/cave/`.
+ *
+ * All cave-owned files live here with standardized names (config.json,
+ * state.json, board.json, conversations/, …) instead of the legacy scattered
+ * `~/.coven/cave-*.json` top-level files. Legacy files are moved in at startup
+ * by `migrateCaveHome()` (src/lib/server/cave-home-migration.ts). Bundle-mode
+ * writables (.env.local, vault.yaml, workflows/) already lived here.
+ */
+export function caveHome(): string {
+  return process.env.COVEN_CAVE_HOME || path.join(covenHome(), "cave");
+}
+
 export function covenWorkspacesRoot(): string {
   return process.env.COVEN_WORKSPACES_ROOT || path.join(covenHome(), "workspaces");
 }
