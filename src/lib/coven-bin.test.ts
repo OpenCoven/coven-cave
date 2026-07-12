@@ -175,7 +175,7 @@ assert.match(
   "covenBin falls back to `where` + launcher picking before the literal name on Windows",
 );
 
-// Released coven CLIs only auto-trust recipe-installed manifests inside
+// Released Coven CLIs only auto-trust recipe-installed manifests inside
 // COVEN_HOME/adapters (hermes); Cave-scaffolded copilot/opencode manifests
 // there are ignored unless COVEN_HARNESS_ADAPTER_DIRS names the directory.
 // Every coven spawn must therefore carry the env var.

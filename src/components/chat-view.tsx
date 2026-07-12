@@ -641,12 +641,12 @@ function ChatErrorStrip({
     () => parseHarnessAuthFailure(detailText, harnessId),
     [detailText, harnessId],
   );
-  // The coven CLI couldn't be resolved from the app's spawn environment
+  // The Coven CLI couldn't be resolved from the app's spawn environment
   // (the #2610 class of failure). Rather than a bare error + generic Retry,
   // offer a soft "Open Setup" link (overlay, not a hard nav) — the message
   // stays in the composer for retry (#2618).
   const covenMissing = useMemo(
-    () => /coven CLI not found on PATH/i.test(message) || code === "ENOENT",
+    () => /Coven CLI not found on PATH/i.test(message) || code === "ENOENT",
     [message, code],
   );
 
@@ -730,7 +730,7 @@ function ChatErrorStrip({
       {!harnessFailure && !authFailure && covenMissing ? (
         <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
           <span className="min-w-0">
-            The coven CLI isn&apos;t resolvable from this app&apos;s environment. Open Setup to install
+            The Coven CLI isn&apos;t resolvable from this app&apos;s environment. Open Setup to install
             or repair it, then retry — your message is kept.
           </span>
           <button type="button" onClick={onOpenSetup} className={btn}>

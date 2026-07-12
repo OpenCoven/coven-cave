@@ -303,7 +303,7 @@ export function covenLaunchCommand(): CovenLaunchCommand {
  * Value for COVEN_HARNESS_ADAPTER_DIRS in coven child processes: the user's
  * own value (if any) with COVEN_HOME/adapters appended.
  *
- * Released coven CLIs (≤0.0.53) only auto-trust manifests in
+ * Released Coven CLIs (≤0.0.53) only auto-trust manifests in
  * COVEN_HOME/adapters whose id matches a built-in install recipe (hermes
  * today). The manifests Cave scaffolds there for other runtimes (copilot,
  * opencode, …) are silently ignored, so `coven run copilot` failed with

@@ -74,9 +74,9 @@ assert.match(
   /\.settings-tool-action--primary\s*\{[\s\S]*?border:[\s\S]*?box-shadow:/,
   "Primary Settings tool action should have a visible border and elevation",
 );
-assert.match(status, /minimumVersion: "0\.0\.49"/, "coven CLI compatibility floor is explicit in the status source");
+assert.match(status, /minimumVersion: "0\.0\.49"/, "Coven CLI compatibility floor is explicit in the status source");
 assert.match(status, /minimumVersion: "0\.0\.22"/, "coven-code compatibility floor is explicit in the status source");
-assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "coven CLI exposes the exact update command");
+assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "Coven CLI exposes the exact update command");
 assert.match(status, /installCommand: "npm i -g coven-code@latest"/, "coven-code exposes the exact update command");
 assert.match(status, /const compatible =[\s\S]*!!installed\?\.version && compareSemver\(installed\.version, tool\.minimumVersion\) >= 0/, "compatibility compares installed version against the Cave minimum");
 assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");

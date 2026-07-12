@@ -8,7 +8,7 @@ import {
 
 const cliOutdated: OpenCovenToolInstallStatus = {
   id: "coven-cli",
-  label: "coven CLI",
+  label: "Coven CLI",
   installed: true,
   outdated: true,
 };
@@ -53,7 +53,7 @@ assert.equal(
 
 assert.equal(
   openCovenToolsPrimaryActionLabel([cliOutdated, codeReady]),
-  "Update coven CLI",
+  "Update Coven CLI",
   "primary action label reflects a single CLI update",
 );
 

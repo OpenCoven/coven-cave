@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 export const OPEN_COVEN_TOOLS = [
   {
     id: "coven-cli",
-    label: "coven CLI",
+    label: "Coven CLI",
     packageName: "@opencoven/cli",
     binary: "coven",
     versionArgs: ["--version"],

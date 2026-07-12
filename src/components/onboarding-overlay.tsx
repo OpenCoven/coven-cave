@@ -968,14 +968,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       {
         key: "covenCli",
         title: "Install the OpenCoven tools",
-        // Require both coven CLI (server step) and Coven Code (required, but
+        // Require both Coven CLI (server step) and Coven Code (required, but
         // skippable) before this step counts as done.
         ok: !!s?.covenCli.ok && covenCodeSatisfied,
         detail: !s?.covenCli.ok
           ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…")
           : covenCodeSatisfied
             ? (s?.covenCli.detail ?? "Installed")
-            : "coven CLI ready — Coven Code still needs installing.",
+            : "Coven CLI ready — Coven Code still needs installing.",
         icon: "ph:gear-six",
       },
       {
@@ -1178,7 +1178,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <div>
               <div className="font-semibold">Setup status is unreachable.</div>
               <p className="mt-1 leading-6 text-[var(--text-secondary)]">
-                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
+                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The Coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
               </p>
             </div>
             <button
@@ -1424,7 +1424,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 }
                                 title={
                                   !status?.steps.covenCli.ok
-                                    ? "Install coven CLI first (step 1)"
+                                    ? "Install Coven CLI first (step 1)"
                                     : "Start local daemon (coven daemon start)"
                                 }
                               >
@@ -1433,7 +1433,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               {!status?.steps.covenCli.ok ? (
                                 <span className="text-[11px] text-[var(--text-muted)]">
                                   Needs step 1 first — the daemon ships with the
-                                  coven CLI.
+                                  Coven CLI.
                                 </span>
                               ) : null}
                             </div>
@@ -1683,7 +1683,7 @@ function StepCovenCli({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        Cave needs two OpenCoven tools — the <strong>coven CLI</strong> (powers
+        Cave needs two OpenCoven tools — the <strong>Coven CLI</strong> (powers
         everything) and <strong>Coven Code</strong> (required). Use the main
         action to install or update whichever tools need attention — Cave runs
         npm installs one after another so they never collide — or copy the

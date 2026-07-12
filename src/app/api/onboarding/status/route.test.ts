@@ -61,19 +61,19 @@ assert.match(
 assert.match(
   source,
   /checkCovenCli\(tool: OpenCovenToolStatus \| undefined\)/,
-  "coven CLI status is derived from the shared coven-cli tool result",
+  "Coven CLI status is derived from the shared coven-cli tool result",
 );
 
 assert.match(
   source,
   /tool\.outdated[\s\S]{0,240}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
-  "startup should require the latest coven CLI version, not just any installed version",
+  "startup should require the latest Coven CLI version, not just any installed version",
 );
 
 assert.match(
   source,
   /openCovenTools\.find\(\(tool\) => tool\.id === "coven-cli"\)/,
-  "startup identifies the coven CLI by the shared tool id",
+  "startup identifies the Coven CLI by the shared tool id",
 );
 
 assert.match(
@@ -84,7 +84,7 @@ assert.match(
 
 assert.doesNotMatch(
   source,
-  /Install the coven CLI from OpenCoven\/coven/,
+  /Install the Coven CLI from OpenCoven\/coven/,
   "onboarding status should not return stale repo-source CLI install guidance",
 );
 

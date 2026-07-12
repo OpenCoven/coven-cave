@@ -29,7 +29,7 @@ assert.match(
 assert.match(
   source,
   /id: "coven-cli"[\s\S]*packageName: "@opencoven\/cli"[\s\S]*binary: "coven"/,
-  "the coven CLI status checks the npm-published @opencoven/cli package and coven binary",
+  "the Coven CLI status checks the npm-published @opencoven/cli package and coven binary",
 );
 
 assert.match(
