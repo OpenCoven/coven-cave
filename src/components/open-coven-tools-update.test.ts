@@ -6,6 +6,7 @@ const src = await readFile(new URL("./open-coven-tools-update.tsx", import.meta.
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const status = await readFile(new URL("../lib/opencoven-tools-status.ts", import.meta.url), "utf8");
+const statusDisplay = await readFile(new URL("../lib/opencoven-tools-status-display.ts", import.meta.url), "utf8");
 const dashboardCss = await readFile(new URL("../styles/dashboard.css", import.meta.url), "utf8");
 const runner = await readFile(new URL("../../scripts/run-tests.mjs", import.meta.url), "utf8");
 
@@ -26,13 +27,18 @@ assert.match(src, /Copy command/, "tool rows can copy the exact update command")
 assert.match(src, /Update \{tool\.label\}/, "outdated tools expose a clear update button");
 assert.match(src, /function toolVersionText\(tool: ToolStatus\): string/, "tool version text is centralized");
 assert.match(src, /if \(!tool\.current\) return "Installed, version unknown"/, "installed tools with unknown versions should say the version is unknown");
-assert.match(src, /function toolStatusText\(tool: ToolStatus\): string/, "tool status text is centralized");
+assert.match(src, /import \{[\s\S]*toolStatusText,[\s\S]*\} from "@\/lib\/opencoven-tools-status-display"/, "tool status text is centralized in the shared verification-state helper");
+assert.match(src, /latestCheckText\(tool, stale\)/, "each tool renders an explicit npm freshness result");
+assert.match(src, /toolFooterStatusText\(\{ tools, checking, error, stale \}\)/, "the footer distinguishes failed or stale latest-version data");
+assert.match(src, /const \[stale, setStale\] = useState\(false\)/, "failed refreshes mark retained results as stale");
+assert.match(src, /setStale\(true\)/, "a failed refresh cannot leave prior rows looking fresh");
 assert.match(src, /function toolNeedsCompatibilityUpdate\(tool: ToolStatus\): boolean/, "tool compatibility failures ignore missing or unknown-version installs");
 assert.match(src, /return tool\.installed && Boolean\(tool\.current\) && !tool\.compatible/, "only installed tools with known stale versions trigger compatibility warnings");
 assert.match(src, /function toolCompatibilityText\(tool: ToolStatus\): string \| null/, "tool compatibility copy is centralized");
 assert.match(src, /if \(!toolNeedsCompatibilityUpdate\(tool\)\) return null/, "missing tools do not render a compatibility floor warning");
 assert.match(src, /return `Requires >= \$\{tool\.minimumVersion\}`/, "below-minimum tools show the compatibility floor");
-assert.match(src, /if \(!tool\.current\) return "Version unknown"/, "installed tools with unknown versions must not claim to be up to date");
+assert.match(statusDisplay, /if \(!tool\.current\) return "Version unknown"/, "installed tools with unknown versions must not claim to be up to date");
+assert.match(src, /toolStatusText\(tool, stale\)/, "stale or unverified latest checks are passed through to the row status");
 assert.match(src, /tool\.outdated \? `\$\{tool\.current\} -> \$\{tool\.latest\}` : tool\.current/, "version line should show an arrow only for actual upgrades");
 assert.doesNotMatch(src, /tool\.latest\s*\?\s*` -> \$\{tool\.latest\}`/, "version line must not advertise latest when npm latest is older than installed");
 assert.doesNotMatch(src, /tool\.installed \? "Up to date" : "Not found"/, "installed-but-version-unknown tools must not fall through to Up to date");

@@ -16,6 +16,12 @@ import { Button } from "@/components/ui/button";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { openExternalUrl } from "@/lib/open-external";
+import {
+  hasVerifiedLatestVersion,
+  latestCheckText,
+  toolStatusText,
+  type LatestCheckDisplay,
+} from "@/lib/opencoven-tools-status-display";
 import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
 import {
   openCovenToolActionTargets,
@@ -65,6 +71,7 @@ type OpenCovenToolStatus = {
   path: string | null;
   current: string | null;
   latest: string | null;
+  latestCheck: LatestCheckDisplay;
   outdated: boolean;
   compatible: boolean;
   minimumVersion: string;
@@ -959,7 +966,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const covenCodeTool = status?.tools?.find((t) => t.id === "coven-code");
   const covenCodeInstalled = !!covenCodeTool?.installed;
   const covenCodeReady =
-    !!covenCodeTool?.installed && !covenCodeTool.outdated && covenCodeTool.compatible;
+    !!covenCodeTool?.installed &&
+    hasVerifiedLatestVersion(covenCodeTool) &&
+    !covenCodeTool.outdated &&
+    covenCodeTool.compatible;
   const covenCodeSatisfied = covenCodeReady || covenCodeSkipped;
   // Server `complete` already requires every other step; AND-in the Coven Code
   // requirement so the finish CTA only appears once both tools are handled.
@@ -1643,11 +1653,7 @@ function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
 }
 
 function openCovenToolStatusText(tool: OpenCovenToolStatus): string {
-  if (!tool.installed) return "Not found";
-  if (!tool.current) return "Version unknown";
-  if (!tool.compatible) return "Needs update";
-  if (tool.outdated) return "Update available";
-  return "Up to date";
+  return toolStatusText(tool);
 }
 
 function StepCovenCli({
@@ -1726,6 +1732,11 @@ function StepCovenCli({
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
               const needsAction = !tool.installed || tool.outdated || !tool.compatible;
+              const currentVerified =
+                tool.installed &&
+                hasVerifiedLatestVersion(tool) &&
+                !tool.outdated &&
+                tool.compatible;
               const result = installResults[tool.id];
               const isCovenCode = tool.id === "coven-code";
               const showSkip = isCovenCode && !tool.installed && !covenCodeSkipped;
@@ -1747,16 +1758,19 @@ function StepCovenCli({
                       <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-muted)]">
                         {openCovenToolVersionText(tool)}
                       </div>
+                      <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                        {latestCheckText(tool)}
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-                          tool.installed && !tool.outdated && tool.compatible
+                          currentVerified
                             ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
                             : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)]"
                         }`}
                       >
-                        {tool.installed && !tool.outdated && tool.compatible ? (
+                        {currentVerified ? (
                           <Icon name="ph:check-bold" />
                         ) : (
                           <Icon name="ph:warning-fill" />

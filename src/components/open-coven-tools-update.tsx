@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import {
+  latestCheckText,
+  toolFooterStatusText,
+  toolStatusText,
+  type LatestCheckDisplay,
+} from "@/lib/opencoven-tools-status-display";
 import { useShellBanners } from "@/lib/shell-banners";
 
 type InstallTarget = "coven-cli" | "coven-code";
@@ -16,6 +22,7 @@ type ToolStatus = {
   path: string | null;
   current: string | null;
   latest: string | null;
+  latestCheck: LatestCheckDisplay;
   outdated: boolean;
   compatible: boolean;
   minimumVersion: string;
@@ -59,13 +66,6 @@ function toolVersionText(tool: ToolStatus): string {
   if (!tool.installed) return "Not installed";
   if (!tool.current) return "Installed, version unknown";
   return tool.outdated ? `${tool.current} -> ${tool.latest}` : tool.current;
-}
-
-function toolStatusText(tool: ToolStatus): string {
-  if (!tool.installed) return "Not found";
-  if (!tool.current) return "Version unknown";
-  if (!tool.compatible) return "Needs update";
-  return "Up to date";
 }
 
 function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {
@@ -186,6 +186,7 @@ export function OpenCovenToolsUpdate() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "copied" | "failed"
   >("idle");
@@ -213,10 +214,12 @@ export function OpenCovenToolsUpdate() {
       }
       if (mounted.current) {
         setTools((json.tools ?? []).filter((tool) => isInstallTarget(tool.id)));
+        setStale(false);
       }
     } catch (err) {
       if (mounted.current) {
         setError(err instanceof Error ? err.message : "tool check failed");
+        setStale(true);
       }
     } finally {
       if (mounted.current) setChecking(false);
@@ -386,16 +389,12 @@ export function OpenCovenToolsUpdate() {
     `${toolActionBtn} settings-tool-action--primary bg-[var(--accent-presence)] px-3 font-semibold text-[var(--accent-presence-foreground)] disabled:opacity-50`;
   const ghostBtn =
     `${toolActionBtn} border border-[var(--border-hairline)] px-2.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]`;
-  const footerStatusText =
+  const footerStatus =
     diagnosticsStatus === "copied"
       ? "Diagnostics copied"
       : diagnosticsStatus === "failed"
         ? "Diagnostics copy failed"
-        : error
-          ? `Check failed: ${error}`
-          : checking
-            ? "Checking tools..."
-            : "Version source: npm latest";
+        : toolFooterStatusText({ tools, checking, error, stale });
 
   return (
     <>
@@ -409,6 +408,9 @@ export function OpenCovenToolsUpdate() {
               <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
                 {toolVersionText(tool)}
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                {latestCheckText(tool, stale)}
               </p>
               {toolCompatibilityText(tool) ? (
                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
@@ -448,7 +450,7 @@ export function OpenCovenToolsUpdate() {
                 </Button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
-                  {toolStatusText(tool)}
+                  {toolStatusText(tool, stale)}
                 </span>
               )}
               {!busy ? (
@@ -469,7 +471,7 @@ export function OpenCovenToolsUpdate() {
       })}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <span className="text-[12px] text-[var(--text-secondary)]">
-          {footerStatusText}
+          {footerStatus}
         </span>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button

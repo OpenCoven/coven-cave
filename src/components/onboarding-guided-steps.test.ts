@@ -12,6 +12,10 @@ const source = await readFile(
   new URL("./onboarding-overlay.tsx", import.meta.url),
   "utf8",
 );
+const statusDisplay = await readFile(
+  new URL("../lib/opencoven-tools-status-display.ts", import.meta.url),
+  "utf8",
+);
 
 // ── Guided stepper structure ────────────────────────────────────────────────
 
@@ -318,7 +322,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  statusDisplay,
   /if \(!tool\.compatible\) return "Needs update"/,
   "the startup tools step warns when an installed tool is below the Cave compatibility floor",
 );
@@ -357,6 +361,18 @@ assert.match(
   source,
   /function openCovenToolStatusText\(tool: OpenCovenToolStatus\): string/,
   "startup formats tool status explicitly instead of treating unknown versions as up to date",
+);
+
+assert.match(
+  source,
+  /hasVerifiedLatestVersion\(tool\)/,
+  "startup only shows a current-success badge after npm latest was verified",
+);
+
+assert.match(
+  source,
+  /latestCheckText\(tool\)/,
+  "startup exposes each tool's npm check result and freshness time",
 );
 
 assert.match(
