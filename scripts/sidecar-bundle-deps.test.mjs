@@ -6,12 +6,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [src, baseConfigSource, windowsConfigSource, manifestSource, closureSource] = await Promise.all([
+const [
+  src,
+  baseConfigSource,
+  windowsConfigSource,
+  manifestSource,
+  closureSource,
+  rustArchiveSource,
+] = await Promise.all([
   readFile(new URL("./sidecar-bundle.sh", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
   readFile(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-archive-manifest.mjs", import.meta.url), "utf8"),
   readFile(new URL("./sidecar-runtime-closure.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/src/sidecar_archive.rs", import.meta.url), "utf8"),
 ]);
 const baseConfig = JSON.parse(baseConfigSource);
 const windowsConfig = JSON.parse(windowsConfigSource);
@@ -160,6 +168,11 @@ assert.match(
   manifestSource,
   /fileCount: SIDECAR_RUNTIME_BUDGETS\.fileCount/,
   "archive must share the runtime file-count budget",
+);
+assert.match(
+  rustArchiveSource,
+  /const MAX_FILE_COUNT: u64 = 5_200;/,
+  "Windows archive extractor must accept the shared runtime file-count budget",
 );
 assert.match(manifestSource, /isSymbolicLink\(\)/, "archive input must reject symlinks");
 assert.match(
