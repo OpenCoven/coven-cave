@@ -66,8 +66,8 @@ assert.match(
 
 assert.match(
   source,
-  /tool\.outdated[\s\S]{0,240}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
-  "startup should require the latest Coven CLI version, not just any installed version",
+  /tool\.outdated \|\| !tool\.compatible[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
+  "startup should require a compatible Coven CLI version, not just any installed version",
 );
 
 assert.match(

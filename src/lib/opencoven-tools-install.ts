@@ -5,6 +5,7 @@ export type OpenCovenToolInstallStatus = {
   label: string;
   installed: boolean;
   outdated: boolean;
+  compatible?: boolean;
 };
 
 const OPEN_COVEN_TOOL_ORDER: OpenCovenToolInstallTarget[] = [
@@ -25,7 +26,7 @@ export function openCovenToolActionTargets(
   if (tools.length === 0) return [...OPEN_COVEN_TOOL_ORDER];
   const actionable = new Set(
     tools
-      .filter((tool) => !tool.installed || tool.outdated)
+      .filter((tool) => !tool.installed || tool.outdated || tool.compatible === false)
       .map((tool) => tool.id),
   );
   return OPEN_COVEN_TOOL_ORDER.filter((id) => actionable.has(id));
@@ -51,9 +52,9 @@ export function openCovenToolsPrimaryActionLabel(
   if (actions.length === 0) return "OpenCoven tools ready";
   if (actions.length === 1) {
     const [tool] = actions;
-    return `${tool.outdated ? "Update" : "Install"} ${tool.label}`;
+    return `${tool.installed ? "Update" : "Install"} ${tool.label}`;
   }
   if (actions.every((tool) => !tool.installed)) return "Install both tools";
-  if (actions.every((tool) => tool.outdated)) return "Update OpenCoven tools";
+  if (actions.every((tool) => tool.installed)) return "Update OpenCoven tools";
   return "Update OpenCoven tools";
 }

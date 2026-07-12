@@ -75,6 +75,28 @@ assert.deepEqual(
   "Windows npm .cmd shims launch through node plus the shim target script",
 );
 
+const covenCodeShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-code-npm-shim-"));
+const covenCodeShimScript = path.join(covenCodeShimDir, "node_modules", "coven-code", "bin", "coven-code");
+await mkdir(path.dirname(covenCodeShimScript), { recursive: true });
+await writeFile(covenCodeShimScript, "console.log('coven-code');\n");
+const covenCodeShim = path.join(covenCodeShimDir, "coven-code.cmd");
+await writeFile(
+  covenCodeShim,
+  [
+    "@ECHO off",
+    "SETLOCAL",
+    "CALL :find_dp0",
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\coven-code\\bin\\coven-code" %*',
+    "",
+  ].join("\r\n"),
+);
+
+assert.deepEqual(
+  covenLaunchCommandForBinary(covenCodeShim, "win32"),
+  { command: process.execPath, fixedArgs: [covenCodeShimScript] },
+  "Windows npm .cmd shims can target extensionless package bin scripts like coven-code",
+);
+
 const fallbackShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-fallback-shim-"));
 const fallbackScript = path.join(fallbackShimDir, "node_modules", "@opencoven", "cli", "bin", "coven.js");
 await mkdir(path.dirname(fallbackScript), { recursive: true });
