@@ -22,7 +22,7 @@ assert.deepEqual(draft, {
   description: "Finds evidence and summarizes it.",
   glyph: "ph:leaf-fill",
   harness: "openclaw",
-  model: "openai/gpt-5.5",
+  model: "openai/gpt-5.6-sol",
   openclawAgentId: "riley",
   runtime: undefined,
 });
@@ -31,7 +31,7 @@ const toml = buildFamiliarsToml(draft);
 assert.match(toml, /id = "riley-research"/);
 assert.match(toml, /display_name = "Riley Research"/);
 assert.match(toml, /harness = "openclaw"/);
-assert.match(toml, /model = "openai\/gpt-5.5"/);
+assert.match(toml, /model = "openai\/gpt-5.6-sol"/);
 assert.match(toml, /openclaw_agent = "riley"/);
 
 assert.equal(
