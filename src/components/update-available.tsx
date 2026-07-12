@@ -171,11 +171,10 @@ export function UpdateBannerTrigger() {
     let busy = false;
     let activeCancellation: CancellationSignal | null = null;
     let preparedUpdate: NativeUpdateHandle | null = null;
-    // Versions whose user-initiated native retry already failed. The native
-    // updater is the recommended install path — a check failure is usually
-    // transient (e.g. latest.json not yet published mid-release), so the
-    // banner offers a native retry first and only escalates to the browser
-    // release page after a retry also fails.
+    // Versions for which the user already clicked "Retry native update" in this session. Native
+    // updater check failures are usually transient (e.g. latest.json not yet published mid-release),
+    // so the banner offers a native retry first and only escalates to the browser release page if
+    // the subsequent check is still `native-unavailable`.
     const nativeRetryFailed = new Set<string>();
 
     const runCheck = () => {
