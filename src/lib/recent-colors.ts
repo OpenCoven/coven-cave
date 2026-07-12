@@ -32,9 +32,9 @@ export function addRecentColor(hex: string): string[] {
     localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(next));
   } catch {
     updateAppPreferences({ appearance: { recentColors: next } });
-    // Write failed (quota/private-mode) — return what's actually stored, not the
-    // list we wanted, so the return value never lies about persisted state.
-    return previous;
+    // The legacy mirror write failed (quota/private-mode), but the canonical
+    // store still persisted `next`, so return the canonical persisted state.
+    return next;
   }
   updateAppPreferences({ appearance: { recentColors: next } });
   return next;
