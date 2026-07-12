@@ -82,15 +82,17 @@ assert.ok(
 // ── Opting in moves the menu-bar icon ───────────────────────────────────────
 // The tray menu item hides the tray icon, opens the notch, and persists the
 // choice; startup restores it; the notch's dock button is the way back.
+// Only persist the preference and hide the tray after the notch window is
+// confirmed to exist (guards against URL failures or window-creation errors).
 assert.match(
   shell,
-  /"notch_mode" => \{\s*\n[\s\S]{0,200}save_notch_mode\(app, true\);\s*\n\s*show_notch_from_main\(app\);\s*\n\s*set_tray_visible\(app, false\);/,
-  "the tray menu item persists the preference, opens the notch, and hides the tray icon",
+  /"notch_mode" => \{\s*[\s\S]{0,400}show_notch_window\(app, &url\);\s*\n\s*if app\.get_webview_window\(NOTCH_WINDOW_LABEL\)\.is_some\(\) \{\s*\n\s*save_notch_mode\(app, true\);\s*\n\s*set_tray_visible\(app, false\);/,
+  "the tray menu item persists the preference and hides the tray icon only after the notch window opens",
 );
 assert.match(
   shell,
-  /if load_notch_mode\(app\.handle\(\)\) \{\s*\n\s*show_notch_from_main\(app\.handle\(\)\);\s*\n\s*set_tray_visible\(app\.handle\(\), false\);/,
-  "launch restores the notch presentation when the user left it enabled",
+  /if load_notch_mode\(app\.handle\(\)\) \{\s*\n\s*show_notch_from_main\(app\.handle\(\)\);\s*\n\s*if app\.handle\(\)\.get_webview_window\(NOTCH_WINDOW_LABEL\)\.is_some\(\) \{\s*\n\s*set_tray_visible\(app\.handle\(\), false\);/,
+  "launch restores the notch presentation and hides the tray only when the window is confirmed open",
 );
 assert.match(
   shell,
@@ -127,6 +129,13 @@ assert.match(
   component,
   /aria-expanded=\{expanded\}[\s\S]{0,200}onClick=\{expanded \? collapse : expand\}/,
   "the pill toggles between expand and collapse",
+);
+// When the notch is collapsed, the panel must be inert so keyboard users
+// cannot tab into toolbar buttons or the composer that are visually hidden.
+assert.match(
+  component,
+  /inert=\{!expanded \|\| undefined\}/,
+  "the collapsed panel is inert so keyboard users cannot tab into hidden controls",
 );
 assert.match(
   component,
