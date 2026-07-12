@@ -82,16 +82,19 @@ assert.deepEqual(
 assert.equal(sorted[1], groups[1], "groups without pins keep their reference");
 assert.equal(sortPinnedFirst(groups, []), groups, "no pins → groups returned untouched");
 
-// ChatList wiring: persisted pin state drives a pinned-first ordering.
+// ChatList wiring: the shared cross-surface pin store drives a pinned-first
+// ordering. ChatList must NOT keep a private useState copy of the pin list —
+// that's the stale-clobber bug (pin in the thread rail, then pin here, and the
+// stale copy overwrote the first pin on write).
 assert.match(
   source,
-  /setPinnedIds\(readPinnedSessions\(\)\)/,
-  "ChatList should hydrate pinned ids from the localStorage store after mount",
+  /const pinnedIds = usePinnedSessions\(\)/,
+  "ChatList should read pinned ids from the shared subscribable store",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /window\.localStorage\.setItem\(PINNED_SESSIONS_KEY, JSON\.stringify\(pinnedIds\)\)/,
-  "ChatList should persist pin toggles back to the localStorage store",
+  /setPinnedIds/,
+  "ChatList must not hold a private pin-list state that can clobber other surfaces",
 );
 assert.match(
   source,
@@ -100,7 +103,7 @@ assert.match(
 );
 assert.match(
   source,
-  /togglePinnedSession\(prev, sessionId\)/,
+  /toggleStoredPinnedSession\(sessionId\)/,
   "ChatList pin action should toggle through the shared store helper",
 );
 assert.match(

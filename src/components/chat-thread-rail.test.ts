@@ -74,9 +74,9 @@ assert.match(
   "Project folder headers read as headers: the label is bold",
 );
 
-// ── Pin toggle is Cave-local (shared localStorage key with the chat list) ────
-assert.match(source, /PINNED_SESSIONS_KEY/, "Rail pins share the chat list's localStorage key");
-assert.match(source, /togglePinnedSession/, "Rail toggles pins through the shared helper");
+// ── Pin toggle is Cave-local (shared cross-surface store with the chat list) ─
+assert.match(source, /usePinnedSessions\(\)/, "Rail pins read from the shared cross-surface pin store");
+assert.match(source, /toggleStoredPinnedSession/, "Rail toggles pins through the shared store helper");
 
 // ── Default floats pinned; once dragged, manual order wins (no tug-of-war) ───
 assert.match(

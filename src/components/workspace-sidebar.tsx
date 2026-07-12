@@ -19,14 +19,13 @@ import {
   type ChatProjectGroup,
 } from "@/lib/chat-projects";
 import {
-  PINNED_SESSIONS_KEY,
   isSessionPinned,
-  readPinnedSessions,
-  togglePinnedSession,
+  toggleStoredPinnedSession,
   readChatSidebarView,
   writeChatSidebarView,
   type ChatSidebarView,
 } from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
@@ -224,8 +223,9 @@ export function WorkspaceSidebar({
   const [query, setQuery] = useState("");
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
   const [showAllByKey, setShowAllByKey] = useState<Set<string>>(() => new Set());
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  // Pins come from the shared cross-surface store (chat list + thread rail +
+  // this sidebar all read and write the same subscribable list).
+  const pinnedIds = usePinnedSessions();
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
@@ -239,17 +239,11 @@ export function WorkspaceSidebar({
   // the GitHub action popover, #2288). Also hydrates the organize-view preference.
   useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
 
-  // Pins and the organize-view preference load after mount so SSR and first
-  // client render agree (same idiom as the chat list). The store is shared
-  // with the chat surface's other lists.
+  // The organize-view preference loads after mount so SSR and first client
+  // render agree (same idiom as the chat list).
   useEffect(() => {
-    setPinnedIds(readPinnedSessions());
     setView(readChatSidebarView());
-    setHydrated(true);
   }, []);
-  useEffect(() => {
-    if (hydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
-  }, [hydrated, pinnedIds]);
 
   const visibleSessions = useMemo(
     () => filterVisibleChatSessions(sessions, activeFamiliarId ?? null),
@@ -327,7 +321,7 @@ export function WorkspaceSidebar({
   };
 
   const togglePin = (sessionId: string) => {
-    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+    toggleStoredPinnedSession(sessionId);
   };
 
   const selectView = (next: ChatSidebarView) => {
