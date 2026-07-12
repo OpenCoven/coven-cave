@@ -12,6 +12,7 @@
 GITHUB_PAT:
   ref: "op://Development/GitHub PAT/credential"
   description: "GitHub Personal Access Token (read:user, repo, notifications)"
+  required: true
 
 GITHUB_USERNAME:
   ref: "op://Development/GitHub PAT/username"
@@ -24,8 +25,3 @@ OPENAI_API_KEY:
 GOOGLE_API_KEY:
   ref: ""
   description: "Google AI Studio key, used to mint ephemeral tokens for Gemini Live (v1.1)"
-
-GITHUB_PERSONAL_ACCESS_TOKEN:
-  ref: "op://Development/GitHub PAT/credential"
-  description: "GitHub Token"
-  required: true

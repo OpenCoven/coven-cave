@@ -27,7 +27,7 @@ const marketplacePlugins = [
   { name: "legacy", displayName: "Legacy", category: "Other", trust: "preview-local", policy: { installation: "UNAVAILABLE", authentication: "NONE" } },
 ];
 const manifests = {
-  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", mcpServers: { github: { command: "npx", type: "stdio" } }, userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
+  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", mcpServers: { github: { command: "npx", type: "stdio" } }, userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PAT" } } },
   fetch: { version: "0.2.0", description: "HTTP fetch.", author: "Anthropic", keywords: ["http"], capabilities: ["network"], mcpServers: { fetch: { command: "npx", type: "stdio" } } },
   "tinyfish-search": { version: "1.0.0", description: "Search the web with an API.", author: "TinyFish", keywords: ["search", "api"], capabilities: ["network", "api"], userConfig: { token: { required: true, sensitive: true, env: "TINYFISH_API_KEY" } } },
   // legacy: intentionally no manifest -> degraded card, no mcpServers -> kind "skill"
@@ -106,13 +106,13 @@ assert.deepEqual(categoriesFrom(merged), ["All", "Developer Tools", "Other", "We
 
 // --- requiredConfig + configured + badge state (credential collection) ---
 const rcManifests = {
-  github: { userConfig: { github_token: { required: true, sensitive: true, title: "GitHub Token", description: "PAT", env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
+  github: { userConfig: { github_token: { required: true, sensitive: true, title: "GitHub Token", description: "PAT", env: "GITHUB_PAT" } } },
   fs: { userConfig: { filesystem_root: { required: true, sensitive: false, type: "directory", title: "Root", env: "COVEN_MCP_FILESYSTEM_ROOT" } } },
   none: { userConfig: { opt: { required: false, env: "X" }, noenv: { required: true } } }, // neither qualifies
 };
 
 assert.deepEqual(requiredConfigFromManifest(rcManifests.github), [
-  { key: "github_token", env: "GITHUB_PERSONAL_ACCESS_TOKEN", title: "GitHub Token", description: "PAT", sensitive: true },
+  { key: "github_token", env: "GITHUB_PAT", title: "GitHub Token", description: "PAT", sensitive: true },
 ]);
 assert.deepEqual(requiredConfigFromManifest(rcManifests.fs), [
   { key: "filesystem_root", env: "COVEN_MCP_FILESYSTEM_ROOT", title: "Root", description: undefined, sensitive: false },
@@ -143,7 +143,7 @@ const rcMerged = mergeCatalog(
 const gh = rcMerged[0];
 assert.equal(gh.requiresSetup, true);
 assert.equal(gh.configured, false);
-assert.deepEqual(gh.requiredConfig.map((f) => f.env), ["GITHUB_PERSONAL_ACCESS_TOKEN"]);
+assert.deepEqual(gh.requiredConfig.map((f) => f.env), ["GITHUB_PAT"]);
 
 assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: true, configured: false }), "needs-setup");
 assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup: true, configured: false }), "needs-setup");
