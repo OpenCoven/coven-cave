@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.181] - 2026-07-12
+
+> 🔍 **Trace what your familiars actually did.** Familiar analytics gains a session trace timeline (the daemon event stream finally has a surface), a Recent sessions drill-through list, a clickable 14-day pulse, and live auto-refresh — plus hardened cave-home migration and GitHub chat-launch fixes.
+
+### Features
+- **Analytics: session tracing + live drill-throughs** — a session trace overlay reads the daemon event timeline per session (reachable from the Familiars Sessions tab and the analytics page); familiar analytics adds a Recent sessions section where every row opens its thread or its trace, the hero 14-day pulse becomes a clickable day filter, response-confidence events link back to the conversation that produced them, analytics and growth auto-refresh every 60s, and growth signals carry next-step action links (#3018).
+- **Cave: hardened home migration** — the cave-home startup migration merges directories per-file instead of skipping on collision, and surfaces conflicts instead of silently dropping them (#3019).
+
+### Fixes
+- **GitHub: chat launch payload aligned** — GitHub popover and safe-merge chat launches use `initialPrompt` (the retired `context` field is gone) and safe merge forwards the working `projectRoot`, matching the chat surface contract (#3017).
+- **Tools: Coven CLI freshness floor + Windows shims** — raises the Coven CLI compatibility floor to 0.0.54, fixes Windows npm `.cmd` shim parsing so extensionless package bins resolve correctly, and uses the packaged CovenCave logo on the startup splash (#3011).
+
 ## [0.0.180] - 2026-07-12
 
 > 🔌 **OpenCoven tools clarity: correct coven-code install path, cleaner harness versions, and GPT-5.6 models.** Every coven-code surface now points at the scoped `@opencoven/coven-code` package (min 0.6.0) instead of the deprecated bare squat, harness version probes ignore log noise, the notch centers correctly across monitors, and familiar auth failures explain how to recover.
