@@ -1,4 +1,4 @@
-import { lstat, mkdir, rename, symlink } from "node:fs/promises";
+import { lstat, mkdir, readdir, rename, rm, rmdir, symlink } from "node:fs/promises";
 import path from "node:path";
 import { caveHome, covenHome } from "@/lib/coven-paths";
 
@@ -20,6 +20,13 @@ import { caveHome, covenHome } from "@/lib/coven-paths";
  * Semantics per entry (idempotent, crash-safe):
  *  - legacy path missing            → nothing to do
  *  - legacy path is a symlink       → already migrated (or user-bridged); skip
+ *  - legacy AND destination are both real directories
+ *                                   → per-file merge: children that only exist
+ *                                     on the legacy side move over (lossless —
+ *                                     each conversation is its own file);
+ *                                     same-name children keep the destination
+ *                                     copy. A fully drained legacy dir is
+ *                                     replaced by the compat symlink.
  *  - destination already exists     → destination wins; legacy left untouched
  *  - otherwise                      → rename(legacy → cave/<name>), then
  *                                     best-effort compat symlink at legacy
@@ -58,19 +65,93 @@ export const CAVE_HOME_MIGRATIONS: readonly CaveHomeMigrationEntry[] = [
   { legacy: "cave-conversations", next: "conversations" },
 ];
 
+export type CaveHomeMigrationDirMerge = {
+  /** Legacy dir name under `covenHome()`. */
+  legacy: string;
+  /** Children moved out of the legacy dir into its destination. */
+  files: number;
+  /** Same-name children left behind (destination copy wins per file). */
+  collisions: number;
+};
+
 export type CaveHomeMigrationResult = {
   moved: string[];
   linked: string[];
   skipped: string[];
+  merged: CaveHomeMigrationDirMerge[];
   errors: Array<{ legacy: string; error: string }>;
 };
 
-async function pathState(target: string): Promise<"missing" | "symlink" | "present"> {
+async function pathState(target: string): Promise<"missing" | "symlink" | "file" | "dir"> {
   try {
     const st = await lstat(target);
-    return st.isSymbolicLink() ? "symlink" : "present";
+    return st.isSymbolicLink() ? "symlink" : st.isDirectory() ? "dir" : "file";
   } catch {
     return "missing";
+  }
+}
+
+// Compat bridge for external readers. Relative target so the link survives a
+// moved home dir. Best-effort: symlink creation can fail on Windows without
+// elevation — the migration itself already succeeded.
+async function bridgeLegacyPath(
+  entry: CaveHomeMigrationEntry,
+  legacyPath: string,
+  nextPath: string,
+  kind: "file" | "dir",
+  result: CaveHomeMigrationResult,
+): Promise<void> {
+  try {
+    const relativeTarget = path.relative(path.dirname(legacyPath), nextPath);
+    await symlink(relativeTarget, legacyPath, kind === "dir" ? "junction" : "file");
+    result.linked.push(entry.legacy);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Both sides of a directory entry exist — e.g. an old build recreated
+ * `cave-conversations/` after migration (cave-lzx3). Children are independent
+ * files keyed by name, so legacy-only ones move over losslessly; same-name
+ * children keep the destination copy (the same destination-wins rule applied
+ * per file) and hold the legacy dir open for review.
+ */
+async function mergeDirEntry(
+  entry: CaveHomeMigrationEntry,
+  legacyPath: string,
+  nextPath: string,
+  result: CaveHomeMigrationResult,
+): Promise<void> {
+  const merge: CaveHomeMigrationDirMerge = { legacy: entry.legacy, files: 0, collisions: 0 };
+  try {
+    for (const name of await readdir(legacyPath)) {
+      // Finder metadata must never hold the compat bridge hostage.
+      if (name === ".DS_Store") {
+        await rm(path.join(legacyPath, name), { force: true });
+        continue;
+      }
+      if ((await pathState(path.join(nextPath, name))) === "missing") {
+        try {
+          await rename(path.join(legacyPath, name), path.join(nextPath, name));
+          merge.files += 1;
+        } catch (error) {
+          result.errors.push({ legacy: `${entry.legacy}/${name}`, error: String(error) });
+        }
+      } else {
+        merge.collisions += 1;
+      }
+    }
+    result.merged.push(merge);
+    if ((await readdir(legacyPath)).length === 0) {
+      await rmdir(legacyPath);
+      result.moved.push(entry.legacy);
+      await bridgeLegacyPath(entry, legacyPath, nextPath, "dir", result);
+    } else {
+      result.skipped.push(entry.legacy);
+    }
+  } catch (error) {
+    result.errors.push({ legacy: entry.legacy, error: String(error) });
   }
 }
 
@@ -82,11 +163,17 @@ async function migrateEntry(
   const nextPath = path.join(caveHome(), entry.next);
 
   const legacyState = await pathState(legacyPath);
-  if (legacyState !== "present") {
+  if (legacyState === "missing" || legacyState === "symlink") {
     result.skipped.push(entry.legacy);
     return;
   }
-  if ((await pathState(nextPath)) !== "missing") {
+  const nextState = await pathState(nextPath);
+
+  if (nextState !== "missing") {
+    if (legacyState === "dir" && nextState === "dir") {
+      await mergeDirEntry(entry, legacyPath, nextPath, result);
+      return;
+    }
     // Destination wins — a newer build already wrote there. Leave the legacy
     // file for the user to inspect rather than clobbering either side.
     result.skipped.push(entry.legacy);
@@ -101,21 +188,12 @@ async function migrateEntry(
     return;
   }
 
-  // Compat bridge for external readers. Relative target so the link survives
-  // a moved home dir. Best-effort: symlink creation can fail on Windows
-  // without elevation — the migration itself already succeeded.
-  try {
-    const relativeTarget = path.relative(path.dirname(legacyPath), nextPath);
-    await symlink(relativeTarget, legacyPath, entry.next === "conversations" ? "junction" : "file");
-    result.linked.push(entry.legacy);
-  } catch {
-    /* best-effort */
-  }
+  await bridgeLegacyPath(entry, legacyPath, nextPath, legacyState, result);
 }
 
 /** Run the full migration once. Safe to call repeatedly (idempotent). */
 export async function migrateCaveHome(): Promise<CaveHomeMigrationResult> {
-  const result: CaveHomeMigrationResult = { moved: [], linked: [], skipped: [], errors: [] };
+  const result: CaveHomeMigrationResult = { moved: [], linked: [], skipped: [], merged: [], errors: [] };
   try {
     await mkdir(caveHome(), { recursive: true });
   } catch (error) {
@@ -129,6 +207,14 @@ export async function migrateCaveHome(): Promise<CaveHomeMigrationResult> {
     console.log(
       `[cave-home-migration] moved ${result.moved.length} legacy file(s) into ${caveHome()}: ${result.moved.join(", ")}`,
     );
+  }
+  for (const merge of result.merged) {
+    if (merge.files > 0 || merge.collisions > 0) {
+      console.log(
+        `[cave-home-migration] merged ${merge.files} file(s) from ${merge.legacy} into ${caveHome()}` +
+          (merge.collisions > 0 ? ` (${merge.collisions} name collision(s) left for review)` : ""),
+      );
+    }
   }
   for (const failure of result.errors) {
     console.warn(`[cave-home-migration] ${failure.legacy}: ${failure.error}`);

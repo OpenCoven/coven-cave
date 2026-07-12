@@ -63,6 +63,29 @@ try {
     assert.equal(status.migrated, false, "conflicts still count as unmigrated");
   }
 
+  // Directory pairs mirror the migrator's per-file merge (cave-lzx3): a legacy
+  // dir whose children all fit the destination drains in one run — that's
+  // PENDING, so the banner button can fix it. A same-name child (ignoring
+  // Finder junk) makes it a CONFLICT.
+  await mkdir(path.join(covenDir, "cave-conversations"));
+  await mkdir(path.join(caveDir, "conversations"));
+  await writeFile(path.join(covenDir, "cave-conversations", "sess-a.json"), "{}", "utf8");
+  await writeFile(path.join(covenDir, "cave-conversations", ".DS_Store"), "junk", "utf8");
+
+  {
+    const status = await caveHomeMigrationStatus();
+    assert.ok(status.pending.includes("cave-conversations"), "drainable dir pair is pending");
+    assert.ok(!status.conflicts.includes("cave-conversations"), "drainable dir pair is not a conflict");
+  }
+
+  await writeFile(path.join(caveDir, "conversations", "sess-a.json"), "{}", "utf8");
+
+  {
+    const status = await caveHomeMigrationStatus();
+    assert.ok(status.conflicts.includes("cave-conversations"), "same-name child makes the dir a conflict");
+    assert.ok(!status.pending.includes("cave-conversations"), "colliding dir is no longer pending");
+  }
+
   console.log("cave-home-migration-status.test.ts: ok");
 } finally {
   await rm(tmpHome, { recursive: true, force: true });

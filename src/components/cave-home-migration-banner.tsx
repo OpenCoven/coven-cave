@@ -11,7 +11,11 @@ type MigrationStatus = {
 
 type StatusPayload = { ok?: boolean; status?: MigrationStatus };
 type RunPayload = StatusPayload & {
-  result?: { moved?: string[]; errors?: Array<{ legacy: string; error: string }> };
+  result?: {
+    moved?: string[];
+    merged?: Array<{ legacy: string; files?: number; collisions?: number }>;
+    errors?: Array<{ legacy: string; error: string }>;
+  };
 };
 
 const MIGRATION_BANNER_ID = "cave-home-migration";
@@ -38,9 +42,36 @@ function dismissMigrationBanner(pending: string[]): void {
   }
 }
 
+/** Conflict dismissal is namespaced apart from pending, keyed by the exact set. */
+const MIGRATION_CONFLICTS_DISMISS_KEY = (conflicts: string[]) =>
+  `coven-cave:cave-home-migration:conflicts-dismissed:${[...conflicts].sort().join("|")}`;
+
+function dismissedConflictsBanner(conflicts: string[]): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(MIGRATION_CONFLICTS_DISMISS_KEY(conflicts)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissConflictsBanner(conflicts: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MIGRATION_CONFLICTS_DISMISS_KEY(conflicts), "1");
+  } catch {
+    /* private mode */
+  }
+}
+
 function pendingBannerTitle(pending: string[]): string {
   const count = pending.length;
   return `${count} legacy Cave file${count === 1 ? "" : "s"} in ~/.coven still need${count === 1 ? "s" : ""} to move into ~/.coven/cave.`;
+}
+
+function conflictsBannerTitle(conflicts: string[]): string {
+  const count = conflicts.length;
+  return `${count} legacy Cave file${count === 1 ? "" : "s"} in ~/.coven conflict${count === 1 ? "s" : ""} with migrated copies — the ~/.coven/cave versions win. Review and remove the legacy cop${count === 1 ? "y" : "ies"}.`;
 }
 
 /**
@@ -51,6 +82,10 @@ function pendingBannerTitle(pending: string[]): string {
  * Everyone else — fresh installs and machines the boot migration already
  * cleaned — never sees it. The CTA runs the same idempotent migration on
  * demand, reports the outcome in place, and clears once nothing is pending.
+ *
+ * Unfixable conflicts (legacy and migrated copies both real — cave-lzx3) get
+ * a CTA-less review banner instead of staying invisible forever; dismissal is
+ * keyed per conflict set so new conflicts re-surface.
  */
 export function CaveHomeMigrationBannerTrigger() {
   const { pushBanner, dismissBanner } = useShellBanners();
@@ -73,6 +108,17 @@ export function CaveHomeMigrationBannerTrigger() {
       });
     };
 
+    // No button — nothing safe to run. Destination wins by design (cave-lzx3);
+    // the user resolves conflicts by reviewing and deleting the legacy copies.
+    const showConflictsBanner = (conflicts: string[]) => {
+      pushBanner({
+        id: MIGRATION_BANNER_ID,
+        severity: "warning",
+        title: conflictsBannerTitle(conflicts),
+        onDismiss: () => dismissConflictsBanner(conflicts),
+      });
+    };
+
     const runMigration = async () => {
       try {
         const res = await fetch("/api/cave-home-migration", { method: "POST" });
@@ -82,12 +128,25 @@ export function CaveHomeMigrationBannerTrigger() {
         const errors = json.result?.errors ?? [];
         if (remaining.length === 0 && errors.length === 0) {
           const moved = json.result?.moved?.length ?? 0;
+          const mergedFiles = (json.result?.merged ?? []).reduce((n, m) => n + (m.files ?? 0), 0);
+          const conflictsAfter = json.status?.conflicts ?? [];
+          if (conflictsAfter.length > 0) {
+            // The run finished but same-name collisions remain — hand off to
+            // the review path instead of claiming a clean finish.
+            pushBanner({
+              id: MIGRATION_BANNER_ID,
+              severity: "warning",
+              title: `Cave files migrated — moved ${moved} file${moved === 1 ? "" : "s"}${mergedFiles > 0 ? ` and merged ${mergedFiles} more` : ""}; ${conflictsAfter.length} conflict${conflictsAfter.length === 1 ? "" : "s"} left for manual review in ~/.coven.`,
+              onDismiss: () => dismissConflictsBanner(conflictsAfter),
+            });
+            return;
+          }
           pushBanner({
             id: MIGRATION_BANNER_ID,
             severity: "info",
             title:
-              moved > 0
-                ? `Cave files migrated — moved ${moved} file${moved === 1 ? "" : "s"} into ~/.coven/cave.`
+              moved > 0 || mergedFiles > 0
+                ? `Cave files migrated — moved ${moved} file${moved === 1 ? "" : "s"}${mergedFiles > 0 ? ` and merged ${mergedFiles} more` : ""} into ~/.coven/cave.`
                 : "Cave files are already in ~/.coven/cave — nothing left to migrate.",
           });
           return;
@@ -114,8 +173,15 @@ export function CaveHomeMigrationBannerTrigger() {
       .then((json) => {
         if (cancelled || !json?.ok || !json.status) return;
         const pending = json.status.pending ?? [];
-        if (pending.length === 0 || dismissedMigrationBanner(pending)) return;
-        showPendingBanner(pending);
+        const conflicts = json.status.conflicts ?? [];
+        if (pending.length > 0) {
+          // Fixable files take precedence — one banner at a time.
+          if (!dismissedMigrationBanner(pending)) showPendingBanner(pending);
+          return;
+        }
+        if (conflicts.length > 0 && !dismissedConflictsBanner(conflicts)) {
+          showConflictsBanner(conflicts);
+        }
       })
       .catch(() => {
         /* Status checks are best-effort. */
