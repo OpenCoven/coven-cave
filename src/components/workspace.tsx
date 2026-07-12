@@ -822,6 +822,13 @@ export function Workspace() {
   useEffect(() => {
     if (daemonRunning) void loadFamiliars();
   }, [daemonRunning, loadFamiliars]);
+  // …and while an error IS showing, keep retrying quietly. The effect above
+  // only fires on daemonRunning TRANSITIONS, so a one-off fetch flake with the
+  // daemon already "running" (e.g. it restarts right after the first familiar
+  // is summoned) stranded the error screen until a manual Retry (issue #2990).
+  usePausablePoll(() => void loadFamiliars(), 4_000, {
+    enabled: familiarsError !== null,
+  });
 
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
@@ -1419,10 +1426,22 @@ export function Workspace() {
     pauseWhileInputActive: true,
   });
 
+  // Declared above handleEnrichTasks, which closes over it.
+  const pushToast = useCallback((title: string) => {
+    const id = `eph:adhoc-${Date.now()}`;
+    setToasts((prev) => [...prev, { id, title }]);
+  }, []);
+
   const handleEnrichTasks = useCallback(async () => {
     if (!activeId || enrichingTasks) return;
     setEnrichingTasks(true);
     setEnrichProgress(null);
+    // The trigger is a small top-bar button with no surface of its own — count
+    // the outcome so it can say what happened when the run ends (issue #2991:
+    // "clicking it results in loading and then returns to the start, no
+    // feedback").
+    let total = 0;
+    let enhanced = 0;
     try {
       const res = await fetch("/api/board/enrich-steps", {
         method: "POST",
@@ -1449,8 +1468,10 @@ export function Workspace() {
           try {
             const msg = JSON.parse(trimmed) as Record<string, unknown>;
             if (msg.kind === "start") {
-              setEnrichProgress({ done: 0, total: (msg.total as number) ?? 0 });
+              total = (msg.total as number) ?? 0;
+              setEnrichProgress({ done: 0, total });
             } else if (msg.kind === "done" || msg.kind === "skip") {
+              if (msg.kind === "done") enhanced += 1;
               setEnrichProgress((prev) => prev ? { ...prev, done: prev.done + 1 } : prev);
             } else if (msg.kind === "complete") {
               window.dispatchEvent(new CustomEvent("cave:board:reload"));
@@ -1461,12 +1482,22 @@ export function Workspace() {
           }
         }
       }
+      // Close the loop: the live label disappears when the run ends, so state
+      // the outcome — especially the two "nothing happened" shapes that read
+      // as a silent failure.
+      pushToast(
+        total === 0
+          ? "No open tasks to enhance right now."
+          : enhanced === 0
+            ? "Open tasks already have steps — nothing to enhance."
+            : `Enhanced ${enhanced} task${enhanced === 1 ? "" : "s"} — open Tasks to review.`,
+      );
     } catch {
-      /* keep the top-bar action quiet; progress resets below */
+      pushToast("Enhance tasks failed — check the daemon banner and try again.");
     } finally {
       setEnrichingTasks(false);
     }
-  }, [activeId, enrichingTasks, refreshOpenTaskCards]);
+  }, [activeId, enrichingTasks, pushToast, refreshOpenTaskCards]);
 
   const openReminderModal = useCallback((title = "", whenText = "", fireAt = "") => {
     setReminderModalDefaults({ fireAt, title, whenText });
@@ -1477,11 +1508,6 @@ export function Workspace() {
     setActiveId(familiarId);
     openReminderModal();
   }, [openReminderModal]);
-
-  const pushToast = useCallback((title: string) => {
-    const id = `eph:adhoc-${Date.now()}`;
-    setToasts((prev) => [...prev, { id, title }]);
-  }, []);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

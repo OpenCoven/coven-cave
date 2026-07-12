@@ -404,3 +404,12 @@ assert.match(
 );
 
 console.log("chat-router-switching.test.ts: ok");
+
+// ── roster-error state is self-healing (issue #2990) ─────────────────────────
+// Workspace auto-retries loadFamiliars while the error shows; the copy must
+// not tell the user to retry manually as if nothing else will happen.
+assert.match(
+  source,
+  /retrying automatically/,
+  "the roster-error copy states that retries happen automatically",
+);

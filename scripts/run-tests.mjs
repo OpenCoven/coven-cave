@@ -348,6 +348,7 @@ export const SUITES = {
     "src/components/evals-removal.test.ts",
     "src/components/debug-pane.test.ts",
     "src/components/workspace-mode-fade.test.ts",
+    "src/components/workspace-feedback.test.ts",
     "src/components/session-changes-inner.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-view.test.ts",

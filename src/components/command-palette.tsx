@@ -833,7 +833,9 @@ export function CommandPalette({
           <div
             role={salemLoading ? "status" : salemError ? "alert" : "region"}
             aria-label="Salem AI response"
-            className="border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
+            // Long answers scroll inside the palette instead of growing it past
+            // the viewport (issue #2988) — mirrors the listbox's own cap below.
+            className="max-h-[45vh] overflow-y-auto border-b border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-4 py-3 text-xs text-[var(--text-secondary)]"
           >
             {salemLoading ? (
               <span>Asking Salem through salem.opencoven.ai...</span>
