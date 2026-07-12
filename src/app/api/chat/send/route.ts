@@ -35,6 +35,7 @@ import {
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
 import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   buildCopilotStreamArgs,
   copilotIdentityPreamble,
@@ -1960,6 +1961,7 @@ export async function POST(req: Request) {
         });
 
       // First attempt — uses --continue if body.sessionId was set.
+      const turnSpawnStartMs = Date.now();
       await runAttempt(args);
 
       // Transparent retry: if codex reported its rollout-resume failed and
@@ -2024,6 +2026,30 @@ export async function POST(req: Request) {
         assistantText = diagnostic;
         result.is_error = true;
         push({ kind: "assistant_chunk", text: diagnostic });
+      }
+
+      // Created-row leak sweep (bd cave-p08l): `coven run` registers the
+      // daemon session row before launching the harness, and the row's id
+      // only reaches this route via the stream handshake. A spawn that dies
+      // pre-handshake (fork exhaustion, missing adapter) strands the row in
+      // "created" forever — the daemon has no reaper. When a NEW chat's turn
+      // ends without ever learning a session id, reap the rows this turn
+      // provably registered: same spawn cwd, created inside the turn window,
+      // title == this turn's prompt head. Best-effort; never fails the turn.
+      if (!cancelledByUser && !body.sessionId && !sessionId && !sshRuntime) {
+        const swept = await sweepStuckCreatedSessions({
+          cwd: familiarCwd ?? cwd,
+          prompt: harnessPrompt,
+          sinceMs: turnSpawnStartMs - 5000,
+        });
+        if (swept.length > 0) {
+          pushProgress(
+            "created-sweep",
+            `Cleaned up ${swept.length} orphaned session ${swept.length === 1 ? "row" : "rows"}`,
+            "done",
+            swept.join(", "),
+          );
+        }
       }
 
       // Boundary sentinel readout: one non-blocking notice per turn listing
