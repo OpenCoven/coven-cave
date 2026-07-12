@@ -126,3 +126,25 @@ test("missing npm, registry errors, and malformed versions remain explicit failu
   assert.equal(malformed.status, "failed");
   assert.equal(malformed.error, "malformed_version");
 });
+
+test("npm found only via the refreshed environment runs the query with that environment", async () => {
+  const staleEnv: NodeJS.ProcessEnv = { PATH: "/stale" };
+  const refreshedEnv: NodeJS.ProcessEnv = { PATH: "/refreshed" };
+  const seen: NodeJS.ProcessEnv[] = [];
+  const result = await checkNpmLatestVersion(OPEN_COVEN_TOOLS[0], {
+    now: () => checkedAt,
+    env: () => staleEnv,
+    refreshEnv: () => refreshedEnv,
+    resolveNpmPath: async (env) => (env === refreshedEnv ? "/usr/local/bin/npm" : null),
+    execFile: async (_command, _args, options) => {
+      seen.push(options.env);
+      return { stdout: "\"0.0.54\"" };
+    },
+  });
+  assert.equal(result.status, "verified", "the refreshed environment recovers the lookup");
+  assert.deepEqual(
+    seen,
+    [refreshedEnv],
+    "the registry query runs with the same environment that located npm",
+  );
+});

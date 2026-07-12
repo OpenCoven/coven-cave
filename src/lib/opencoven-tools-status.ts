@@ -233,16 +233,28 @@ export async function checkNpmLatestVersion(
 ): Promise<NpmLatestCheck> {
   const checkedAt = (dependencies.now ?? (() => new Date()))().toISOString();
   const platform = dependencies.platform ?? process.platform;
-  const env = (dependencies.env ?? covenSpawnEnv)();
   const exec = dependencies.execFile ?? execLatestVersion;
-  const npmPath = dependencies.resolveNpmPath
-    ? await dependencies.resolveNpmPath(env)
-    : (await npmPathFromEnvironment(env, platform, exec)) ??
-      (await npmPathFromEnvironment(
-        (dependencies.refreshEnv ?? refreshCovenSpawnEnv)(),
-        platform,
-        exec,
-      ));
+  // Track which environment actually located npm and run the registry query
+  // with that same environment — if only the refreshed PATH makes npm/node
+  // resolvable (e.g. a shebang's `/usr/bin/env node`), executing with the
+  // original env could fail right after a successful lookup.
+  let env = (dependencies.env ?? covenSpawnEnv)();
+  let npmPath: string | null;
+  if (dependencies.resolveNpmPath) {
+    npmPath = await dependencies.resolveNpmPath(env);
+    if (!npmPath) {
+      const refreshed = (dependencies.refreshEnv ?? refreshCovenSpawnEnv)();
+      npmPath = await dependencies.resolveNpmPath(refreshed);
+      if (npmPath) env = refreshed;
+    }
+  } else {
+    npmPath = await npmPathFromEnvironment(env, platform, exec);
+    if (!npmPath) {
+      const refreshed = (dependencies.refreshEnv ?? refreshCovenSpawnEnv)();
+      npmPath = await npmPathFromEnvironment(refreshed, platform, exec);
+      if (npmPath) env = refreshed;
+    }
+  }
   const launch = npmPath
     ? npmViewLaunchCommandForPath(npmPath, platform, dependencies.fileExists)
     : null;
