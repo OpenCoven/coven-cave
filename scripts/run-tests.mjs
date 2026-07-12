@@ -688,6 +688,7 @@ export const SUITES = {
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",
     "src/lib/coven-bin.test.ts",
+    "src/lib/harness-version.test.ts",
     "src/lib/openclaw-bin.test.ts",
     "src/lib/openclaw-bridge.test.ts",
     "src/lib/coven-identity-canon.test.ts",
