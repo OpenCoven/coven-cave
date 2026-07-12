@@ -8,6 +8,7 @@ import {
   adapterManifestScaffoldForHarness,
   covenHelpSupportsAdapterList,
   covenRunSupportsModelFlag,
+  covenRunSupportsAddDirFlag,
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
   openClawAdapterReport,
@@ -46,6 +47,35 @@ assert.equal(
   covenRunSupportsModelFlag("see also --model-context-protocol for MCP"),
   false,
   "A substring like --model-context-protocol must not be mistaken for --model",
+);
+
+// Directory-grant gating probe: forwarding `--add-dir` must stay off until the
+// installed `coven run` advertises the flag.
+assert.equal(
+  covenRunSupportsAddDirFlag(`Usage: coven run [OPTIONS] <HARNESS> [PROMPT]...
+
+Options:
+      --stream-json  Emit stream-json events
+      --add-dir <DIR>  Additional directory the harness may access (repeatable)
+`),
+  true,
+  "Help text advertising --add-dir should enable forwarding",
+);
+assert.equal(
+  covenRunSupportsAddDirFlag(`Usage: coven run [OPTIONS] <HARNESS> [PROMPT]...
+
+Options:
+      --stream-json  Emit stream-json events
+`),
+  false,
+  "Help text without --add-dir should keep forwarding off",
+);
+assert.equal(covenRunSupportsAddDirFlag(""), false, "Empty help text never enables --add-dir forwarding");
+assert.equal(covenRunSupportsAddDirFlag(undefined), false, "Non-string help text never enables --add-dir forwarding");
+assert.equal(
+  covenRunSupportsAddDirFlag("see also --add-dir-recursive for nested grants"),
+  false,
+  "A longer flag like --add-dir-recursive must not be mistaken for --add-dir",
 );
 
 const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];

@@ -64,7 +64,7 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, canonicalHarnessId } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, covenRunSupportsAddDirFlag, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
@@ -605,6 +605,54 @@ function covenRunSupportsPermission(): Promise<boolean> {
   return covenRunPermissionFlagProbe;
 }
 
+// Same gated probe for `coven run --add-dir <DIR>` (repeatable). Granted
+// project roots must be trusted by the spawned harness itself — the
+// runtime-scope preamble only DESCRIBES the grants, and a harness that trusts
+// nothing but its cwd denies every access to them (non-interactive sessions
+// cannot re-request permission mid-turn). Cached; failures resolve false.
+let covenRunAddDirFlagProbe: Promise<boolean> | null = null;
+function covenRunSupportsAddDir(): Promise<boolean> {
+  if (!covenRunAddDirFlagProbe) {
+    covenRunAddDirFlagProbe = new Promise<boolean>((resolve) => {
+      let out = "";
+      let settled = false;
+      const done = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        const { command, fixedArgs } = covenLaunchCommand();
+        const child = spawn(command, [...fixedArgs, "run", "--help"], {
+          env: covenSpawnEnv(),
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        child.stdout.on("data", (d) => (out += d.toString()));
+        child.stderr.on("data", (d) => (out += d.toString()));
+        const t = setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+          done(false);
+        }, 2500);
+        child.on("close", () => {
+          clearTimeout(t);
+          done(covenRunSupportsAddDirFlag(out));
+        });
+        child.on("error", () => {
+          clearTimeout(t);
+          done(false);
+        });
+      } catch {
+        done(false);
+      }
+    });
+  }
+  return covenRunAddDirFlagProbe;
+}
+
 function resolveSendModelMetadata(args: {
   body: SendBody;
   config: CaveConfig;
@@ -1068,6 +1116,11 @@ export async function POST(req: Request) {
   // its own default sandbox instead of being widened to danger-full-access.
   const permissionForwardingEnabled =
     binding.harness !== "openclaw" && (await covenRunSupportsPermission());
+  // Same gating for directory grants (`--add-dir`). Without forwarding, the
+  // granted roots listed in the runtime-scope preamble are prompt-text-only
+  // and the harness denies every access to them.
+  const addDirForwardingEnabled =
+    binding.harness !== "openclaw" && (await covenRunSupportsAddDir());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -1295,6 +1348,25 @@ export async function POST(req: Request) {
     modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
   const forwardPermission =
     permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
+  // Directory grants: forward every granted project root — plus the familiar's
+  // own workspace when it isn't the spawn cwd — so the harness actually trusts
+  // the roots the runtime-scope preamble grants. The spawn cwd is already
+  // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
+  // local runtimes only (SSH runtimes own their remote filesystem).
+  const spawnRoot = familiarCwd ?? cwd;
+  const forwardAddDirs =
+    addDirForwardingEnabled && !sshRuntime
+      ? Array.from(
+          new Set(
+            [
+              ...grantedProjectRoots,
+              ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+            ]
+              .map((root) => root.trim())
+              .filter((root) => root && root !== spawnRoot),
+          ),
+        )
+      : [];
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1320,6 +1392,8 @@ export async function POST(req: Request) {
     // `coven run --permission read-only` (codex --sandbox read-only / claude
     // --permission-mode plan). Gated on the CLI advertising the flag.
     if (forwardPermission) a.push("--permission", forwardPermission);
+    // Trust each granted root at the harness level; repeatable flag.
+    for (const dir of forwardAddDirs) a.push("--add-dir", dir);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
