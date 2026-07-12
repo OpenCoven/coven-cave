@@ -479,6 +479,62 @@ describe("FamiliarAnalyticsView", () => {
   });
 });
 
+describe("session tracking + tracing (recent sessions, pulse drill, trace overlay)", () => {
+  it("exposes the familiar's recent sessions on the model, newest first", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    assert.equal(model.recentSessions.length, 10, "all mock sessions ride the model");
+    assert.ok(
+      model.recentSessions.every((session) => session.familiarId === "cody"),
+      "sessions are scoped to this familiar",
+    );
+  });
+
+  it("renders a Recent sessions section with open-thread and trace actions", () => {
+    assert.match(source, /id="fa-sessions"/, "the section carries its drill anchor");
+    assert.match(source, /<RecentSessionsSection/, "section renders the sessions list");
+    assert.match(
+      source,
+      /href=\{`\/#chat-\$\{encodeURIComponent\(session\.id\)\}`\}/,
+      "each row opens its thread via the chat hash deep link",
+    );
+    assert.match(source, /onTrace\(\{ id: session\.id, title: session\.title \}\)/, "each row can open the trace overlay");
+    assert.match(source, /<SessionTraceOverlay target=\{traceTarget\}/, "the overlay is rendered from page state");
+    assert.match(source, /Showing \{shown\.length\} of \{filtered\.length\} sessions\./, "truncation is stated, never silent");
+  });
+
+  it("makes the hero pulse interactive — a clicked day filters the sessions list", () => {
+    assert.match(source, /onSelectDay=\{handleSelectDay\}/, "hero pulse takes the day-select handler");
+    assert.match(source, /selectedKey=\{selectedDay\?\.key \?\? null\}/, "selection state rides back into the bars");
+    assert.match(source, /sessionDayKey\(session\.updated_at\) === selectedDay\.key/, "the list filters by the pulse's own day bucketing");
+    assert.match(source, /getElementById\("fa-sessions"\)\?\.scrollIntoView/, "selecting a day lands the reader on the list");
+    assert.match(source, /className="fa-day-chip focus-ring"/, "an active day filter shows a clearable chip");
+    // The interactive bars are real buttons with pressed state (not color alone).
+    const pulseBars = readFileSync(new URL("./ui/pulse-bars.tsx", import.meta.url), "utf8");
+    assert.match(pulseBars, /aria-pressed=\{selected\}/, "selected day is exposed to AT");
+    assert.match(pulseBars, /onSelectDay\?: \(day: PulseDay\) => void/, "interactivity is opt-in — existing decorative uses are untouched");
+  });
+
+  it("links each response-confidence event back to the session that produced it", () => {
+    assert.match(
+      source,
+      /href=\{`\/#chat-\$\{encodeURIComponent\(event\.sessionId\)\}`\}/,
+      "events deep-link into their thread",
+    );
+    assert.match(source, /RECENT_RESPONSE_EVENTS/, "the raw-event list is capped, not unbounded");
+    assert.match(source, /fa-response-score--\$\{confidenceScoreTone\(event\.overallConfidence\)\}/, "score chips tint by the trend thresholds");
+    assert.match(source, /onTrace\(\{ id: event\.sessionId, title: event\.threadTitle \}\)/, "events can open the session trace");
+  });
+
+  it("keeps the page live with a pausable poll that never spams AT", () => {
+    assert.match(source, /import \{ usePausablePoll \} from "@\/lib\/use-pausable-poll"/);
+    assert.match(source, /usePausablePoll\(\(\) => void load\(\{ quiet: true, silent: true \}\), 60_000\)/, "background refresh every 60s, hidden-tab safe");
+    assert.match(source, /if \(quiet && !silent\) announce\("Analytics refreshed\."\)/, "only manual refreshes announce");
+  });
+});
+
 describe("confidence breakdown + metric labeling", () => {
   it("represents each confidence factor by its influence, with plain labels + units", () => {
     const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");

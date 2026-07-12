@@ -19,11 +19,13 @@ import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { ConfidenceFactor, ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
-import type { Familiar } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
 import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
 import { formatTimeToFirstReply, timeToFirstReplyMs } from "@/lib/first-run-stamps";
-import { pulseTotal } from "@/lib/session-pulse";
+import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trace-overlay";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { pulseTotal, sessionDayKey, type PulseDay } from "@/lib/session-pulse";
 import {
   RESPONSE_CONFIDENCE_EMPTY_STATE,
   RESPONSE_CONFIDENCE_FACTOR_KEYS,
@@ -42,14 +44,16 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const { announce } = useAnnouncer();
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  // `silent` marks the recurring background poll: it refreshes the data and
+  // freshness stamp but never announces (a 60s AT announcement loop is noise).
+  const load = useCallback(async ({ quiet = false, silent = false } = {}) => {
     if (quiet) setRefreshing(true);
     else setLoading(true);
     setError(null);
     try {
       setData(await loadFamiliarAnalyticsData(familiarId));
       setUpdatedAt(new Date().toISOString());
-      if (quiet) announce("Analytics refreshed.");
+      if (quiet && !silent) announce("Analytics refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "analytics data unavailable");
     } finally {
@@ -61,6 +65,10 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Keep the page live — pulse, sessions, and confidence data drift while
+  // familiars work. Pauses in hidden tabs; refreshes on regaining focus.
+  usePausablePoll(() => void load({ quiet: true, silent: true }), 60_000);
 
   const model = useMemo(() => data ? buildFamiliarAnalyticsModel(data) : null, [data]);
 
@@ -307,16 +315,29 @@ function SelfReportEmptyState({
   );
 }
 
+/** Score tone shared by the trend line and the per-response chips. */
+function confidenceScoreTone(score: number): "good" | "mid" | "bad" {
+  if (score >= 70) return "good";
+  if (score >= 50) return "mid";
+  return "bad";
+}
+
+/** How many raw response events the drill-through list shows. */
+const RECENT_RESPONSE_EVENTS = 6;
+
 const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
   rollup,
   events,
   familiar,
   onSelfReportEnabled,
+  onTrace,
 }: {
   rollup: ResponseConfidenceRollup;
   events: ResponseConfidenceEvent[];
   familiar: Familiar | null;
   onSelfReportEnabled?: () => void;
+  /** Open the session trace overlay for the session behind an event. */
+  onTrace?: (target: TraceTarget) => void;
 }) {
   if (rollup.eventCount === 0) {
     return (
@@ -324,6 +345,11 @@ const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
     );
   }
   const trend = buildResponseTrend(events);
+  // Newest first — each event links back to the thread that produced it, so a
+  // low score is one click from the conversation that explains it.
+  const recentEvents = [...events]
+    .sort((a, b) => Date.parse(b.responseAt) - Date.parse(a.responseAt))
+    .slice(0, RECENT_RESPONSE_EVENTS);
 
   return (
     <div className="fa-response-confidence">
@@ -367,6 +393,163 @@ const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
           </span>
         ))}
       </div>
+      {recentEvents.length > 0 ? (
+        <div className="fa-response-events">
+          <h3>Recent responses</h3>
+          <ul aria-label="Recent response confidence events">
+            {recentEvents.map((event) => (
+              <li key={event.id} className="fa-response-event">
+                <b
+                  className={`fa-response-score fa-response-score--${confidenceScoreTone(event.overallConfidence)}`}
+                  title={`Self-reported confidence ${event.overallConfidence} of 100`}
+                >
+                  {event.overallConfidence}
+                </b>
+                <span className="fa-response-event__body">
+                  <a
+                    className="focus-ring"
+                    href={`/#chat-${encodeURIComponent(event.sessionId)}`}
+                    title="Open this thread in chat"
+                  >
+                    {event.threadTitle?.trim() || event.sessionId}
+                  </a>
+                  <small>
+                    <RelativeTime iso={event.responseAt} />
+                    {event.diagnosticTags.length > 0 ? <> · {event.diagnosticTags.slice(0, 2).join(", ")}</> : null}
+                  </small>
+                </span>
+                {onTrace ? (
+                  <button
+                    type="button"
+                    className="fa-trace-btn focus-ring"
+                    title="Trace the session behind this response"
+                    aria-label={`Trace session ${event.threadTitle?.trim() || event.sessionId}`}
+                    onClick={() => onTrace({ id: event.sessionId, title: event.threadTitle })}
+                  >
+                    <Icon name="ph:tree-structure" width={12} aria-hidden />
+                    Trace
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+});
+
+/** Status tone for a session row's presence dot. */
+function sessionStatusTone(status: string): "run" | "bad" | "done" {
+  const s = status.toLowerCase();
+  if (/(running|active|working|streaming|starting)/.test(s)) return "run";
+  if (/(error|fail|killed|crash)/.test(s)) return "bad";
+  return "done";
+}
+
+/** How many session rows the drill-through list shows at once. */
+const RECENT_SESSIONS_SHOWN = 12;
+
+/**
+ * Recent sessions — the tracing spine of the page. Every row is one click
+ * from the conversation (`/#chat-<id>`) and one click from the daemon event
+ * timeline (trace overlay). A clicked pulse day narrows the list to that day.
+ */
+const RecentSessionsSection = memo(function RecentSessionsSection({
+  sessions,
+  selectedDay,
+  onClearDay,
+  onTrace,
+}: {
+  sessions: SessionRow[];
+  selectedDay: PulseDay | null;
+  onClearDay: () => void;
+  onTrace: (target: TraceTarget) => void;
+}) {
+  const filtered = selectedDay
+    ? sessions.filter((session) => sessionDayKey(session.updated_at) === selectedDay.key)
+    : sessions;
+  const shown = filtered.slice(0, RECENT_SESSIONS_SHOWN);
+
+  if (sessions.length === 0) {
+    return (
+      <EmptyState
+        compact
+        icon="ph:terminal-window"
+        headline="No sessions yet."
+        subtitle="Sessions appear here as this familiar runs."
+      />
+    );
+  }
+
+  return (
+    <div className="fa-sessions">
+      {selectedDay ? (
+        <button
+          type="button"
+          className="fa-day-chip focus-ring"
+          onClick={onClearDay}
+          title="Clear the day filter"
+        >
+          {selectedDay.label} · {filtered.length} session{filtered.length === 1 ? "" : "s"}
+          <Icon name="ph:x" width={11} aria-hidden />
+        </button>
+      ) : null}
+      {filtered.length === 0 ? (
+        <EmptyState
+          compact
+          icon="ph:terminal-window"
+          headline={`No sessions on ${selectedDay?.label ?? "that day"}.`}
+          subtitle="Pick another pulse day, or clear the filter."
+        />
+      ) : (
+        <ul className="fa-session-list">
+          {shown.map((session) => {
+            const tone = sessionStatusTone(session.status);
+            return (
+              <li key={session.id} className="fa-session">
+                <span className={`fa-session__dot fa-session__dot--${tone}`} aria-hidden />
+                <span className="fa-session__main">
+                  <a
+                    className="fa-session__title focus-ring"
+                    href={`/#chat-${encodeURIComponent(session.id)}`}
+                    title="Open this thread in chat"
+                  >
+                    {session.title || session.id}
+                  </a>
+                  <small className="fa-session__meta">
+                    {session.harness} · {session.status}
+                    {session.diff ? (
+                      <>
+                        {" · "}
+                        <span className="fa-session__diff">
+                          +{session.diff.additions} −{session.diff.deletions}
+                        </span>
+                      </>
+                    ) : null}
+                  </small>
+                </span>
+                <RelativeTime iso={session.updated_at} className="fa-session__time" />
+                <button
+                  type="button"
+                  className="fa-trace-btn focus-ring"
+                  title="Trace this session's daemon events"
+                  aria-label={`Trace ${session.title || session.id}`}
+                  onClick={() => onTrace({ id: session.id, title: session.title })}
+                >
+                  <Icon name="ph:tree-structure" width={12} aria-hidden />
+                  Trace
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {filtered.length > shown.length ? (
+        <p className="fa-sessions__truncation">
+          Showing {shown.length} of {filtered.length} sessions.
+        </p>
+      ) : null}
     </div>
   );
 });
@@ -642,6 +825,21 @@ export function FamiliarAnalyticsContent({
     const ms = timeToFirstReplyMs();
     setTimeToFirstReply(ms === null ? null : formatTimeToFirstReply(ms));
   }, []);
+  // Pulse-day drill: clicking a hero bar narrows Recent sessions to that day.
+  const [selectedDay, setSelectedDay] = useState<PulseDay | null>(null);
+  // Session trace overlay target — any surface on the page can open it.
+  const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
+  const handleSelectDay = useCallback((day: PulseDay) => {
+    setSelectedDay((prev) => {
+      const next = prev?.key === day.key ? null : day;
+      if (next && typeof document !== "undefined") {
+        // Land the reader on the filtered list; smoothness comes from the
+        // page's scroll-behavior (and holds still under reduced motion).
+        document.getElementById("fa-sessions")?.scrollIntoView({ block: "start" });
+      }
+      return next;
+    });
+  }, []);
 
   return (
     <>
@@ -697,12 +895,17 @@ export function FamiliarAnalyticsContent({
           <span className="fa-pulse__label">14-day pulse</span>
           <PulseBars
             pulse={model.sessionPulse}
-            label={`14-day activity: ${pulseSessions} session${pulseSessions === 1 ? "" : "s"}`}
+            label={`14-day activity: ${pulseSessions} session${pulseSessions === 1 ? "" : "s"}. Select a day to filter recent sessions.`}
             size="lg"
             showTips
+            onSelectDay={handleSelectDay}
+            selectedKey={selectedDay?.key ?? null}
           />
           <span className="fa-pulse__meta">
-            {pulseSessions} session{pulseSessions === 1 ? "" : "s"} · last active{" "}
+            <a className="focus-ring" href="#fa-sessions">
+              {pulseSessions} session{pulseSessions === 1 ? "" : "s"}
+            </a>{" "}
+            · last active{" "}
             <RelativeTime iso={model.growthReport?.lastActiveAt} fallback="never" />
             {timeToFirstReply ? <> · first reply {timeToFirstReply} after first open</> : null}
           </span>
@@ -729,6 +932,22 @@ export function FamiliarAnalyticsContent({
             events={model.responseConfidenceEvents}
             familiar={model.familiar}
             onSelfReportEnabled={onRefresh}
+            onTrace={setTraceTarget}
+          />
+        </FaSection>
+
+        {/* Recent sessions — the tracing spine. The hero pulse filters this
+            list by day; every row opens its thread or its daemon trace. */}
+        <FaSection
+          id="fa-sessions"
+          title="Recent sessions"
+          count={`${model.recentSessions.length} recent`}
+        >
+          <RecentSessionsSection
+            sessions={model.recentSessions}
+            selectedDay={selectedDay}
+            onClearDay={() => setSelectedDay(null)}
+            onTrace={setTraceTarget}
           />
         </FaSection>
 
@@ -771,6 +990,10 @@ export function FamiliarAnalyticsContent({
           <ModelFeedbackSection rollup={model.modelFeedback} />
         </FaSection>
       </div>
+
+      {traceTarget ? (
+        <SessionTraceOverlay target={traceTarget} onClose={() => setTraceTarget(null)} />
+      ) : null}
     </>
   );
 }
