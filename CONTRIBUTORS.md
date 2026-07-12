@@ -6,6 +6,16 @@ improvements.
 
 ## Community Contributors
 
+### Timothy Wayne Gregg ([@romgenie](https://github.com/romgenie))
+
+Timothy diagnosed and contributed the Windows native Browser callback, focus,
+and shutdown hardening that keeps Cave controls responsive after opening links,
+isolates ConPTY startup from WebView2 callbacks, and preserves a bounded native
+close path when renderers stall. His fork contribution was re-landed through an
+origin branch for required CI and CodeQL coverage.
+(proposed in [#2962](https://github.com/OpenCoven/coven-cave/pull/2962),
+shipped in [#2963](https://github.com/OpenCoven/coven-cave/pull/2963))
+
 ### Jiachen LIU ([@AmberLJC](https://github.com/AmberLJC))
 
 Jiachen authored the two MIT-licensed research-ideation skills adapted for the
