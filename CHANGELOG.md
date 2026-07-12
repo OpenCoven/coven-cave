@@ -16,10 +16,15 @@ breaking config changes; patch releases stay additive.
 
 ### Features
 - **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-and-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keeps it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937, #2938).
+- **Chat: threads auto-name themselves with a short summary title** — when a thread's first exchange completes, the send route derives a concise title (filler-cleaned prompt, or the assistant's opening heading for long asks, clamped at a word boundary). Manual renames — including mid-stream ones — always win, and error/cancelled first turns keep the default.
 - **Chat: split panes** — drag a conversation from the thread rail onto the chat surface to snap it left / right / above / below the current chat as a resizable pane. Each secondary pane carries a slim header (title · open as main · ✕); opening a pane's thread as the primary chat collapses it back out of the strip. Desktop full-width chat only (#2941).
+- **Analytics: thread signals launch resolution threads** — review-queue items and actionable signal rows (blockers, access/clarity gaps, capabilities) now open a new chat primed with an auto-sent prompt that directs the familiar to diagnose, apply, and verify the fix, replacing the discuss-only prompt. Informational rows (skills used most) stay task-only.
 - **Windows: prepared background updates + startup progress** — updates download and verify in the background, and a startup-progress surface (with retry/cancel controls) shows sidecar runtime bring-up instead of a blank wait (#2916).
 - **iOS: honest reconnect pill** — tabs stay mounted through connection drops so a brief network blip shows a reconnect pill rather than tearing down and remounting the whole surface (cave-y482 part 2) (#2935).
 - **Avatars: shared AvatarLightbox primitive** — one reusable lightbox for avatar imagery across the app (cave-ocy8) (#2931).
+
+### Security
+- **Chat: runtime filesystem boundary gains a non-blocking sentinel** — the send route now watches streamed tool calls for user-space paths outside the granted roots. Violations never interrupt the turn: they surface as a progress notice on the turn and append a corrective boundary reminder to the conversation's next harness prompt so the familiar self-corrects (observe → surface → steer).
 
 ### Fixes
 - **Folder picker is summoned to the foreground** — the native "choose a folder" dialog no longer opens hidden behind the window. On Windows the `FolderBrowserDialog` now gets a `TopMost` owner form so it comes forward focused; macOS activates System Events before `choose folder`; Linux runs zenity modal (#2614, #2944).

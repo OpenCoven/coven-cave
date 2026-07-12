@@ -238,18 +238,23 @@ const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
 };
 
 /**
- * Seed prompt for a focused discussion about one review-queue item. Selecting an
- * item in the Thread Signals review queue opens a new chat with the familiar
- * primed with this, so the topic is "unlocked" into a working conversation.
+ * Seed prompt that launches a working thread to RESOLVE one review-queue item.
+ * Selecting a signal in the Thread Signals review queue (or a table row) opens
+ * a new chat with the familiar primed with this; the initialPrompt auto-sends,
+ * so the thread starts working the fix immediately rather than idling on a
+ * blank composer.
  */
-export function buildThreadSignalDiscussionPrompt(item: ThreadSignalReviewItem): string {
+export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem): string {
   return [
-    `Let's work through a ${REVIEW_KIND_LABEL[item.kind]} from your thread self-reports:`,
+    `Resolve this ${REVIEW_KIND_LABEL[item.kind]} surfaced by your thread self-reports:`,
     "",
     `**${item.title}**`,
     item.detail,
     "",
-    "What's the root cause, and what concrete change — prompt, memory, skill, or access — would resolve it? Walk me through it.",
+    "This thread exists to fix the signal, not just discuss it:",
+    "1. Diagnose the root cause.",
+    "2. Apply the concrete fix now — update the prompt, memory, skill, config, or workflow at fault. If the fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
+    "3. Verify the fix and summarize what changed, so future threads stop reporting this signal.",
   ].join("\n");
 }
 

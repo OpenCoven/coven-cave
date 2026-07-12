@@ -30,8 +30,8 @@ assert.match(
 
 assert.match(
   source,
-  /entry\.familiarId == null \|\| entry\.familiarId === effectiveFamiliarFilter/,
-  "Memory files list should show only the selected familiar's files plus shared files",
+  /entry\.familiarId === effectiveFamiliarFilter/,
+  "Memory files list should show only the selected familiar's own files",
 );
 
 assert.match(

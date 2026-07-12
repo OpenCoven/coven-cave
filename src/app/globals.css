@@ -3188,26 +3188,6 @@ textarea.required-inputs-control {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- AvatarLightbox trigger -------------------------------- */
-/* Shared reset for the "click to enlarge" avatar button (AvatarLightbox). The
-   caller owns the inline avatar inside; this strips all button chrome so the
-   avatar looks identical whether or not it is expandable, and only adds the
-   zoom cursor. Focus styling comes from the composed `.focus-ring` utility. */
-.cave-avatar-lightbox-trigger {
-  display: inline-flex;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  line-height: 0;
-  border-radius: inherit;
-  cursor: zoom-in;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
 /* ---- ThinkingIndicator ------------------------------------- */
 .ui-thinking {
   display: inline-flex;
@@ -11218,7 +11198,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-table__col-state { width: 13%; }
 .fa-thread-table__col-detail { width: 33%; }
 .fa-thread-table__col-count { width: 9%; }
-.fa-thread-table__col-actions { width: 84px; }
+.fa-thread-table__col-actions { width: 168px; }
 .fa-thread-table thead th {
   position: sticky;
   top: 0;
@@ -12376,6 +12356,29 @@ details[open] > .cave-edit-card__summary::before {
   background: color-mix(in oklch, var(--accent-presence, var(--accent)) 6%, transparent);
   font-size: 11.5px;
   color: var(--text-secondary);
+}
+.quick-chat-queued__steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.quick-chat-queued__steer[aria-disabled="true"] {
+  cursor: default;
+}
+.quick-chat-queued__steer:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+  border-radius: calc(var(--radius-control) - 2px);
 }
 .quick-chat-queued__text {
   flex: 1 1 auto;

@@ -206,6 +206,10 @@ export function deriveChatProjectGroups(
       if (a.projectRoot === null && b.projectRoot === null) return 0;
       if (a.projectRoot === null) return 1;
       if (b.projectRoot === null) return -1;
+      // Latest activity first: the project holding the most recent chat tops
+      // the rail, so resuming the current conversation never needs scrolling.
+      const byRecency = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+      if (byRecency !== 0) return byRecency;
       const aProject = a.projectId ? projects.find((project) => project.id === a.projectId) : null;
       const bProject = b.projectId ? projects.find((project) => project.id === b.projectId) : null;
       if (aProject && bProject) return compareProjectsAlphabetically(aProject, bProject);

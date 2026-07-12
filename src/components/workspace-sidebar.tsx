@@ -505,7 +505,10 @@ export function WorkspaceSidebar({
             <section aria-label="Pinned threads">
               <div className="cnav__label">Pinned</div>
               <ul>
-                {/* Pinned rail uses a compact read-only row; ThreadRow is the full interactive row. */}
+                {/* Pinned rail is compact; the trailing always-visible bookmark
+                    doubles as the pin marker AND a one-click unpin — otherwise
+                    the only unpin lives on the (possibly truncated/collapsed)
+                    copy of the row further down the rail. */}
                 {pinnedSessions.map((session) => {
                   const title = sessionRailTitle(session);
                   const active = activeSessionId === session.id;
@@ -518,8 +521,18 @@ export function WorkspaceSidebar({
                           onClick={() => onOpenSession(session)}
                           className="cnav__thread-main focus-ring"
                         >
-                          <Icon name="ph:bookmark-simple-fill" width={12} className="cnav__lead is-accent" aria-hidden />
+                          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
                           <span className="cnav__thread-title" title={title}>{title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Unpin chat"
+                          aria-label={`Unpin ${title}`}
+                          aria-pressed
+                          onClick={() => togglePin(session.id)}
+                          className="cnav__icon-btn is-on focus-ring"
+                        >
+                          <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
                         </button>
                       </div>
                     </li>

@@ -191,6 +191,14 @@ export function QuickChatControlsRow({
   sending: boolean;
   showFamiliarPicker?: boolean;
 }) {
+  // Once a project is picked the thread is locked to that context (switching
+  // would reset the conversation), so the menu collapses into a read-only
+  // badge that names the selection instead of offering a pointless re-pick.
+  const selectedProject = selectedProjectRoot
+    ? projects.find((project) => project.root === selectedProjectRoot) ?? null
+    : null;
+  const selectedProjectName =
+    selectedProject?.name ?? selectedProjectRoot?.split(/[\\/]/).filter(Boolean).pop() ?? "";
   return (
     <div className="quick-chat-overlay__controls">
       {showFamiliarPicker ? (
@@ -211,25 +219,42 @@ export function QuickChatControlsRow({
           }
         />
       ) : null}
-      <QuickChatSelect
-        label="Project"
-        value={selectedProjectRoot ?? "__none__"}
-        onChange={(next) => onPickProjectRoot(next === "__none__" ? null : next)}
-        disabled={projectsLoading && projects.length === 0}
-        className="flex-1"
-        options={
-          projectsLoading && projects.length === 0
-            ? [{ value: "__none__", label: "Loading projects…", disabled: true }]
-            : [
-                { value: "__none__", label: "No project", icon: "ph:folder-simple-dashed" as IconName },
-                ...projects.map((project) => ({
-                  value: project.root,
-                  label: project.name,
-                  icon: "ph:folder" as IconName,
-                })),
-              ]
-        }
-      />
+      {selectedProjectRoot ? (
+        <span
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs"
+          title={selectedProjectRoot}
+          aria-label={`Project: ${selectedProjectName} (locked for this chat)`}
+        >
+          <Icon name="ph:folder" width={13} aria-hidden className="shrink-0 text-[var(--fg-muted)]" />
+          <span className="min-w-0 truncate">{selectedProjectName}</span>
+          <Icon
+            name="ph:lock-simple"
+            width={11}
+            aria-hidden
+            className="ml-auto shrink-0 text-[var(--fg-muted)]"
+          />
+        </span>
+      ) : (
+        <QuickChatSelect
+          label="Project"
+          value={selectedProjectRoot ?? "__none__"}
+          onChange={(next) => onPickProjectRoot(next === "__none__" ? null : next)}
+          disabled={projectsLoading && projects.length === 0}
+          className="flex-1"
+          options={
+            projectsLoading && projects.length === 0
+              ? [{ value: "__none__", label: "Loading projects…", disabled: true }]
+              : [
+                  { value: "__none__", label: "No project", icon: "ph:folder-simple-dashed" as IconName },
+                  ...projects.map((project) => ({
+                    value: project.root,
+                    label: project.name,
+                    icon: "ph:folder" as IconName,
+                  })),
+                ]
+          }
+        />
+      )}
       <StandardSelect
         label="Choose thinking effort"
         value={thinkingEffort}
@@ -309,6 +334,7 @@ export function QuickChatComposer({
   onModelOverrideChange,
   queued,
   onRemoveQueued,
+  onSteerQueued,
 }: {
   error: string | null;
   draft: string;
@@ -346,6 +372,7 @@ export function QuickChatComposer({
   /** Messages parked behind the in-flight turn (chips above the actions row). */
   queued?: QueuedQuickChatMessage[];
   onRemoveQueued?: (id: string) => void;
+  onSteerQueued?: (id: string) => void;
 }) {
   // Prompt enhancement (cave-b6c2): the shared model-backed hook, mounted
   // internally so every quick-chat surface (dropdown, tray tab, standalone
@@ -746,14 +773,31 @@ export function QuickChatComposer({
         <div className="quick-chat-queued" role="group" aria-label="Queued messages">
           {queued.map((item) => (
             <span key={item.id} className="quick-chat-queued__chip" title={item.text}>
-              <Icon name="ph:clock" width={11} aria-hidden />
-              <span className="quick-chat-queued__text">
-                {item.text.trim() ||
-                  `${item.attachments?.length ?? 0} file${(item.attachments?.length ?? 0) === 1 ? "" : "s"}`}
+              <span
+                className="quick-chat-queued__steer"
+                onClick={() => onSteerQueued?.(item.id)}
+                onKeyDown={(event) => {
+                  if (!onSteerQueued) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSteerQueued(item.id);
+                  }
+                }}
+                role="button"
+                tabIndex={onSteerQueued ? 0 : -1}
+                aria-disabled={!onSteerQueued}
+                aria-label="Send queued message next"
+                title="Send this queued message next"
+              >
+                <Icon name="ph:clock" width={11} aria-hidden />
+                <span className="quick-chat-queued__text">
+                  {item.text.trim() ||
+                    `${item.attachments?.length ?? 0} file${(item.attachments?.length ?? 0) === 1 ? "" : "s"}`}
+                </span>
+                {item.attachments?.length && item.text.trim() ? (
+                  <span className="quick-chat-queued__count">📎{item.attachments.length}</span>
+                ) : null}
               </span>
-              {item.attachments?.length && item.text.trim() ? (
-                <span className="quick-chat-queued__count">📎{item.attachments.length}</span>
-              ) : null}
               {onRemoveQueued ? (
                 <IconButton
                   icon="ph:x"

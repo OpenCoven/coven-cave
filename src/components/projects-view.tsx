@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import "@/styles/projects.css";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import { invalidateConversation } from "@/lib/conversation-cache";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { deriveProjectStatus } from "@/lib/project-status";
@@ -433,6 +434,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
         setSessionError(json.error ?? "delete failed");
         return false;
       }
+      invalidateConversation(sessionId);
       return true;
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : "delete failed");

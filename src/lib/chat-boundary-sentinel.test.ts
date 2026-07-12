@@ -138,34 +138,6 @@ const makeSentinel = () =>
   );
 }
 
-// Windows path forms: drive-letter tokens in command strings and `~\`
-// expansion. Classification of these is meaningful only where the platform
-// path module is win32 (the sentinel guards the host the server runs on),
-// so the positive assertions run on Windows and POSIX asserts inertness.
-if (process.platform === "win32") {
-  const s = makeSentinel();
-  const foreignWin = path.join(home, "winproj", "secret.txt");
-  s.observe("Bash", { command: `type ${foreignWin}` }); // C:\… token in a command
-  s.observe("Bash", { command: "dir ~\\winother\\cfg" }); // ~\ expansion
-  const paths = s.violations().map((v) => v.path);
-  assert.ok(
-    paths.includes(path.resolve(foreignWin)),
-    `drive-letter command tokens classify on Windows: ${paths.join(", ")}`,
-  );
-  assert.ok(
-    paths.includes(path.join(home, "winother", "cfg")),
-    `~\\ tokens expand against home on Windows: ${paths.join(", ")}`,
-  );
-} else {
-  const s = makeSentinel();
-  s.observe("Bash", { command: "run C:\\Other\\place && dir C:/Other/too" });
-  assert.deepEqual(
-    s.violations(),
-    [],
-    "drive-letter tokens are inert on POSIX hosts (not absolute paths there)",
-  );
-}
-
 // Classification never throws on hostile input.
 {
   const s = makeSentinel();

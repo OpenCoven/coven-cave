@@ -12,6 +12,7 @@ import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib
 import { segmentTurn } from "@/lib/turn-segments";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
@@ -211,6 +212,64 @@ type Turn = {
 const replyableTurnCache = new WeakMap<Turn, boolean>();
 
 type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn>;
+
+// Raw turn shape returned by GET /api/chat/conversation/:id.
+type ConversationHistoryTurn = {
+  id: string;
+  parentId?: string | null;
+  role: string;
+  text: string;
+  attachments?: ChatAttachment[];
+  reasoning?: string;
+  tools?: ToolEvent[];
+  durationMs?: number;
+  isError?: boolean;
+  usage?: TurnUsage;
+  costUsd?: number;
+  responseMetadata?: ChatResponseMetadata;
+  cancelled?: boolean;
+  createdAt?: string;
+  origin?: "chat" | "voice";
+  voiceCallId?: string;
+};
+
+// Parsed payload of GET /api/chat/conversation/:id — also what the
+// conversation cache stores, so a hover-prefetched payload and a fresh fetch
+// go through the same apply path in the history-load effect.
+type ConversationHistoryPayload = {
+  ok?: boolean;
+  context?: ChatLinkedContext | null;
+  conversation?: {
+    activeLeafId?: string;
+    turns?: ConversationHistoryTurn[];
+  };
+};
+
+function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[]): Turn[] {
+  return rawTurns
+    .filter(
+      (t): t is ConversationHistoryTurn & { role: "user" | "assistant" } =>
+        t.role === "user" || t.role === "assistant",
+    )
+    .map((t) => ({
+      id: t.id,
+      parentId: t.parentId,
+      role: t.role,
+      text: t.text,
+      attachments: t.attachments,
+      reasoning: t.reasoning,
+      tools: t.tools,
+      durationMs: t.durationMs,
+      usage: t.usage,
+      costUsd: t.costUsd,
+      responseMetadata: t.responseMetadata,
+      error: t.isError,
+      lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
+      createdAt: t.createdAt ?? new Date().toISOString(),
+      origin: t.origin,
+      voiceCallId: t.voiceCallId,
+    }));
+}
 
 function cloneLiveTurn(turn: Turn): Turn {
   return {
@@ -3257,6 +3316,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setHistoryState("loaded");
       return;
     }
+    const isThreadSwitch = currentSessionRef.current !== sessionId;
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
     // Reset the settle-refetch marker on every (re)load; the live-snapshot
@@ -3310,9 +3370,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearLiveChatGeneration(sessionId);
       if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
     }
+    const applyConversationPayload = (json: ConversationHistoryPayload) => {
+      const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
+      setFlowTranscriptFallback(null);
+      setTurns(mapped);
+      turnsRef.current = mapped;
+      setActiveLeafId(
+        typeof json.conversation?.activeLeafId === "string" ? json.conversation.activeLeafId : "",
+      );
+      setHistoryState("loaded");
+    };
+    // A prefetched (hover) or previously loaded transcript paints immediately
+    // instead of blanking to the history skeleton. The fetch below still runs
+    // as revalidation, so a stale cache entry is corrected as soon as the
+    // network answers — the cache is never the source of truth.
+    const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
+    const cachedConversation =
+      cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
+    if (cachedConversation) {
+      setLinkedContext(cachedConversation.context ?? null);
+      applyConversationPayload(cachedConversation);
+    } else if (isThreadSwitch) {
+      // Thread switch: blank the PREVIOUS thread's transcript synchronously so
+      // the history skeleton renders while this thread's history loads —
+      // otherwise the old thread's messages stay visible until the fetch
+      // lands (the skeleton only shows when turns.length === 0). Same-session
+      // reloads (settle refetch / retry) keep the visible transcript in place
+      // while revalidating. Clearing turnsRef also keeps keepLiveSession()
+      // from counting the old thread's turns if this fetch fails.
+      setTurns([]);
+      turnsRef.current = [];
+      setActiveLeafId("");
+    }
     let cancelled = false;
     void (async () => {
-      setHistoryState("loading");
+      if (!cachedConversation) setHistoryState("loading");
       try {
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
@@ -3345,79 +3437,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           return;
         }
-        const json = await res.json() as {
-          ok?: boolean;
-          context?: ChatLinkedContext | null;
-          conversation?: {
-            activeLeafId?: string;
-            turns?: Array<{
-              id: string;
-              parentId?: string | null;
-              role: string;
-              text: string;
-              attachments?: ChatAttachment[];
-              reasoning?: string;
-              tools?: ToolEvent[];
-              durationMs?: number;
-              isError?: boolean;
-              usage?: TurnUsage;
-              costUsd?: number;
-              responseMetadata?: ChatResponseMetadata;
-              createdAt?: string;
-              origin?: "chat" | "voice";
-              voiceCallId?: string;
-            }>;
-          };
-        };
+        const json = await res.json() as ConversationHistoryPayload;
         if (cancelled) return;
         setLinkedContext(json.context ?? null);
         if (json.ok && json.conversation) {
-          setFlowTranscriptFallback(null);
-          setTurns(
-            (json.conversation.turns ?? [])
-              .filter(
-                (t): t is {
-                  id: string;
-                  parentId?: string | null;
-                  role: "user" | "assistant";
-                  text: string;
-                  attachments?: ChatAttachment[];
-                  reasoning?: string;
-                  tools?: ToolEvent[];
-                  durationMs?: number;
-                  isError?: boolean;
-                  usage?: TurnUsage;
-                  costUsd?: number;
-                  responseMetadata?: ChatResponseMetadata;
-                  cancelled?: boolean;
-                  createdAt?: string;
-                  origin?: "chat" | "voice";
-                  voiceCallId?: string;
-                } => t.role === "user" || t.role === "assistant",
-              )
-              .map((t) => ({
-                  id: t.id,
-                  parentId: t.parentId,
-                  role: t.role,
-                  text: t.text,
-                  attachments: t.attachments,
-                  reasoning: t.reasoning,
-                  tools: t.tools,
-                  durationMs: t.durationMs,
-                  usage: t.usage,
-                  costUsd: t.costUsd,
-                  responseMetadata: t.responseMetadata,
-                  error: t.isError,
-                  lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
-                  createdAt: t.createdAt ?? new Date().toISOString(),
-                  origin: t.origin,
-                  voiceCallId: t.voiceCallId,
-                })),
-          );
-          setActiveLeafId(
-            typeof json.conversation.activeLeafId === "string" ? json.conversation.activeLeafId : "",
-          );
-          setHistoryState("loaded");
+          storeConversation(sessionId, json);
+          applyConversationPayload(json);
         } else if (json.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
           if (keepLiveSession()) {
@@ -3910,6 +3935,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     try {
       setAssistantLifecycle(assistantId, "connecting", liveGeneration.sessionId);
+      // The on-disk conversation is about to change; a cached pre-send payload
+      // must not be painted on a later revisit of this thread.
+      if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -4260,6 +4288,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const leaf = childLeaf(turns, next.id);
     setActiveLeafId(leaf);
     if (!sessionId) return;
+    invalidateConversation(sessionId);
     try {
       await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
@@ -4791,6 +4820,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setError(json.error ?? "delete failed");
         return;
       }
+      invalidateConversation(sessionId);
       onSessionsChanged?.();
       onBack?.();
     } catch (err) {

@@ -641,10 +641,10 @@ function MemoryTab({
     return () => { cancelled = true; };
   }, []);
 
-  // Scope the file inventory to the active familiar AT THE SOURCE so another
-  // familiar's file metadata never reaches this chat session. The server keeps
-  // this familiar's files + ownerless/global pools and drops every other
-  // familiar's. Re-fetch when the active familiar changes.
+  // Scope the file inventory to the active familiar AT THE SOURCE so nothing
+  // beyond this familiar's own files ever reaches this chat session. The
+  // server drops other familiars' files and the ownerless/global pools.
+  // Re-fetch when the active familiar changes.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -704,9 +704,9 @@ function MemoryTab({
   }, [openPath, reveal]);
 
   // Strict per-familiar scoping (defense in depth alongside the server filter):
-  // owned files first, then ownerless/global; another familiar's files are never
-  // shown. `ownership` labels each row; `hiddenForeignCount` reports how many
-  // other-familiar files were withheld.
+  // only files owned by the active familiar are shown — other familiars' files
+  // and shared/global pools are withheld; `hiddenForeignCount` reports how many
+  // other-familiar files were dropped.
   const filesScope = useMemo(
     () => scopeMemoryFilesToFamiliar(entries, familiar?.id),
     [entries, familiar?.id],

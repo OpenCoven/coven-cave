@@ -113,4 +113,25 @@ for (const [file, label] of [
   assert.doesNotMatch(src, />Loading…</, `${label} no longer shows a bare Loading… line`);
   assert.match(src, /<SkeletonRows/, `${label} shows shared skeleton rows on first load`);
 }
+
+// Thread switch must not show the previous thread's messages: ChatView blanks
+// the transcript synchronously (skeleton state) while the new thread's history
+// fetch is in flight, and only for actual switches — same-session reloads
+// (settle refetch / retry) revalidate behind the visible transcript.
+const chatView = read("./chat-view.tsx");
+assert.match(
+  chatView,
+  /const isThreadSwitch = currentSessionRef\.current !== sessionId;\s*\n\s*currentSessionRef\.current = sessionId;/,
+  "ChatView detects a real thread switch before adopting the new session id",
+);
+assert.match(
+  chatView,
+  /if \(isThreadSwitch\) \{[\s\S]{0,600}?setTurns\(\[\]\);\s*\n\s*turnsRef\.current = \[\];\s*\n\s*setActiveLeafId\(""\);/,
+  "ChatView blanks turns/turnsRef synchronously on thread switch so the skeleton shows instead of stale messages",
+);
+assert.match(
+  chatView,
+  /historyState === "loading" \? \(\s*<ChatHistorySkeleton \/>/,
+  "The blanked transcript renders ChatHistorySkeleton while history loads",
+);
 console.log("surface-loading-states.test.ts: ok");

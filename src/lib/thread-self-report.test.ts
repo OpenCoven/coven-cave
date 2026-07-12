@@ -4,7 +4,7 @@ import {
   aggregateResponseConfidenceEvents,
   buildReflectTranscript,
   buildThreadReflectPrompt,
-  buildThreadSignalDiscussionPrompt,
+  buildThreadSignalResolutionPrompt,
   contextPressureLabel,
   deriveThreadScore,
   normalizeResponseConfidenceEvent,
@@ -205,8 +205,8 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(prompt.includes("Reflect on the thread just completed (session: sess-2)"));
   });
 
-  it("builds a focused discussion prompt for a selected review item", () => {
-    const prompt = buildThreadSignalDiscussionPrompt({
+  it("builds a resolution prompt that directs the thread to fix a selected review item", () => {
+    const prompt = buildThreadSignalResolutionPrompt({
       kind: "skill-access",
       severity: "critical",
       title: "github",
@@ -215,10 +215,13 @@ describe("buildThreadReflectPrompt", () => {
     assert.ok(prompt.includes("skill access gap"), "names the item kind in plain language");
     assert.ok(prompt.includes("**github**"), "highlights the topic title");
     assert.ok(prompt.includes("needs push access to land PRs"), "carries the detail");
-    assert.ok(/root cause/i.test(prompt), "asks for a root cause + concrete fix");
+    assert.ok(/root cause/i.test(prompt), "asks for a root-cause diagnosis");
+    assert.ok(/apply the concrete fix/i.test(prompt), "instructs the thread to actually apply the fix");
+    assert.ok(/verify the fix/i.test(prompt), "requires verification, not just discussion");
+    assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {
-      const p = buildThreadSignalDiscussionPrompt({ kind, severity: "info", title: "t", detail: "d" });
+      const p = buildThreadSignalResolutionPrompt({ kind, severity: "info", title: "t", detail: "d" });
       assert.doesNotMatch(p, /undefined/, `${kind} resolves to a label`);
     }
   });

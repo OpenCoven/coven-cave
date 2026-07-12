@@ -105,6 +105,8 @@ export type UseQuickChat = {
   /** Messages waiting behind the in-flight turn, in send order. */
   queued: QueuedQuickChatMessage[];
   removeQueued: (id: string) => void;
+  /** Move a queued item to send next; when idle, send it immediately. */
+  steerQueued: (id: string) => void;
   /** Append a local assistant-styled note (slash-command output). Never
    *  touches the daemon session. */
   note: (text: string) => void;
@@ -205,9 +207,29 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // inside the send chain, where state would be stale).
   const [queued, setQueued] = useState<QueuedQuickChatMessage[]>([]);
   const queuedRef = useRef<QueuedQuickChatMessage[]>([]);
+  const sendTextRef = useRef<(raw: string, attachments?: ChatAttachment[]) => Promise<void>>(
+    async () => {},
+  );
   const removeQueued = useCallback((id: string) => {
     queuedRef.current = queuedRef.current.filter((item) => item.id !== id);
     setQueued(queuedRef.current);
+  }, []);
+  const steerQueued = useCallback((id: string) => {
+    const index = queuedRef.current.findIndex((item) => item.id === id);
+    if (index < 0) return;
+    const next = queuedRef.current[index];
+    if (!next) return;
+    const rest = queuedRef.current.filter((item) => item.id !== id);
+    // While a turn is in flight, steering reprioritizes the queue only.
+    if (abortRef.current) {
+      queuedRef.current = [next, ...rest];
+      setQueued(queuedRef.current);
+      return;
+    }
+    // Idle/stopped: steering also resumes delivery immediately.
+    queuedRef.current = rest;
+    setQueued(rest);
+    void sendTextRef.current(next.text, next.attachments ?? []);
   }, []);
   // Files that rode with the last user turn, so regenerate() re-sends them.
   const lastUserAttachmentsRef = useRef<ChatAttachment[]>([]);
@@ -395,9 +417,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // slash dispatch (skill invocations) feeds it a built prompt directly.
   // Self-reference (assigned below) so the queue drain re-enters the pipeline
   // without a stale closure.
-  const sendTextRef = useRef<(raw: string, attachments?: ChatAttachment[]) => Promise<void>>(
-    async () => {},
-  );
   const sendText = useCallback(
     async (raw: string, attachments: ChatAttachment[] = []) => {
       // A turn is already streaming: QUEUE the message instead of dropping it
@@ -554,6 +573,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     sendText,
     queued,
     removeQueued,
+    steerQueued,
     note,
     modelOverride,
     setModelOverride,
