@@ -7,6 +7,25 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.178] - 2026-07-12
+
+> 🪄 **Craft authoring, GitHub event subscriptions, and chat reliability.** Cave can now create local draft Crafts from familiar roles, subscribe to GitHub repository activity, keep pinned chats synchronized across surfaces, and render captured Codex output events reliably on the Windows harness path.
+
+Patch release on top of v0.0.177.
+
+### Features
+- **Crafts: create local draft Crafts from familiars** — the Crafts page can extract a reversible local draft from a familiar's selected roles, including direct and effective skills, tools/capabilities, MCP servers, plugins, prompts, workflows, origin labels, and a review ledger before save (#2974, #2975).
+- **GitHub: subscribe to repository events** — repository activity can now subscribe to opened PRs and CI completion events for Cave-side project awareness (#2978).
+- **Desktop: Coven logo menu-bar icon** — the menu-bar tray now uses the Coven logo so Cave is easier to recognize at a glance (#2979).
+
+### Fixes
+- **Chat: captured Codex output events render correctly** — Coven stream-json `output` events are routed through the assistant filter, persisted, and still preserve error-looking output text for empty-response diagnostics on the Windows captured-piped path (#2982).
+- **Chat: pinned chats persist across surfaces** — pinned chat state now flows through one shared subscribable store, so chat pins stay in sync between surfaces (#2980).
+
+### Docs
+- **Settings: attribution note** — the preference-persistence changelog credit now names the original author correctly (#2977).
+
+
 ## [0.0.177] - 2026-07-12
 
 > 🗨️ **Chat context, discoverability, and durable settings.** The composer gains a live git context chip (branch · worktree · PR), chats get a visible rename button and smart chat→task autofill with promoted inspector tabs and AI project icons, granted project roots are now enforced at the harness level, and preferences survive sidecar port changes.
