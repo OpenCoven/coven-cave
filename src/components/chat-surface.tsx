@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
-import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import { InspectorPane, type Tab as InspectorSection } from "@/components/inspector-pane";
@@ -20,7 +19,6 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { openGrimoireDoc } from "@/lib/grimoire-link";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
@@ -57,7 +55,9 @@ const chatStorage = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type FamiliarsScope = "conversation" | "memory" | "projects" | "coven";
+// Memory is deliberately absent: familiar memory lives in the Familiars
+// surface and the Grimoire editor, not as a chat scope (cave-liut).
+type FamiliarsScope = "conversation" | "projects" | "coven";
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -76,13 +76,13 @@ type Props = {
   familiarsError?: string | null;
   onRetryFamiliars?: () => void;
   inboxItems: InboxItem[];
-  inspectorOpen: boolean;
-  rightPanel?: RightPanelKind | null;
+  /** Single owner of the right panel — the legacy open/closed boolean
+   *  fallback is retired (cave-liut). */
+  rightPanel: RightPanelKind | null;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
   pendingCodeRailOpen?: PendingCodeRailOpen | null;
-  onSetInspectorOpen: (open: boolean) => void;
-  onSetRightPanel?: (panel: RightPanelKind | null) => void;
+  onSetRightPanel: (panel: RightPanelKind | null) => void;
   onSetActiveFamiliar: (id: string | null) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
@@ -119,25 +119,30 @@ const INSPECTOR_SECTIONS: { id: Exclude<InspectorSection, "memory">; label: stri
 
 function RightPanel({
   panel,
+  section,
   activeFamiliar,
   inboxItems,
   onSetPanel,
+  onSetSection,
   onOpenInbox,
   onCreateReminder,
   onOpenInboxItem,
   onInboxItemChanged,
 }: {
   panel: RightPanelKind;
+  /** Controlled by ChatSurface so the selection survives panel close/reopen
+   *  and the desktop-sidebar ↔ mobile-sheet remount (cave-liut). */
+  section: Exclude<InspectorSection, "memory">;
   activeFamiliar: Familiar | null;
   inboxItems: InboxItem[];
   onSetPanel: (p: RightPanelKind | null) => void;
+  onSetSection: (s: Exclude<InspectorSection, "memory">) => void;
   onOpenInbox: () => void;
   onCreateReminder: (familiarId: string) => void;
   onOpenInboxItem: (item: InboxItem) => void;
   onInboxItemChanged: () => void | Promise<void>;
 }) {
   const primaryPanel: Exclude<RightPanelKind, "changes"> = panel === "debug" ? "debug" : "inspector";
-  const [section, setSection] = useState<Exclude<InspectorSection, "memory">>("familiar");
 
   // Fired-reminder count for the active familiar — surfaces on the Automations
   // tab as a soft warning-tinted badge (softened from the old red danger pill).
@@ -160,7 +165,7 @@ function RightPanel({
                 type="button"
                 className={`right-panel-tab${primaryPanel === "inspector" && section === sec.id ? " right-panel-tab--active" : ""}`}
                 onClick={() => {
-                  setSection(sec.id);
+                  onSetSection(sec.id);
                   onSetPanel("inspector");
                 }}
               >
@@ -241,12 +246,10 @@ export function ChatSurface({
   familiarsError,
   onRetryFamiliars,
   inboxItems,
-  inspectorOpen,
-  rightPanel: rightPanelProp,
+  rightPanel,
   pendingProjectRoot,
   pendingChatAction,
   pendingCodeRailOpen,
-  onSetInspectorOpen,
   onSetRightPanel,
   onSetActiveFamiliar,
   onClearPendingProjectRoot,
@@ -292,10 +295,6 @@ export function ChatSurface({
   const paneNarrow = paneWidth === null ? isMobile : paneWidth < 680;
   const consumedPendingActionNonce = useRef<number | null>(null);
 
-  // Right panel — prefer new prop, fall back to legacy bool
-  const rightPanel: RightPanelKind | null =
-    rightPanelProp !== undefined ? (rightPanelProp ?? null) : inspectorOpen ? "inspector" : null;
-
   // The collapsed right rail reopens whatever the user last had — a fresh
   // session lands on the Inspector.
   const [lastPanel, setLastPanel] = useState<Exclude<RightPanelKind, "changes">>("inspector");
@@ -303,10 +302,14 @@ export function ChatSurface({
     if (rightPanel === "inspector" || rightPanel === "debug") setLastPanel(rightPanel);
   }, [rightPanel]);
 
-  function setRightPanel(next: RightPanelKind | null) {
-    if (onSetRightPanel) { onSetRightPanel(next); return; }
-    onSetInspectorOpen(next === "inspector");
-  }
+  // The inspector's active section is owned here, not by RightPanel — closing
+  // and reopening the panel (or crossing the desktop↔sheet breakpoint, which
+  // remounts RightPanel) keeps the user's last section instead of snapping
+  // back to Familiar (cave-liut).
+  const [inspectorSection, setInspectorSection] =
+    useState<Exclude<InspectorSection, "memory">>("familiar");
+
+  const setRightPanel = onSetRightPanel;
 
   // The inspector/debug/changes sidebar shares the chat thread's row on desktop
   // — only when the pane itself is wide enough to host both.
@@ -530,7 +533,6 @@ export function ChatSurface({
     storage: chatStorage,
   });
 
-  const scopedFamiliars = useMemo(() => activeFamiliar ? [activeFamiliar] : familiars, [activeFamiliar, familiars]);
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
 
   // Window events
@@ -715,7 +717,7 @@ export function ChatSurface({
                   // Mutually exclusive with the right-panel sheet: two z-[200]
                   // aria-modal overlays on the same edge would stack and confuse
                   // AT. Opening the code rail dismisses the other sheet.
-                  if (!mobileRailOpen) onSetRightPanel?.(null);
+                  if (!mobileRailOpen) onSetRightPanel(null);
                   setMobileRailOpen((v) => !v);
                 }}
               >
@@ -728,18 +730,7 @@ export function ChatSurface({
           </div>
         </div>
 
-        {scope === "memory" ? (
-          <FamiliarsMemoryView
-            familiars={scopedFamiliars}
-            activeFamiliar={activeFamiliar}
-            lockToFamiliar
-            onOpenMemoryFile={(path) => {
-              // Land on the Grimoire editor — the app's memory-file reader.
-              // (The old `#memory:` hash had no consumer anywhere; cave-ce7y.)
-              openGrimoireDoc("memory", path);
-            }}
-          />
-        ) : scope === "projects" ? (
+        {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
         ) : scope === "coven" ? (
           // Group Chat ("coven") lives here as a first-class chat tab instead of
@@ -804,9 +795,11 @@ export function ChatSurface({
                 >
                   <RightPanel
                     panel={rightPanel}
+                    section={inspectorSection}
                     activeFamiliar={activeFamiliar}
                     inboxItems={inboxItems}
                     onSetPanel={setRightPanel}
+                    onSetSection={setInspectorSection}
                     onOpenInbox={onOpenInbox}
                     onCreateReminder={onCreateReminder}
                     onOpenInboxItem={onOpenInboxItem}
@@ -906,9 +899,11 @@ export function ChatSurface({
           <div className="relative flex h-full w-[min(92vw,420px)] flex-col bg-[var(--bg-raised)] shadow-[-8px_0_32px_rgba(0,0,0,0.2)] [padding-bottom:var(--sai-bottom)] [padding-top:var(--sai-top)]">
             <RightPanel
               panel={rightPanel}
+              section={inspectorSection}
               activeFamiliar={activeFamiliar}
               inboxItems={inboxItems}
               onSetPanel={setRightPanel}
+              onSetSection={setInspectorSection}
               onOpenInbox={onOpenInbox}
               onCreateReminder={onCreateReminder}
               onOpenInboxItem={onOpenInboxItem}

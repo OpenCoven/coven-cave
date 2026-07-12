@@ -23,6 +23,30 @@ enum ChatChrome {
     static let iconWell: CGFloat = 34
 }
 
+// MARK: - GlassPressStyle
+
+/// The app's standard pressed state: a quick springy dip plus a slight dim, so
+/// every glass control answers the finger the way native Apple controls do
+/// (`.plain` gives no feedback at all on custom-backgrounded buttons). Under
+/// Reduce Motion the scale is dropped and only the dim remains.
+struct GlassPressStyle: ButtonStyle {
+    var scale: CGFloat = 0.96
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? scale : 1))
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.75),
+                       value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == GlassPressStyle {
+    /// Springy scale-on-press for glass chrome controls.
+    static var glassPress: GlassPressStyle { GlassPressStyle() }
+}
+
 // MARK: - CircularIconButton
 
 /// A round glass icon button — the app's standard tap target for icon-only
@@ -44,7 +68,7 @@ struct CircularIconButton: View {
                 .glass(.control, in: Circle())
                 .accentGlow(active: active)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glassPress)
         .accessibilityLabel(label)
     }
 }
@@ -89,7 +113,7 @@ struct PillSelector<Leading: View>: View {
             .glass(.control, in: Capsule())
             .accentGlow(active: active)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glassPress)
         .accessibilityLabel(label)
         .accessibilityHint(accessibilityHint ?? "")
     }
@@ -134,7 +158,7 @@ struct FloatingActionMenu: View {
                     .padding(.vertical, 7)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GlassPressStyle(scale: 0.98))
                 .accessibilityLabel(item.label)
             }
         }
@@ -183,7 +207,7 @@ struct DrawerRow: View {
                     .fill(active ? Color.accentColor.opacity(0.12) : .clear)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassPressStyle(scale: 0.98))
         .accessibilityLabel(label)
         .accessibilityAddTraits(active ? [.isSelected] : [])
     }
@@ -218,7 +242,7 @@ struct EmptyChatSuggestionRow: View {
             .glass(.raised, in: RoundedRectangle(cornerRadius: ChatChrome.menuRadius, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GlassPressStyle(scale: 0.98))
         .accessibilityLabel(label)
         .accessibilityHint("Fills the message field")
     }

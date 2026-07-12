@@ -3,7 +3,7 @@
 //
 // Source: OpenCoven/coven-runtimes canonical registry index
 //   ref:      main
-//   blob sha: 1379e72f7d310a40a79daa2d40eddcb5c7300922
+//   blob sha: 051805ae24056d3efee0b93b73fee75e0d737b52
 //
 // Every entry passed coven-runtimes acceptance (conformance + review), so
 // Cave treats these as trusted runtimes (see harness-adapters.ts). New
@@ -35,7 +35,7 @@ export type RegistryRuntime = {
 export const REGISTRY_SOURCE = {
   repo: "OpenCoven/coven-runtimes",
   ref: "main",
-  blobSha: "1379e72f7d310a40a79daa2d40eddcb5c7300922",
+  blobSha: "051805ae24056d3efee0b93b73fee75e0d737b52",
 } as const;
 
 export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
@@ -164,10 +164,10 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
   {
     "id": "hermes",
     "label": "Hermes Agent",
-    "binary": "hermes",
-    "installHint": "Install Hermes Agent, add it to PATH, and complete Hermes setup before using this adapter.",
-    "version": "1.0.0",
-    "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities.",
+    "binary": "hermes-coven",
+    "installHint": "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
+    "version": "1.0.1",
+    "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities. Uses the hermes-coven shim so the harness's trailing positional prompt is remapped to hermes chat's -q/--query flag (hermes has no positional prompt slot).",
     "modelFlag": null,
     "capabilities": {
       "stream": false,
@@ -180,29 +180,27 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
         {
           "id": "hermes",
           "label": "Hermes Agent",
-          "executable": "hermes",
+          "executable": "hermes-coven",
           "interactive_prompt_prefix_args": [
             "chat",
             "--source",
-            "coven",
-            "-q"
+            "coven"
           ],
           "non_interactive_prompt_prefix_args": [
             "chat",
             "--source",
             "coven",
-            "-Q",
-            "-q"
+            "-Q"
           ],
-          "install_hint": "Install Hermes Agent, add it to PATH, and complete Hermes setup before using this adapter.",
+          "install_hint": "Install Hermes Agent, add it to PATH, install the hermes-coven shim, and complete Hermes setup before using this adapter.",
           "capabilities": {
             "stream": false,
             "preassigned_session_id": false,
             "think": false,
             "speed": false
           },
-          "version": "1.0.0",
-          "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities."
+          "version": "1.0.1",
+          "description": "Reference adapter — mirrors coven's built-in Hermes recipe. A plain one-shot runtime with baseline capabilities. Uses the hermes-coven shim so the harness's trailing positional prompt is remapped to hermes chat's -q/--query flag (hermes has no positional prompt slot)."
         }
       ]
     }

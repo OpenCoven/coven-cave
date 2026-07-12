@@ -58,3 +58,33 @@ assert.match(css, /\.cave-artifact-comments \{/, "the comments panel is styled")
 assert.match(css, /\.cave-artifact-comments__send \{/, "the request-revision button is styled");
 
 console.log("artifact-comments.test.ts: ok");
+
+// ── fab tracks its selection through scroll (issue #2997) ───────────────────
+// position:fixed coords captured at mouseup go stale the moment the chat
+// scrolls — the pill then floats over unrelated prose. The reposition effect
+// re-derives the coords from the live selection range on scroll/resize.
+assert.match(
+  comp,
+  /window\.addEventListener\("scroll", reposition, true\)/,
+  "fab repositions on scroll (capture — the chat scrolls in an inner container)",
+);
+assert.match(
+  comp,
+  /window\.addEventListener\("resize", reposition\)/,
+  "fab repositions on resize",
+);
+assert.match(
+  comp,
+  /raf = requestAnimationFrame\(\(\) => \{\s*raf = 0;/,
+  "reposition is rAF-coalesced and nulls its handle on fire (wedge trap)",
+);
+assert.match(
+  comp,
+  /if \(raf\) \{\s*cancelAnimationFrame\(raf\);\s*raf = 0;/,
+  "cleanup cancels AND nulls the pending frame",
+);
+assert.match(
+  comp,
+  /clampFabX\(rect\.left \+ rect\.width \/ 2, window\.innerWidth\), y: rect\.top \} : prev/,
+  "repositioning reuses the same clamp as the initial placement",
+);

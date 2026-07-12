@@ -281,9 +281,9 @@ assert.equal(hermesManifest?.filename, "hermes.json");
   const parsed = JSON.parse(hermesManifest?.contents ?? "{}");
   const adapter = parsed.adapters?.[0];
   assert.equal(adapter?.id, "hermes");
-  assert.equal(adapter?.executable, "hermes");
-  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven", "-q"], "hermes keeps the coven-source chat entry");
-  assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q", "-q"]);
+  assert.equal(adapter?.executable, "hermes-coven", "hermes launches via the hermes-coven shim (hermes chat has no positional prompt slot)");
+  assert.deepEqual(adapter?.interactive_prompt_prefix_args, ["chat", "--source", "coven"], "hermes keeps the coven-source chat entry; the shim maps the prompt to -q");
+  assert.deepEqual(adapter?.non_interactive_prompt_prefix_args, ["chat", "--source", "coven", "-Q"]);
   assert.ok(typeof adapter?.install_hint === "string" && adapter.install_hint.length > 0);
 }
 assert.equal(adapterManifestScaffoldForHarness("codex"), null, "curated runtimes without a registry manifest scaffold nothing");

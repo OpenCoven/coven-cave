@@ -87,10 +87,13 @@ assert.match(
   "ChatSurface should destructure familiars so the generic scope can show all familiars",
 );
 
-assert.match(
+// The chat memory scope was retired (cave-liut): familiar memory lives in the
+// Familiars surface / Grimoire, so ChatSurface no longer derives a
+// scopedFamiliars list for it.
+assert.doesNotMatch(
   chatSurface,
-  /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
-  "ChatSurface should show all familiar memory/list context when Familiars is selected",
+  /const scopedFamiliars = useMemo/,
+  "ChatSurface should not keep the dead memory-scope familiar derivation",
 );
 
 assert.match(

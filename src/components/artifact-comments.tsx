@@ -93,6 +93,47 @@ export function ArtifactComments({
     };
   }, [turnId]);
 
+  // Keep the pill anchored to the TEXT, not the viewport: the fab is
+  // position:fixed at coords captured on mouseup, so scrolling the chat left
+  // it hovering over unrelated prose mid-response (issue #2997). While the
+  // pill is up, recompute its position from the live selection range on any
+  // scroll (capture phase — the chat scrolls in an inner container) or
+  // resize; it now travels with — and off-screen with — its selection.
+  const fabVisible = sel !== null;
+  useEffect(() => {
+    if (!fabVisible) return;
+    let raf = 0;
+    const reposition = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+          setSel(null);
+          return;
+        }
+        const rect = selection.getRangeAt(0).getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) {
+          setSel(null);
+          return;
+        }
+        setSel((prev) =>
+          prev ? { ...prev, x: clampFabX(rect.left + rect.width / 2, window.innerWidth), y: rect.top } : prev,
+        );
+      });
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    };
+  }, [fabVisible]);
+
   // Focus the note field of a freshly added comment.
   useEffect(() => {
     if (!focusIdRef.current) return;

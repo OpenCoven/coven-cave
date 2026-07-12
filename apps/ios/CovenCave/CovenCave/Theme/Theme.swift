@@ -48,6 +48,44 @@ extension ChromePalette {
         if let c = Color(hex: t["--accent-presence"]) { accent = c; accentHex = t["--accent-presence"] }
         colorScheme = snapshot.mode.lowercased() == "light" ? .light : .dark
     }
+
+    /// Readable text/icon colour on an accent-filled surface — the iOS mirror
+    /// of the desktop's `--accent-presence-foreground` token. Light accents
+    /// (a pale lavender, a lemon) get near-black text; everything else keeps
+    /// white. Falls back to white when the accent can't be resolved, which is
+    /// exactly the pre-theme behaviour.
+    var accentForeground: Color {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(accent).getRed(&r, green: &g, blue: &b, alpha: &a) else { return .white }
+        // Perceived brightness (YIQ): light accents need dark text.
+        let brightness = 0.299 * r + 0.587 * g + 0.114 * b
+        return brightness > 0.62 ? Color(white: 0.08) : .white
+    }
+
+    /// A soft vertical wash of the accent for filled "presence" surfaces (the
+    /// user's chat bubble): slightly brighter at the top, the pure accent at
+    /// the bottom — the same treatment the system Messages bubble uses instead
+    /// of a flat fill.
+    var accentGradient: LinearGradient {
+        LinearGradient(colors: [accent.toned(lighter: 0.10), accent],
+                       startPoint: .top, endPoint: .bottom)
+    }
+}
+
+extension Color {
+    /// Blend a colour toward white by `lighter` (0–1). Returns self unchanged
+    /// when the colour can't be resolved to RGBA (e.g. some dynamic colours),
+    /// so callers degrade to the flat original rather than misrendering.
+    func toned(lighter amount: Double) -> Color {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return self }
+        let t = CGFloat(max(0, min(1, amount)))
+        return Color(.sRGB,
+                     red: Double(r + (1 - r) * t),
+                     green: Double(g + (1 - g) * t),
+                     blue: Double(b + (1 - b) * t),
+                     opacity: Double(a))
+    }
 }
 
 /// Reach the desktop palette from any view (`@Environment(\.chrome)`); defaults

@@ -411,7 +411,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             <p className="mt-1 text-[12px]">
               {daemonRunning === false
                 ? "The daemon is offline, so the roster can't be read. Your familiars are safe."
-                : "The roster didn't load. Your familiars are safe — retry in a moment."}
+                : "The roster didn't load. Your familiars are safe — retrying automatically."}
             </p>
           </div>
           {onRetryFamiliars ? (

@@ -212,3 +212,12 @@ assert.match(
 );
 
 console.log("command-palette.test.ts OK");
+
+// ── Salem answer stays inside the palette (issue #2988) ──────────────────────
+// Long answers previously grew the region unboundedly and overflowed the
+// viewport; it now caps and scrolls like the listbox below it.
+assert.match(
+  source,
+  /max-h-\[45vh\] overflow-y-auto border-b/,
+  "the Salem answer region caps its height and scrolls internally",
+);

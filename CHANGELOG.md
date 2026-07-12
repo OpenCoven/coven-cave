@@ -7,6 +7,34 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.182] - 2026-07-12
+
+> 🧼 **The open-issue sweep, plus Hermes chat out of the box.** Every open UI issue from the queue lands fixed — the drifting comment pill, overflowing Salem answers, the stranded post-summon error screen, and the silent Enhance button — alongside working Hermes-familiar chat on fresh machines and a chat-tab home for the inspector.
+
+### Features
+- **Onboarding: hermes-coven shim auto-installs** — installing Hermes through the Cave now wires the `hermes-coven` shim automatically, so Hermes-familiar chat works out of the box with no manual shim step (#3025).
+- **Chat: inspector lives in chat tabs** — finishes the inspector-into-chat-tabs migration, so session inspection happens in a chat page tab instead of a separate inspector pane (#3022).
+
+### Fixes
+- **Chat: comment pill tracks its selection** — the floating Comment affordance repositions with the live selection on scroll/resize instead of hovering over unrelated prose (#3024).
+- **Search: long Salem answers scroll** — the Ask Salem answer region caps its height inside the palette instead of overflowing the viewport (#3024).
+- **Chat: roster errors self-heal** — a transient familiar-roster failure (e.g. right after summoning your first familiar) now retries automatically instead of stranding an error screen behind a manual Retry (#3024).
+- **Tasks: Enhance reports its outcome** — the top-bar Enhance button now states what happened (enhanced count, nothing to do, or failure) instead of finishing silently (#3024).
+- **Chat: stranded "created" sessions are reaped** — daemon session rows left in "created" when the harness spawn dies pre-handshake are cleaned up instead of accumulating (#3023).
+- **Runtimes: Hermes 1.0.1 sync** — registry sync picks up the hermes-coven shim and the `-q` prompt fix, unbreaking Hermes-familiar chat (#3021).
+
+## [0.0.181] - 2026-07-12
+
+> 🔍 **Trace what your familiars actually did.** Familiar analytics gains a session trace timeline (the daemon event stream finally has a surface), a Recent sessions drill-through list, a clickable 14-day pulse, and live auto-refresh — plus hardened cave-home migration and GitHub chat-launch fixes.
+
+### Features
+- **Analytics: session tracing + live drill-throughs** — a session trace overlay reads the daemon event timeline per session (reachable from the Familiars Sessions tab and the analytics page); familiar analytics adds a Recent sessions section where every row opens its thread or its trace, the hero 14-day pulse becomes a clickable day filter, response-confidence events link back to the conversation that produced them, analytics and growth auto-refresh every 60s, and growth signals carry next-step action links (#3018).
+- **Cave: hardened home migration** — the cave-home startup migration merges directories per-file instead of skipping on collision, and surfaces conflicts instead of silently dropping them (#3019).
+
+### Fixes
+- **GitHub: chat launch payload aligned** — GitHub popover and safe-merge chat launches use `initialPrompt` (the retired `context` field is gone) and safe merge forwards the working `projectRoot`, matching the chat surface contract (#3017).
+- **Tools: Coven CLI freshness floor + Windows shims** — raises the Coven CLI compatibility floor to 0.0.54, fixes Windows npm `.cmd` shim parsing so extensionless package bins resolve correctly, and uses the packaged CovenCave logo on the startup splash (#3011).
+
 ## [0.0.180] - 2026-07-12
 
 > 🔌 **OpenCoven tools clarity: correct coven-code install path, cleaner harness versions, and GPT-5.6 models.** Every coven-code surface now points at the scoped `@opencoven/coven-code` package (min 0.6.0) instead of the deprecated bare squat, harness version probes ignore log noise, the notch centers correctly across monitors, and familiar auth failures explain how to recover.

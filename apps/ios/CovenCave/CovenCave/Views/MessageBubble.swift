@@ -337,7 +337,7 @@ struct MessageBubble: View {
         } else {
             Text(parsed.visible.isEmpty ? " " : parsed.visible)
                 .textSelection(.enabled)
-                .foregroundStyle(isUser ? Color.white : Color.primary)
+                .foregroundStyle(isUser ? chrome.accentForeground : Color.primary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
                 .background(bubbleBackground, in: bubbleShape)
                 .overlay(alignment: .bottomTrailing) {
@@ -352,36 +352,64 @@ struct MessageBubble: View {
         RoundedRectangle(cornerRadius: isUser ? 22 : 26, style: .continuous)
     }
 
-    private var bubbleBackground: Color {
-        if message.isError { return Color.red.opacity(0.85) }
-        if isUser { return Color.accentColor }
-        return Color(.secondarySystemBackground)
+    /// Bubble fills: errors stay red; the user's bubble is a soft vertical
+    /// accent gradient (readable text comes from `chrome.accentForeground`);
+    /// the assistant's bubble sits on the theme's raised surface so it tracks
+    /// the desktop palette — the fallback palette resolves to the same
+    /// `secondarySystemBackground` as before.
+    private var bubbleBackground: AnyShapeStyle {
+        if message.isError { return AnyShapeStyle(Color.red.opacity(0.85)) }
+        if isUser { return AnyShapeStyle(chrome.accentGradient) }
+        return AnyShapeStyle(chrome.bgRaised)
     }
 }
 
+/// Three staggered dots while a familiar is thinking — a real wave driven by
+/// `PhaseAnimator` (each phase lifts one dot), not a repeat-forever hack.
+/// Reduce Motion swaps the wave for calm static dots.
 struct TypingIndicator: View {
-    @State private var phase = 0.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
+        if reduceMotion {
+            dots { _ in (opacity: 0.55, scale: 1) }
+        } else {
+            PhaseAnimator([0, 1, 2]) { phase in
+                dots { i in (opacity: phase == i ? 1 : 0.3, scale: phase == i ? 1.2 : 1) }
+            } animation: { _ in .easeInOut(duration: 0.28) }
+        }
+    }
+
+    private func dots(_ style: @escaping (Int) -> (opacity: Double, scale: Double)) -> some View {
         HStack(spacing: 4) {
             ForEach(0..<3) { i in
                 Circle().frame(width: 6, height: 6)
                     .foregroundStyle(.secondary)
-                    .opacity(phase == Double(i) ? 1 : 0.3)
+                    .opacity(style(i).opacity)
+                    .scaleEffect(style(i).scale)
             }
         }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.5).repeatForever()) { phase = 2 }
-        }
+        .accessibilityLabel("Thinking")
     }
 }
 
+/// The pulsing "still streaming" dot in a reply's corner. `PhaseAnimator`
+/// breathes it between dim and bright; Reduce Motion holds it steady.
 struct StreamingDot: View {
-    @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        Circle().frame(width: 6, height: 6)
-            .foregroundStyle(.secondary)
-            .opacity(on ? 1 : 0.2)
-            .onAppear { withAnimation(.easeInOut(duration: 0.6).repeatForever()) { on = true } }
+        if reduceMotion {
+            dot.opacity(0.6)
+        } else {
+            PhaseAnimator([0.2, 1.0]) { phase in
+                dot.opacity(phase)
+            } animation: { _ in .easeInOut(duration: 0.6) }
+        }
+    }
+
+    private var dot: some View {
+        Circle().frame(width: 6, height: 6).foregroundStyle(.secondary)
     }
 }
 
@@ -423,7 +451,7 @@ struct SuggestionPills: View {
                         )
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GlassPressStyle(scale: 0.98))
             }
         }
         .frame(maxWidth: .infinity)
