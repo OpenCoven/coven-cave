@@ -90,7 +90,7 @@ assert.deepEqual(
     familiarId: "nova",
     harness: "claude",
     runtime: "local:/tmp/coven-cave",
-    effectiveModel: "openai/gpt-5.5",
+    effectiveModel: "openai/gpt-5.6-sol",
     source: "global-default",
     applicationState: "saved",
     reason: "Inherited from Cave defaults.",

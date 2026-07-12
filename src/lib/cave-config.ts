@@ -14,7 +14,7 @@ const STATE_PATH = path.join(homedir(), ".coven", "cave-state.json");
 
 const DEFAULT_CONFIG: CaveConfig = {
   version: 1,
-  defaults: { harness: "codex", model: "openai/gpt-5.5" },
+  defaults: { harness: "codex", model: "openai/gpt-5.6-sol" },
   familiars: {},
   roles: [],
   addons: {
