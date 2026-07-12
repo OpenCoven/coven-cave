@@ -57,18 +57,20 @@ function checkCovenCli(tool: OpenCovenToolStatus | undefined): Step {
   if (!tool?.installed) {
     return {
       ok: false,
-      hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+      hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
     };
   }
-  if (tool.outdated) {
+  if (tool.outdated || !tool.compatible) {
     const detail =
       tool.current && tool.latest
         ? `Update available: ${tool.current} -> ${tool.latest}`
+        : tool.current
+          ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
         : "Update available";
     return {
       ok: false,
       detail,
-      hint: `Update the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
+      hint: `Update the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
     };
   }
   const location = tool.path ?? tool.binary;

@@ -23,8 +23,33 @@ assert.match(
 );
 assert.match(
   src,
-  /pending\.length === 0 \|\| dismissedMigrationBanner\(pending\)/,
-  "only machines with pending legacy files qualify for the banner",
+  /if \(pending\.length > 0\)/,
+  "fixable pending files take precedence over conflict surfacing",
+);
+assert.match(
+  src,
+  /dismissedMigrationBanner\(pending\)/,
+  "pending banner respects per-set dismissal",
+);
+assert.match(
+  src,
+  /conflicts\.length > 0 && !dismissedConflictsBanner\(conflicts\)/,
+  "unfixable conflicts surface as a review banner instead of staying invisible (cave-lzx3)",
+);
+assert.match(
+  src,
+  /coven-cave:cave-home-migration:conflicts-dismissed:/,
+  "conflict dismissal persists per conflict set so new conflicts re-surface",
+);
+assert.match(
+  src,
+  /the ~\/\.coven\/cave versions win\. Review and remove the legacy/,
+  "conflicts banner states the outcome and the next step",
+);
+assert.match(
+  src,
+  /left for manual review/,
+  "a run that finishes with collisions hands off to the review path, not a clean success",
 );
 assert.match(src, /severity: "warning"/, "pending legacy files warrant a warning banner");
 assert.match(src, /Migrate now/, "banner exposes a one-click migrate button");

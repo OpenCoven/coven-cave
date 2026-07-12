@@ -33,7 +33,7 @@ const execFileAsync = promisify(execFile);
 const INSTALL_TARGETS = {
   "coven-cli": {
     kind: "npm",
-    label: "coven CLI",
+    label: "Coven CLI",
     packageName: "@opencoven/cli@latest",
     binary: "coven",
     timeoutMs: 240_000,
@@ -41,7 +41,9 @@ const INSTALL_TARGETS = {
   "coven-code": {
     kind: "npm",
     label: "Coven Code",
-    packageName: "coven-code@latest",
+    // Scoped package only — bare "coven-code" is a different, deprecated
+    // npm package (see opencoven-tools-status.ts).
+    packageName: "@opencoven/coven-code@latest",
     binary: "coven-code",
     timeoutMs: 240_000,
   },
@@ -328,7 +330,7 @@ async function prepareForInstall(
   job: InstallJob,
 ) {
   if (targetName !== "coven-cli") return;
-  appendOutput(job, "Preparing coven CLI update: checking daemon lock state...\n");
+  appendOutput(job, "Preparing Coven CLI update: checking daemon lock state...\n");
   const health = await callDaemon<{ ok?: boolean; daemon?: { pid?: number } }>({
     path: "/api/v1/health",
     timeoutMs: 800,

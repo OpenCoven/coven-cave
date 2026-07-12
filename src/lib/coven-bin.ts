@@ -260,10 +260,10 @@ function windowsShimTargetFromFile(shimPath: string): string | null {
   const binDir = path.dirname(shimPath);
   try {
     const shim = readFileSync(shimPath, "utf-8");
-    const quotedTargets = shim.matchAll(/"(%(?:~?dp0)%?)[\\/]*([^"]+\.[cm]?js)"/gi);
+    const quotedTargets = shim.matchAll(/"(%(?:~?dp0)%?)[\\/]*([^"]+)"/gi);
     for (const match of quotedTargets) {
       const relativeTarget = match[2]?.replace(/[\\/]+/g, path.sep);
-      if (!relativeTarget) continue;
+      if (!relativeTarget || relativeTarget.includes("%")) continue;
       const candidate = path.resolve(binDir, relativeTarget);
       if (existsSync(candidate)) return candidate;
     }
@@ -303,7 +303,7 @@ export function covenLaunchCommand(): CovenLaunchCommand {
  * Value for COVEN_HARNESS_ADAPTER_DIRS in coven child processes: the user's
  * own value (if any) with COVEN_HOME/adapters appended.
  *
- * Released coven CLIs (≤0.0.53) only auto-trust manifests in
+ * Released Coven CLIs (≤0.0.53) only auto-trust manifests in
  * COVEN_HOME/adapters whose id matches a built-in install recipe (hermes
  * today). The manifests Cave scaffolds there for other runtimes (copilot,
  * opencode, …) are silently ignored, so `coven run copilot` failed with

@@ -8,7 +8,7 @@ import {
 
 const cliOutdated: OpenCovenToolInstallStatus = {
   id: "coven-cli",
-  label: "coven CLI",
+  label: "Coven CLI",
   installed: true,
   outdated: true,
 };
@@ -18,6 +18,7 @@ const codeReady: OpenCovenToolInstallStatus = {
   label: "Coven Code",
   installed: true,
   outdated: false,
+  compatible: true,
 };
 
 const codeMissing: OpenCovenToolInstallStatus = {
@@ -25,6 +26,15 @@ const codeMissing: OpenCovenToolInstallStatus = {
   label: "Coven Code",
   installed: false,
   outdated: false,
+  compatible: false,
+};
+
+const cliBelowFloor: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "coven CLI",
+  installed: true,
+  outdated: false,
+  compatible: false,
 };
 
 assert.deepEqual(
@@ -35,14 +45,20 @@ assert.deepEqual(
 
 assert.equal(
   openCovenToolsInstallCommand([]),
-  "npm i -g @opencoven/cli@latest coven-code@latest",
-  "fresh setup manual command installs both required OpenCoven tools",
+  "npm i -g @opencoven/cli@latest @opencoven/coven-code@latest",
+  "fresh setup manual command installs both required OpenCoven tools (scoped packages only)",
 );
 
 assert.deepEqual(
   openCovenToolActionTargets([cliOutdated, codeReady]),
   ["coven-cli"],
   "when Coven Code is already current, the primary action only updates the CLI",
+);
+
+assert.deepEqual(
+  openCovenToolActionTargets([cliBelowFloor, codeReady]),
+  ["coven-cli"],
+  "a tool below Cave's compatibility floor is actionable even when latest metadata is unavailable",
 );
 
 assert.equal(
@@ -53,8 +69,14 @@ assert.equal(
 
 assert.equal(
   openCovenToolsPrimaryActionLabel([cliOutdated, codeReady]),
-  "Update coven CLI",
+  "Update Coven CLI",
   "primary action label reflects a single CLI update",
+);
+
+assert.equal(
+  openCovenToolsPrimaryActionLabel([cliBelowFloor, codeReady]),
+  "Update coven CLI",
+  "primary action label treats below-floor tools as updates",
 );
 
 assert.equal(

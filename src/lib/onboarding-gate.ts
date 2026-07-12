@@ -15,7 +15,7 @@ export const COVEN_CODE_SKIP_KEY = "cave:onboarding:skip-coven-code";
 export type OnboardingStatusPayload = {
   complete?: boolean;
   steps?: Record<string, { ok?: boolean }>;
-  tools?: Array<{ id?: string; installed?: boolean; outdated?: boolean }>;
+  tools?: Array<{ id?: string; installed?: boolean; outdated?: boolean; compatible?: boolean }>;
 };
 
 /** Mirrors the wizard's rule: an explicit skip, or installed and current. */
@@ -25,7 +25,7 @@ export function isCovenCodeSatisfied(
 ): boolean {
   if (covenCodeSkipped) return true;
   const tool = payload.tools?.find((t) => t.id === "coven-code");
-  return !!tool?.installed && !tool.outdated;
+  return !!tool?.installed && !tool.outdated && tool.compatible !== false;
 }
 
 /**

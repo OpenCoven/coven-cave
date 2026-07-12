@@ -214,7 +214,7 @@ function FamiliarPicker({
             : ctx.kind === "notification"
               ? "Notification"
               : "Issue";
-      const contextText = [
+      const initialPrompt = [
         `**${kindLabel}: ${ctx.title}**`,
         `Repo: \`${ctx.repo}\`${ctx.number != null ? ` #${ctx.number}` : ""}`,
         `URL: ${ctx.url}`,
@@ -222,7 +222,7 @@ function FamiliarPicker({
 
       window.dispatchEvent(
         new CustomEvent("cave:agents-new-chat", {
-          detail: { familiarId: selected, context: contextText },
+          detail: { familiarId: selected, initialPrompt },
         }),
       );
       setBusy(false);

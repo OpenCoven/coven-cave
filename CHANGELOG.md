@@ -7,6 +7,27 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.180] - 2026-07-12
+
+> 🔌 **OpenCoven tools clarity: correct coven-code install path, cleaner harness versions, and GPT-5.6 models.** Every coven-code surface now points at the scoped `@opencoven/coven-code` package (min 0.6.0) instead of the deprecated bare squat, harness version probes ignore log noise, the notch centers correctly across monitors, and familiar auth failures explain how to recover.
+
+### Features
+- **Models: GPT-5.6 Codex models** — adds the GPT-5.6 Codex model family (`gpt-5.6-sol`/`-terra`/`-luna`) and moves the default familiar model to `gpt-5.6-sol` (#3007).
+- **Cave: dedicated cave home with startup migration** — a dedicated cave home directory with an automatic startup migration and a one-click migration banner (#3005).
+
+### Fixes
+- **Onboarding: coven-code installs only as `@opencoven/coven-code`** — the bare `coven-code` npm package is a different, deprecated package (stuck at 0.0.22); every install/status/update surface now targets the scoped `@opencoven/coven-code` exclusively, with a 0.6.0 compatibility floor (#3013).
+- **Runtimes: corrected coven-code install hint** — synced the registry so the install hint points at `@opencoven/coven-code` (the old `@opencoven/coven` does not exist on npm) (#3014, #3015).
+- **Harnesses: skip log noise in version probes** — version detection ignores leading timestamp/log-level lines (e.g. OpenCode's `WARN FZF not found`) instead of reporting them as the version (#3006).
+- **Notch: exact-center on the mouse's screen** — the quick-chat notch always centers on the top-bar middle and opens on whatever monitor the cursor is on unless pinned (#3009).
+- **Familiars: actionable hub-auth error** — a 401/403 loading familiars now explains that the hub rejected this Cave's token and to reconnect, instead of a bare status code (#3008).
+- **Onboarding: require descriptions for new familiars** — new familiars must carry a description (#3002).
+- **Onboarding: quiet npm "Unknown env config" warnings** — npm config warnings no longer leak into Tools output (#3001).
+- **Startup: sidecar cache validation** — validates the sidecar cache on startup (#3010).
+
+### Chores
+- **Copy: capitalize "Coven CLI"** — consistent "Coven CLI" casing across prose (#3012).
+
 ## [0.0.179] - 2026-07-12
 
 > 🧹 **Chat housekeeping, familiar lifecycle, and updater polish.** Chats gain an automatic archive policy and a centered quick-chat notch, familiars get a discoverable Remove entry and a cleaner picker, the copilot harness renders tool calls, and the update banner leads with the native installer.
@@ -90,7 +111,7 @@ Patch release on top of v0.0.177.
 
 ### Fixes
 - **Folder picker is summoned to the foreground** — the native "choose a folder" dialog no longer opens hidden behind the window. On Windows the `FolderBrowserDialog` now gets a `TopMost` owner form so it comes forward focused; macOS activates System Events before `choose folder`; Linux runs zenity modal (#2614, #2944).
-- **A failed chat send keeps you in the conversation** — when the coven CLI can't be resolved from the app's environment, the send failure now surfaces as an inline error strip with your message preserved for one-click Retry and a soft "Open Setup" link (wizard overlay, not a hard navigation) instead of eating the message and bouncing to Setup (#2618, #2944).
+- **A failed chat send keeps you in the conversation** — when the Coven CLI can't be resolved from the app's environment, the send failure now surfaces as an inline error strip with your message preserved for one-click Retry and a soft "Open Setup" link (wizard overlay, not a hard navigation) instead of eating the message and bouncing to Setup (#2618, #2944).
 - **Board: table never mounts with the selected card hidden** — switching to the table view with a card selected in the collapsed-by-default "done" group used to leave no row for the anchor scroll to find; the collapse initializer is now selection-aware and the still-selected card is revealed after a view-mode switch (cave-iote) (#2940, #2943).
 - **Board: detail-panel action popover no longer clips** — the popover anchors left so it isn't cut off at the panel edge (#2936).
 - **Projects: deduped by normalized root at load** — projects registered under differently-normalized paths no longer show as duplicates (#2932).
@@ -1852,7 +1873,7 @@ Patch release: respect persisted home navigation state after the v0.0.102 chat-w
 ### Fixed
 - **Shell** — reverted the forced home-screen nav reopen so fresh desktop launches still default open, but a deliberate collapsed nav stays collapsed across reloads and app launches (#920).
 - **Windows OpenClaw bridge** — Cave now resolves and launches npm `openclaw.cmd` shims safely, so OpenClaw-backed familiars such as TARS do not require a hand-built `openclaw.exe`.
-- **OpenCoven tools update** — updating the coven CLI from Cave now best-effort stops the running daemon first and surfaces clearer guidance if Windows still has `coven.exe` locked.
+- **OpenCoven tools update** — updating the Coven CLI from Cave now best-effort stops the running daemon first and surfaces clearer guidance if Windows still has `coven.exe` locked.
 
 ## [0.0.102] - 2026-06-18
 
@@ -1901,7 +1922,7 @@ Patch release: Salem perch proximity polish, companion rail alignment fixes, nex
 Patch release: Windows first-run daemon startup fix and a Salem typecheck guard after 0.0.98.
 
 ### Fixed
-- **Windows setup** — Cave now resolves npm-installed `coven.cmd` shims from `%APPDATA%\npm` / `npm_config_prefix`, preserves Windows PATH delimiters, and starts the daemon through shell mode for the fixed `coven daemon start` command. This fixes the welcome screen reporting `covenCli.ok: true` while the daemon button still surfaced "coven CLI not found on PATH."
+- **Windows setup** — Cave now resolves npm-installed `coven.cmd` shims from `%APPDATA%\npm` / `npm_config_prefix`, preserves Windows PATH delimiters, and starts the daemon through shell mode for the fixed `coven daemon start` command. This fixes the welcome screen reporting `covenCli.ok: true` while the daemon button still surfaced "Coven CLI not found on PATH."
 - **Salem** — restored the floating Salem perch `retreat` prop and right-edge retreat behavior so the workspace typecheck stays green.
 
 ## [0.0.98] - 2026-06-16
@@ -2263,7 +2284,7 @@ Chats that persist and a workflow canvas you can rearrange by hand.
 - **Chat conversations no longer fork on resumed turns** — continued turns now resume in the conversation's original working directory (harness session stores are cwd-scoped) and keep a stable cave-owned conversation id while the harness's per-resume session id is tracked internally. Previously each continued turn could lose project context and spawn a new sidebar session.
 - **Workflow canvas edges render** — step nodes gained explicit connection handles (React Flow error #008), with a toggleable themed minimap.
 - **Machines without Node or Git are covered** — Node ships inside the app bundle (the release now refuses to build without it); Git became an advisory setup check with platform-aware install hints, missing-git API errors are actionable, and the README gains a dependency table.
-- **Friendly error when the coven CLI is missing**, and mobile-access token checks no longer trust spoofable `Host` headers.
+- **Friendly error when the Coven CLI is missing**, and mobile-access token checks no longer trust spoofable `Host` headers.
 
 ### Changed
 - **Workflow studio polish** — role attach rows align as fixed columns with right-pinned familiar tags; all studio scroll regions use thin dark scrollbars.

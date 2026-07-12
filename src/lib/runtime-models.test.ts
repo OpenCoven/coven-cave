@@ -38,6 +38,19 @@ assert.equal(
   "Opus 4.8 must stay first so it remains the claude default",
 );
 assert.ok(catalogForRuntime("codex").models.length > 1, "codex should seed a multi-model menu, not just the default");
+assert.deepEqual(
+  catalogForRuntime("codex").models.map((model) => model.id),
+  [
+    "openai/gpt-5.6-sol",
+    "openai/gpt-5.6-terra",
+    "openai/gpt-5.6-luna",
+    "openai/gpt-5.5",
+    "openai/gpt-5.4",
+    "openai/gpt-5.4-mini",
+    "openai/gpt-5.3-codex-spark",
+  ],
+  "codex catalog should match the current Codex model order",
+);
 assert.ok(
   catalogForRuntime("codex").models.some((m) => m.id === "openai/gpt-5.4"),
   "codex catalog should seed GPT-5.4",
@@ -56,8 +69,8 @@ assert.ok(
 );
 assert.equal(
   catalogForRuntime("codex").models[0].id,
-  "openai/gpt-5.5",
-  "GPT-5.5 must stay first so it remains the codex default",
+  "openai/gpt-5.6-sol",
+  "GPT-5.6 Sol must stay first so it remains the codex default",
 );
 
 // Copilot serves multiple providers' models through one GitHub subscription.
@@ -103,9 +116,9 @@ const openclaw = catalogForRuntime("openclaw");
 assert.equal(openclaw.provider, null);
 assert.equal(openclaw.models.length, 0, "openclaw renders free-text only");
 assert.equal(openclaw.allowCustom, true, "free-text must stay allowed when there is no menu");
-assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.5");
+assert.equal(defaultModelForRuntime("codex"), "openai/gpt-5.6-sol");
 assert.equal(defaultModelForRuntime("hermes"), "hermes-local", "Hermes should default to the runtime marker, not a Hermes model");
-assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.5", "OpenClaw should inherit a real global default, not openclaw-local");
+assert.equal(defaultModelForRuntime("openclaw"), "openai/gpt-5.6-sol", "OpenClaw should inherit a real global default, not openclaw-local");
 
 // Unknown runtimes have no catalog.
 assert.equal(catalogForRuntime("nonexistent"), null);

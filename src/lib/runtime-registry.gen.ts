@@ -3,7 +3,7 @@
 //
 // Source: OpenCoven/coven-runtimes canonical registry index
 //   ref:      main
-//   blob sha: 29cb1dae5511744444e49c089472cfbcb6c6373b
+//   blob sha: 1379e72f7d310a40a79daa2d40eddcb5c7300922
 //
 // Every entry passed coven-runtimes acceptance (conformance + review), so
 // Cave treats these as trusted runtimes (see harness-adapters.ts). New
@@ -35,7 +35,7 @@ export type RegistryRuntime = {
 export const REGISTRY_SOURCE = {
   repo: "OpenCoven/coven-runtimes",
   ref: "main",
-  blobSha: "29cb1dae5511744444e49c089472cfbcb6c6373b",
+  blobSha: "1379e72f7d310a40a79daa2d40eddcb5c7300922",
 } as const;
 
 export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
@@ -108,8 +108,8 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
     "id": "coven-code",
     "label": "Coven Code",
     "binary": "coven-code",
-    "installHint": "npm install -g @opencoven/coven (or download a release archive from https://github.com/OpenCoven/coven-code/releases), then ensure `coven-code` is on PATH.",
-    "version": "1.0.0",
+    "installHint": "npm install -g @opencoven/coven-code (or download a release archive from https://github.com/OpenCoven/coven-code/releases), then ensure `coven-code` is on PATH.",
+    "version": "1.0.1",
     "homepage": "https://github.com/OpenCoven/coven-code",
     "description": "Coven Code adapter. One-shot via `--print <prompt>`, JSONL streaming via `--print --input-format stream-json --output-format stream-json` (long-lived: one turn per stdin user frame, exits on stdin EOF; the positional prompt is ignored in this mode, matching Claude Code). Session pre-assignment/resume via `--session-id`/`--resume`. Think maps to `--thinking <TOKENS>`, speed to `--effort <LEVEL>`. Interactive launches must not append a prompt: a positional prompt switches coven-code into print mode.",
     "modelFlag": "--model",
@@ -129,7 +129,7 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
           "non_interactive_prompt_prefix_args": [
             "--print"
           ],
-          "install_hint": "npm install -g @opencoven/coven (or download a release archive from https://github.com/OpenCoven/coven-code/releases), then ensure `coven-code` is on PATH.",
+          "install_hint": "npm install -g @opencoven/coven-code (or download a release archive from https://github.com/OpenCoven/coven-code/releases), then ensure `coven-code` is on PATH.",
           "system_prompt_flag": "--append-system-prompt",
           "model_flag": "--model",
           "capabilities": {
@@ -154,7 +154,7 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
             "session_id_flag": "--session-id",
             "resume_flag": "--resume"
           },
-          "version": "1.0.0",
+          "version": "1.0.1",
           "homepage": "https://github.com/OpenCoven/coven-code",
           "description": "Coven Code adapter. One-shot via `--print <prompt>`, JSONL streaming via `--print --input-format stream-json --output-format stream-json` (long-lived: one turn per stdin user frame, exits on stdin EOF; the positional prompt is ignored in this mode, matching Claude Code). Session pre-assignment/resume via `--session-id`/`--resume`. Think maps to `--thinking <TOKENS>`, speed to `--effort <LEVEL>`. Interactive launches must not append a prompt: a positional prompt switches coven-code into print mode."
         }

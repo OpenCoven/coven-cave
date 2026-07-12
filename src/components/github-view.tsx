@@ -633,6 +633,7 @@ function SafeMergeAction({
     e.stopPropagation();
     setBusy(true);
     setError(null);
+    let safeMergeRoot: string | null = linkedCard?.cwd ?? null;
     let worktreeLine =
       "Worktree: no linked local project root was available; resolve the repo root before editing.";
 
@@ -658,11 +659,12 @@ function SafeMergeAction({
         if (!res.ok || !json?.ok) {
           throw new Error(json?.error ?? `worktree HTTP ${res.status}`);
         }
+        safeMergeRoot = typeof json.worktree === "string" && json.worktree ? json.worktree : linkedCard.cwd;
         worktreeLine = `Worktree: ${json.worktree} (${json.created ? "created" : "reused"}). Branch: ${json.branch}.`;
         announce(`Worktree ${json.created ? "created" : "reused"} for the safe merge.`);
       }
 
-      const context = [
+      const initialPrompt = [
         `**Safely merge this PR: ${item.title}**`,
         `Repo: \`${item.repo}\`${item.number != null ? ` #${item.number}` : ""}`,
         `URL: ${item.url}`,
@@ -675,7 +677,7 @@ function SafeMergeAction({
 
       window.dispatchEvent(
         new CustomEvent("cave:agents-new-chat", {
-          detail: { familiarId, context },
+          detail: { familiarId, projectRoot: safeMergeRoot ?? undefined, initialPrompt },
         }),
       );
     } catch (err) {

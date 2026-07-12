@@ -1930,7 +1930,7 @@ export async function POST(req: Request) {
                     ? "ssh CLI not found on PATH. Install OpenSSH or run this familiar locally."
                     : copilotStream
                       ? "copilot CLI not found on PATH. Install it with `npm install -g @github/copilot`, then try again."
-                      : "coven CLI not found on PATH. Open Setup to install it, then try again.",
+                      : "Coven CLI not found on PATH. Open Setup to install it, then try again.",
               });
             } else {
               push({ kind: "error", message: err.message });

@@ -553,6 +553,7 @@ test("Windows first launch paints progress and supports recovery while the sidec
   const [launcher, startupPage] = await Promise.all([
     readFile(new URL("./src/lib.rs", import.meta.url), "utf8"),
     readFile(new URL("./frontend-stub/startup.html", import.meta.url), "utf8"),
+    access(new URL("./frontend-stub/cave-icon.png", import.meta.url)),
   ]);
 
   assert.match(
@@ -574,6 +575,11 @@ test("Windows first launch paints progress and supports recovery while the sidec
     startupPage,
     /role="progressbar"[\s\S]*aria-live="polite"/,
     "startup page must expose accessible progress",
+  );
+  assert.match(
+    startupPage,
+    /<img[^>]+src="\.\/cave-icon\.png"[^>]+alt="CovenCave"/,
+    "startup page must render the packaged CovenCave logo instead of the placeholder mark",
   );
   assert.match(
     startupPage,

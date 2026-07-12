@@ -66,6 +66,8 @@ type OpenCovenToolStatus = {
   current: string | null;
   latest: string | null;
   outdated: boolean;
+  compatible: boolean;
+  minimumVersion: string;
   checkedAt?: string;
 };
 
@@ -223,7 +225,7 @@ const PLATFORM_COPY: Record<
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure coven.exe and coven-code are on PATH after the global npm install.",
       "Click Re-check after Windows can run both tools from a new terminal.",
     ],
@@ -241,7 +243,7 @@ const PLATFORM_COPY: Record<
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure coven and coven-code are on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the tools.",
     ],
@@ -259,7 +261,7 @@ const PLATFORM_COPY: Record<
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure a terminal can run coven and coven-code after the global npm install.",
       "Click Re-check here after install.",
     ],
@@ -277,7 +279,7 @@ const PLATFORM_COPY: Record<
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest coven-code@latest.",
+      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
       "Make sure coven and coven-code are on PATH.",
       "Click Re-check here after install.",
     ],
@@ -956,7 +958,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // can never permanently strand onboarding (see covenCodeSkipped).
   const covenCodeTool = status?.tools?.find((t) => t.id === "coven-code");
   const covenCodeInstalled = !!covenCodeTool?.installed;
-  const covenCodeReady = !!covenCodeTool?.installed && !covenCodeTool.outdated;
+  const covenCodeReady =
+    !!covenCodeTool?.installed && !covenCodeTool.outdated && covenCodeTool.compatible;
   const covenCodeSatisfied = covenCodeReady || covenCodeSkipped;
   // Server `complete` already requires every other step; AND-in the Coven Code
   // requirement so the finish CTA only appears once both tools are handled.
@@ -968,14 +971,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       {
         key: "covenCli",
         title: "Install the OpenCoven tools",
-        // Require both coven CLI (server step) and Coven Code (required, but
+        // Require both Coven CLI (server step) and Coven Code (required, but
         // skippable) before this step counts as done.
         ok: !!s?.covenCli.ok && covenCodeSatisfied,
         detail: !s?.covenCli.ok
           ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…")
           : covenCodeSatisfied
             ? (s?.covenCli.detail ?? "Installed")
-            : "coven CLI ready — Coven Code still needs installing.",
+            : "Coven CLI ready — Coven Code still needs installing.",
         icon: "ph:gear-six",
       },
       {
@@ -1178,7 +1181,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             <div>
               <div className="font-semibold">Setup status is unreachable.</div>
               <p className="mt-1 leading-6 text-[var(--text-secondary)]">
-                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
+                Cave couldn&rsquo;t reach <code className="font-mono">/api/onboarding/status</code> in {statusFailures} attempts. The Coven CLI may not be installed, or the local sidecar may be blocked. Steps will stay on &ldquo;checking…&rdquo; until this clears — step 1 below still works and is the usual fix.
               </p>
             </div>
             <button
@@ -1424,7 +1427,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 }
                                 title={
                                   !status?.steps.covenCli.ok
-                                    ? "Install coven CLI first (step 1)"
+                                    ? "Install Coven CLI first (step 1)"
                                     : "Start local daemon (coven daemon start)"
                                 }
                               >
@@ -1433,7 +1436,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               {!status?.steps.covenCli.ok ? (
                                 <span className="text-[11px] text-[var(--text-muted)]">
                                   Needs step 1 first — the daemon ships with the
-                                  coven CLI.
+                                  Coven CLI.
                                 </span>
                               ) : null}
                             </div>
@@ -1642,6 +1645,7 @@ function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
 function openCovenToolStatusText(tool: OpenCovenToolStatus): string {
   if (!tool.installed) return "Not found";
   if (!tool.current) return "Version unknown";
+  if (!tool.compatible) return "Needs update";
   if (tool.outdated) return "Update available";
   return "Up to date";
 }
@@ -1683,7 +1687,7 @@ function StepCovenCli({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        Cave needs two OpenCoven tools — the <strong>coven CLI</strong> (powers
+        Cave needs two OpenCoven tools — the <strong>Coven CLI</strong> (powers
         everything) and <strong>Coven Code</strong> (required). Use the main
         action to install or update whichever tools need attention — Cave runs
         npm installs one after another so they never collide — or copy the
@@ -1721,7 +1725,7 @@ function StepCovenCli({
             {tools.map((tool) => {
               const toolJob = installJobs[tool.id];
               const toolBusy = toolJob?.status === "running";
-              const needsAction = !tool.installed || tool.outdated;
+              const needsAction = !tool.installed || tool.outdated || !tool.compatible;
               const result = installResults[tool.id];
               const isCovenCode = tool.id === "coven-code";
               const showSkip = isCovenCode && !tool.installed && !covenCodeSkipped;
@@ -1747,12 +1751,12 @@ function StepCovenCli({
                     <div className="flex shrink-0 items-center gap-2">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
-                          tool.installed && !tool.outdated
+                          tool.installed && !tool.outdated && tool.compatible
                             ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
                             : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)]"
                         }`}
                       >
-                        {tool.installed && !tool.outdated ? (
+                        {tool.installed && !tool.outdated && tool.compatible ? (
                           <Icon name="ph:check-bold" />
                         ) : (
                           <Icon name="ph:warning-fill" />
@@ -1774,7 +1778,7 @@ function StepCovenCli({
                           )}
                           {toolBusy && toolJob
                             ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
-                            : tool.outdated
+                            : tool.outdated || !tool.compatible
                               ? "Update"
                               : "Install"}
                         </button>

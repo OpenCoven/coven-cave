@@ -4,7 +4,7 @@
  * A *coven* is a saved set of familiars you talk to together. Sending a prompt
  * fans it out to every participant in parallel (one `/api/chat/send` stream per
  * familiar — the same client-side broadcast model the iOS app uses, since the
- * daemon/coven CLI has no server-side "group session" concept). Each familiar
+ * daemon/Coven CLI has no server-side "group session" concept). Each familiar
  * keeps its own resumable session; the group just remembers which session id
  * belongs to which familiar so every thread persists across reloads.
  *

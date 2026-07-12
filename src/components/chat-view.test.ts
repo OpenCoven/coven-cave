@@ -192,7 +192,7 @@ assert.match(
 );
 assert.match(
   source,
-  /const covenMissing = useMemo\(\s*\(\) => \/coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
+  /const covenMissing = useMemo\(\s*\(\) => \/Coven CLI not found on PATH\/i\.test\(message\) \|\| code === "ENOENT"/,
   "the error strip detects the coven-CLI-missing failure class",
 );
 assert.match(

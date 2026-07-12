@@ -29,13 +29,13 @@ assert.match(
 assert.match(
   source,
   /id: "coven-cli"[\s\S]*packageName: "@opencoven\/cli"[\s\S]*binary: "coven"/,
-  "the coven CLI status checks the npm-published @opencoven/cli package and coven binary",
+  "the Coven CLI status checks the npm-published @opencoven/cli package and coven binary",
 );
 
 assert.match(
   source,
-  /id: "coven-code"[\s\S]*packageName: "coven-code"[\s\S]*binary: "coven-code"/,
-  "the coven-code status checks the public coven-code package and coven-code binary",
+  /id: "coven-code"[\s\S]*packageName: "@opencoven\/coven-code"[\s\S]*binary: "coven-code"/,
+  "the coven-code status checks the SCOPED @opencoven/coven-code package and coven-code binary",
 );
 
 assert.match(
@@ -48,6 +48,12 @@ assert.match(
   source,
   /compareSemver\(latest, installed\.version\) > 0/,
   "outdated status uses the shared semver comparison",
+);
+
+assert.match(
+  source,
+  /minimumVersion: "0\.0\.54"/,
+  "coven CLI compatibility floor includes the Windows Codex connection fixes",
 );
 
 assert.match(

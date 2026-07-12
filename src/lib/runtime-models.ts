@@ -3,7 +3,7 @@
 // "Model parity" means every runtime gets the same first-class, working model
 // selection, sourced from the provider tied to that runtime where one exists.
 // Model ids follow Cave's existing namespaced convention (`provider/model`),
-// matching the live default (`openai/gpt-5.5`).
+// matching the live default (`openai/gpt-5.6-sol`).
 //
 // The curated lists below are a seed. They are intentionally a one-line edit as
 // providers ship new models, and `allowCustom` is the safety valve so the menu
@@ -35,6 +35,9 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     runtime: "codex",
     provider: "openai",
     models: [
+      { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol" },
+      { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra" },
+      { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna" },
       { id: "openai/gpt-5.5", label: "GPT-5.5" },
       { id: "openai/gpt-5.4", label: "GPT-5.4" },
       { id: "openai/gpt-5.4-mini", label: "GPT-5.4 Mini" },
@@ -88,7 +91,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   },
 };
 
-const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.5";
+const GLOBAL_DEFAULT_MODEL = "openai/gpt-5.6-sol";
 
 export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
   const curated = RUNTIME_MODEL_CATALOG[runtime];

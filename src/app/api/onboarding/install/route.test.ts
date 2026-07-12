@@ -16,7 +16,7 @@ assert.match(
 
 for (const pkg of [
   "@opencoven\\/cli@latest",
-  "coven-code@latest",
+  "@opencoven\\/coven-code@latest",
   "@openai\\/codex",
   "@anthropic-ai\\/claude-code",
   "@github\\/copilot@latest",
@@ -160,8 +160,13 @@ assert.match(
 
 assert.match(
   source,
-  /"coven-code":\s*\{[\s\S]*packageName: "coven-code@latest"[\s\S]*binary: "coven-code"/,
-  "coven-code updates use the public npm package and verify the coven-code binary",
+  /"coven-code":\s*\{[\s\S]*packageName: "@opencoven\/coven-code@latest"[\s\S]*binary: "coven-code"/,
+  "coven-code updates use the SCOPED @opencoven package and verify the coven-code binary",
+);
+assert.doesNotMatch(
+  source,
+  /packageName: "coven-code@/,
+  "bare coven-code is a different, deprecated npm package — installs must never target it",
 );
 
 // ── Background install jobs ─────────────────────────────────────────────────

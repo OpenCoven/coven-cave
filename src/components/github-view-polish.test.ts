@@ -323,6 +323,21 @@ assert.match(
 );
 assert.match(
   source,
+  /let safeMergeRoot: string \| null = linkedCard\?\.cwd \?\? null;/,
+  "safe merge tracks the chat root and defaults to the linked card cwd",
+);
+assert.match(
+  source,
+  /safeMergeRoot = typeof json\.worktree === "string" && json\.worktree \? json\.worktree : linkedCard\.cwd;/,
+  "safe merge roots the chat in the provisioned worktree when available",
+);
+assert.match(
+  source,
+  /detail: \{ familiarId, projectRoot: safeMergeRoot \?\? undefined, initialPrompt \}/,
+  "safe merge opens chat with the initial prompt and worktree root",
+);
+assert.match(
+  source,
   /<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
   "safe merge action should be wired into each GitHub row",
 );

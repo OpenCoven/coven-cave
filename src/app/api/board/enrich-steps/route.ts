@@ -213,7 +213,7 @@ async function resolveFamiliarWorkspace(
   }
 }
 
-// Run coven CLI and collect full stdout output as a string.
+// Run Coven CLI and collect full stdout output as a string.
 function runCoven(
   args: string[],
   signal: AbortSignal,
