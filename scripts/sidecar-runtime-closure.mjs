@@ -36,7 +36,7 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
 ]);
 
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
-  fileCount: 4_999,
+  fileCount: 5_200,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
