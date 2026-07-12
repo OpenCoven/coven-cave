@@ -15,11 +15,11 @@ import {
  */
 export function ReadingWidthController() {
   useEffect(() => {
-    applyReadingWidth(readReadingWidth());
+    applyReadingWidth(readReadingWidth(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_WIDTH_KEY) return;
-      applyReadingWidth(readReadingWidth());
+      applyReadingWidth(readReadingWidth(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

@@ -62,9 +62,11 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       COVEN_CAVE_E2E: "1",
-      // Redirect theme writes to a throwaway file so an E2E run never clobbers
-      // a real user's ~/.coven/cave-theme.json (which the iOS app polls).
-      COVEN_THEME_PATH: join(tmpdir(), "cave-e2e-theme.json"),
+      // Keep app-owned preferences and backdrop bytes out of the developer's
+      // real ~/.coven directory. The PID keeps concurrent Playwright runs from
+      // sharing a store while remaining stable for every request in this run.
+      COVEN_PREFERENCES_PATH: join(tmpdir(), `cave-e2e-preferences-${process.pid}.json`),
+      COVEN_BACKDROP_PATH: join(tmpdir(), `cave-e2e-backdrop-${process.pid}.jpg`),
     },
   },
 });

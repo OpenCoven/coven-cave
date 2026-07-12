@@ -16,6 +16,7 @@ import { GrimoireView, type GrimoireViewKind } from "@/components/grimoire-view"
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
+import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import {
   COVEN_CODE_SKIP_KEY,
   shouldAutoOpenOnboarding,
@@ -174,7 +175,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
 const CHAT_HASH_PREFIX = "#chat-";
-const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
 
 function readChatHash(): string | null {
   if (typeof window === "undefined") return null;
@@ -219,16 +219,6 @@ function clearModeParam() {
     "",
     window.location.pathname + (query ? `?${query}` : "") + window.location.hash,
   );
-}
-
-function readMobileModeEnabled() {
-  if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY) !== "false";
-}
-
-function writeMobileModeEnabled(enabled: boolean) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
 }
 
 function taskCanAnnotateSession(task: GitHubTask): boolean {

@@ -83,13 +83,18 @@ assert.match(
   );
 }
 
-// The component must apply the saved fonts on mount (the boot script that would
-// otherwise do it pre-paint is not mounted), so the rendered font matches the
-// persisted selection after a reload — not just after a user change.
+// The component applies the bootstrapped pair on mount but does not write an
+// unchanged value back and create a redundant canonical revision, so the
+// mounted UI simply reflects the already-persisted selection.
 assert.match(
   src,
-  /useEffect\(\(\) => \{[\s\S]*?readFontPairPref\([\s\S]*?writeFontPairPref\([\s\S]*?applyFontPair\([\s\S]*?\}, \[\]\)/,
-  "mount effect normalizes and applies the saved font pair",
+  /useEffect\(\(\) => \{[\s\S]*?const pair = readFontPairPref\(\)[\s\S]*?setPairId\(pair\.id\)[\s\S]*?applyFontPair\(pair\.id\)[\s\S]*?\}, \[\]\)/,
+  "mount effect reads and applies the saved font pair",
+);
+assert.doesNotMatch(
+  src.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[\]\)/)?.[0] ?? "",
+  /writeFontPairPref/,
+  "mounting Typography must not rewrite an unchanged preference",
 );
 
 // Text size control (reframed Screen magnification) lives in Typography.

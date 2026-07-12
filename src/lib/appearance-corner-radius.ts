@@ -53,6 +53,8 @@ export function normalizeCornerRadius(value: unknown): CornerRadius {
 }
 
 export function readCornerRadius(): CornerRadius {
+  const central = normalizeCornerRadius(readAppPreferences().appearance.cornerRadius);
+  if (central !== DEFAULT_CORNER_RADIUS || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_CORNER_RADIUS;
   try {
     return normalizeCornerRadius(window.localStorage.getItem(CORNER_RADIUS_KEY));
@@ -66,9 +68,12 @@ export function readCornerRadius(): CornerRadius {
  * on <html> (or remove them for the default so the :root values apply) and
  * persist the choice.
  */
-export function applyCornerRadius(level: CornerRadius) {
+export function applyCornerRadius(level: CornerRadius, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeCornerRadius(level);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { cornerRadius: normalized } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_CORNER_RADIUS) {
     root.style.removeProperty("--radius");
@@ -87,3 +92,4 @@ export function applyCornerRadius(level: CornerRadius) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

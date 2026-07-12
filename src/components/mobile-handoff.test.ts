@@ -6,6 +6,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
@@ -20,9 +21,25 @@ assert.match(topBar, /top-bar__mobile-handoff/, "TopBar handoff button should ha
 assert.doesNotMatch(sidebar, /onOpenMobileHandoff/, "Sidebar should not carry a mobile handoff button");
 assert.doesNotMatch(sidebar, /Open on phone/, "Sidebar should not expose an Open-on-phone control");
 assert.match(workspace, /MobileHandoffModal/, "Workspace should mount the mobile handoff modal");
-assert.match(workspace, /MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled"/, "Workspace should persist the mobile mode toggle under a stable key");
+assert.match(workspace, /readMobileModeEnabled, writeMobileModeEnabled/, "Workspace should use the shared canonical mobile preference adapter");
 assert.match(workspace, /useState\(readMobileModeEnabled\)/, "Workspace should default mobile mode from persisted state");
-assert.match(workspace, /function readMobileModeEnabled\(\)[\s\S]*return true/, "Mobile mode should default on when the user has not disabled it");
+assert.match(workspace, /writeMobileModeEnabled\(enabled\)/, "Workspace should persist mobile-mode changes through the canonical adapter");
+assert.match(settings, /readMobileModeEnabled, writeMobileModeEnabled/, "Settings should share the same canonical mobile preference adapter");
+assert.match(
+  mobileModePref,
+  /return readAppPreferences\(\)\.phone\.mobileMode/,
+  "mobile mode reads the server-bootstrapped preference instead of the current origin",
+);
+assert.match(
+  mobileModePref,
+  /updateAppPreferences\(\{ phone: \{ mobileMode: enabled \} \}\)/,
+  "mobile mode writes a typed patch to the canonical preference store",
+);
+assert.doesNotMatch(
+  mobileModePref,
+  /localStorage\.(?:getItem|setItem|removeItem)/,
+  "the shared mobile-mode adapter must not treat one loopback origin as authority",
+);
 assert.match(workspace, /action: "app-start"/, "Workspace should reconcile the native iOS Tailscale route while mobile mode is enabled");
 assert.match(workspace, /action: "app-stop"/, "Workspace should stop the native iOS Tailscale route when mobile mode is disabled");
 assert.match(workspace, /mobileModeHost/, "Workspace should keep the current native app host returned by the route");
@@ -44,7 +61,7 @@ assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale S
 // cave-i74f: the invite may carry a #chat-<id> fragment (Continue on phone),
 // so the canonical field is the fragment-aware inviteUrl.
 assert.match(handoffRoute, /const inviteUrl = withChatFragment\(invite\.url, chatId\);/, "the web invite rides the chat fragment when a handoff targets a conversation");
-assert.match(handoffRoute, /inviteUrl,\n\s*url: inviteUrl,/, "API should expose inviteUrl as the canonical invite field");
+assert.match(handoffRoute, /inviteUrl,\r?\n\s*url: inviteUrl,/, "API should expose inviteUrl as the canonical invite field");
 assert.match(handoffRoute, /appUrl: inviteUrl/, "API should keep appUrl as an inviteUrl alias for compatibility");
 assert.match(handoffRoute, /action === "app-start"/, "API should expose a native app mobile-mode start action");
 assert.match(handoffRoute, /action === "app-stop"/, "API should expose a native app mobile-mode stop action");

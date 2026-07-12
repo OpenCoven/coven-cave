@@ -5,12 +5,13 @@ import "@/styles/backdrop.css";
 import {
   applyBackdropToDocument,
   readBackdropImage,
+  useBackdropImageRevision,
   useBackdropPrefs,
 } from "@/lib/cave-backdrop";
 
 /**
- * Mounts once in the workspace: loads the stored backdrop image from
- * IndexedDB into an object URL, keeps <html>'s backdrop state in sync with
+ * Mounts once in the workspace: loads the durable backdrop image into an
+ * object URL, keeps <html>'s backdrop state in sync with
  * the prefs store, and renders the fixed image layer. `active` says whether
  * the frontmost surface wants the backdrop (home/chat) — the layer stays
  * mounted and crossfades via CSS.
@@ -20,10 +21,13 @@ import {
  */
 export function CaveBackdropLayer({ active }: { active: boolean }) {
   const prefs = useBackdropPrefs();
+  const imageRevision = useBackdropImageRevision();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
 
-  // Load (or clear) the stored image whenever the backdrop is toggled.
+  // Load (or clear) the stored image whenever the backdrop is toggled or its
+  // bytes change. writeBackdropImage publishes the latter independently from
+  // the enabled preference, so replacing an enabled image updates live.
   useEffect(() => {
     let cancelled = false;
     if (!prefs.enabled) {
@@ -41,7 +45,7 @@ export function CaveBackdropLayer({ active }: { active: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [prefs.enabled]);
+  }, [prefs.enabled, imageRevision]);
 
   // Push prefs + image to <html>; re-fit the accent when the mode flips.
   useEffect(() => {

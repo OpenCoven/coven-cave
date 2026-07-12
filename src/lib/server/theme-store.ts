@@ -1,74 +1,126 @@
-// Persists the desktop's active theme + resolved color tokens to
-// ~/.coven/cave-theme.json so other clients (the iOS app over Tailscale) can
-// read it from GET /api/theme. The location is fixed in normal use, but
-// COVEN_THEME_PATH overrides it so tests / E2E runs / any throwaway server never
-// clobber a real user's theme (mirrors COVEN_AUTOMATION_RUNS_PATH). Not
-// user-request-controlled — only the process environment can set it.
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
-import path from "node:path";
-import { homedir } from "node:os";
+import {
+  sanitizeThemeTokens,
+  type CaveMode,
+  type CaveModePreference,
+  type CavePreferences,
+  type CaveThemeId,
+  type CustomThemeData,
+} from "@/lib/preferences-schema";
+import {
+  PreferencesConflictError,
+  loadPreferences,
+  updatePreferences,
+} from "@/lib/server/preferences-store";
 
-// Resolved at call-time so the env can be set before the first read/write.
-function themePath(): string {
-  return process.env.COVEN_THEME_PATH ?? path.join(homedir(), ".coven", "cave-theme.json");
-}
-
+/** Backward-compatible shape decoded by the existing native iOS app. */
 export type ThemeSnapshot = {
   themeId: string;
-  mode: string;
+  mode: CaveMode;
   tokens: Record<string, string>;
   updatedAt: string;
+  revision: number;
+  selectionRevision: number;
+  modePreference: CaveModePreference;
+  custom: CustomThemeData | null;
 };
 
-const DEFAULT_SNAPSHOT: ThemeSnapshot = { themeId: "coven", mode: "dark", tokens: {}, updatedAt: "" };
+export type ThemeSaveInput = {
+  themeId?: unknown;
+  mode?: unknown;
+  modePreference?: unknown;
+  resolvedMode?: unknown;
+  custom?: unknown;
+  tokens?: unknown;
+  tokenOnly?: unknown;
+  expectedSelectionRevision?: unknown;
+};
 
-function sanitizeTokens(input: unknown): Record<string, string> {
-  if (!input || typeof input !== "object") return {};
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    if (typeof key === "string" && key.startsWith("--") && typeof value === "string" && value.length <= 64) {
-      out[key] = value;
-    }
-  }
-  return out;
+export function themeSnapshotFromPreferences(preferences: CavePreferences): ThemeSnapshot {
+  const theme = preferences.appearance.theme;
+  return {
+    themeId: theme.id,
+    mode: theme.resolvedMode,
+    tokens: { ...theme.tokens },
+    updatedAt: theme.updatedAt,
+    revision: preferences.revision,
+    selectionRevision: theme.selectionRevision,
+    modePreference: theme.modePreference,
+    custom: theme.custom,
+  };
 }
 
 export async function loadTheme(): Promise<ThemeSnapshot> {
-  const THEME_PATH = themePath();
-  try {
-    const parsed = JSON.parse(await readFile(THEME_PATH, "utf8")) as Partial<ThemeSnapshot>;
-    return {
-      themeId: typeof parsed.themeId === "string" ? parsed.themeId : DEFAULT_SNAPSHOT.themeId,
-      mode: typeof parsed.mode === "string" ? parsed.mode : DEFAULT_SNAPSHOT.mode,
-      tokens: sanitizeTokens(parsed.tokens),
-      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
-    };
-  } catch {
-    return DEFAULT_SNAPSHOT;
-  }
+  return themeSnapshotFromPreferences(await loadPreferences());
 }
 
-export async function saveTheme(input: { themeId?: unknown; mode?: unknown; tokens?: unknown }): Promise<ThemeSnapshot> {
-  const snap: ThemeSnapshot = {
-    themeId: typeof input.themeId === "string" && input.themeId ? input.themeId : DEFAULT_SNAPSHOT.themeId,
-    mode: typeof input.mode === "string" && input.mode ? input.mode : DEFAULT_SNAPSHOT.mode,
-    tokens: sanitizeTokens(input.tokens),
-    updatedAt: new Date().toISOString(),
-  };
-  const THEME_PATH = themePath();
-  await mkdir(path.dirname(THEME_PATH), { recursive: true });
-  // Unique temp name per write: a fixed `.tmp` made concurrent PUTs race —
-  // both wrote the same file, the first rename consumed it, and the second
-  // rename hit ENOENT, crashing the dev server. A per-write name lets parallel
-  // saves each rename their own file (last writer wins) without colliding.
-  const tmp = `${THEME_PATH}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-  try {
-    await writeFile(tmp, JSON.stringify(snap, null, 2), "utf8");
-    await rename(tmp, THEME_PATH);
-  } catch (err) {
-    await rm(tmp, { force: true }).catch(() => {});
-    throw err;
+function expectedSelectionRevision(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function modePreference(input: ThemeSaveInput, current: CavePreferences): CaveModePreference {
+  if (input.modePreference === "light" || input.modePreference === "dark" || input.modePreference === "system") {
+    return input.modePreference;
   }
-  return snap;
+  if (input.mode === "light" || input.mode === "dark") return input.mode;
+  return current.appearance.theme.modePreference;
+}
+
+function resolvedMode(input: ThemeSaveInput, preference: CaveModePreference, current: CavePreferences): CaveMode {
+  if (input.resolvedMode === "light" || input.resolvedMode === "dark") return input.resolvedMode;
+  if (input.mode === "light" || input.mode === "dark") return input.mode;
+  if (preference === "light" || preference === "dark") return preference;
+  return current.appearance.theme.resolvedMode;
+}
+
+export async function saveTheme(input: ThemeSaveInput): Promise<ThemeSnapshot> {
+  const tokenOnly = input.tokenOnly === true;
+  const expected = expectedSelectionRevision(input.expectedSelectionRevision);
+  const preferences = await updatePreferences((current) => {
+    if (tokenOnly && expected === null) {
+      throw new TypeError("expectedSelectionRevision required for token-only theme updates");
+    }
+    if (expected !== null && expected !== current.appearance.theme.selectionRevision) {
+      throw new PreferencesConflictError("theme selection changed", current);
+    }
+
+    if (tokenOnly) {
+      return {
+        appearance: {
+          theme: {
+            tokens: sanitizeThemeTokens(input.tokens),
+            ...(input.resolvedMode === "light" || input.resolvedMode === "dark"
+              ? { resolvedMode: input.resolvedMode }
+              : {}),
+          },
+        },
+      };
+    }
+
+    if (typeof input.themeId !== "string" || !input.themeId) {
+      throw new TypeError("themeId required");
+    }
+    const preference = modePreference(input, current);
+    const mode = resolvedMode(input, preference, current);
+    const selectionChanged =
+      input.themeId !== current.appearance.theme.id ||
+      preference !== current.appearance.theme.modePreference ||
+      (Object.hasOwn(input, "custom") && JSON.stringify(input.custom) !== JSON.stringify(current.appearance.theme.custom));
+    const hasTokens = Object.hasOwn(input, "tokens");
+    return {
+      appearance: {
+        theme: {
+          id: input.themeId as CaveThemeId,
+          modePreference: preference,
+          resolvedMode: mode,
+          custom: input.themeId === "custom"
+            ? (Object.hasOwn(input, "custom") ? input.custom as CustomThemeData | null : current.appearance.theme.custom)
+            : null,
+          tokens: hasTokens
+            ? sanitizeThemeTokens(input.tokens)
+            : selectionChanged ? {} : current.appearance.theme.tokens,
+        },
+      },
+    };
+  });
+  return themeSnapshotFromPreferences(preferences);
 }

@@ -10,6 +10,8 @@ function normalizeHex(raw: string): string | null {
 }
 
 export function getRecentColors(): string[] {
+  const central = readAppPreferences().appearance.recentColors;
+  if (central.length > 0 || readAppPreferences().initialized) return [...central];
   try {
     const raw = localStorage.getItem(RECENT_COLORS_KEY);
     if (!raw) return [];
@@ -24,13 +26,17 @@ export function getRecentColors(): string[] {
 export function addRecentColor(hex: string): string[] {
   const norm = normalizeHex(hex);
   if (!norm) return getRecentColors();
-  const next = [norm, ...getRecentColors().filter((c) => c !== norm)].slice(0, MAX_RECENTS);
+  const previous = getRecentColors();
+  const next = [norm, ...previous.filter((c) => c !== norm)].slice(0, MAX_RECENTS);
   try {
     localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(next));
   } catch {
+    updateAppPreferences({ appearance: { recentColors: next } });
     // Write failed (quota/private-mode) — return what's actually stored, not the
     // list we wanted, so the return value never lies about persisted state.
-    return getRecentColors();
+    return previous;
   }
+  updateAppPreferences({ appearance: { recentColors: next } });
   return next;
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

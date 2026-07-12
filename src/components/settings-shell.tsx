@@ -18,7 +18,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
-import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode, type ModePref } from "@/lib/theme-storage";
+import type { Mode, ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
@@ -26,6 +26,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
+import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
@@ -53,6 +54,17 @@ import { readableTextColor } from "@/lib/readable-text-color";
 import { openExternalUrl } from "@/lib/open-external";
 import { copyText } from "@/lib/clipboard";
 import { BackdropSettings } from "@/components/backdrop-settings";
+import {
+  flushAppPreferences,
+  readAppPreferences,
+  refreshAppPreferences,
+  updateAppPreferences,
+} from "@/lib/app-preferences";
+import {
+  clearCustomThemeVariables,
+  reapplyIndependentAppearance,
+} from "@/lib/appearance-restore";
+import type { CustomThemeData } from "@/lib/preferences-schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,18 +104,6 @@ type DaemonStatus = {
 };
 
 type MultiHostMode = "local" | "hub";
-
-const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
-
-function readMobileModeEnabled() {
-  if (typeof window === "undefined") return true;
-  return window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY) !== "false";
-}
-
-function writeMobileModeEnabled(enabled: boolean) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
-}
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
@@ -951,39 +951,12 @@ function FamiliarsSection({
 type PresetTheme = ThemeId;
 type ActiveTheme = PresetTheme | "custom";
 
-const THEME_OWNED_APPEARANCE_KEYS = [
-  "cave:font:sans",
-  "cave:font:mono",
-  "cave:corner-radius",
-  "cave:reading-leading",
-  "cave:reading-tracking",
-  "cave:reading-weight",
-] as const;
-
-interface CustomThemeData {
-  name: string;
-  cssVars: {
-    theme?: Record<string, string>;
-    light?: Record<string, string>;
-    dark?: Record<string, string>;
-  };
-}
-
-function clearCustomCssVars(html: HTMLElement) {
-  const style = html.getAttribute("style") ?? "";
-  const cleaned = style.replace(/--[\w-]+\s*:[^;]+;?/g, "").trim();
-  if (cleaned) html.setAttribute("style", cleaned);
-  else html.removeAttribute("style");
-}
-
 function applyPreset(theme: PresetTheme) {
   const html = document.documentElement;
-  clearCustomCssVars(html);
-  for (const key of THEME_OWNED_APPEARANCE_KEYS) {
-    localStorage.removeItem(key);
-  }
+  clearCustomThemeVariables();
   html.setAttribute("data-theme", theme);
-  localStorage.setItem(COVEN_THEME_KEY, theme);
+  updateAppPreferences({ appearance: { theme: { id: theme, custom: null } } });
+  reapplyIndependentAppearance();
 }
 
 function resolveMode(pref: ModePref): Mode {
@@ -993,8 +966,9 @@ function resolveMode(pref: ModePref): Mode {
 
 function applyMode(pref: ModePref) {
   const html = document.documentElement;
-  html.setAttribute("data-mode", resolveMode(pref));
-  localStorage.setItem(COVEN_MODE_KEY, pref);
+  const resolvedMode = resolveMode(pref);
+  html.setAttribute("data-mode", resolvedMode);
+  updateAppPreferences({ appearance: { theme: { modePreference: pref, resolvedMode } } });
 }
 
 // Color tokens mirrored to the daemon so other clients (e.g. the iOS app over
@@ -1055,18 +1029,24 @@ function resolveSyncTokens(): Record<string, string> {
  *  the result; the automatic on-change call ignores it). */
 async function persistThemeTokens(): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  if (!(await flushAppPreferences())) return false;
   try {
-    const html = document.documentElement;
+    const preferences = readAppPreferences();
     const res = await fetch("/api/theme", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        themeId: html.getAttribute("data-theme") ?? "coven",
-        mode: html.getAttribute("data-mode") ?? "dark",
+        tokenOnly: true,
         tokens: resolveSyncTokens(),
+        expectedSelectionRevision: preferences.appearance.theme.selectionRevision,
       }),
     });
-    return res.ok;
+    if (!res.ok) {
+      if (res.status === 409) await refreshAppPreferences();
+      return false;
+    }
+    await refreshAppPreferences();
+    return true;
   } catch {
     return false; // best-effort sync; never block the UI
   }
@@ -1074,8 +1054,8 @@ async function persistThemeTokens(): Promise<boolean> {
 
 function applyCustomVars(cssVars: CustomThemeData["cssVars"], mode: Mode) {
   const html = document.documentElement;
+  clearCustomThemeVariables();
   html.setAttribute("data-theme", "custom");
-  clearCustomCssVars(html);
 
   const apply = (group?: Record<string, string>) => {
     if (!group) return;
@@ -1093,6 +1073,7 @@ function applyCustomVars(cssVars: CustomThemeData["cssVars"], mode: Mode) {
     (mode === "light" ? cssVars.light : cssVars.dark) ??
     (mode === "light" ? cssVars.dark : cssVars.light);
   apply(modeGroup);
+  reapplyIndependentAppearance({ preserveCustomDefaults: true });
 }
 
 /**
@@ -1177,24 +1158,20 @@ function enrichTweakcnTheme(data: CustomThemeData): CustomThemeData {
 }
 
 function clearCustomTheme() {
+  clearCustomThemeVariables();
   document.documentElement.setAttribute("data-theme", "coven");
-  document.documentElement.removeAttribute("style");
-  localStorage.removeItem(COVEN_CUSTOM_THEME_KEY);
-  localStorage.setItem(COVEN_THEME_KEY, "coven");
+  updateAppPreferences({ appearance: { theme: { id: "coven", custom: null } } });
+  reapplyIndependentAppearance();
 }
 
 function readPersistedTheme(): ActiveTheme {
-  const raw = localStorage.getItem(COVEN_THEME_KEY);
-  if (!raw) return "coven";
-  if (LEGACY_THEME_RENAME[raw]) return LEGACY_THEME_RENAME[raw] as ActiveTheme;
-  if (raw === "custom") return "custom";
-  if ((THEME_IDS as readonly string[]).includes(raw)) return raw as ActiveTheme;
+  const raw = readAppPreferences().appearance.theme.id;
+  if (raw === "custom" || (THEME_IDS as readonly string[]).includes(raw)) return raw as ActiveTheme;
   return "coven";
 }
 
 function readPersistedMode(): ModePref {
-  const raw = localStorage.getItem(COVEN_MODE_KEY);
-  return raw === "light" ? "light" : raw === "system" ? "system" : "dark";
+  return readAppPreferences().appearance.theme.modePreference;
 }
 
 // ─── Preset cards ─────────────────────────────────────────────────────────────────────────────
@@ -1352,9 +1329,11 @@ function withAlphaFrom(prev: string | undefined, hex: string): string {
  *  companions) changes on the selected theme. */
 function applyTokenOverride(key: string, hex: string, mode: Mode) {
   const html = document.documentElement;
-  let existing: CustomThemeData | null = null;
+  const themePreferences = readAppPreferences().appearance.theme;
+  let existing: CustomThemeData | null =
+    themePreferences.id === "custom" ? themePreferences.custom : null;
   try {
-    const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
+    const raw = null;
     if (raw) existing = JSON.parse(raw) as CustomThemeData;
   } catch {
     /* malformed — treat as none */
@@ -1376,8 +1355,9 @@ function applyTokenOverride(key: string, hex: string, mode: Mode) {
     name: existing?.name ?? forkName,
     cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
   };
-  localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
-  localStorage.setItem(COVEN_THEME_KEY, "custom");
+  updateAppPreferences({
+    appearance: { theme: { id: "custom", resolvedMode: mode, custom: data } },
+  });
   // Live-apply the whole group — not just the edited key — so the selected
   // theme's look survives the data-theme flip. Boot (theme-init.js) replays
   // this exact group, so what you see now is what a reload restores.
@@ -1567,6 +1547,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
+  const [appearanceHydrated, setAppearanceHydrated] = useState(false);
   // Below the shell's FamiliarStudioProvider — lets the pin-order hint open
   // Familiars directly on the Lifecycle tab (the app-wide roster order lives
   // there, distinct from the avatar-strip pin order set here).
@@ -1575,8 +1556,9 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   // Mirror the active theme + resolved tokens to the daemon on change (and mount)
   // so cross-device clients can read it. Best-effort; failures are swallowed.
   useEffect(() => {
+    if (!appearanceHydrated) return;
     void persistThemeTokens();
-  }, [activeTheme, mode, customData]);
+  }, [activeTheme, mode, customData, appearanceHydrated]);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -1594,31 +1576,28 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
 
   const reloadCustomData = () => {
     setActiveTheme("custom");
-    try {
-      const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
-      if (raw) setCustomData(JSON.parse(raw) as CustomThemeData);
-    } catch {
-      /* ignore */
-    }
+    setCustomData(readAppPreferences().appearance.theme.custom);
   };
   const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
 
   // Read persisted theme + mode on mount
   useEffect(() => {
+    const preferences = readAppPreferences();
     setActiveTheme(readPersistedTheme());
     setMode(readPersistedMode());
     setCornerRadius(readCornerRadius());
-    const saved = localStorage.getItem(COVEN_THEME_KEY);
+    const saved = preferences.appearance.theme.id;
     if (saved === "custom") {
-      const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
+      const raw = preferences.appearance.theme.custom;
       if (raw) {
         try {
-          setCustomData(JSON.parse(raw) as CustomThemeData);
+          setCustomData(raw);
         } catch {
           /* malformed — ignore */
         }
       }
     }
+    setAppearanceHydrated(true);
   }, []);
 
   const handleSelectPreset = (id: PresetTheme) => {
@@ -1640,18 +1619,6 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       applyCustomVars(customData.cssVars, resolveMode(next));
     }
   };
-
-  // When following the OS ("system"), re-resolve on every prefers-color-scheme flip.
-  useEffect(() => {
-    if (mode !== "system" || typeof window === "undefined") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      applyMode("system");
-      if (activeTheme === "custom" && customData) applyCustomVars(customData.cssVars, resolveMode("system"));
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [mode, activeTheme, customData]);
 
   // Two-step: an imported/tuned theme is unrecoverable once cleared (recovery
   // = re-import from a remembered URL), and the trigger is a ~14px X. First
@@ -1735,8 +1702,11 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       const data = enrichTweakcnTheme(raw);
 
       applyCustomVars(data.cssVars, resolveMode(mode));
-      localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
-      localStorage.setItem(COVEN_THEME_KEY, "custom");
+      updateAppPreferences({
+        appearance: {
+          theme: { id: "custom", resolvedMode: resolveMode(mode), custom: data },
+        },
+      });
       setCustomData(data);
       setActiveTheme("custom");
       setImportUrl("");

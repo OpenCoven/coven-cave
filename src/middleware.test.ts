@@ -10,6 +10,7 @@ const layoutSource = await readFile(new URL("./app/layout.tsx", import.meta.url)
 const mobileScriptSource = await readFile(new URL("../scripts/mobile-tailscale.sh", import.meta.url), "utf8");
 const mobileDocsSource = await readFile(new URL("../docs/mobile-tailscale.md", import.meta.url), "utf8");
 const nextConfigSource = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
+const proxyHelpersSource = await readFile(new URL("./proxy-helpers.ts", import.meta.url), "utf8");
 
 assert.match(source, /export async function proxy\(req: NextRequest\)/, "Next 16 proxy entrypoint should guard requests");
 assert.match(source, /matcher:\s*\["\/\(\(\?!_next\/static\|_next\/image\|favicon\.ico\)\.\*\)"\]/, "proxy should guard API and mobile browser routes");
@@ -33,6 +34,17 @@ assert.match(
   "the origin gate must compare against origins derived from the request's own Host, not just the configured-port nextUrl.origin",
 );
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
+for (const mime of ["image/jpeg", "image/png", "image/webp"]) {
+  assert.ok(
+    proxyHelpersSource.includes(`"${mime}"`),
+    `the authenticated local backdrop upload should allow raw ${mime} bodies`,
+  );
+}
+assert.doesNotMatch(
+  proxyHelpersSource,
+  /image\/svg\+xml/,
+  "the API content-type gate must not admit active SVG backdrop payloads",
+);
 assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless-tailnet CSRF guard");
 assert.match(source, /missing request source/, "tokenless tailnet GET webhooks should reject absent Origin and Referer headers");
 

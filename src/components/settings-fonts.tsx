@@ -234,7 +234,6 @@ export function FontSettings() {
   useEffect(() => {
     const pair = readFontPairPref();
     setPairId(pair.id);
-    writeFontPairPref(pair.id);
     applyFontPair(pair.id);
     // The mounted Screen/Reading controllers already applied these on load;
     // we only mirror them into local UI state.

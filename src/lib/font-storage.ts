@@ -26,6 +26,7 @@ import {
   type FontPair,
   type FontSlot,
 } from "./font-catalog.ts";
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";
 
 export const FONT_SERIF_KEY = "cave:font:serif";
 export const FONT_SANS_KEY = "cave:font:sans";
@@ -46,6 +47,11 @@ function varFor(slot: FontSlot): string {
 /** Stored id for the slot, validated against the catalog. Missing, unknown, or
  *  wrong-slot values fall back to the slot default. Never throws. */
 export function readFontPref(slot: FontSlot): string {
+  const preferences = readAppPreferences();
+  const fonts = preferences.appearance.fonts;
+  const stored = slot === "serif" ? fonts.serif : slot === "sans" ? fonts.sans : fonts.mono;
+  const storedOption = fontOptionById(stored);
+  if (preferences.initialized && storedOption?.slot === slot) return stored;
   if (typeof window === "undefined") return DEFAULT_FONT_ID[slot];
   let raw: string | null = null;
   try {
@@ -61,6 +67,8 @@ export function readFontPref(slot: FontSlot): string {
 }
 
 export function writeFontPref(slot: FontSlot, id: string): void {
+  const value = fontOptionById(id)?.slot === slot ? id : DEFAULT_FONT_ID[slot];
+  updateAppPreferences({ appearance: { fonts: { [slot]: value } } });
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(keyFor(slot), id);
@@ -80,9 +88,20 @@ export function readFontPairPref(): FontPair {
 
 export function writeFontPairPref(id: string): void {
   const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
-  writeFontPref("serif", pair.serifId);
-  writeFontPref("sans", pair.sansId);
-  writeFontPref("mono", pair.monoId);
+  updateAppPreferences({
+    appearance: {
+      fonts: { serif: pair.serifId, sans: pair.sansId, mono: pair.monoId },
+    },
+  });
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(FONT_SERIF_KEY, pair.serifId);
+      window.localStorage.setItem(FONT_SANS_KEY, pair.sansId);
+      window.localStorage.setItem(FONT_MONO_KEY, pair.monoId);
+    } catch {
+      /* legacy mirror unavailable */
+    }
+  }
 }
 
 /** Point the slot's CSS var at the chosen family's stack. The default id (or an

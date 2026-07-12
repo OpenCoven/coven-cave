@@ -1,57 +1,106 @@
 // @ts-nocheck
-// Guards the fix for the theme-write crash: a fixed `.tmp` filename let
-// concurrent PUT /api/theme requests race (first rename consumed the temp,
-// second hit ENOENT and crashed the dev server). The write must use a unique
-// temp name and never let a failure escape the route handler.
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
-const store = await readFile(new URL("./theme-store.ts", import.meta.url), "utf8");
+const root = await mkdtemp(path.join(os.tmpdir(), "cave-theme-adapter-"));
+const preferencesFile = path.join(root, "cave-preferences.json");
+process.env.COVEN_PREFERENCES_PATH = preferencesFile;
+process.env.COVEN_THEME_PATH = path.join(root, "missing-legacy-theme.json");
+
 const route = await readFile(new URL("../../app/api/theme/route.ts", import.meta.url), "utf8");
 
-assert.doesNotMatch(
-  store,
-  /const tmp = THEME_PATH \+ "\.tmp"/,
-  "theme-store must not use a single fixed temp filename (concurrent writes race on it)",
-);
+try {
+  const preferencesStore = await import("./preferences-store.ts");
+  const themeStore = await import("./theme-store.ts");
 
-assert.match(
-  store,
-  /const tmp = `\$\{THEME_PATH\}\.\$\{process\.pid\}\.\$\{randomBytes\(/,
-  "theme-store should write to a per-process, randomized temp file so parallel saves don't collide",
-);
+  const initial = await themeStore.loadTheme();
+  assert.equal(initial.themeId, "coven");
+  assert.equal(initial.revision, 0);
+  assert.equal(initial.selectionRevision, 0);
 
-assert.match(
-  store,
-  /catch \(err\) \{[\s\S]*rm\(tmp, \{ force: true \}\)[\s\S]*throw err/,
-  "a failed write should clean up its temp file and rethrow (no orphaned temp, no swallowed error)",
-);
+  const selected = await themeStore.saveTheme({
+    themeId: "ember",
+    modePreference: "light",
+    resolvedMode: "light",
+    tokens: { "--bg-base": "#120d0a" },
+  });
+  assert.equal(selected.themeId, "ember");
+  assert.equal(selected.mode, "light");
+  assert.equal(selected.revision, 1);
+  assert.equal(selected.selectionRevision, 1);
 
-assert.match(
-  route,
-  /try \{[\s\S]*await saveTheme\(body\)[\s\S]*\} catch[\s\S]*status: 500/,
-  "PUT /api/theme must wrap saveTheme so a write failure returns 500 instead of crashing the server",
-);
+  const tokenUpdate = await themeStore.saveTheme({
+    tokenOnly: true,
+    tokens: { "--bg-base": "#22110a", "not-a-token": "ignored" },
+    expectedSelectionRevision: selected.selectionRevision,
+  });
+  assert.equal(tokenUpdate.revision, 2, "token publication is still a canonical preference write");
+  assert.equal(
+    tokenUpdate.selectionRevision,
+    selected.selectionRevision,
+    "token-only publication must not masquerade as a new theme selection",
+  );
+  assert.deepEqual(tokenUpdate.tokens, { "--bg-base": "#22110a" });
 
-// The path is env-overridable so tests / E2E / throwaway servers never write a
-// real user's ~/.coven/cave-theme.json (which the iOS app polls).
-assert.match(
-  store,
-  /function themePath\(\): string/,
-  "the snapshot path is resolved through a themePath() function (call-time, not a module const)",
-);
-assert.match(
-  store,
-  /process\.env\.COVEN_THEME_PATH \?\? path\.join\(homedir\(\), "\.coven", "cave-theme\.json"\)/,
-  "themePath honours COVEN_THEME_PATH, falling back to ~/.coven/cave-theme.json",
-);
+  const newerSelection = await themeStore.saveTheme({
+    themeId: "tide",
+    modePreference: "dark",
+    resolvedMode: "dark",
+  });
+  assert.equal(newerSelection.selectionRevision, 3);
 
-// The E2E web server points the theme store at a throwaway file.
-const e2e = await readFile(new URL("../../../playwright.config.ts", import.meta.url), "utf8");
-assert.match(
-  e2e,
-  /COVEN_THEME_PATH: join\(tmpdir\(\)/,
-  "the Playwright web server redirects theme writes to a temp file",
-);
+  await assert.rejects(
+    themeStore.saveTheme({
+      tokenOnly: true,
+      tokens: { "--bg-base": "#ffffff" },
+      expectedSelectionRevision: selected.selectionRevision,
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof preferencesStore.PreferencesConflictError);
+      assert.equal(error.current.appearance.theme.id, "tide");
+      return true;
+    },
+    "a delayed token write must not overwrite a newer remote or local selection",
+  );
 
-console.log("theme-store.test.ts: ok");
+  await assert.rejects(
+    themeStore.saveTheme({ tokenOnly: true, tokens: {} }),
+    TypeError,
+    "token-only updates require an explicit selection revision",
+  );
+
+  const persisted = JSON.parse(await readFile(preferencesFile, "utf8"));
+  assert.equal(persisted.appearance.theme.id, "tide");
+  assert.equal(persisted.appearance.theme.tokens["--bg-base"], undefined);
+  assert.equal(persisted.general.newsHeadlines, true);
+  assert.equal(persisted.phone.mobileMode, true);
+  assert.equal(
+    Object.hasOwn(persisted, "themeId"),
+    false,
+    "the compatibility theme endpoint must persist through the canonical preference document",
+  );
+
+  assert.match(
+    route,
+    /PreferencesConflictError[\s\S]*status: 409/,
+    "PUT /api/theme should surface stale selection revisions as conflicts",
+  );
+  assert.match(
+    route,
+    /themeSnapshotFromPreferences\(error\.current\)/,
+    "a conflict response should return the winning canonical snapshot for reconciliation",
+  );
+  assert.match(
+    route,
+    /cache-control": "no-store"/,
+    "theme compatibility responses must not cache canonical state",
+  );
+
+  console.log("theme-store.test.ts: ok");
+} finally {
+  delete process.env.COVEN_PREFERENCES_PATH;
+  delete process.env.COVEN_THEME_PATH;
+  await rm(root, { recursive: true, force: true });
+}
