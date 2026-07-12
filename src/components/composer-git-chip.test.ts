@@ -48,11 +48,23 @@ assert.match(
   "the PR context comes from the changes route's ?pr=1 query",
 );
 
-// ── The PR segment is the interactive part: opens in-app, window.open shim ──
+// ── Selecting the chip opens the Git/Changes panel for this chat ─────────────
 assert.match(
   chip,
-  /if \(onOpenUrl\) onOpenUrl\(pr\.url\);\s*\n\s*else window\.open\(pr\.url, "_blank", "noopener,noreferrer"\);/,
-  "clicking the PR opens it via the app's URL handler with a safe window.open fallback",
+  /window\.dispatchEvent\(new CustomEvent\("cave:changes-open"\)\);/,
+  "selecting the git chip dispatches cave:changes-open to open the changes surface",
+);
+assert.match(
+  chip,
+  /role="button"[\s\S]*tabIndex=\{0\}[\s\S]*onClick=\{\(\) => openChanges\(\)\}[\s\S]*onKeyDown=\{onChipKeyDown\}/,
+  "the root git chip is keyboard-focusable and actionable",
+);
+
+// ── The PR segment remains interactive and does not trigger chip selection ───
+assert.match(
+  chip,
+  /onClick=\{\(event\) => \{\s*\n\s*event\.stopPropagation\(\);[\s\S]*if \(onOpenUrl\) onOpenUrl\(pr\.url\);\s*\n\s*else window\.open\(pr\.url, "_blank", "noopener,noreferrer"\);/,
+  "clicking the PR opens it via the app URL handler and does not bubble to chip-open",
 );
 
 // ── Long branch names ellipsize instead of blowing up the control row ───────

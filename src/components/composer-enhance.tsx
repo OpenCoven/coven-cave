@@ -150,7 +150,7 @@ export function EnhanceStrip({
   if (state.phase === "idle") return null;
 
   const pillBtn =
-    "focus-ring rounded-full border border-[var(--border-hairline)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+    "focus-ring rounded-[var(--radius-pill)] border border-[var(--border-hairline)] px-2.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
   return (
     <div

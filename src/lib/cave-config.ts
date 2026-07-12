@@ -3,6 +3,12 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import {
+  type ChatAutoArchivePolicy,
+  extendUntilIso,
+  normalizeChatAutoArchivePolicy,
+  SUMMON_GRACE_DAYS,
+} from "@/lib/chat-auto-archive";
+import {
   type FamiliarRuntime,
   isSshRuntime,
   normalizeFamiliarRuntime,
@@ -35,6 +41,8 @@ const DEFAULT_STATE: CaveState = {
   sessionTitles: {},
   sessionArchived: {},
   sessionSacrificed: {},
+  sessionKeep: {},
+  sessionArchiveExtendedUntil: {},
   sessionOwned: {},
   mergedPrAutoArchived: {},
   travel: {
@@ -67,6 +75,8 @@ function defaultState(): CaveState {
     sessionTitles: {},
     sessionArchived: {},
     sessionSacrificed: {},
+    sessionKeep: {},
+    sessionArchiveExtendedUntil: {},
     sessionOwned: {},
     mergedPrAutoArchived: {},
     travel: defaultTravelState(),
@@ -100,11 +110,12 @@ type FamiliarBindingPatch = {
   [K in keyof FamiliarBinding]?: FamiliarBinding[K] | null;
 };
 
-type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars"> & {
+type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars" | "chatAutoArchive"> & {
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
   multiHost?: Partial<CaveMultiHostConfig>;
   remoteHosts?: CaveRemoteHost[];
+  chatAutoArchive?: Partial<ChatAutoArchivePolicy>;
 };
 
 export type RoleConfigEntry = {
@@ -189,6 +200,8 @@ export type CaveConfig = {
   remoteHosts: CaveRemoteHost[];
   /** Operator profile (Settings → Profile). Image lives in ~/.coven/user-avatar.*, not here. */
   profile?: UserProfile;
+  /** Auto-archive policy for chats (see chat-auto-archive.ts). Absent = defaults. */
+  chatAutoArchive?: ChatAutoArchivePolicy;
 };
 
 export type CaveState = {
@@ -200,6 +213,10 @@ export type CaveState = {
   sessionArchived: Record<string, string>;
   /** Session to ISO timestamp when sacrificed (soft-deleted) in the Cave. Hidden from lists. */
   sessionSacrificed: Record<string, string>;
+  /** Session to ISO timestamp when marked keep (never auto-archived). */
+  sessionKeep: Record<string, string>;
+  /** Session to ISO deadline before which auto-archive sweeps must skip it. */
+  sessionArchiveExtendedUntil: Record<string, string>;
   /** Sessions created through Cave's browser-facing session API. */
   sessionOwned: Record<string, string>;
   /** Session → PR key ("owner/repo#N") whose merge already auto-archived it
@@ -237,6 +254,9 @@ export async function loadConfig(): Promise<CaveConfig> {
       // Must be listed — this explicit shape drops unknown keys, and a dropped
       // profile would be erased by the next saveConfig round-trip.
       profile: parsed.profile,
+      ...(parsed.chatAutoArchive !== undefined
+        ? { chatAutoArchive: normalizeChatAutoArchivePolicy(parsed.chatAutoArchive) }
+        : {}),
     };
   } catch {
     return defaultConfig();
@@ -415,6 +435,14 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
     roles: patch.roles !== undefined ? patch.roles : current.roles,
     // Replace-if-provided ("in" so `{ profile: undefined }` clears the key).
     profile: "profile" in patch ? patch.profile : current.profile,
+    // Merge-if-provided; partial patches inherit current values then defaults.
+    chatAutoArchive:
+      patch.chatAutoArchive !== undefined
+        ? normalizeChatAutoArchivePolicy({
+            ...current.chatAutoArchive,
+            ...patch.chatAutoArchive,
+          })
+        : current.chatAutoArchive,
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);
@@ -497,6 +525,8 @@ export async function loadState(): Promise<CaveState> {
       sessionTitles: parsed.sessionTitles ?? {},
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
+      sessionKeep: parsed.sessionKeep ?? {},
+      sessionArchiveExtendedUntil: parsed.sessionArchiveExtendedUntil ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
       mergedPrAutoArchived: parsed.mergedPrAutoArchived ?? {},
       travel: normalizeTravelState(parsed.travel),
@@ -707,11 +737,61 @@ export async function archiveSessionLocal(sessionId: string): Promise<string> {
   return now;
 }
 
-/** Restore a previously archived session in the Cave. */
+/** Restore a previously archived session in the Cave. Applies a short
+ *  auto-archive grace extension so an idle-based sweep doesn't immediately
+ *  re-archive the freshly summoned chat. */
 export async function summonSessionLocal(sessionId: string): Promise<void> {
   await updateState((state) => {
     delete state.sessionArchived[sessionId];
+    state.sessionArchiveExtendedUntil[sessionId] = extendUntilIso(
+      new Date(),
+      SUMMON_GRACE_DAYS,
+    );
   });
+}
+
+/** Mark or unmark a session keep (never auto-archived). Manual archive still works. */
+export async function setSessionKeepLocal(sessionId: string, keep: boolean): Promise<boolean> {
+  await updateState((state) => {
+    if (keep) {
+      state.sessionKeep[sessionId] = new Date().toISOString();
+    } else {
+      delete state.sessionKeep[sessionId];
+    }
+  });
+  return keep;
+}
+
+/** Push a session's auto-archive deadline out to `untilIso`. */
+export async function extendSessionAutoArchiveLocal(
+  sessionId: string,
+  untilIso: string,
+): Promise<string> {
+  await updateState((state) => {
+    state.sessionArchiveExtendedUntil[sessionId] = untilIso;
+  });
+  return untilIso;
+}
+
+/**
+ * Archive a batch of sessions in one state write (auto-archive sweep).
+ * Sessions already archived or sacrificed are skipped. Returns the ids that
+ * were archived now, mapped to their shared archive timestamp.
+ */
+export async function autoArchiveSessionsLocal(
+  sessionIds: string[],
+): Promise<Map<string, string>> {
+  const archived = new Map<string, string>();
+  if (sessionIds.length === 0) return archived;
+  await updateState((state) => {
+    const now = new Date().toISOString();
+    for (const sessionId of sessionIds) {
+      if (state.sessionArchived[sessionId] || state.sessionSacrificed[sessionId]) continue;
+      state.sessionArchived[sessionId] = now;
+      archived.set(sessionId, now);
+    }
+  });
+  return archived;
 }
 
 /**

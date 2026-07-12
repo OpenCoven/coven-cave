@@ -33,6 +33,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
   const [draftHarness, setDraftHarness] = useState(familiar.harnessOverride ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
+  // Explicit "Custom..." mode. Without this flag an empty draft is ambiguous:
+  // "" is both "Inherit default" and "custom id being typed", so the select
+  // could never actually display Inherit default (it always fell through to
+  // Custom). Non-empty unlisted ids still force custom mode via render logic.
+  const [modelCustomMode, setModelCustomMode] = useState(false);
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
@@ -46,6 +51,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   useEffect(() => {
     setDraftHarness(familiar.harnessOverride ?? "");
     setDraftModel(familiar.model ?? "");
+    setModelCustomMode(false);
     setDraftNote(familiar.note ?? "");
     setDraftVoiceProvider(familiar.voiceProvider ?? "");
     setDraftVoiceModel(familiar.voiceModel ?? "");
@@ -77,6 +83,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const modelOptions = modelCatalog?.models ?? [];
   const allowCustomModel = modelCatalog?.allowCustom ?? true;
   const draftModelIsListed = modelOptions.some((option) => option.id === draftModel);
+  // "" means Inherit default — only a non-empty unlisted id (or the user
+  // explicitly picking Custom...) should switch the select to Custom.
+  const modelIsCustom = modelCustomMode || (draftModel !== "" && !draftModelIsListed);
 
   useEffect(() => {
     if (!harnessId) {
@@ -133,7 +142,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         reportDaemonSyncFailure(`cave-config write: ${json.error ?? res.statusText}`);
         // Revert local draft to last-known value on failure.
         if ("harness" in patch) setDraftHarness(familiar.harnessOverride ?? "");
-        if ("model" in patch) setDraftModel(familiar.model ?? "");
+        if ("model" in patch) {
+          setDraftModel(familiar.model ?? "");
+          setModelCustomMode(false);
+        }
         if ("note" in patch) setDraftNote(familiar.note ?? "");
         if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
         if ("voiceModel" in patch) setDraftVoiceModel(familiar.voiceModel ?? "");
@@ -186,12 +198,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                   {modelOptions.length > 0 ? (
                     <StandardSelect
                       label="Model"
-                      value={draftModelIsListed ? draftModel : "__custom__"}
+                      value={modelIsCustom ? "__custom__" : draftModel}
                       onChange={(next) => {
                         if (next === "__custom__") {
+                          setModelCustomMode(true);
                           setDraftModel("");
                           return;
                         }
+                        setModelCustomMode(false);
                         setDraftModel(next);
                         void save({ model: next || null });
                       }}
@@ -203,12 +217,18 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       ]}
                     />
                   ) : null}
-                  {allowCustomModel && (modelOptions.length === 0 || !draftModelIsListed) ? (
+                  {allowCustomModel && (modelOptions.length === 0 || modelIsCustom) ? (
                     <input
                       type="text"
                       value={draftModel}
                       onChange={(e) => setDraftModel(e.target.value)}
-                      onBlur={() => save({ model: draftModel.trim() || null })}
+                      onBlur={() => {
+                        const trimmed = draftModel.trim();
+                        // Blurring an empty custom field falls back to Inherit
+                        // default instead of lingering as a blank Custom row.
+                        if (!trimmed) setModelCustomMode(false);
+                        void save({ model: trimmed || null });
+                      }}
                       placeholder="provider/model"
                       autoCapitalize="none"
                       autoCorrect="off"

@@ -23,4 +23,9 @@ assert.match(source, /onError=\{\(\) => setSrcIdx\(\(i\) => i \+ 1\)\}/, "img mu
 assert.match(source, /const hasImage = Boolean\(currentSrc\)/, "render must gate the img on a resolvable current source");
 assert.match(source, /useEffect\(\s*\(\) => \{\s*setSrcIdx\(0\);\s*\}, \[familiar\.avatarImage, familiar\.avatarImageFallback\]\)/, "source index must reset when either avatar src changes");
 
+// The enlarged preview can carry footer actions (e.g. the inline card's
+// "Edit profile" link) — forwarded through to the AvatarLightbox modal.
+assert.match(source, /expandFooterActions\?: ReactNode/, "must accept optional expandFooterActions");
+assert.match(source, /footerActions=\{expandFooterActions\}/, "must forward expandFooterActions to AvatarLightbox");
+
 console.log("familiar-avatar.test.ts: ok");

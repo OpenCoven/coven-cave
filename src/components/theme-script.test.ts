@@ -136,7 +136,7 @@ for (const property of [
   "--font-serif", "--font-sans", "--font-mono",
   "--cave-reading-leading", "--cave-reading-tracking", "--cave-reading-align",
   "--cave-reading-width", "--cave-reading-weight", "--cave-reading-hyphens",
-  "--radius", "--radius-control", "--radius-card",
+  "--radius", "--radius-control", "--radius-card", "--radius-pill",
 ]) {
   assert.equal(
     defaultBoot.inline.has(property),
@@ -165,7 +165,7 @@ for (const property of [
   "--font-sans", "--font-mono",
   "--cave-reading-leading", "--cave-reading-tracking", "--cave-reading-align",
   "--cave-reading-width", "--cave-reading-weight", "--cave-reading-hyphens",
-  "--radius", "--radius-control", "--radius-card",
+  "--radius", "--radius-control", "--radius-card", "--radius-pill",
 ]) {
   assert.equal(
     explicitBoot.inline.has(property),

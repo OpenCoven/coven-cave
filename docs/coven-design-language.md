@@ -67,7 +67,8 @@ color.
   `--border-strong` (22%) for inputs/emphasis. Because they derive from
   `--foreground`, they invert automatically in light mode.
 - Radii: `--radius-control: 8px` · `--radius-card: 12px` ·
-  `--radius-panel: 16px` · and the signature **999px pill** (§3).
+  `--radius-panel: 16px` · and the signature **999px pill** (§3), tokenized as
+  `--radius-pill` so it tracks the corner-radius appearance setting.
 - Spacing: 4px grid (`--space-1` … `--space-10`).
 - Type: EB Garamond (display/hero) + Inter (body/UI) + JetBrains Mono (code/labels) — Coven canon per OpenCoven DESIGN.md §4. Geist stays in the selectable catalog but is no longer the shipped default. Ladder: `--text-2xs` (10px) →
   `--text-display` (28px); eyebrow tracking `0.08em` + uppercase for tiny

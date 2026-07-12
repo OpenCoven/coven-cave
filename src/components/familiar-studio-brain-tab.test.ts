@@ -28,9 +28,33 @@ assert.match(
   /allowCustomModel/,
   "Brain tab should keep a free-text fallback for ids not in the curated catalog",
 );
+// ── Model select: Inherit default must be representable (2026-07-12) ─────────
+// The select's value used to be `draftModelIsListed ? draftModel : "__custom__"`,
+// so "" (Inherit default) always rendered as Custom... with an empty text box.
+// Custom mode is now explicit state; "" only means inherit.
 assert.match(
   source,
-  /type="text"[\s\S]{0,320}autoCapitalize="none"[\s\S]{0,80}autoCorrect="off"[\s\S]{0,80}spellCheck=\{false\}/,
+  /const \[modelCustomMode, setModelCustomMode\] = useState\(false\)/,
+  "Custom model mode must be explicit state, not inferred from an empty draft",
+);
+assert.match(
+  source,
+  /modelCustomMode \|\| \(draftModel !== "" && !draftModelIsListed\)/,
+  "Only a non-empty unlisted id (or explicit Custom...) switches the select to Custom",
+);
+assert.match(
+  source,
+  /value=\{modelIsCustom \? "__custom__" : draftModel\}/,
+  "Inherit default (empty draft) must render as the empty option, not Custom...",
+);
+assert.match(
+  source,
+  /if \(!trimmed\) setModelCustomMode\(false\)/,
+  "Blurring an empty custom field falls back to Inherit default",
+);
+assert.match(
+  source,
+  /type="text"[\s\S]{0,800}autoCapitalize="none"[\s\S]{0,80}autoCorrect="off"[\s\S]{0,80}spellCheck=\{false\}/,
   "Brain tab custom model input should not auto-capitalize, autocorrect, or spellcheck model ids",
 );
 assert.match(source, /note/);

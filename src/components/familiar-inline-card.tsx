@@ -8,6 +8,7 @@ import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
 import { resolveFamiliar } from "@/lib/familiar-resolve";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import type { Familiar } from "@/lib/types";
 import {
@@ -142,7 +143,23 @@ export function FamiliarInlineCard({
       </button>
 
       <div className="familiar-inline-card__identity">
-        <FamiliarAvatar familiar={resolved} size="xl" expandable />
+        {/* The enlarged preview allows editing too — same identity-tab target
+            as the "Edit profile" quick action below. */}
+        <FamiliarAvatar
+          familiar={resolved}
+          size="xl"
+          expandable
+          expandFooterActions={
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon="ph:pencil-simple"
+              onClick={() => act(() => openFamiliarStudio(familiar.id, "identity"))}
+            >
+              Edit profile
+            </Button>
+          }
+        />
         <div className="familiar-inline-card__id-text">
           <div className="familiar-inline-card__name">{familiar.display_name}</div>
           <div className="familiar-inline-card__role">{familiar.role}</div>

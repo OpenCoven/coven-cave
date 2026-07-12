@@ -11,7 +11,7 @@
 // through the separate `?pr=1` query instead of riding the poll. Chats whose
 // root isn't a repo (or have no project root at all) render nothing.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { useChangesSummary } from "@/lib/use-changes-summary";
 import "@/styles/composer-git-chip.css";
@@ -93,9 +93,27 @@ export function ComposerGitChip({
   ]
     .filter(Boolean)
     .join(" · ");
+  const openChanges = () => {
+    window.dispatchEvent(new CustomEvent("cave:changes-open"));
+  };
+  const onChipKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openChanges();
+  };
 
   return (
-    <div className="cave-composer-git-chip" title={title} data-testid="composer-git-chip">
+    <div
+      className="cave-composer-git-chip focus-ring"
+      title={`${title} · Open Git changes`}
+      data-testid="composer-git-chip"
+      role="button"
+      tabIndex={0}
+      aria-label="Open Git changes for this chat"
+      onClick={() => openChanges()}
+      onKeyDown={onChipKeyDown}
+    >
       <span className="cave-composer-git-chip__branch">
         <Icon name="ph:git-branch" width={12} aria-hidden />
         <span className="cave-composer-git-chip__label" aria-label={`Branch: ${branch}`}>
@@ -120,7 +138,8 @@ export function ComposerGitChip({
           data-pr-state={pr.isDraft ? "draft" : pr.state.toLowerCase()}
           title={`Open PR #${pr.number} (${pr.isDraft ? "draft" : pr.state.toLowerCase()})`}
           aria-label={`Open pull request #${pr.number}`}
-          onClick={() => {
+          onClick={(event) => {
+            event.stopPropagation();
             if (onOpenUrl) onOpenUrl(pr.url);
             else window.open(pr.url, "_blank", "noopener,noreferrer");
           }}

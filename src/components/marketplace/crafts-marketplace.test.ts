@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
 const card = await readFile(new URL("./marketplace-card.tsx", import.meta.url), "utf8");
 const detail = await readFile(new URL("./marketplace-detail.tsx", import.meta.url), "utf8");
+const createDrawer = await readFile(new URL("./craft-create-drawer.tsx", import.meta.url), "utf8");
 const craftDetailUrl = new URL("./craft-detail.tsx", import.meta.url);
 const css = await readFile(new URL("../../app/globals.css", import.meta.url), "utf8");
 const marketplaceRoute = await readFile(new URL("../../app/api/marketplace/route.ts", import.meta.url), "utf8");
@@ -29,6 +30,9 @@ assert.match(card, /plugin\.kind === "craft"[\s\S]*onOpen\(plugin\.id\)/, "Craft
 assert.match(card, /state === "added" \? "Manage" : "Preview"/, "Craft cards use explicit Preview and Manage states");
 assert.match(card, /plugin\.draft[\s\S]*"Draft"/, "local draft Crafts have a distinct card state");
 assert.match(card, /kind === "craft"[\s\S]*"Craft"/, "Craft cards have a distinct kind label");
+assert.match(createDrawer, /className="craft-create-drawer__backdrop"/, "Craft create drawer keeps a stable fixed-overlay hook");
+assert.match(createDrawer, /className="craft-create-drawer__header"/, "Craft create drawer header layout stays on semantic hooks");
+assert.match(createDrawer, /className="craft-create-drawer__actions"/, "Craft create drawer footer actions stay on semantic hooks");
 
 assert.equal(existsSync(craftDetailUrl), true, "Craft detail component exists");
 const craftDetail = await readFile(craftDetailUrl, "utf8");
@@ -72,6 +76,7 @@ assert.match(
 );
 
 assert.match(css, /\.craft-loadout-path \{/, "Craft hierarchy has a stable visual hook");
+assert.match(css, /\.craft-create-drawer__backdrop \{/, "Craft create drawer overlay has a stable visual hook");
 assert.match(css, /\.craft-create-drawer \{/, "Craft creation drawer has stable styling hooks");
 assert.match(css, /\.craft-draft-ledger \{/, "Craft draft extraction ledger has stable styling hooks");
 assert.match(css, /\.craft-dossier__ledger \{/, "Craft grouped contents use a stable dossier ledger");

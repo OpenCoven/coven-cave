@@ -18,11 +18,12 @@
   line-height: 1;
   cursor: pointer;
   border: 1px solid var(--border-hairline);
-  /* Pill radius — the chip sits in the composer's control row between fully
-     round icon buttons (attach / voice / options / send are rounded-full
-     circles), so it shares their curvature instead of the squarer
-     --radius-control that made it read as a different control family. */
-  border-radius: 999px;
+  /* Pill radius — the chip sits in the composer's control row between the
+     pill icon buttons (attach / voice / options / send), so it shares their
+     curvature via --radius-pill instead of the squarer --radius-control that
+     made it read as a different control family. The token tracks the corner
+     radius appearance setting. */
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
 }
