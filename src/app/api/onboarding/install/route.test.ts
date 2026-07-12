@@ -154,8 +154,26 @@ assert.match(
 
 assert.match(
   source,
-  /commandPath\(target\.binary\)/,
-  "success is verified by resolving the installed binary, not just exit code 0",
+  /verifyOpenCovenToolInstall\(targetName\)/,
+  "OpenCoven installs refresh discovery and perform the authoritative executable/version verification",
+);
+
+assert.match(
+  source,
+  /isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
+  "a zero npm exit is necessary but insufficient: OpenCoven success also requires verified post-install state",
+);
+
+assert.match(
+  source,
+  /job\.verification = verification/,
+  "the polled job carries sanitized path/version verification evidence to the UI",
+);
+
+assert.match(
+  source,
+  /redactSensitiveInstallOutput/,
+  "installer tails redact token-like values before diagnostics expose them",
 );
 
 assert.match(
@@ -210,8 +228,8 @@ assert.match(
 
 assert.match(
   source,
-  /appendOutput\(job, stripAnsi\(/,
-  "installer output is ANSI-stripped at append time, so the cap counts visible bytes",
+  /redactSensitiveInstallOutput\(stripAnsi\(chunk\)\)/,
+  "installer output is ANSI-stripped and redacted before the capped diagnostics tail is stored",
 );
 
 assert.match(

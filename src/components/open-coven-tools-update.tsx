@@ -14,12 +14,28 @@ type ToolStatus = {
   binary: string;
   installed: boolean;
   path: string | null;
+  executablePath: string | null;
   current: string | null;
   latest: string | null;
   outdated: boolean;
   compatible: boolean;
+  packageVerified: boolean;
+  executableVerified: boolean;
+  packagePath: string | null;
+  discoveryError: "version-probe-failed" | "launcher-unreadable" | null;
   minimumVersion: string;
   installCommand: string;
+};
+
+type InstallVerification = {
+  path: string | null;
+  current: string | null;
+  latest: string | null;
+  packageVerified: boolean;
+  compatible: boolean;
+  latestSatisfied: boolean | null;
+  ok: boolean;
+  error?: string;
 };
 
 type InstallJobView = {
@@ -28,6 +44,7 @@ type InstallJobView = {
   tail: string;
   ok?: boolean;
   binaryPath?: string | null;
+  verification?: InstallVerification;
   error?: string;
 };
 
@@ -63,18 +80,53 @@ function toolVersionText(tool: ToolStatus): string {
 
 function toolStatusText(tool: ToolStatus): string {
   if (!tool.installed) return "Not found";
-  if (!tool.current) return "Version unknown";
+  if (!tool.packageVerified) return "Unexpected executable";
+  if (!tool.current) return "Version probe failed";
   if (!tool.compatible) return "Needs update";
   return "Up to date";
 }
 
 function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {
-  return tool.installed && Boolean(tool.current) && !tool.compatible;
+  return tool.installed && (!tool.packageVerified || !tool.current || !tool.compatible);
 }
 
 function toolCompatibilityText(tool: ToolStatus): string | null {
+  if (!tool.installed) return null;
+  if (!tool.packageVerified) return `Expected ${tool.packageName}`;
+  if (!tool.current) return "Version probe failed";
   if (!toolNeedsCompatibilityUpdate(tool)) return null;
   return `Requires >= ${tool.minimumVersion}`;
+}
+
+function installResultFromCompletion(
+  job: InstallJobView,
+  rechecked: ToolStatus | undefined,
+): InstallResult {
+  if (!job.ok) return { ok: false, detail: job.error ?? "update failed" };
+  const verification = job.verification;
+  if (!verification || !verification.ok) {
+    return { ok: false, detail: verification?.error ?? "post-install verification failed" };
+  }
+  const consistent =
+    rechecked &&
+    rechecked.path === verification.path &&
+    rechecked.current === verification.current &&
+    rechecked.latest === verification.latest &&
+    rechecked.packageVerified &&
+    rechecked.compatible &&
+    !rechecked.outdated;
+  if (!consistent) {
+    const current = rechecked?.current ? ` (${rechecked.current})` : "";
+    const path = rechecked?.path ? ` at ${rechecked.path}` : "";
+    return {
+      ok: false,
+      detail: `Post-install recheck now resolves a different executable${current}${path}. Retry after fixing PATH precedence.`,
+    };
+  }
+  return {
+    ok: true,
+    detail: `Verified ${verification.current} at ${verification.path}`,
+  };
 }
 
 function dismissedToolBanner(tools: ToolStatus[]): boolean {
@@ -198,7 +250,7 @@ export function OpenCovenToolsUpdate() {
   >({});
   const mounted = useRef(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<ToolStatus[] | null> => {
     setChecking(true);
     setError(null);
     try {
@@ -211,13 +263,14 @@ export function OpenCovenToolsUpdate() {
       if (!res.ok || json.ok === false) {
         throw new Error(json.error ?? "tool check failed");
       }
-      if (mounted.current) {
-        setTools((json.tools ?? []).filter((tool) => isInstallTarget(tool.id)));
-      }
+      const refreshed = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
+      if (mounted.current) setTools(refreshed);
+      return refreshed;
     } catch (err) {
       if (mounted.current) {
         setError(err instanceof Error ? err.message : "tool check failed");
       }
+      return null;
     } finally {
       if (mounted.current) setChecking(false);
     }
@@ -265,18 +318,14 @@ export function OpenCovenToolsUpdate() {
           }
           setInstallJobs((prev) => ({ ...prev, [target]: json }));
           if (json.status === "done") {
+            const refreshed = await load();
             setInstallResults((prev) => ({
               ...prev,
-              [target]: json.ok
-                ? {
-                    ok: true,
-                    detail: json.binaryPath
-                      ? `updated at ${json.binaryPath}`
-                      : "updated",
-                  }
-                : { ok: false, detail: json.error ?? "update failed" },
+              [target]: installResultFromCompletion(
+                json,
+                refreshed?.find((tool) => tool.id === target),
+              ),
             }));
-            await load();
           }
         } catch {
           /* transient poll failure; next tick retries */

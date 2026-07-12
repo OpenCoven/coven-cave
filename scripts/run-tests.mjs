@@ -52,6 +52,7 @@ export const SUITES = {
     "src-tauri/release-runtime.test.mjs",
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/opencoven-tools-install.test.ts",
+    "src/lib/opencoven-tool-verification.test.ts",
     "src/components/cave-home-migration-banner.test.ts",
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",

@@ -13,6 +13,11 @@ import {
 } from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
 import { installHermesShim } from "@/lib/hermes-shim";
+import {
+  verifyOpenCovenToolInstall,
+  type OpenCovenToolVerification,
+} from "@/lib/opencoven-tools-status";
+import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,6 +96,12 @@ const INSTALL_TARGETS = {
 
 type InstallTarget = keyof typeof INSTALL_TARGETS;
 type CommandPathResult = { path: string | null; error?: string };
+
+function isOpenCovenToolInstallTarget(
+  target: InstallTarget,
+): target is "coven-cli" | "coven-code" {
+  return target === "coven-cli" || target === "coven-code";
+}
 
 function nodeInstallHint(): string {
   if (process.platform === "darwin") {
@@ -266,6 +277,7 @@ type InstallJob = {
   ok?: boolean;
   code?: number | null;
   binaryPath?: string | null;
+  verification?: OpenCovenToolVerification;
   error?: string;
 };
 
@@ -282,8 +294,21 @@ const globalScope = globalThis as unknown as {
 const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
   new Map());
 
+function redactSensitiveInstallOutput(value: string): string {
+  return value
+    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1[redacted]@")
+    .replace(
+      /\b(?:_authToken|authorization|password|token)\b\s*[:=]\s*[^\r\n]+/gi,
+      (secret) => `${secret.slice(0, Math.max(secret.indexOf(":"), secret.indexOf("=")) + 1)} [redacted]`,
+    )
+    .replace(
+      /^.*(?:GITHUB_(?:PAT|PERSONAL_ACCESS_TOKEN)|NPM_CONFIG_.*(?:AUTH|TOKEN)|(?:^|[_-])TOKEN)\s*=.*$/gim,
+      "[redacted sensitive installer output]",
+    );
+}
+
 function appendOutput(job: InstallJob, chunk: string) {
-  job.output = (job.output + chunk).slice(-OUTPUT_CAP);
+  job.output = (job.output + redactSensitiveInstallOutput(stripAnsi(chunk))).slice(-OUTPUT_CAP);
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -309,10 +334,10 @@ function runCommand(
     let output = "";
     const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
     child.stdout.on("data", (data) => {
-      output += stripAnsi(data.toString());
+      output += redactSensitiveInstallOutput(stripAnsi(data.toString()));
     });
     child.stderr.on("data", (data) => {
-      output += stripAnsi(data.toString());
+      output += redactSensitiveInstallOutput(stripAnsi(data.toString()));
     });
     child.on("error", (err) => {
       clearTimeout(timer);
@@ -413,6 +438,7 @@ function jobView(job: InstallJob) {
     ok: job.ok ?? false,
     code: job.code ?? null,
     binaryPath: job.binaryPath ?? null,
+    ...(job.verification ? { verification: job.verification } : {}),
     ...(job.error ? { error: job.error } : {}),
   };
 }
@@ -422,7 +448,8 @@ function installStartErrorMessage(err: unknown): string {
   if (/resource temporarily unavailable|EAGAIN|uv_thread_create/i.test(message)) {
     return "Cave could not start the installer because the system is temporarily out of process slots. Wait a moment, then click Install again.";
   }
-  return message || "install failed to start";
+  if (!message) return "install failed to start";
+  return "Cave could not start the installer. Retry in a moment; if it continues, copy diagnostics for support.";
 }
 
 function finishInstallJobError(job: InstallJob, err: unknown) {
@@ -505,7 +532,7 @@ export async function POST(req: Request) {
         ok: false,
         commandLookupFailed: true,
         error: `Cave couldn't check ${plan.binary} on PATH`,
-        hint: `Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again. Details: ${plan.error}`,
+        hint: "Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again.",
       },
       { status: 503 },
     );
@@ -559,8 +586,8 @@ export async function POST(req: Request) {
         env: covenSpawnEnv(),
         shell: plan.shell,
       });
-      child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-      child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+      child.stdout.on("data", (d) => appendOutput(job, d.toString()));
+      child.stderr.on("data", (d) => appendOutput(job, d.toString()));
       let killTimer: NodeJS.Timeout | undefined;
       const timer = setTimeout(() => {
         // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
@@ -577,9 +604,17 @@ export async function POST(req: Request) {
         clearTimeout(timer);
         if (killTimer) clearTimeout(killTimer);
         void (async () => {
-          const installed = await commandPath(target.binary);
-          const installedPath = installed.path;
-          const ok = code === 0 && !!installedPath && !job.error;
+          const verification = isOpenCovenToolInstallTarget(targetName)
+            ? await verifyOpenCovenToolInstall(targetName)
+            : null;
+          const installed = verification
+            ? null
+            : await commandPath(target.binary, { refreshOnMiss: true });
+          const installedPath = verification?.path ?? installed?.path ?? null;
+          const completedSuccessfully = verification
+            ? isVerifiedOpenCovenInstallSuccess(code, verification)
+            : code === 0 && !!installedPath;
+          const ok = completedSuccessfully && !job.error;
 
           // Hermes has no positional prompt slot, so the harness's
           // `-- "<prompt>"` convention needs the `hermes-coven` shim to remap
@@ -596,19 +631,20 @@ export async function POST(req: Request) {
                     `chat may fail until it is installed manually.\n`,
             );
           }
-
           job.status = "done";
           job.finishedAt = Date.now();
           job.ok = ok;
           job.code = code;
           job.binaryPath = installedPath;
+          if (verification) job.verification = verification;
           if (!ok && !job.error) {
-            job.error = installed.error
-              ? `Could not verify ${target.binary} on PATH after install: ${installed.error}`
+            job.error = verification?.error ??
+              (installed?.error
+                ? `Could not verify ${target.binary} on PATH after install.`
               : installFailureHint(targetName, job.output) ??
                 (code === 0
                   ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-                  : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
+                  : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`));
           }
         })();
       });

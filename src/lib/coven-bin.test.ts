@@ -106,8 +106,8 @@ await writeFile(fallbackShim, "@ECHO off\r\nREM unknown shim shape\r\n");
 
 assert.deepEqual(
   covenLaunchCommandForBinary(fallbackShim, "win32"),
-  { command: process.execPath, fixedArgs: [fallbackScript] },
-  "Windows .cmd shims fall back to the standard npm global coven.js location",
+  { command: fallbackShim, fixedArgs: [] },
+  "an unreadable Windows .cmd shim is not guessed as the OpenCoven package entry point",
 );
 
 // Windows has no $SHELL, so the login-shell PATH probe always failed there
@@ -167,8 +167,8 @@ assert.equal(
 // prefer real launchers or spawn("coven") ENOENTs with the CLI on PATH.
 assert.equal(
   pickWindowsLauncher(["C:\\node\\coven", "C:\\node\\coven.cmd", "C:\\shims\\coven.exe"]),
-  "C:\\shims\\coven.exe",
-  "a real .exe wins over shims and POSIX launchers",
+  "C:\\node\\coven.cmd",
+  "the first spawnable launcher preserves PATH precedence over a later .exe",
 );
 
 assert.equal(

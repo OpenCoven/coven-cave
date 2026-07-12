@@ -40,14 +40,26 @@ assert.match(
 
 assert.match(
   source,
-  /execFileAsync\("npm", \["view", tool\.packageName, "version", "--json"\]/,
-  "latest versions are read from npm without involving a shell",
+  /const npm = await commandPath\("npm", \{ env \}\)[\s\S]*?execFileAsync\(\s*npm\.path,[\s\S]*?\["view", tool\.packageName, "version", "--json"\]/,
+  "latest versions are read through the discovered npm launcher, including npm.cmd on Windows",
 );
 
 assert.match(
   source,
-  /compareSemver\(latest, installed\.version\) > 0/,
-  "outdated status uses the shared semver comparison",
+  /compareSemver\(latest, probe\.version\) > 0/,
+  "outdated status uses the shared semver comparison after identifying the executable package",
+);
+
+assert.match(
+  source,
+  /packageIdentityForExecutable[\s\S]*?manifest\.bin/,
+  "status verifies both the package identity and the selected package bin entry point",
+);
+
+assert.match(
+  source,
+  /verifyOpenCovenToolInstall[\s\S]*?refreshCovenSpawnEnv\(\)/,
+  "post-install verification rebuilds PATH before probing the tool",
 );
 
 assert.match(
