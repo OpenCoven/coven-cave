@@ -1146,6 +1146,40 @@ assert.ok(
   "--model must be pushed before the -- prompt separator",
 );
 
+// ── Directory grants (gated --add-dir passthrough) ─────────────────────────
+// Granted project roots must be forwarded to the harness or they stay
+// prompt-text-only: the runtime-scope preamble describes the grants, but a
+// harness that only trusts its cwd denies every access to them.
+assert.match(
+  chatRoute,
+  /covenRunSupportsAddDirFlag/,
+  "--add-dir forwarding must gate on the coven run capability probe",
+);
+assert.match(
+  chatRoute,
+  /binding\.harness !== "openclaw" && \(await covenRunSupportsAddDir\(\)\)/,
+  "OpenClaw never forwards --add-dir; every other harness gates on the probe",
+);
+assert.match(
+  chatRoute,
+  /addDirForwardingEnabled && !sshRuntime/,
+  "--add-dir forwarding is local-only; SSH runtimes own their remote filesystem",
+);
+assert.match(
+  chatRoute,
+  /for \(const dir of forwardAddDirs\) a\.push\("--add-dir", dir\);/,
+  "Local argv should push each granted root via the repeatable --add-dir flag",
+);
+assert.ok(
+  localArgvBlock[0].indexOf('a.push("--add-dir"') < localArgvBlock[0].indexOf('a.push("--", prompt)'),
+  "--add-dir must be pushed before the -- prompt separator",
+);
+assert.match(
+  chatRoute,
+  /\.filter\(\(root\) => root && root !== spawnRoot\)/,
+  "The spawn cwd is already trusted and must not be re-forwarded",
+);
+
 assert.match(
   chatRoute,
   /responseMetadata\.confirmedModel = confirmedModel;/,

@@ -223,6 +223,16 @@ export function covenRunSupportsPermissionFlag(helpText: string): boolean {
   return /(^|\s)--permission(?![\w-])/m.test(helpText);
 }
 
+// Gated-forwarding probe for `coven run --add-dir <DIR>` (repeatable). Granted
+// project roots are only real grants if the spawned harness also trusts those
+// directories — the runtime-scope preamble alone leaves the harness denying
+// every access outside its cwd. Forwarding stays a no-op on CLIs that predate
+// the flag, since `coven run` rejects unknown flags.
+export function covenRunSupportsAddDirFlag(helpText: string): boolean {
+  if (typeof helpText !== "string" || !helpText) return false;
+  return /(^|\s)--add-dir(?![\w-])/m.test(helpText);
+}
+
 export function mergeAdapterReports(
   localReports: Array<
     Partial<AdapterReport> & {
