@@ -247,6 +247,19 @@ jobs:
             throw 'Browser lifecycle filter completed without running any tests.'
           }
 
+      - name: Test Windows PTY callback isolation
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $testOutput = @(& cargo test --color never --manifest-path src-tauri/Cargo.toml --locked --lib pty::tests::pty_start_worker_returns_dependency_panics_as_errors -- --exact --nocapture 2>&1)
+          $testExitCode = $LASTEXITCODE
+          $testOutput | ForEach-Object { Write-Host $_ }
+          if ($testExitCode -ne 0) { exit $testExitCode }
+          $testSummary = $testOutput -join "`n"
+          if ($testSummary -notmatch '(?m)^test result: ok\. 1 passed; 0 failed;') {
+            throw 'PTY callback-isolation filter did not run exactly one test.'
+          }
+
       - name: Test Windows owned-process Job Object lifecycle
         if: matrix.os == 'windows-latest'
         shell: pwsh

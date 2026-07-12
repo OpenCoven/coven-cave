@@ -324,7 +324,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       ptyRust,
-      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }
@@ -341,7 +341,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       ptyRust,
-      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }
@@ -359,7 +359,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       ptyRust,
-      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }

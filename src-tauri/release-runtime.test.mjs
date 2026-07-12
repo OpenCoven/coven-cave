@@ -9,6 +9,11 @@ const WINDOWS_NATIVE_RUST_STEPS = [
     exact: false,
   },
   {
+    name: "Test Windows PTY callback isolation",
+    filter: "pty::tests::pty_start_worker_returns_dependency_panics_as_errors",
+    exact: true,
+  },
+  {
     name: "Test Windows owned-process Job Object lifecycle",
     filter: "windows_process_job::tests",
     exact: false,
@@ -263,6 +268,11 @@ test("Windows native Browser children fail closed before WebView2 registration",
     browser,
     /with_main_webview2_environment\(app, builder\)[\s\S]*LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)[\s\S]*hide_webview/,
     "a child must reuse the main environment and remain offscreen/hidden until registration finishes",
+  );
+  assert.match(
+    browser,
+    /WebviewBuilder::new\(label, WebviewUrl::External\(parsed_url\)\)[\s\S]*?\.focused\(false\)[\s\S]*?\.background_color/,
+    "an offscreen child must not steal focus from the main Cave renderer during creation",
   );
   assert.match(
     browser,

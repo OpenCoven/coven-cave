@@ -57,6 +57,9 @@ param(
     [ValidateRange(500, 30000)]
     [int]$PostExitDeadlineMs = 5000,
 
+    [ValidateRange(30000, 600000)]
+    [int]$StartupReadyDeadlineMs = 180000,
+
     [ValidateRange(2000, 30000)]
     [int]$RendererStallMs = 8000,
 
@@ -135,6 +138,9 @@ $settingsLinks = @(
     [ordered]@{ label = "Podcast"; href = "https://pod.opencoven.ai" }
 )
 
+$trustedStartupUrl = "http://tauri.localhost/startup.html"
+$mainWorkspaceProbeExpression = 'Boolean(document.querySelector(''link[rel="manifest"][href="/manifest.webmanifest"], [aria-label="Settings"], [aria-label="Account / settings"], [data-native-browser-viewport], [id^="settings-"]''))'
+
 $childUrlRules = [ordered]@{
     GitHub = @([ordered]@{ host = "github.com"; pathPrefix = "/OpenCoven/coven-cave"; queryContains = $null })
     Docs = @([ordered]@{ host = "docs.opencoven.ai"; pathPrefix = "/"; queryContains = $null })
@@ -179,7 +185,14 @@ $report = [ordered]@{
         webView2Profile = $WebView2Profile
         profileCreatedByHarness = $false
         profileOwnerToken = $profileOwnerToken
-        profileCleanup = [ordered]@{ eligible = $false; attempted = $false; passed = $null; error = $null }
+        profileCleanup = [ordered]@{
+            eligible = $false
+            attempted = $false
+            passed = $null
+            profileProcessWaitMilliseconds = 0
+            deleteAttempts = 0
+            error = $null
+        }
         dpiAwareness = $null
         dpiAwarenessRestored = $null
     }
@@ -195,11 +208,32 @@ $report = [ordered]@{
     cyclesCompleted = 0
     transitions = @()
     phases = @()
+    startupWait = [ordered]@{
+        deadlineMilliseconds = $StartupReadyDeadlineMs
+        attempted = $false
+        targetId = $null
+        initialUrl = $null
+        lastUrl = $null
+        trustedStartupTargetSeen = $false
+        workspaceReady = $false
+        startedAtUtc = $null
+        completedAtUtc = $null
+        elapsedMilliseconds = $null
+        pollErrors = @()
+    }
     startupGeometry = $null
     geometryTolerances = [ordered]@{ viewportPixels = $BoundsTolerancePx; clientContainmentPixels = $ClientContainmentTolerancePx }
     lastPhysicalInput = $null
     processSnapshot = @()
-    ptySetup = [ordered]@{ requested = [bool]$StartTrustedPty; threadId = $null; projectRoot = $null; started = $false; newExactTuple = $null }
+    ptySetup = [ordered]@{
+        requested = [bool]$StartTrustedPty
+        attemptedAtUtc = $null
+        threadId = $null
+        projectRoot = $null
+        invokeElapsedMs = $null
+        started = $false
+        newExactTuple = $null
+    }
     stalls = @()
     close = [ordered]@{ skipped = [bool]($SkipClose -or $StartupProbeOnly); posted = $false; elapsedMilliseconds = $null; withinDeadline = $null }
     orphanCheck = [ordered]@{ performed = $false; passed = $null; survivingTuples = @() }
@@ -443,12 +477,32 @@ namespace CovenNativeRegression {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+  [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO {
+    public int cbSize;
+    public uint flags;
+    public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+    public RECT rcCaret;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT {
+    public int dx, dy;
+    public uint mouseData, dwFlags, time;
+    public UIntPtr dwExtraInfo;
+  }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION {
+    [FieldOffset(0)] public MOUSEINPUT mi;
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT {
+    public uint type;
+    public INPUTUNION U;
+  }
   public delegate bool EnumWindowProc(IntPtr hWnd, IntPtr lParam);
   public static class Win32 {
+    [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowProc cb, IntPtr data);
     [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr parent, EnumWindowProc cb, IntPtr data);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool IsHungAppWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr GhostWindowFromHungWindow(IntPtr hWnd);
@@ -459,7 +513,11 @@ namespace CovenNativeRegression {
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll", SetLastError=true)] public static extern bool AttachThreadInput(uint attachThread, uint attachToThread, bool attach);
+    [DllImport("user32.dll", SetLastError=true)] public static extern bool GetGUIThreadInfo(uint threadId, ref GUITHREADINFO info);
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int command);
     [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
     [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
@@ -467,11 +525,22 @@ namespace CovenNativeRegression {
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT point);
+    [DllImport("user32.dll", SetLastError=true)] public static extern uint SendInput(uint inputCount, INPUT[] inputs, int inputSize);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
     [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam, uint flags, uint timeoutMs, out UIntPtr result);
+
+    public static INPUT MouseInput(int dx, int dy, uint flags) {
+      return new INPUT {
+        type = 0,
+        U = new INPUTUNION {
+          mi = new MOUSEINPUT { dx = dx, dy = dy, mouseData = 0, dwFlags = flags, time = 0, dwExtraInfo = UIntPtr.Zero }
+        }
+      };
+    }
   }
 }
 '@
@@ -480,6 +549,13 @@ $WM_CLOSE = 0x0010
 $SW_RESTORE = 9
 $MOUSE_LEFTDOWN = 0x0002
 $MOUSE_LEFTUP = 0x0004
+$MOUSE_MOVE = 0x0001
+$MOUSE_VIRTUALDESK = 0x4000
+$MOUSE_ABSOLUTE = 0x8000
+$SM_XVIRTUALSCREEN = 76
+$SM_YVIRTUALSCREEN = 77
+$SM_CXVIRTUALSCREEN = 78
+$SM_CYVIRTUALSCREEN = 79
 $KEYUP = 0x0002
 $VK_CONTROL = 0x11
 $VK_MENU = 0x12
@@ -537,15 +613,27 @@ function Get-MainWindowHandle {
         $owner = [uint32]0
         [void][CovenNativeRegression.Win32]::GetWindowThreadProcessId($handle, [ref]$owner)
         $className = Get-WindowClassName $handle
-        # Windows creates a DWM-owned Ghost window for a hung top-level HWND.
-        # It must never be selected as the authoritative candidate, even if a
-        # future Windows version attributes it differently.
-        if ($owner -eq $ProcessId -and $className -ne "Ghost" -and [CovenNativeRegression.Win32]::IsWindowVisible($handle)) {
+        # Tao creates a tiny message-only/event target before the real window.
+        # Keep polling until a substantial visible top-level with a usable
+        # client area exists; neither an event target nor a Ghost is authority.
+        if ($owner -eq $ProcessId -and
+            $className -notin @("Ghost", "Tao Thread Event Target") -and
+            [CovenNativeRegression.Win32]::IsWindowVisible($handle)) {
             $rect = New-Object CovenNativeRegression.RECT
-            if ([CovenNativeRegression.Win32]::GetWindowRect($handle, [ref]$rect)) {
+            $client = New-Object CovenNativeRegression.RECT
+            if ([CovenNativeRegression.Win32]::GetWindowRect($handle, [ref]$rect) -and
+                [CovenNativeRegression.Win32]::GetClientRect($handle, [ref]$client)) {
+                $width = [Math]::Max(0, $rect.Right - $rect.Left)
+                $height = [Math]::Max(0, $rect.Bottom - $rect.Top)
+                $clientWidth = [Math]::Max(0, $client.Right - $client.Left)
+                $clientHeight = [Math]::Max(0, $client.Bottom - $client.Top)
+                if ($width -lt 320 -or $height -lt 240 -or $clientWidth -lt 300 -or $clientHeight -lt 200) {
+                    return $true
+                }
                 [void]$candidates.Add([pscustomobject]@{
                     handle = $handle
-                    area = [long]([Math]::Max(0, $rect.Right - $rect.Left)) * [long]([Math]::Max(0, $rect.Bottom - $rect.Top))
+                    area = [long]$width * [long]$height
+                    clientArea = [long]$clientWidth * [long]$clientHeight
                     title = Get-WindowTitle $handle
                     className = $className
                 })
@@ -554,7 +642,7 @@ function Get-MainWindowHandle {
         return $true
     }
     [void][CovenNativeRegression.Win32]::EnumWindows($callback, [IntPtr]::Zero)
-    $winner = @($candidates | Sort-Object area -Descending | Select-Object -First 1)
+    $winner = @($candidates | Sort-Object clientArea, area -Descending | Select-Object -First 1)
     if ($winner.Count -eq 0 -or $winner[0].area -le 0) { return [IntPtr]::Zero }
     return [IntPtr]$winner[0].handle
 }
@@ -577,7 +665,7 @@ function Wait-MainWindowHandle {
         if ($handle -ne [IntPtr]::Zero) { return $handle }
         Start-Sleep -Milliseconds 100
     } while ($watch.ElapsedMilliseconds -lt $TimeoutMs)
-    throw "Candidate PID $ProcessId did not expose a visible top-level window within ${TimeoutMs}ms."
+    throw "Candidate PID $ProcessId did not expose a usable visible top-level window within ${TimeoutMs}ms."
 }
 
 function Wait-NativeMessagePump {
@@ -723,32 +811,90 @@ function Assert-ExactMainForeground {
     )
 }
 
+function Invoke-AttachedMainWindowFocus {
+    param([IntPtr]$MainWindow)
+    $targetProcessId = [uint32]0
+    $targetThreadId = [CovenNativeRegression.Win32]::GetWindowThreadProcessId($MainWindow, [ref]$targetProcessId)
+    if ($targetThreadId -eq 0) { return $false }
+    $currentThreadId = [CovenNativeRegression.Win32]::GetCurrentThreadId()
+    $foregroundWindow = [CovenNativeRegression.Win32]::GetForegroundWindow()
+    $foregroundProcessId = [uint32]0
+    $foregroundThreadId = if ($foregroundWindow -ne [IntPtr]::Zero) {
+        [CovenNativeRegression.Win32]::GetWindowThreadProcessId($foregroundWindow, [ref]$foregroundProcessId)
+    } else { 0 }
+    $attachedThreads = New-Object System.Collections.ArrayList
+    try {
+        foreach ($threadId in @($targetThreadId, $foregroundThreadId) | Sort-Object -Unique) {
+            if ($threadId -eq 0 -or $threadId -eq $currentThreadId) { continue }
+            if ([CovenNativeRegression.Win32]::AttachThreadInput($currentThreadId, [uint32]$threadId, $true)) {
+                [void]$attachedThreads.Add([uint32]$threadId)
+            }
+        }
+        [void][CovenNativeRegression.Win32]::ShowWindowAsync($MainWindow, $SW_RESTORE)
+        [void][CovenNativeRegression.Win32]::BringWindowToTop($MainWindow)
+        [void][CovenNativeRegression.Win32]::SetForegroundWindow($MainWindow)
+        [void][CovenNativeRegression.Win32]::SetFocus($MainWindow)
+        Start-Sleep -Milliseconds 100
+        return [CovenNativeRegression.Win32]::GetForegroundWindow() -eq $MainWindow
+    }
+    finally {
+        foreach ($threadId in $attachedThreads) {
+            [void][CovenNativeRegression.Win32]::AttachThreadInput($currentThreadId, [uint32]$threadId, $false)
+        }
+    }
+}
+
+function Get-MainWryKeyboardTarget {
+    param([Parameter(Mandatory = $true)][IntPtr]$MainWindow)
+    $wrys = @(Get-DirectWryWebViews $MainWindow)
+    $mainWry = Get-MainWryWebView $wrys
+    $chromeChildren = New-Object System.Collections.ArrayList
+    $callback = [CovenNativeRegression.EnumWindowProc]{
+        param([IntPtr]$handle, [IntPtr]$unused)
+        if ((Get-WindowClassName $handle) -eq "Chrome_WidgetWin_1" -and
+            [CovenNativeRegression.Win32]::IsWindowVisible($handle)) {
+            try {
+                $rect = Get-WindowRectRecord $handle
+                if ($rect.width -gt 0 -and $rect.height -gt 0) {
+                    [void]$chromeChildren.Add([pscustomobject]@{
+                        handle = $handle
+                        area = [long]$rect.width * [long]$rect.height
+                        rect = $rect
+                    })
+                }
+            }
+            catch { }
+        }
+        return $true
+    }
+    # EnumChildWindows is scoped to the selected largest direct WRY, so a
+    # Chrome_WidgetWin_1 hosted by a separate native Browser WRY cannot win.
+    [void][CovenNativeRegression.Win32]::EnumChildWindows($mainWry.handle, $callback, [IntPtr]::Zero)
+    $target = @($chromeChildren | Sort-Object area -Descending | Select-Object -First 1)
+    if ($target.Count -eq 0) { throw "No visible Chrome_WidgetWin_1 descendant exists under the main renderer WRY_WEBVIEW." }
+    return [pscustomobject][ordered]@{ mainWry = $mainWry; target = $target[0] }
+}
+
 function Focus-MainWindow {
     param([IntPtr]$MainWindow)
     Assert-MainWindowNotGhosted $MainWindow
     if ([CovenNativeRegression.Win32]::GetForegroundWindow() -eq $MainWindow) { return }
-    # Windows foreground-lock rules can reject a bare SetForegroundWindow.
-    # A harmless ALT tap makes this process eligible; verify focus before any
-    # coordinates are measured or input is sent, retrying for a bounded period.
+    # First use attached input queues so a covering foreground application never
+    # receives a coordinate click. Retain the harmless ALT-only foreground-lock
+    # nudge as a bounded fallback; no pointer coordinates or action key are sent.
     foreach ($attempt in 1..4) {
+        Assert-MainWindowNotGhosted $MainWindow
+        if (Invoke-AttachedMainWindowFocus $MainWindow) {
+            Assert-ExactMainForeground $MainWindow
+            return
+        }
         [CovenNativeRegression.Win32]::keybd_event([byte]$VK_MENU, 0, 0, [UIntPtr]::Zero)
         [CovenNativeRegression.Win32]::keybd_event([byte]$VK_MENU, 0, $KEYUP, [UIntPtr]::Zero)
-        [void][CovenNativeRegression.Win32]::SetForegroundWindow($MainWindow)
-        Start-Sleep -Milliseconds 250
-        if ([CovenNativeRegression.Win32]::GetForegroundWindow() -eq $MainWindow) { return }
-        # Foreground lock can still reject background automation. A real click
-        # in the native title-bar band is the bounded, user-equivalent fallback.
-        Assert-MainWindowNotGhosted $MainWindow
-        $window = Get-WindowRectRecord $MainWindow
-        [void][CovenNativeRegression.Win32]::SetCursorPos([int](($window.left + $window.right) / 2), $window.top + 10)
-        $titlePoint = New-Object CovenNativeRegression.POINT
-        [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$titlePoint)
-        $titleHit = [CovenNativeRegression.Win32]::WindowFromPoint($titlePoint)
-        Assert-Condition ((Get-WindowClassName $titleHit) -ne "Ghost") "Windows placed a Ghost window over the title bar before the focus click."
-        [CovenNativeRegression.Win32]::mouse_event($MOUSE_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-        [CovenNativeRegression.Win32]::mouse_event($MOUSE_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-        Start-Sleep -Milliseconds 250
-        if ([CovenNativeRegression.Win32]::GetForegroundWindow() -eq $MainWindow) { return }
+        if (Invoke-AttachedMainWindowFocus $MainWindow) {
+            Assert-ExactMainForeground $MainWindow
+            return
+        }
+        Start-Sleep -Milliseconds 150
     }
     throw "The exact candidate main HWND did not become foreground within the bounded retries."
 }
@@ -829,34 +975,186 @@ function Ensure-MainWindowWithinWorkArea {
     }
 }
 
+function Set-StableCursorPosition {
+    param(
+        [IntPtr]$MainWindow,
+        [int]$X,
+        [int]$Y,
+        [ValidateRange(2, 10)][int]$Attempts = 6,
+        [ValidateRange(5, 100)][int]$SettleMilliseconds = 25
+    )
+    $lastPoint = $null
+    foreach ($attempt in 1..$Attempts) {
+        # Never move the shared desktop cursor unless the exact candidate HWND
+        # is still authoritative. Shared-desktop interference is then handled
+        # as a bounded placement retry, never as an accidental click.
+        Assert-MainWindowNotGhosted $MainWindow
+        Assert-ExactMainForeground $MainWindow
+        if (-not [CovenNativeRegression.Win32]::SetCursorPos($X, $Y)) {
+            Start-Sleep -Milliseconds 20
+            continue
+        }
+        Start-Sleep -Milliseconds $SettleMilliseconds
+        $first = New-Object CovenNativeRegression.POINT
+        [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$first)
+        $lastPoint = $first
+        if ($first.X -ne $X -or $first.Y -ne $Y) { continue }
+
+        # Require a second exact sample so a concurrent cursor owner moving it
+        # during the old 25ms settle window is observed before mouse-down.
+        Start-Sleep -Milliseconds 10
+        $second = New-Object CovenNativeRegression.POINT
+        [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$second)
+        $lastPoint = $second
+        Assert-ExactMainForeground $MainWindow
+        if ($second.X -eq $X -and $second.Y -eq $Y) { return $second }
+    }
+    $actual = if ($null -ne $lastPoint) { "$($lastPoint.X),$($lastPoint.Y)" } else { "unavailable" }
+    throw "Shared desktop cursor did not stabilize at exact requested coordinates ($X,$Y) after $Attempts attempts; last observed $actual. No mouse button was pressed."
+}
+
+function Invoke-AtomicPhysicalClick {
+    param(
+        [IntPtr]$MainWindow,
+        [IntPtr]$ExpectedHitWindow,
+        [IntPtr]$MainWryHandle,
+        [IntPtr]$KeyboardTarget,
+        [uint32]$TargetThreadId,
+        [int]$X,
+        [int]$Y
+    )
+    # This is the final no-return boundary: after SendInput reports a partial
+    # batch, a click may already have been delivered, so this function never
+    # retries. Revalidate every authority/input fact immediately beforehand.
+    Assert-MainWindowNotGhosted $MainWindow
+    Assert-ExactMainForeground $MainWindow
+    $point = New-Object CovenNativeRegression.POINT
+    [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$point)
+    Assert-Condition ($point.X -eq $X -and $point.Y -eq $Y) "Shared desktop cursor moved after hit-testing; no SendInput batch was submitted."
+    $hitWindow = [CovenNativeRegression.Win32]::WindowFromPoint($point)
+    Assert-Condition ($hitWindow -eq $ExpectedHitWindow) "The exact hit HWND changed after verification; no SendInput batch was submitted."
+    Assert-Condition ((Get-WindowClassName $hitWindow) -ne "Ghost") "A Ghost window replaced the verified hit target; no SendInput batch was submitted."
+
+    $virtualLeft = [CovenNativeRegression.Win32]::GetSystemMetrics($SM_XVIRTUALSCREEN)
+    $virtualTop = [CovenNativeRegression.Win32]::GetSystemMetrics($SM_YVIRTUALSCREEN)
+    $virtualWidth = [CovenNativeRegression.Win32]::GetSystemMetrics($SM_CXVIRTUALSCREEN)
+    $virtualHeight = [CovenNativeRegression.Win32]::GetSystemMetrics($SM_CYVIRTUALSCREEN)
+    Assert-Condition ($virtualWidth -gt 1 -and $virtualHeight -gt 1) "Windows reported an invalid virtual-desktop extent for SendInput."
+    Assert-Condition (
+        $X -ge $virtualLeft -and $X -lt ($virtualLeft + $virtualWidth) -and
+        $Y -ge $virtualTop -and $Y -lt ($virtualTop + $virtualHeight)
+    ) "Verified click coordinates are outside the Windows virtual desktop."
+    $absoluteX = [int][Math]::Round((($X - $virtualLeft) * 65535.0) / ($virtualWidth - 1))
+    $absoluteY = [int][Math]::Round((($Y - $virtualTop) * 65535.0) / ($virtualHeight - 1))
+    $moveFlags = $MOUSE_MOVE -bor $MOUSE_ABSOLUTE -bor $MOUSE_VIRTUALDESK
+    $inputs = [CovenNativeRegression.INPUT[]]@(
+        [CovenNativeRegression.Win32]::MouseInput($absoluteX, $absoluteY, [uint32]$moveFlags),
+        [CovenNativeRegression.Win32]::MouseInput(0, 0, [uint32]$MOUSE_LEFTDOWN),
+        [CovenNativeRegression.Win32]::MouseInput(0, 0, [uint32]$MOUSE_LEFTUP)
+    )
+    $inputSize = [Runtime.InteropServices.Marshal]::SizeOf([type][CovenNativeRegression.INPUT])
+    $mouseInputSize = [Runtime.InteropServices.Marshal]::SizeOf([type][CovenNativeRegression.MOUSEINPUT])
+    $expectedInputSize = if ([IntPtr]::Size -eq 8) { 40 } else { 28 }
+    $expectedMouseInputSize = if ([IntPtr]::Size -eq 8) { 32 } else { 24 }
+    Assert-Condition ($inputSize -eq $expectedInputSize -and $mouseInputSize -eq $expectedMouseInputSize) (
+        "Unexpected native SendInput layout: INPUT=$inputSize (expected $expectedInputSize), MOUSEINPUT=$mouseInputSize (expected $expectedMouseInputSize)."
+    )
+
+    # Recheck again after constructing the native batch so SendInput directly
+    # follows the exact-foreground/non-Ghost/main-renderer-focus/same-hit-HWND
+    # safety gate while the caller still has the GUI input queues attached.
+    Assert-MainWindowNotGhosted $MainWindow
+    Assert-ExactMainForeground $MainWindow
+    $finalGui = New-Object CovenNativeRegression.GUITHREADINFO
+    $finalGui.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][CovenNativeRegression.GUITHREADINFO])
+    Assert-Condition ([CovenNativeRegression.Win32]::GetGUIThreadInfo($TargetThreadId, [ref]$finalGui)) "Could not re-read the main WRY GUI focus chain before mouse input."
+    $finalFocus = [IntPtr]$finalGui.hwndFocus
+    Assert-Condition (
+        $finalFocus -eq $KeyboardTarget -or [CovenNativeRegression.Win32]::IsChild($MainWryHandle, $finalFocus)
+    ) "Mouse focus left the main renderer WRY before SendInput; no batch was submitted."
+    $finalPoint = New-Object CovenNativeRegression.POINT
+    [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$finalPoint)
+    Assert-Condition ($finalPoint.X -eq $X -and $finalPoint.Y -eq $Y) "Shared desktop cursor moved before SendInput; no batch was submitted."
+    $finalHitWindow = [CovenNativeRegression.Win32]::WindowFromPoint($finalPoint)
+    Assert-Condition ($finalHitWindow -eq $ExpectedHitWindow -and (Get-WindowClassName $finalHitWindow) -ne "Ghost") "The exact hit HWND changed before SendInput; no batch was submitted."
+    $submitted = [CovenNativeRegression.Win32]::SendInput([uint32]$inputs.Length, $inputs, $inputSize)
+    Assert-Condition ($submitted -eq [uint32]$inputs.Length) "SendInput submitted $submitted of $($inputs.Length) atomic click entries; the batch was not retried."
+}
+
 function Invoke-PhysicalScreenClick {
     param([IntPtr]$MainWindow, [int]$X, [int]$Y)
     Add-PhaseEvidence -Name "before-physical-click" -MainWindow $MainWindow
     Assert-MainWindowNotGhosted $MainWindow
     Focus-MainWindow $MainWindow
     Assert-ExactMainForeground $MainWindow
-    Assert-Condition ([CovenNativeRegression.Win32]::SetCursorPos($X, $Y)) "SetCursorPos failed for ($X,$Y)."
-    Start-Sleep -Milliseconds 25
-    $point = New-Object CovenNativeRegression.POINT
-    [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$point)
-    $hitWindow = [CovenNativeRegression.Win32]::WindowFromPoint($point)
-    $hitProcessId = [uint32]0
-    [void][CovenNativeRegression.Win32]::GetWindowThreadProcessId($hitWindow, [ref]$hitProcessId)
-    $hitClass = [Text.StringBuilder]::new(256)
-    [void][CovenNativeRegression.Win32]::GetClassName($hitWindow, $hitClass, $hitClass.Capacity)
-    $report.lastPhysicalInput.cursor = [ordered]@{ x = $point.X; y = $point.Y }
-    $report.lastPhysicalInput.hitHwnd = $hitWindow.ToInt64()
-    $report.lastPhysicalInput.hitClass = $hitClass.ToString()
-    $report.lastPhysicalInput.hitProcessId = [int]$hitProcessId
-    $report.lastPhysicalInput.mainWindowHung = [CovenNativeRegression.Win32]::IsHungAppWindow($MainWindow)
-    $report.lastPhysicalInput.foregroundHwnd = [CovenNativeRegression.Win32]::GetForegroundWindow().ToInt64()
-    Assert-Condition ([Math]::Abs($point.X - $X) -le 1 -and [Math]::Abs($point.Y - $Y) -le 1) "Windows clamped the requested physical click outside the monitor work area."
-    Assert-MainWindowNotGhosted $MainWindow
-    Assert-ExactMainForeground $MainWindow
-    Assert-Condition ($hitClass.ToString() -ne "Ghost") "Windows ghosted the exact candidate native window; OS mouse input is being intercepted before the main WebView."
-    [CovenNativeRegression.Win32]::mouse_event($MOUSE_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-    Start-Sleep -Milliseconds 25
-    [CovenNativeRegression.Win32]::mouse_event($MOUSE_LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+    $keyboard = Get-MainWryKeyboardTarget $MainWindow
+    $mainWryHandle = [IntPtr]$keyboard.mainWry.handle
+    $keyboardTarget = [IntPtr]$keyboard.target.handle
+    $targetProcessId = [uint32]0
+    $targetThreadId = [CovenNativeRegression.Win32]::GetWindowThreadProcessId($keyboardTarget, [ref]$targetProcessId)
+    Assert-Condition ($targetThreadId -ne 0) "Main WRY Chrome mouse target has no GUI thread."
+    $currentThreadId = [CovenNativeRegression.Win32]::GetCurrentThreadId()
+    $foregroundWindow = [CovenNativeRegression.Win32]::GetForegroundWindow()
+    $foregroundProcessId = [uint32]0
+    $foregroundThreadId = [CovenNativeRegression.Win32]::GetWindowThreadProcessId($foregroundWindow, [ref]$foregroundProcessId)
+    $attachedThreads = New-Object System.Collections.ArrayList
+    $targetThreadAttached = $targetThreadId -eq $currentThreadId
+    try {
+        foreach ($threadId in @($targetThreadId, $foregroundThreadId) | Sort-Object -Unique) {
+            if ($threadId -eq 0 -or $threadId -eq $currentThreadId) { continue }
+            if ([CovenNativeRegression.Win32]::AttachThreadInput($currentThreadId, [uint32]$threadId, $true)) {
+                [void]$attachedThreads.Add([uint32]$threadId)
+                if ($threadId -eq $targetThreadId) { $targetThreadAttached = $true }
+            }
+        }
+        Assert-Condition $targetThreadAttached "Could not attach input queues to the main WRY Chrome mouse thread."
+
+        $verifiedFocus = [IntPtr]::Zero
+        foreach ($attempt in 1..5) {
+            [void][CovenNativeRegression.Win32]::SetFocus($keyboardTarget)
+            Start-Sleep -Milliseconds 25
+            $gui = New-Object CovenNativeRegression.GUITHREADINFO
+            $gui.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][CovenNativeRegression.GUITHREADINFO])
+            if ([CovenNativeRegression.Win32]::GetGUIThreadInfo([uint32]$targetThreadId, [ref]$gui)) {
+                $focus = [IntPtr]$gui.hwndFocus
+                if ($focus -eq $keyboardTarget -or [CovenNativeRegression.Win32]::IsChild($mainWryHandle, $focus)) {
+                    $verifiedFocus = $focus
+                    break
+                }
+            }
+        }
+        Assert-Condition ($verifiedFocus -ne [IntPtr]::Zero) "Mouse focus did not enter the main renderer WRY focus chain; no pointer input was sent."
+
+        # Focus is established before measuring the final DOM-derived hit point,
+        # because focus handlers may change layout. Keep the queues attached
+        # through the one-shot SendInput batch and detach in the outer finally.
+        $point = Set-StableCursorPosition $MainWindow $X $Y
+        $hitWindow = [CovenNativeRegression.Win32]::WindowFromPoint($point)
+        $hitProcessId = [uint32]0
+        [void][CovenNativeRegression.Win32]::GetWindowThreadProcessId($hitWindow, [ref]$hitProcessId)
+        $hitClass = [Text.StringBuilder]::new(256)
+        [void][CovenNativeRegression.Win32]::GetClassName($hitWindow, $hitClass, $hitClass.Capacity)
+        $report.lastPhysicalInput.cursor = [ordered]@{ x = $point.X; y = $point.Y }
+        $report.lastPhysicalInput.hitHwnd = $hitWindow.ToInt64()
+        $report.lastPhysicalInput.hitClass = $hitClass.ToString()
+        $report.lastPhysicalInput.hitProcessId = [int]$hitProcessId
+        $report.lastPhysicalInput.mainWindowHung = [CovenNativeRegression.Win32]::IsHungAppWindow($MainWindow)
+        $report.lastPhysicalInput.foregroundHwnd = [CovenNativeRegression.Win32]::GetForegroundWindow().ToInt64()
+        Assert-Condition ($point.X -eq $X -and $point.Y -eq $Y) "Windows clamped the requested physical click outside the monitor work area."
+        Assert-MainWindowNotGhosted $MainWindow
+        Assert-ExactMainForeground $MainWindow
+        Assert-Condition ($hitClass.ToString() -ne "Ghost") "Windows ghosted the exact candidate native window; OS mouse input is being intercepted before the main WebView."
+        Assert-Condition (
+            $hitWindow -eq $mainWryHandle -or
+            [CovenNativeRegression.Win32]::IsChild($mainWryHandle, $hitWindow)
+        ) "The physical click point is not inside the main renderer WRY; a stale native child or another overlay may be intercepting input. No pointer input was sent."
+        Invoke-AtomicPhysicalClick $MainWindow $hitWindow $mainWryHandle $keyboardTarget $targetThreadId $X $Y
+    }
+    finally {
+        foreach ($threadId in $attachedThreads) {
+            [void][CovenNativeRegression.Win32]::AttachThreadInput($currentThreadId, [uint32]$threadId, $false)
+        }
+    }
 }
 
 function Invoke-KeyChord {
@@ -865,11 +1163,85 @@ function Invoke-KeyChord {
     Assert-MainWindowNotGhosted $MainWindow
     Focus-MainWindow $MainWindow
     Assert-ExactMainForeground $MainWindow
-    Assert-MainWindowNotGhosted $MainWindow
-    if ($Control) { [CovenNativeRegression.Win32]::keybd_event([byte]$VK_CONTROL, 0, 0, [UIntPtr]::Zero) }
-    [CovenNativeRegression.Win32]::keybd_event($Key, 0, 0, [UIntPtr]::Zero)
-    [CovenNativeRegression.Win32]::keybd_event($Key, 0, $KEYUP, [UIntPtr]::Zero)
-    if ($Control) { [CovenNativeRegression.Win32]::keybd_event([byte]$VK_CONTROL, 0, $KEYUP, [UIntPtr]::Zero) }
+    $keyboard = Get-MainWryKeyboardTarget $MainWindow
+    $mainWryHandle = [IntPtr]$keyboard.mainWry.handle
+    $keyboardTarget = [IntPtr]$keyboard.target.handle
+    $targetProcessId = [uint32]0
+    $targetThreadId = [CovenNativeRegression.Win32]::GetWindowThreadProcessId($keyboardTarget, [ref]$targetProcessId)
+    Assert-Condition ($targetThreadId -ne 0) "Main WRY Chrome keyboard target has no GUI thread."
+    $currentThreadId = [CovenNativeRegression.Win32]::GetCurrentThreadId()
+    $foregroundWindow = [CovenNativeRegression.Win32]::GetForegroundWindow()
+    $foregroundProcessId = [uint32]0
+    $foregroundThreadId = [CovenNativeRegression.Win32]::GetWindowThreadProcessId($foregroundWindow, [ref]$foregroundProcessId)
+    $attachedThreads = New-Object System.Collections.ArrayList
+    $targetThreadAttached = $targetThreadId -eq $currentThreadId
+    $controlDown = $false
+    $keyDown = $false
+    try {
+        foreach ($threadId in @($targetThreadId, $foregroundThreadId) | Sort-Object -Unique) {
+            if ($threadId -eq 0 -or $threadId -eq $currentThreadId) { continue }
+            if ([CovenNativeRegression.Win32]::AttachThreadInput($currentThreadId, [uint32]$threadId, $true)) {
+                [void]$attachedThreads.Add([uint32]$threadId)
+                if ($threadId -eq $targetThreadId) { $targetThreadAttached = $true }
+            }
+        }
+        Assert-Condition $targetThreadAttached "Could not attach input queues to the main WRY Chrome keyboard thread."
+
+        $verifiedFocus = [IntPtr]::Zero
+        foreach ($attempt in 1..5) {
+            [void][CovenNativeRegression.Win32]::SetFocus($keyboardTarget)
+            Start-Sleep -Milliseconds 25
+            $gui = New-Object CovenNativeRegression.GUITHREADINFO
+            $gui.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][CovenNativeRegression.GUITHREADINFO])
+            if ([CovenNativeRegression.Win32]::GetGUIThreadInfo([uint32]$targetThreadId, [ref]$gui)) {
+                $focus = [IntPtr]$gui.hwndFocus
+                if ($focus -eq $keyboardTarget -or [CovenNativeRegression.Win32]::IsChild($mainWryHandle, $focus)) {
+                    $verifiedFocus = $focus
+                    break
+                }
+            }
+        }
+        Assert-Condition ($verifiedFocus -ne [IntPtr]::Zero) "Keyboard focus did not enter the main renderer WRY focus chain."
+
+        # Recheck both authorities immediately before the complete chord while
+        # the input queues remain attached. Native Browser child focus is not
+        # accepted merely because the top-level main window is foreground.
+        Assert-MainWindowNotGhosted $MainWindow
+        Assert-ExactMainForeground $MainWindow
+        $finalGui = New-Object CovenNativeRegression.GUITHREADINFO
+        $finalGui.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][CovenNativeRegression.GUITHREADINFO])
+        Assert-Condition ([CovenNativeRegression.Win32]::GetGUIThreadInfo([uint32]$targetThreadId, [ref]$finalGui)) "Could not re-read the main WRY GUI focus chain before keyboard input."
+        $finalFocus = [IntPtr]$finalGui.hwndFocus
+        Assert-Condition (
+            $finalFocus -eq $keyboardTarget -or [CovenNativeRegression.Win32]::IsChild($mainWryHandle, $finalFocus)
+        ) "Keyboard focus left the main renderer WRY before the chord; no key was pressed."
+
+        if ($Control) {
+            [CovenNativeRegression.Win32]::keybd_event([byte]$VK_CONTROL, 0, 0, [UIntPtr]::Zero)
+            $controlDown = $true
+        }
+        [CovenNativeRegression.Win32]::keybd_event($Key, 0, 0, [UIntPtr]::Zero)
+        $keyDown = $true
+        [CovenNativeRegression.Win32]::keybd_event($Key, 0, $KEYUP, [UIntPtr]::Zero)
+        $keyDown = $false
+        if ($controlDown) {
+            [CovenNativeRegression.Win32]::keybd_event([byte]$VK_CONTROL, 0, $KEYUP, [UIntPtr]::Zero)
+            $controlDown = $false
+        }
+    }
+    finally {
+        try {
+            # Never leave a synthetic modifier/action key down, even if focus
+            # or renderer state changes midway through the chord.
+            if ($keyDown) { [CovenNativeRegression.Win32]::keybd_event($Key, 0, $KEYUP, [UIntPtr]::Zero) }
+            if ($controlDown) { [CovenNativeRegression.Win32]::keybd_event([byte]$VK_CONTROL, 0, $KEYUP, [UIntPtr]::Zero) }
+        }
+        finally {
+            foreach ($threadId in $attachedThreads) {
+                [void][CovenNativeRegression.Win32]::AttachThreadInput($currentThreadId, [uint32]$threadId, $false)
+            }
+        }
+    }
 }
 
 function Invoke-PhysicalWindowResize {
@@ -881,21 +1253,27 @@ function Invoke-PhysicalWindowResize {
     $before = Get-WindowRectRecord $MainWindow
     $startX = $before.right - 2
     $startY = $before.bottom - 2
-    [void][CovenNativeRegression.Win32]::SetCursorPos($startX, $startY)
-    Start-Sleep -Milliseconds 40
-    $resizePoint = New-Object CovenNativeRegression.POINT
-    [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$resizePoint)
+    $resizePoint = Set-StableCursorPosition $MainWindow $startX $startY
     $resizeHit = [CovenNativeRegression.Win32]::WindowFromPoint($resizePoint)
     Assert-MainWindowNotGhosted $MainWindow
     Assert-ExactMainForeground $MainWindow
+    Assert-Condition ($resizeHit -eq $MainWindow) "The native resize edge is covered by another HWND; no mouse button was pressed."
     Assert-Condition ((Get-WindowClassName $resizeHit) -ne "Ghost") "Windows placed a Ghost window over the native resize edge."
+    $preResizeDownPoint = New-Object CovenNativeRegression.POINT
+    [void][CovenNativeRegression.Win32]::GetCursorPos([ref]$preResizeDownPoint)
+    Assert-Condition ($preResizeDownPoint.X -eq $startX -and $preResizeDownPoint.Y -eq $startY) "Shared desktop cursor moved after resize hit-testing; no mouse button was pressed."
+    $preResizeDownHit = [CovenNativeRegression.Win32]::WindowFromPoint($preResizeDownPoint)
+    Assert-Condition ($preResizeDownHit -eq $resizeHit) "The exact native resize-edge HWND changed after verification; no mouse button was pressed."
     $mouseDown = $false
     try {
         [CovenNativeRegression.Win32]::mouse_event($MOUSE_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
         $mouseDown = $true
         foreach ($step in 1..4) {
-            [void][CovenNativeRegression.Win32]::SetCursorPos($startX + [int]($Delta * $step / 4), $startY + [int]($Delta * $step / 4))
-            Start-Sleep -Milliseconds 35
+            [void](Set-StableCursorPosition $MainWindow (
+                $startX + [int]($Delta * $step / 4)
+            ) (
+                $startY + [int]($Delta * $step / 4)
+            ) 6 15)
         }
     }
     finally {
@@ -1062,15 +1440,30 @@ function Find-MainCdpTarget {
     param([int]$Port, [int]$TimeoutMs = 30000)
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $probeErrors = New-Object System.Collections.ArrayList
-    # The manifest link is emitted by RootLayout on every Cave route, including
-    # /settings where workspace navigation controls are intentionally absent.
-    # DOM fallbacks also cover an early render before Next inserts metadata.
-    $probeExpression = 'Boolean(document.querySelector(''link[rel="manifest"][href="/manifest.webmanifest"], [aria-label="Settings"], [aria-label="Account / settings"], [data-native-browser-viewport], [id^="settings-"]''))'
     do {
-        foreach ($target in @(Wait-CdpTargets $Port ([Math]::Min(2000, $TimeoutMs)))) {
+        $targets = @()
+        try {
+            # A cold packaged WebView2 can take longer than one HTTP timeout to
+            # expose /json/list. Treat that as a poll miss, not the outer 30s
+            # startup deadline expiring.
+            $targets = @(Get-CdpTargets $Port)
+        }
+        catch {
+            if ($probeErrors.Count -lt 8) {
+                [void]$probeErrors.Add("CDP discovery: $($_.Exception.Message)")
+            }
+        }
+        foreach ($target in $targets) {
             if (-not $target.webSocketDebuggerUrl -or $target.type -ne "page") { continue }
+            if ([string]$target.url -ceq $trustedStartupUrl) {
+                # This exact URL is bundled app chrome on the candidate's
+                # isolated CDP endpoint, not an external Browser child. Return
+                # it now; workspace readiness has its own longer deadline.
+                $report.startupWait.trustedStartupTargetSeen = $true
+                return $target
+            }
             try {
-                $isMain = Invoke-CdpExpression -Target $target -Expression $probeExpression -TimeoutMs 1500
+                $isMain = Invoke-CdpExpression -Target $target -Expression $mainWorkspaceProbeExpression -TimeoutMs 1500
                 if ($isMain) { return $target }
             }
             catch {
@@ -1083,6 +1476,65 @@ function Find-MainCdpTarget {
     } while ($watch.ElapsedMilliseconds -lt $TimeoutMs)
     $detail = if ($probeErrors.Count -gt 0) { " Probe errors: " + ($probeErrors -join " | ") } else { "" }
     throw "No CDP target on port $Port matched CovenCave's main renderer.$detail"
+}
+
+function Wait-MainWorkspaceReady {
+    param([int]$Port, $MainTarget, [int]$TimeoutMs = 180000)
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $targetId = [string]$MainTarget.id
+    $lastTarget = $MainTarget
+    $lastUrl = [string]$MainTarget.url
+    $pollErrors = New-Object System.Collections.ArrayList
+    $report.startupWait.attempted = $true
+    $report.startupWait.targetId = $targetId
+    $report.startupWait.initialUrl = $lastUrl
+    $report.startupWait.lastUrl = $lastUrl
+    $report.startupWait.startedAtUtc = [DateTime]::UtcNow.ToString("o")
+    if ($lastUrl -ceq $trustedStartupUrl) {
+        $report.startupWait.trustedStartupTargetSeen = $true
+    }
+
+    do {
+        try {
+            # Refresh only the originally attributed target ID. Never adopt an
+            # external child target merely because it later exposes page DOM.
+            $sameTarget = @(Get-CdpTargets $Port | Where-Object {
+                $_.type -eq "page" -and [string]$_.id -ceq $targetId -and $_.webSocketDebuggerUrl
+            } | Select-Object -First 1)
+            if ($sameTarget.Count -eq 1) {
+                $lastTarget = $sameTarget[0]
+                $lastUrl = [string]$lastTarget.url
+                $report.startupWait.lastUrl = $lastUrl
+                if ($lastUrl -ceq $trustedStartupUrl) {
+                    $report.startupWait.trustedStartupTargetSeen = $true
+                }
+                else {
+                    try {
+                        $ready = Invoke-CdpExpression -Target $lastTarget -Expression $mainWorkspaceProbeExpression -TimeoutMs 1500
+                        if ($ready) {
+                            $report.startupWait.workspaceReady = $true
+                            $report.startupWait.elapsedMilliseconds = $watch.ElapsedMilliseconds
+                            $report.startupWait.completedAtUtc = [DateTime]::UtcNow.ToString("o")
+                            $report.startupWait.pollErrors = @($pollErrors)
+                            return $lastTarget
+                        }
+                    }
+                    catch {
+                        if ($pollErrors.Count -lt 12) { [void]$pollErrors.Add("workspace probe: $($_.Exception.Message)") }
+                    }
+                }
+            }
+        }
+        catch {
+            if ($pollErrors.Count -lt 12) { [void]$pollErrors.Add("target refresh: $($_.Exception.Message)") }
+        }
+        Start-Sleep -Milliseconds 250
+    } while ($watch.ElapsedMilliseconds -lt $TimeoutMs)
+
+    $report.startupWait.elapsedMilliseconds = $watch.ElapsedMilliseconds
+    $report.startupWait.completedAtUtc = [DateTime]::UtcNow.ToString("o")
+    $report.startupWait.pollErrors = @($pollErrors)
+    throw "Main CDP target $targetId did not navigate from '$($report.startupWait.initialUrl)' to Coven workspace DOM within ${TimeoutMs}ms. Last URL: '$lastUrl'."
 }
 
 function Wait-MainRendererReady {
@@ -1196,7 +1648,13 @@ function Start-TrustedPtyForRegression {
     Assert-Condition (Test-Path -LiteralPath $projectRoot -PathType Container) "Trusted PTY project root does not exist: $projectRoot"
     $threadJson = $threadId | ConvertTo-Json -Compress
     $rootJson = $projectRoot | ConvertTo-Json -Compress
-    $result = Invoke-CdpExpression $MainTarget @"
+    $report.ptySetup.attemptedAtUtc = [DateTime]::UtcNow.ToString("o")
+    $report.ptySetup.threadId = $threadId
+    $report.ptySetup.projectRoot = $projectRoot
+    $invokeWatch = [Diagnostics.Stopwatch]::StartNew()
+    $result = $null
+    try {
+        $result = Invoke-CdpExpression $MainTarget @"
 (async () => {
   const invoke = window.__TAURI__?.core?.invoke;
   if (typeof invoke !== 'function') return { started: false, error: 'trusted Tauri invoke unavailable' };
@@ -1209,11 +1667,13 @@ function Start-TrustedPtyForRegression {
   return { started: true };
 })()
 "@ 10000
+    }
+    finally {
+        $report.ptySetup.invokeElapsedMs = $invokeWatch.ElapsedMilliseconds
+    }
     $ptyError = if ($result.PSObject.Properties.Name -contains "error") { [string]$result.error } else { "unknown error" }
     Assert-Condition ([bool]$result.started) "Trusted main renderer could not invoke pty_start: $ptyError"
 
-    $report.ptySetup.threadId = $threadId
-    $report.ptySetup.projectRoot = $projectRoot
     $report.ptySetup.started = $true
     $watch = [Diagnostics.Stopwatch]::StartNew()
     do {
@@ -1632,6 +2092,8 @@ try {
     [void](Wait-CdpTargets $CdpPort)
     $mainTarget = Find-MainCdpTarget $CdpPort
     Add-PhaseEvidence -Name "cdp-main-target-discovered" -MainWindow $mainWindow -MainTarget $mainTarget
+    $mainTarget = Wait-MainWorkspaceReady $CdpPort $mainTarget $StartupReadyDeadlineMs
+    Add-PhaseEvidence -Name "main-workspace-ready" -MainWindow $mainWindow -MainTarget $mainTarget
     Wait-MainRendererReady $mainTarget
     Add-PhaseEvidence -Name "main-renderer-ready" -MainWindow $mainWindow -MainTarget $mainTarget
     Wait-NativeMessagePump $mainWindow
@@ -1811,8 +2273,40 @@ finally {
                 Assert-Condition (Test-Path -LiteralPath $marker -PathType Leaf) "Run-owned profile marker is missing; refusing recursive cleanup."
                 $actualMarkerContent = [System.IO.File]::ReadAllText($marker)
                 Assert-Condition ($actualMarkerContent -ceq $profileMarkerContent) "Run-owned profile marker content does not match this exact harness invocation; refusing recursive cleanup."
-                Remove-Item -LiteralPath $profileFull -Recurse -Force -ErrorAction Stop
-                Assert-Condition (-not (Test-Path -LiteralPath $profileFull)) "Run-owned profile still exists after recursive cleanup."
+
+                # Root exit can precede WebView2/profile handle teardown. Wait
+                # for the uniquely attributed profile process set to reach zero,
+                # then retry transient locked-file deletion within a fresh,
+                # bounded post-exit deadline.
+                $profileCleanupWatch = [Diagnostics.Stopwatch]::StartNew()
+                $profileProcesses = @()
+                do {
+                    $profileProcesses = @(Get-AttributedProcessTuples $appProcessId $rootTuple $WebView2Profile | Where-Object kind -eq "webview2")
+                    if ($profileProcesses.Count -eq 0) { break }
+                    Start-Sleep -Milliseconds 50
+                } while ($profileCleanupWatch.ElapsedMilliseconds -lt $PostExitDeadlineMs)
+                $report.isolation.profileCleanup.profileProcessWaitMilliseconds = $profileCleanupWatch.ElapsedMilliseconds
+                Assert-Condition ($profileProcesses.Count -eq 0) (
+                    "Profile-attributed WebView2 processes remained alive at cleanup: " +
+                    (($profileProcesses | ForEach-Object { "$($_.processId)|$($_.creationTimeUtcTicks)" }) -join ", ")
+                )
+
+                $deleteWatch = [Diagnostics.Stopwatch]::StartNew()
+                $lastDeleteError = $null
+                do {
+                    $report.isolation.profileCleanup.deleteAttempts = [int]$report.isolation.profileCleanup.deleteAttempts + 1
+                    try {
+                        Remove-Item -LiteralPath $profileFull -Recurse -Force -ErrorAction Stop
+                        $lastDeleteError = $null
+                    }
+                    catch {
+                        $lastDeleteError = $_.Exception.Message
+                    }
+                    if (-not (Test-Path -LiteralPath $profileFull)) { break }
+                    Start-Sleep -Milliseconds 100
+                } while ($deleteWatch.ElapsedMilliseconds -lt $PostExitDeadlineMs)
+                $deleteDetail = if ($lastDeleteError) { " Last deletion error: $lastDeleteError" } else { "" }
+                Assert-Condition (-not (Test-Path -LiteralPath $profileFull)) "Run-owned profile still exists after ${PostExitDeadlineMs}ms of bounded cleanup retries.$deleteDetail"
                 $report.isolation.profileCleanup.passed = $true
                 if ([string]$report.status -eq "passed-pending-profile-cleanup") {
                     $report.status = "passed"

@@ -655,6 +655,11 @@ fn ensure_browser(
     let load_finished_for_event = Arc::clone(&initial_load_finished);
     let tracker_for_load = Arc::clone(&event_tracker);
     let builder = WebviewBuilder::new(label, WebviewUrl::External(parsed_url))
+        // Tauri defaults child WebViews to focused. A cold tab would therefore
+        // call WebView2 MoveFocus while it was still offscreen, stealing the
+        // main renderer's input focus immediately after a Cave control click.
+        // Let an actual click inside the visible child focus it instead.
+        .focused(false)
         .background_color(tauri::webview::Color(12, 12, 14, 255)) // dark bg — no white flash
         .on_page_load(
         move |webview, payload| {
