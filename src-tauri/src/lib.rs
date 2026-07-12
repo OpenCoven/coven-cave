@@ -2832,7 +2832,9 @@ pub fn run() {
             // enabled — the tray icon stays "moved" until they dock it back.
             if load_notch_mode(app.handle()) {
                 show_notch_from_main(app.handle());
-                set_tray_visible(app.handle(), false);
+                if app.handle().get_webview_window(NOTCH_WINDOW_LABEL).is_some() {
+                    set_tray_visible(app.handle(), false);
+                }
             }
 
             Ok(())
