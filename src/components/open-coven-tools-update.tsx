@@ -36,6 +36,11 @@ type InstallResult = {
   detail: string;
 };
 
+type NpmLaneState = {
+  target: string;
+  label: string;
+};
+
 const SIDECAR_TOKEN_STORAGE_KEY = "coven-cave:sidecar-auth-token";
 const TOOL_UPDATE_BANNER_ID = "opencoven-tools-update";
 const TOOL_DISMISS_KEY = (tools: ToolStatus[]) =>
@@ -196,7 +201,31 @@ export function OpenCovenToolsUpdate() {
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
+  const [npmLane, setNpmLane] = useState<NpmLaneState | null>(null);
   const mounted = useRef(true);
+
+  const refreshNpmLane = useCallback(async () => {
+    try {
+      const res = await fetch("/api/onboarding/install", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
+      };
+      if (!mounted.current) return;
+      setNpmLane(
+        json.npmBusy && json.npmBusyTarget
+          ? {
+              target: json.npmBusyTarget,
+              label: json.npmBusyLabel ?? json.npmBusyTarget,
+            }
+          : null,
+      );
+    } catch {
+      /* A later poll will reconcile the shared lane. */
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setChecking(true);
@@ -226,10 +255,13 @@ export function OpenCovenToolsUpdate() {
   useEffect(() => {
     mounted.current = true;
     void load();
+    void refreshNpmLane();
+    const pollLane = setInterval(() => void refreshNpmLane(), 2000);
     return () => {
       mounted.current = false;
+      clearInterval(pollLane);
     };
-  }, [load]);
+  }, [load, refreshNpmLane]);
 
   const runningInstallKey = useMemo(
     () =>
@@ -311,7 +343,16 @@ export function OpenCovenToolsUpdate() {
         npmMissing?: boolean;
         hint?: string;
         error?: string;
+        npmBusy?: boolean;
+        npmBusyTarget?: string | null;
+        npmBusyLabel?: string | null;
       };
+      if (json.npmBusy && json.npmBusyTarget) {
+        setNpmLane({
+          target: json.npmBusyTarget,
+          label: json.npmBusyLabel ?? json.npmBusyTarget,
+        });
+      }
       if (!res.ok || json.npmMissing) {
         setInstallResults((prev) => ({
           ...prev,
@@ -399,9 +440,19 @@ export function OpenCovenToolsUpdate() {
 
   return (
     <>
+      {npmLane ? (
+        <p
+          role="status"
+          className="px-4 pt-3 text-[11px] text-[var(--text-secondary)]"
+        >
+          {npmLane.label} is updating the shared global npm directory. Other npm updates are disabled until it finishes.
+        </p>
+      ) : null}
       {tools.map((tool) => {
         const job = installJobs[tool.id];
         const busy = job?.status === "running";
+        const updatingElsewhere = !busy && npmLane?.target === tool.id;
+        const blockedByGlobalNpm = Boolean(npmLane && npmLane.target !== tool.id);
         const result = installResults[tool.id];
         return (
           <div key={tool.id} className="flex items-center justify-between gap-4 px-4 py-3">
@@ -436,22 +487,33 @@ export function OpenCovenToolsUpdate() {
                   <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
                   Updating... {formatElapsed(job.elapsedMs)}
                 </span>
+              ) : updatingElsewhere ? (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--text-muted)]">
+                  <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
+                  Updating in another Cave window
+                </span>
               ) : tool.outdated || toolNeedsCompatibilityUpdate(tool) ? (
                 <Button
                   variant="primary"
                   size="xs"
                   onClick={() => void updateTool(tool.id)}
+                  disabled={blockedByGlobalNpm}
+                  title={
+                    blockedByGlobalNpm
+                      ? `Wait for ${npmLane?.label} to finish updating npm.`
+                      : undefined
+                  }
                   className={accentBtn}
                   leadingIcon="ph:arrow-down-bold"
                 >
-                  Update {tool.label}
+                  {blockedByGlobalNpm ? `Waiting for ${npmLane?.label}` : `Update ${tool.label}`}
                 </Button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
                   {toolStatusText(tool)}
                 </span>
               )}
-              {!busy ? (
+              {!busy && !updatingElsewhere ? (
                 <Button
                   variant="secondary"
                   size="xs"

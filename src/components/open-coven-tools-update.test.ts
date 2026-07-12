@@ -18,12 +18,17 @@ assert.doesNotMatch(
 );
 assert.match(src, /\/api\/opencoven-tools\/status/, "component fetches OpenCoven tool version status");
 assert.match(src, /\/api\/onboarding\/install/, "component reuses the allowlisted background installer");
+assert.match(src, /const refreshNpmLane = useCallback/, "About polls the server-owned global npm lane");
+assert.match(src, /\/api\/onboarding\/install", \{ cache: "no-store" \}/, "About queries the global installer lane without a target");
+assert.match(src, /Other npm updates are disabled until it finishes/, "About explains the shared npm lock before a second update can start");
+assert.match(src, /disabled=\{blockedByGlobalNpm\}/, "About disables a different tool's update button while npm is busy");
+assert.match(src, /Updating in another Cave window/, "About distinguishes a job reattached from another client surface");
 assert.match(src, /tool\.outdated/, "update buttons are gated to outdated tools");
 assert.match(src, /tool\.compatible/, "tool rows distinguish update availability from Cave compatibility");
 assert.match(src, /tool\.minimumVersion/, "tool rows expose the minimum compatible version");
 assert.match(src, /tool\.installCommand/, "tool rows expose a copyable install/update command");
 assert.match(src, /Copy command/, "tool rows can copy the exact update command");
-assert.match(src, /Update \{tool\.label\}/, "outdated tools expose a clear update button");
+assert.match(src, /`Update \$\{tool\.label\}`/, "outdated tools expose a clear update button");
 assert.match(src, /function toolVersionText\(tool: ToolStatus\): string/, "tool version text is centralized");
 assert.match(src, /if \(!tool\.current\) return "Installed, version unknown"/, "installed tools with unknown versions should say the version is unknown");
 assert.match(src, /function toolStatusText\(tool: ToolStatus\): string/, "tool status text is centralized");

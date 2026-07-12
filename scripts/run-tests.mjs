@@ -666,6 +666,7 @@ export const SUITES = {
     "src/lib/coven-paths.test.ts",
     "src/lib/server/cave-home-migration.test.ts",
     "src/lib/server/cave-home-migration-status.test.ts",
+    "src/lib/server/global-npm-install-lane.test.ts",
     "src/app/api/cave-home-migration/route.test.ts",
     "src/lib/server/agent-attachments.test.ts",
     "src/app/api/api-contracts.test.ts",

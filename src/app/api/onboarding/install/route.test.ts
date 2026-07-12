@@ -198,8 +198,50 @@ assert.match(
 
 assert.match(
   source,
-  /other\.kind === "npm"/,
-  "npm-kind installs are mutually exclusive (global npm tree races)",
+  /reserveGlobalNpmInstall\(targetName\)/,
+  "npm installs reserve one global npm lease across every allowlisted target",
+);
+
+assert.match(
+  source,
+  /const plan = await spawnPlanFor\(target\);[\s\S]*?reserveGlobalNpmInstall\(targetName\)/,
+  "the atomic global reservation happens after asynchronous plan preparation",
+);
+
+assert.match(
+  source,
+  /retryable: true,[\s\S]*?code: "npm_install_in_progress"[\s\S]*?"Retry-After": "2"/,
+  "a competing npm request gets a specific, retryable conflict response",
+);
+
+assert.match(
+  source,
+  /npmBusyTarget: InstallTarget \| null/,
+  "GET exposes the global npm owner so every client surface can reflect it",
+);
+
+assert.match(
+  source,
+  /export async function DELETE[\s\S]*?job\.cancel\?\.\(\)/,
+  "a running install can be cancelled through the route",
+);
+
+assert.match(
+  source,
+  /function finishInstallJobError\([\s\S]*?npmLease\?\.release\(\)/,
+  "terminal job error paths release the global npm lease",
+);
+
+assert.match(
+  source,
+  /forceFinishTimer = setTimeout\([\s\S]*?fail\(new Error\(job\.error \?\? reason\)\)/,
+  "the timeout watchdog settles a child that never emits close",
+);
+
+assert.match(
+  source,
+  /@\/lib\/server\/global-npm-install-lane/,
+  "the HMR-safe global npm lease is owned by a dedicated server module",
 );
 
 assert.match(
