@@ -77,6 +77,22 @@ async function currentBranch(repoRoot: string): Promise<string> {
   return stdout.trim();
 }
 
+/** Linked-worktree name (the checkout dir's basename) when repoRoot is a
+ *  `git worktree` checkout rather than the primary clone, else null. A linked
+ *  worktree's --git-dir (.git/worktrees/<name>) differs from its
+ *  --git-common-dir (the primary clone's .git). */
+async function worktreeName(repoRoot: string): Promise<string | null> {
+  try {
+    const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir"]);
+    const [gitDir, commonDir] = stdout.trim().split("\n");
+    if (!gitDir || !commonDir) return null;
+    if (path.resolve(repoRoot, gitDir) === path.resolve(repoRoot, commonDir)) return null;
+    return path.basename(repoRoot);
+  } catch {
+    return null;
+  }
+}
+
 /** The repo's default branch: origin/HEAD when known, else main/master, else main. */
 async function defaultBranch(repoRoot: string): Promise<string> {
   try {
@@ -248,7 +264,49 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
     /* no HEAD yet */
   }
 
-  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, files });
+  // Linked-worktree name rides along too (composer git chip) — null in the
+  // primary checkout, the checkout dir's basename in a `git worktree`.
+  const worktree = await worktreeName(repoRoot);
+
+  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, worktree, files });
+}
+
+/** PR context for the current branch (composer git chip): the open/merged pull
+ *  request heading this branch, via `gh pr view` — null when there is no PR,
+ *  no branch (detached/unborn HEAD), or `gh` is unavailable/unauthenticated.
+ *  Read-only and network-bound, so it's a separate `?pr=1` query the client
+ *  fetches once per branch instead of riding the 5s status poll. */
+async function branchPr(repoRoot: string): Promise<NextResponse> {
+  let branch: string | null = null;
+  try {
+    branch = await currentBranch(repoRoot);
+  } catch {
+    /* no HEAD yet */
+  }
+  if (!branch || branch === "HEAD") return NextResponse.json({ ok: true, branch, pr: null });
+  try {
+    const { stdout } = await ghCli(repoRoot, [
+      "pr", "view", branch, "--json", "number,url,state,isDraft",
+    ]);
+    const parsed = JSON.parse(stdout) as {
+      number?: number; url?: string; state?: string; isDraft?: boolean;
+    };
+    if (typeof parsed.number === "number" && typeof parsed.url === "string" && PR_URL_RE.test(parsed.url)) {
+      return NextResponse.json({
+        ok: true,
+        branch,
+        pr: {
+          number: parsed.number,
+          url: parsed.url,
+          state: typeof parsed.state === "string" ? parsed.state : "OPEN",
+          isDraft: parsed.isDraft === true,
+        },
+      });
+    }
+  } catch {
+    /* no PR for this branch, or gh missing/unauthenticated — a clean null */
+  }
+  return NextResponse.json({ ok: true, branch, pr: null });
 }
 
 async function diffFile(repoRoot: string, relPath: string, absPath: string): Promise<NextResponse> {
@@ -286,6 +344,7 @@ export async function GET(req: NextRequest) {
   const filePath = req.nextUrl.searchParams.get("path");
   const wantCheckpoints = req.nextUrl.searchParams.get("checkpoints");
   const checkpointName = req.nextUrl.searchParams.get("checkpoint");
+  const wantPr = req.nextUrl.searchParams.get("pr");
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "missing projectRoot param" }, { status: 400 });
   }
@@ -319,6 +378,7 @@ export async function GET(req: NextRequest) {
         truncated,
       });
     }
+    if (wantPr !== null) return await branchPr(root.repoRoot);
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();

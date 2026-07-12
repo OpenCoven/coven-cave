@@ -25,6 +25,8 @@ type ChangesSummary = {
   notARepo: boolean;
   /** Current branch (null before load, when not a repo, or on an unborn HEAD). */
   branch: string | null;
+  /** Linked-worktree name (checkout dir basename) — null in the primary checkout. */
+  worktree: string | null;
 };
 
 type ChangesResponse = {
@@ -32,6 +34,7 @@ type ChangesResponse = {
   repo?: boolean;
   files?: unknown[];
   branch?: string | null;
+  worktree?: string | null;
 };
 
 export function useChangesSummary(
@@ -42,6 +45,7 @@ export function useChangesSummary(
   const [loaded, setLoaded] = useState(false);
   const [notARepo, setNotARepo] = useState(false);
   const [branch, setBranch] = useState<string | null>(null);
+  const [worktree, setWorktree] = useState<string | null>(null);
   const inFlight = useRef(false);
 
   useEffect(() => {
@@ -63,6 +67,7 @@ export function useChangesSummary(
           setNotARepo(json.repo === false);
           setCount(Array.isArray(json.files) ? json.files.length : 0);
           setBranch(typeof json.branch === "string" ? json.branch : null);
+          setWorktree(typeof json.worktree === "string" ? json.worktree : null);
         }
       } catch {
         /* transient — keep the last known summary */
@@ -85,5 +90,5 @@ export function useChangesSummary(
     };
   }, [projectRoot, active]);
 
-  return { count, loaded, notARepo, branch };
+  return { count, loaded, notARepo, branch, worktree };
 }

@@ -26,8 +26,29 @@ assert.match(
 );
 assert.match(
   source,
-  /NextResponse\.json\(\{ ok: true, repo: true, repoRoot, branch, files \}\)/,
-  "the change-list response includes the branch field",
+  /NextResponse\.json\(\{ ok: true, repo: true, repoRoot, branch, worktree, files \}\)/,
+  "the change-list response includes the branch and worktree fields",
+);
+
+// Linked-worktree detection compares --git-dir with --git-common-dir (they
+// only differ in a `git worktree` checkout) — never a path-name heuristic.
+assert.match(
+  source,
+  /\["rev-parse", "--git-dir", "--git-common-dir"\]/,
+  "worktreeName resolves worktree-ness from git itself",
+);
+
+// PR context (?pr=1) goes through ghCli (execFile, no shell) and the branch
+// PR's URL must match the pinned github.com PR shape before it is returned.
+assert.match(
+  source,
+  /ghCli\(repoRoot, \[\s*"pr", "view", branch, "--json", "number,url,state,isDraft",\s*\]\)/,
+  "branchPr reads the branch PR via the gh CLI helper",
+);
+assert.match(
+  source,
+  /PR_URL_RE\.test\(parsed\.url\)/,
+  "branchPr validates the PR URL shape before returning it",
 );
 
 console.log("changes route.test.ts: ok");

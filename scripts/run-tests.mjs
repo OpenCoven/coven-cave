@@ -220,6 +220,7 @@ export const SUITES = {
     "src/components/message-bubble-file-links.test.ts",
     "src/components/chat-view-polish.test.ts",
     "src/components/composer-runtime-chip.test.ts",
+    "src/components/composer-git-chip.test.ts",
     "src/components/chat-empty-state.test.ts",
     "src/components/user-chat-avatar.test.ts",
     "src/components/user-profile-invariants.test.ts",

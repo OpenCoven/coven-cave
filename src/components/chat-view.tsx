@@ -134,6 +134,7 @@ import { useComposerHistory } from "@/lib/use-composer-history";
 import { useAttachmentStaging } from "@/lib/use-attachment-staging";
 import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
 import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
+import { ComposerGitChip } from "@/components/composer-git-chip";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
@@ -5681,6 +5682,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onPickModel={handleSelectModel}
                     disabled={busy}
                   />
+                  {/* Git context — branch · dirty count · worktree · PR — for
+                      chats rooted in a git repo (hidden otherwise). */}
+                  <ComposerGitChip projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
                 </div>
                 <div className="cave-composer-submit-row">
                   <EnhanceControl

@@ -1,0 +1,92 @@
+/* Composer git chip — branch · worktree · PR context in the chat composer's
+   control row. A passive status strip (the PR segment is the one interactive
+   part), pill-shaped to sit with the runtime chip and icon-button family
+   (composer-runtime-chip.css is the styling reference). */
+
+.cave-composer-git-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 240px;
+  height: 30px;
+  padding: 0 11px;
+  font-size: 11px;
+  line-height: 1;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
+  color: var(--text-secondary);
+}
+
+.cave-composer-git-chip__branch,
+.cave-composer-git-chip__worktree {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.cave-composer-git-chip svg {
+  flex-shrink: 0;
+  color: var(--composer-pill-gold, oklch(0.81 0.105 83));
+}
+
+.cave-composer-git-chip__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Worktree segment reads quieter than the branch it duplicates context with. */
+.cave-composer-git-chip__worktree .cave-composer-git-chip__label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.cave-composer-git-chip__dirty {
+  flex: 0 0 auto;
+  color: var(--color-warning, oklch(0.75 0.15 75));
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cave-composer-git-chip__pr {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  margin: 0 -4px 0 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.cave-composer-git-chip__pr:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.cave-composer-git-chip__pr[data-pr-state="merged"] svg {
+  color: var(--accent-presence);
+}
+.cave-composer-git-chip__pr[data-pr-state="draft"] svg,
+.cave-composer-git-chip__pr[data-pr-state="closed"] svg {
+  color: var(--text-muted);
+}
+
+/* Narrow composers (mobile / slim side panels): the branch name is the
+   highest-value token — drop the worktree segment first. */
+@media (max-width: 640px) {
+  .cave-composer-git-chip__worktree {
+    display: none;
+  }
+}
