@@ -68,3 +68,10 @@ build once on an origin that still has the old data allows the best-effort
 migration; otherwise the old data remains untouched for manual/browser-level
 recovery. This limitation is why all covered settings now use the port-independent
 store.
+
+## Credits
+
+The preference-persistence system in this document was designed and
+implemented by Timothy Wayne Gregg ([@romgenie](https://github.com/romgenie))
+in [#2952](https://github.com/OpenCoven/coven-cave/pull/2952), re-homed and
+merged via [#2971](https://github.com/OpenCoven/coven-cave/pull/2971).
