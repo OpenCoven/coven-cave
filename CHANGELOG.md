@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.177] - 2026-07-12
+
+> 🗨️ **Chat context, discoverability, and durable settings.** The composer gains a live git context chip (branch · worktree · PR), chats get a visible rename button and smart chat→task autofill with promoted inspector tabs and AI project icons, granted project roots are now enforced at the harness level, and preferences survive sidecar port changes.
+
+### Features
+- **Chat: git context chip in the composer** — when the chat's project root is a git repo, the composer utility row shows the branch, uncommitted-change count, linked worktree, and the branch's PR; the PR segment opens in the in-app browser (#2967).
+- **Chat: smart chat→task autofill + promoted inspector tabs + AI project icons** — creating a task from a chat mines links, GitHub references, priority keywords, natural-language due dates, and plan-list subtasks into a full board draft; inspector sections are promoted into the right-panel tab strip, and projects gain AI-generated icons (#2970).
+- **Chat: visible rename button** — a pencil button beside the chat title opens the inline rename editor, making renaming discoverable; clicking the title and the overflow-menu item still work (#2968).
+
+### Fixes
+- **Chat: granted project roots enforced at the harness** — runtime grants are forwarded via `coven run --add-dir`, so familiars can actually read granted directories instead of failing on prompt-text-only grants (#2969).
+- **Settings: preferences persist across sidecar ports** — appearance, theme, backdrop, and reading settings are server-persisted and bootstrapped at startup, so they no longer reset when the app serves from a different port (#2971, supersedes #2952).
+
 ## [0.0.176] - 2026-07-11
 
 > 🪟 **Windows stability + chat robustness.** Native browser lockups and unresponsive shutdown are fixed, the send route gains a non-blocking filesystem boundary sentinel and a resilient chat-title helper, quick-chat gets a conversation cache, and mobile chat scroll anchoring is repaired.
