@@ -7,8 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.176] - 2026-07-11
+
+> 🪟 **Windows stability + chat robustness.** Native browser lockups and unresponsive shutdown are fixed, the send route gains a non-blocking filesystem boundary sentinel and a resilient chat-title helper, quick-chat gets a conversation cache, and mobile chat scroll anchoring is repaired.
+
+### Features
+- **Chat: conversation cache + quick-chat UX** — recently viewed conversations are cached so quick-chat and thread switches feel instant, with the composer/UX polish that shipped alongside it (#2961).
+- **Settings: scalable familiar picker** — the familiar picker scales cleanly across window sizes instead of clipping or overflowing (#2950).
+- **Cross-platform UI consistency program (Phase 0)** — shared field primitives land as the foundation for consistent form/input styling across desktop, mobile, and web (#2951).
+
+### Fixes
+- **Windows: native browser lockups and unresponsive shutdown** — the WebView2 environment callback work is isolated so a slow or hung callback can no longer freeze the main thread, plus a close watchdog and offscreen-at-full-size child realization prevent the shutdown hang (#2947, #2963).
+- **Mobile: chat scroll anchoring** — the conversation no longer jumps or loses its anchor while streaming on mobile (#2946).
+- **Chat: resilient conversation-title helper** — the `chatSummaryTitle` helper is restored with Windows path coverage so title derivation works consistently across platforms (#2955).
+
 ### Security
-- **Chat: runtime filesystem boundary gains a non-blocking sentinel** — the send route now watches streamed tool calls for user-space paths outside the granted roots. Violations never interrupt the turn: they surface as a progress notice on the turn and append a corrective boundary reminder to the conversation's next harness prompt so the familiar self-corrects (observe → surface → steer).
+- **Chat: runtime filesystem boundary gains a non-blocking sentinel** — the send route now watches streamed tool calls for user-space paths outside the granted roots. Violations never interrupt the turn: they surface as a progress notice on the turn and append a corrective boundary reminder to the conversation's next harness prompt so the familiar self-corrects (observe → surface → steer) (#2949).
 
 ## [0.0.175] - 2026-07-11
 
