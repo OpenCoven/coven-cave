@@ -74,4 +74,4 @@ store.
 The preference-persistence system in this document was designed and
 implemented by Timothy Wayne Gregg ([@romgenie](https://github.com/romgenie))
 in [#2952](https://github.com/OpenCoven/coven-cave/pull/2952), re-homed and
-merged via #2971.
+merged via [#2971](https://github.com/OpenCoven/coven-cave/pull/2971).
