@@ -171,6 +171,12 @@ export function UpdateBannerTrigger() {
     let busy = false;
     let activeCancellation: CancellationSignal | null = null;
     let preparedUpdate: NativeUpdateHandle | null = null;
+    // Versions whose user-initiated native retry already failed. The native
+    // updater is the recommended install path — a check failure is usually
+    // transient (e.g. latest.json not yet published mid-release), so the
+    // banner offers a native retry first and only escalates to the browser
+    // release page after a retry also fails.
+    const nativeRetryFailed = new Set<string>();
 
     const runCheck = () => {
       if (busy) return;
@@ -191,15 +197,26 @@ export function UpdateBannerTrigger() {
           return;
         }
 
+        const recommendNativeRetry =
+          r.kind === "native-unavailable" && !nativeRetryFailed.has(r.version);
         pushBanner({
           id: BANNER_ID,
           severity: r.kind === "native-unavailable" ? "warning" : "info",
           title:
             r.kind === "native-unavailable"
-              ? `Native updater unavailable — v${r.version}`
+              ? recommendNativeRetry
+                ? `Native updater unavailable — v${r.version}`
+                : `Native updater still unavailable — v${r.version}`
               : `Update available — v${r.version}`,
           cta: {
-            label: r.kind === "native" ? "Download update" : "Open installer in Browser",
+            label:
+              r.kind === "native"
+                ? "Download update"
+                : r.kind === "native-unavailable"
+                  ? recommendNativeRetry
+                    ? "Retry native update"
+                    : "Open release page in Browser"
+                  : "Open installer in Browser",
             onClick: () => {
               if (r.kind === "native") {
                 if (busy) return;
@@ -315,7 +332,13 @@ export function UpdateBannerTrigger() {
                   });
                 });
               } else if (r.kind === "native-unavailable") {
-                openReleasePageInBrowser();
+                if (recommendNativeRetry) {
+                  nativeRetryFailed.add(r.version);
+                  dismissBanner(BANNER_ID);
+                  runCheck();
+                } else {
+                  openReleasePageInBrowser();
+                }
               } else {
                 openInAppBrowserUrl(r.url);
               }

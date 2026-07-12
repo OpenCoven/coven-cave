@@ -97,6 +97,23 @@ assert.match(src, /Open installer in Browser/, "fallback keeps installer recover
 assert.match(src, /Native updater unavailable/, "settings row distinguishes native updater failure from a normal installer fallback");
 assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
 
+// Banner: the native updater is the recommended install path. A native check
+// failure (often a transient mid-release latest.json gap) first offers a
+// native retry; only after a user-initiated retry also fails does the banner
+// escalate to the canonical release page in the Browser surface.
+assert.match(src, /recommendNativeRetry/, "banner recommends retrying the native updater before any browser handoff");
+assert.match(src, /Native updater still unavailable/, "banner escalates copy only after a failed native retry");
+assert.match(
+  src,
+  /recommendNativeRetry[\s\S]{0,400}?"Retry native update"[\s\S]{0,200}?"Open release page in Browser"/,
+  "banner CTA orders native retry ahead of the browser release page",
+);
+assert.match(
+  src,
+  /r\.kind === "native-unavailable"\) \{\s*if \(recommendNativeRetry\) \{\s*nativeRetryFailed\.add\(r\.version\);/,
+  "clicking retry records the attempt so a second failure offers browser recovery",
+);
+
 // A failed native install must not bypass the signed updater by resolving a
 // direct installer asset from release metadata. It captures the reason, keeps
 // recovery inside Cave, and sends users to the canonical release page instead.
