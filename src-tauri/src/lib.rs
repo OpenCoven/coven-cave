@@ -51,31 +51,15 @@ const QUICK_CHAT_HEIGHT: f64 = 520.0;
 
 #[cfg(desktop)]
 fn coven_tray_icon() -> Image<'static> {
-    const SIZE: u32 = 18;
-    let mut rgba = vec![0; (SIZE * SIZE * 4) as usize];
-    let center = (SIZE as f32 - 1.0) / 2.0;
-
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let in_c_ring = (4.3..=7.7).contains(&dist) && !(dx > 1.2 && dy.abs() < 4.2);
-            let in_core = dx.abs() <= 1.2 && dy.abs() <= 5.8;
-            let in_mark = in_c_ring || in_core;
-            if !in_mark {
-                continue;
-            }
-
-            let idx = ((y * SIZE + x) * 4) as usize;
-            rgba[idx] = 255;
-            rgba[idx + 1] = 255;
-            rgba[idx + 2] = 255;
-            rgba[idx + 3] = 255;
-        }
-    }
-
-    Image::new_owned(rgba, SIZE, SIZE)
+    // The Coven fox-and-trident mark, pre-rendered from
+    // icons/icon-source-1024.png as 36×36 (18pt @2x) white+alpha raw RGBA —
+    // regenerate with scripts/generate-tray-icon.py. macOS renders it as a
+    // template image (alpha only, adapts to menu-bar appearance); the white
+    // fill keeps dark Windows/Linux trays legible. Raw RGBA avoids pulling
+    // tauri's `image-png` decoder feature for a single build-time asset.
+    const SIZE: u32 = 36;
+    const RGBA: &[u8] = include_bytes!("../icons/tray-icon-36.rgba");
+    Image::new(RGBA, SIZE, SIZE)
 }
 
 #[cfg(desktop)]
