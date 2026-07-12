@@ -906,6 +906,12 @@ assert.match(
 );
 
 assert.match(
+  chatRoute,
+  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(cleaned\)[\s\S]*?assistantFilter\.push\(cleaned\)/,
+  "Coven stream-json output events must preserve error-looking stdout text for empty-response diagnostics before filtering",
+);
+
+assert.match(
   streamEvents,
   /kind: "done";[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
   "The done StreamEvent must carry optional usage and costUsd fields (CHAT-D12-02)",

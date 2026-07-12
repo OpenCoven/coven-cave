@@ -1498,6 +1498,14 @@ export async function POST(req: Request) {
       const STDOUT_ERR_KEEP = 10;
       const ERR_LINE_RE =
         /\b(error|failed|denied|unauthori[sz]ed|invalid|refused|missing|not found|401|403|500)\b/i;
+      const recordStdoutErrorTail = (text: string) => {
+        for (const part of text.split(/\r?\n/)) {
+          const trimmed = part.trim();
+          if (!trimmed || !ERR_LINE_RE.test(trimmed)) continue;
+          stdoutErrTail.push(trimmed);
+          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
+        }
+      };
 
       // Set to true when the harness reports its resume failed (rollout DB
       // miss). Triggers a single transparent retry without --continue.
@@ -1584,6 +1592,7 @@ export async function POST(req: Request) {
               // AssistantFilter buffers partial lines and exposes only the
               // assistant phase after stripping Codex's startup transcript.
               const cleaned = resolveBackspaces(stripAnsi(ev.text));
+              recordStdoutErrorTail(cleaned);
               const filtered = assistantFilter.push(cleaned);
               if (filtered) {
                 assistantText += filtered;
@@ -1635,12 +1644,9 @@ export async function POST(req: Request) {
           }
         }
         const cleaned = resolveBackspaces(stripAnsi(line));
-        // Snapshot error-looking stdout lines for the empty-response diagnostic.
         const trimmed = cleaned.trim();
-        if (trimmed && ERR_LINE_RE.test(trimmed)) {
-          stdoutErrTail.push(trimmed);
-          if (stdoutErrTail.length > STDOUT_ERR_KEEP) stdoutErrTail.shift();
-        }
+        // Snapshot error-looking stdout lines for the empty-response diagnostic.
+        recordStdoutErrorTail(cleaned);
         // Surface tool-use hook lines as structured events so the chat can
         // render a tool block. Hooks are still discarded by AssistantFilter
         // below, so this is purely additive.
