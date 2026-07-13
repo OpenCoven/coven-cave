@@ -25,7 +25,11 @@ type InstallJobDiagnostic = {
 
 type InstallResultDiagnostic = { ok: boolean; detail: string };
 
-const LOCAL_PATH_START = /(^|[\s"'`(<\[])(?:[A-Za-z]:\\|\/(?:Users|home|private|var|tmp)\/)/i;
+const SAFE_WEB_URL = /https?:\/\/[^\s"'<>]+/gi;
+const LOCAL_PATH =
+  /(^|[\s"'`(<\[])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)[^\s"'`<>\])}]+|\\\\[^\s"'`<>\])}]+[\\/][^\s"'`<>\])}]+|[A-Za-z]:[\\/][^\s"'`<>\])}]+|\/(?!\/)[^\s/"'`<>\])}]+(?:\/[^\s"'`<>\])}]+)*)/i;
+const LOCAL_PATH_START =
+  /(^|[\s"'`(<\[])(?:file:\/{2,3}(?:[A-Za-z]:[\\/]|\/)|\\\\[^\s"'`<>\])}]+[\\/]|[A-Za-z]:[\\/]|\/(?!\/)[^\s/"'`<>\])}]+\/)/i;
 
 function withoutQueryOrFragment(value: string): string {
   try {
@@ -38,14 +42,46 @@ function withoutQueryOrFragment(value: string): string {
   }
 }
 
+function redactLocalPaths(value: string): string {
+  let remaining = value;
+  let redacted = "";
+
+  while (remaining) {
+    const localPath = LOCAL_PATH.exec(remaining);
+    const pathStart = LOCAL_PATH_START.exec(remaining);
+    if (!localPath || !pathStart || localPath.index !== pathStart.index) {
+      return redacted + remaining;
+    }
+
+    const afterStart = remaining.slice(pathStart.index + pathStart[0].length);
+    const firstWhitespace = afterStart.search(/\s/);
+    const nextTokenHasSlash =
+      firstWhitespace >= 0 && /^\s+[^\s]*[\\/][^\s]*/.test(afterStart.slice(firstWhitespace));
+    redacted += remaining.slice(0, localPath.index) + (localPath[1] ?? "") + "[local path omitted]";
+
+    if (nextTokenHasSlash) {
+      // A literal space can be part of a local path, so its end cannot be
+      // inferred from prose. Deliberately sacrifice the rest of this line
+      // rather than risk copying a user or directory name.
+      return redacted;
+    }
+    remaining = remaining.slice(localPath.index + localPath[0].length);
+  }
+
+  return redacted;
+}
+
 /** Remove secrets, URL query values, and machine-local paths from short status text. */
 export function sanitizeAboutDiagnosticText(value: string): string {
-  const querySafe = value.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => withoutQueryOrFragment(url));
-  const localPath = LOCAL_PATH_START.exec(querySafe);
-  const pathSafe = localPath
-    ? `${querySafe.slice(0, localPath.index)}${/\s/.test(localPath[1] ?? "") ? localPath[1] : ""}[local path omitted]`
-    : querySafe;
-  return redactSecretText(pathSafe).slice(0, 280);
+  const webUrls: string[] = [];
+  const querySafe = value.replace(SAFE_WEB_URL, (url) => {
+    webUrls.push(withoutQueryOrFragment(url));
+    return `__ABOUT_WEB_URL_${webUrls.length - 1}__`;
+  });
+
+  const pathSafe = redactLocalPaths(querySafe);
+  const urlSafe = pathSafe.replace(/__ABOUT_WEB_URL_(\d+)__/g, (_placeholder, index: string) => webUrls[Number(index)] ?? "unavailable");
+  return redactSecretText(urlSafe).slice(0, 280);
 }
 
 /**
