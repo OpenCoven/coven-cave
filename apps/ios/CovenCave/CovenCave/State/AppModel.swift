@@ -5,7 +5,7 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks, calendar, dev, settings }
+enum AppTab: String { case chats, tasks, calendar, dev, settings, search }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -63,6 +63,10 @@ final class AppModel {
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
 
+    /// A familiar selected from global Search. `ChatsHomeView` consumes this
+    /// one-shot intent and opens the existing thread-list destination.
+    var familiarToOpen: Familiar?
+
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
@@ -94,6 +98,11 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    func requestOpenFamiliar(_ familiar: Familiar) {
+        selectedTab = .chats
+        familiarToOpen = familiar
     }
 
     /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
@@ -502,7 +511,7 @@ final class AppModel {
     /// Surface a widget tap targets. The widget body deep-links to `.reminders`
     /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
     /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
-    enum DeepLink: String { case tasks, reminders, calendar }
+    enum DeepLink: String { case tasks, reminders, calendar, search }
 
     var deepLink: DeepLink?
 
@@ -520,6 +529,7 @@ final class AppModel {
         switch target {
         case .tasks, .reminders: selectedTab = .tasks
         case .calendar: selectedTab = .calendar
+        case .search: selectedTab = .search
         }
         deepLink = target
     }

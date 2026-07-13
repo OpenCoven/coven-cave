@@ -2009,6 +2009,14 @@ export function Workspace() {
       openGrimoireDoc("memory", intent.path);
       return;
     }
+    if (intent.kind === "open-setting") {
+      const params = new URLSearchParams();
+      if (intent.group) params.set("group", intent.group);
+      if (intent.familiarTab) params.set("familiarTab", intent.familiarTab);
+      const search = params.size > 0 ? `?${params.toString()}` : "";
+      nextRouter.push(`/settings${search}#${intent.section}`);
+      return;
+    }
     if (intent.kind === "slash") {
       handleSlashIntent(intent.command, intent.args);
       return;
