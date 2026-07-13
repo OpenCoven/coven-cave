@@ -146,11 +146,17 @@ function installResultFromCompletion(
   if (!verification.ok) {
     return { ok: false, detail: verification.error ?? "post-install verification failed" };
   }
+  const normalizePath = (value: string | null | undefined) => {
+    if (!value) return null;
+    const looksWindows = /[A-Za-z]:\\/.test(value) || value.includes("\\");
+    const normalized = value.replace(/\//g, "\\");
+    return looksWindows ? normalized.toLowerCase() : normalized;
+  };
   const consistent =
     rechecked &&
-    rechecked.path === verification.path &&
+    normalizePath(rechecked.path) === normalizePath(verification.path) &&
     rechecked.current === verification.current &&
-    rechecked.latest === verification.latest &&
+    (rechecked.latest ? rechecked.latest === verification.latest : true) &&
     rechecked.packageVerified &&
     rechecked.compatible &&
     !rechecked.outdated;
