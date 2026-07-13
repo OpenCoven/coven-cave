@@ -199,8 +199,8 @@ assert.equal(
 // prefer real launchers or spawn("coven") ENOENTs with the CLI on PATH.
 assert.equal(
   pickWindowsLauncher(["C:\\node\\coven", "C:\\node\\coven.cmd", "C:\\shims\\coven.exe"]),
-  "C:\\shims\\coven.exe",
-  "a real .exe wins over shims and POSIX launchers",
+  "C:\\node\\coven.cmd",
+  "the first spawnable launcher preserves PATH precedence over a later .exe",
 );
 
 assert.equal(

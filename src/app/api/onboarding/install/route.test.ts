@@ -178,8 +178,32 @@ assert.match(
 
 assert.match(
   source,
+  /verifyOpenCovenToolInstall\(targetName\)/,
+  "OpenCoven installs refresh discovery and perform the authoritative executable/version verification",
+);
+
+assert.match(
+  source,
   /targetName === "coven-cli" \? \{ refresh: true \}/,
   "CLI success refreshes the executable environment before resolving the installed binary",
+);
+
+assert.match(
+  source,
+  /isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
+  "a zero npm exit is necessary but insufficient: OpenCoven success also requires verified post-install state",
+);
+
+assert.match(
+  source,
+  /job\.verification = verification/,
+  "the polled job carries sanitized path/version verification evidence to the UI",
+);
+
+assert.match(
+  source,
+  /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
+  "installer tails re-redact the combined buffer so secrets split across chunks cannot leak",
 );
 
 assert.match(
@@ -264,6 +288,12 @@ assert.match(
 
 assert.match(
   source,
+  /const safeMessage =\s*"Cave could not safely stop the local daemon before updating the CLI\. The update was not started\.";[\s\S]*?finishInstallJobError\([\s\S]*?safeMessage/,
+  "a failed graceful daemon stop keeps actionable copy without exposing raw command output",
+);
+
+assert.match(
+  source,
   /forceFinishTimer = setTimeout\([\s\S]*?finish\(null, null, new Error\(job\.error \?\? reason\)\)/,
   "the timeout watchdog settles a child that never emits close",
 );
@@ -282,8 +312,8 @@ assert.match(
 
 assert.match(
   source,
-  /appendOutput\(job, stripAnsi\(/,
-  "installer output is ANSI-stripped at append time, so the cap counts visible bytes",
+  /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
+  "installer output is ANSI-stripped and redacted before the capped diagnostics tail is stored",
 );
 
 assert.match(

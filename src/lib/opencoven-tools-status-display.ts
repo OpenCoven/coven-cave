@@ -16,6 +16,7 @@ export type OpenCovenToolDisplayStatus = {
   latest: string | null;
   outdated: boolean;
   compatible: boolean;
+  packageVerified?: boolean;
   latestCheck?: LatestCheckDisplay;
 };
 
@@ -53,7 +54,8 @@ export function latestCheckText(tool: OpenCovenToolDisplayStatus, stale = false)
 
 export function toolStatusText(tool: OpenCovenToolDisplayStatus, stale = false): string {
   if (!tool.installed) return "Not found";
-  if (!tool.current) return "Version unknown";
+  if (tool.packageVerified === false) return "Unexpected executable";
+  if (!tool.current) return "Version probe failed";
   if (!tool.compatible) return "Needs update";
   if (stale || !hasVerifiedLatestVersion(tool)) return "Couldn't verify latest version";
   if (tool.outdated) return "Update available";

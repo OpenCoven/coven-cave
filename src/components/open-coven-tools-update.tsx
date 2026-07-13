@@ -28,15 +28,31 @@ type ToolStatus = {
   binary: string;
   installed: boolean;
   path: string | null;
+  executablePath: string | null;
   current: string | null;
   latest: string | null;
   latestCheck: LatestCheckDisplay;
   outdated: boolean;
   compatible: boolean;
   state: OpenCovenToolState;
+  packageVerified: boolean;
+  executableVerified: boolean;
+  packagePath: string | null;
+  discoveryError: "version-probe-failed" | "launcher-unreadable" | null;
   minimumVersion: string;
   installCommand: string;
   checkedAt: string;
+};
+
+type InstallVerification = {
+  path: string | null;
+  current: string | null;
+  latest: string | null;
+  packageVerified: boolean;
+  compatible: boolean;
+  latestSatisfied: boolean | null;
+  ok: boolean;
+  error?: string;
 };
 
 type InstallJobView = {
@@ -44,6 +60,7 @@ type InstallJobView = {
   elapsedMs: number;
   tail: string;
   ok?: boolean;
+  verification?: InstallVerification;
   error?: string;
   daemon?: {
     wasRunning: boolean;
@@ -117,14 +134,12 @@ function daemonLifecycleText(daemon: NonNullable<InstallJobView["daemon"]>): str
 function successfulInstallDetail(
   target: InstallTarget,
   job: InstallJobView,
-  action: OpenCovenToolAction,
+  result = "updated",
 ): string {
-  const location =
-    action === "install" ? "installed" : action === "repair" ? "repaired" : "updated";
-  if (target !== "coven-cli" || !job.daemon) return location;
-  if (job.daemon.phase === "healthy") return `${location}; local daemon restarted and healthy`;
-  if (job.daemon.phase === "not-running") return `${location}; local daemon remained stopped`;
-  return `${location}; daemon health: ${job.daemon.health}`;
+  if (target !== "coven-cli" || !job.daemon) return result;
+  if (job.daemon.phase === "healthy") return `${result}; local daemon restarted and healthy`;
+  if (job.daemon.phase === "not-running") return `${result}; local daemon remained stopped`;
+  return `${result}; daemon health: ${job.daemon.health}`;
 }
 
 function isInstallTarget(id: string): id is InstallTarget {
@@ -132,7 +147,51 @@ function isInstallTarget(id: string): id is InstallTarget {
 }
 
 function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {
-  return tool.installed && Boolean(tool.current) && !tool.compatible;
+  return tool.installed && (!tool.packageVerified || !tool.current || !tool.compatible);
+}
+
+function toolCompatibilityText(tool: ToolStatus): string | null {
+  if (!tool.installed) return null;
+  if (!tool.packageVerified) return `Expected ${tool.packageName}`;
+  if (!tool.current) return "Version probe failed";
+  if (!toolNeedsCompatibilityUpdate(tool)) return null;
+  return `Requires >= ${tool.minimumVersion}`;
+}
+
+function installResultFromCompletion(
+  target: InstallTarget,
+  job: InstallJobView,
+  rechecked: ToolStatus | undefined,
+): InstallResult {
+  if (!job.ok) return { ok: false, detail: job.error ?? "update failed" };
+  const verification = job.verification;
+  if (!verification || !verification.ok) {
+    return { ok: false, detail: verification?.error ?? "post-install verification failed" };
+  }
+  if (!rechecked || rechecked.latestCheck.status !== "verified") {
+    return {
+      ok: false,
+      detail: "Post-install recheck could not verify npm latest. Check the network or registry, then retry.",
+    };
+  }
+  const consistent =
+    rechecked.path === verification.path &&
+    rechecked.current === verification.current &&
+    rechecked.latest === verification.latest &&
+    rechecked.packageVerified &&
+    rechecked.compatible &&
+    !rechecked.outdated;
+  if (!consistent) {
+    const current = rechecked.current ? ` (${rechecked.current})` : "";
+    return {
+      ok: false,
+      detail: `Post-install recheck now resolves a different executable${current}. Retry after fixing PATH precedence.`,
+    };
+  }
+  return {
+    ok: true,
+    detail: successfulInstallDetail(target, job, `Verified ${verification.current}`),
+  };
 }
 
 function dismissedToolBanner(tools: ToolStatus[]): boolean {
@@ -287,7 +346,7 @@ export function OpenCovenToolsUpdate() {
     }
   }, []);
 
-  const load = useCallback(async (): Promise<boolean> => {
+  const load = useCallback(async (): Promise<ToolStatus[] | null> => {
     setChecking(true);
     setError(null);
     try {
@@ -300,8 +359,8 @@ export function OpenCovenToolsUpdate() {
       if (!res.ok || json.ok === false) {
         throw new Error(json.error ?? "tool check failed");
       }
+      const nextTools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
       if (mounted.current) {
-        const nextTools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
         setTools(nextTools);
         setStale(false);
         setLastSuccessfulCheckedAt(nextTools[0]?.checkedAt ?? new Date().toISOString());
@@ -310,7 +369,7 @@ export function OpenCovenToolsUpdate() {
           dismissBanner(TOOL_UPDATE_BANNER_ID);
         }
       }
-      return true;
+      return nextTools;
     } catch (err) {
       if (mounted.current) {
         const message = err instanceof Error ? err.message : "tool check failed";
@@ -319,7 +378,7 @@ export function OpenCovenToolsUpdate() {
         // A failed refresh cannot leave prior rows looking fresh.
         setStale(true);
       }
-      return false;
+      return null;
     } finally {
       if (mounted.current) setChecking(false);
     }
@@ -373,18 +432,17 @@ export function OpenCovenToolsUpdate() {
             [target]: { ...json, action: prev[target]?.action },
           }));
           if (json.status === "done") {
-            const action = installJobs[target]?.action ?? "update";
+            const refreshed = await load();
+            const result = installResultFromCompletion(
+              target,
+              json,
+              refreshed?.find((tool) => tool.id === target),
+            );
             setInstallResults((prev) => ({
               ...prev,
-              [target]: json.ok
-                ? {
-                    ok: true,
-                    detail: successfulInstallDetail(target, json, action),
-                  }
-                : { ok: false, detail: json.error ?? "update failed" },
+              [target]: result,
             }));
-            const refreshed = await load();
-            if (json.ok && refreshed) {
+            if (result.ok && refreshed) {
               window.dispatchEvent(new Event(TOOL_UPDATE_RECHECK_EVENT));
             }
           }
@@ -561,6 +619,11 @@ export function OpenCovenToolsUpdate() {
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                 {stateStatusText}
               </p>
+              {toolCompatibilityText(tool) ? (
+                <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                  {toolCompatibilityText(tool)}
+                </p>
+              ) : null}
               <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                 {latestCheckText(tool, stale)}
               </p>

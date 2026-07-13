@@ -19,8 +19,14 @@ import {
   refreshCovenSpawnEnv,
 } from "@/lib/coven-bin";
 import { installHermesShim } from "@/lib/hermes-shim";
+import {
+  verifyOpenCovenToolInstall,
+  type OpenCovenToolVerification,
+} from "@/lib/opencoven-tools-status";
+import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
 import { startLocalDaemon } from "@/lib/daemon-start";
+import { redactSecretText } from "@/lib/secret-redaction";
 import {
   markDaemonCliInstalling,
   prepareDaemonForCliUpdate,
@@ -107,6 +113,12 @@ const INSTALL_TARGETS = {
 
 type InstallTarget = keyof typeof INSTALL_TARGETS;
 type CommandPathResult = { path: string | null; error?: string };
+
+function isOpenCovenToolInstallTarget(
+  target: InstallTarget,
+): target is "coven-cli" | "coven-code" {
+  return target === "coven-cli" || target === "coven-code";
+}
 
 function nodeInstallHint(): string {
   if (process.platform === "darwin") {
@@ -282,6 +294,7 @@ type InstallJob = {
   ok?: boolean;
   code?: number | null;
   binaryPath?: string | null;
+  verification?: OpenCovenToolVerification;
   error?: string;
   /** Present only for a Coven CLI update, never for other tool installers. */
   daemon?: DaemonUpdateLifecycle;
@@ -302,6 +315,13 @@ const globalScope = globalThis as unknown as {
 };
 const jobs: Map<InstallTarget, InstallJob> = (globalScope.__covenInstallJobs ??=
   new Map());
+
+function redactSensitiveInstallOutput(value: string): string {
+  return redactSecretText(value).replace(
+    /^.*(?:GITHUB_(?:PAT|PERSONAL_ACCESS_TOKEN)|NPM_CONFIG_.*(?:AUTH|TOKEN)|(?:^|[_-])TOKEN)\s*=.*$/gim,
+    "[redacted sensitive installer output]",
+  );
+}
 
 type NpmLaneView = {
   npmBusy: boolean;
@@ -355,7 +375,7 @@ function npmBusyResponse(owner: InstallTarget) {
 }
 
 function appendOutput(job: InstallJob, chunk: string) {
-  job.output = (job.output + chunk).slice(-OUTPUT_CAP);
+  job.output = redactSensitiveInstallOutput(job.output + stripAnsi(chunk)).slice(-OUTPUT_CAP);
 }
 
 function runCommand(
@@ -372,10 +392,10 @@ function runCommand(
     let output = "";
     const timer = setTimeout(() => child.kill("SIGTERM"), options.timeoutMs);
     child.stdout.on("data", (data) => {
-      output += stripAnsi(data.toString());
+      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
     });
     child.stderr.on("data", (data) => {
-      output += stripAnsi(data.toString());
+      output = redactSensitiveInstallOutput(output + stripAnsi(data.toString()));
     });
     child.on("error", (err) => {
       clearTimeout(timer);
@@ -510,6 +530,7 @@ function jobView(job: InstallJob) {
     ok: job.ok ?? false,
     code: job.code ?? null,
     binaryPath: job.binaryPath ?? null,
+    ...(job.verification ? { verification: job.verification } : {}),
     ...(job.daemon ? { daemon: job.daemon } : {}),
     ...(job.error ? { error: job.error } : {}),
   };
@@ -520,19 +541,21 @@ function installStartErrorMessage(err: unknown): string {
   if (/resource temporarily unavailable|EAGAIN|uv_thread_create/i.test(message)) {
     return "Cave could not start the installer because the system is temporarily out of process slots. Wait a moment, then click Install again.";
   }
-  return message || "install failed to start";
+  if (!message) return "install failed to start";
+  return "Cave could not start the installer. Retry in a moment; if it continues, copy diagnostics for support.";
 }
 
 function finishInstallJobError(
   job: InstallJob,
   err: unknown,
   npmLease?: NpmInstallLease,
+  safeMessage?: string,
 ) {
   if (job.status !== "running") return;
   job.status = "done";
   job.finishedAt = Date.now();
   job.ok = false;
-  job.error = installStartErrorMessage(err);
+  job.error = safeMessage ?? installStartErrorMessage(err);
   job.cancel = undefined;
   npmLease?.release();
 }
@@ -577,23 +600,49 @@ async function finishInstallJob(
       appendOutput(job, `${installStartErrorMessage(launchError)}\n`);
     }
 
-    // A successful npm process is not enough for a CLI update. Refresh lookup
-    // state first, then verify the executable Cave will actually be able to
-    // launch for daemon recovery.
-    const installed = await commandPath(
-      target.binary,
-      targetName === "coven-cli" ? { refresh: true } : undefined,
-    );
-    const installError = installerOutcomeError(
-      targetName,
-      target,
-      code,
-      signal,
-      installed,
-      job.output,
-      launchError ? installStartErrorMessage(launchError) : job.error,
-    );
-    const installOk = !installError && code === 0 && !!installed.path;
+    const priorError = launchError
+      ? installStartErrorMessage(launchError)
+      : job.error;
+    const shouldVerifyOpenCovenTool =
+      !priorError && code === 0 && isOpenCovenToolInstallTarget(targetName);
+    let verification: OpenCovenToolVerification | undefined;
+    let verificationError: string | null = null;
+    let installed: CommandPathResult;
+
+    if (shouldVerifyOpenCovenTool) {
+      try {
+        verification = await verifyOpenCovenToolInstall(targetName);
+        installed = { path: verification.path };
+        if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
+          verificationError = verification.error ??
+            `Could not verify ${target.binary} after install.`;
+        }
+      } catch {
+        installed = { path: null };
+        verificationError =
+          `Could not complete ${target.binary} post-install verification. Re-check the tool and retry.`;
+      }
+    } else {
+      installed = await commandPath(
+        target.binary,
+        targetName === "coven-cli" ? { refresh: true } : undefined,
+      );
+    }
+
+    const installError = shouldVerifyOpenCovenTool
+      ? verificationError
+      : installerOutcomeError(
+          targetName,
+          target,
+          code,
+          signal,
+          installed,
+          job.output,
+          priorError,
+        );
+    const installOk = verification
+      ? isVerifiedOpenCovenInstallSuccess(code, verification)
+      : !installError && code === 0 && !!installed.path;
 
     // Hermes has no positional prompt slot, so the harness's `-- "<prompt>"`
     // convention needs the hermes-coven shim to remap it onto -q. This remains
@@ -627,6 +676,7 @@ async function finishInstallJob(
     job.ok = installOk && recovered;
     job.code = code;
     job.binaryPath = installed.path;
+    if (verification) job.verification = verification;
     if (!job.ok) {
       job.error = [installError, recoveryError].filter(Boolean).join(" ");
     } else {
@@ -723,13 +773,13 @@ async function runInstallJob(
     if (!readyForInstall) {
       finalized = true;
       clearTimers();
+      const safeMessage =
+        "Cave could not safely stop the local daemon before updating the CLI. The update was not started.";
       finishInstallJobError(
         job,
-        new Error(
-          job.daemon?.detail ??
-            "Cave could not safely stop the local daemon before updating the CLI.",
-        ),
+        new Error(job.daemon?.detail ?? safeMessage),
         npmLease,
+        safeMessage,
       );
       return;
     }
@@ -739,8 +789,8 @@ async function runInstallJob(
       env: covenSpawnEnv(),
       shell: plan.shell,
     });
-    child.stdout?.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-    child.stderr?.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+    child.stdout?.on("data", (d) => appendOutput(job, d.toString()));
+    child.stderr?.on("data", (d) => appendOutput(job, d.toString()));
     timer = setTimeout(() => {
       job.error = `install timed out after ${target.timeoutMs / 1000}s`;
       requestTermination(`${job.error}; stopping installer...`);
@@ -846,7 +896,7 @@ export async function POST(req: Request) {
         ok: false,
         commandLookupFailed: true,
         error: `Cave couldn't check ${plan.binary} on PATH`,
-        hint: `Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again. Details: ${plan.error}`,
+        hint: "Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again.",
       },
       { status: 503 },
     );

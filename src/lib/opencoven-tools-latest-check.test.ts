@@ -13,6 +13,17 @@ import {
 
 const checkedAt = new Date("2026-07-12T16:00:00.000Z");
 
+function verifiedProbe(version: string) {
+  return {
+    path: "C:\\tools\\coven.cmd",
+    executablePath: "C:\\tools\\node_modules\\@opencoven\\cli\\bin\\coven.js",
+    executableVerified: true,
+    version,
+    packageName: "@opencoven/cli",
+    packagePath: "C:\\tools\\node_modules\\@opencoven\\cli",
+  } as const;
+}
+
 async function windowsNpmShim() {
   const dir = await mkdtemp(path.join(os.tmpdir(), "coven-npm-view-"));
   const npmCli = path.join(dir, "node_modules", "npm", "bin", "npm-cli.js");
@@ -75,7 +86,7 @@ test("registry timeouts return explicit freshness and error state", async () => 
   });
   const status = composeOpenCovenToolStatus(
     OPEN_COVEN_TOOLS[0],
-    { path: "C:\\tools\\coven.cmd", version: "0.0.53" },
+    verifiedProbe("0.0.53"),
     latestCheck,
   );
   assert.equal(status.latest, null);
@@ -91,7 +102,7 @@ test("a verified newer npm version produces an outdated result", async () => {
   });
   const status = composeOpenCovenToolStatus(
     OPEN_COVEN_TOOLS[0],
-    { path: "C:\\tools\\coven.cmd", version: "0.0.53" },
+    verifiedProbe("0.0.53"),
     latestCheck,
   );
 
