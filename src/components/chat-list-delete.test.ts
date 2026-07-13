@@ -139,6 +139,26 @@ assert.match(
 );
 assert.match(
   source,
+  /const setSessionKeep = async \(sessionId: string, keep: boolean\) =>[\s\S]*\{ keep \}/,
+  "Keep toggle should route the keep field through the sessions PATCH helper",
+);
+assert.match(
+  source,
+  /const extendSessionAutoArchive = async \(sessionId: string, days: number\) =>[\s\S]*\{ extendDays: days \}/,
+  "Auto-archive extension should route extendDays through the sessions PATCH helper",
+);
+assert.match(
+  source,
+  /OverflowMenu[\s\S]*Archive controls for chat/,
+  "Chat rows should expose an archive-controls overflow menu for keep/extend actions",
+);
+assert.match(
+  source,
+  /Extend auto-archive \+7 days[\s\S]*Extend auto-archive \+30 days/,
+  "Archive-controls menu should offer quick +7d and +30d extension actions",
+);
+assert.match(
+  source,
   /aria-label=\{`\$\{s\.archived_at \? "Unarchive" : "Archive"\} chat \$\{rowName\}`\}/,
   "Archive toggle should be a real button with a state-aware aria-label",
 );

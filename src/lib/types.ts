@@ -78,6 +78,10 @@ export type SessionRow = {
   pullRequest?: SessionPullRequestContext | null;
   /** Working-tree change size vs HEAD, for the Recent Activity roll-up's `+N -N`. */
   diff?: { additions: number; deletions: number } | null;
+  /** Keep mark from Cave state (never auto-archived when true). */
+  keep?: boolean;
+  /** Cave-local auto-archive defer-until timestamp, if set. */
+  archive_extended_until?: string | null;
 };
 
 export type SessionGitContext = {

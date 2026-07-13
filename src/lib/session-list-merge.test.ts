@@ -141,6 +141,70 @@ assert.equal(
   "archived local chats should return when includeArchived is enabled",
 );
 
+const archiveOverrideState = {
+  ...state,
+  sessionKeep: { "local-1": "2026-06-08T22:00:00.000Z", "daemon-1": "2026-06-08T22:00:00.000Z" },
+  sessionArchiveExtendedUntil: {
+    "local-1": "2026-07-01T00:00:00.000Z",
+    "daemon-1": "2026-07-15T00:00:00.000Z",
+  },
+};
+
+assert.equal(
+  localConversationSessionRows([localConversation], archiveOverrideState, false)[0].keep,
+  true,
+  "local conversation rows should carry the keep flag from Cave state",
+);
+assert.equal(
+  localConversationSessionRows([localConversation], archiveOverrideState, false)[0].archive_extended_until,
+  "2026-07-01T00:00:00.000Z",
+  "local conversation rows should carry the extension deadline from Cave state",
+);
+assert.equal(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "daemon-1",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Daemon chat",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-08T19:00:00.000Z",
+        updated_at: "2026-06-08T19:05:00.000Z",
+      },
+    ],
+    localConversations: [],
+    state: archiveOverrideState,
+    includeArchived: false,
+  })[0].keep,
+  true,
+  "daemon rows should carry the keep flag from Cave state",
+);
+assert.equal(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "daemon-1",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Daemon chat",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-08T19:00:00.000Z",
+        updated_at: "2026-06-08T19:05:00.000Z",
+      },
+    ],
+    localConversations: [],
+    state: archiveOverrideState,
+    includeArchived: false,
+  })[0].archive_extended_until,
+  "2026-07-15T00:00:00.000Z",
+  "daemon rows should carry the extension deadline from Cave state",
+);
+
 // A daemon session whose `updated_at` was bumped by a mere resume/view should
 // order by the matching local conversation's last-message time, not the later
 // view time — so reopening an old chat doesn't float it to the top.
