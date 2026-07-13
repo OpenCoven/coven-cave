@@ -193,8 +193,18 @@ export function SettingsShell() {
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
+        const params = new URLSearchParams(window.location.search);
+        const group = params.get("group")?.trim();
+        const familiarTab = params.get("familiarTab")?.trim() as FamiliarStudioTab | undefined;
         setSection(hash);
         setPickerView(false);
+        if (familiarTab && SETTINGS_INDEX.some((entry) => entry.familiarTab === familiarTab)) {
+          setFamiliarsTabTarget(familiarTab);
+          setScrollTarget(null);
+        } else {
+          setFamiliarsTabTarget(null);
+          setScrollTarget(group ? settingsGroupId(group) : null);
+        }
         return;
       }
       setPickerView(true);
