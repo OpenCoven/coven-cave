@@ -468,13 +468,33 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /let sessionsListCache:[\s\S]*let sessionsListInFlight:/,
-    "/sessions/list: repeated callers should share a short-lived cached response",
+    /const sessionsListCache = createSwrCache<SessionsListResult>\(/,
+    "/sessions/list: repeated callers should share a stale-while-revalidate cached response",
   );
   assert.match(
     sessionsListSource,
-    /const inFlight = sessionsListInFlight\.get\(cacheKey\);[\s\S]*if \(inFlight\) return inFlight;/,
-    "/sessions/list: concurrent callers should await one in-flight session list computation",
+    /canServeStale: \(result\) => result\.payload\.ok/,
+    "/sessions/list: error payloads must never be served stale (no pinned 503s)",
+  );
+  assert.match(
+    sessionsListSource,
+    /SESSIONS_LIST_STALE_SERVE_MS = 30_000/,
+    "/sessions/list: stale serve window covers the poll cadence so polls never block on recompute",
+  );
+
+  const swrCacheSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "swr-cache.ts"),
+    "utf8",
+  );
+  assert.match(
+    swrCacheSource,
+    /const existing = inFlight\.get\(key\);\s*\n\s*if \(existing\) return existing;/,
+    "swr-cache: concurrent callers should await one in-flight computation",
+  );
+  assert.match(
+    swrCacheSource,
+    /revalidate\(key, compute\)\.catch\(\(\) => undefined\);\s*\n\s*return entry\.value;/,
+    "swr-cache: stale reads serve the cached value and revalidate in the background",
   );
 
   const sessionGitEnrichSource = readFileSync(
