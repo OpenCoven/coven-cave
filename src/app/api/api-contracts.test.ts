@@ -18,6 +18,8 @@ type RouteContract = {
 
 const contracts: RouteContract[] = [
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
+  { route: "/access-groups", methods: ["GET", "POST"], kind: "json" },
+  { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true },
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
   { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
   { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
