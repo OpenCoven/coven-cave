@@ -12,6 +12,7 @@ const marketplaceRoute = await readFile(new URL("../../app/api/marketplace/route
 
 assert.match(view, /\{ id: "crafts", label: "Crafts"/, "Crafts is a first-class Marketplace section");
 assert.match(view, /\{ id: "craft", label: "Crafts" \}/, "Browse can filter catalog entries by Craft kind");
+assert.match(view, /\{ id: "knowledge-pack", label: "Knowledge packs" \}/, "Browse can filter catalog entries by Knowledge pack kind");
 assert.match(view, /id="marketplace-panel-crafts"/, "Crafts section has a labelled tabpanel");
 assert.match(view, /selectSection\("crafts"\)/, "Browse setup rail links to Crafts");
 assert.match(view, /Familiar[\s\S]*Role[\s\S]*Craft[\s\S]*Capabilities/, "Crafts section explains the loadout hierarchy");
@@ -30,6 +31,7 @@ assert.match(card, /plugin\.kind === "craft"[\s\S]*onOpen\(plugin\.id\)/, "Craft
 assert.match(card, /state === "added" \? "Manage" : "Preview"/, "Craft cards use explicit Preview and Manage states");
 assert.match(card, /plugin\.draft[\s\S]*"Draft"/, "local draft Crafts have a distinct card state");
 assert.match(card, /kind === "craft"[\s\S]*"Craft"/, "Craft cards have a distinct kind label");
+assert.match(card, /kind === "knowledge-pack"[\s\S]*"Knowledge pack"/, "Knowledge pack cards have a distinct kind label");
 assert.match(createDrawer, /className="craft-create-drawer__backdrop"/, "Craft create drawer keeps a stable fixed-overlay hook");
 assert.match(createDrawer, /className="craft-create-drawer__header"/, "Craft create drawer header layout stays on semantic hooks");
 assert.match(createDrawer, /className="craft-create-drawer__actions"/, "Craft create drawer footer actions stay on semantic hooks");
@@ -37,6 +39,7 @@ assert.match(createDrawer, /className="craft-create-drawer__actions"/, "Craft cr
 assert.equal(existsSync(craftDetailUrl), true, "Craft detail component exists");
 const craftDetail = await readFile(craftDetailUrl, "utf8");
 assert.match(detail, /plugin\.kind === "craft"[\s\S]*<CraftDetail/, "generic drawer delegates Craft state to the loadout detail");
+assert.match(detail, /plugin\.kind === "knowledge-pack"[\s\S]*<KnowledgePackDetail/, "generic drawer delegates Knowledge packs to the seeding detail");
 assert.match(detail, /plugin\.draft[\s\S]*<DraftCraftDetail/, "local draft Crafts open a draft review drawer instead of install planning");
 assert.match(craftDetail, /\/api\/marketplace\/crafts\/plan\?id=/, "drawer previews the exact install plan");
 assert.match(craftDetail, /fetch\("\/api\/roles"/, "drawer loads Roles for equipping and effective capability display");
@@ -74,6 +77,18 @@ assert.match(
   /plugin\.installation\?\.verifiedAt[\s\S]*plugin\.installation\?\.craftVersion[\s\S]*plugin\.updateAvailable/,
   "Role resolution refreshes when install verification or the current Craft version changes",
 );
+
+const knowledgePackDetail = await readFile(new URL("./knowledge-pack-detail.tsx", import.meta.url), "utf8");
+const knowledgePackSeedModal = await readFile(new URL("./knowledge-pack-seed-modal.tsx", import.meta.url), "utf8");
+assert.match(knowledgePackDetail, /\/api\/knowledge\/packs/, "Knowledge pack detail loads the compiled pack manifest");
+assert.match(knowledgePackDetail, /Install & seed…/, "new Knowledge packs expose an install-and-seed action");
+assert.match(knowledgePackDetail, /Seed again…/, "installed Knowledge packs make idempotent reseeding explicit");
+assert.match(knowledgePackDetail, /Folders/, "Knowledge pack detail shows seeded folders");
+assert.match(knowledgePackDetail, /Bundled skills/, "Knowledge pack detail explains bundled skills");
+assert.match(knowledgePackSeedModal, /<Modal/, "Knowledge pack seed flow uses the shared focus-trapped Modal");
+assert.match(knowledgePackSeedModal, /<ProjectPicker/, "Project target reuses the shared ProjectPicker");
+assert.match(knowledgePackSeedModal, /\/api\/marketplace\/install[\s\S]*\/api\/knowledge\/packs\/seed[\s\S]*\/api\/skills\/packages\/install/, "seed confirmation tracks install, seeds, then installs checked skills");
+assert.match(knowledgePackSeedModal, /useAnnouncer/, "seed results and errors are announced through the live region");
 
 assert.match(css, /\.craft-loadout-path \{/, "Craft hierarchy has a stable visual hook");
 assert.match(css, /\.craft-create-drawer__backdrop \{/, "Craft create drawer overlay has a stable visual hook");

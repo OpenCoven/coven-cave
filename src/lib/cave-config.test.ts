@@ -151,6 +151,15 @@ try {
   assert.deepEqual(Object.keys(cfg.marketplace.installed), ["seekers-lens"]);
   await config.uninstallMarketplacePlugin("seekers-lens");
 
+  const vaultSeededAt = await config.recordKnowledgePackSeed("worldbuilding", { target: "vault" });
+  assert.ok(Number.isFinite(Date.parse(vaultSeededAt)));
+  await config.recordKnowledgePackSeed("worldbuilding", { target: "project", root: "/story" });
+  await config.recordKnowledgePackSeed("worldbuilding", { target: "project", root: "/story" });
+  cfg = await config.loadConfig();
+  assert.equal(cfg.marketplace.knowledgePacks.length, 2, "knowledge pack seed records dedupe by id, target, and root");
+  assert.ok(cfg.marketplace.knowledgePacks.some((entry) => entry.target === "vault"));
+  assert.ok(cfg.marketplace.knowledgePacks.some((entry) => entry.target === "project" && entry.root === "/story"));
+
   await config.saveConfig({
     multiHost: {
       mode: "hub",
@@ -224,11 +233,11 @@ try {
 }
 
 // ── Config write-race mutex (2026-07-03 settings audit) ──────────────────────
-// All four cave-config.json writers serialize their read-modify-write through
+// All cave-config.json writers serialize their read-modify-write through
 // one in-process lock, mirroring the state mutex — otherwise concurrent PATCHes
 // clobber each other's fields.
 {
   const src = fs.readFileSync(new URL("./cave-config.ts", import.meta.url), "utf8");
   assert.match(src, /async function withConfigLock<T>/, "cave-config has a config mutex helper");
-  assert.equal((src.match(/return withConfigLock\(async \(\) => \{/g) || []).length, 4, "all four config writers run under the lock");
+  assert.equal((src.match(/return withConfigLock\(async \(\) => \{/g) || []).length, 5, "all config writers run under the lock");
 }

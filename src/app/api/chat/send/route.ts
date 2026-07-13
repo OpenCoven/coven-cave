@@ -46,6 +46,7 @@ import {
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
+  listCollections,
   readKnowledgeVaultForPrompt,
 } from "@/lib/server/knowledge-vault";
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
@@ -1301,6 +1302,7 @@ export async function POST(req: Request) {
   // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
   // consumes `harnessPrompt` below receives the same authoritative context.
   const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
+  const knowledgeVaultCollections = await listCollections();
 
   const taskContext = await taskContextForSession(body.sessionId);
   const scopedPrompt = buildPromptWithRuntimeScope(
@@ -1321,6 +1323,7 @@ export async function POST(req: Request) {
             [operatorProfileContext, dailyMemoryContext],
           ),
           knowledgeVaultEntries,
+          knowledgeVaultCollections,
         ),
         taskContext,
       ),

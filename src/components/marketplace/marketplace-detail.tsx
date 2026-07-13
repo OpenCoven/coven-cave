@@ -11,6 +11,7 @@ import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/use-composer-draft";
 import { promptIconName } from "@/components/prompt-snippets-modal";
 import type { PromptOption } from "@/lib/slash-prompt";
 import { CraftDetail, type CraftActionError } from "@/components/marketplace/craft-detail";
+import { KnowledgePackDetail } from "@/components/marketplace/knowledge-pack-detail";
 
 type PackPrompt = PromptOption;
 
@@ -33,6 +34,7 @@ type Props = {
 };
 
 function kindIcon(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "ph:books";
   if (kind === "mcp") return "ph:plug-bold";
   if (kind === "api") return "ph:cloud-bold";
   if (kind === "prompt") return "ph:chat-centered-text";
@@ -40,6 +42,7 @@ function kindIcon(kind: MarketplacePlugin["kind"]) {
 }
 
 function kindLabel(kind: MarketplacePlugin["kind"]) {
+  if (kind === "knowledge-pack") return "Knowledge pack";
   if (kind === "mcp") return "MCP server";
   if (kind === "api") return "API";
   if (kind === "prompt") return "Prompt pack";
@@ -119,6 +122,9 @@ export function MarketplaceDetail(props: Props) {
         onActionCleared={props.onActionCleared ?? (() => {})}
       />
     );
+  }
+  if (props.plugin.kind === "knowledge-pack") {
+    return <KnowledgePackDetail plugin={props.plugin} busy={props.busy} onClose={props.onClose} />;
   }
   return <StandardMarketplaceDetail {...props} />;
 }

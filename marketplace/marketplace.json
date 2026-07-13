@@ -1762,6 +1762,22 @@
       "roleAffinity": []
     },
     {
+      "name": "worldbuilding",
+      "displayName": "Worldbuilding",
+      "category": "Knowledge Packs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/worldbuilding"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [],
+      "kind": "knowledge-pack"
+    },
+    {
       "name": "prompt-pack-essentials",
       "displayName": "Prompt Pack: Essentials",
       "category": "Productivity",

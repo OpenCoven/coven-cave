@@ -272,15 +272,15 @@ assert.deepEqual(filterPlugins(merged, { ids: ["github", "legacy"] }).map((p) =>
 assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((p) => p.id), []);
 
 // --- countByKind ---
-assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0, craft: 0 });
-assert.deepEqual(countByKind(craftMerged), { api: 0, mcp: 0, skill: 0, prompt: 0, craft: 1 });
+assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0, craft: 0, "knowledge-pack": 0 });
+assert.deepEqual(countByKind(craftMerged), { api: 0, mcp: 0, skill: 0, prompt: 0, craft: 1, "knowledge-pack": 0 });
 
 // --- groupPluginsByCategory ---
 const groups = groupPluginsByCategory(merged);
 assert.deepEqual(groups.map((g) => g.category), ["Developer Tools", "Other", "Web"]);
 assert.deepEqual(groups[0].plugins.map((p) => p.id), ["fetch", "github"]);
-assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0, craft: 0 });
-assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0, craft: 0 });
+assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0, craft: 0, "knowledge-pack": 0 });
+assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0, craft: 0, "knowledge-pack": 0 });
 
 // --- sortPlugins (returns a new array, never mutates) ---
 const before = merged.map((p) => p.id);

@@ -6130,6 +6130,299 @@
       }
     },
     {
+      "name": "worldbuilding",
+      "displayName": "Worldbuilding",
+      "kind": "knowledge-pack",
+      "version": "0.1.0",
+      "description": "A living encyclopedia of your story world — characters, settings, themes, factions, and lore, linked into one graph an agent grows and guards as you write.",
+      "category": "Knowledge Packs",
+      "license": "MIT",
+      "keywords": [
+        "worldbuilding",
+        "writing",
+        "knowledge",
+        "wiki",
+        "canon"
+      ],
+      "capabilities": [
+        "knowledge",
+        "skills",
+        "prompts"
+      ],
+      "sourceRefs": [
+        "https://openknowledge.ai/docs/workflows/worldbuilding"
+      ],
+      "trust": "official-local",
+      "knowledgePack": {
+        "schemaVersion": "opencoven.knowledge-pack.v1",
+        "defaultRoot": "world",
+        "folders": [
+          {
+            "id": "characters",
+            "name": "Characters",
+            "description": "People, creatures, viewpoint voices, and recurring named entities in the story world.",
+            "storyQuestion": "Who?",
+            "entityType": "character",
+            "fields": [
+              {
+                "key": "type",
+                "label": "Type",
+                "options": [
+                  "PC",
+                  "NPC"
+                ]
+              },
+              {
+                "key": "status",
+                "label": "Status",
+                "options": [
+                  "alive",
+                  "dead",
+                  "unknown"
+                ]
+              },
+              {
+                "key": "faction",
+                "label": "Faction"
+              },
+              {
+                "key": "firstAppearance",
+                "label": "First appearance"
+              }
+            ],
+            "templates": [
+              "character"
+            ]
+          },
+          {
+            "id": "settings",
+            "name": "Settings",
+            "description": "Places, routes, regions, rooms, realms, and atmospheric locations where scenes unfold.",
+            "storyQuestion": "Where?",
+            "entityType": "setting",
+            "fields": [
+              {
+                "key": "region",
+                "label": "Region"
+              },
+              {
+                "key": "controllingFaction",
+                "label": "Controlling faction"
+              },
+              {
+                "key": "dangerLevel",
+                "label": "Danger level"
+              }
+            ],
+            "templates": [
+              "setting"
+            ]
+          },
+          {
+            "id": "themes",
+            "name": "Themes",
+            "description": "Recurring tensions, motifs, questions, and symbolic pressures that give the world meaning.",
+            "storyQuestion": "Why?",
+            "entityType": "theme",
+            "fields": [
+              {
+                "key": "tension",
+                "label": "Tension"
+              }
+            ],
+            "templates": [
+              "theme"
+            ]
+          },
+          {
+            "id": "factions",
+            "name": "Factions",
+            "description": "Political, social, criminal, magical, and religious groups with agendas and alliances.",
+            "storyQuestion": "Who's aligned with whom?",
+            "entityType": "faction",
+            "fields": [
+              {
+                "key": "type",
+                "label": "Type",
+                "options": [
+                  "political",
+                  "social",
+                  "criminal",
+                  "magical",
+                  "religious"
+                ]
+              },
+              {
+                "key": "alignment",
+                "label": "Alignment"
+              },
+              {
+                "key": "leader",
+                "label": "Leader"
+              },
+              {
+                "key": "headquarters",
+                "label": "Headquarters"
+              }
+            ],
+            "templates": [
+              "faction",
+              "political-faction",
+              "religion"
+            ]
+          },
+          {
+            "id": "lore",
+            "name": "Lore",
+            "description": "History, mythology, cosmology, magic systems, and hard truths about how the world works.",
+            "storyQuestion": "What's true about the world?",
+            "entityType": "lore",
+            "fields": [
+              {
+                "key": "kind",
+                "label": "Kind",
+                "options": [
+                  "history",
+                  "mythology",
+                  "cosmology",
+                  "magic-system"
+                ]
+              },
+              {
+                "key": "era",
+                "label": "Era"
+              }
+            ],
+            "templates": [
+              "lore",
+              "magic-system",
+              "historical-event"
+            ]
+          }
+        ],
+        "templates": [
+          {
+            "id": "character",
+            "folder": "characters",
+            "name": "Character",
+            "description": "A canon page for a person, creature, or recurring voice.",
+            "sourcePath": "pack-sources/worldbuilding/templates/character.md"
+          },
+          {
+            "id": "setting",
+            "folder": "settings",
+            "name": "Setting",
+            "description": "A canon page for a place, route, region, or atmosphere-heavy location.",
+            "sourcePath": "pack-sources/worldbuilding/templates/setting.md"
+          },
+          {
+            "id": "theme",
+            "folder": "themes",
+            "name": "Theme",
+            "description": "A page for a recurring tension, motif, or story question.",
+            "sourcePath": "pack-sources/worldbuilding/templates/theme.md"
+          },
+          {
+            "id": "faction",
+            "folder": "factions",
+            "name": "Faction",
+            "description": "A generic faction page for groups with agendas and relationships.",
+            "sourcePath": "pack-sources/worldbuilding/templates/faction.md"
+          },
+          {
+            "id": "political-faction",
+            "folder": "factions",
+            "name": "Political faction",
+            "description": "A faction page for parties, councils, states, houses, and political blocs.",
+            "sourcePath": "pack-sources/worldbuilding/templates/political-faction.md"
+          },
+          {
+            "id": "religion",
+            "folder": "factions",
+            "name": "Religion",
+            "description": "A faction page for faiths, cults, temples, orders, and schisms.",
+            "sourcePath": "pack-sources/worldbuilding/templates/religion.md"
+          },
+          {
+            "id": "lore",
+            "folder": "lore",
+            "name": "Lore",
+            "description": "A generic lore page for world truths, myths, and contested knowledge.",
+            "sourcePath": "pack-sources/worldbuilding/templates/lore.md"
+          },
+          {
+            "id": "magic-system",
+            "folder": "lore",
+            "name": "Magic system",
+            "description": "A lore page for supernatural rules, costs, limits, and practitioners.",
+            "sourcePath": "pack-sources/worldbuilding/templates/magic-system.md"
+          },
+          {
+            "id": "historical-event",
+            "folder": "lore",
+            "name": "Historical event",
+            "description": "A lore page for dated events, causes, consequences, and contested accounts.",
+            "sourcePath": "pack-sources/worldbuilding/templates/historical-event.md"
+          }
+        ],
+        "skills": [
+          {
+            "id": "worldbuilding",
+            "sourcePath": "pack-sources/worldbuilding/skills/worldbuilding/SKILL.md"
+          }
+        ],
+        "workflows": [
+          "worldbuilding-audit"
+        ]
+      },
+      "prompts": [
+        {
+          "id": "update-world-encyclopedia",
+          "name": "Update world encyclopedia",
+          "description": "Fold a chapter or scene into the world graph without inventing canon.",
+          "icon": "ph:globe-bold",
+          "tags": [
+            "worldbuilding",
+            "writing"
+          ],
+          "body": "Update the world encyclopedia from {{the chapter or scene|the text below}}. Stub any characters, settings, factions, themes, or lore mentioned that don't have pages yet — in the right folder, using its template — and backlink them. Link existing pages where mentioned. Flag anything that contradicts existing canon in the entry's flags list and tell me: mistake or mystery? Only record what the source establishes; leave unknowns blank."
+        },
+        {
+          "id": "thread-world-graph",
+          "name": "Thread world graph",
+          "description": "Turn isolated encyclopedia pages into linked hubs.",
+          "icon": "ph:link",
+          "tags": [
+            "worldbuilding",
+            "writing"
+          ],
+          "body": "Thread the world graph for {{scope|the current worldbuilding encyclopedia}}. Find entries with few or no [[links]], add backlinks where relationships are already established, and suggest 5–10 high-value links that would make characters, settings, factions, themes, and lore easier to navigate. Do not invent new canon to justify a link."
+        },
+        {
+          "id": "pre-reveal-continuity-audit",
+          "name": "Pre-reveal continuity audit",
+          "description": "Gather every relevant page before a reveal lands.",
+          "icon": "ph:book-open",
+          "tags": [
+            "worldbuilding",
+            "writing"
+          ],
+          "body": "Before I write the reveal about {{character or lore|this character or lore}}, pull every world encyclopedia page that touches it. Summarize established canon, unresolved flags, related characters/settings/factions/themes, and any contradictions that might be a mistake or an intentional mystery. End with continuity risks to check in the scene."
+        },
+        {
+          "id": "world-dead-link-audit",
+          "name": "World dead-link audit",
+          "description": "Find dead links, forgotten stubs, and missing backlinks.",
+          "icon": "ph:list-checks-bold",
+          "tags": [
+            "worldbuilding",
+            "writing"
+          ],
+          "body": "Audit {{scope|the worldbuilding knowledge collections}} for dead [[links]], pages that are still stubs after their first mention, and missing backlinks from source chapters or scenes. Produce a prioritized fix list grouped by continuity risk, graph navigation, and low-priority cleanup. Ask before applying changes."
+        }
+      ]
+    },
+    {
       "name": "prompt-pack-essentials",
       "displayName": "Prompt Pack: Essentials",
       "version": "0.1.0",

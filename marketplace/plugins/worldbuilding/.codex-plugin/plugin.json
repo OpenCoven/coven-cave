@@ -1,0 +1,24 @@
+{
+  "name": "worldbuilding",
+  "version": "0.1.0",
+  "description": "A living encyclopedia of your story world \u2014 characters, settings, themes, factions, and lore, linked into one graph an agent grows and guards as you write.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Worldbuilding",
+    "shortDescription": "A living encyclopedia of your story world \u2014 characters, settings, themes, factions, and lore, linked into one graph an agent grows and guards as you write.",
+    "longDescription": "A living encyclopedia of your story world \u2014 characters, settings, themes, factions, and lore, linked into one graph an agent grows and guards as you write.",
+    "developerName": "OpenCoven",
+    "category": "Knowledge Packs",
+    "capabilities": [
+      "worldbuilding",
+      "writing",
+      "knowledge",
+      "wiki",
+      "canon"
+    ],
+    "defaultPrompt": "Help me use Worldbuilding safely."
+  }
+}

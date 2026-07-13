@@ -6,6 +6,7 @@ const index = {
   knowledge: [
     { id: "a", title: "Alpha" },
     { id: "b", title: "Beta" },
+    { id: "a", collection: "lore", title: "Lore Alpha" },
   ],
   memory: [{ path: "/root/notes.md" }],
   journal: [{ date: "2026-07-08" }],
@@ -116,6 +117,24 @@ assert.equal(solo.nodes.length, 1, "a doc with no links is still a node (orphans
 assert.equal(solo.nodes[0].degree, 0, "an orphan has degree 0");
 assert.equal(solo.edges.length, 0, "no links → no edges");
 assert.deepEqual(buildDocGraph([], index), { nodes: [], edges: [] }, "empty input → empty graph");
+
+// ── knowledge collections: graph ids include collection to avoid collisions ───
+const cg = buildDocGraph(
+  [
+    { ref: { kind: "knowledge", id: "a" }, title: "Alpha", markdown: "[[lore/a]]" },
+    { ref: { kind: "knowledge", id: "a", collection: "lore" }, title: "Lore Alpha", markdown: "[[Alpha]]" },
+  ],
+  index,
+);
+assert.deepEqual(
+  cg.nodes.map((n) => n.id).sort(),
+  ["knowledge:a", "knowledge:lore/a"],
+  "root and collection entries with the same id get distinct graph node ids",
+);
+assert.ok(
+  cg.edges.some((e) => e.source === "knowledge:a" && e.target === "knowledge:lore/a"),
+  "collection/id wiki links target the collection node",
+);
 
 // ── noise control: only discriminative needles infer mentions ────────────────
 // A title owned by many docs is ambiguous (which one is meant?); a needle that

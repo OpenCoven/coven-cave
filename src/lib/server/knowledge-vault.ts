@@ -29,7 +29,8 @@
 
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type { KnowledgeCollectionMeta } from "../knowledge-pack-types.ts";
 import { covenHome } from "../coven-paths.ts";
 import { normalizePinRefs, type StitchPinRef } from "../stitch.ts";
 
@@ -45,6 +46,10 @@ const KNOWLEDGE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 /** Strict slug guard — the id is the only user input that hits the filesystem,
  *  so it must never contain separators, dots, or anything path-traversing. */
 export function isValidKnowledgeId(id: unknown): id is string {
+  return typeof id === "string" && KNOWLEDGE_ID_RE.test(id);
+}
+
+export function isValidCollectionId(id: unknown): id is string {
   return typeof id === "string" && KNOWLEDGE_ID_RE.test(id);
 }
 
@@ -67,12 +72,15 @@ export type KnowledgeScope = "global" | string[];
 
 export type KnowledgeEntry = {
   id: string;
+  collection?: string;
   title: string;
   tags: string[];
   /** "global" → every familiar; otherwise an explicit familiar-id allow-list. */
   scope: KnowledgeScope;
   enabled: boolean;
   body: string;
+  /** Unknown frontmatter keys, preserved verbatim across server round-trips. */
+  extra?: Record<string, unknown>;
   /** Stitch provenance: the pins this entry was sewn from (absent when the
    *  entry was written by hand). */
   pins?: StitchPinRef[];
@@ -109,8 +117,29 @@ export function normalizeScope(value: unknown): KnowledgeScope {
   return ids;
 }
 
+function extraFrontmatterLines(entry: KnowledgeEntry): string[] {
+  const extra = sanitizeKnowledgeExtra(entry.extra);
+  if (Object.keys(extra).length === 0) return [];
+  return stringifyYaml(extra).trimEnd().split("\n").filter(Boolean);
+}
+
+const RESERVED_FRONTMATTER_KEYS = new Set(["title", "tags", "scope", "enabled", "pins"]);
+
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function sanitizeKnowledgeExtra(value: unknown): Record<string, unknown> {
+  if (!isPlainRecord(value)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (!RESERVED_FRONTMATTER_KEYS.has(key)) out[key] = entry;
+  }
+  return out;
+}
+
 /** Parse one entry file's contents (frontmatter + body) into an entry. */
-export function parseKnowledgeFile(id: string, raw: string): KnowledgeEntry {
+export function parseKnowledgeFile(id: string, raw: string, collection?: string): KnowledgeEntry {
   const match = raw.match(FRONTMATTER_RE);
   let front: Record<string, unknown> = {};
   let body = raw;
@@ -126,14 +155,17 @@ export function parseKnowledgeFile(id: string, raw: string): KnowledgeEntry {
     }
   }
   const pins = normalizePinRefs(front.pins);
+  const extra = sanitizeKnowledgeExtra(front);
   return {
     id,
+    ...(collection ? { collection } : {}),
     title: typeof front.title === "string" && front.title.trim() ? front.title.trim() : id,
     tags: normalizeTags(front.tags),
     scope: normalizeScope(front.scope),
     enabled: front.enabled !== false,
     body: body.trim(),
     ...(pins.length > 0 ? { pins } : {}),
+    ...(Object.keys(extra).length > 0 ? { extra } : {}),
   };
 }
 
@@ -156,6 +188,7 @@ export function serializeKnowledgeEntry(entry: KnowledgeEntry): string {
           ),
         ]
       : []),
+    ...extraFrontmatterLines(entry),
     "---",
     "",
     entry.body.trim(),
@@ -184,10 +217,15 @@ export function selectKnowledgeForFamiliar(
 export function buildPromptWithKnowledgeVault(
   prompt: string,
   entries: readonly KnowledgeEntry[],
+  collections: readonly { id: string; meta: KnowledgeCollectionMeta | null; count: number }[] = [],
 ): string {
   const text = prompt.trim();
   const usable = entries.filter((e) => e.enabled && e.body.trim());
-  if (usable.length === 0) return text;
+  const collectionIndex = collections
+    .filter((collection) => collection.meta?.summary?.trim())
+    .slice(0, 20)
+    .map((collection) => `- ${collection.id}: ${collection.meta?.summary?.trim()}`);
+  if (usable.length === 0 && collectionIndex.length === 0) return text;
 
   const blocks = usable.map((entry) => {
     const heading = entry.tags.length
@@ -202,6 +240,13 @@ export function buildPromptWithKnowledgeVault(
     "This is durable, human-curated background material, NOT your evolving memory.",
     "Treat it as authoritative context for this conversation; do not edit it.",
     "",
+    ...(collectionIndex.length > 0
+      ? [
+          "Collections index",
+          ...collectionIndex,
+          "",
+        ]
+      : []),
     ...blocks,
     "</KNOWLEDGE_VAULT>",
   ].join("\n\n");
@@ -211,36 +256,91 @@ export function buildPromptWithKnowledgeVault(
 
 // ── Filesystem store ─────────────────────────────────────────────────────────
 
-function entryPath(id: string): string {
+function collectionPath(collection: string): string {
+  if (!isValidCollectionId(collection)) throw new Error("invalid knowledge collection");
+  const root = path.resolve(covenKnowledgeRoot());
+  const resolved = path.resolve(root, collection);
+  if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== root) {
+    throw new Error("invalid knowledge collection");
+  }
+  return resolved;
+}
+
+function entryPath(id: string, collection?: string): string {
+  if (!isValidKnowledgeId(id)) throw new Error("invalid knowledge id");
+  if (collection !== undefined && !isValidCollectionId(collection)) {
+    throw new Error("invalid knowledge collection");
+  }
   // Single chokepoint where a vault path is built from the (slug-validated) id.
   // Resolve and assert containment directly under the vault root so a path can
   // never escape it, even if a caller forgets the id guard.
   const root = path.resolve(covenKnowledgeRoot());
-  const resolved = path.resolve(root, `${id}.md`);
-  if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== root) {
+  const parent = collection ? collectionPath(collection) : root;
+  const resolved = path.resolve(parent, `${id}.md`);
+  if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== parent) {
     throw new Error("invalid knowledge id");
   }
   return resolved;
 }
 
+function collectionMetaPath(collection: string): string {
+  return path.join(collectionPath(collection), "collection.yml");
+}
+
 /** List every vault entry on disk. Returns [] when the directory is absent or
  *  unreadable — the vault is an optional add-on, never a hard dependency. */
-export async function listKnowledgeEntries(): Promise<KnowledgeEntry[]> {
+export async function listKnowledgeEntries(collection?: string): Promise<KnowledgeEntry[]> {
+  if (collection !== undefined && !isValidCollectionId(collection)) return [];
   const root = covenKnowledgeRoot();
   let names: string[];
   try {
-    names = await readdir(root);
+    names = await readdir(collection ? collectionPath(collection) : root);
   } catch {
     return [];
   }
   const entries: KnowledgeEntry[] = [];
-  for (const name of names.sort()) {
-    if (!name.endsWith(".md")) continue;
-    const id = name.slice(0, -3);
-    if (!isValidKnowledgeId(id)) continue;
+  const scanRootEntries = async (dir: string, entryCollection?: string) => {
+    let dirNames: string[];
     try {
-      const raw = await readFile(path.join(root, name), "utf8");
-      entries.push(parseKnowledgeFile(id, raw));
+      dirNames = await readdir(dir);
+    } catch {
+      return;
+    }
+    for (const name of dirNames.sort()) {
+      if (name === "collection.yml" || !name.endsWith(".md")) continue;
+      const id = name.slice(0, -3);
+      if (!isValidKnowledgeId(id)) continue;
+      try {
+        const raw = await readFile(path.join(dir, name), "utf8");
+        entries.push(parseKnowledgeFile(id, raw, entryCollection));
+      } catch {
+        // Skip unreadable entries rather than failing the whole list.
+      }
+    }
+  };
+
+  if (collection) {
+    await scanRootEntries(collectionPath(collection), collection);
+    return entries;
+  }
+
+  for (const name of names.sort()) {
+    const full = path.join(root, name);
+    if (name.endsWith(".md")) {
+      const id = name.slice(0, -3);
+      if (!isValidKnowledgeId(id)) continue;
+      try {
+        const raw = await readFile(full, "utf8");
+        entries.push(parseKnowledgeFile(id, raw));
+      } catch {
+        // Skip unreadable entries rather than failing the whole list.
+      }
+      continue;
+    }
+    if (!isValidCollectionId(name)) continue;
+    try {
+      const st = await stat(full);
+      if (st.isDirectory()) await scanRootEntries(full, name);
     } catch {
       // Skip unreadable entries rather than failing the whole list.
     }
@@ -248,11 +348,12 @@ export async function listKnowledgeEntries(): Promise<KnowledgeEntry[]> {
   return entries;
 }
 
-export async function readKnowledgeEntry(id: string): Promise<KnowledgeEntry | null> {
+export async function readKnowledgeEntry(id: string, collection?: string): Promise<KnowledgeEntry | null> {
   if (!isValidKnowledgeId(id)) return null;
+  if (collection !== undefined && !isValidCollectionId(collection)) return null;
   try {
-    const raw = await readFile(entryPath(id), "utf8");
-    return parseKnowledgeFile(id, raw);
+    const raw = await readFile(entryPath(id, collection), "utf8");
+    return parseKnowledgeFile(id, raw, collection);
   } catch {
     return null;
   }
@@ -260,21 +361,82 @@ export async function readKnowledgeEntry(id: string): Promise<KnowledgeEntry | n
 
 export async function writeKnowledgeEntry(entry: KnowledgeEntry): Promise<KnowledgeEntry> {
   if (!isValidKnowledgeId(entry.id)) throw new Error("invalid knowledge id");
+  if (entry.collection !== undefined && !isValidCollectionId(entry.collection)) {
+    throw new Error("invalid knowledge collection");
+  }
   const root = covenKnowledgeRoot();
-  await mkdir(root, { recursive: true });
-  await writeFile(entryPath(entry.id), serializeKnowledgeEntry(entry), "utf8");
+  await mkdir(entry.collection ? collectionPath(entry.collection) : root, { recursive: true });
+  await writeFile(entryPath(entry.id, entry.collection), serializeKnowledgeEntry(entry), "utf8");
   return entry;
 }
 
-export async function deleteKnowledgeEntry(id: string): Promise<boolean> {
+export async function deleteKnowledgeEntry(id: string, collection?: string): Promise<boolean> {
   if (!isValidKnowledgeId(id)) return false;
+  if (collection !== undefined && !isValidCollectionId(collection)) return false;
   try {
-    await stat(entryPath(id));
+    await stat(entryPath(id, collection));
   } catch {
     return false;
   }
-  await rm(entryPath(id), { force: true });
+  await rm(entryPath(id, collection), { force: true });
   return true;
+}
+
+export async function readCollectionMeta(collection: string): Promise<KnowledgeCollectionMeta | null> {
+  if (!isValidCollectionId(collection)) return null;
+  try {
+    const raw = await readFile(collectionMetaPath(collection), "utf8");
+    const parsed = parseYaml(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const meta = parsed as Partial<KnowledgeCollectionMeta>;
+    if (typeof meta.name !== "string" || !meta.name.trim()) return null;
+    return meta as KnowledgeCollectionMeta;
+  } catch {
+    return null;
+  }
+}
+
+export async function collectionMetaExists(collection: string): Promise<boolean> {
+  if (!isValidCollectionId(collection)) return false;
+  try {
+    await stat(collectionMetaPath(collection));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function writeCollectionMeta(collection: string, meta: KnowledgeCollectionMeta): Promise<void> {
+  if (!isValidCollectionId(collection)) throw new Error("invalid knowledge collection");
+  await mkdir(collectionPath(collection), { recursive: true });
+  await writeFile(collectionMetaPath(collection), stringifyYaml(meta), "utf8");
+}
+
+export async function listCollections(): Promise<{ id: string; meta: KnowledgeCollectionMeta | null; count: number }[]> {
+  const root = covenKnowledgeRoot();
+  let names: string[];
+  try {
+    names = await readdir(root);
+  } catch {
+    return [];
+  }
+  const collections: { id: string; meta: KnowledgeCollectionMeta | null; count: number }[] = [];
+  for (const name of names.sort()) {
+    if (!isValidCollectionId(name)) continue;
+    try {
+      const full = path.join(root, name);
+      const st = await stat(full);
+      if (!st.isDirectory()) continue;
+      collections.push({
+        id: name,
+        meta: await readCollectionMeta(name),
+        count: (await listKnowledgeEntries(name)).length,
+      });
+    } catch {
+      // Skip unreadable collection directories.
+    }
+  }
+  return collections;
 }
 
 /** Convenience for the prompt-construction layer: load the vault and select the

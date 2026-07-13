@@ -142,7 +142,7 @@ export type MarketplaceInstallationState = {
 
 export type InstalledMap = Record<string, MarketplaceInstallationState>;
 
-export type PluginKind = "api" | "mcp" | "skill" | "prompt" | "craft";
+export type PluginKind = "api" | "mcp" | "skill" | "prompt" | "craft" | "knowledge-pack";
 
 export type MarketplacePlugin = {
   id: string;
@@ -198,6 +198,7 @@ export function isCraftInstallationVerified(
  */
 export function deriveKind(manifest: PluginManifest): PluginKind {
   if (manifest.kind === "craft") return "craft";
+  if (manifest.kind === "knowledge-pack") return "knowledge-pack";
   const servers = manifest.mcpServers ?? {};
   if (Object.keys(servers).length > 0) return "mcp";
   if ((manifest.prompts?.length ?? 0) > 0) return "prompt";
@@ -255,7 +256,7 @@ export function mergeCatalog(
       const installation = p.policy?.installation ?? "AVAILABLE";
       const installedState = installed[p.name];
       const requiredConfig = requiredConfigFromManifest(manifest);
-      const kind = p.kind === "craft" ? "craft" : deriveKind(manifest);
+      const kind = p.kind === "craft" || p.kind === "knowledge-pack" ? p.kind : deriveKind(manifest);
       const version = manifest.version ?? "0.0.0";
       const craftVerified = isCraftInstallationVerified({
         kind,
@@ -369,7 +370,14 @@ export function sortPlugins(plugins: MarketplacePlugin[], sort: SortKey): Market
   );
 }
 
-export type PluginKindCounts = { api: number; mcp: number; skill: number; prompt: number; craft: number };
+export type PluginKindCounts = {
+  api: number;
+  mcp: number;
+  skill: number;
+  prompt: number;
+  craft: number;
+  "knowledge-pack": number;
+};
 
 export function countByKind(plugins: MarketplacePlugin[]): PluginKindCounts {
   let api = 0;
@@ -377,14 +385,16 @@ export function countByKind(plugins: MarketplacePlugin[]): PluginKindCounts {
   let skill = 0;
   let prompt = 0;
   let craft = 0;
+  let knowledgePack = 0;
   for (const p of plugins) {
     if (p.kind === "api") api += 1;
     else if (p.kind === "mcp") mcp += 1;
     else if (p.kind === "prompt") prompt += 1;
     else if (p.kind === "craft") craft += 1;
+    else if (p.kind === "knowledge-pack") knowledgePack += 1;
     else skill += 1;
   }
-  return { api, mcp, skill, prompt, craft };
+  return { api, mcp, skill, prompt, craft, "knowledge-pack": knowledgePack };
 }
 
 export type MarketplaceCategoryGroup = {
