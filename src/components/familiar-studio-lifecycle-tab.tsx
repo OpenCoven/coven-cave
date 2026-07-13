@@ -128,7 +128,7 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChan
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ familiars: { [familiar.id]: null } }),
-    });
+    }).catch(() => undefined);
     setConfirmReset(false);
   }
 

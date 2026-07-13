@@ -1521,11 +1521,12 @@ export function Workspace() {
   // (missed-batches, ephemeral response-needed rows, ad-hoc toasts).
   const markInboxItemRead = useCallback((id: string | null | undefined) => {
     if (!id || id.startsWith("missed-") || id.startsWith("eph:")) return;
+    // Best-effort: a dead daemon must not turn a toast timer into a crash.
     void fetch("/api/inbox/bulk", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action: "read", ids: [id] }),
-    });
+    }).catch(() => undefined);
   }, []);
 
   // Explicit ✕ on a toast = "seen it" — mark read, keep it in the bell. The
@@ -1549,7 +1550,7 @@ export function Workspace() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ untilIso }),
-      });
+      }).catch(() => undefined);
     }
     setToasts((prev) => prev.filter((t) => t.id !== toast.id));
   }, []);
@@ -1927,7 +1928,7 @@ export function Workspace() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "attach", sessionId: intent.sessionId }),
-      });
+      }).catch(() => undefined);
       return;
     }
     if (intent.kind === "open-board") {
@@ -2103,7 +2104,7 @@ export function Workspace() {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ mode: "attach", sessionId: sid }),
-          });
+          }).catch(() => undefined);
         }
         return true;
       }
