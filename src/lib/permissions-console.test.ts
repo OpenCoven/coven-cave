@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 
 import {
+  accessLevelMeta,
   accessSummary,
   auditDecisionMeta,
   auditReasonLabel,
+  effectiveAccessRows,
   familiarLabel,
   filterAccess,
   filterAudit,
   grantKey,
   grantSourceMeta,
+  groupsForFamiliar,
   matchesQuery,
   nameResolver,
   pendingProposalCount,
@@ -16,6 +19,7 @@ import {
   sortFamiliars,
   splitProposals,
   surfaceLabel,
+  type ConsoleAccessGroup,
   type ConsoleAuditEntry,
   type ConsoleFamiliar,
   type ConsoleProject,
@@ -119,8 +123,67 @@ assert.equal(auditDecisionMeta("allow").tone, "positive");
 assert.equal(auditDecisionMeta("deny").tone, "negative");
 assert.equal(auditReasonLabel("missing-grant"), "no grant");
 assert.equal(auditReasonLabel("supreme"), "all-access familiar");
+assert.equal(auditReasonLabel("group"), "access group");
+assert.equal(auditReasonLabel("insufficient-access"), "read-only grant");
 assert.equal(grantSourceMeta("bootstrap").label, "Auto");
 assert.equal(grantSourceMeta("human").label, "You");
 assert.equal(nameResolver(familiars, familiarLabel)("ghost"), "ghost", "resolver falls back to the id");
+
+// access levels + groups
+assert.equal(accessLevelMeta("read").label, "Read");
+assert.equal(accessLevelMeta("write").label, "Read + write");
+
+const groups: ConsoleAccessGroup[] = [
+  {
+    id: "g-research",
+    name: "Researchers",
+    memberFamiliarIds: ["zelda"],
+    projectGrants: [{ projectId: "p-api", access: "read" }],
+  },
+  {
+    id: "g-build",
+    name: "Builders",
+    memberFamiliarIds: ["zelda", "atlas"],
+    projectGrants: [{ projectId: "p-web", access: "write" }],
+  },
+];
+
+const rows = effectiveAccessRows({
+  projects,
+  grants: [{ familiarId: "zelda", projectId: "p-web", access: "read" }],
+  groups,
+  familiarId: "zelda",
+});
+assert.equal(rows.length, 2, "every project gets a row, granted or not");
+const webRow = rows.find((row) => row.project.id === "p-web");
+assert.equal(webRow?.effective.direct, "read", "direct level is reported separately");
+assert.equal(webRow?.effective.level, "write", "union-max: group write beats direct read");
+assert.deepEqual(
+  webRow?.effective.groups.map((g) => [g.groupId, g.access]),
+  [["g-build", "write"]],
+  "group sources ride along for the via-group chips",
+);
+const apiRow = rows.find((row) => row.project.id === "p-api");
+assert.equal(apiRow?.effective.direct, null, "no direct grant on the api project");
+assert.equal(apiRow?.effective.level, "read", "group-only read resolves to read");
+
+const legacyRows = effectiveAccessRows({
+  projects,
+  grants: [{ familiarId: "zelda", projectId: "p-api" }],
+  groups: [],
+  familiarId: "zelda",
+});
+assert.equal(
+  legacyRows.find((row) => row.project.id === "p-api")?.effective.level,
+  "write",
+  "legacy level-less grants mean write",
+);
+
+assert.deepEqual(
+  groupsForFamiliar(groups, "zelda").map((g) => g.id),
+  ["g-build", "g-research"],
+  "membership summary is filtered + alpha-sorted",
+);
+assert.deepEqual(groupsForFamiliar(groups, "ghost"), [], "non-members get no groups");
 
 console.log("permissions-console.test.ts: ok");

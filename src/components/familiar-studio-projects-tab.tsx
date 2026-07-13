@@ -11,21 +11,26 @@ import { SettingsGroup } from "@/components/ui/settings-group";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import {
+  accessLevelMeta,
   auditDecisionMeta,
   auditReasonLabel,
+  effectiveAccessRows,
   grantKey,
   grantSourceMeta,
+  groupsForFamiliar,
   isSupreme,
   nameResolver,
   proposalStatusMeta,
   splitProposals,
   surfaceLabel,
+  type ConsoleAccessGroup,
   type ConsoleAuditEntry,
   type ConsoleGrant,
   type ConsoleProject,
   type ConsoleProposal,
   type Tone,
 } from "@/lib/permissions-console";
+import type { ProjectAccessLevel } from "@/lib/project-access-levels";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -86,6 +91,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const [projects, setProjects] = useState<ConsoleProject[]>([]);
   const [granted, setGranted] = useState<Set<string>>(new Set());
   const [grantMeta, setGrantMeta] = useState<Map<string, ConsoleGrant>>(new Map());
+  const [accessGroups, setAccessGroups] = useState<ConsoleAccessGroup[]>([]);
   const [supremeFamiliarId, setSupremeFamiliarId] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ConsoleProposal[]>([]);
   const [audit, setAudit] = useState<ConsoleAuditEntry[]>([]);
@@ -107,6 +113,9 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
       const grants = Array.isArray(grantRes?.grants) ? (grantRes.grants as ConsoleGrant[]) : [];
       setGranted(new Set(grants.map((g) => grantKey(g.familiarId, g.projectId))));
       setGrantMeta(new Map(grants.map((g) => [grantKey(g.familiarId, g.projectId), g])));
+      setAccessGroups(
+        Array.isArray(grantRes?.accessGroups) ? (grantRes.accessGroups as ConsoleAccessGroup[]) : [],
+      );
       setSupremeFamiliarId(
         typeof grantRes?.supremeFamiliarId === "string" ? grantRes.supremeFamiliarId : null,
       );
@@ -125,7 +134,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   }, [load]);
 
   const toggle = useCallback(
-    async (projectId: string, next: boolean) => {
+    async (projectId: string, next: boolean, access: ProjectAccessLevel = "write") => {
       const key = grantKey(familiar.id, projectId);
       setPending((p) => new Set(p).add(key));
       // Optimistic.
@@ -139,10 +148,16 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         const res = await fetch("/api/project-grants", {
           method: next ? "POST" : "DELETE",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ targetFamiliarId: familiar.id, projectId }),
+          body: JSON.stringify(
+            next
+              ? { targetFamiliarId: familiar.id, projectId, access }
+              : { targetFamiliarId: familiar.id, projectId },
+          ),
         });
         if (!res.ok) throw new Error(String(res.status));
         setError(null);
+        // Re-sync so grant metadata (level, source, time) reflects the server.
+        await load();
       } catch {
         // Revert on failure.
         setGranted((g) => {
@@ -160,7 +175,13 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         });
       }
     },
-    [familiar.id],
+    [familiar.id, load],
+  );
+
+  // Re-granting at a different level moves the direct grant read⇄write.
+  const setAccess = useCallback(
+    (projectId: string, access: ProjectAccessLevel) => toggle(projectId, true, access),
+    [toggle],
   );
 
   const resolveProposal = useCallback(
@@ -194,6 +215,22 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   const grantedCount = useMemo(
     () => projects.reduce((n, p) => (granted.has(grantKey(familiar.id, p.id)) ? n + 1 : n), 0),
     [projects, granted, familiar.id],
+  );
+
+  // Effective access = union-max of the direct grant + this familiar's access
+  // groups, resolved with the SAME helper the server enforces with.
+  const effectiveByProject = useMemo(() => {
+    const rows = effectiveAccessRows({
+      projects,
+      grants: [...grantMeta.values()],
+      groups: accessGroups,
+      familiarId: familiar.id,
+    });
+    return new Map(rows.map((row) => [row.project.id, row.effective]));
+  }, [projects, grantMeta, accessGroups, familiar.id]);
+  const memberGroups = useMemo(
+    () => groupsForFamiliar(accessGroups, familiar.id),
+    [accessGroups, familiar.id],
   );
 
   // Grant-list filter — rosters run to dozens of projects, so the list is
@@ -309,6 +346,8 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
             const busy = pending.has(key);
             const meta = grantMeta.get(key);
             const source = on && meta ? grantSourceMeta(meta.source, userDisplayName(profileSnapshot?.profile)) : null;
+            const level: ProjectAccessLevel = meta?.access === "read" ? "read" : "write";
+            const groupSources = effectiveByProject.get(project.id)?.groups ?? [];
             return (
               <div key={project.id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -338,28 +377,109 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                         </>
                       )}
                     </p>
+                    {groupSources.length > 0 && (
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {groupSources.map((g) => {
+                          const levelMeta = accessLevelMeta(g.access);
+                          return (
+                            <span
+                              key={g.groupId}
+                              title={`Granted through the “${g.groupName}” access group — ${levelMeta.title}. Manage it in Settings → Access groups.`}
+                              className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-hover)] px-1.5 py-px text-[10px] font-medium text-[var(--text-muted)]"
+                            >
+                              <Icon name="ph:users-three" width={11} height={11} className="shrink-0" aria-hidden />
+                              {g.groupName} · {levelMeta.label}
+                            </span>
+                          );
+                        })}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={on}
-                  aria-label={`${on ? "Revoke" : "Grant"} ${project.name} for ${familiar.display_name}`}
-                  disabled={busy}
-                  onClick={() => toggle(project.id, !on)}
-                  className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-[var(--radius-pill)] transition-colors duration-150 ${
-                    on ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
-                  } ${busy ? "opacity-60" : ""}`}
-                >
-                  <span
-                    className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-[var(--radius-pill)] bg-white shadow transition-transform duration-150 ${
-                      on ? "translate-x-4" : "translate-x-0.5"
-                    }`}
-                  />
-                </button>
+                <div className="flex shrink-0 items-center gap-2.5">
+                  {on && (
+                    <div
+                      role="radiogroup"
+                      aria-label={`Access level for ${project.name}`}
+                      className="inline-flex overflow-hidden rounded-[var(--radius-pill)] border border-[var(--border-hairline)]"
+                    >
+                      {(["read", "write"] as const).map((candidate) => {
+                        const levelMeta = accessLevelMeta(candidate);
+                        const active = level === candidate;
+                        return (
+                          <button
+                            key={candidate}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            title={levelMeta.title}
+                            disabled={busy}
+                            onClick={() => {
+                              if (!active) void setAccess(project.id, candidate);
+                            }}
+                            className={`focus-ring-inset inline-flex cursor-pointer items-center gap-1 px-2 py-0.5 text-[10px] font-medium transition-colors duration-150 ${
+                              active
+                                ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+                                : "text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                            } ${busy ? "opacity-60" : ""}`}
+                          >
+                            <Icon name={levelMeta.icon} width={11} height={11} className="shrink-0" aria-hidden />
+                            {candidate === "read" ? "Read" : "Write"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    aria-label={`${on ? "Revoke" : "Grant"} ${project.name} for ${familiar.display_name}`}
+                    disabled={busy}
+                    onClick={() => toggle(project.id, !on)}
+                    className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-[var(--radius-pill)] transition-colors duration-150 ${
+                      on ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
+                    } ${busy ? "opacity-60" : ""}`}
+                  >
+                    <span
+                      className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-[var(--radius-pill)] bg-white shadow transition-transform duration-150 ${
+                        on ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             );
           })}
+        </SettingsGroup>
+      )}
+
+      {/* ── Access groups this familiar belongs to ── */}
+      {!supreme && memberGroups.length > 0 && (
+        <SettingsGroup
+          label={`Access groups (${memberGroups.length})`}
+          description="Base project access inherited through group membership — manage groups in Settings"
+        >
+          {memberGroups.map((group) => (
+            <div key={group.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <ToneIcon tone="neutral" icon="ph:users-three" size={15} />
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] text-[var(--text-primary)]">{group.name}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">
+                    {group.projectGrants.length === 1
+                      ? "1 project"
+                      : `${group.projectGrants.length} projects`}
+                    {" · "}
+                    {group.memberFamiliarIds.length === 1
+                      ? "1 member"
+                      : `${group.memberFamiliarIds.length} members`}
+                    {group.description ? ` · ${group.description}` : ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
         </SettingsGroup>
       )}
 

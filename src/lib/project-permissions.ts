@@ -5,25 +5,56 @@ import { caveHome } from "./coven-paths.ts";
 
 import { loadProjects, projectForRoot } from "./cave-projects.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
+import {
+  accessLevelSatisfies,
+  maxAccessLevel,
+  normalizeAccessLevel,
+  requiredAccessLevel,
+  resolveEffectiveAccess,
+  type EffectiveProjectAccess,
+  type ProjectAccessLevel,
+  type ProjectPermissionSurface,
+} from "./project-access-levels.ts";
+
+export {
+  requiredAccessLevel,
+  type EffectiveProjectAccess,
+  type ProjectAccessLevel,
+  type ProjectPermissionSurface,
+} from "./project-access-levels.ts";
 
 export type ProjectGrantSource = "bootstrap" | "human";
 export type ProjectAccessDecision = "allow" | "deny";
-export type ProjectPermissionSurface =
-  | "chat"
-  | "session-launch"
-  | "shell"
-  | "file-browse"
-  | "file-read"
-  | "file-write"
-  | "project-api"
-  | "mobile"
-  | "project-picker";
 
 export type ProjectGrant = {
   familiarId: string;
   projectId: string;
+  /** v1 grants predate levels and unlocked every surface → migrate as "write". */
+  access: ProjectAccessLevel;
   source: ProjectGrantSource;
   grantedAt: string;
+};
+
+export type GroupProjectGrant = {
+  projectId: string;
+  access: ProjectAccessLevel;
+  grantedAt: string;
+};
+
+/**
+ * A named group of familiars sharing a base set of project grants. Membership
+ * is by explicit familiar id — deliberately NOT keyed off the free-text
+ * `role` display label, which can be renamed at any time and must never
+ * silently change access.
+ */
+export type FamiliarAccessGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  memberFamiliarIds: string[];
+  projectGrants: GroupProjectGrant[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type GrantProposal = {
@@ -31,9 +62,18 @@ export type GrantProposal = {
   proposedBy: string;
   targetFamiliarId: string;
   projectId: string;
+  /** Level the grant will carry when accepted; legacy proposals imply "write". */
+  access?: ProjectAccessLevel;
   status: "pending" | "accepted" | "rejected";
   createdAt: string;
 };
+
+export type PermissionAuditReason =
+  | "grant"
+  | "group"
+  | "supreme"
+  | "missing-grant"
+  | "insufficient-access";
 
 export type PermissionAuditEntry = {
   id: string;
@@ -42,12 +82,15 @@ export type PermissionAuditEntry = {
   projectId: string;
   surface: ProjectPermissionSurface;
   decision: ProjectAccessDecision;
-  reason: "grant" | "supreme" | "missing-grant";
+  reason: PermissionAuditReason;
+  /** Level the surface demanded. Legacy entries (v1, binary grants) omit it. */
+  requiredAccess?: ProjectAccessLevel;
 };
 
 type ProjectPermissionsFile = {
-  version: 1;
+  version: 2;
   projectGrants: ProjectGrant[];
+  accessGroups: FamiliarAccessGroup[];
   grantProposals: GrantProposal[];
   permissionAudit: PermissionAuditEntry[];
 };
@@ -78,7 +121,13 @@ function humanPermissionConfigPath(): string {
 }
 
 function emptyFile(): ProjectPermissionsFile {
-  return { version: 1, projectGrants: [], grantProposals: [], permissionAudit: [] };
+  return {
+    version: 2,
+    projectGrants: [],
+    accessGroups: [],
+    grantProposals: [],
+    permissionAudit: [],
+  };
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
@@ -113,12 +162,61 @@ export async function loadHumanPermissionConfig(): Promise<HumanPermissionConfig
   return { version: 1, supremeFamiliarId };
 }
 
+function normalizeGrant(grant: Partial<ProjectGrant>): ProjectGrant | null {
+  if (typeof grant?.familiarId !== "string" || typeof grant?.projectId !== "string") return null;
+  return {
+    familiarId: grant.familiarId,
+    projectId: grant.projectId,
+    // v1 grants have no `access` and unlocked every surface — migrate as write.
+    access: normalizeAccessLevel(grant.access),
+    source: grant.source === "bootstrap" ? "bootstrap" : "human",
+    grantedAt: typeof grant.grantedAt === "string" ? grant.grantedAt : new Date().toISOString(),
+  };
+}
+
+function normalizeAccessGroup(group: Partial<FamiliarAccessGroup>): FamiliarAccessGroup | null {
+  if (typeof group?.id !== "string" || typeof group?.name !== "string") return null;
+  const now = new Date().toISOString();
+  return {
+    id: group.id,
+    name: group.name,
+    ...(typeof group.description === "string" && group.description
+      ? { description: group.description }
+      : {}),
+    memberFamiliarIds: Array.isArray(group.memberFamiliarIds)
+      ? group.memberFamiliarIds.filter((id): id is string => typeof id === "string" && !!id.trim())
+      : [],
+    projectGrants: Array.isArray(group.projectGrants)
+      ? group.projectGrants
+          .filter((grant) => typeof grant?.projectId === "string" && !!grant.projectId)
+          .map((grant) => ({
+            projectId: grant.projectId,
+            access: normalizeAccessLevel(grant.access),
+            grantedAt: typeof grant.grantedAt === "string" ? grant.grantedAt : now,
+          }))
+      : [],
+    createdAt: typeof group.createdAt === "string" ? group.createdAt : now,
+    updatedAt: typeof group.updatedAt === "string" ? group.updatedAt : now,
+  };
+}
+
 export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> {
-  const parsed = await readJsonFile<Partial<ProjectPermissionsFile>>(permissionsFilePath());
+  const parsed = await readJsonFile<
+    Partial<ProjectPermissionsFile> & { version?: number }
+  >(permissionsFilePath());
   if (!parsed) return emptyFile();
   return {
-    version: 1,
-    projectGrants: Array.isArray(parsed.projectGrants) ? parsed.projectGrants : [],
+    version: 2,
+    projectGrants: Array.isArray(parsed.projectGrants)
+      ? parsed.projectGrants
+          .map((grant) => normalizeGrant(grant))
+          .filter((grant): grant is ProjectGrant => grant !== null)
+      : [],
+    accessGroups: Array.isArray(parsed.accessGroups)
+      ? parsed.accessGroups
+          .map((group) => normalizeAccessGroup(group))
+          .filter((group): group is FamiliarAccessGroup => group !== null)
+      : [],
     grantProposals: Array.isArray(parsed.grantProposals) ? parsed.grantProposals : [],
     permissionAudit: Array.isArray(parsed.permissionAudit) ? parsed.permissionAudit : [],
   };
@@ -134,15 +232,26 @@ function ensureProjectGrant(
     familiarId: string;
     projectId: string;
     source: ProjectGrantSource;
+    access?: ProjectAccessLevel;
   },
 ): boolean {
-  const exists = file.projectGrants.some(
+  const access = normalizeAccessLevel(input.access);
+  const existing = file.projectGrants.find(
     (grant) => grant.familiarId === input.familiarId && grant.projectId === input.projectId,
   );
-  if (exists) return false;
+  if (existing) {
+    // Re-granting can move the level in either direction (write→read is the
+    // human downgrading a familiar); source/grantedAt track the latest action.
+    if (existing.access === access) return false;
+    existing.access = access;
+    existing.source = input.source;
+    existing.grantedAt = new Date().toISOString();
+    return true;
+  }
   file.projectGrants.push({
     familiarId: input.familiarId,
     projectId: input.projectId,
+    access,
     source: input.source,
     grantedAt: new Date().toISOString(),
   });
@@ -170,35 +279,68 @@ export async function listRecentPermissionAudit(limit = 200): Promise<Permission
     .slice(0, Math.max(0, limit));
 }
 
+/**
+ * A familiar's effective access to one project: union-max of its direct grant
+ * and every access-group grant it inherits through membership. Supreme is
+ * handled by callers (it bypasses grants entirely).
+ */
+export function effectiveProjectAccess(
+  file: Pick<ProjectPermissionsFile, "projectGrants" | "accessGroups">,
+  familiarId: string,
+  projectId: string,
+): EffectiveProjectAccess {
+  return resolveEffectiveAccess({
+    directGrants: file.projectGrants,
+    groups: file.accessGroups ?? [],
+    familiarId,
+    projectId,
+  });
+}
+
 export function canAccessProject(
-  file: Pick<ProjectPermissionsFile, "projectGrants">,
+  file: Pick<ProjectPermissionsFile, "projectGrants"> &
+    Partial<Pick<ProjectPermissionsFile, "accessGroups">>,
   ctx: ProjectAccessContext,
   projectId: string,
   supremeFamiliarId: string,
+  required: ProjectAccessLevel = "read",
 ): boolean {
   const familiarId = ctx.familiarId?.trim();
   if (!familiarId) return false;
   if (familiarId === supremeFamiliarId) return true;
-  return file.projectGrants.some(
-    (grant) => grant.familiarId === familiarId && grant.projectId === projectId,
+  const effective = effectiveProjectAccess(
+    { projectGrants: file.projectGrants, accessGroups: file.accessGroups ?? [] },
+    familiarId,
+    projectId,
   );
+  return accessLevelSatisfies(effective.level, required);
+}
+
+/** Every project the familiar can reach, with its effective level. */
+export async function listAccessibleProjects(
+  projects: CaveProject[],
+  familiarId: string,
+): Promise<{ project: CaveProject; access: ProjectAccessLevel }[]> {
+  const [permissions, config] = await Promise.all([
+    loadProjectPermissions(),
+    loadHumanPermissionConfig(),
+  ]);
+  if (familiarId === config.supremeFamiliarId) {
+    return projects.map((project) => ({ project, access: "write" as const }));
+  }
+  const accessible: { project: CaveProject; access: ProjectAccessLevel }[] = [];
+  for (const project of projects) {
+    const { level } = effectiveProjectAccess(permissions, familiarId, project.id);
+    if (level) accessible.push({ project, access: level });
+  }
+  return accessible;
 }
 
 export async function filterProjectsForFamiliar(
   projects: CaveProject[],
   familiarId: string,
 ): Promise<CaveProject[]> {
-  const [permissions, config] = await Promise.all([
-    loadProjectPermissions(),
-    loadHumanPermissionConfig(),
-  ]);
-  if (familiarId === config.supremeFamiliarId) return projects;
-  const granted = new Set(
-    permissions.projectGrants
-      .filter((grant) => grant.familiarId === familiarId)
-      .map((grant) => grant.projectId),
-  );
-  return projects.filter((project) => granted.has(project.id));
+  return (await listAccessibleProjects(projects, familiarId)).map((entry) => entry.project);
 }
 
 export class ProjectAccessDeniedError extends Error {
@@ -220,12 +362,19 @@ export async function assertProjectAccess(
     loadProjectPermissions(),
     loadHumanPermissionConfig(),
   ]);
-  const allowed = canAccessProject(permissions, ctx, projectId, config.supremeFamiliarId);
-  const reason = allowed
-    ? familiarId === config.supremeFamiliarId
-      ? "supreme"
-      : "grant"
-    : "missing-grant";
+  const required = requiredAccessLevel(surface);
+  const isSupreme = !!familiarId && familiarId === config.supremeFamiliarId;
+  const effective = familiarId && !isSupreme
+    ? effectiveProjectAccess(permissions, familiarId, projectId)
+    : null;
+  const allowed = isSupreme || accessLevelSatisfies(effective?.level, required);
+
+  let reason: PermissionAuditReason;
+  if (allowed) {
+    reason = isSupreme ? "supreme" : effective?.direct ? "grant" : "group";
+  } else {
+    reason = effective?.level ? "insufficient-access" : "missing-grant";
+  }
 
   await appendAudit({
     familiarId: familiarId || "unknown",
@@ -233,6 +382,7 @@ export async function assertProjectAccess(
     surface,
     decision: allowed ? "allow" : "deny",
     reason,
+    requiredAccess: required,
   });
 
   if (!allowed) throw new ProjectAccessDeniedError();
@@ -269,6 +419,7 @@ export async function grantProjectToFamiliar(input: {
   familiarId: string;
   projectId: string;
   source: ProjectGrantSource;
+  access?: ProjectAccessLevel;
 }): Promise<void> {
   await withWriteMutex(async () => {
     const file = await loadProjectPermissions();
@@ -309,6 +460,7 @@ export async function createGrantProposal(input: {
   proposedBy: string;
   targetFamiliarId: string;
   projectId: string;
+  access?: ProjectAccessLevel;
   claimedHumanApproval?: boolean;
 }): Promise<GrantProposal> {
   const { supremeFamiliarId } = await loadHumanPermissionConfig();
@@ -329,6 +481,7 @@ export async function createGrantProposal(input: {
       proposedBy: input.proposedBy,
       targetFamiliarId: input.targetFamiliarId,
       projectId: input.projectId,
+      access: normalizeAccessLevel(input.access),
       status: "pending",
       createdAt: new Date().toISOString(),
     };
@@ -357,9 +510,136 @@ export async function resolveGrantProposal(input: {
         familiarId: grantProposal.targetFamiliarId,
         projectId: grantProposal.projectId,
         source: "human",
+        // Legacy pending proposals predate levels — they meant full access.
+        access: normalizeAccessLevel(grantProposal.access),
       });
     }
     await saveProjectPermissions(file);
     return grantProposal;
+  });
+}
+
+// --- Access groups -----------------------------------------------------------
+//
+// Groups are mutated only through human-confirmed API routes (the same
+// rejectRelayedApproval discipline as direct grants): a group grant is a real
+// grant of project access to every member, so familiars must never be able to
+// add themselves to a group or raise a group's level.
+
+export class AccessGroupNotFoundError extends Error {
+  status = 404;
+
+  constructor(message = "access group not found") {
+    super(message);
+    this.name = "AccessGroupNotFoundError";
+  }
+}
+
+function normalizeMemberIds(ids: string[] | undefined): string[] {
+  if (!Array.isArray(ids)) return [];
+  const seen = new Set<string>();
+  const members: string[] = [];
+  for (const raw of ids) {
+    const id = typeof raw === "string" ? raw.trim() : "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    members.push(id);
+  }
+  return members;
+}
+
+function normalizeGroupGrants(
+  grants: { projectId: string; access?: ProjectAccessLevel }[] | undefined,
+  previous: GroupProjectGrant[],
+): GroupProjectGrant[] {
+  if (!Array.isArray(grants)) return previous;
+  const now = new Date().toISOString();
+  const previousById = new Map(previous.map((grant) => [grant.projectId, grant]));
+  const seen = new Set<string>();
+  const next: GroupProjectGrant[] = [];
+  for (const raw of grants) {
+    const projectId = typeof raw?.projectId === "string" ? raw.projectId.trim() : "";
+    if (!projectId || seen.has(projectId)) continue;
+    seen.add(projectId);
+    const access = normalizeAccessLevel(raw.access);
+    const before = previousById.get(projectId);
+    next.push({
+      projectId,
+      access,
+      grantedAt: before && before.access === access ? before.grantedAt : now,
+    });
+  }
+  return next;
+}
+
+export async function listAccessGroups(): Promise<FamiliarAccessGroup[]> {
+  return (await loadProjectPermissions()).accessGroups;
+}
+
+export async function createAccessGroup(input: {
+  name: string;
+  description?: string;
+  memberFamiliarIds?: string[];
+  projectGrants?: { projectId: string; access?: ProjectAccessLevel }[];
+}): Promise<FamiliarAccessGroup> {
+  const name = input.name.trim();
+  if (!name) throw new Error("access group name is required");
+  return withWriteMutex(async () => {
+    const file = await loadProjectPermissions();
+    const now = new Date().toISOString();
+    const group: FamiliarAccessGroup = {
+      id: randomUUID(),
+      name,
+      ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      memberFamiliarIds: normalizeMemberIds(input.memberFamiliarIds),
+      projectGrants: normalizeGroupGrants(input.projectGrants, []),
+      createdAt: now,
+      updatedAt: now,
+    };
+    file.accessGroups.push(group);
+    await saveProjectPermissions(file);
+    return group;
+  });
+}
+
+export async function updateAccessGroup(input: {
+  groupId: string;
+  name?: string;
+  description?: string | null;
+  memberFamiliarIds?: string[];
+  projectGrants?: { projectId: string; access?: ProjectAccessLevel }[];
+}): Promise<FamiliarAccessGroup> {
+  return withWriteMutex(async () => {
+    const file = await loadProjectPermissions();
+    const group = file.accessGroups.find((candidate) => candidate.id === input.groupId);
+    if (!group) throw new AccessGroupNotFoundError();
+    if (input.name !== undefined) {
+      const name = input.name.trim();
+      if (!name) throw new Error("access group name is required");
+      group.name = name;
+    }
+    if (input.description !== undefined) {
+      const description = input.description?.trim();
+      if (description) group.description = description;
+      else delete group.description;
+    }
+    if (input.memberFamiliarIds !== undefined) {
+      group.memberFamiliarIds = normalizeMemberIds(input.memberFamiliarIds);
+    }
+    group.projectGrants = normalizeGroupGrants(input.projectGrants, group.projectGrants);
+    group.updatedAt = new Date().toISOString();
+    await saveProjectPermissions(file);
+    return group;
+  });
+}
+
+export async function deleteAccessGroup(groupId: string): Promise<boolean> {
+  return withWriteMutex(async () => {
+    const file = await loadProjectPermissions();
+    const next = file.accessGroups.filter((group) => group.id !== groupId);
+    if (next.length === file.accessGroups.length) return false;
+    file.accessGroups = next;
+    await saveProjectPermissions(file);
+    return true;
   });
 }

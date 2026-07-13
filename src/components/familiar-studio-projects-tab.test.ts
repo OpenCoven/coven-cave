@@ -28,14 +28,31 @@ assert.match(tab, /fetch\("\/api\/projects"/, "loads projects");
 assert.match(tab, /fetch\("\/api\/project-grants"/, "loads grants + supreme familiar + audit");
 assert.match(tab, /fetch\("\/api\/grant-proposals"/, "loads the grant-proposal inbox");
 // Toggling a project grants (POST) or revokes (DELETE) — sending ONLY this
-// familiar + the project (the grant route rejects relayed approvals).
+// familiar + the project (+ the access level on grant; the grant route rejects
+// relayed approvals).
 assert.match(tab, /method: next \? "POST" : "DELETE"/, "toggling on grants, off revokes");
 assert.match(
   tab,
-  /body: JSON\.stringify\(\{ targetFamiliarId: familiar\.id, projectId \}\)/,
-  "grant changes send only the selected familiar + project (human-confirmed)",
+  /\{ targetFamiliarId: familiar\.id, projectId, access \}/,
+  "granting sends only the selected familiar + project + level (human-confirmed)",
+);
+assert.match(
+  tab,
+  /\{ targetFamiliarId: familiar\.id, projectId \}/,
+  "revoking sends only the selected familiar + project (human-confirmed)",
 );
 assert.match(tab, /role="switch"/, "each project row is a switch");
+// Read/write levels + access groups render on every project row.
+assert.match(tab, /role="radiogroup"/, "granted rows expose a read/write level control");
+assert.match(
+  tab,
+  /setAccess\(project\.id, candidate\)/,
+  "picking a level re-grants the project at that level",
+);
+assert.match(tab, /effectiveAccessRows\(\{/, "effective access resolves direct + group grants with the shared union-max helper");
+assert.match(tab, /groupsForFamiliar\(accessGroups, familiar\.id\)/, "lists the access groups this familiar belongs to");
+assert.match(tab, /accessLevelMeta\(/, "levels render through the shared read/write meta");
+assert.match(tab, /access group/i, "explains group-derived access");
 // Proposals are resolved by id (PATCH), sending only the decision.
 assert.match(tab, /\/api\/grant-proposals\/\$\{id\}/, "resolves a proposal by id");
 assert.match(tab, /method: "PATCH"/, "proposal decisions are a PATCH");
@@ -56,5 +73,6 @@ assert.match(
 // ── API still exposes the supreme familiar + a bounded recent audit window ───
 assert.match(route, /supremeFamiliarId: config\.supremeFamiliarId/, "the grants GET returns the supreme familiar id");
 assert.match(route, /listRecentPermissionAudit/, "the grants GET returns a recent audit window");
+assert.match(route, /listAccessGroups/, "the grants GET rides access groups along for effective access");
 
 console.log("familiar-studio-projects-tab.test.ts: ok");
