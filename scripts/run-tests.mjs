@@ -41,6 +41,8 @@ export const SUITES = {
     "src/components/role-surfaces/research-evidence-ledger.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
+    "src/components/chat-view-chunk-coalescing.test.ts",
+    "src/lib/chunk-coalescer.test.ts",
     "src/components/chat-view-scroll-pin.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",
     "src/lib/app-version.test.ts",
