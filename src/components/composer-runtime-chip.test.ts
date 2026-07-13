@@ -102,6 +102,7 @@ assert.match(
 // ── Brand marks: real logos for provider runtimes, glyphs for the rest ──────
 assert.match(logo, /codex: OPENAI_PATH,\s*\n\s*claude: ANTHROPIC_PATH,/, "codex and claude carry their providers' brand marks");
 assert.match(logo, /hermes: "ph:plug-bold",\s*\n\s*openclaw: "ph:paw-print-bold",/, "brand-less runtimes reuse the glyph language skill-card established");
+assert.match(logo, /opencode: "ph:code-bold",/, "opencode carries a deliberate glyph (skill-card's /code/ rule) instead of the generic robot fallback");
 assert.match(logo, /fill="currentColor"[\s\S]{0,80}?aria-hidden/, "brand SVGs inherit currentColor and stay decorative (the trigger carries the name)");
 
 // ── Tokens only; the mark reads as presence ──────────────────────────────────

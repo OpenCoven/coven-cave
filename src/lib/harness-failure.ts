@@ -155,7 +155,7 @@ export type HarnessAuthFailure = {
 const AUTH_FAILURE_PATTERNS: RegExp[] = [
   /\bnot (?:signed|logged) in\b/i,
   /\bplease (?:run )?[`'"]?\/?login\b/i,
-  /\brun [`'"]?(?:codex login|claude \/login|copilot \/login|gh auth login)[`'"]?/i,
+  /\brun [`'"]?(?:codex login|claude \/login|copilot \/login|gh auth login|opencode auth login)[`'"]?/i,
   /\binvalid api key\b/i,
   /\bapi key (?:not set|missing|not found|expired)\b/i,
   /\bauthentication (?:error|failed|required)\b/i,
@@ -168,6 +168,7 @@ const LOGIN_COMMANDS: Record<string, string> = {
   claude: "claude /login",
   codex: "codex login",
   copilot: "copilot /login",
+  opencode: "opencode auth login",
 };
 
 /**
