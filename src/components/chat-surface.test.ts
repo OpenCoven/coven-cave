@@ -226,8 +226,8 @@ assert.match(
 
 assert.match(
   chatSurface,
-  /<div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">\s*\{primaryPanel === "inspector" &&/,
-  "ChatSurface right side panel should put tab content in a min-height-zero scroll boundary",
+  /className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"\s*>\s*\{primaryPanel === "inspector" &&/,
+  "ChatSurface right side panel should put tab content in a min-height-zero scroll boundary (the div also carries the cave-t7uz tabpanel wiring)",
 );
 
 assert.match(

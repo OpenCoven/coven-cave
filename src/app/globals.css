@@ -3516,6 +3516,17 @@ textarea.required-inputs-control {
   padding: 0 4px;
 }
 
+/* The section tabs live in a real tablist (WAI-ARIA tabs pattern, cave-t7uz);
+   debug/close remain plain sibling controls outside it. Shrinkable so the
+   tabs keep truncating inside narrow sidebar widths. */
+.right-panel-tablist {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 100%;
+  min-width: 0;
+}
+
 .right-panel-tab {
   display: inline-flex;
   align-items: center;

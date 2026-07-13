@@ -1952,8 +1952,12 @@ function LinkedContextRow({
       announce(
         `Task "${result.card.title}" created from this chat${filled.length ? ` with ${filled.join(", ")}` : ""}.`,
       );
-    } catch {
-      announce("Couldn't create a task from this chat — check your connection.", "assertive");
+    } catch (err) {
+      // Surface the server's specific reason (validation message, HTTP status)
+      // instead of always blaming the connection (cave-t7uz).
+      const reason =
+        err instanceof Error && err.message ? err.message.replace(/\.$/, "") : "check your connection";
+      announce(`Couldn't create a task from this chat — ${reason}.`, "assertive");
     } finally {
       setCreatingTask(false);
     }
