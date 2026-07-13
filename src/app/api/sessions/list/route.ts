@@ -14,6 +14,7 @@ import {
   mergeSessionRows,
 } from "@/lib/session-list-merge";
 import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
+import { createSwrCache } from "@/lib/swr-cache";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
@@ -53,14 +54,21 @@ type SessionsListResult = {
   init?: ResponseInit;
 };
 
-type SessionsListCacheEntry = {
-  expiresAt: number;
-  result: SessionsListResult;
-};
-
+// Stale-while-revalidate cache (cave-5m1c). The old plain 2s TTL sat under
+// the workspace's 4s poll, so effectively EVERY poll missed and paid the full
+// daemon + git + archive-sweep recompute on the response path. Now a poll
+// inside the fresh window is a pure cache hit; a poll after it is served the
+// previous payload instantly while one background recompute refreshes it —
+// steady-state pollers never wait on the compute. Error payloads are never
+// served stale (a transient daemon failure must not pin a 503 for the whole
+// stale window), and concurrent callers still share one in-flight compute.
 const SESSIONS_LIST_CACHE_MS = 2000;
-let sessionsListCache: Map<string, SessionsListCacheEntry> = new Map();
-let sessionsListInFlight: Map<string, Promise<SessionsListResult>> = new Map();
+const SESSIONS_LIST_STALE_SERVE_MS = 30_000;
+const sessionsListCache = createSwrCache<SessionsListResult>({
+  ttlMs: SESSIONS_LIST_CACHE_MS,
+  staleServeMs: SESSIONS_LIST_STALE_SERVE_MS,
+  canServeStale: (result) => result.payload.ok,
+});
 
 function isTrueProjectCwd(projectRoot: string): boolean {
   const trimmed = projectRoot.trim();
@@ -221,34 +229,6 @@ async function computeSessionsList(
   };
 }
 
-async function cachedSessionsList(
-  cacheKey: string,
-  includeArchived: boolean,
-  familiarId: string | null,
-): Promise<SessionsListResult> {
-  const now = Date.now();
-  const cached = sessionsListCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return cached.result;
-  }
-  const inFlight = sessionsListInFlight.get(cacheKey);
-  if (inFlight) return inFlight;
-
-  const promise = computeSessionsList(includeArchived, familiarId).then((result) => {
-    sessionsListCache.set(cacheKey, {
-      expiresAt: Date.now() + SESSIONS_LIST_CACHE_MS,
-      result,
-    });
-    return result;
-  });
-  sessionsListInFlight.set(cacheKey, promise);
-  try {
-    return await promise;
-  } finally {
-    if (sessionsListInFlight.get(cacheKey) === promise) sessionsListInFlight.delete(cacheKey);
-  }
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
@@ -258,6 +238,8 @@ export async function GET(req: Request) {
   }
   // Cache per (archived, familiar) — scoped views differ by grant set.
   const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}`;
-  const result = await cachedSessionsList(cacheKey, includeArchived, familiarId);
+  const result = await sessionsListCache.get(cacheKey, () =>
+    computeSessionsList(includeArchived, familiarId),
+  );
   return NextResponse.json(result.payload, result.init);
 }
