@@ -70,3 +70,22 @@ test("a verified newer version remains an update state", () => {
 
   assert.equal(toolStatusText(tool), "Update available");
 });
+
+test("a wrong package or unreadable version remains an explicit recovery state", () => {
+  const base = {
+    installed: true,
+    latest: "0.0.54",
+    outdated: false,
+    compatible: false,
+    latestCheck: { status: "verified" as const, checkedAt, latest: "0.0.54" },
+  };
+
+  assert.equal(
+    toolStatusText({ ...base, current: "0.0.54", packageVerified: false }),
+    "Unexpected executable",
+  );
+  assert.equal(
+    toolStatusText({ ...base, current: null, packageVerified: true }),
+    "Version probe failed",
+  );
+});

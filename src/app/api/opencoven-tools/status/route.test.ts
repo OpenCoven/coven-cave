@@ -64,8 +64,32 @@ assert.match(
 
 assert.match(
   source,
-  /compareSemver\(latest, installed\.version\) > 0/,
-  "outdated status uses the shared semver comparison",
+  /compareSemver\(latest, probe\.version\) > 0/,
+  "outdated status uses the shared semver comparison after identifying the executable package",
+);
+
+assert.match(
+  source,
+  /packageIdentityForExecutable[\s\S]*?manifest\.bin/,
+  "status verifies both the package identity and the selected package bin entry point",
+);
+
+assert.match(
+  source,
+  /verifyOpenCovenToolInstall[\s\S]*?refreshCovenSpawnEnv\(\)/,
+  "post-install verification rebuilds PATH before probing the tool",
+);
+
+assert.match(
+  source,
+  /if \(launch\.unresolvedWindowsShim\) \{[\s\S]*?error: "launcher-unreadable"/,
+  "an unparseable Windows shim fails closed without executing an ambiguous batch file",
+);
+
+assert.match(
+  source,
+  /openCovenToolStatuses[\s\S]*?const env = refreshCovenSpawnEnv\(\);[\s\S]*?toolStatus\(tool, env\)/,
+  "ordinary status checks share one freshly rebuilt environment across tool and npm probes",
 );
 
 assert.match(
@@ -76,7 +100,7 @@ assert.match(
 
 assert.match(
   source,
-  /Promise\.all\(OPEN_COVEN_TOOLS\.map\(toolStatus\)\)/,
+  /Promise\.all\(OPEN_COVEN_TOOLS\.map\(\(tool\) => toolStatus\(tool, env\)\)\)/,
   "GET reports all allowlisted OpenCoven tools together",
 );
 

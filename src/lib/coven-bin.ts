@@ -109,14 +109,17 @@ function candidateBinNames(): string[] {
  * shim, and a .ps1), and `where` lists the extensionless one first — but a
  * bare Windows spawn() can only execute .exe/.com, and a .cmd needs
  * covenLaunchCommandForBinary() to convert it into a direct `node <script>`
- * spawn. So prefer .exe/.com, then .cmd/.bat, and only then the first line
- * (callers that merely display the path still get something).
+ * spawn. Keep the order emitted by `where`, though: it reflects PATH
+ * precedence. Picking a later .exe over an earlier npm .cmd shim can launch a
+ * stale or unrelated executable after an update.
  */
 export function pickWindowsLauncher(lines: string[]): string | null {
   const candidates = lines.map((line) => line.trim()).filter(Boolean);
-  const byExt = (...exts: string[]) =>
-    candidates.find((line) => exts.some((ext) => line.toLowerCase().endsWith(ext)));
-  return byExt(".exe", ".com") ?? byExt(".cmd", ".bat") ?? candidates[0] ?? null;
+  return (
+    candidates.find((line) => /\.(?:exe|com|cmd|bat)$/i.test(line)) ??
+    candidates[0] ??
+    null
+  );
 }
 
 function loginShellPath(): string | null {
