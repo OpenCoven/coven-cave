@@ -10,6 +10,7 @@ import {
   timingSafeEqualString,
   isLoopbackHost,
   isAllowedApiHost,
+  isTailscaleServeHost,
   sameOrigin,
   isAllowedRequestSource,
   isAllowedRequestSourceAny,
@@ -194,6 +195,8 @@ export async function proxy(req: NextRequest) {
   if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)) {
     return jsonError(403, "forbidden host");
   }
+  const mobileAccessMarker =
+    mobileAccessAuthenticated || (tailnetTrusted && isTailscaleServeHost(requestHost));
 
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
@@ -250,14 +253,14 @@ export async function proxy(req: NextRequest) {
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"
       ? jsonError(500, "missing sidecar auth token")
-      : nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
+      : nextWithMobileAccessMarker(req, mobileAccessMarker);
   }
 
   if (!sidecarAuthenticated) {
     return jsonError(401, "unauthorized");
   }
 
-  return nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
+  return nextWithMobileAccessMarker(req, mobileAccessMarker);
 }
 
 export const config = {
