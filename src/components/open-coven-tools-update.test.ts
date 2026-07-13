@@ -19,11 +19,10 @@ assert.doesNotMatch(
 );
 assert.match(src, /\/api\/opencoven-tools\/status/, "component fetches OpenCoven tool version status");
 assert.match(src, /\/api\/onboarding\/install/, "component reuses the allowlisted background installer");
-assert.match(src, /const refreshNpmLane = useCallback/, "About polls the server-owned global npm lane");
 assert.match(src, /\/api\/onboarding\/install", \{ cache: "no-store" \}/, "About queries the global installer lane without a target");
 assert.match(src, /Other npm updates are disabled until it finishes/, "About explains the shared npm lock before a second update can start");
 assert.match(src, /disabled=\{blockedByGlobalNpm\}/, "About disables a different tool's update button while npm is busy");
-assert.match(src, /Updating in another Cave window/, "About distinguishes a job reattached from another client surface");
+assert.match(src, /createOpenCovenInstallJobObserver/, "About uses the behavior-tested shared lane and job observer");
 assert.match(src, /openCovenToolPresentation\(tool\)/, "tool state presentation is centralized");
 assert.match(src, /data-tool-state=\{presentation\.state\}/, "tool rows expose the truthful state for UI testing");
 assert.match(src, /presentation\.action \? \(/, "missing and unreadable tools expose recovery actions");
@@ -86,7 +85,7 @@ assert.match(src, /Stale data from/, "failed rechecks explicitly mark retained t
 assert.match(src, /Last known/, "each retained tool row identifies last-known data");
 assert.match(src, /TOOL_UPDATE_RECHECK_EVENT/, "a completed in-page update requests a banner revalidation");
 assert.match(src, /window\.dispatchEvent\(new Event\(TOOL_UPDATE_RECHECK_EVENT\)\)/, "successful in-page updates revalidate the banner");
-assert.match(src, /json\.status === "done"[\s\S]*?await load\(\)/, "completed recovery actions recheck the tool status");
+assert.match(src, /onTerminal:[\s\S]*?const refreshed = await load\(\)/, "all completed recovery actions use the authoritative status recheck");
 assert.match(src, /dismissBanner\(TOOL_UPDATE_BANNER_ID\)/, "a clean recheck dismisses an obsolete update banner");
 assert.match(src, /Copy diagnostics \(safe\)/, "the copy control discloses that diagnostics are sanitized");
 assert.match(src, /paths, raw output, URL queries, and secrets are omitted or redacted/, "the UI discloses copied-diagnostics redaction");
