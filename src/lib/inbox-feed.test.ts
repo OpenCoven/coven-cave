@@ -1,6 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { groupInboxFeed, inboxActivityTime, inboxKindLabel } from "./inbox-feed.ts";
+import {
+  groupInboxFeed,
+  inboxActivityTime,
+  inboxKindLabel,
+  isInboxItemUnread,
+  unreadInboxCount,
+} from "./inbox-feed.ts";
 
 const item = (over = {}) => ({
   id: over.id ?? Math.random().toString(36).slice(2),
@@ -84,6 +90,41 @@ const item = (over = {}) => ({
   assert.equal(inboxKindLabel("daily-summary"), "Summary");
   assert.equal(inboxKindLabel("response-needed"), "Response");
   assert.equal(inboxKindLabel("agent"), "Agent");
+}
+
+// ── Unread: fired without readAt; reading, resolving, or refiring flips it ──
+{
+  assert.equal(isInboxItemUnread(item({ status: "fired" })), true, "fired + no readAt = unread");
+  assert.equal(
+    isInboxItemUnread(item({ status: "fired", readAt: null })),
+    true,
+    "explicit null readAt = unread (pre-upgrade items)",
+  );
+  assert.equal(
+    isInboxItemUnread(item({ status: "fired", readAt: "2026-06-01T00:00:00Z" })),
+    false,
+    "acknowledged fired item is read",
+  );
+  assert.equal(isInboxItemUnread(item({ status: "pending" })), false, "not fired yet = not unread");
+  assert.equal(
+    isInboxItemUnread(item({ status: "dismissed" })),
+    false,
+    "terminal states never count as unread",
+  );
+}
+
+// ── unreadInboxCount = unread fired + pending response-needed ───────────────
+{
+  const items = [
+    item({ status: "fired" }), // unread
+    item({ status: "fired", readAt: "2026-06-01T00:00:00Z" }), // read
+    item({ kind: "response-needed", status: "pending" }), // waiting on a reply
+    item({ kind: "response-needed", status: "done" }), // replied — quiet
+    item({ status: "pending" }), // not fired yet
+    item({ status: "dismissed" }),
+  ];
+  assert.equal(unreadInboxCount(items), 2, "one unread fired + one pending response-needed");
+  assert.equal(unreadInboxCount([]), 0);
 }
 
 console.log("inbox-feed.test.ts passed");

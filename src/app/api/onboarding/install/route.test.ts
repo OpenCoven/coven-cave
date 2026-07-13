@@ -55,7 +55,7 @@ assert.match(
 
 assert.match(
   source,
-  /await prepareForInstall\(targetName, target, job\)/,
+  /await prepareForInstall\(targetName, job\)/,
   "installer should run target-specific preparation before npm mutates a global tool",
 );
 
@@ -67,19 +67,43 @@ assert.match(
 
 assert.match(
   source,
-  /callDaemon<\{ ok\?: boolean; daemon\?: \{ pid\?: number \} \}>/,
-  "coven-cli upgrades should query the live daemon pid instead of trusting stale pid files",
+  /callDaemonTarget<LocalDaemonHealth>\(localDaemonTarget\(\),/,
+  "coven-cli upgrades should inspect only the laptop-local daemon rather than a configured remote hub",
 );
 
 assert.match(
   source,
-  /process\.kill\(pid, "SIGTERM"\)/,
-  "coven-cli upgrades should clear a still-running daemon that keeps coven.exe locked",
+  /Resolve it for every probe: Windows daemon[\s\S]*new pipe name to daemon\.json/,
+  "daemon recovery re-resolves the local pipe after restart instead of probing a stale Windows socket",
 );
 
 assert.match(
   source,
-  /installFailureHint\(targetName, job\.output\)/,
+  /prepareDaemonForCliUpdate\(dependencies\)/,
+  "coven-cli upgrades should explicitly capture and stop the pre-update daemon lifecycle",
+);
+
+assert.match(
+  source,
+  /recoverDaemonAfterCliUpdate\(job\.daemon, daemonLifecycleDependencies\(job\)\)/,
+  "both successful and failed CLI installs should restore a daemon that was running before update",
+);
+
+assert.match(
+  source,
+  /refreshCovenBin\(\)/,
+  "daemon recovery should clear cached executable discovery after npm rewrites the CLI",
+);
+
+assert.doesNotMatch(
+  source,
+  /process\.kill\(pid/,
+  "the updater must never SIGTERM a reported PID, which could be stale or reused",
+);
+
+assert.match(
+  source,
+  /installFailureHint\(targetName, output\)/,
   "installer should translate common Windows lock failures into actionable guidance",
 );
 
@@ -116,7 +140,7 @@ assert.match(
 
 assert.match(
   source,
-  /import \{\s*covenBin,\s*covenSpawnEnv,\s*pickWindowsLauncher,\s*refreshCovenSpawnEnv,?\s*\} from "@\/lib\/coven-bin"/,
+  /import \{\s*covenBin,\s*covenSpawnEnv,\s*pickWindowsLauncher,\s*refreshCovenBin,\s*refreshCovenSpawnEnv,?\s*\} from "@\/lib\/coven-bin"/,
   "install route can refresh Cave's cached PATH before declaring npm missing",
 );
 
@@ -160,6 +184,12 @@ assert.match(
 
 assert.match(
   source,
+  /targetName === "coven-cli" \? \{ refresh: true \}/,
+  "CLI success refreshes the executable environment before resolving the installed binary",
+);
+
+assert.match(
+  source,
   /isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
   "a zero npm exit is necessary but insufficient: OpenCoven success also requires verified post-install state",
 );
@@ -172,8 +202,14 @@ assert.match(
 
 assert.match(
   source,
-  /redactSensitiveInstallOutput/,
-  "installer tails redact token-like values before diagnostics expose them",
+  /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
+  "installer tails re-redact the combined buffer so secrets split across chunks cannot leak",
+);
+
+assert.match(
+  source,
+  /daemon: job\.daemon/,
+  "polled jobs expose lifecycle state so the UI can show daemon progress and health",
 );
 
 assert.match(
@@ -216,8 +252,56 @@ assert.match(
 
 assert.match(
   source,
-  /other\.kind === "npm"/,
-  "npm-kind installs are mutually exclusive (global npm tree races)",
+  /reserveGlobalNpmInstall\(targetName\)/,
+  "npm installs reserve one global npm lease across every allowlisted target",
+);
+
+assert.match(
+  source,
+  /const plan = await spawnPlanFor\(target\);[\s\S]*?reserveGlobalNpmInstall\(targetName\)/,
+  "the atomic global reservation happens after asynchronous plan preparation",
+);
+
+assert.match(
+  source,
+  /retryable: true,[\s\S]*?code: "npm_install_in_progress"[\s\S]*?"Retry-After": "2"/,
+  "a competing npm request gets a specific, retryable conflict response",
+);
+
+assert.match(
+  source,
+  /npmBusyTarget: InstallTarget \| null/,
+  "GET exposes the global npm owner so every client surface can reflect it",
+);
+
+assert.match(
+  source,
+  /export async function DELETE[\s\S]*?job\.cancel\?\.\(\)/,
+  "a running install can be cancelled through the route",
+);
+
+assert.match(
+  source,
+  /function finishInstallJobError\([\s\S]*?npmLease\?\.release\(\)/,
+  "terminal job error paths release the global npm lease",
+);
+
+assert.match(
+  source,
+  /const safeMessage =\s*"Cave could not safely stop the local daemon before updating the CLI\. The update was not started\.";[\s\S]*?finishInstallJobError\([\s\S]*?safeMessage/,
+  "a failed graceful daemon stop keeps actionable copy without exposing raw command output",
+);
+
+assert.match(
+  source,
+  /forceFinishTimer = setTimeout\([\s\S]*?finish\(null, null, new Error\(job\.error \?\? reason\)\)/,
+  "the timeout watchdog settles a child that never emits close",
+);
+
+assert.match(
+  source,
+  /@\/lib\/server\/global-npm-install-lane/,
+  "the HMR-safe global npm lease is owned by a dedicated server module",
 );
 
 assert.match(
@@ -228,7 +312,7 @@ assert.match(
 
 assert.match(
   source,
-  /redactSensitiveInstallOutput\(stripAnsi\(chunk\)\)/,
+  /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
   "installer output is ANSI-stripped and redacted before the capped diagnostics tail is stored",
 );
 
@@ -240,7 +324,7 @@ assert.match(
 
 assert.match(
   source,
-  /status: "running" as const, elapsedMs, tail/,
+  /status: "running" as const,[\s\S]*elapsedMs,[\s\S]*tail/,
   "the polled running view exposes status/elapsedMs/tail — the UI contract",
 );
 

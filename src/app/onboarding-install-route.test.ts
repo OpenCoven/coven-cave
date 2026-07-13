@@ -9,8 +9,8 @@ const route = readFileSync(
 
 assert.match(
   route,
-  /function finishInstallJobError\([\s\S]*?job\.status = "done";[\s\S]*?job\.ok = false;[\s\S]*?job\.error = installStartErrorMessage\(err\);/,
-  "install route should have a shared finalizer for start failures",
+  /async function finishInstallJob\([\s\S]*?launchError[\s\S]*?installStartErrorMessage\(launchError\)[\s\S]*?recoverDaemonAfterCliInstall\(targetName, job\)/,
+  "install route should finalize start failures through the daemon-recovery path",
 );
 
 assert.match(
@@ -19,10 +19,28 @@ assert.match(
   "install route should turn process exhaustion into a user-facing retryable job error",
 );
 
+assert.doesNotMatch(
+  route,
+  /â€”/,
+  "installer recovery copy must not expose a mojibake em dash",
+);
+
 assert.match(
   route,
-  /void \(async \(\) => \{\s*try \{[\s\S]*?const child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*finishInstallJobError\(job, err\);/,
-  "fire-and-forget installer task should catch synchronous spawn failures",
+  /void runInstallJob\(targetName, target, plan, job, npmLease\);/,
+  "POST should hand the background installer to the shared lifecycle runner",
+);
+
+assert.match(
+  route,
+  /async function runInstallJob\([\s\S]*?child = spawn\(plan\.command, plan\.args,[\s\S]*?\} catch \(err\) \{\s*await finish\(null, null, err\);/,
+  "the background lifecycle runner should recover a daemon after synchronous spawn failures",
+);
+
+assert.match(
+  route,
+  /async function finishInstallJob\([\s\S]*?recoverDaemonAfterCliInstall\(targetName, job\)[\s\S]*?finally \{[\s\S]*?npmLease\?\.release\(\);/,
+  "the shared npm lease should be released only after daemon recovery finishes",
 );
 
 assert.doesNotMatch(

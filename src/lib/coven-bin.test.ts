@@ -46,6 +46,11 @@ assert.match(
   /export function refreshCovenSpawnEnv\(\)[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(\)/,
   "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
 );
+assert.match(
+  source,
+  /export function refreshCovenBin\(\)[\s\S]*cachedBin = null;[\s\S]*cachedPath = null;[\s\S]*return covenBin\(\)/,
+  "CLI updates clear executable and PATH caches before daemon recovery",
+);
 
 assert.deepEqual(
   covenLaunchCommandForBinary("/usr/local/bin/coven", "darwin"),
@@ -57,6 +62,7 @@ const npmShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-npm-shim-"));
 const npmShimScript = path.join(npmShimDir, "node_modules", "@opencoven", "cli", "bin", "coven.js");
 await mkdir(path.dirname(npmShimScript), { recursive: true });
 await writeFile(npmShimScript, "console.log('coven');\n");
+await writeFile(path.join(npmShimDir, "node.exe"), "local node runtime probe");
 const npmShim = path.join(npmShimDir, "coven.cmd");
 await writeFile(
   npmShim,
@@ -76,7 +82,7 @@ assert.deepEqual(
 );
 
 const covenCodeShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-code-npm-shim-"));
-const covenCodeShimScript = path.join(covenCodeShimDir, "node_modules", "coven-code", "bin", "coven-code");
+const covenCodeShimScript = path.join(covenCodeShimDir, "node_modules", "@opencoven", "coven-code", "bin", "coven-code");
 await mkdir(path.dirname(covenCodeShimScript), { recursive: true });
 await writeFile(covenCodeShimScript, "console.log('coven-code');\n");
 const covenCodeShim = path.join(covenCodeShimDir, "coven-code.cmd");
@@ -86,7 +92,7 @@ await writeFile(
     "@ECHO off",
     "SETLOCAL",
     "CALL :find_dp0",
-    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\coven-code\\bin\\coven-code" %*',
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\coven-code\\bin\\coven-code" %*',
     "",
   ].join("\r\n"),
 );
@@ -97,17 +103,43 @@ assert.deepEqual(
   "Windows npm .cmd shims can target extensionless package bin scripts like coven-code",
 );
 
-const fallbackShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-fallback-shim-"));
-const fallbackScript = path.join(fallbackShimDir, "node_modules", "@opencoven", "cli", "bin", "coven.js");
-await mkdir(path.dirname(fallbackScript), { recursive: true });
-await writeFile(fallbackScript, "console.log('fallback coven');\n");
-const fallbackShim = path.join(fallbackShimDir, "coven.cmd");
-await writeFile(fallbackShim, "@ECHO off\r\nREM unknown shim shape\r\n");
+const covenCodeBat = path.join(covenCodeShimDir, "coven-code.bat");
+await writeFile(
+  covenCodeBat,
+  '"%~dp0\\node_modules\\@opencoven\\coven-code\\bin\\coven-code" %*\r\n',
+);
+assert.deepEqual(
+  covenLaunchCommandForBinary(covenCodeBat, "win32"),
+  { command: process.execPath, fixedArgs: [covenCodeShimScript] },
+  "Windows .bat shims and the %~dp0 batch form resolve the same extensionless target",
+);
 
 assert.deepEqual(
-  covenLaunchCommandForBinary(fallbackShim, "win32"),
-  { command: fallbackShim, fixedArgs: [] },
-  "an unreadable Windows .cmd shim is not guessed as the OpenCoven package entry point",
+  covenLaunchCommandForBinary("C:\\tools\\coven.exe", "win32"),
+  { command: "C:\\tools\\coven.exe", fixedArgs: [] },
+  "Windows native executables remain direct launch commands",
+);
+
+const unresolvedShimDir = await mkdtemp(path.join(os.tmpdir(), "coven-unresolved-shim-"));
+// A real CLI script alongside an unparseable shim must not become a fallback:
+// doing that is how a coven-code probe used to report Coven CLI's version.
+const wrongPackageScript = path.join(unresolvedShimDir, "node_modules", "@opencoven", "cli", "bin", "coven.js");
+await mkdir(path.dirname(wrongPackageScript), { recursive: true });
+await writeFile(wrongPackageScript, "console.log('wrong package');\n");
+const unresolvedShim = path.join(unresolvedShimDir, "coven-code.cmd");
+await writeFile(unresolvedShim, "@ECHO off\r\nREM unknown shim shape\r\n");
+
+assert.deepEqual(
+  covenLaunchCommandForBinary(unresolvedShim, "win32"),
+  { command: unresolvedShim, fixedArgs: [], unresolvedWindowsShim: true },
+  "unparseable Windows shims report an unknown target instead of falling back to another package",
+);
+
+const missingShim = path.join(unresolvedShimDir, "missing.cmd");
+assert.deepEqual(
+  covenLaunchCommandForBinary(missingShim, "win32"),
+  { command: missingShim, fixedArgs: [], unresolvedWindowsShim: true },
+  "missing Windows shims retain their path but have an explicit unknown target",
 );
 
 // Windows has no $SHELL, so the login-shell PATH probe always failed there

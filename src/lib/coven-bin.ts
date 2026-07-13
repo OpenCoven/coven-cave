@@ -34,6 +34,10 @@ let cachedPath: string | null = null;
 export type CovenLaunchCommand = {
   command: string;
   fixedArgs: string[];
+  // A .cmd/.bat shim was found but its target could not be proven. Callers
+  // that only need a version must report it as unknown instead of asking
+  // Windows to run an ambiguous batch file (or substituting another binary).
+  unresolvedWindowsShim?: true;
 };
 
 const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"] as const;
@@ -263,15 +267,31 @@ function windowsShimTargetFromFile(shimPath: string): string | null {
   const binDir = path.dirname(shimPath);
   try {
     const shim = readFileSync(shimPath, "utf-8");
-    const quotedTargets = shim.matchAll(/"(%(?:~?dp0)%?)[\\/]*([^"]+)"/gi);
-    for (const match of quotedTargets) {
-      const relativeTarget = match[2]?.replace(/[\\/]+/g, path.sep);
-      if (!relativeTarget || relativeTarget.includes("%")) continue;
+    // npm's cmd-shim generator quotes the package entry point relative to
+    // either `%dp0%` (its shim-directory variable) or `%~dp0` (the batch
+    // parameter form). Do not infer a package name: an npm `bin` target may
+    // be JavaScript, extensionless, or any other file Node can execute.
+    for (const line of shim.split(/\r?\n/)) {
+      // Standard npm shims first test and assign a local node.exe. Those are
+      // setup statements, not the package command to invoke. Only accept
+      // quoted `%dp0` paths from a command line; the final one is the entry
+      // point for the older `node <script>` shim form as well.
+      if (/^\s*(?:@?if\s+exist|@?set(?:local)?\b|@?call\b|@?rem\b|::|:)/i.test(line)) {
+        continue;
+      }
+      const targets = Array.from(line.matchAll(/"([^"]+)"/g))
+        .map((match) => match[1]?.trim())
+        .map((target) => target && /^%~?dp0%?[\\/]+(.+)$/i.exec(target)?.[1])
+        .filter((target): target is string => !!target && !target.includes("%"));
+      const relativeTarget = targets.at(-1)?.replace(/[\\/]+/g, path.sep);
+      if (!relativeTarget) continue;
       const candidate = path.resolve(binDir, relativeTarget);
-      if (existsSync(candidate)) return candidate;
+      if (existsSync(candidate)) {
+        return candidate;
+      }
     }
   } catch {
-    /* an unreadable launcher cannot be safely identified or probed */
+    /* unreadable or missing shim: leave it unresolved */
   }
   return null;
 }
@@ -285,7 +305,9 @@ export function covenLaunchCommandForBinary(
   }
 
   const script = windowsShimTargetFromFile(binary);
-  if (!script) return { command: binary, fixedArgs: [] };
+  if (!script) {
+    return { command: binary, fixedArgs: [], unresolvedWindowsShim: true };
+  }
   return { command: process.execPath, fixedArgs: [script] };
 }
 
@@ -367,4 +389,15 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
 export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {
   cachedPath = null;
   return covenSpawnEnv();
+}
+
+/**
+ * Drop both executable and PATH discovery caches after a global CLI install.
+ * A long-running desktop Cave process otherwise keeps launching the binary it
+ * resolved before npm rewrote its shim or registered a new global bin dir.
+ */
+export function refreshCovenBin(): string {
+  cachedBin = null;
+  cachedPath = null;
+  return covenBin();
 }

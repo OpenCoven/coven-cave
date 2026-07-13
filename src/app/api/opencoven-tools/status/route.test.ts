@@ -64,13 +64,25 @@ assert.match(
 
 assert.match(
   source,
+  /if \(launch\.unresolvedWindowsShim\) \{[\s\S]*?error: "launcher-unreadable"/,
+  "an unparseable Windows shim fails closed without executing an ambiguous batch file",
+);
+
+assert.match(
+  source,
+  /openCovenToolStatuses[\s\S]*?const env = refreshCovenSpawnEnv\(\);[\s\S]*?toolStatus\(tool, env\)/,
+  "ordinary status checks share one freshly rebuilt environment across tool and npm probes",
+);
+
+assert.match(
+  source,
   /minimumVersion: "0\.0\.54"/,
   "coven CLI compatibility floor includes the Windows Codex connection fixes",
 );
 
 assert.match(
   source,
-  /Promise\.all\(OPEN_COVEN_TOOLS\.map\(toolStatus\)\)/,
+  /Promise\.all\(OPEN_COVEN_TOOLS\.map\(\(tool\) => toolStatus\(tool, env\)\)\)/,
   "GET reports all allowlisted OpenCoven tools together",
 );
 

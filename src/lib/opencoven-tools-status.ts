@@ -2,23 +2,23 @@ import { execFile } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { compareSemver } from "@/lib/app-update";
+import { compareSemver } from "./app-update.ts";
 import {
   covenLaunchCommandForBinary,
   covenSpawnEnv,
   pickWindowsLauncher,
   refreshCovenSpawnEnv,
-} from "@/lib/coven-bin";
+} from "./coven-bin.ts";
 import {
   evaluateOpenCovenToolVerification,
   type OpenCovenToolProbe,
   type OpenCovenToolVerification,
-} from "@/lib/opencoven-tool-verification";
+} from "./opencoven-tool-verification.ts";
 
 export type {
   OpenCovenToolProbe,
   OpenCovenToolVerification,
-} from "@/lib/opencoven-tool-verification";
+} from "./opencoven-tool-verification.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -115,6 +115,7 @@ async function commandPath(
 
 async function resolvedExecutablePath(binaryPath: string): Promise<string | null> {
   const launch = covenLaunchCommandForBinary(binaryPath);
+  if (launch.unresolvedWindowsShim) return null;
   if (launch.command === process.execPath && launch.fixedArgs[0]) {
     return launch.fixedArgs[0];
   }
@@ -182,10 +183,10 @@ async function packageIdentityForExecutable(
 
 export async function discoverOpenCovenTool(
   tool: OpenCovenToolSpec,
-  options: { refresh?: boolean } = {},
+  options: { env?: NodeJS.ProcessEnv } = {},
 ): Promise<OpenCovenToolProbe> {
-  const env = options.refresh ? refreshCovenSpawnEnv() : covenSpawnEnv();
-  const located = await commandPath(tool.binary, { env, refresh: options.refresh });
+  const env = options.env ?? refreshCovenSpawnEnv();
+  const located = await commandPath(tool.binary, { env });
   if (!located.path) {
     return {
       path: null,
@@ -202,6 +203,17 @@ export async function discoverOpenCovenTool(
     ? await packageIdentityForExecutable(executablePath, tool.binary)
     : null;
   const launch = covenLaunchCommandForBinary(located.path);
+  if (launch.unresolvedWindowsShim) {
+    return {
+      path: located.path,
+      executablePath: null,
+      executableVerified: false,
+      version: null,
+      packageName: null,
+      packagePath: null,
+      error: "launcher-unreadable",
+    };
+  }
   try {
     const { stdout, stderr } = await execFileAsync(
       launch.command,
@@ -250,10 +262,12 @@ async function latestVersion(
   }
 }
 
-async function toolStatus(tool: OpenCovenToolSpec): Promise<OpenCovenToolStatus> {
-  const env = covenSpawnEnv();
+async function toolStatus(
+  tool: OpenCovenToolSpec,
+  env: NodeJS.ProcessEnv,
+): Promise<OpenCovenToolStatus> {
   const [probe, latest] = await Promise.all([
-    discoverOpenCovenTool(tool),
+    discoverOpenCovenTool(tool, { env }),
     latestVersion(tool, env),
   ]);
   const packageVerified =
@@ -304,12 +318,13 @@ export async function verifyOpenCovenToolInstall(
   // cache that made a stale launcher look like a successful update.
   const env = refreshCovenSpawnEnv();
   const [probe, latest] = await Promise.all([
-    discoverOpenCovenTool(tool, { refresh: true }),
+    discoverOpenCovenTool(tool, { env }),
     latestVersion(tool, env),
   ]);
   return evaluateOpenCovenToolVerification(tool, probe, latest);
 }
 
 export async function openCovenToolStatuses(): Promise<OpenCovenToolStatus[]> {
-  return Promise.all(OPEN_COVEN_TOOLS.map(toolStatus));
+  const env = refreshCovenSpawnEnv();
+  return Promise.all(OPEN_COVEN_TOOLS.map((tool) => toolStatus(tool, env)));
 }

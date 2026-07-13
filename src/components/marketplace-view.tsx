@@ -2,11 +2,12 @@
 
 // Marketplace hub — the store and your familiars' setup merged into one
 // surface. A single slim header row holds the section tabs (Browse · Crafts ·
-// Skills · Capabilities, with live counts) and the scoped search — no hero.
-// Browse is the plugin store (collections, categories, cards);
+// Skills · Build · Capabilities, with live counts) and the scoped search — no
+// hero. Browse is the plugin store (collections, categories, cards);
 // Crafts sits between Role context and effective capabilities; Skills and
 // Capabilities are the "what my familiars can do" views that used
-// to live on the separate Roles page. Deep links via WorkspaceMode still work —
+// to live on the separate Roles page; Build authors a new SKILL.md into a
+// local skill root. Deep links via WorkspaceMode still work —
 // the "capabilities" mode opens its section here; "roles" lands on Browse
 // while the Roles section is hidden.
 
@@ -25,6 +26,7 @@ import type { CraftActionError } from "@/components/marketplace/craft-detail";
 import { CraftCreateDrawer } from "@/components/marketplace/craft-create-drawer";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
+import { SkillBuilder } from "@/components/marketplace/skill-builder";
 import { SkillBrowser, type SkillBrowserEntry } from "@/components/skill-browser";
 import {
   SkillDetailDrawer,
@@ -45,7 +47,7 @@ import {
   type MarketplacePlugin,
 } from "@/lib/marketplace-catalog";
 
-export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "capabilities";
+export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "build" | "capabilities";
 
 // Roles is hidden from the hub (kept in the MarketplaceSection type so
 // `mode === "roles"` deep links keep type-checking — they land on Browse).
@@ -56,6 +58,7 @@ const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: Ico
   { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
   { id: "crafts", label: "Crafts", icon: "ph:package-bold" },
   { id: "skills", label: "Skills", icon: "ph:sparkle" },
+  { id: "build", label: "Build", icon: "ph:hammer" },
   { id: "capabilities", label: "Capabilities", icon: "ph:lightning-bold" },
 ];
 
@@ -66,10 +69,13 @@ const SECTION_HINT: Record<MarketplaceSection, string> = {
   crafts: "Versioned Role loadouts — preview, verify, equip, update, and detach Craft bundles.",
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
   skills: "Skills already in your Cave — reusable SKILL.md procedures familiars load while they work.",
+  build: "Author a new skill — write the SKILL.md your familiars load, straight into a local skill root.",
   capabilities: "What each runtime you've installed can do — its instructions, skills, and plugins, side by side.",
 };
 
-const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> = {
+// Build and Capabilities own their surfaces end-to-end, so the hub search
+// hides there and this record only types the searchable sections.
+const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities" | "build">, string> = {
   browse: "Search the marketplace",
   crafts: "Search Crafts",
   roles: "Search roles",
@@ -527,7 +533,7 @@ export function MarketplaceViewSurface({
           className="surface-compact-tabs"
         />
         <div className="surface-compact-actions">
-          {section !== "capabilities" ? (
+          {section !== "capabilities" && section !== "build" ? (
             <SearchInput
               ref={searchRef}
               value={query}
@@ -606,6 +612,11 @@ export function MarketplaceViewSurface({
                 label="Skills"
                 detail={skillsLoaded ? String(skills.length) : undefined}
                 onClick={() => selectSection("skills")}
+              />
+              <SetupRailLink
+                icon="ph:hammer"
+                label="Build a skill"
+                onClick={() => selectSection("build")}
               />
               <SetupRailLink
                 icon="ph:lightning-bold"
@@ -839,8 +850,21 @@ export function MarketplaceViewSurface({
             loaded={skillsLoaded}
             query={query}
             onClearQuery={() => setQuery("")}
-            onCreateSkill={() => selectSection("capabilities")}
+            onCreateSkill={() => selectSection("build")}
             onChanged={() => void loadSkills(query)}
+          />
+        </div>
+      ) : section === "build" ? (
+        // Authoring surface: form + live SKILL.md preview, own scroll.
+        <div
+          role="tabpanel"
+          id="marketplace-panel-build"
+          aria-labelledby="marketplace-tab-build"
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <SkillBuilder
+            onSaved={() => void loadSkills("")}
+            onViewSkills={() => selectSection("skills")}
           />
         </div>
       ) : (

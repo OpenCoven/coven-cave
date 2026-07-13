@@ -734,7 +734,7 @@ export function SkillBrowser({
             actions={
               onCreateSkill ? (
                 <Button variant="secondary" size="xs" onClick={onCreateSkill}>
-                  Open Capabilities
+                  Build a skill
                 </Button>
               ) : undefined
             }
