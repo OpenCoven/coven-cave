@@ -2944,7 +2944,7 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-model-popover__option[aria-checked="true"] {
   border-color: var(--border-strong);
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
 }
 
 .cave-chat-model-popover__option:disabled {
@@ -4550,7 +4550,7 @@ details[open] > .cave-tool-summary::before {
   overflow: hidden;
 }
 .cave-linear-turn-avatar-btn:focus-visible {
-  outline: 2px solid var(--accent, #7c93ff);
+  outline: 2px solid var(--ring-focus, #7c93ff);
   outline-offset: 2px;
 }
 
@@ -4617,9 +4617,24 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-primary, #eee); cursor: pointer;
 }
 .familiar-inline-card__actions button:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__actions button:focus-visible,
+.familiar-inline-card__workload-item:focus-visible,
+.familiar-inline-card__close:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff);
+  outline-offset: var(--ring-offset, 2px);
+}
 
 .familiar-inline-card__memory-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
-.familiar-inline-card__view-all { border: 0; background: transparent; color: var(--accent, #7c93ff); cursor: pointer; font-size: 12px; }
+.familiar-inline-card__view-all {
+  border: 0; background: transparent; cursor: pointer; font-size: 12px;
+  /* Brand accent (--accent-presence), NOT --accent — that's the shadcn
+     surface token (near-black in dark themes), which rendered this link
+     almost invisible. */
+  color: var(--accent-presence, #7c93ff);
+  border-radius: var(--radius-control);
+}
+.familiar-inline-card__view-all:hover { text-decoration: underline; color: var(--text-primary, #fff); }
+.familiar-inline-card__view-all:focus-visible { outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff); outline-offset: var(--ring-offset, 2px); }
 .familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary, #888); }
 .familiar-inline-card__memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .familiar-inline-card__memory-item { display: flex; flex-direction: column; gap: 1px; }
@@ -4681,8 +4696,13 @@ details[open] > .cave-tool-summary::before {
 .familiar-inline-card__workload-time { font-size: 10px; color: var(--text-secondary, #777); flex-shrink: 0; }
 
 .familiar-inline-card__actions button.familiar-inline-card__action-contextual {
-  color: var(--accent, #7c93ff);
-  border-color: color-mix(in srgb, var(--accent, #7c93ff) 40%, transparent);
+  /* Brand accent, not the --accent surface token (see __view-all note). */
+  color: var(--accent-presence, #7c93ff);
+  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 40%, transparent);
+}
+.familiar-inline-card__actions button.familiar-inline-card__action-contextual:hover {
+  background: color-mix(in srgb, var(--accent-presence, #7c93ff) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 60%, transparent);
 }
 
 /* ── New-chat launch surface ───────────────────────────────────────────────

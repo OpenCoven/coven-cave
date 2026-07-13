@@ -844,8 +844,10 @@ tr[role="checkbox"]:focus-visible {
   height: 34px;
   padding: 0 8px;
   border-radius: 10px;
-  border: 1px solid color-mix(in oklch, var(--accent) 32%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  /* Brand accent (--accent-presence); var(--accent) is the shadcn surface
+     token and rendered this button's chrome nearly invisible. */
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 560;
@@ -854,8 +856,8 @@ tr[role="checkbox"]:focus-visible {
     border-color var(--duration-fast) var(--ease-standard);
 }
 .cnav__new:hover {
-  background: color-mix(in oklch, var(--accent) 20%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 48%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, transparent);
 }
 .cnav__new-icon {
   flex-shrink: 0;
@@ -939,8 +941,8 @@ tr[role="checkbox"]:focus-visible {
     box-shadow var(--duration-fast) var(--ease-standard);
 }
 .cnav__search:focus-within {
-  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 13%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 13%, transparent);
 }
 .cnav__search-icon {
   flex-shrink: 0;
@@ -1174,7 +1176,7 @@ tr[role="checkbox"]:focus-visible {
   color: var(--text-primary);
 }
 .cnav__thread.is-active {
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   color: var(--text-primary);
 }
 .cnav__thread.is-active::before {
@@ -1185,7 +1187,7 @@ tr[role="checkbox"]:focus-visible {
   bottom: 7px;
   width: 2.5px;
   border-radius: 2px;
-  background: var(--accent);
+  background: var(--accent-presence);
 }
 .cnav__dot {
   width: 6px;
@@ -5506,7 +5508,10 @@ button:active > .edge-rail-chip {
   height: 14px;
   border-radius: 4px;
   border: 1px solid var(--border-strong);
-  color: var(--accent-foreground);
+  /* Checkmark sits on an --accent-presence fill when checked, so it takes the
+     paired on-accent foreground (not shadcn's --accent-foreground, which is
+     near-black in light mode on the dark presence fill). */
+  color: var(--accent-presence-foreground);
   background: transparent;
   opacity: 0;
   transition: background var(--duration-fast) var(--ease-standard),
@@ -12236,7 +12241,7 @@ details[open] > .cave-edit-card__summary::before {
   background: color-mix(in oklch, var(--bg-raised) 40%, var(--bg-base));
 }
 .quick-chat-overlay [aria-haspopup="menu"]:focus-visible {
-  border-color: var(--accent-presence, var(--accent));
+  border-color: var(--accent-presence);
   outline: none;
 }
 
@@ -12288,8 +12293,8 @@ details[open] > .cave-edit-card__summary::before {
 .quick-chat-bubble--user {
   max-width: 84%;
   color: var(--fg-primary);
-  background: color-mix(in oklch, var(--accent) 20%, var(--bg-base));
-  border: 1px solid color-mix(in oklch, var(--accent) 34%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 20%, var(--bg-base));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 34%, transparent);
   border-bottom-right-radius: 5px;
 }
 .quick-chat-bubble--familiar {
@@ -12335,7 +12340,7 @@ details[open] > .cave-edit-card__summary::before {
   height: 1em;
   margin-left: 1px;
   vertical-align: text-bottom;
-  background: var(--accent-presence, var(--accent));
+  background: var(--accent-presence);
   animation: quick-chat-caret-blink 1s steps(2, start) infinite;
 }
 @keyframes quick-chat-caret-blink {
@@ -12390,8 +12395,8 @@ details[open] > .cave-edit-card__summary::before {
   width: 40px;
   height: 40px;
   border-radius: 999px;
-  color: var(--accent-presence, var(--accent));
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
 }
 .quick-chat-empty__title {
   font-size: 13px;
@@ -12421,8 +12426,8 @@ details[open] > .cave-edit-card__summary::before {
   gap: 8px;
   padding: 6px 8px 6px 10px;
   border-radius: var(--radius-control);
-  border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent) 6%, var(--bg-raised));
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
 }
 .quick-chat-reco__label {
   display: inline-flex;
@@ -12432,7 +12437,7 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: var(--accent-presence, var(--accent));
+  color: var(--accent-presence);
 }
 .quick-chat-reco__text {
   flex: 1 1 auto;
@@ -12555,8 +12560,8 @@ details[open] > .cave-edit-card__summary::before {
     box-shadow var(--duration-fast, 120ms) var(--ease-standard, ease);
 }
 .quick-chat-overlay__input:focus {
-  border-color: var(--accent-presence, var(--accent));
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 18%, transparent);
 }
 .quick-chat-overlay__actions {
   display: flex;
@@ -12572,7 +12577,7 @@ details[open] > .cave-edit-card__summary::before {
  * counted enter/leave handlers (shared useAttachmentStaging) keep this veil
  * steady while the drag crosses child elements. */
 .quick-chat-overlay__composer--drop {
-  outline: 1.5px dashed var(--accent-presence, var(--accent));
+  outline: 1.5px dashed var(--accent-presence);
   outline-offset: -4px;
 }
 .quick-chat-dropzone {
@@ -12585,7 +12590,7 @@ details[open] > .cave-edit-card__summary::before {
   gap: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent-presence, var(--accent));
+  color: var(--accent-presence);
   background: color-mix(in oklch, var(--bg-base) 78%, transparent);
   border-radius: inherit;
   pointer-events: none;
@@ -12641,8 +12646,8 @@ details[open] > .cave-edit-card__summary::before {
   min-width: 0;
   padding: 2px 4px 2px 8px;
   border-radius: var(--radius-control);
-  border: 1px dashed color-mix(in oklch, var(--accent-presence, var(--accent)) 45%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence, var(--accent)) 6%, transparent);
+  border: 1px dashed color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
   font-size: 11.5px;
   color: var(--text-secondary);
 }
@@ -12852,8 +12857,8 @@ details[open] > .cave-edit-card__summary::before {
   transform: translate(-50%, -50%) scaleY(1);
 }
 .split-host__group[data-resizing] .split-host__grip {
-  background: var(--accent);
-  box-shadow: 0 0 10px color-mix(in oklch, var(--accent) 55%, transparent);
+  background: var(--accent-presence);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--accent-presence) 55%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
   .split-host__grip { transition: opacity var(--duration-fast) var(--ease-standard); }
@@ -12872,17 +12877,17 @@ details[open] > .cave-edit-card__summary::before {
   transition: left 0.04s linear;
 }
 .split-host__guide--snap {
-  background: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent),
-    0 0 12px color-mix(in oklch, var(--accent) 55%, transparent);
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 40%, transparent),
+    0 0 12px color-mix(in oklch, var(--accent-presence) 55%, transparent);
 }
 .split-host__guide--close { background: var(--color-danger, #e5484d); }
 /* Far-edge "Fill" state — promoting the secondary to the whole surface. Uses
    the accent (a positive/constructive action) with a stronger glow than snap. */
 .split-host__guide--collapse {
-  background: var(--accent);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent),
-    0 0 16px color-mix(in oklch, var(--accent) 70%, transparent);
+  background: var(--accent-presence);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent-presence) 55%, transparent),
+    0 0 16px color-mix(in oklch, var(--accent-presence) 70%, transparent);
 }
 .split-host__guide-chip {
   position: absolute;
@@ -12894,8 +12899,8 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 11px;
   font-weight: 700;
   line-height: 1.4;
-  color: var(--accent-foreground, #fff);
-  background: var(--accent);
+  color: var(--accent-presence-foreground, #fff);
+  background: var(--accent-presence);
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
@@ -12919,7 +12924,7 @@ details[open] > .cave-edit-card__summary::before {
   align-items: center;
   justify-content: center;
   margin: 10px;
-  border: 2px dashed color-mix(in oklch, var(--accent) 40%, transparent);
+  border: 2px dashed color-mix(in oklch, var(--accent-presence) 40%, transparent);
   border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--bg-base) 55%, transparent);
   backdrop-filter: blur(2px);
@@ -12929,8 +12934,8 @@ details[open] > .cave-edit-card__summary::before {
 .split-dropzone__half--left { margin-right: 5px; }
 .split-dropzone__half--right { margin-left: 5px; }
 .split-dropzone__half.is-hover {
-  background: color-mix(in oklch, var(--accent) 18%, var(--bg-base));
-  border: 2px solid var(--accent);
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-base));
+  border: 2px solid var(--accent-presence);
   color: var(--text-primary);
 }
 .split-dropzone__hint {
@@ -13039,9 +13044,9 @@ details[open] > .cave-edit-card__summary::before {
   display: grid;
   place-items: center;
   padding: 10px;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--accent-presence);
   border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
   transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
   pointer-events: none;
 }
@@ -13101,7 +13106,7 @@ details[open] > .cave-edit-card__summary::before {
   .split-host__mobile-tab[aria-selected="true"] {
     background: var(--bg-raised);
     color: var(--text-primary);
-    border-color: color-mix(in oklch, var(--accent) 45%, var(--border-hairline));
+    border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
   }
 
   .split-host__group {

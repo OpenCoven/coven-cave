@@ -394,6 +394,7 @@ export const SUITES = {
     "src/components/familiars-memory-view-sources.test.ts",
     "src/components/familiars-memory-view-scroll-collapse.test.ts",
     "src/app/globals.css.test.ts",
+    "src/app/accent-token-usage.test.ts",
     "src/app/globals-reveal-on-hover.test.ts",
     "src/components/familiar-roster-card.test.ts",
     "src/lib/familiar-growth-signals.test.ts",
