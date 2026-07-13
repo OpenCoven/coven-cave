@@ -417,15 +417,18 @@ export async function writeCollectionMeta(collection: string, meta: KnowledgeCol
 /** Count valid `*.md` entry files in a collection directory without reading
  *  (or parsing) their contents — listCollections runs on every chat send. */
 async function countCollectionEntries(collection: string): Promise<number> {
-  let names: string[];
+  let dirents: import("node:fs").Dirent[];
   try {
-    names = await readdir(collectionPath(collection));
+    dirents = await readdir(collectionPath(collection), { withFileTypes: true });
   } catch {
     return 0;
   }
-  return names.filter(
-    (name) => name !== "collection.yml" && name.endsWith(".md") && isValidKnowledgeId(name.slice(0, -3)),
-  ).length;
+  return dirents.filter((dirent) => {
+    const name = dirent.name;
+    if (name === "collection.yml" || !name.endsWith(".md")) return false;
+    if (!dirent.isFile()) return false;
+    return isValidKnowledgeId(name.slice(0, -3));
+  }).length;
 }
 
 export async function listCollections(): Promise<{ id: string; meta: KnowledgeCollectionMeta | null; count: number }[]> {
