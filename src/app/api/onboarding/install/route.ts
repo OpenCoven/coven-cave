@@ -29,6 +29,11 @@ import {
   type DaemonUpdateDependencies,
   type DaemonUpdateLifecycle,
 } from "@/lib/daemon-update-lifecycle";
+import { verifyOpenCovenToolInstall, type OpenCovenToolId } from "@/lib/opencoven-tools-status";
+import {
+  isVerifiedOpenCovenInstallSuccess,
+  type OpenCovenToolVerification,
+} from "@/lib/opencoven-tool-verification";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -152,6 +157,10 @@ async function commandPath(
 
 function isInstallTarget(value: unknown): value is InstallTarget {
   return typeof value === "string" && value in INSTALL_TARGETS;
+}
+
+function isOpenCovenToolInstallTarget(value: InstallTarget): value is OpenCovenToolId {
+  return value === "coven-cli" || value === "coven-code";
 }
 
 /** Walk up from `start` to the nearest directory that actually exists. The
@@ -285,6 +294,8 @@ type InstallJob = {
   error?: string;
   /** Present only for a Coven CLI update, never for other tool installers. */
   daemon?: DaemonUpdateLifecycle;
+  /** Present only for OpenCoven npm tools after installer completion. */
+  verification?: OpenCovenToolVerification<OpenCovenToolId>;
   /** Cancels preparation or the spawned process; never exposed to clients. */
   cancel?: () => void;
   cancelRequested?: boolean;
@@ -510,6 +521,7 @@ function jobView(job: InstallJob) {
     ok: job.ok ?? false,
     code: job.code ?? null,
     binaryPath: job.binaryPath ?? null,
+    ...(job.verification ? { verification: job.verification } : {}),
     ...(job.daemon ? { daemon: job.daemon } : {}),
     ...(job.error ? { error: job.error } : {}),
   };
@@ -582,8 +594,12 @@ async function finishInstallJob(
     // launch for daemon recovery.
     const installed = await commandPath(
       target.binary,
-      targetName === "coven-cli" ? { refresh: true } : undefined,
+      isOpenCovenToolInstallTarget(targetName) ? { refresh: true } : undefined,
     );
+    const verification = isOpenCovenToolInstallTarget(targetName)
+      ? await verifyOpenCovenToolInstall(targetName)
+      : null;
+    if (verification) job.verification = verification;
     const installError = installerOutcomeError(
       targetName,
       target,
@@ -593,7 +609,13 @@ async function finishInstallJob(
       job.output,
       launchError ? installStartErrorMessage(launchError) : job.error,
     );
-    const installOk = !installError && code === 0 && !!installed.path;
+    const verificationError =
+      verification && !isVerifiedOpenCovenInstallSuccess(code, verification)
+        ? verification.error ?? "post-install verification failed"
+        : null;
+    const installOk = verification
+      ? !installError && isVerifiedOpenCovenInstallSuccess(code, verification)
+      : !installError && code === 0 && !!installed.path;
 
     // Hermes has no positional prompt slot, so the harness's `-- "<prompt>"`
     // convention needs the hermes-coven shim to remap it onto -q. This remains
@@ -626,9 +648,9 @@ async function finishInstallJob(
     job.finishedAt = Date.now();
     job.ok = installOk && recovered;
     job.code = code;
-    job.binaryPath = installed.path;
+    job.binaryPath = verification?.path ?? installed.path;
     if (!job.ok) {
-      job.error = [installError, recoveryError].filter(Boolean).join(" ");
+      job.error = [installError, verificationError, recoveryError].filter(Boolean).join(" ");
     } else {
       delete job.error;
     }

@@ -178,8 +178,26 @@ assert.match(
 
 assert.match(
   source,
-  /targetName === "coven-cli" \? \{ refresh: true \}/,
-  "CLI success refreshes the executable environment before resolving the installed binary",
+  /isOpenCovenToolInstallTarget\(targetName\) \? \{ refresh: true \}/,
+  "OpenCoven tool success refreshes the executable environment before resolving the installed binary",
+);
+
+assert.match(
+  source,
+  /verifyOpenCovenToolInstall/,
+  "OpenCoven tool updates perform package, entry-point, and latest-version verification after npm exits",
+);
+
+assert.match(
+  source,
+  /isVerifiedOpenCovenInstallSuccess\(code, verification\)/,
+  "a zero npm exit is not enough to mark OpenCoven tool updates successful",
+);
+
+assert.match(
+  source,
+  /verification: job\.verification/,
+  "polled jobs expose post-install verification so the UI can report verified recovery states",
 );
 
 assert.match(

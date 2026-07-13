@@ -49,6 +49,7 @@ export const SUITES = {
     "src/lib/browser-navigation-queue.test.ts",
     "src/lib/open-external.test.ts",
     "src/lib/coven-version.test.ts",
+    "src/lib/opencoven-tool-verification.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",
     "src/components/update-available.test.ts",
     "src-tauri/permissions/desktop-permissions.test.mjs",

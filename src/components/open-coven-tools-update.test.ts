@@ -65,6 +65,10 @@ assert.match(src, /Updating CLI; local daemon will restart afterward/, "About pa
 assert.match(src, /Local daemon restarted and healthy/, "About panel surfaces final verified daemon health");
 assert.match(src, /local daemon remained stopped/, "an intentionally stopped daemon is not presented as a failed restart");
 assert.match(src, /Daemon: \{daemonLifecycleText\(daemon\)\}/, "About panel renders lifecycle health beside the update result");
+assert.match(src, /type InstallVerification = \{/, "the About updater understands post-install verification payloads");
+assert.match(src, /verification\?: InstallVerification/, "installer polling keeps verification attached to completed jobs");
+assert.match(src, /Post-install recheck now resolves a different executable/, "the UI refuses to show success when the follow-up status check disagrees with verification");
+assert.match(src, /Verified \$\{verification\.current\} at \$\{verification\.path\}/, "successful update copy is based on the verified executable, not npm exit alone");
 assert.match(src, /lastSuccessfulCheckedAt/, "tool checks retain a visible successful-check timestamp");
 assert.match(src, /Stale data from/, "failed rechecks explicitly mark retained tool rows as stale");
 assert.match(src, /Last known/, "each retained tool row identifies last-known data");
@@ -105,7 +109,7 @@ assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "Coven
 assert.match(status, /installCommand: "npm i -g @opencoven\/coven-code@latest"/, "coven-code exposes the exact update command, scoped package only");
 assert.match(status, /packageName: "@opencoven\/coven-code"/, "coven-code status probes the SCOPED registry package for latest");
 assert.doesNotMatch(status, /packageName: "coven-code"/, "bare coven-code is a different, deprecated npm package — status must never probe it");
-assert.match(status, /const compatible =[\s\S]*!!installed\?\.version && compareSemver\(installed\.version, tool\.minimumVersion\) >= 0/, "compatibility compares installed version against the Cave minimum");
+assert.match(status, /const compatible =[\s\S]*packageVerified && !!version && compareSemver\(version, tool\.minimumVersion\) >= 0/, "compatibility compares the verified package version against the Cave minimum");
 assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");
 assert.match(settings, /<SettingsGroup label="OpenCoven tools">[\s\S]*<OpenCovenToolsUpdate \/>/, "About settings renders the OpenCoven tools group");
 assert.match(runner, /src\/components\/open-coven-tools-update\.test\.ts/, "OpenCoven tools update test is wired into the test:app suite (scripts/run-tests.mjs)");

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { compareSemver } from "./app-update.ts";
@@ -9,6 +10,16 @@ import {
   pickWindowsLauncher,
   refreshCovenSpawnEnv,
 } from "./coven-bin.ts";
+import {
+  evaluateOpenCovenToolVerification,
+  type OpenCovenToolProbe,
+  type OpenCovenToolVerification,
+} from "./opencoven-tool-verification.ts";
+
+export type {
+  OpenCovenToolProbe,
+  OpenCovenToolVerification,
+} from "./opencoven-tool-verification.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -90,28 +101,173 @@ export type OpenCovenToolStatus = {
   binary: string;
   installed: boolean;
   path: string | null;
+  executablePath: string | null;
   current: string | null;
   latest: string | null;
   latestCheck: NpmLatestCheck;
   outdated: boolean;
   compatible: boolean;
+  packageVerified: boolean;
+  executableVerified: boolean;
+  packagePath: string | null;
+  discoveryError: OpenCovenToolProbe["error"] | null;
   minimumVersion: string;
   installCommand: string;
   checkedAt: string;
 };
 
-async function commandPath(binary: string): Promise<string | null> {
+function firstSemver(text: string): string | null {
+  const match = /\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/.exec(text);
+  return match?.[1] ?? null;
+}
+
+async function resolvedExecutablePath(binaryPath: string): Promise<string | null> {
+  const launch = covenLaunchCommandForBinary(binaryPath);
+  if (launch.unresolvedWindowsShim) return null;
+  if (launch.command === process.execPath && launch.fixedArgs[0]) {
+    try {
+      return await realpath(launch.fixedArgs[0]);
+    } catch {
+      return launch.fixedArgs[0];
+    }
+  }
+  try {
+    return await realpath(binaryPath);
+  } catch {
+    return null;
+  }
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalize = (value: string) =>
+    process.platform === "win32" ? value.toLowerCase() : value;
+  return normalize(path.resolve(left)) === normalize(path.resolve(right));
+}
+
+type PackageIdentity = {
+  name: string;
+  path: string;
+  binaryVerified: boolean;
+};
+
+async function packageIdentityForExecutable(
+  executablePath: string,
+  binary: string,
+): Promise<PackageIdentity | null> {
+  let directory = path.dirname(executablePath);
+  for (let depth = 0; depth < 16; depth += 1) {
+    try {
+      const manifest = JSON.parse(await readFile(path.join(directory, "package.json"), "utf8")) as {
+        name?: unknown;
+        bin?: unknown;
+      };
+      if (typeof manifest.name === "string") {
+        const binPath =
+          typeof manifest.bin === "string"
+            ? manifest.bin
+            : manifest.bin &&
+                typeof manifest.bin === "object" &&
+                !Array.isArray(manifest.bin) &&
+                typeof (manifest.bin as Record<string, unknown>)[binary] === "string"
+              ? (manifest.bin as Record<string, string>)[binary]
+              : null;
+        let binaryVerified = false;
+        if (binPath) {
+          const expectedPath = path.resolve(directory, binPath);
+          try {
+            binaryVerified = samePath(await realpath(expectedPath), executablePath);
+          } catch {
+            binaryVerified = samePath(expectedPath, executablePath);
+          }
+        }
+        return { name: manifest.name, path: directory, binaryVerified };
+      }
+    } catch {
+      /* Keep walking toward the package root. */
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return null;
+}
+
+export async function discoverOpenCovenTool(
+  tool: ToolSpec,
+  options: { refresh?: boolean } = {},
+): Promise<OpenCovenToolProbe> {
+  const env = options.refresh ? refreshCovenSpawnEnv() : covenSpawnEnv();
+  const located = await commandPathWithEnv(tool.binary, env, options.refresh);
+  if (!located) {
+    return {
+      path: null,
+      executablePath: null,
+      executableVerified: false,
+      version: null,
+      packageName: null,
+      packagePath: null,
+    };
+  }
+
+  const launch = covenLaunchCommandForBinary(located);
+  if (launch.unresolvedWindowsShim) {
+    return {
+      path: located,
+      executablePath: null,
+      executableVerified: false,
+      version: null,
+      packageName: null,
+      packagePath: null,
+      error: "launcher-unreadable",
+    };
+  }
+
+  const executablePath = await resolvedExecutablePath(located);
+  const identity = executablePath
+    ? await packageIdentityForExecutable(executablePath, tool.binary)
+    : null;
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      launch.command,
+      [...launch.fixedArgs, ...tool.versionArgs],
+      { env, timeout: 2500 },
+    );
+    const version = firstSemver(`${stdout}\n${stderr}`);
+    return {
+      path: located,
+      executablePath,
+      executableVerified: identity?.binaryVerified ?? false,
+      version,
+      packageName: identity?.name ?? null,
+      packagePath: identity?.path ?? null,
+      ...(version ? {} : { error: "version-probe-failed" as const }),
+    };
+  } catch {
+    return {
+      path: located,
+      executablePath,
+      executableVerified: identity?.binaryVerified ?? false,
+      version: null,
+      packageName: identity?.name ?? null,
+      packagePath: identity?.path ?? null,
+      error: executablePath ? "version-probe-failed" : "launcher-unreadable",
+    };
+  }
+}
+
+async function commandPathWithEnv(
+  binary: string,
+  env: NodeJS.ProcessEnv,
+  refresh: boolean | undefined,
+): Promise<string | null> {
   const finder = process.platform === "win32" ? "where" : "which";
-  const find = async (env: NodeJS.ProcessEnv): Promise<string | null> => {
+  const find = async (lookupEnv: NodeJS.ProcessEnv): Promise<string | null> => {
     try {
       const { stdout } = await execFileAsync(finder, [binary], {
-        env,
+        env: lookupEnv,
         timeout: 1500,
       });
       const lines = stdout.split(/\r?\n/);
-      // `where` lists npm's unspawnable extensionless launcher first; the
-      // .cmd/.exe sibling is the one execFile can actually run (versions
-      // below, and callers that spawn the returned path).
       return process.platform === "win32"
         ? pickWindowsLauncher(lines)
         : lines.map((l) => l.trim()).find(Boolean) ?? null;
@@ -119,41 +275,9 @@ async function commandPath(binary: string): Promise<string | null> {
       return null;
     }
   };
-  // covenSpawnEnv() caches PATH for the server's lifetime. A cave launched from
-  // Finder/Spotlight starts with a minimal PATH (no nvm/fnm), so a tool the
-  // user actually has goes undetected and shows as "Not installed". Re-probe
-  // once with a freshly rebuilt PATH before concluding the binary is missing.
-  const found = await find(covenSpawnEnv());
-  if (found) return found;
+  const found = await find(env);
+  if (found || refresh) return found;
   return find(refreshCovenSpawnEnv());
-}
-
-function firstSemver(text: string): string | null {
-  const match = /\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/.exec(text);
-  return match?.[1] ?? null;
-}
-
-async function installedTool(tool: ToolSpec): Promise<InstalledTool | null> {
-  const path = await commandPath(tool.binary);
-  if (!path) return null;
-  // Node refuses to execFile a .cmd directly (EINVAL since the batch-file
-  // hardening); convert npm cmd-shims to a direct `node <script>` exec so
-  // the version probe works on Windows instead of silently reporting null.
-  const { command, fixedArgs, unresolvedWindowsShim } = covenLaunchCommandForBinary(path);
-  if (unresolvedWindowsShim) {
-    // The .cmd exists, so retain its displayed path, but a parser failure must
-    // never probe a different launcher or execute the batch file via a shell.
-    return { path, version: null };
-  }
-  try {
-    const { stdout, stderr } = await execFileAsync(command, [...fixedArgs, ...tool.versionArgs], {
-      env: covenSpawnEnv(),
-      timeout: 2500,
-    });
-    return { path, version: firstSemver(`${stdout}\n${stderr}`) };
-  } catch {
-    return { path, version: null };
-  }
 }
 
 async function execLatestVersion(
@@ -280,27 +404,43 @@ export async function checkNpmLatestVersion(
 
 export function composeOpenCovenToolStatus(
   tool: ToolSpec,
-  installed: InstalledTool | null,
+  installed: InstalledTool | null | OpenCovenToolProbe,
   latestCheck: NpmLatestCheck,
 ): OpenCovenToolStatus {
   const latest = latestCheck.status === "verified" ? latestCheck.latest : null;
+  const probe = installed && "executableVerified" in installed ? installed : null;
+  const version = installed?.version ?? null;
+  const installedPath = installed?.path ?? null;
+  const executableVerified = probe ? probe.executableVerified : Boolean(installed);
+  const packageVerified =
+    probe
+      ? probe.packageName === tool.packageName &&
+        Boolean(probe.packagePath) &&
+        Boolean(probe.executablePath) &&
+        Boolean(probe.executableVerified)
+      : Boolean(installed);
   const outdated =
-    !!installed?.version && !!latest && compareSemver(latest, installed.version) > 0;
+    packageVerified && !!version && !!latest && compareSemver(latest, version) > 0;
   const compatible =
-    !!installed?.version && compareSemver(installed.version, tool.minimumVersion) >= 0;
+    packageVerified && !!version && compareSemver(version, tool.minimumVersion) >= 0;
 
   return {
     id: tool.id,
     label: tool.label,
     packageName: tool.packageName,
     binary: tool.binary,
-    installed: !!installed,
-    path: installed?.path ?? null,
-    current: installed?.version ?? null,
+    installed: !!installedPath,
+    path: installedPath,
+    executablePath: probe ? probe.executablePath : installedPath,
+    current: version,
     latest,
     latestCheck,
     outdated,
     compatible,
+    packageVerified,
+    executableVerified,
+    packagePath: probe ? probe.packagePath : null,
+    discoveryError: probe ? probe.error ?? null : null,
     minimumVersion: tool.minimumVersion,
     installCommand: tool.installCommand,
     checkedAt: latestCheck.checkedAt,
@@ -308,13 +448,27 @@ export function composeOpenCovenToolStatus(
 }
 
 async function toolStatus(tool: ToolSpec): Promise<OpenCovenToolStatus> {
-  const [installed, latestCheck] = await Promise.all([
-    installedTool(tool),
+  const [probe, latestCheck] = await Promise.all([
+    discoverOpenCovenTool(tool),
     checkNpmLatestVersion(tool),
   ]);
-  return composeOpenCovenToolStatus(tool, installed, latestCheck);
+  return composeOpenCovenToolStatus(tool, probe, latestCheck);
 }
 
 export async function openCovenToolStatuses(): Promise<OpenCovenToolStatus[]> {
   return Promise.all(OPEN_COVEN_TOOLS.map(toolStatus));
+}
+
+export async function verifyOpenCovenToolInstall(
+  id: OpenCovenToolId,
+): Promise<OpenCovenToolVerification<OpenCovenToolId>> {
+  const tool = OPEN_COVEN_TOOLS.find((candidate) => candidate.id === id);
+  if (!tool) throw new Error("unknown OpenCoven tool");
+
+  const [probe, latestCheck] = await Promise.all([
+    discoverOpenCovenTool(tool, { refresh: true }),
+    checkNpmLatestVersion(tool, { env: refreshCovenSpawnEnv, refreshEnv: refreshCovenSpawnEnv }),
+  ]);
+  const latest = latestCheck.status === "verified" ? latestCheck.latest : null;
+  return evaluateOpenCovenToolVerification(tool, probe, latest);
 }

@@ -5,10 +5,33 @@
 // actually executes.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { openCovenToolStatuses } from "./opencoven-tools-status.ts";
+
+const source = await readFile(new URL("./opencoven-tools-status.ts", import.meta.url), "utf8");
+
+assert.match(
+  source,
+  /executablePath: string \| null/,
+  "OpenCoven tool status exposes the resolved package entry point for local recovery decisions",
+);
+assert.match(
+  source,
+  /packagePath: string \| null/,
+  "OpenCoven tool status exposes package identity for stale PATH shadow detection",
+);
+assert.match(
+  source,
+  /if \(launch\.unresolvedWindowsShim\)/,
+  "unresolved Windows shims remain explicit instead of being executed or guessed",
+);
+assert.match(
+  source,
+  /export async function verifyOpenCovenToolInstall/,
+  "status module provides the authoritative post-install verification entry point",
+);
 
 if (process.platform !== "win32") {
   console.log("opencoven-tools-status.test.ts: skipped Windows packaged-server probe (requires win32)");

@@ -22,14 +22,30 @@ type ToolStatus = {
   binary: string;
   installed: boolean;
   path: string | null;
+  executablePath: string | null;
   current: string | null;
   latest: string | null;
   latestCheck: LatestCheckDisplay;
   outdated: boolean;
   compatible: boolean;
+  packageVerified: boolean;
+  executableVerified: boolean;
+  packagePath: string | null;
+  discoveryError: "version-probe-failed" | "launcher-unreadable" | null;
   minimumVersion: string;
   installCommand: string;
   checkedAt: string;
+};
+
+type InstallVerification = {
+  path: string | null;
+  current: string | null;
+  latest: string | null;
+  packageVerified: boolean;
+  compatible: boolean;
+  latestSatisfied: boolean | null;
+  ok: boolean;
+  error?: string;
 };
 
 type InstallJobView = {
@@ -37,6 +53,8 @@ type InstallJobView = {
   elapsedMs: number;
   tail: string;
   ok?: boolean;
+  binaryPath?: string | null;
+  verification?: InstallVerification;
   error?: string;
   daemon?: {
     wasRunning: boolean;
@@ -115,6 +133,43 @@ function successfulInstallDetail(
   if (job.daemon.phase === "healthy") return `${location}; local daemon restarted and healthy`;
   if (job.daemon.phase === "not-running") return `${location}; local daemon remained stopped`;
   return `${location}; daemon health: ${job.daemon.health}`;
+}
+
+function installResultFromCompletion(
+  target: InstallTarget,
+  job: InstallJobView,
+  rechecked: ToolStatus | undefined,
+): InstallResult {
+  if (!job.ok) return { ok: false, detail: job.error ?? "update failed" };
+  const verification = job.verification;
+  if (!verification) return { ok: true, detail: successfulInstallDetail(target, job) };
+  if (!verification.ok) {
+    return { ok: false, detail: verification.error ?? "post-install verification failed" };
+  }
+  const consistent =
+    rechecked &&
+    rechecked.path === verification.path &&
+    rechecked.current === verification.current &&
+    rechecked.latest === verification.latest &&
+    rechecked.packageVerified &&
+    rechecked.compatible &&
+    !rechecked.outdated;
+  if (!consistent) {
+    const current = rechecked?.current ? ` (${rechecked.current})` : "";
+    const path = rechecked?.path ? ` at ${rechecked.path}` : "";
+    return {
+      ok: false,
+      detail: `Post-install recheck now resolves a different executable${current}${path}. Retry after fixing PATH precedence.`,
+    };
+  }
+  const daemonDetail =
+    target === "coven-cli" && job.daemon
+      ? `; ${successfulInstallDetail(target, job)}`
+      : "";
+  return {
+    ok: true,
+    detail: `Verified ${verification.current} at ${verification.path}${daemonDetail}`,
+  };
 }
 
 function isInstallTarget(id: string): id is InstallTarget {
@@ -288,7 +343,7 @@ export function OpenCovenToolsUpdate() {
     }
   }, []);
 
-  const load = useCallback(async (): Promise<boolean> => {
+  const load = useCallback(async (): Promise<ToolStatus[] | null> => {
     setChecking(true);
     setError(null);
     try {
@@ -311,7 +366,7 @@ export function OpenCovenToolsUpdate() {
           dismissBanner(TOOL_UPDATE_BANNER_ID);
         }
       }
-      return true;
+      return (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
     } catch (err) {
       if (mounted.current) {
         const message = err instanceof Error ? err.message : "tool check failed";
@@ -320,7 +375,7 @@ export function OpenCovenToolsUpdate() {
         // A failed refresh cannot leave prior rows looking fresh.
         setStale(true);
       }
-      return false;
+      return null;
     } finally {
       if (mounted.current) setChecking(false);
     }
@@ -371,17 +426,17 @@ export function OpenCovenToolsUpdate() {
           }
           setInstallJobs((prev) => ({ ...prev, [target]: json }));
           if (json.status === "done") {
+            const refreshed = await load();
+            const result = installResultFromCompletion(
+              target,
+              json,
+              refreshed?.find((tool) => tool.id === target),
+            );
             setInstallResults((prev) => ({
               ...prev,
-              [target]: json.ok
-                ? {
-                    ok: true,
-                    detail: successfulInstallDetail(target, json),
-                  }
-                : { ok: false, detail: json.error ?? "update failed" },
+              [target]: result,
             }));
-            const refreshed = await load();
-            if (json.ok && refreshed) {
+            if (result.ok && refreshed) {
               window.dispatchEvent(new Event(TOOL_UPDATE_RECHECK_EVENT));
             }
           }

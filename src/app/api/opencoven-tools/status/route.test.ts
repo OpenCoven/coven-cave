@@ -64,7 +64,7 @@ assert.match(
 
 assert.match(
   source,
-  /compareSemver\(latest, installed\.version\) > 0/,
+  /compareSemver\(latest, version\) > 0/,
   "outdated status uses the shared semver comparison",
 );
 
