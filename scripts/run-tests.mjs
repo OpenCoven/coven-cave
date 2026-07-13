@@ -35,6 +35,7 @@ export const SUITES = {
     "src/lib/role-surface-state.test.ts",
     "src/components/role-surface-shell.test.ts",
     "src/components/chat-view-render-cap.test.ts",
+    "src/components/chat-view-transcript-memo.test.ts",
     "src/components/chat-view-scroll-pin.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",
     "src/lib/app-version.test.ts",
