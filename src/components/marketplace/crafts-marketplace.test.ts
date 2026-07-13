@@ -36,6 +36,31 @@ assert.match(createDrawer, /className="craft-create-drawer__backdrop"/, "Craft c
 assert.match(createDrawer, /className="craft-create-drawer__header"/, "Craft create drawer header layout stays on semantic hooks");
 assert.match(createDrawer, /className="craft-create-drawer__actions"/, "Craft create drawer footer actions stay on semantic hooks");
 
+// ── Agentic build path (cave-4n7j) ───────────────────────────────────────────
+// The drawer offers two ways in: hand-pick roles, or describe the Craft and
+// hand a familiar the complete drafts-API build brief (the same chat-dispatch
+// contract the skills "Use" action rides). The brief itself is a pure,
+// unit-tested builder, and .agents/skills/craft-builder documents the same
+// loop for any harness session working in this repo.
+assert.match(createDrawer, /type CreateMode = "extract" \| "describe"/, "drawer models the two creation modes");
+assert.match(createDrawer, /\{ id: "describe", label: "Describe it", icon: "ph:sparkle" \}/, "the agentic mode is a first-class tab");
+assert.match(createDrawer, /import \{ buildCraftAgentPrompt \} from "@\/lib\/craft-agent-prompt"/, "the brief comes from the shared prompt builder");
+assert.match(createDrawer, /new CustomEvent\("cave:agents-new-chat"/, "describe mode dispatches a familiar chat");
+assert.match(createDrawer, /initialPrompt: buildCraftAgentPrompt\(\{ description, familiar: familiar \|\| undefined \}\)/, "the chat opens with the complete build brief");
+assert.match(createDrawer, /Draft with familiar/, "describe mode has an explicit agentic CTA");
+assert.match(createDrawer, /What happens next/, "describe mode explains the agentic loop");
+{
+  const promptLib = await readFile(new URL("../../lib/craft-agent-prompt.ts", import.meta.url), "utf8");
+  assert.match(promptLib, /GET \/api\/roles/, "the brief documents role discovery");
+  assert.match(promptLib, /POST \/api\/marketplace\/crafts\/drafts/, "the brief documents draft creation");
+  assert.match(promptLib, /crafts\/plan\?id=/, "the brief documents plan verification");
+  assert.equal(
+    existsSync(new URL("../../../.agents/skills/craft-builder/SKILL.md", import.meta.url)),
+    true,
+    "the craft-builder agent skill documents the same build loop for harness sessions",
+  );
+}
+
 assert.equal(existsSync(craftDetailUrl), true, "Craft detail component exists");
 const craftDetail = await readFile(craftDetailUrl, "utf8");
 assert.match(detail, /plugin\.kind === "craft"[\s\S]*<CraftDetail/, "generic drawer delegates Craft state to the loadout detail");

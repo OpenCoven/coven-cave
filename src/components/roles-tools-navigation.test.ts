@@ -21,14 +21,14 @@ const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.me
 const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
 // ── Roles + Marketplace are ONE merged hub surface ──────────────────────────
-// The store (Browse) and the familiars' setup (Roles / Skills / Capabilities)
-// live on a single Marketplace page with a section tablist. The old modes stay
-// in the WorkspaceMode union so deep links and navigate-mode events keep
-// working — they open the hub on the matching section.
+// The store (Browse) and the familiars' setup (Skills / Build) live on a
+// single Marketplace page with a section tablist. The old modes stay in the
+// WorkspaceMode union so deep links and navigate-mode events keep working —
+// roles/capabilities land on Browse while those sections are hidden.
 
 assert.match(workspaceMode, /\|\s*"marketplace"/, "Marketplace should be a first-class workspace mode");
-assert.match(workspaceMode, /\|\s*"roles"/, "roles mode survives as a deep link into the hub's Roles section");
-assert.match(workspaceMode, /\|\s*"capabilities"/, "capabilities mode survives as a deep link into the hub's Capabilities section");
+assert.match(workspaceMode, /\|\s*"roles"/, "roles mode survives as a deep link into the hub");
+assert.match(workspaceMode, /\|\s*"capabilities"/, "capabilities mode survives as a deep link into the hub");
 
 assert.match(
   workspace,
@@ -55,7 +55,7 @@ assert.doesNotMatch(
 // ── Sidebar: one Tools entry for the merged hub ──────────────────────────────
 assert.match(
   sidebar,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true \},/,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true \},/,
   "Sidebar navigation should expose the merged Marketplace hub with a description covering both halves",
 );
 assert.doesNotMatch(
@@ -86,10 +86,12 @@ assert.doesNotMatch(settings, /"plugins"/, "Settings must not declare a plugins 
 assert.doesNotMatch(settings, /key: "roles"/, "Settings must not offer a roles add-on toggle — the merged hub is not gated");
 
 // ── The hub composes the store and the setup views ───────────────────────────
-// Roles is hidden from the hub, and the RolesSection component + its CSS +
-// the addons.roles config flag were DELETED as dead code (cave-vp4h — git
-// history keeps them). /api/roles stays: it serves the live role definitions.
-// "roles" deep links land on Browse.
+// Roles and Capabilities are hidden from the hub. The RolesSection component +
+// its CSS + the addons.roles config flag were DELETED as dead code (cave-vp4h);
+// the CapabilitiesViewSurface, capabilities-normalize, and their CSS followed
+// (cave-4n7j — git history keeps them). /api/roles and /api/capabilities stay:
+// they serve live role definitions and the Brain tab / inspector capability
+// chips. "roles" and "capabilities" deep links land on Browse.
 {
   const { existsSync } = await import("node:fs");
   assert.equal(
@@ -97,19 +99,36 @@ assert.doesNotMatch(settings, /key: "roles"/, "Settings must not offer a roles a
     false,
     "roles-section.tsx stays deleted (was dead code — nothing rendered it)",
   );
+  assert.equal(
+    existsSync(new URL("./capabilities-view.tsx", import.meta.url)),
+    false,
+    "capabilities-view.tsx stays deleted with the retired Capabilities section (cave-4n7j)",
+  );
+  assert.equal(
+    existsSync(new URL("./capabilities-normalize.ts", import.meta.url)),
+    false,
+    "capabilities-normalize.ts stays deleted with the retired Capabilities section",
+  );
+  assert.equal(
+    existsSync(new URL("./capability-card.tsx", import.meta.url)),
+    true,
+    "capability-card.tsx stays — the familiar-studio Brain tab still renders it",
+  );
 }
 assert.doesNotMatch(marketplaceView, /import \{ RolesSection/, "the Roles section is not imported");
 assert.doesNotMatch(marketplaceView, /<RolesSection/, "the Roles section does not render");
 assert.doesNotMatch(css, /plugins-role-|marketplace-roles-summary/, "roles-section-only CSS stays deleted");
+assert.doesNotMatch(css, /\.capabilities-view |\.capabilities-decision|\.capability-meta-/, "capabilities-surface CSS stays deleted");
 assert.doesNotMatch(marketplaceView, /\{ id: "roles", label: "Roles"/, "no Roles tab while hidden");
+assert.doesNotMatch(marketplaceView, /\{ id: "capabilities", label: "Capabilities"/, "no Capabilities tab — the section is retired from the hub");
 assert.match(
   marketplaceView,
-  /initialSection === "roles" \? "browse" : initialSection/,
-  "a 'roles' deep link lands on Browse while the section is hidden",
+  /initialSection === "roles" \|\| initialSection === "capabilities" \? "browse" : initialSection/,
+  "'roles' and 'capabilities' deep links land on Browse",
 );
 assert.match(marketplaceView, /import \{ SkillBrowser, type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub renders the Skills browser");
 assert.match(marketplaceView, /SkillDetailDrawer,/, "hub mounts the skill detail drawer for role-card skill chips");
-assert.match(marketplaceView, /import \{ CapabilitiesViewSurface \} from "@\/components\/capabilities-view"/, "hub renders the Capabilities surface");
+assert.doesNotMatch(marketplaceView, /CapabilitiesViewSurface|capabilities-view/, "the hub no longer imports or renders the Capabilities surface");
 assert.match(
   marketplaceView,
   /initialSection\?: MarketplaceSection/,
@@ -127,7 +146,7 @@ assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives
 assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
 assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
 assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
-for (const id of ["browse", "crafts", "skills", "build", "capabilities"]) {
+for (const id of ["browse", "crafts", "skills", "build"]) {
   assert.match(
     marketplaceView,
     new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
@@ -135,14 +154,16 @@ for (const id of ["browse", "crafts", "skills", "build", "capabilities"]) {
   );
 }
 assert.doesNotMatch(marketplaceView, /marketplace-panel-roles/, "no roles tabpanel while the section is hidden");
+assert.doesNotMatch(marketplaceView, /marketplace-panel-capabilities/, "no capabilities tabpanel — the section is retired");
 
-// One search field, scoped per section; the self-contained Capabilities and
-// Build surfaces own their flows so the hub hides the shared search there.
+// One search field, scoped per section; the self-contained Build surface owns
+// its flow so the hub hides the shared search there ("capabilities" stays in
+// the guard only for type-safety — the section is unreachable).
 assert.match(marketplaceView, /aria-label=\{SEARCH_LABEL\[section\]\}/, "the search input names the active section");
 assert.match(
   marketplaceView,
   /\{section !== "capabilities" && section !== "build" \? \(\s*\n\s*<SearchInput/,
-  "the shared search hides on the Capabilities and Build sections",
+  "the shared search hides on the Build section",
 );
 
 // The store rail cross-links into the setup sections, so Browse stays aware of
@@ -151,7 +172,7 @@ assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setu
 assert.doesNotMatch(marketplaceView, /selectSection\("roles"\)/, "no rail jump to Roles while the section is hidden");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("crafts"\)\}/, "the rail jumps to Crafts");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
-assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
+assert.doesNotMatch(marketplaceView, /selectSection\("capabilities"\)/, "no rail jump to the retired Capabilities section");
 assert.match(marketplaceView, /groupPluginsByCategory/, "Browse derives standardized category groups from the visible plugin set");
 assert.match(marketplaceView, /className="marketplace-category-stack"/, "Browse renders a grouped category stack instead of one flat card grid");
 assert.match(marketplaceView, /className="marketplace-category-group"/, "each Marketplace category has a stable grouped section hook");

@@ -7575,99 +7575,6 @@ a.mobile-handoff__link:hover {
   color: var(--text-muted);
 }
 
-/* Capabilities inspector metadata collapses into one dense row whenever the
-   expanded row has enough width, then wraps by whole field on narrower panes. */
-.capability-meta-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  gap: 8px 18px;
-  align-items: center;
-  border-top: 1px solid var(--border-hairline);
-  padding-block: 10px;
-}
-
-.capability-meta-item {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: baseline;
-  min-width: 0;
-  gap: 8px;
-}
-
-.capability-meta-label {
-  color: var(--text-muted);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.capability-meta-value {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.capability-meta-value--warning {
-  color: var(--color-warning);
-}
-
-.capabilities-decision {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.capabilities-decision__card {
-  min-height: 92px;
-  min-width: 0;
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
-  padding: 10px;
-}
-
-.capabilities-decision__card strong {
-  display: block;
-  margin-top: 7px;
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: 15px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.capabilities-decision__card p {
-  margin-top: 5px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.capabilities-decision__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.1;
-  text-transform: uppercase;
-}
-
-@media (max-width: 680px) {
-  .capabilities-decision {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 /* Touch / coarse-pointer surface. On devices with no hover capability,
    controls that the desktop hides behind `opacity-0 group-hover:opacity-100`
    become permanently visible — opt in with `.touch-always-visible`. */
@@ -8110,33 +8017,15 @@ a.mobile-handoff__link:hover {
   }
 
   .marketplace-view button,
-  .marketplace-view [role="button"],
-  .capabilities-view button,
-  .capabilities-view [aria-haspopup="menu"],
-  .capabilities-view label:has(input) {
+  .marketplace-view [role="button"] {
     min-height: var(--touch-target);
     -webkit-tap-highlight-color: transparent;
   }
 
   .marketplace-view input,
-  .marketplace-view [aria-haspopup="menu"],
-  .capabilities-view input {
+  .marketplace-view [aria-haspopup="menu"] {
     min-height: var(--touch-target);
     font-size: 16px;
-  }
-
-  .capabilities-view button.rounded-full {
-    padding-inline: 14px;
-  }
-
-  /* Inspector metadata chips stay compact, centered pills on mobile. Without
-     this, the blanket touch-target min-height above (plus the row's flex
-     stretch) inflates these dense chips into circular blobs. The lone
-     interactive chip keeps a comfortable tap height via block padding. */
-  .capabilities-view .capability-chips button {
-    min-height: 0;
-    padding-block: 4px;
-    padding-inline: 10px;
   }
 
   .chat-list-surface {
@@ -13518,6 +13407,44 @@ details[open] > .cave-edit-card__summary::before {
   color: var(--text-muted);
   font-size: 12px;
 }
+.craft-create-drawer__modes {
+  align-self: flex-start;
+}
+.craft-create-drawer__goal {
+  resize: vertical;
+  min-height: 84px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 8px);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+}
+.craft-create-drawer__goal::placeholder { color: var(--text-muted); }
+/* "What happens next" — quiet numbered steps for the agentic path. */
+.craft-create-drawer__how { display: grid; gap: 6px; }
+.craft-create-drawer__how h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.craft-create-drawer__how ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.craft-create-drawer__how li::marker {
+  color: var(--accent-presence);
+  font-weight: 600;
+}
 .craft-create-drawer__select {
   border: 1px solid var(--border-hairline);
   border-radius: 6px;
@@ -13636,14 +13563,15 @@ details[open] > .cave-edit-card__summary::before {
   background: var(--bg-base);
 }
 /* Filter strip — lives INSIDE the merged list panel (below the leaderboard
-   header): labeled groups flow inline as wrapping chip rows. */
+   header): labeled groups flow inline as wrapping chip rows. Chips are quiet
+   text on the canvas — the accent wash marks the one active choice. */
 .skill-browser__rail {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
-  gap: 6px 16px;
-  padding: 2px 2px 10px;
-  border-bottom: 1px solid var(--border-hairline);
+  gap: 8px 18px;
+  padding: 10px 2px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
 }
 .skill-browser__rail-group {
   flex: 0 1 auto;
@@ -13656,49 +13584,50 @@ details[open] > .cave-edit-card__summary::before {
 .skill-browser__rail-label {
   margin: 0;
   padding: 0 2px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
+  opacity: 0.8;
 }
 .skill-browser__cat {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 9px;
+  gap: 6px;
+  padding: 5px 10px;
   white-space: nowrap;
-  border-radius: 8px;
+  border-radius: var(--radius-pill, 999px);
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
+  color: var(--text-muted);
+  font-size: 12.5px;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .skill-browser__cat:hover { background: var(--bg-hover); color: var(--text-primary); }
 .skill-browser__cat.is-active {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
   color: var(--text-primary);
 }
 .skill-browser__cat-icon { flex: 0 0 auto; color: var(--text-muted); }
 .skill-browser__cat.is-active .skill-browser__cat-icon { color: var(--accent-presence); }
 .skill-browser__cat-label { flex: 0 0 auto; }
-.skill-browser__cat-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-muted); }
+.skill-browser__cat-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-muted); }
+.skill-browser__cat.is-active .skill-browser__cat-count { color: var(--text-secondary); }
 
 .skill-browser__list {
   /* Merged panel (leaderboard header + filter strip + ranked list) absorbs
      the old 224px rail's width alongside the previous 300px list. */
-  flex: 0 0 420px;
+  flex: 0 0 440px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px;
+  gap: 4px;
+  padding: 14px 14px 18px;
   overflow-y: auto;
   border-right: 1px solid var(--border-hairline);
 }
@@ -13706,30 +13635,30 @@ details[open] > .cave-edit-card__summary::before {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 2px 2px 8px;
-  border-bottom: 1px solid var(--border-hairline);
+  padding: 2px 2px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
 }
 .skill-browser__leaderboard-kicker {
   margin: 0;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--accent-presence);
 }
 .skill-browser__leaderboard-title {
   margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
+/* Ecosystem block reads as quiet supporting copy, not a boxed sub-panel. */
 .skill-browser__ecosystem {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-panel, var(--bg-base)) 78%, transparent);
-  padding: 8px;
+  min-width: 0;
 }
 .skill-browser__ecosystem-command {
   display: flex;
@@ -13739,51 +13668,50 @@ details[open] > .cave-edit-card__summary::before {
 }
 .skill-browser__ecosystem-command span {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  opacity: 0.8;
 }
 .skill-browser__ecosystem-command code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 1px solid var(--border-hairline);
-  border-radius: 7px;
-  background: var(--bg-base);
-  color: var(--text-primary);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  color: var(--text-secondary);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
-  padding: 5px 7px;
+  padding: 6px 9px;
 }
 /* Single summary line — the old chip strip overflowed sideways. */
 .skill-browser__agent-strip {
   margin: 0;
   color: var(--text-muted);
   font-size: 10.5px;
-  font-weight: 650;
-  line-height: 1.4;
+  font-weight: 500;
+  line-height: 1.5;
 }
 .skill-browser__directory-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px 12px;
 }
 .skill-browser__directory-links a {
   flex: 0 0 auto;
-  border: 1px solid var(--border-hairline);
-  border-radius: 999px;
   color: var(--text-muted);
   font-size: 10.5px;
-  font-weight: 650;
-  line-height: 1;
-  padding: 4px 7px;
+  font-weight: 600;
+  line-height: 1.6;
+  padding: 0;
   text-decoration: none;
+  transition: color 0.12s ease;
 }
 .skill-browser__directory-links a:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-  background: var(--bg-hover);
+  color: var(--accent-presence);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .skill-browser__browse,
 .skill-browser__topics,
@@ -13791,18 +13719,23 @@ details[open] > .cave-edit-card__summary::before {
 .skill-browser__agents {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 4px;
 }
 /* Badge toggles ride inside the merged Filter group, set off from the
    category buttons by a hairline. */
 .skill-browser__rail-group .skill-browser__browse {
   margin-top: 6px;
   padding-top: 8px;
-  border-top: 1px solid var(--border-hairline);
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
 }
-/* Rank lives in the leaderboard header now. */
+/* Rank lives in the leaderboard header now — a compact segmented control. */
 .skill-browser__leaderboard .skill-browser__modes {
   margin-top: 8px;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in oklch, var(--bg-raised) 80%, transparent);
+  align-self: flex-start;
 }
 .skill-browser__rail-group--inline {
   flex-direction: row;
@@ -13818,7 +13751,7 @@ details[open] > .cave-edit-card__summary::before {
   max-width: 220px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
-  background: var(--bg-base);
+  background: transparent;
   padding: 4px 8px;
   font-size: 11px;
 }
@@ -13832,44 +13765,48 @@ details[open] > .cave-edit-card__summary::before {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  background: var(--bg-panel, var(--bg-base));
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 550;
   line-height: 1;
-  padding: 6px 8px;
+  padding: 6px 9px;
   cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .skill-browser__topic {
-  border-radius: 999px;
-  padding: 5px 8px;
+  padding: 5px 9px;
 }
 .skill-browser__topic-count {
   color: var(--text-muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 .skill-browser__browse-btn:hover,
 .skill-browser__topic:hover,
 .skill-browser__mode:hover,
 .skill-browser__agent:hover {
-  border-color: var(--border-strong);
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 .skill-browser__browse-btn.is-active,
 .skill-browser__topic.is-active,
 .skill-browser__mode.is-active,
 .skill-browser__agent.is-active {
-  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-base));
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
   color: var(--text-primary);
 }
 .skill-browser__topic.is-active .skill-browser__topic-count {
   color: var(--text-secondary);
 }
+/* Ranked rows sit directly on the canvas — no per-row box. Hover raises a
+   soft wash; the selected row carries the accent wash plus an inset accent
+   bar (the same active grammar as the chat nav). */
 .skill-browser__card {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -13877,32 +13814,42 @@ details[open] > .cave-edit-card__summary::before {
   width: 100%;
   min-height: 72px;
   text-align: left;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-panel, var(--bg-base));
+  padding: 11px 12px;
+  border-radius: var(--radius-card, 10px);
+  border: 1px solid transparent;
+  background: transparent;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease, transform 0.1s ease;
+  transition: background 0.12s ease;
 }
 .skill-browser__card.ui-btn {
   height: auto;
   min-height: 72px;
 }
-.skill-browser__card:hover { border-color: var(--border-strong); background: var(--bg-hover); }
-.skill-browser__card:active { transform: scale(0.995); }
+.skill-browser__card:hover { background: var(--bg-hover); }
+.skill-browser__card:active { background: color-mix(in oklch, var(--bg-hover) 80%, var(--bg-raised)); }
 .skill-browser__card.is-active {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
-  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-panel, var(--bg-base)));
+  background: color-mix(in oklch, var(--accent-presence) 10%, transparent);
+}
+.skill-browser__card.is-active::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  bottom: 10px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--accent-presence);
 }
 .skill-browser__rank {
-  flex: 0 0 30px;
+  flex: 0 0 26px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-  padding-top: 2px;
+  padding-top: 3px;
+  opacity: 0.75;
 }
 .skill-browser__card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.skill-browser__card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.skill-browser__card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.005em; }
 .skill-browser__card-slug {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -13926,59 +13873,74 @@ details[open] > .cave-edit-card__summary::before {
   align-self: flex-start;
   font-size: 10px;
   font-weight: 600;
-  color: var(--text-muted);
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
-  border-radius: 999px;
-  padding: 2px 8px;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  border: 0;
+  border-radius: var(--radius-pill, 999px);
+  padding: 3px 9px;
   white-space: nowrap;
 }
 .skill-browser__row-stats {
-  flex: 0 0 72px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  min-width: 72px;
-}
-.skill-browser__activity {
-  width: 64px;
-  height: 24px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 2px;
-}
-.skill-browser__activity-bar {
-  width: 5px;
-  min-height: 3px;
-  border-radius: 999px 999px 2px 2px;
-  background: color-mix(in oklch, var(--accent-presence) 72%, var(--text-muted));
-  opacity: 0.82;
-}
-.skill-browser__metric {
-  width: 64px;
+  flex: 0 0 68px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 5px;
+  min-width: 68px;
+  padding-top: 2px;
+}
+/* Sparkline stays informative but recedes: hairline bars, accent reserved
+   for the selected/hovered row. */
+.skill-browser__activity {
+  width: 58px;
+  height: 18px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 2.5px;
+}
+.skill-browser__activity-bar {
+  width: 3.5px;
+  min-height: 2px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--text-muted) 55%, transparent);
+  transition: background 0.12s ease;
+}
+.skill-browser__card:hover .skill-browser__activity-bar,
+.skill-browser__card.is-active .skill-browser__activity-bar {
+  background: color-mix(in oklch, var(--accent-presence) 70%, transparent);
+}
+.skill-browser__metric {
+  width: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   color: var(--text-secondary);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .skill-browser__metric i {
   display: block;
-  max-width: 48px;
-  height: 3px;
+  max-width: 44px;
+  height: 2px;
   border-radius: 999px;
-  background: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 55%, transparent);
 }
 
 .skill-browser__detail { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-.skill-browser__detail-head { padding: 18px 20px 12px; border-bottom: 1px solid var(--border-hairline); }
+/* The detail reads as an article: header and body share one centered,
+   readable column instead of stretching edge-to-edge. */
+.skill-browser__detail-head {
+  width: 100%;
+  max-width: 820px;
+  margin-inline: auto;
+  padding: 26px 28px 16px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
 .skill-browser__detail-titlerow { display: flex; align-items: flex-start; gap: 12px; }
-.skill-browser__detail-name { margin: 0; font-size: 18px; font-weight: 700; color: var(--text-primary); flex: 1; min-width: 0; }
+.skill-browser__detail-name { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -0.02em; color: var(--text-primary); flex: 1; min-width: 0; }
 .skill-browser__actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .skill-browser__action {
   display: inline-flex;
@@ -14005,20 +13967,17 @@ details[open] > .cave-edit-card__summary::before {
 .skill-browser__decision {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
+  gap: 14px;
+  margin-top: 14px;
 }
-/* Minimalist stat: just the labelled value, no description paragraph. */
+/* Minimalist stat: just the labelled value — no box, no description. */
 .skill-browser__decision-card {
   min-width: 0;
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-panel) 60%, transparent);
-  padding: 8px 10px;
+  padding: 0;
 }
 .skill-browser__decision-card strong {
   display: block;
-  margin-top: 5px;
+  margin-top: 4px;
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
@@ -14032,12 +13991,13 @@ details[open] > .cave-edit-card__summary::before {
   align-items: center;
   gap: 5px;
   max-width: 100%;
-  color: var(--text-secondary);
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   line-height: 1.1;
   text-transform: uppercase;
+  opacity: 0.85;
 }
 .skill-browser__install {
   display: flex;
@@ -14162,35 +14122,39 @@ details[open] > .cave-edit-card__summary::before {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.skill-browser__detail-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.skill-browser__detail-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
 .skill-browser__tag {
   font-size: 10px;
   color: var(--text-muted);
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
-  border-radius: 6px;
-  padding: 2px 7px;
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  border: 0;
+  border-radius: var(--radius-pill, 999px);
+  padding: 3px 8px;
 }
 .skill-browser__links {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  gap: 2px 12px;
   margin-top: 10px;
 }
 .skill-browser__links a,
 .skill-browser__links span {
-  border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  background: var(--bg-base);
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
   font-size: 11px;
-  font-weight: 600;
-  padding: 4px 7px;
+  font-weight: 550;
+  padding: 0;
   text-decoration: none;
 }
+.skill-browser__links a {
+  color: var(--accent-presence);
+}
 .skill-browser__links a:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: var(--accent-presence);
 }
 .skill-browser__source-group {
   display: flex;
@@ -14259,7 +14223,17 @@ details[open] > .cave-edit-card__summary::before {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.skill-browser__detail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 28px; }
+.skill-browser__detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 28px 40px;
+}
+/* The rendered SKILL.md shares the header's readable column. */
+.skill-browser__detail-body > * {
+  max-width: 764px;
+  margin-inline: auto;
+}
 .skill-browser__fallback { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
 .skill-browser__detail-empty { display: grid; place-items: center; height: 100%; color: var(--text-muted); font-size: 13px; }
 .skill-browser__note { padding: 16px; color: var(--text-muted); font-size: 13px; }

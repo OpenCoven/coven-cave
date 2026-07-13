@@ -2526,12 +2526,12 @@ export function Workspace() {
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
-      // modes still resolve here (deep links / navigate-mode) but open the
-      // matching section; keying on the mode remounts so deep links land.
+      // modes still resolve here (deep links / navigate-mode) but land on
+      // Browse while those sections are hidden; keying on the mode remounts
+      // so deep links land.
       <MarketplaceView
         key={mode}
         initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
-        activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />

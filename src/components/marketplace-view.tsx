@@ -2,14 +2,13 @@
 
 // Marketplace hub — the store and your familiars' setup merged into one
 // surface. A single slim header row holds the section tabs (Browse · Crafts ·
-// Skills · Build · Capabilities, with live counts) and the scoped search — no
+// Skills · Build, with live counts) and the scoped search — no
 // hero. Browse is the plugin store (collections, categories, cards);
-// Crafts sits between Role context and effective capabilities; Skills and
-// Capabilities are the "what my familiars can do" views that used
+// Crafts sits between Role context and effective capabilities; Skills is
+// the "what my familiars can do" view that used
 // to live on the separate Roles page; Build authors a new SKILL.md into a
 // local skill root. Deep links via WorkspaceMode still work —
-// the "capabilities" mode opens its section here; "roles" lands on Browse
-// while the Roles section is hidden.
+// "roles" and "capabilities" land on Browse while those sections are hidden.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
@@ -33,7 +32,6 @@ import {
   type FamiliarForSkill,
   type SkillEntry as SkillDetailEntry,
 } from "@/components/skill-detail-drawer";
-import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import {
   categoriesFrom,
   filterPlugins,
@@ -49,17 +47,19 @@ import {
 
 export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "build" | "capabilities";
 
-// Roles is hidden from the hub (kept in the MarketplaceSection type so
-// `mode === "roles"` deep links keep type-checking — they land on Browse).
-// The RolesSection component, its CSS, and the addons.roles config flag were
-// removed as dead code (cave-vp4h — git history keeps them); /api/roles stays
-// intact because it serves the live role definitions.
+// Roles and Capabilities are hidden from the hub (kept in the
+// MarketplaceSection type so `mode === "roles"` / `mode === "capabilities"`
+// deep links keep type-checking — they land on Browse). The RolesSection
+// component, its CSS, and the addons.roles config flag were removed as dead
+// code (cave-vp4h); the Capabilities surface, its normalize helper, and their
+// CSS followed (cave-4n7j — git history keeps them). /api/roles and
+// /api/capabilities stay intact: they serve live role definitions and the
+// familiar-studio Brain tab / inspector capability chips.
 const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
   { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
   { id: "crafts", label: "Crafts", icon: "ph:package-bold" },
   { id: "skills", label: "Skills", icon: "ph:sparkle" },
   { id: "build", label: "Build", icon: "ph:hammer" },
-  { id: "capabilities", label: "Capabilities", icon: "ph:lightning-bold" },
 ];
 
 // One-line hint per section — surfaces as the tab tooltip (the old hero
@@ -70,11 +70,11 @@ const SECTION_HINT: Record<MarketplaceSection, string> = {
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
   skills: "Skills already in your Cave — reusable SKILL.md procedures familiars load while they work.",
   build: "Author a new skill — write the SKILL.md your familiars load, straight into a local skill root.",
-  capabilities: "What each runtime you've installed can do — its instructions, skills, and plugins, side by side.",
+  capabilities: "What each runtime you've installed can do — retired from the hub; deep links land on Browse.",
 };
 
-// Build and Capabilities own their surfaces end-to-end, so the hub search
-// hides there and this record only types the searchable sections.
+// Build owns its surface end-to-end, so the hub search hides there and this
+// record only types the searchable sections.
 const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities" | "build">, string> = {
   browse: "Search the marketplace",
   crafts: "Search Crafts",
@@ -117,8 +117,6 @@ function toSkillDetail(skill: SkillBrowserEntry): SkillDetailEntry {
 type Props = {
   /** Which section to land on — deep links from the roles/capabilities modes. */
   initialSection?: MarketplaceSection;
-  /** Pre-selects the harness filter on the Capabilities section. */
-  activeHarness?: string | null;
   /** Familiars offered by the skill detail drawer's "try it" affordances. */
   familiars?: FamiliarForSkill[];
   /** Opens a chat with the familiar that owns a role. Unused while the Roles
@@ -128,12 +126,11 @@ type Props = {
 
 export function MarketplaceViewSurface({
   initialSection = "browse",
-  activeHarness = null,
   familiars = [],
 }: Props = {}) {
-  // Roles is hidden for now: a "roles" deep link lands on Browse.
+  // Roles and Capabilities are hidden: their deep links land on Browse.
   const [section, setSection] = useState<MarketplaceSection>(
-    initialSection === "roles" ? "browse" : initialSection,
+    initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection,
   );
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -619,11 +616,6 @@ export function MarketplaceViewSurface({
                 label="Build a skill"
                 onClick={() => selectSection("build")}
               />
-              <SetupRailLink
-                icon="ph:lightning-bold"
-                label="Capabilities"
-                onClick={() => selectSection("capabilities")}
-              />
             </nav>
           </aside>
 
@@ -855,7 +847,7 @@ export function MarketplaceViewSurface({
             onChanged={() => void loadSkills(query)}
           />
         </div>
-      ) : section === "build" ? (
+      ) : (
         // Authoring surface: form + live SKILL.md preview, own scroll.
         <div
           role="tabpanel"
@@ -867,17 +859,6 @@ export function MarketplaceViewSurface({
             onSaved={() => void loadSkills("")}
             onViewSkills={() => selectSection("skills")}
           />
-        </div>
-      ) : (
-        // Self-contained surface: it owns its own scroll, header, search, and
-        // filters, so it renders full-bleed (no shared padding/scroll wrapper).
-        <div
-          role="tabpanel"
-          id="marketplace-panel-capabilities"
-          aria-labelledby="marketplace-tab-capabilities"
-          className="flex min-h-0 flex-1 flex-col"
-        >
-          <CapabilitiesViewSurface activeHarness={activeHarness} />
         </div>
       )}
 
