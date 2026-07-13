@@ -59,15 +59,19 @@ for (const state of ["merged", "closed", "draft"]) {
 }
 
 // ── Sessions list: branch PR enrichment never blocks the poll ────────────────
+const gitEnrichLib = readFileSync(
+  new URL("../lib/session-git-enrich.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  listRoute,
+  gitEnrichLib,
   /branchPrCache\.get\(root, branch\)/,
-  "the list route reads PR context from the stale-while-revalidate cache",
+  "session enrichment reads PR context from the stale-while-revalidate cache",
 );
 assert.match(
   listRoute,
-  /applyMergedPrAutoArchive\(\s*enrichSessionsWithGitContext\(scoped\),/,
-  "the merged-PR sweep runs over the enriched rows before the payload returns",
+  /applyMergedPrAutoArchive\(\s*await enrichSessionsWithGitContext\(scoped\),/,
+  "the merged-PR sweep runs over the (async) enriched rows before the payload returns",
 );
 assert.match(
   listRoute,
