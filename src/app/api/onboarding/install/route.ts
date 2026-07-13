@@ -610,7 +610,7 @@ async function finishInstallJob(
       launchError ? installStartErrorMessage(launchError) : job.error,
     );
     const verificationError =
-      verification && !isVerifiedOpenCovenInstallSuccess(code, verification)
+      verification && code === 0 && !verification.ok
         ? verification.error ?? "post-install verification failed"
         : null;
     const installOk = verification
