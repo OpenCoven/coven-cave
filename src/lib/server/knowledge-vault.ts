@@ -224,7 +224,9 @@ export function buildPromptWithKnowledgeVault(
   const collectionIndex = collections
     .filter((collection) => collection.meta?.summary?.trim())
     .slice(0, 20)
-    .map((collection) => `- ${collection.id}: ${collection.meta?.summary?.trim()}`);
+    // Collapse whitespace/newlines so a multi-line summary can't break the
+    // one-line list format or balloon prompt tokens.
+    .map((collection) => `- ${collection.id}: ${(collection.meta?.summary ?? "").replace(/\s+/g, " ").trim()}`);
   if (usable.length === 0 && collectionIndex.length === 0) return text;
 
   const blocks = usable.map((entry) => {
@@ -412,6 +414,20 @@ export async function writeCollectionMeta(collection: string, meta: KnowledgeCol
   await writeFile(collectionMetaPath(collection), stringifyYaml(meta), "utf8");
 }
 
+/** Count valid `*.md` entry files in a collection directory without reading
+ *  (or parsing) their contents — listCollections runs on every chat send. */
+async function countCollectionEntries(collection: string): Promise<number> {
+  let names: string[];
+  try {
+    names = await readdir(collectionPath(collection));
+  } catch {
+    return 0;
+  }
+  return names.filter(
+    (name) => name !== "collection.yml" && name.endsWith(".md") && isValidKnowledgeId(name.slice(0, -3)),
+  ).length;
+}
+
 export async function listCollections(): Promise<{ id: string; meta: KnowledgeCollectionMeta | null; count: number }[]> {
   const root = covenKnowledgeRoot();
   let names: string[];
@@ -430,7 +446,7 @@ export async function listCollections(): Promise<{ id: string; meta: KnowledgeCo
       collections.push({
         id: name,
         meta: await readCollectionMeta(name),
-        count: (await listKnowledgeEntries(name)).length,
+        count: await countCollectionEntries(name),
       });
     } catch {
       // Skip unreadable collection directories.

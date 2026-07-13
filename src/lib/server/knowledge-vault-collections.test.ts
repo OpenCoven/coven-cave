@@ -96,6 +96,19 @@ try {
   const prompt = buildPromptWithKnowledgeVault("User prompt", await listKnowledgeEntries(), collections);
   assert.match(prompt, /Collections index/);
   assert.match(prompt, /- characters: Characters — People in the story/);
+
+  const messyPrompt = buildPromptWithKnowledgeVault("User prompt", [], [
+    {
+      id: "places",
+      meta: { name: "Places", summary: "  Multi-line\n\n   summary\ttext  " },
+      count: 1,
+    },
+  ]);
+  assert.match(
+    messyPrompt,
+    /- places: Multi-line summary text/,
+    "multi-line/whitespace-heavy summaries collapse to one line in the index",
+  );
   assert.match(prompt, /root body/);
   assert.doesNotMatch(prompt, /seed body/, "disabled seeded entries stay out of the prompt block");
 } finally {
