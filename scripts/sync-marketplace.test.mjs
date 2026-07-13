@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -271,6 +272,19 @@ expectRejected(fixtureCatalog(duplicate), /duplicate Craft resource id "brainsto
 const unsafe = validCraft();
 unsafe.craft.bundled.skills[0].sourcePath = "../outside/SKILL.md";
 expectRejected(fixtureCatalog(unsafe), /unsafe Craft source path/i, false);
+
+const craftSymlinkFixture = writeFixture(fixtureCatalog());
+try {
+  const target = path.join(craftSymlinkFixture.marketplace, "outside-secret.md");
+  writeFileSync(target, "outside\n");
+  const skillRoot = path.join(craftSymlinkFixture.marketplace, "craft-sources", "seekers-lens", "brainstorming-research-ideas");
+  symlinkSync(target, path.join(skillRoot, "leak.md"));
+  const result = runSync(craftSymlinkFixture);
+  assert.notEqual(result.status, 0, "craft symlink source should be rejected");
+  assert.match(result.stderr, /craft skill source contains a symlink/i);
+} finally {
+  rmSync(craftSymlinkFixture.dir, { recursive: true, force: true });
+}
 
 const unsupported = validCraft();
 unsupported.craft.provenance.license = "GPL-3.0";
