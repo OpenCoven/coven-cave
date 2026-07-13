@@ -8,9 +8,12 @@ struct RootView: View {
     var body: some View {
         @Bindable var app = app
         Group {
-            if app.deepLink == .search && app.connectionState != .connected {
+            if app.deepLink == .search && !app.hasLoadedSurfaces && app.connectionState != .connected {
                 // Search deep link before a connection exists: land on the
-                // local-index SearchView rather than the Connect screen.
+                // local-index SearchView rather than the Connect screen. The
+                // hasLoadedSurfaces guard limits this to the genuine
+                // pre-connection case — once the tab tree has data, a stale
+                // .search marker must never tear it down on a connection blip.
                 SearchView()
             } else {
                 switch app.connectionState {
