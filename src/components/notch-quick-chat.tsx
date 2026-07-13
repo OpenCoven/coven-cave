@@ -14,8 +14,8 @@ import { Icon } from "@/lib/icon";
 import { QuickChatTabPane, type TabReport } from "@/components/tray-quick-chat";
 
 /**
- * The centered-notch presentation of quick chat (the `/notch` route, loaded
- * by show_notch_window in src-tauri/src/lib.rs).
+ * The centered-notch presentation of quick chat (`/quick-chat?notch=1`,
+ * loaded by show_notch_window in src-tauri/src/lib.rs).
  *
  * The Rust shell parks a tiny always-on-top frameless window flush with the
  * top of the screen — the "notch". By default the collapsed pill follows the
