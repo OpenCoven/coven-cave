@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import {
@@ -18,6 +18,7 @@ import {
   type OpenCovenToolState,
 } from "@/lib/opencoven-tools-state";
 import { relativeTime } from "@/lib/relative-time";
+import { createOpenCovenInstallJobObserver } from "@/lib/opencoven-install-job-observer";
 
 type InstallTarget = "coven-cli" | "coven-code";
 
@@ -322,29 +323,7 @@ export function OpenCovenToolsUpdate() {
   >({});
   const [npmLane, setNpmLane] = useState<NpmLaneState | null>(null);
   const mounted = useRef(true);
-
-  const refreshNpmLane = useCallback(async () => {
-    try {
-      const res = await fetch("/api/onboarding/install", { cache: "no-store" });
-      if (!res.ok) return;
-      const json = (await res.json()) as {
-        npmBusy?: boolean;
-        npmBusyTarget?: string | null;
-        npmBusyLabel?: string | null;
-      };
-      if (!mounted.current) return;
-      setNpmLane(
-        json.npmBusy && json.npmBusyTarget
-          ? {
-              target: json.npmBusyTarget,
-              label: json.npmBusyLabel ?? json.npmBusyTarget,
-            }
-          : null,
-      );
-    } catch {
-      /* A later poll will reconcile the shared lane. */
-    }
-  }, []);
+  const installObserver = useRef<ReturnType<typeof createOpenCovenInstallJobObserver> | null>(null);
 
   const load = useCallback(async (): Promise<ToolStatus[] | null> => {
     setChecking(true);
@@ -387,77 +366,57 @@ export function OpenCovenToolsUpdate() {
   useEffect(() => {
     mounted.current = true;
     void load();
-    void refreshNpmLane();
-    const pollLane = setInterval(() => void refreshNpmLane(), 2000);
+    const observer = createOpenCovenInstallJobObserver({
+      fetchLane: async () => {
+        const res = await fetch("/api/onboarding/install", { cache: "no-store" });
+        if (!res.ok) return null;
+        return res.json();
+      },
+      fetchJob: async (target) => {
+        const res = await fetch(
+          `/api/onboarding/install?target=${encodeURIComponent(target)}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return null;
+        return res.json();
+      },
+      onLane: setNpmLane,
+      onJob: (target, job) => {
+        setInstallJobs((prev) => {
+          const next = { ...prev };
+          if (job) next[target] = { ...job, action: prev[target]?.action } as InstallJobView;
+          else delete next[target];
+          return next;
+        });
+      },
+      onTerminal: async (target, job) => {
+        const completed = job as InstallJobView;
+        const refreshed = await load();
+        if (!mounted.current) return;
+        const result = installResultFromCompletion(
+          target,
+          completed,
+          refreshed?.find((tool) => tool.id === target),
+        );
+        setInstallResults((prev) => ({ ...prev, [target]: result }));
+        if (result.ok && refreshed) {
+          window.dispatchEvent(new Event(TOOL_UPDATE_RECHECK_EVENT));
+        }
+      },
+      // If a completed job aged out or another client cleared the lane, do
+      // not leave a retained row presenting old status indefinitely.
+      onLaneCleared: async () => {
+        await load();
+      },
+    });
+    installObserver.current = observer;
+    observer.start();
     return () => {
       mounted.current = false;
-      clearInterval(pollLane);
+      observer.stop();
+      if (installObserver.current === observer) installObserver.current = null;
     };
-  }, [load, refreshNpmLane]);
-
-  const runningInstallKey = useMemo(
-    () =>
-      (Object.entries(installJobs) as [InstallTarget, InstallJobView][])
-        .filter(([, job]) => job.status === "running")
-        .map(([target]) => target)
-        .sort()
-        .join(","),
-    [installJobs],
-  );
-
-  useEffect(() => {
-    if (!runningInstallKey) return;
-    const targets = runningInstallKey.split(",") as InstallTarget[];
-    let cancelled = false;
-    const tick = async () => {
-      for (const target of targets) {
-        try {
-          const res = await fetch(
-            `/api/onboarding/install?target=${encodeURIComponent(target)}`,
-          );
-          if (!res.ok || cancelled) continue;
-          const json = (await res.json()) as { status: "idle" } | InstallJobView;
-          if (cancelled) return;
-          if (json.status === "idle") {
-            setInstallJobs((prev) => {
-              const next = { ...prev };
-              delete next[target];
-              return next;
-            });
-            await load();
-            continue;
-          }
-          setInstallJobs((prev) => ({
-            ...prev,
-            [target]: { ...json, action: prev[target]?.action },
-          }));
-          if (json.status === "done") {
-            const refreshed = await load();
-            const result = installResultFromCompletion(
-              target,
-              json,
-              refreshed?.find((tool) => tool.id === target),
-            );
-            setInstallResults((prev) => ({
-              ...prev,
-              [target]: result,
-            }));
-            if (result.ok && refreshed) {
-              window.dispatchEvent(new Event(TOOL_UPDATE_RECHECK_EVENT));
-            }
-          }
-        } catch {
-          /* transient poll failure; next tick retries */
-        }
-      }
-    };
-    void tick();
-    const id = setInterval(() => void tick(), 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [load, runningInstallKey]);
+  }, [load]);
 
   const updateTool = async (target: InstallTarget, action: OpenCovenToolAction) => {
     setError(null);
@@ -484,10 +443,9 @@ export function OpenCovenToolsUpdate() {
         npmBusyLabel?: string | null;
       };
       if (json.npmBusy && json.npmBusyTarget) {
-        setNpmLane({
-          target: json.npmBusyTarget,
-          label: json.npmBusyLabel ?? json.npmBusyTarget,
-        });
+        // Re-read through the observer so only its fixed allowlist can become
+        // a displayed lane owner or a target-specific job request.
+        void installObserver.current?.pollNow();
       }
       if (!res.ok || json.npmMissing) {
         setInstallResults((prev) => ({
@@ -514,6 +472,8 @@ export function OpenCovenToolsUpdate() {
               }
             : { status: "running", elapsedMs: 0, tail: "", action },
       }));
+      installObserver.current?.observe(target);
+      void installObserver.current?.pollNow();
     } catch (err) {
       setInstallResults((prev) => ({
         ...prev,
