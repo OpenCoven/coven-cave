@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const component = readFileSync(new URL("./notch-quick-chat.tsx", import.meta.url), "utf8");
-const page = readFileSync(new URL("../app/notch/page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../app/quick-chat/page.tsx", import.meta.url), "utf8");
 const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../styles/notch-quick-chat.css", import.meta.url), "utf8");
 const shell = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
@@ -11,12 +11,17 @@ const shell = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url
 assert.match(
   page,
   /import \{ NotchQuickChat \} from "@\/components\/notch-quick-chat"/,
-  "the /notch route renders the notch quick chat component",
+  "the shared quick-chat route can render the notch presentation",
+);
+assert.match(
+  page,
+  /params\.notch === "1" \? <NotchQuickChat \/> : <TrayQuickChat \/>/,
+  "?notch=1 selects the notch presentation server-side — no dedicated route, so the sidecar runtime closure stays flat",
 );
 
 // ── The shell owns the notch window ─────────────────────────────────────────
 // A dedicated always-on-top frameless window, top-center of the primary
-// monitor, loading /notch on the trusted loopback origin only.
+// monitor, loading /quick-chat?notch=1 on the trusted loopback origin only.
 assert.match(
   shell,
   /const NOTCH_WINDOW_LABEL: &str = "notch";/,
@@ -24,8 +29,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /url\.set_path\("\/notch"\);/,
-  "notch_url_from_main routes the trusted loopback origin to /notch",
+  /url\.set_path\("\/quick-chat"\);\s*\n\s*url\.query_pairs_mut\(\)\.append_pair\("notch", "1"\);/,
+  "notch_url_from_main routes the trusted loopback origin to /quick-chat?notch=1, keeping the sidecar auth token",
 );
 assert.match(
   shell,

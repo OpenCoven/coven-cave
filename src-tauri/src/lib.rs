@@ -270,7 +270,11 @@ fn notch_url_from_main(mut url: Url) -> Option<Url> {
     if !trusted_loopback {
         return None;
     }
-    url.set_path("/notch");
+    // The notch shares the /quick-chat route with the tray window; ?notch=1
+    // selects the notch presentation server-side. Appended (not replacing)
+    // because the loopback URL carries the sidecar auth token in its query.
+    url.set_path("/quick-chat");
+    url.query_pairs_mut().append_pair("notch", "1");
     Some(url)
 }
 
@@ -2122,8 +2126,8 @@ mod tests {
         let sidecar = Url::parse("http://127.0.0.1:43123/?token=secret").expect("sidecar URL");
         let notch = notch_url_from_main(sidecar).expect("trusted notch URL");
 
-        assert_eq!(notch.path(), "/notch");
-        assert_eq!(notch.query(), Some("token=secret"));
+        assert_eq!(notch.path(), "/quick-chat");
+        assert_eq!(notch.query(), Some("token=secret&notch=1"));
         assert!(notch_url_from_main(
             Url::parse("https://example.test/").expect("external URL")
         )
