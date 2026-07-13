@@ -71,6 +71,9 @@ const COMPLETE_NO_FAMILIARS_STATUS = {
       outdated: false,
       compatible: true,
       minimumVersion: "0.0.50",
+      // effectiveComplete requires hasVerifiedLatestVersion(tool): a verified
+      // latestCheck, not just current === latest.
+      latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
     },
     {
       id: "coven-code",
@@ -84,6 +87,7 @@ const COMPLETE_NO_FAMILIARS_STATUS = {
       outdated: false,
       compatible: true,
       minimumVersion: "0.0.50",
+      latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
     },
   ],
 };
