@@ -46,7 +46,7 @@ function jsxElementBlocks(fileName: string, source: string, tagName: string): st
 }
 
 const reviewedSemanticControl = (button: string): boolean =>
-  /goToSetting\(e\)|settings-nav__item|role="switch"|aria-pressed=|aria-label=\{`Pick \$\{label\} color`\}|aria-haspopup="dialog"|role="option"|setEnlarged\(true\)|Drag to reorder|familiar-studio-lifecycle__row-main/.test(
+  /goToSetting\(e\)|settings-nav__item|role="switch"|role="radio"|aria-pressed=|aria-label=\{`Pick \$\{label\} color`\}|aria-haspopup="dialog"|role="option"|setEnlarged\(true\)|Drag to reorder|familiar-studio-lifecycle__row-main/.test(
     button,
   );
 
