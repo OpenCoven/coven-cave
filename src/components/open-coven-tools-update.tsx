@@ -174,8 +174,17 @@ function installResultFromCompletion(
       detail: "Post-install recheck could not verify npm latest. Check the network or registry, then retry.",
     };
   }
+  // `where` on Windows can report the same executable with different casing
+  // or slash direction than the verification probe; normalize before
+  // comparing so a cosmetic path difference doesn't fail the recheck.
+  const normalizePath = (value: string | null | undefined) => {
+    if (!value) return null;
+    const looksWindows = /[A-Za-z]:\\/.test(value) || value.includes("\\");
+    const normalized = value.replace(/\//g, "\\");
+    return looksWindows ? normalized.toLowerCase() : value;
+  };
   const consistent =
-    rechecked.path === verification.path &&
+    normalizePath(rechecked.path) === normalizePath(verification.path) &&
     rechecked.current === verification.current &&
     rechecked.latest === verification.latest &&
     rechecked.packageVerified &&
