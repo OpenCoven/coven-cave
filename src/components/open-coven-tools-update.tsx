@@ -10,6 +10,7 @@ import {
   type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { useShellBanners } from "@/lib/shell-banners";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { buildSafeToolDiagnostics } from "@/lib/about-diagnostics";
 import {
   openCovenToolActionLabel,
@@ -417,6 +418,12 @@ export function OpenCovenToolsUpdate() {
       onLaneCleared: async () => {
         await load();
       },
+      // usePausablePoll below owns the polling cadence (cave-e794): the
+      // observer must not self-schedule — its default interval would fetch
+      // every 2s even from hidden windows, the exact drip the shared hook
+      // exists to prevent. start() still fires the immediate first tick.
+      schedule: () => null,
+      unschedule: () => {},
     });
     installObserver.current = observer;
     observer.start();
@@ -427,13 +434,15 @@ export function OpenCovenToolsUpdate() {
     };
   }, [load]);
 
-  useEffect(() => {
-    const refreshWhenVisible = () => {
-      if (!document.hidden) void installObserver.current?.pollNow();
-    };
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
+  // Shared npm lane + observed install jobs: one observer tick reads the lane
+  // (so an install started by any OTHER surface — onboarding, capabilities —
+  // shows here too) and polls observed jobs through completion. usePausablePoll
+  // (cave-e794) drives the tick: it pauses while hidden and refreshes instantly
+  // on return, so the always-mounted surface never polls from a hidden window.
+  const refreshNpmLane = useCallback(() => {
+    void installObserver.current?.pollNow();
   }, []);
+  usePausablePoll(() => void refreshNpmLane(), 2000);
 
   const updateTool = async (target: InstallTarget, action: OpenCovenToolAction) => {
     setError(null);
