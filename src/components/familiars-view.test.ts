@@ -318,3 +318,19 @@ assert.match(
   /\{traceTarget \? \(\s*<SessionTraceOverlay target=\{traceTarget\} onClose=\{\(\) => setTraceTarget\(null\)\} \/>\s*\) : null\}/,
   "the overlay renders from panel state and closes cleanly",
 );
+
+// ── cave-ibvl: the summon-event listener consumes the latch ──────────────────
+// requestSummonFamiliar() arms the module latch unconditionally; a mounted
+// view that only reacted to the event left the latch armed, so the NEXT
+// FamiliarsView mount popped the circle open uninvited. Both intake paths
+// must consume it: the mount check and the live event listener.
+assert.match(
+  source,
+  /if \(consumeSummonPending\(\)\) setCreateOpen\(true\);/,
+  "a fresh mount consumes the summon latch",
+);
+assert.match(
+  source,
+  /const open = \(\) => \{\s*consumeSummonPending\(\);\s*setCreateOpen\(true\);\s*\};/,
+  "the already-mounted event listener also consumes the latch (cave-ibvl)",
+);

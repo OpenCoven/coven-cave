@@ -10,6 +10,9 @@ breaking config changes; patch releases stay additive.
 ### Features
 - **Onboarding: hand-held first run through the first chat** — the setup wizard now shows a three-beat journey strip (Set up Cave → Summon a familiar → First chat) so it never reads as a dead-ended infra checklist; completing setup surfaces an above-the-fold success banner, and the finish CTA keeps its promise by opening the Summoning Circle directly (decided on the wizard's own fresh status, immune to the workspace's slower daemon poll). In the circle, the name stage gains one-click identity templates (Code reviewer, Research assistant, Project planner, Writing partner) that fill the role and required description, and the success stage hands keyboard focus to "Begin the first conversation" so Enter completes the funnel (cave-uvv7).
 
+### Fixes
+- **Familiars: no phantom Summoning Circle on revisit** — a summon request handled by an already-open Familiars surface left the cross-surface latch armed, so the next visit to Familiars popped the circle open uninvited; the event listener now consumes the latch too (cave-ibvl).
+
 ## [0.0.182] - 2026-07-12
 
 > 🧼 **The open-issue sweep, plus Hermes chat out of the box.** Every open UI issue from the queue lands fixed — the drifting comment pill, overflowing Salem answers, the stranded post-summon error screen, and the silent Enhance button — alongside working Hermes-familiar chat on fresh machines and a chat-tab home for the inspector.
