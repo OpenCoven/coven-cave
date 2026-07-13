@@ -365,7 +365,7 @@
   height: 20px;
   padding: 0;
   border: 1px solid var(--border-hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-base);
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease;
@@ -380,7 +380,7 @@
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--text-muted);
   transition: transform 140ms var(--ease-standard, ease), background 140ms ease;
 }

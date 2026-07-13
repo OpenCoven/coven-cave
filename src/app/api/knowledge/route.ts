@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   deleteKnowledgeEntry,
+  isValidCollectionId,
   isValidKnowledgeId,
   listKnowledgeEntries,
   normalizeScope,
   readKnowledgeEntry,
+  sanitizeKnowledgeExtra,
   selectKnowledgeForFamiliar,
   slugifyKnowledgeId,
   writeKnowledgeEntry,
@@ -27,8 +29,13 @@ export const runtime = "nodejs";
  * so the route can never escape the vault directory.
  */
 export async function GET(req: Request) {
-  const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() || undefined;
-  const all = await listKnowledgeEntries();
+  const params = new URL(req.url).searchParams;
+  const familiarId = params.get("familiarId")?.trim() || undefined;
+  const collection = params.get("collection")?.trim() || undefined;
+  if (collection && !isValidCollectionId(collection)) {
+    return NextResponse.json({ ok: false, error: "invalid collection" }, { status: 400 });
+  }
+  const all = await listKnowledgeEntries(collection);
   const entries = familiarId ? selectKnowledgeForFamiliar(all, familiarId) : all;
   return NextResponse.json({ ok: true, entries });
 }
@@ -41,6 +48,8 @@ export async function POST(req: Request) {
     tags?: unknown;
     scope?: unknown;
     enabled?: unknown;
+    collection?: unknown;
+    extra?: unknown;
   };
   try {
     body = await req.json();
@@ -58,6 +67,13 @@ export async function POST(req: Request) {
   if (!isValidKnowledgeId(requestedId)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
+  const collection = typeof body.collection === "string" && body.collection.trim() ? body.collection.trim() : undefined;
+  if (collection && !isValidCollectionId(collection)) {
+    return NextResponse.json({ ok: false, error: "invalid collection" }, { status: 400 });
+  }
+  if (body.extra !== undefined && (!body.extra || typeof body.extra !== "object" || Array.isArray(body.extra))) {
+    return NextResponse.json({ ok: false, error: "extra must be an object" }, { status: 400 });
+  }
 
   const tags = Array.isArray(body.tags)
     ? body.tags.map((t) => String(t).trim()).filter(Boolean)
@@ -67,14 +83,19 @@ export async function POST(req: Request) {
 
   // Editing a sewn entry must not strip its stitch provenance — the POST body
   // doesn't carry pins, so they ride through from the stored entry.
-  const existing = await readKnowledgeEntry(requestedId);
+  const existing = await readKnowledgeEntry(requestedId, collection);
+  const extra = body.extra !== undefined ? sanitizeKnowledgeExtra(body.extra) : existing?.extra;
   const entry: KnowledgeEntry = {
     id: requestedId,
+    ...(collection ? { collection } : {}),
     title: title || requestedId,
     tags,
     scope: normalizeScope(body.scope),
     enabled: body.enabled !== false,
     body: content,
+    ...(extra && Object.keys(extra).length > 0
+      ? { extra }
+      : {}),
     ...(existing?.pins && existing.pins.length > 0 ? { pins: existing.pins } : {}),
   };
 
@@ -83,10 +104,15 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const id = new URL(req.url).searchParams.get("id")?.trim() ?? "";
+  const params = new URL(req.url).searchParams;
+  const id = params.get("id")?.trim() ?? "";
+  const collection = params.get("collection")?.trim() || undefined;
   if (!isValidKnowledgeId(id)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
-  const deleted = await deleteKnowledgeEntry(id);
+  if (collection && !isValidCollectionId(collection)) {
+    return NextResponse.json({ ok: false, error: "invalid collection" }, { status: 400 });
+  }
+  const deleted = await deleteKnowledgeEntry(id, collection);
   return NextResponse.json({ ok: true, deleted });
 }

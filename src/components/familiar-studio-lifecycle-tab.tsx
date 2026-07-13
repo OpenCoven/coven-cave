@@ -20,6 +20,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
@@ -222,19 +224,19 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChan
       <section>
         <h3 className="familiar-studio-lifecycle__heading">Active</h3>
         <p className="familiar-studio-lifecycle__hint">
-          Sets the roster order across the app. The avatar strip's pinned order
-          is separate —{" "}
-          <button
-            type="button"
-            className="familiar-studio-lifecycle__hint-link focus-ring"
-            onClick={() => {
-              window.location.hash = "appearance";
-            }}
-          >
-            set it in Appearance
-          </button>
-          .
+          Sets the roster order across the app. The avatar strip&apos;s pinned order is separate.
         </p>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="self-start"
+          leadingIcon="ph:paint-brush"
+          onClick={() => {
+            window.location.hash = "appearance";
+          }}
+        >
+          Open Appearance
+        </Button>
         <DndContext
           id="familiar-lifecycle-order"
           sensors={sensors}
@@ -312,15 +314,16 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChan
               <span className="familiar-studio-lifecycle__removed-when">
                 removed {relativeTime(entry.removedAt)}
               </span>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="xs"
                 onClick={() => void restoreRemoved(entry)}
                 disabled={restoringId !== null}
-                className="familiar-studio-lifecycle__btn"
+                loading={restoringId === entry.id}
+                leadingIcon="ph:arrow-counter-clockwise"
               >
-                <Icon name="ph:arrow-counter-clockwise" width={12} />
                 {restoringId === entry.id ? "Restoring…" : "Restore"}
-              </button>
+              </Button>
             </div>
           ))}
         </section>
@@ -333,13 +336,15 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved, onRosterChan
             Clears {familiar.display_name}&apos;s identity / look / brain customizations and
             reverts it to its daemon defaults.
           </p>
-          <button
+          <Button
+            variant="danger"
+            size="sm"
+            className="self-start"
             onClick={resetAll}
-            className={`familiar-studio-lifecycle__btn familiar-studio-lifecycle__btn--danger${confirmReset ? " familiar-studio-lifecycle__btn--confirm" : ""}`}
+            leadingIcon="ph:trash"
           >
-            <Icon name="ph:trash" width={14} />
             {confirmReset ? "Click again to confirm" : "Reset all overrides"}
-          </button>
+          </Button>
         </section>
       ) : null}
 
@@ -388,17 +393,17 @@ function RemoveConfirm({
         </p>
       ) : null}
       <div className="familiar-studio-lifecycle__confirm-actions">
-        <button
-          type="button"
+        <Button
+          variant="danger"
+          size="sm"
           onClick={onConfirm}
-          className="familiar-studio-lifecycle__btn familiar-studio-lifecycle__btn--danger familiar-studio-lifecycle__btn--confirm"
+          leadingIcon="ph:trash"
         >
-          <Icon name="ph:trash" width={14} />
           Remove familiar
-        </button>
-        <button type="button" onClick={onCancel} className="familiar-studio-lifecycle__btn">
+        </Button>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
           Cancel
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -490,51 +495,47 @@ function FamiliarRow({
       </button>
       {!isArchived ? (
         <>
-          <button
+          <IconButton
+            icon="ph:arrow-up-bold"
+            size="xs"
             onClick={onMoveUp}
             disabled={!canMoveUp}
             aria-label={`Move ${familiar.display_name} up`}
-            className="familiar-studio-lifecycle__row-action"
-          >
-            <Icon name="ph:arrow-up-bold" width={12} />
-          </button>
-          <button
+          />
+          <IconButton
+            icon="ph:arrow-down-bold"
+            size="xs"
             onClick={onMoveDown}
             disabled={!canMoveDown}
             aria-label={`Move ${familiar.display_name} down`}
-            className="familiar-studio-lifecycle__row-action"
-          >
-            <Icon name="ph:arrow-down-bold" width={12} />
-          </button>
+          />
         </>
       ) : null}
       {isArchived ? (
-        <button
+        <IconButton
+          icon="ph:arrow-counter-clockwise"
+          size="xs"
           onClick={onUnarchive}
           aria-label={`Unarchive ${familiar.display_name}`}
           title="Unarchive — return to the active roster"
-          className="familiar-studio-lifecycle__row-action"
-        >
-          <Icon name="ph:arrow-counter-clockwise" width={12} />
-        </button>
+        />
       ) : (
-        <button
+        <IconButton
+          icon="ph:archive"
+          size="xs"
           onClick={onArchive}
           aria-label={`Archive ${familiar.display_name}`}
           title="Archive — hide from switchers; stays bound, unarchive anytime"
-          className="familiar-studio-lifecycle__row-action"
-        >
-          <Icon name="ph:archive" width={12} />
-        </button>
+        />
       )}
-      <button
+      <IconButton
+        icon="ph:trash"
+        size="xs"
+        danger
         onClick={onRemove}
         aria-label={`Remove ${familiar.display_name}`}
         title="Remove — detach from your Cave (undo-safe); chats and memory stay on disk"
-        className="familiar-studio-lifecycle__row-action familiar-studio-lifecycle__row-action--danger"
-      >
-        <Icon name="ph:trash" width={12} />
-      </button>
+      />
     </div>
   );
 }

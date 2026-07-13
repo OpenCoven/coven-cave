@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
@@ -287,14 +288,12 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                   className="w-full bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
                 />
                 {projectQuery ? (
-                  <button
-                    type="button"
+                  <IconButton
+                    icon="ph:x-bold"
+                    size="xs"
                     aria-label="Clear project filter"
                     onClick={() => setProjectQuery("")}
-                    className="focus-ring shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  >
-                    <Icon name="ph:x-bold" width={10} aria-hidden />
-                  </button>
+                  />
                 ) : null}
               </label>
             </div>
@@ -348,12 +347,12 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
                   aria-label={`${on ? "Revoke" : "Grant"} ${project.name} for ${familiar.display_name}`}
                   disabled={busy}
                   onClick={() => toggle(project.id, !on)}
-                  className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
+                  className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-[var(--radius-pill)] transition-colors duration-150 ${
                     on ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
                   } ${busy ? "opacity-60" : ""}`}
                 >
                   <span
-                    className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-150 ${
+                    className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-[var(--radius-pill)] bg-white shadow transition-transform duration-150 ${
                       on ? "translate-x-4" : "translate-x-0.5"
                     }`}
                   />
@@ -451,14 +450,18 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
             );
           })}
           {famAudit.length > AUDIT_PREVIEW ? (
-            <button
-              type="button"
-              onClick={() => setShowAllAudit((v) => !v)}
-              aria-expanded={showAllAudit}
-              className="focus-ring w-full border-t border-[var(--border-hairline)] px-4 py-2 text-left text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            >
-              {showAllAudit ? "Show recent only" : `Show all ${famAudit.length} decisions`}
-            </button>
+            <div className="border-t border-[var(--border-hairline)] px-2 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                fullWidth
+                className="justify-start"
+                onClick={() => setShowAllAudit((v) => !v)}
+                aria-expanded={showAllAudit}
+              >
+                {showAllAudit ? "Show recent only" : `Show all ${famAudit.length} decisions`}
+              </Button>
+            </div>
           ) : null}
         </SettingsGroup>
       )}

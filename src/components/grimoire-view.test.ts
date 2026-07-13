@@ -154,7 +154,7 @@ assert.match(view, /role="tabpanel"\s*\n\s*id=\{`grimoire-tabpanel-\$\{i\}`\}\s*
 // unsaved drafts survive switching tabs (inactive tabs are display:none).
 assert.match(view, /key === selectedKey \? "h-full min-h-0" : "hidden"/, "inactive tab editors stay mounted, just hidden");
 assert.match(view, /kind !== "knowledge-new"/, "unsaved new-entry drafts are not restored across reloads");
-assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id \}\)/, "saving a new entry swaps its draft tab for the real doc");
+assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id,[\s\S]{0,120}saved\.collection/, "saving a new entry swaps its draft tab for the real doc, preserving collection");
 assert.match(view, /const evictIndex = tabs\.findIndex/, "over-cap opens evict the oldest non-active tab");
 assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activates within) the restored tab set");
 
@@ -173,6 +173,16 @@ assert.match(
 assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
 assert.match(view, /title="No matching Memories doc"[\s\S]{0,600}border-dashed/, "an unresolved link renders dashed with a hint (tap shows why — cave-bkpj)");
 assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,280}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
+
+// ── Knowledge collections + continuity flags ────────────────────────────────
+assert.match(view, /"cave:grimoire:stitch-groups-collapsed"/, "stitch collection collapse overrides persist");
+assert.match(view, /fetch\("\/api\/knowledge\/collections"/, "collection metadata loads alongside knowledge");
+assert.match(view, /groupKnowledgeByCollection\(visibleKnowledge, collections \?\? \[\]\)/, "stitches group by collection metadata");
+assert.match(view, /knowledgeDocKey\(entry\.id, entry\.collection\)/, "knowledge row keys include collection identity");
+assert.match(view, /knowledgeEntryFlags\(entry\)/, "continuity flags are surfaced for open and rail entries");
+assert.match(view, /Continuity flags — resolve by editing the <code className="font-mono">flags:<\/code> list in frontmatter/, "open flagged entries show a frontmatter-resolution banner");
+assert.match(view, /buildStubPayload\(display, collection, sourceTitle\)/, "unresolved wiki chips build one-click stub payloads");
+assert.match(view, /Create in \$\{collection\.meta\?\.name \?\? collection\.id\}/, "unresolved wiki chips offer collection stub buttons");
 
 // ── Backlinks: incoming mentions from the doc graph (cave-hand) ──────────────
 // The active doc's incoming link/mention edges surface as a second chip row

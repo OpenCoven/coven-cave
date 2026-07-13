@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import {
+  latestCheckText,
+  toolFooterStatusText,
+  toolStatusText,
+  type LatestCheckDisplay,
+} from "@/lib/opencoven-tools-status-display";
 import { useShellBanners } from "@/lib/shell-banners";
 import { buildSafeToolDiagnostics } from "@/lib/about-diagnostics";
 import { relativeTime } from "@/lib/relative-time";
@@ -19,6 +25,7 @@ type ToolStatus = {
   executablePath: string | null;
   current: string | null;
   latest: string | null;
+  latestCheck: LatestCheckDisplay;
   outdated: boolean;
   compatible: boolean;
   packageVerified: boolean;
@@ -137,14 +144,6 @@ function toolVersionText(tool: ToolStatus): string {
   return tool.outdated ? `${tool.current} -> ${tool.latest}` : tool.current;
 }
 
-function toolStatusText(tool: ToolStatus): string {
-  if (!tool.installed) return "Not found";
-  if (!tool.packageVerified) return "Unexpected executable";
-  if (!tool.current) return "Version probe failed";
-  if (!tool.compatible) return "Needs update";
-  return "Up to date";
-}
-
 function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {
   return tool.installed && (!tool.packageVerified || !tool.current || !tool.compatible);
 }
@@ -167,8 +166,13 @@ function installResultFromCompletion(
   if (!verification || !verification.ok) {
     return { ok: false, detail: verification?.error ?? "post-install verification failed" };
   }
+  if (!rechecked || rechecked.latestCheck.status !== "verified") {
+    return {
+      ok: false,
+      detail: "Post-install recheck could not verify npm latest. Check the network or registry, then retry.",
+    };
+  }
   const consistent =
-    rechecked &&
     rechecked.path === verification.path &&
     rechecked.current === verification.current &&
     rechecked.latest === verification.latest &&
@@ -176,7 +180,7 @@ function installResultFromCompletion(
     rechecked.compatible &&
     !rechecked.outdated;
   if (!consistent) {
-    const current = rechecked?.current ? ` (${rechecked.current})` : "";
+    const current = rechecked.current ? ` (${rechecked.current})` : "";
     return {
       ok: false,
       detail: `Post-install recheck now resolves a different executable${current}. Retry after fixing PATH precedence.`,
@@ -301,6 +305,7 @@ export function OpenCovenToolsUpdate() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [lastSuccessfulCheckedAt, setLastSuccessfulCheckedAt] = useState<string | null>(null);
   const [lastCheckError, setLastCheckError] = useState<string | null>(null);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
@@ -355,6 +360,7 @@ export function OpenCovenToolsUpdate() {
       const nextTools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
       if (mounted.current) {
         setTools(nextTools);
+        setStale(false);
         setLastSuccessfulCheckedAt(nextTools[0]?.checkedAt ?? new Date().toISOString());
         setLastCheckError(null);
         if (!nextTools.some((tool) => tool.outdated || toolNeedsCompatibilityUpdate(tool))) {
@@ -367,6 +373,8 @@ export function OpenCovenToolsUpdate() {
         const message = err instanceof Error ? err.message : "tool check failed";
         setError(message);
         setLastCheckError(message);
+        // A failed refresh cannot leave prior rows looking fresh.
+        setStale(true);
       }
       return null;
     } finally {
@@ -563,10 +571,7 @@ export function OpenCovenToolsUpdate() {
             ? lastSuccessfulCheckedAt
               ? `Stale data from ${relativeTime(lastSuccessfulCheckedAt)} — check failed: ${lastCheckError}`
               : `Couldn't check tools: ${lastCheckError}`
-            : lastSuccessfulCheckedAt
-              ? `Checked ${relativeTime(lastSuccessfulCheckedAt)} · Version source: npm latest`
-              : error ?? "Version source: npm latest";
-  const stale = Boolean(lastCheckError && lastSuccessfulCheckedAt);
+            : toolFooterStatusText({ tools, checking, error, stale });
 
   return (
     <>
@@ -589,15 +594,18 @@ export function OpenCovenToolsUpdate() {
           <div key={tool.id} className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
               <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
-               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
-                 {toolVersionText(tool)}
-               </p>
-               {stale ? (
-                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
-                   Last known · {relativeTime(lastSuccessfulCheckedAt)}
-                 </p>
-               ) : null}
-               {toolCompatibilityText(tool) ? (
+              <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
+                {toolVersionText(tool)}
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                {latestCheckText(tool, stale)}
+              </p>
+              {stale && lastSuccessfulCheckedAt ? (
+                <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                  Last known · {relativeTime(lastSuccessfulCheckedAt)}
+                </p>
+              ) : null}
+              {toolCompatibilityText(tool) ? (
                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
                   {toolCompatibilityText(tool)}
                 </p>
@@ -659,7 +667,7 @@ export function OpenCovenToolsUpdate() {
                 </Button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
-                  {toolStatusText(tool)}
+                  {toolStatusText(tool, stale)}
                 </span>
               )}
               {!busy && !updatingElsewhere ? (

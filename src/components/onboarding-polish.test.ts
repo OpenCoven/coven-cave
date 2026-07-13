@@ -85,8 +85,8 @@ assert.match(
 );
 assert.equal(
   source.match(/(?:onClick=\{finishOnboarding\}|onOpenCave=\{finishOnboarding\})/g)?.length,
-  1,
-  "the footer Open Cave CTA (the only one — the meet-familiars step is retired) finishes via finishOnboarding",
+  2,
+  "exactly two finish CTAs — the above-the-fold completion banner and the footer — both via finishOnboarding (the meet-familiars step stays retired)",
 );
 
 // The shared setup-action error banner must be a live alert with a dismiss —
@@ -173,6 +173,69 @@ assert.doesNotMatch(
   source,
   /className="focus-ring inline-flex[^"]*bg-\[var\(--accent-presence\)\][^"]*text-\[var\(--accent-presence-foreground\)\]/,
   "the hand-rolled accent-bg CTA recipe is gone (now Button variant=primary)",
+);
+
+// ── cave-uvv7: the finish CTA keeps its promise ──────────────────────────────
+// "Open Cave — summon your familiar" must actually open the Summoning Circle
+// (requestSummonFamiliar walks to Familiars AND latches the circle open) when
+// the wizard's own fresh status shows a live daemon and an empty roster. The
+// decision must NOT ride the workspace's daemonRunning poll, which can lag a
+// just-auto-started daemon. Skip/Escape stay non-pushy: only finishOnboarding
+// summons.
+assert.match(
+  source,
+  /import \{ requestSummonFamiliar \} from "@\/lib\/summon-events"/,
+  "the finish path routes through the shared summon-events wiring",
+);
+assert.match(
+  source,
+  /const finishOnboarding = useCallback\(\(\) => \{[\s\S]*?if \(s\?\.daemon\.ok && !s\.familiars\.ok\) requestSummonFamiliar\(\);[\s\S]*?onDismiss\(\);/,
+  "finishOnboarding opens the Summoning Circle for a familiar-less machine with a live daemon",
+);
+assert.equal(
+  (source.match(/requestSummonFamiliar\(\);/g) ?? []).length,
+  1,
+  "only the finish CTA summons the circle — Skip for now and Escape never do",
+);
+
+// ── cave-uvv7: three-beat journey strip ──────────────────────────────────────
+// The wizard is beat one of Set up → Summon → First chat; the strip keeps the
+// page from reading as a dead-ended infra checklist.
+assert.match(
+  source,
+  /function JourneyStrip\(/,
+  "the journey strip component exists",
+);
+assert.match(
+  source,
+  /aria-label="First-run journey"/,
+  "the journey strip is labelled for assistive tech",
+);
+for (const beat of ["Set up Cave", "Summon a familiar", "First chat"]) {
+  assert.match(
+    source,
+    new RegExp(`label: "${beat}"`),
+    `journey strip carries the "${beat}" beat`,
+  );
+}
+assert.match(
+  source,
+  /<JourneyStrip\s+setupDone=\{effectiveComplete\}\s+familiarDone=\{hasFamiliars\}/,
+  "the strip's beats derive from live status (effectiveComplete / familiars step)",
+);
+
+// ── cave-uvv7: completion surfaces above the fold ────────────────────────────
+// The footer CTA sits below the fold of a long page; when the last step ticks
+// the user must see the next action without scrolling.
+assert.match(
+  source,
+  /\{effectiveComplete \? \([\s\S]{0,1200}?Setup complete — Cave is ready\./,
+  "a completion banner renders at the top of the wizard once setup is done",
+);
+assert.match(
+  source,
+  /\{hasFamiliars \? "Open Cave" : "Open Cave — summon your familiar"\}/,
+  "the footer CTA only promises a summoning when the roster is actually empty",
 );
 
 console.log("onboarding-polish.test.ts: ok");

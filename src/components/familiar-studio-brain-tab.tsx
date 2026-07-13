@@ -345,7 +345,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     // default is false), keeping the file free of no-op entries.
                     void save({ autoSelfReport: next ? true : null });
                   }}
-                  className={`familiar-studio-brain__switch rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
+                  className={`familiar-studio-brain__switch rounded-[var(--radius-pill)] border px-3 py-1.5 text-[12px] transition-colors ${
                     draftAutoSelfReport
                       ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                       : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"

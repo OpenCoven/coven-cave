@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import path, { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { compareSemver } from "./app-update.ts";
 import {
@@ -53,6 +54,43 @@ export type OpenCovenToolSpec = (typeof OPEN_COVEN_TOOLS)[number];
 
 type CommandPathResult = { path: string | null; error?: "lookup-failed" };
 
+type NpmLatestCheckError =
+  | "npm_unavailable"
+  | "timeout"
+  | "registry_error"
+  | "malformed_version";
+
+export type NpmLatestCheck =
+  | {
+      status: "verified";
+      checkedAt: string;
+      latest: string;
+    }
+  | {
+      status: "failed";
+      checkedAt: string;
+      error: NpmLatestCheckError;
+    };
+
+type CommandLaunch = {
+  command: string;
+  fixedArgs: string[];
+};
+
+type NpmLatestCheckDependencies = {
+  platform?: NodeJS.Platform;
+  env?: () => NodeJS.ProcessEnv;
+  refreshEnv?: () => NodeJS.ProcessEnv;
+  resolveNpmPath?: (env: NodeJS.ProcessEnv) => Promise<string | null>;
+  fileExists?: (file: string) => boolean;
+  execFile?: (
+    command: string,
+    args: string[],
+    options: { env: NodeJS.ProcessEnv; timeout: number },
+  ) => Promise<{ stdout: string }>;
+  now?: () => Date;
+};
+
 export type OpenCovenToolStatus = {
   id: OpenCovenToolId;
   label: string;
@@ -63,6 +101,7 @@ export type OpenCovenToolStatus = {
   executablePath: string | null;
   current: string | null;
   latest: string | null;
+  latestCheck: NpmLatestCheck;
   outdated: boolean;
   compatible: boolean;
   packageVerified: boolean;
@@ -243,33 +282,134 @@ export async function discoverOpenCovenTool(
   }
 }
 
-async function latestVersion(
-  tool: OpenCovenToolSpec,
-  env: NodeJS.ProcessEnv = covenSpawnEnv(),
+async function execLatestVersion(
+  command: string,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; timeout: number },
+): Promise<{ stdout: string }> {
+  const { stdout } = await execFileAsync(command, args, options);
+  return { stdout: String(stdout) };
+}
+
+/**
+ * npm on Windows is normally a .cmd shim, which Node refuses to execute with
+ * execFile. The shim's npm CLI lives at this fixed sibling path, so run it
+ * directly with Cave's Node process instead of going through cmd.exe. That
+ * keeps the registry probe argv-only: neither a shell string nor request data
+ * is ever involved.
+ */
+export function npmViewLaunchCommandForPath(
+  npmPath: string,
+  platform: NodeJS.Platform = process.platform,
+  fileExists: (file: string) => boolean = existsSync,
+): CommandLaunch | null {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(npmPath)) {
+    return { command: npmPath, fixedArgs: [] };
+  }
+  const npmCli = path.join(
+    path.dirname(npmPath),
+    "node_modules",
+    "npm",
+    "bin",
+    "npm-cli.js",
+  );
+  return fileExists(npmCli) ? { command: process.execPath, fixedArgs: [npmCli] } : null;
+}
+
+async function npmPathFromEnvironment(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  exec: NpmLatestCheckDependencies["execFile"] = execLatestVersion,
 ): Promise<string | null> {
-  const npm = await commandPath("npm", { env });
-  if (!npm.path) return null;
+  const finder = platform === "win32" ? "where" : "which";
   try {
-    const { stdout } = await execFileAsync(
-      npm.path,
-      ["view", tool.packageName, "version", "--json"],
-      { env, timeout: 5000, shell: process.platform === "win32" },
-    );
-    const parsed: unknown = JSON.parse(stdout);
-    return typeof parsed === "string" ? firstSemver(parsed) : null;
+    const { stdout } = await exec(finder, ["npm"], { env, timeout: 1500 });
+    const lines = stdout.split(/\r?\n/);
+    return platform === "win32"
+      ? pickWindowsLauncher(lines)
+      : lines.map((line) => line.trim()).find(Boolean) ?? null;
   } catch {
     return null;
   }
 }
 
-async function toolStatus(
+function latestCheckError(err: unknown): NpmLatestCheckError {
+  const details = err as { code?: unknown; killed?: unknown; signal?: unknown } | undefined;
+  const code = details?.code;
+  const message = err instanceof Error ? err.message : String(err);
+  if (code === "ENOENT") return "npm_unavailable";
+  if (
+    code === "ETIMEDOUT" ||
+    (details?.killed === true && details.signal === "SIGTERM") ||
+    /timed?\s*out/i.test(message)
+  ) {
+    return "timeout";
+  }
+  return "registry_error";
+}
+
+/**
+ * Read an allowlisted package's npm latest tag. A lookup failure remains
+ * best-effort, but is represented explicitly so callers can never mistake an
+ * unknown latest version for a confirmed current version.
+ */
+export async function checkNpmLatestVersion(
+  tool: Pick<OpenCovenToolSpec, "packageName">,
+  dependencies: NpmLatestCheckDependencies = {},
+): Promise<NpmLatestCheck> {
+  const checkedAt = (dependencies.now ?? (() => new Date()))().toISOString();
+  const platform = dependencies.platform ?? process.platform;
+  const exec = dependencies.execFile ?? execLatestVersion;
+  // Track which environment actually located npm and run the registry query
+  // with that same environment — if only the refreshed PATH makes npm/node
+  // resolvable (e.g. a shebang's `/usr/bin/env node`), executing with the
+  // original env could fail right after a successful lookup.
+  let env = (dependencies.env ?? covenSpawnEnv)();
+  let npmPath: string | null;
+  if (dependencies.resolveNpmPath) {
+    npmPath = await dependencies.resolveNpmPath(env);
+    if (!npmPath) {
+      const refreshed = (dependencies.refreshEnv ?? refreshCovenSpawnEnv)();
+      npmPath = await dependencies.resolveNpmPath(refreshed);
+      if (npmPath) env = refreshed;
+    }
+  } else {
+    npmPath = await npmPathFromEnvironment(env, platform, exec);
+    if (!npmPath) {
+      const refreshed = (dependencies.refreshEnv ?? refreshCovenSpawnEnv)();
+      npmPath = await npmPathFromEnvironment(refreshed, platform, exec);
+      if (npmPath) env = refreshed;
+    }
+  }
+  const launch = npmPath
+    ? npmViewLaunchCommandForPath(npmPath, platform, dependencies.fileExists)
+    : null;
+  if (!launch) {
+    return { status: "failed", checkedAt, error: "npm_unavailable" };
+  }
+
+  try {
+    const { stdout } = await exec(
+      launch.command,
+      [...launch.fixedArgs, "view", tool.packageName, "version", "--json"],
+      { env, timeout: 5000 },
+    );
+    const parsed = JSON.parse(stdout);
+    const latest = typeof parsed === "string" ? firstSemver(parsed) : null;
+    return latest
+      ? { status: "verified", checkedAt, latest }
+      : { status: "failed", checkedAt, error: "malformed_version" };
+  } catch (err) {
+    return { status: "failed", checkedAt, error: latestCheckError(err) };
+  }
+}
+
+export function composeOpenCovenToolStatus(
   tool: OpenCovenToolSpec,
-  env: NodeJS.ProcessEnv,
-): Promise<OpenCovenToolStatus> {
-  const [probe, latest] = await Promise.all([
-    discoverOpenCovenTool(tool, { env }),
-    latestVersion(tool, env),
-  ]);
+  probe: OpenCovenToolProbe,
+  latestCheck: NpmLatestCheck,
+): OpenCovenToolStatus {
+  const latest = latestCheck.status === "verified" ? latestCheck.latest : null;
   const packageVerified =
     probe.packageName === tool.packageName &&
     Boolean(probe.packagePath) &&
@@ -295,6 +435,7 @@ async function toolStatus(
     executablePath: probe.executablePath,
     current: probe.version,
     latest,
+    latestCheck,
     outdated,
     compatible,
     packageVerified,
@@ -303,7 +444,7 @@ async function toolStatus(
     discoveryError: probe.error ?? null,
     minimumVersion: tool.minimumVersion,
     installCommand: tool.installCommand,
-    checkedAt: new Date().toISOString(),
+    checkedAt: latestCheck.checkedAt,
   };
 }
 
@@ -317,11 +458,23 @@ export async function verifyOpenCovenToolInstall(
   // authoritative post-install check: it must not inherit the pre-install
   // cache that made a stale launcher look like a successful update.
   const env = refreshCovenSpawnEnv();
-  const [probe, latest] = await Promise.all([
+  const [probe, latestCheck] = await Promise.all([
     discoverOpenCovenTool(tool, { env }),
-    latestVersion(tool, env),
+    checkNpmLatestVersion(tool, { env: () => env, refreshEnv: () => env }),
   ]);
+  const latest = latestCheck.status === "verified" ? latestCheck.latest : null;
   return evaluateOpenCovenToolVerification(tool, probe, latest);
+}
+
+async function toolStatus(
+  tool: OpenCovenToolSpec,
+  env: NodeJS.ProcessEnv,
+): Promise<OpenCovenToolStatus> {
+  const [probe, latestCheck] = await Promise.all([
+    discoverOpenCovenTool(tool, { env }),
+    checkNpmLatestVersion(tool, { env: () => env, refreshEnv: () => env }),
+  ]);
+  return composeOpenCovenToolStatus(tool, probe, latestCheck);
 }
 
 export async function openCovenToolStatuses(): Promise<OpenCovenToolStatus[]> {

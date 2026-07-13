@@ -44,6 +44,15 @@ It also includes a conservative common MCP starter set:
 - Sequential Thinking
 - Time
 
+## Knowledge Packs
+
+`kind: "knowledge-pack"` entries bundle a seeded knowledge base — folders with
+entity schemas, entry templates, an agent skill, cadence prompts, and audit
+workflows — compiled by the sync script into `plugins/<pack>/pack.json` plus
+copied `templates/` and whole `skills/<id>/` directories (so `references/`
+ship). Install & seed flows, the vault/project seed targets, and the skill
+package install API are documented in [knowledge-packs.md](knowledge-packs.md).
+
 ## Trust Levels
 
 `official-remote` packages point at a service-operated remote MCP endpoint, such as Linear, Vercel, Canva, or Asana.

@@ -33,7 +33,7 @@ assert.match(source, /arrayMove\(ids, oldIndex, newIndex\)/, "drag reorder moves
 
 // The roster order here is distinct from the avatar-strip pin order in
 // Appearance — the hint cross-links so users find both (2026-07-06).
-assert.match(source, /avatar strip's pinned order/, "lifecycle hint disambiguates roster order from pin order");
+assert.match(source, /avatar strip(?:'|&apos;)s pinned order/, "lifecycle hint disambiguates roster order from pin order");
 assert.match(source, /window\.location\.hash = "appearance"/, "lifecycle hint links to Appearance");
 
 // ── Dual-track lifecycle (cave-ykwk): Remove = undo-safe detach ─────────────

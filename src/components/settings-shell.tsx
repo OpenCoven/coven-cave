@@ -7,6 +7,7 @@ import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
@@ -245,17 +246,18 @@ export function SettingsShell() {
         // Back button and other controls opt out automatically as clickables.
         data-tauri-drag-region="deep"
       >
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => {
             if (isMobile && !pickerView) backToPicker();
             else router.back();
           }}
-          className="settings-back-button focus-ring flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[12px] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className="settings-back-button"
+          leadingIcon="ph:arrow-left"
         >
-          <Icon name="ph:arrow-left" width={13} />
           {isMobile && !pickerView ? "Settings" : "Back"}
-        </button>
+        </Button>
         <div className="min-w-0">
           <span className="surface-compact-title block truncate">
             {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
@@ -294,7 +296,7 @@ export function SettingsShell() {
                   <button
                     type="button"
                     onClick={() => goToSetting(e)}
-                    className="focus-ring flex w-full flex-col items-start rounded-[5px] px-2.5 py-[5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                    className="focus-ring flex w-full flex-col items-start rounded-[var(--radius-control)] px-2.5 py-[5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
                   >
                     <span className="text-[12px] font-medium">{e.group ?? settingsSectionLabel(e.section)}</span>
                     <span className="text-[10px] text-[var(--text-muted)]">{settingsSectionLabel(e.section)}</span>
@@ -310,7 +312,7 @@ export function SettingsShell() {
                 type="button"
                 onClick={() => openSection(s.id)}
                 aria-current={section === s.id && !showPicker ? "page" : undefined}
-                className={`settings-nav__item focus-ring flex w-full items-center rounded-[5px] px-2.5 text-left transition-colors ${
+                className={`settings-nav__item focus-ring flex w-full items-center rounded-[var(--radius-control)] px-2.5 text-left transition-colors ${
                   showPicker
                     ? "min-h-[var(--touch-target)] gap-3 py-3 text-[14px]"
                     : "gap-2 py-[6px] text-[12px]"
@@ -734,15 +736,16 @@ function DaemonSection() {
                 <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
                   {status.travel.mode}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={() => void setManualOffline(!status.travel?.manualOffline)}
                   disabled={savingTravel}
-                  className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
+                  className="ml-auto"
+                  leadingIcon={status.travel.manualOffline ? "ph:plug-bold" : "ph:plug"}
                 >
-                  <Icon name={status.travel.manualOffline ? "ph:plug-bold" : "ph:plug"} width={12} />
                   {status.travel.manualOffline ? "Return online" : "Manual offline"}
-                </button>
+                </Button>
               </div>
               <div className="grid gap-2 text-[11px] text-[var(--text-muted)] sm:grid-cols-3">
                 <span>Reason: <strong className="font-medium text-[var(--text-primary)]">{status.travel.reason}</strong></span>
@@ -1207,7 +1210,7 @@ function ThemePresetCard({
       type="button"
       onClick={() => onSelect(preset.id)}
       aria-pressed={active}
-      className={`focus-ring relative flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
+      className={`focus-ring relative flex flex-col gap-3 rounded-[var(--radius-card)] border p-4 text-left transition-all ${
         active
           ? "border-[var(--accent-presence)] bg-[var(--bg-raised)] ring-1 ring-[var(--accent-presence)]"
           : "border-[var(--border-hairline)] bg-[var(--bg-base)] hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)]"
@@ -1399,7 +1402,7 @@ function TokenColorRow({
         aria-label={`Pick ${label} color`}
         title={`Pick ${label} color`}
         onClick={() => setOpen((o) => !o)}
-        className="focus-ring h-6 w-6 shrink-0 cursor-pointer rounded-md border border-[var(--border-strong)] transition-transform hover:scale-110"
+        className="focus-ring h-6 w-6 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] transition-transform hover:scale-110"
         style={{ background: value }}
       />
       <span className="flex-1 text-[12px] text-[var(--text-primary)]">{label}</span>
@@ -1750,18 +1753,25 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-3 py-0.5 text-[11px] font-medium text-[var(--text-primary)]">
               <Icon name="ph:sparkle" width={11} className="text-[var(--accent-presence)]" />
               Custom: {customData.name}
-              <button
-                type="button"
-                onClick={handleResetCustom}
-                className={`focus-ring ml-1 inline-flex items-center justify-center rounded-full ${
-                  resetCustomArmed
-                    ? "h-auto w-auto px-1.5 text-[10px] font-semibold text-[var(--color-danger)]"
-                    : "h-3.5 w-3.5 opacity-70 hover:opacity-100"
-                }`}
-                aria-label={resetCustomArmed ? `Really discard ${customData.name}? Click again to confirm` : `Discard ${customData.name}`}
-              >
-                {resetCustomArmed ? "Discard?" : <Icon name="ph:x-bold" width={9} />}
-              </button>
+              {resetCustomArmed ? (
+                <Button
+                  variant="danger-ghost"
+                  size="xs"
+                  className="ml-1"
+                  onClick={handleResetCustom}
+                  aria-label={`Really discard ${customData.name}? Click again to confirm`}
+                >
+                  Discard?
+                </Button>
+              ) : (
+                <IconButton
+                  icon="ph:x-bold"
+                  size="xs"
+                  className="ml-1"
+                  onClick={handleResetCustom}
+                  aria-label={`Discard ${customData.name}`}
+                />
+              )}
             </span>
             <span className="text-[11px] text-[var(--text-muted)]">
               {resetCustomArmed
@@ -1823,16 +1833,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       <SettingsGroup label="Import from tweakcn">
         <div className="flex flex-col gap-2 px-4 py-3">
           <p className="text-[12px] text-[var(--text-muted)]">
-            Browse{" "}
-            <button
-              type="button"
-              className="focus-ring rounded underline decoration-dotted underline-offset-2 text-[var(--accent-presence)] hover:text-[var(--text-primary)] transition-colors"
-              onClick={() => openExternalUrl("https://tweakcn.com/editor/theme")}
-              title="Open tweakcn in the in-app browser"
-            >
-              tweakcn.com
-            </button>{" "}
-            in the in-app browser, then paste a theme URL to apply it. Supports{" "}
+            Use Browse to open tweakcn.com in the in-app browser, then paste a theme URL to apply it. Supports{" "}
             <code className="rounded bg-[var(--bg-raised)] px-1 py-0.5 font-mono text-[11px]">
               /themes/&#123;id&#125;
             </code>
@@ -2218,14 +2219,15 @@ function MobileSection() {
       <SettingsGroup label="Get the app">
         <SettingsRow label="Build it with Xcode" description="apps/ios/CovenCave — open in Xcode and run on your device, or install the TestFlight build." />
         <div className="flex flex-wrap gap-2 px-4 py-3">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            className="settings-touch-action"
             onClick={() => openExternalUrl("https://github.com/OpenCoven/coven-cave/blob/main/docs/ios-native-rebuild.md")}
-            className="settings-touch-action gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            leadingIcon="ph:file-text"
           >
-            <Icon name="ph:file-text" width={12} />
             Setup guide
-          </button>
+          </Button>
         </div>
       </SettingsGroup>
     </SettingsPage>
@@ -2332,15 +2334,16 @@ function AboutSection() {
             { label: "Grimoire", href: "https://mind.opencoven.ai",               icon: "ph:book-open" as const },
             { label: "Podcast",  href: "https://pod.opencoven.ai",                icon: "ph:waveform-bold" as const },
           ].map((l) => (
-            <button
+            <Button
               key={l.href}
-              type="button"
+              variant="secondary"
+              size="sm"
+              className="settings-touch-action"
               onClick={() => openExternalUrl(l.href)}
-              className="settings-touch-action gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              leadingIcon={l.icon}
             >
-              <Icon name={l.icon} width={12} />
               {l.label}
-            </button>
+            </Button>
           ))}
         </div>
       </SettingsGroup>
