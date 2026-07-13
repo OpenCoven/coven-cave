@@ -107,8 +107,6 @@ test("surfaces size their grids by PANE, not viewport (cave-hivd)", () => {
   assert.match(roster, /@container p-4/, "familiars roster declares its container");
   assert.match(roster, /@min-\[700px\]:grid-cols-2 @min-\[1050px\]:grid-cols-3 @min-\[1400px\]:grid-cols-4/, "roster columns are container-keyed");
   assert.doesNotMatch(roster, /xl:grid-cols-4/, "the viewport-keyed roster grid must not return");
-  const caps = readFileSync(new URL("./capabilities-view.tsx", import.meta.url), "utf8");
-  assert.doesNotMatch(caps, /lg:grid-cols-7/, "capability summary tiles are no longer viewport-keyed");
   const card = readFileSync(new URL("./capability-card.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(card, /sm:grid-cols-2/, "capability cards are no longer viewport-keyed");
   const autos = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");

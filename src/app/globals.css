@@ -7575,99 +7575,6 @@ a.mobile-handoff__link:hover {
   color: var(--text-muted);
 }
 
-/* Capabilities inspector metadata collapses into one dense row whenever the
-   expanded row has enough width, then wraps by whole field on narrower panes. */
-.capability-meta-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  gap: 8px 18px;
-  align-items: center;
-  border-top: 1px solid var(--border-hairline);
-  padding-block: 10px;
-}
-
-.capability-meta-item {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: baseline;
-  min-width: 0;
-  gap: 8px;
-}
-
-.capability-meta-label {
-  color: var(--text-muted);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.capability-meta-value {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.capability-meta-value--warning {
-  color: var(--color-warning);
-}
-
-.capabilities-decision {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.capabilities-decision__card {
-  min-height: 92px;
-  min-width: 0;
-  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
-  padding: 10px;
-}
-
-.capabilities-decision__card strong {
-  display: block;
-  margin-top: 7px;
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: 15px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.capabilities-decision__card p {
-  margin-top: 5px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.capabilities-decision__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 100%;
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1.1;
-  text-transform: uppercase;
-}
-
-@media (max-width: 680px) {
-  .capabilities-decision {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 /* Touch / coarse-pointer surface. On devices with no hover capability,
    controls that the desktop hides behind `opacity-0 group-hover:opacity-100`
    become permanently visible — opt in with `.touch-always-visible`. */
@@ -8110,33 +8017,15 @@ a.mobile-handoff__link:hover {
   }
 
   .marketplace-view button,
-  .marketplace-view [role="button"],
-  .capabilities-view button,
-  .capabilities-view [aria-haspopup="menu"],
-  .capabilities-view label:has(input) {
+  .marketplace-view [role="button"] {
     min-height: var(--touch-target);
     -webkit-tap-highlight-color: transparent;
   }
 
   .marketplace-view input,
-  .marketplace-view [aria-haspopup="menu"],
-  .capabilities-view input {
+  .marketplace-view [aria-haspopup="menu"] {
     min-height: var(--touch-target);
     font-size: 16px;
-  }
-
-  .capabilities-view button.rounded-full {
-    padding-inline: 14px;
-  }
-
-  /* Inspector metadata chips stay compact, centered pills on mobile. Without
-     this, the blanket touch-target min-height above (plus the row's flex
-     stretch) inflates these dense chips into circular blobs. The lone
-     interactive chip keeps a comfortable tap height via block padding. */
-  .capabilities-view .capability-chips button {
-    min-height: 0;
-    padding-block: 4px;
-    padding-inline: 10px;
   }
 
   .chat-list-surface {
