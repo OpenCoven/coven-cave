@@ -40,8 +40,26 @@ assert.match(
 
 assert.match(
   source,
-  /execFileAsync\("npm", \["view", tool\.packageName, "version", "--json"\]/,
-  "latest versions are read from npm without involving a shell",
+  /npmViewLaunchCommandForPath/,
+  "the Windows npm launcher is resolved before reading latest versions",
+);
+
+assert.match(
+  source,
+  /\[\.\.\.launch\.fixedArgs, "view", tool\.packageName, "version", "--json"\]/,
+  "latest versions are read through fixed argv without a shell command string",
+);
+
+assert.match(
+  source,
+  /latestCheck: NpmLatestCheck/,
+  "every response records whether the npm latest check was verified or failed",
+);
+
+assert.match(
+  source,
+  /status: "failed", checkedAt, error:/,
+  "failed npm checks preserve explicit error state and freshness time",
 );
 
 assert.match(

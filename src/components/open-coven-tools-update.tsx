@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import {
+  latestCheckText,
+  toolFooterStatusText,
+  toolStatusText,
+  type LatestCheckDisplay,
+} from "@/lib/opencoven-tools-status-display";
 import { useShellBanners } from "@/lib/shell-banners";
 import { buildSafeToolDiagnostics } from "@/lib/about-diagnostics";
 import { relativeTime } from "@/lib/relative-time";
@@ -18,6 +24,7 @@ type ToolStatus = {
   path: string | null;
   current: string | null;
   latest: string | null;
+  latestCheck: LatestCheckDisplay;
   outdated: boolean;
   compatible: boolean;
   minimumVersion: string;
@@ -118,13 +125,6 @@ function toolVersionText(tool: ToolStatus): string {
   if (!tool.installed) return "Not installed";
   if (!tool.current) return "Installed, version unknown";
   return tool.outdated ? `${tool.current} -> ${tool.latest}` : tool.current;
-}
-
-function toolStatusText(tool: ToolStatus): string {
-  if (!tool.installed) return "Not found";
-  if (!tool.current) return "Version unknown";
-  if (!tool.compatible) return "Needs update";
-  return "Up to date";
 }
 
 function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {
@@ -249,6 +249,7 @@ export function OpenCovenToolsUpdate() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [lastSuccessfulCheckedAt, setLastSuccessfulCheckedAt] = useState<string | null>(null);
   const [lastCheckError, setLastCheckError] = useState<string | null>(null);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
@@ -303,6 +304,7 @@ export function OpenCovenToolsUpdate() {
       if (mounted.current) {
         const nextTools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
         setTools(nextTools);
+        setStale(false);
         setLastSuccessfulCheckedAt(nextTools[0]?.checkedAt ?? new Date().toISOString());
         setLastCheckError(null);
         if (!nextTools.some((tool) => tool.outdated || toolNeedsCompatibilityUpdate(tool))) {
@@ -315,6 +317,8 @@ export function OpenCovenToolsUpdate() {
         const message = err instanceof Error ? err.message : "tool check failed";
         setError(message);
         setLastCheckError(message);
+        // A failed refresh cannot leave prior rows looking fresh.
+        setStale(true);
       }
       return false;
     } finally {
@@ -511,10 +515,7 @@ export function OpenCovenToolsUpdate() {
             ? lastSuccessfulCheckedAt
               ? `Stale data from ${relativeTime(lastSuccessfulCheckedAt)} — check failed: ${lastCheckError}`
               : `Couldn't check tools: ${lastCheckError}`
-            : lastSuccessfulCheckedAt
-              ? `Checked ${relativeTime(lastSuccessfulCheckedAt)} · Version source: npm latest`
-              : error ?? "Version source: npm latest";
-  const stale = Boolean(lastCheckError && lastSuccessfulCheckedAt);
+            : toolFooterStatusText({ tools, checking, error, stale });
 
   return (
     <>
@@ -537,15 +538,18 @@ export function OpenCovenToolsUpdate() {
           <div key={tool.id} className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="min-w-0">
               <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
-               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
-                 {toolVersionText(tool)}
-               </p>
-               {stale ? (
-                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
-                   Last known · {relativeTime(lastSuccessfulCheckedAt)}
-                 </p>
-               ) : null}
-               {toolCompatibilityText(tool) ? (
+              <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
+                {toolVersionText(tool)}
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+                {latestCheckText(tool, stale)}
+              </p>
+              {stale && lastSuccessfulCheckedAt ? (
+                <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                  Last known · {relativeTime(lastSuccessfulCheckedAt)}
+                </p>
+              ) : null}
+              {toolCompatibilityText(tool) ? (
                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">
                   {toolCompatibilityText(tool)}
                 </p>
@@ -607,7 +611,7 @@ export function OpenCovenToolsUpdate() {
                 </Button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
-                  {toolStatusText(tool)}
+                  {toolStatusText(tool, stale)}
                 </span>
               )}
               {!busy && !updatingElsewhere ? (
