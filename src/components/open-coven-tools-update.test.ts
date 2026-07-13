@@ -52,6 +52,11 @@ assert.doesNotMatch(src, /tool\.installed \? "Up to date" : "Not found"/, "insta
 assert.match(src, /function installResultFromCompletion/, "post-install result reconciliation is centralized");
 assert.match(src, /const refreshed = await load\(\)/, "the UI refreshes status before displaying a completed install result");
 assert.match(src, /Post-install recheck now resolves a different executable/, "a stale status recheck replaces optimistic success with a recovery message");
+assert.match(
+  src,
+  /normalizePath\(rechecked\.path\) === normalizePath\(verification\.path\)/,
+  "recheck path comparison normalizes Windows casing/slashes so a cosmetic difference does not fail verification",
+);
 assert.match(src, /Post-install recheck could not verify npm latest/, "a registry recheck failure is not misdiagnosed as a different executable");
 assert.match(src, /Verified \$\{verification\.current\}/, "green success includes the verified version");
 assert.doesNotMatch(src, /Verified \$\{verification\.current\} at \$\{verification\.path\}/, "green success does not retain a local executable path");
