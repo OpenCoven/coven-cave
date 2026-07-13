@@ -570,6 +570,10 @@ def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) 
                 source = marketplace_dir / Path(*PurePosixPath(skill["sourcePath"]).parts)
                 source_root = source.parent
                 for source_file in source_root.rglob("*"):
+                    # Reject symlinks during traversal so packaging never reads
+                    # through links to bytes outside the source tree.
+                    if source_file.is_symlink():
+                        raise SystemExit(f"craft skill source contains a symlink: {source_file}")
                     if not source_file.is_file():
                         continue
                     relative = source_file.relative_to(source_root)
@@ -596,9 +600,8 @@ def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) 
                 source = marketplace_dir / Path(*PurePosixPath(skill["sourcePath"]).parts)
                 source_root = source.parent
                 for source_file in source_root.rglob("*"):
-                    # Reject symlinks before is_file()/read_bytes() follow them:
-                    # a link inside the pack source tree could otherwise ship
-                    # bytes from anywhere on disk.
+                    # Reject symlinks during traversal so packaging never reads
+                    # through links to bytes outside the source tree.
                     if source_file.is_symlink():
                         raise SystemExit(
                             f"knowledge-pack skill source contains a symlink: {source_file}"
