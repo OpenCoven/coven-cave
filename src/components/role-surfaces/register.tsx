@@ -65,59 +65,19 @@ registerRoleSurface({
   role: "researcher",
   title: "Research Desk",
   iconName: "ph:detective",
-  description: "Discovery, synthesis, and source evaluation — the analyst's desk",
+  description: "Bounded research missions, evidence, and durable knowledge artifacts",
   accentHue: 278,
   priority: 30,
   shouldDisplay: () => true,
   getContributions(context) {
-    const state = readRoleSurfaceState<{ evidence?: unknown[]; searchHistory?: string[] }>(
-      context.activeFamiliar.id,
-      RESEARCHER_SURFACE_ID,
-    );
-    const evidenceCount = state?.evidence?.length ?? 0;
     return {
-      commands: [
-        {
-          id: "researcher.toggle-drawer",
-          title: "Toggle reasoning trail",
-          hint: "⌘⇧D",
-          run: (ctx) => toggleDrawer(ctx, RESEARCHER_SURFACE_ID),
-        },
-        {
-          id: "researcher.clear-search-history",
-          title: "Clear search history",
-          run: (ctx) => {
-            const current = readRoleSurfaceState<object>(ctx.activeFamiliar.id, RESEARCHER_SURFACE_ID) ?? {};
-            writeRoleSurfaceState(ctx.activeFamiliar.id, RESEARCHER_SURFACE_ID, {
-              ...current,
-              searchHistory: [],
-            });
-          },
-        },
-      ],
-      toolbarActions: [
-        {
-          id: "researcher.drawer",
-          title: "Reasoning trail",
-          iconName: "ph:list",
-          run: (ctx) => toggleDrawer(ctx, RESEARCHER_SURFACE_ID),
-        },
-      ],
-      keyboardShortcuts: [
-        {
-          id: "researcher.drawer.kbd",
-          combo: "mod+shift+d",
-          description: "Toggle the reasoning trail drawer",
-          run: (ctx) => toggleDrawer(ctx, RESEARCHER_SURFACE_ID),
-        },
-      ],
       notifications: daemonNotices(context),
       statusIndicators: [
         {
-          id: "researcher.evidence",
-          label: `${evidenceCount} evidence`,
-          tone: evidenceCount > 0 ? "ok" : "muted",
-          detail: "Collected evidence items",
+          id: "researcher.engine",
+          label: context.runtimeState.daemonRunning ? "research engine ready" : "research engine offline",
+          tone: context.runtimeState.daemonRunning ? "ok" : "warn",
+          detail: "Missions run through the familiar's real Flow sessions",
         },
       ],
     };

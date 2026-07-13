@@ -65,9 +65,10 @@ never fake production data.
 
 ## Initial rooms
 
-- **Research Desk** (`researcher-desk`, role `researcher`) — objectives, web
-  search (opens the in-app browser), working notes/hypotheses, evidence with
-  confidence + conflict tracking, related memories, reasoning-trail drawer.
+- **Research Desk** (`researcher-desk`, role `researcher`) — mission-first
+  research intake with explainable Brief/Sweep/Paper/Autoresearch routing,
+  real Flow progress, provenance-rich Knowledge artifacts, structured sources,
+  checkpoints, and finite linked Codex Automations.
 - **Comms Operations** (`messenger-ops`, role `messenger`) — channel-aware
   drafting (email/Discord/Slack/SMS/Teams/social), approval-required states,
   real inbox items, delivery queue drawer. Nothing sends externally — no
