@@ -3311,9 +3311,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
   // per render).
   const { groupedTurns, turnIndexMap } = useMemo(() => {
-    type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
-    type SingleItem = { kind: "single"; turn: Turn };
-    const grouped: Array<VoiceGroup | SingleItem> = [];
+    const grouped: TranscriptGroup[] = [];
     for (const turn of activePath) {
       if (turn.voiceCallId) {
         const last = grouped[grouped.length - 1];
@@ -4404,6 +4402,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, branchParent !== undefined ? { parentTurnId: branchParent } : undefined);
   };
 
+  // Latest-ref for the memoized transcript's per-row actions (cave-likl).
+  // Reassigned every render so TranscriptRows — which deliberately does NOT
+  // re-render on composer keystrokes — always invokes closures that read the
+  // CURRENT busy/turns/attachments state at call time. See TranscriptHandlers.
+  const transcriptHandlersRef = useRef<TranscriptHandlers>(null as unknown as TranscriptHandlers);
+  transcriptHandlersRef.current = {
+    siblingsFor,
+    switchBranch,
+    editTurnInComposer,
+    regenerateFor,
+    replyFor,
+    send,
+  };
+
   // Auto-send a prompt handed off from the home composer. Deferred one
   // macrotask so it runs after strict-mode's mount-effect replay — sending
   // synchronously here lets the replayed history-load effect (null-session
@@ -5111,115 +5123,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             )
           ) : null}
-          {(() => {
-            // `groupedTurns` + `turnIndexMap` are memoized above (rebuilt only
-            // when `activePath` changes, not on every keystroke). `allTurns`
-            // feeds the per-row prev-turn timestamp-gap lookup and must match
-            // the same sequence used for grouping.
-            const allTurns = activePath;
-            // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
-            // mount the newest groups. The per-row prev-turn lookup still reads
-            // the full `allTurns`/`turnIndexMap`, so the first visible row's
-            // timestamp gap stays correct. Expands to the whole transcript the
-            // moment the reader scrolls up or opens find (see historyExpanded).
-            const renderGroups =
-              historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
-                ? groupedTurns
-                : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
-            return renderGroups.map((g) => {
-              if (g.kind === "single") {
-                const t = g.turn;
-                const i = turnIndexMap.get(t.id) ?? -1;
-                const prev = allTurns[i - 1];
-                const showTimestamp = (() => {
-                  if (!t.createdAt) return false;
-                  if (!prev?.createdAt) return true;
-                  const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
-                  if (!Number.isFinite(gap)) return true;
-                  if (gap >= 10 * 60 * 1000) return true;
-                  return prev.role !== t.role;
-                })();
-                const singleBranchNav = (() => {
-                  const { siblings, index } = siblingsFor(t.id);
-                  if (siblings.length <= 1) return undefined;
-                  return {
-                    index,
-                    total: siblings.length,
-                    onPrev: () => void switchBranch(t.id, -1),
-                    onNext: () => void switchBranch(t.id, 1),
-                  };
-                })();
-                return (
-                  <TurnRow
-                    key={t.id}
-                    turn={t}
-                    familiar={familiar}
-                    showTimestamp={showTimestamp}
-                    found={foundTurnId === t.id}
-                    onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
-                    onRegenerate={regenerateFor(t)}
-                    onReply={replyFor(t)}
-                    onOpenUrl={onOpenUrl}
-                    onSuggestion={(sug) => void send(sug)}
-                    feedbackContext={feedbackContext}
-                    expanded={expandedAvatarTurnId === t.id}
-                    onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
-                    branchNav={singleBranchNav}
-                  />
-                );
-              }
-              const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
-              const ss = String(g.durationSec % 60).padStart(2, "0");
-              return (
-                <div key={g.callId} className="cave-chat-voice-call-group">
-                  <div className="cave-chat-voice-call-header">
-                    <span aria-hidden>📞</span>
-                    Voice call · {mm}:{ss}
-                  </div>
-                  {g.turns.map((t) => {
-                    const i = turnIndexMap.get(t.id) ?? -1;
-                    const prev = allTurns[i - 1];
-                    const showTimestamp = (() => {
-                      if (!t.createdAt) return false;
-                      if (!prev?.createdAt) return true;
-                      const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
-                      if (!Number.isFinite(gap)) return true;
-                      if (gap >= 10 * 60 * 1000) return true;
-                      return prev.role !== t.role;
-                    })();
-                    const groupBranchNav = (() => {
-                      const { siblings, index } = siblingsFor(t.id);
-                      if (siblings.length <= 1) return undefined;
-                      return {
-                        index,
-                        total: siblings.length,
-                        onPrev: () => void switchBranch(t.id, -1),
-                        onNext: () => void switchBranch(t.id, 1),
-                      };
-                    })();
-                    return (
-                      <TurnRow
-                        key={t.id}
-                        turn={t}
-                        familiar={familiar}
-                        showTimestamp={showTimestamp}
-                        found={foundTurnId === t.id}
-                        onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
-                        onRegenerate={regenerateFor(t)}
-                        onReply={replyFor(t)}
-                        onOpenUrl={onOpenUrl}
-                        onSuggestion={(sug) => void send(sug)}
-                        feedbackContext={feedbackContext}
-                        expanded={expandedAvatarTurnId === t.id}
-                        onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
-                        branchNav={groupBranchNav}
-                      />
-                    );
-                  })}
-                </div>
-              );
-            });
-          })()}
+          {/* Transcript rows: memoized subtree (cave-likl) — the row loop no
+              longer re-runs on composer keystrokes / caret moves / menu
+              toggles. Data props are all referentially stable between
+              transcript changes; per-row actions route through
+              transcriptHandlersRef (read at call time, never stale). */}
+          <TranscriptRows
+            groupedTurns={groupedTurns}
+            turnIndexMap={turnIndexMap}
+            allTurns={activePath}
+            historyExpanded={historyExpanded}
+            familiar={familiar}
+            busy={busy}
+            foundTurnId={foundTurnId}
+            feedbackContext={feedbackContext}
+            expandedAvatarTurnId={expandedAvatarTurnId}
+            setExpandedAvatarTurnId={setExpandedAvatarTurnId}
+            onOpenUrl={onOpenUrl}
+            handlersRef={transcriptHandlersRef}
+          />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
             sessionArchived: Boolean(session?.archived_at),
@@ -5860,6 +5782,180 @@ function splitTextForArtifacts(
   if (tail.trim()) out.push({ kind: "text", text: tail });
   return out;
 }
+
+// ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
+// The grouped-turn shapes built by ChatView's `groupedTurns` memo.
+type TranscriptVoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
+type TranscriptSingleItem = { kind: "single"; turn: Turn };
+type TranscriptGroup = TranscriptVoiceGroup | TranscriptSingleItem;
+
+/**
+ * Per-row actions the transcript needs from ChatView. Routed through a
+ * "latest ref" (`transcriptHandlersRef`, reassigned every ChatView render)
+ * instead of props: the closures read live component state (busy, turns,
+ * attachments, …), so prop-passing them would either defeat the memo (fresh
+ * identity every keystroke) or go stale behind a comparator that skips
+ * function props. Reading `handlersRef.current` at CALL time always hits the
+ * newest closure while keeping every prop of TranscriptRows referentially
+ * stable across keystroke/caret/hover re-renders.
+ */
+type TranscriptHandlers = {
+  siblingsFor: (turnId: string) => { siblings: Turn[]; index: number };
+  switchBranch: (turnId: string, dir: -1 | 1) => Promise<void>;
+  editTurnInComposer: (turn: Turn) => void;
+  regenerateFor: (turn: Turn) => (() => void) | undefined;
+  replyFor: (turn: Turn) => (() => void) | undefined;
+  send: (override?: string) => Promise<void>;
+};
+
+/**
+ * The transcript row loop, extracted from ChatView's JSX and memoized
+ * (cave-likl). ChatView keeps 60+ pieces of state whose updates have nothing
+ * to do with the transcript — every composer keystroke, caret move, menu
+ * toggle and poll tick re-ran this 60-row mapping loop (per-row closures,
+ * sibling lookups, presence recomputation, TurnRow comparator × rows). All
+ * props below are referentially stable across those renders, so React.memo
+ * skips the whole subtree; the rows re-render only when the transcript data
+ * itself changes (activePath/groupedTurns identity), an action's presence
+ * input flips (`busy`), or row-affecting UI state moves (find highlight,
+ * avatar expansion).
+ *
+ * NOTE for presence semantics: `regenerateFor` hides the Regenerate action
+ * while `busy` — `busy` must stay a prop so the flip re-renders the rows even
+ * though the handler itself is read through the ref.
+ */
+const TranscriptRows = memo(function TranscriptRows({
+  groupedTurns,
+  turnIndexMap,
+  allTurns,
+  historyExpanded,
+  familiar,
+  // Presence input for regenerateFor (see doc comment); unused directly.
+  busy: _busy,
+  foundTurnId,
+  feedbackContext,
+  expandedAvatarTurnId,
+  setExpandedAvatarTurnId,
+  onOpenUrl,
+  handlersRef,
+}: {
+  groupedTurns: TranscriptGroup[];
+  turnIndexMap: Map<string, number>;
+  allTurns: Turn[];
+  historyExpanded: boolean;
+  familiar: Familiar;
+  busy: boolean;
+  foundTurnId: string | null;
+  feedbackContext: FeedbackContext;
+  expandedAvatarTurnId: string | null;
+  setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
+  onOpenUrl?: (url: string) => void;
+  handlersRef: React.RefObject<TranscriptHandlers>;
+}) {
+  const handlers = () => handlersRef.current;
+  // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
+  // mount the newest groups. The per-row prev-turn lookup still reads
+  // the full `allTurns`/`turnIndexMap`, so the first visible row's
+  // timestamp gap stays correct. Expands to the whole transcript the
+  // moment the reader scrolls up or opens find (see historyExpanded).
+  const renderGroups =
+    historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
+      ? groupedTurns
+      : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
+  return renderGroups.map((g) => {
+    if (g.kind === "single") {
+      const t = g.turn;
+      const i = turnIndexMap.get(t.id) ?? -1;
+      const prev = allTurns[i - 1];
+      const showTimestamp = (() => {
+        if (!t.createdAt) return false;
+        if (!prev?.createdAt) return true;
+        const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+        if (!Number.isFinite(gap)) return true;
+        if (gap >= 10 * 60 * 1000) return true;
+        return prev.role !== t.role;
+      })();
+      const singleBranchNav = (() => {
+        const { siblings, index } = handlers().siblingsFor(t.id);
+        if (siblings.length <= 1) return undefined;
+        return {
+          index,
+          total: siblings.length,
+          onPrev: () => void handlers().switchBranch(t.id, -1),
+          onNext: () => void handlers().switchBranch(t.id, 1),
+        };
+      })();
+      return (
+        <TurnRow
+          key={t.id}
+          turn={t}
+          familiar={familiar}
+          showTimestamp={showTimestamp}
+          found={foundTurnId === t.id}
+          onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+          onRegenerate={handlers().regenerateFor(t)}
+          onReply={handlers().replyFor(t)}
+          onOpenUrl={onOpenUrl}
+          onSuggestion={(sug) => void handlers().send(sug)}
+          feedbackContext={feedbackContext}
+          expanded={expandedAvatarTurnId === t.id}
+          onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
+          branchNav={singleBranchNav}
+        />
+      );
+    }
+    const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
+    const ss = String(g.durationSec % 60).padStart(2, "0");
+    return (
+      <div key={g.callId} className="cave-chat-voice-call-group">
+        <div className="cave-chat-voice-call-header">
+          <span aria-hidden>📞</span>
+          Voice call · {mm}:{ss}
+        </div>
+        {g.turns.map((t) => {
+          const i = turnIndexMap.get(t.id) ?? -1;
+          const prev = allTurns[i - 1];
+          const showTimestamp = (() => {
+            if (!t.createdAt) return false;
+            if (!prev?.createdAt) return true;
+            const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+            if (!Number.isFinite(gap)) return true;
+            if (gap >= 10 * 60 * 1000) return true;
+            return prev.role !== t.role;
+          })();
+          const groupBranchNav = (() => {
+            const { siblings, index } = handlers().siblingsFor(t.id);
+            if (siblings.length <= 1) return undefined;
+            return {
+              index,
+              total: siblings.length,
+              onPrev: () => void handlers().switchBranch(t.id, -1),
+              onNext: () => void handlers().switchBranch(t.id, 1),
+            };
+          })();
+          return (
+            <TurnRow
+              key={t.id}
+              turn={t}
+              familiar={familiar}
+              showTimestamp={showTimestamp}
+              found={foundTurnId === t.id}
+              onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+              onRegenerate={handlers().regenerateFor(t)}
+              onReply={handlers().replyFor(t)}
+              onOpenUrl={onOpenUrl}
+              onSuggestion={(sug) => void handlers().send(sug)}
+              feedbackContext={feedbackContext}
+              expanded={expandedAvatarTurnId === t.id}
+              onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
+              branchNav={groupBranchNav}
+            />
+          );
+        })}
+      </div>
+    );
+  });
+});
 
 // CHAT-D3-07 perf: the implementation is memoized as `TurnRow` below, so a
 // streamed token re-renders only the streaming row rather than every settled
