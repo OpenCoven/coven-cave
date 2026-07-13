@@ -1,21 +1,63 @@
 import { redactSecretText } from "./secret-redaction.ts";
+import type {
+  NpmLatestCheck,
+  NpmLatestCheckError,
+  OpenCovenToolStatus,
+} from "./opencoven-tools-status.ts";
+import type { OpenCovenToolProbe } from "./opencoven-tool-verification.ts";
 
-type ToolDiagnostic = {
-  id: string;
-  label: string;
-  packageName: string;
-  binary: string;
-  installed: boolean;
-  current: string | null;
-  latest: string | null;
-  outdated: boolean;
-  compatible: boolean;
-  minimumVersion: string;
+type ToolDiagnostic = Pick<
+  OpenCovenToolStatus,
+  | "id"
+  | "label"
+  | "packageName"
+  | "binary"
+  | "installed"
+  | "current"
+  | "latest"
+  | "latestCheck"
+  | "outdated"
+  | "compatible"
+  | "packageVerified"
+  | "executableVerified"
+  | "discoveryError"
+  | "minimumVersion"
+> & {
   path?: string | null;
   executablePath?: string | null;
   packagePath?: string | null;
   installCommand?: string;
 };
+
+const NPM_LATEST_CHECK_ERRORS = new Set<NpmLatestCheckError>([
+  "npm_unavailable",
+  "timeout",
+  "registry_error",
+  "malformed_version",
+]);
+const DISCOVERY_ERRORS = new Set<NonNullable<OpenCovenToolProbe["error"]>>([
+  "version-probe-failed",
+  "launcher-unreadable",
+]);
+const SEMVER = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+
+function safeLatestCheck(value: NpmLatestCheck): NpmLatestCheck | null {
+  if (!value || typeof value !== "object") return null;
+  const checkedAt = value.checkedAt;
+  if (typeof checkedAt !== "string" || !Number.isFinite(Date.parse(checkedAt))) return null;
+  const normalizedCheckedAt = new Date(checkedAt).toISOString();
+  if (value.status === "verified" && typeof value.latest === "string" && SEMVER.test(value.latest)) {
+    return { status: "verified", checkedAt: normalizedCheckedAt, latest: value.latest };
+  }
+  if (value.status === "failed" && NPM_LATEST_CHECK_ERRORS.has(value.error)) {
+    return { status: "failed", checkedAt: normalizedCheckedAt, error: value.error };
+  }
+  return null;
+}
+
+function safeDiscoveryError(value: OpenCovenToolProbe["error"] | null): OpenCovenToolProbe["error"] | null {
+  return value && DISCOVERY_ERRORS.has(value) ? value : null;
+}
 
 type InstallJobDiagnostic = {
   status: "running" | "done";
@@ -73,8 +115,12 @@ export function buildSafeToolDiagnostics(input: {
     installed: tool.installed,
     current: tool.current,
     latest: tool.latest,
+    latestCheck: safeLatestCheck(tool.latestCheck),
     outdated: tool.outdated,
     compatible: tool.compatible,
+    packageVerified: tool.packageVerified === true,
+    executableVerified: tool.executableVerified === true,
+    discoveryError: safeDiscoveryError(tool.discoveryError),
     minimumVersion: tool.minimumVersion,
   }));
   const installJobs = Object.fromEntries(
@@ -96,7 +142,7 @@ export function buildSafeToolDiagnostics(input: {
       surface: "Settings/About/OpenCoven tools",
       included: [
         "sanitized Settings route",
-        "tool version and compatibility states",
+        "tool version, npm freshness, compatibility, and verification states",
         "check and installer outcome summaries",
         "desktop-shell and sidecar-token presence flags",
       ],
