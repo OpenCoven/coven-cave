@@ -36,6 +36,15 @@ assert.deepEqual(
   "raw knowledge payload keeps collection and non-reserved extra keys",
 );
 
+// Deleting the last extra key in the raw editor must clear stored extras: an
+// explicit `extra: {}` tells the route "extra-aware client, nothing left",
+// while an omitted field would resurrect the stored keys.
+assert.deepEqual(
+  rawToKnowledgePayload("mara", '---\ntitle: "Mara"\nscope: "global"\nenabled: true\n---\n\nBio\n').extra,
+  {},
+  "payload always carries extra so clearing the last key sticks",
+);
+
 assert.deepEqual(
   buildStubPayload("Lost Queen", {
     id: "characters",

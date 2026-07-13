@@ -58,7 +58,10 @@ export function rawToKnowledgePayload(id: string | null, raw: string, collection
     enabled: enabled !== false,
     body: doc.body.trim(),
   };
-  if (Object.keys(extra).length > 0) payload.extra = extra;
+  // Always send extra — omitting it means "client is extra-unaware" to the
+  // route, which then resurrects stored keys; an explicit `{}` clears them, so
+  // deleting the last entity field in the raw editor actually sticks.
+  payload.extra = extra;
   return payload;
 }
 
@@ -101,10 +104,13 @@ export function groupKnowledgeByCollection(
     root,
     collections: ids.map((id) => {
       const collection = metaById.get(id) ?? { id, meta: null, count: byCollection.get(id)?.length ?? 0 };
+      // Meta values come from hand-edited YAML; tolerate non-string types.
+      const name = collection.meta?.name;
+      const storyQuestion = collection.meta?.storyQuestion;
       return {
         ...collection,
-        label: collection.meta?.name?.trim() || id,
-        storyQuestion: collection.meta?.storyQuestion?.trim() || undefined,
+        label: (typeof name === "string" && name.trim()) || id,
+        storyQuestion: (typeof storyQuestion === "string" && storyQuestion.trim()) || undefined,
         entries: byCollection.get(id) ?? [],
       };
     }),

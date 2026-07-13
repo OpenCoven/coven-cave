@@ -111,6 +111,43 @@ try {
   );
   assert.match(prompt, /root body/);
   assert.doesNotMatch(prompt, /seed body/, "disabled seeded entries stay out of the prompt block");
+
+  // collection.yml is hand-editable: non-string optional fields must degrade
+  // to "absent" at the readCollectionMeta chokepoint instead of crashing the
+  // prompt builder (`summary: 2026` parses as a YAML number) on every send.
+  await mkdir(path.join(scratchRoot, "typo"), { recursive: true });
+  await writeFile(
+    path.join(scratchRoot, "typo", "collection.yml"),
+    "name: Typo\nsummary: 2026\nstoryQuestion: true\ndescription: [not, a, string]\nfields: nope\npack: broken\n",
+    "utf8",
+  );
+  const typoMeta = await readCollectionMeta("typo");
+  assert.deepEqual(typoMeta, { name: "Typo" }, "non-string optional meta fields are dropped, not passed through");
+  assert.doesNotThrow(
+    () =>
+      buildPromptWithKnowledgeVault("User prompt", [], [
+        { id: "typo", meta: { name: "C", summary: 2026 }, count: 0 },
+      ]),
+    "the pure prompt builder tolerates raw unsanitized metas from direct callers",
+  );
+
+  // Multi-line extra values keep their blank lines through a full
+  // serialize→parse round-trip (paragraph breaks were being stripped).
+  await writeKnowledgeEntry({
+    id: "notes",
+    collection: "characters",
+    title: "Notes",
+    tags: [],
+    scope: "global",
+    enabled: true,
+    body: "body",
+    extra: { notes: "para one\n\npara two" },
+  });
+  assert.deepEqual(
+    (await readKnowledgeEntry("notes", "characters"))?.extra,
+    { notes: "para one\n\npara two" },
+    "blank lines inside multi-line extra values survive the round-trip",
+  );
 } finally {
   if (prev === undefined) delete process.env.COVEN_KNOWLEDGE_DIR;
   else process.env.COVEN_KNOWLEDGE_DIR = prev;

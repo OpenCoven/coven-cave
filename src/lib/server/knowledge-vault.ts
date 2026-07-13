@@ -120,7 +120,11 @@ export function normalizeScope(value: unknown): KnowledgeScope {
 function extraFrontmatterLines(entry: KnowledgeEntry): string[] {
   const extra = sanitizeKnowledgeExtra(entry.extra);
   if (Object.keys(extra).length === 0) return [];
-  return stringifyYaml(extra).trimEnd().split("\n").filter(Boolean);
+  // Keep empty lines: block scalars use blank lines for paragraph breaks, and
+  // dropping them would silently corrupt multi-line values on every save. The
+  // frontmatter fence stays unambiguous — block content is always indented, so
+  // no emitted line can match the column-0 `---` terminator.
+  return stringifyYaml(extra).trimEnd().split("\n");
 }
 
 const RESERVED_FRONTMATTER_KEYS = new Set(["title", "tags", "scope", "enabled", "pins"]);
@@ -221,12 +225,17 @@ export function buildPromptWithKnowledgeVault(
 ): string {
   const text = prompt.trim();
   const usable = entries.filter((e) => e.enabled && e.body.trim());
+  // collection.yml is hand-edited YAML; readCollectionMeta coerces types, but
+  // this is a pure function other callers can feed raw metas — a non-string
+  // summary must be skipped, never crash the chat-send path. Whitespace and
+  // newlines are collapsed so a multi-line summary can't break the one-line
+  // list format or balloon prompt tokens.
+  const summaryOf = (meta: KnowledgeCollectionMeta | null): string =>
+    meta && typeof meta.summary === "string" ? meta.summary.replace(/\s+/g, " ").trim() : "";
   const collectionIndex = collections
-    .filter((collection) => collection.meta?.summary?.trim())
+    .filter((collection) => summaryOf(collection.meta))
     .slice(0, 20)
-    // Collapse whitespace/newlines so a multi-line summary can't break the
-    // one-line list format or balloon prompt tokens.
-    .map((collection) => `- ${collection.id}: ${(collection.meta?.summary ?? "").replace(/\s+/g, " ").trim()}`);
+    .map((collection) => `- ${collection.id}: ${summaryOf(collection.meta)}`);
   if (usable.length === 0 && collectionIndex.length === 0) return text;
 
   const blocks = usable.map((entry) => {
@@ -390,9 +399,33 @@ export async function readCollectionMeta(collection: string): Promise<KnowledgeC
     const raw = await readFile(collectionMetaPath(collection), "utf8");
     const parsed = parseYaml(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const meta = parsed as Partial<KnowledgeCollectionMeta>;
+    const meta = parsed as Record<string, unknown>;
     if (typeof meta.name !== "string" || !meta.name.trim()) return null;
-    return meta as KnowledgeCollectionMeta;
+    // collection.yml is hand-editable YAML, so every optional field is coerced
+    // at this single chokepoint: a stray `summary: 2026` (YAML number) must
+    // degrade to "field absent", not throw `.trim is not a function` in the
+    // prompt builder on every chat send.
+    const str = (v: unknown): string | undefined =>
+      typeof v === "string" && v.trim() ? v : undefined;
+    const fields = Array.isArray(meta.fields)
+      ? meta.fields.filter(
+          (f): f is { key: string; label: string } =>
+            isPlainRecord(f) && typeof f.key === "string" && typeof f.label === "string",
+        )
+      : undefined;
+    const pack =
+      isPlainRecord(meta.pack) && typeof meta.pack.id === "string" && typeof meta.pack.version === "string"
+        ? { id: meta.pack.id, version: meta.pack.version }
+        : undefined;
+    return {
+      name: meta.name,
+      ...(str(meta.description) ? { description: str(meta.description) } : {}),
+      ...(str(meta.entityType) ? { entityType: str(meta.entityType) } : {}),
+      ...(str(meta.storyQuestion) ? { storyQuestion: str(meta.storyQuestion) } : {}),
+      ...(fields ? { fields } : {}),
+      ...(pack ? { pack } : {}),
+      ...(str(meta.summary) ? { summary: str(meta.summary) } : {}),
+    };
   } catch {
     return null;
   }

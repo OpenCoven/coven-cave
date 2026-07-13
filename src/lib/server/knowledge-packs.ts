@@ -157,9 +157,15 @@ async function seedVault(pack: KnowledgePackManifest): Promise<KnowledgePackSeed
     const meta = folderMeta(pack, folder);
     result.collections?.push(folder.id);
     const hasMetaFile = await collectionMetaExists(folder.id);
-    const currentMeta = await readCollectionMeta(folder.id);
-    if (!hasMetaFile || currentMeta?.pack?.id === pack.id) await writeCollectionMeta(folder.id, meta);
-    else result.skipped.push(`${folder.id}/collection.yml`);
+    // Never overwrite an existing collection.yml — users customize it (esp.
+    // `summary`, which reaches every harness prompt) and the docs promise
+    // seeding never clobbers existing files. Report the touch either way.
+    if (!hasMetaFile) {
+      await writeCollectionMeta(folder.id, meta);
+      result.created.push(`${folder.id}/collection.yml`);
+    } else {
+      result.skipped.push(`${folder.id}/collection.yml`);
+    }
 
     const [template] = templatesByFolder(pack, folder);
     if (!template) continue;

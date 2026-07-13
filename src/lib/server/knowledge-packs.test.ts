@@ -61,7 +61,12 @@ try {
   const firstVault = await packs.seedKnowledgePack({ packId: "worldbuilding", target: "vault" });
   assert.equal(firstVault.ok, true);
   assert.deepEqual(firstVault.collections, ["characters", "locations"]);
-  assert.deepEqual(firstVault.created.sort(), ["characters/character", "locations/location"]);
+  assert.deepEqual(firstVault.created.sort(), [
+    "characters/character",
+    "characters/collection.yml",
+    "locations/collection.yml",
+    "locations/location",
+  ]);
   const character = await vault.readKnowledgeEntry("character", "characters");
   assert.equal(character?.enabled, false, "seeded vault stubs are disabled by default");
   assert.deepEqual(character?.extra, { type: "character", status: "draft" }, "seeded stubs preserve entity/template frontmatter in extra");
@@ -76,7 +81,28 @@ try {
 
   const secondVault = await packs.seedKnowledgePack({ packId: "worldbuilding", target: "vault" });
   assert.deepEqual(secondVault.created, []);
-  assert.deepEqual(secondVault.skipped.sort(), ["characters/character", "locations/location"]);
+  assert.deepEqual(secondVault.skipped.sort(), [
+    "characters/character",
+    "characters/collection.yml",
+    "locations/collection.yml",
+    "locations/location",
+  ]);
+
+  // Same-pack provenance must not license clobbering user customizations:
+  // `summary` reaches every harness prompt, so a re-seed reverting it would be
+  // silent data loss (docs promise seeding never overwrites existing files).
+  await vault.writeCollectionMeta("characters", {
+    name: "Characters",
+    pack: { id: "worldbuilding", version: "0.1.0" },
+    summary: "my customized summary",
+  });
+  const samePackReseed = await packs.seedKnowledgePack({ packId: "worldbuilding", target: "vault" });
+  assert.ok(samePackReseed.skipped.includes("characters/collection.yml"));
+  assert.equal(
+    (await vault.readCollectionMeta("characters"))?.summary,
+    "my customized summary",
+    "re-seeding never overwrites an existing collection.yml, even from the same pack",
+  );
 
   await vault.writeCollectionMeta("characters", { name: "Other", pack: { id: "other-pack", version: "1" } });
   const protectedMeta = await packs.seedKnowledgePack({ packId: "worldbuilding", target: "vault" });
