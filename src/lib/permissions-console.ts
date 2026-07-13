@@ -8,6 +8,11 @@
 // the React surface (settings-permissions.tsx) stays a thin rendering layer.
 
 import type { IconName } from "@/lib/icon";
+import {
+  resolveEffectiveAccess,
+  type EffectiveProjectAccess,
+  type ProjectAccessLevel,
+} from "./project-access-levels.ts";
 
 export type ConsoleFamiliar = { id: string; displayName?: string; name?: string };
 export type ConsoleProject = { id: string; name: string; root: string; color?: string };
@@ -16,8 +21,20 @@ export type GrantSource = "bootstrap" | "human";
 export type ConsoleGrant = {
   familiarId: string;
   projectId: string;
+  /** Level of the direct grant; legacy (v1) rows omit it and mean "write". */
+  access?: ProjectAccessLevel;
   source?: GrantSource;
   grantedAt?: string;
+};
+
+export type ConsoleAccessGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  memberFamiliarIds: string[];
+  projectGrants: { projectId: string; access?: ProjectAccessLevel; grantedAt?: string }[];
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type ProposalStatus = "pending" | "accepted" | "rejected";
@@ -26,12 +43,13 @@ export type ConsoleProposal = {
   proposedBy: string;
   targetFamiliarId: string;
   projectId: string;
+  access?: ProjectAccessLevel;
   status: ProposalStatus;
   createdAt: string;
 };
 
 export type AuditDecision = "allow" | "deny";
-export type AuditReason = "grant" | "supreme" | "missing-grant";
+export type AuditReason = "grant" | "group" | "supreme" | "missing-grant" | "insufficient-access";
 export type PermissionSurface =
   | "chat"
   | "session-launch"
@@ -50,6 +68,7 @@ export type ConsoleAuditEntry = {
   surface: PermissionSurface;
   decision: AuditDecision;
   reason: AuditReason;
+  requiredAccess?: ProjectAccessLevel;
 };
 
 export type PermissionTab = "access" | "requests" | "audit";
@@ -213,8 +232,12 @@ export function auditReasonLabel(reason: AuditReason): string {
       return "all-access familiar";
     case "grant":
       return "explicit grant";
+    case "group":
+      return "access group";
     case "missing-grant":
       return "no grant";
+    case "insufficient-access":
+      return "read-only grant";
     default:
       return reason;
   }
@@ -262,4 +285,58 @@ export function nameResolver<T extends { id: string }>(
 ): (id: string) => string {
   const map = new Map(items.map((item) => [item.id, label(item)]));
   return (id: string) => map.get(id) ?? id;
+}
+
+// --- Access levels + groups --------------------------------------------------
+
+export function accessLevelMeta(level: ProjectAccessLevel): {
+  label: string;
+  icon: IconName;
+  title: string;
+} {
+  return level === "write"
+    ? { label: "Read + write", icon: "ph:pencil-simple", title: "May read files and use write surfaces (file writes, shell)" }
+    : { label: "Read", icon: "ph:book-open", title: "May browse, read files, and chat — write surfaces stay locked" };
+}
+
+/**
+ * One project row in a familiar's effective-access view: its direct grant (the
+ * toggleable part) plus every access-group grant it inherits, resolved to the
+ * union-max effective level the enforcement chokepoint will apply.
+ */
+export type EffectiveAccessRow = {
+  project: ConsoleProject;
+  effective: EffectiveProjectAccess;
+};
+
+/**
+ * Resolve every project against a familiar's direct grants + group memberships
+ * using the SAME union-max resolver the server enforces with. Rows are returned
+ * for all projects (granted or not) so the studio tab can render toggles.
+ */
+export function effectiveAccessRows(args: {
+  projects: ConsoleProject[];
+  grants: ConsoleGrant[];
+  groups: ConsoleAccessGroup[];
+  familiarId: string;
+}): EffectiveAccessRow[] {
+  return args.projects.map((project) => ({
+    project,
+    effective: resolveEffectiveAccess({
+      directGrants: args.grants,
+      groups: args.groups,
+      familiarId: args.familiarId,
+      projectId: project.id,
+    }),
+  }));
+}
+
+/** Groups the familiar belongs to, for the studio tab's membership summary. */
+export function groupsForFamiliar(
+  groups: ConsoleAccessGroup[],
+  familiarId: string,
+): ConsoleAccessGroup[] {
+  return groups
+    .filter((group) => group.memberFamiliarIds.includes(familiarId))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }

@@ -80,7 +80,10 @@ struct ChatsHomeView: View {
                 await app.loadSessions()
             }
             .task { await app.loadSessions() }
-            .onAppear(perform: openDeepLinkedThread)
+            .onAppear {
+                openDeepLinkedThread()
+                openRequestedFamiliar()
+            }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
             .onChange(of: app.threadToOpen) { _, thread in
@@ -88,6 +91,7 @@ struct ChatsHomeView: View {
                 if lastThreadId != thread.id { open(.thread(thread)) }
                 app.threadToOpen = nil
             }
+            .onChange(of: app.familiarToOpen) { _, _ in openRequestedFamiliar() }
             .sidebarColumn()
         } detail: {
             detailColumn
@@ -159,6 +163,12 @@ struct ChatsHomeView: View {
               let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
               let thread = app.threads.first(where: { $0.id == id }) else { return }
         open(.thread(thread))
+    }
+
+    private func openRequestedFamiliar() {
+        guard let familiar = app.familiarToOpen else { return }
+        open(.familiar(familiar))
+        app.familiarToOpen = nil
     }
 
     /// Large-title header pinned to the top, mirroring the Read / Tasks tabs

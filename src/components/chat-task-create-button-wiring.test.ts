@@ -43,6 +43,11 @@ assert.match(
 );
 assert.match(
   chatView,
+  /createSmartTaskFromChat\(\{ sessionId, context: handoff \}\)[\s\S]{0,1500}catch \(err\) \{[\s\S]{0,400}err instanceof Error && err\.message[\s\S]{0,160}check your connection/,
+  "creation failure surfaces the server's specific reason (err.message), with the connection hint only as fallback",
+);
+assert.match(
+  chatView,
   /announce\(\s*`Task "\$\{result\.card\.title\}" created from this chat/,
   "success is announced to screen readers, naming what was auto-filled",
 );

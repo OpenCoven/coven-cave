@@ -14,7 +14,7 @@
  *   - composer + slash menu: src/components/chat-view.tsx onComposerKey and
  *     src/components/home-composer.tsx handleKeyDown
  *   - "/" search focus: each surface's view (familiars-view, projects-view,
- *     capabilities-view, chat-list); "⌘F" sessions search: chat-list.tsx
+ *     marketplace-view, chat-list); "⌘F" sessions search: chat-list.tsx
  *   - browser pane: src/components/browser-pane.tsx (⌘L / ⌘K / [)
  *   - ⌘S save: familiar-daily-notes.tsx;
  *     artifact refine ⌘↵: chat-artifact-viewer.tsx

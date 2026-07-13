@@ -82,7 +82,6 @@ export type SidebarMinimalProps = {
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
-  onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged?: () => void;
   /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
   boardOpenCount?: number;
@@ -136,7 +135,7 @@ const FOLDER_MODES: Array<{
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
   // those launchers but hidden from the sidebar rows.
   { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true },
+  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },

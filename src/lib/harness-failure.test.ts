@@ -117,6 +117,17 @@ import {
   assert.ok(codex);
   assert.equal(codex.loginCommand, "codex login");
 
+  // OpenCode (registry runtime): its sign-in flow is `opencode auth login`,
+  // and the package alias must canonicalize before the command lookup.
+  const opencode = parseHarnessAuthFailure("Error: no credentials found. Run `opencode auth login` first.", "opencode");
+  assert.ok(opencode, "opencode sign-in failure detected");
+  assert.equal(opencode.harness, "opencode");
+  assert.equal(opencode.loginCommand, "opencode auth login", "opencode login command offered");
+  const opencodeAlias = parseHarnessAuthFailure("authentication required", "opencode-ai");
+  assert.ok(opencodeAlias);
+  assert.equal(opencodeAlias.harness, "opencode", "npm package alias canonicalizes");
+  assert.equal(opencodeAlias.loginCommand, "opencode auth login");
+
   const unknownRuntime = parseHarnessAuthFailure("authentication required", "mystery-harness");
   assert.ok(unknownRuntime, "auth failure still detected without a known runtime");
   assert.equal(unknownRuntime.harness, null, "unknown runtime ids don't map");

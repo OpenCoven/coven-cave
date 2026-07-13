@@ -30,6 +30,9 @@ const BRAND_PATHS: Record<string, string> = {
 const GLYPH_FALLBACKS: Record<string, IconName> = {
   hermes: "ph:plug-bold",
   openclaw: "ph:paw-print-bold",
+  // Registry runtime — same glyph skill-card's /code/ rule resolves, so the
+  // runtime chip and skill cards speak one visual language for OpenCode.
+  opencode: "ph:code-bold",
 };
 
 export function runtimeDisplayName(runtime: string): string {

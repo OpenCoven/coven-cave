@@ -8,23 +8,29 @@ struct RootView: View {
     var body: some View {
         @Bindable var app = app
         Group {
-            switch app.connectionState {
-            case .unconfigured, .needsAuth:
-                // No endpoint, or the desktop is up but demands pairing —
-                // only the user can fix either, so the Connect screen takes
-                // over fully.
-                ConnectionView()
-            case .checking where app.connection != nil && !app.hasLoadedSurfaces:
-                ConnectingView()
-            case .unreachable where !app.hasLoadedSurfaces:
-                // Never got in this session — nothing to keep on screen.
-                ConnectionView()
-            default:
-                // Connected — or a transient drop AFTER surfaces loaded. Keep
-                // the tab tree mounted (cached data stays usable, offline
-                // compose keeps queueing) and narrate recovery with the pill
-                // instead of tearing down to the Connect screen.
-                MainTabView()
+            if app.deepLink == .search && app.connectionState != .connected {
+                // Search deep link before a connection exists: land on the
+                // local-index SearchView rather than the Connect screen.
+                SearchView()
+            } else {
+                switch app.connectionState {
+                case .unconfigured, .needsAuth:
+                    // No endpoint, or the desktop is up but demands pairing —
+                    // only the user can fix either, so the Connect screen takes
+                    // over fully.
+                    ConnectionView()
+                case .checking where app.connection != nil && !app.hasLoadedSurfaces:
+                    ConnectingView()
+                case .unreachable where !app.hasLoadedSurfaces:
+                    // Never got in this session — nothing to keep on screen.
+                    ConnectionView()
+                default:
+                    // Connected — or a transient drop AFTER surfaces loaded. Keep
+                    // the tab tree mounted (cached data stays usable, offline
+                    // compose keeps queueing) and narrate recovery with the pill
+                    // instead of tearing down to the Connect screen.
+                    MainTabView()
+                }
             }
         }
         .overlay(alignment: .top) {
@@ -123,8 +129,8 @@ struct MainTabView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Tab order, used to map ⌘1–5 to the right tab.
-    private let tabOrder: [AppTab] = [.chats, .tasks, .calendar, .dev, .settings]
+    /// Tab order, used to map ⌘1–6 to the right tab.
+    private let tabOrder: [AppTab] = [.chats, .tasks, .calendar, .dev, .settings, .search]
 
     var body: some View {
         @Bindable var app = app
@@ -144,11 +150,14 @@ struct MainTabView: View {
             Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
                 SettingsView()
             }
+            Tab(value: .search, role: .search) {
+                SearchView()
+            }
         }
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
         .toast($app.toast)
-        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–4.
+        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–6.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
             ForEach(Array(tabOrder.enumerated()), id: \.element) { index, tab in

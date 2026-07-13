@@ -2009,6 +2009,14 @@ export function Workspace() {
       openGrimoireDoc("memory", intent.path);
       return;
     }
+    if (intent.kind === "open-setting") {
+      const params = new URLSearchParams();
+      if (intent.group) params.set("group", intent.group);
+      if (intent.familiarTab) params.set("familiarTab", intent.familiarTab);
+      const search = params.size > 0 ? `?${params.toString()}` : "";
+      nextRouter.push(`/settings${search}#${intent.section}`);
+      return;
+    }
     if (intent.kind === "slash") {
       handleSlashIntent(intent.command, intent.args);
       return;
@@ -2313,14 +2321,6 @@ export function Workspace() {
       responseNeeded={responseNeeded}
       notificationBadgeCount={notificationUnreadCount}
       onOpenInbox={() => setMode("inbox")}
-      onOpenInboxItem={(item) => {
-        markInboxItemRead(item.id);
-        if (item.sessionId) {
-          openFamiliarSession(item.sessionId, item.familiarId);
-        } else {
-          setMode("inbox");
-        }
-      }}
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
@@ -2526,12 +2526,12 @@ export function Workspace() {
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
-      // modes still resolve here (deep links / navigate-mode) but open the
-      // matching section; keying on the mode remounts so deep links land.
+      // modes still resolve here (deep links / navigate-mode) but land on
+      // Browse while those sections are hidden; keying on the mode remounts
+      // so deep links land.
       <MarketplaceView
         key={mode}
         initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
-        activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
       />
@@ -2669,10 +2669,14 @@ export function Workspace() {
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
               inboxBadgeCount={notificationUnreadCount}
+              // Bell rows open in the Inbox (Schedules) surface — the popover
+              // is a triage list, not a chat launcher. Session jumps stay on
+              // the chat surface and Home needs-you paths
+              // (openInspectorInboxItem).
               onOpenInboxItem={(item) => {
                 markInboxItemRead(item.id);
-                if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-                else setMode("inbox");
+                if (item.familiarId) setActiveId(item.familiarId);
+                setMode("inbox");
               }}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}

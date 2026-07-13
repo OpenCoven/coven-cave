@@ -114,7 +114,11 @@ export function inferDueDateFromTurns(turns: HandoffTurn[], now: Date = new Date
     ...usable.filter((turn) => turn.role === "user"),
     ...usable.filter((turn) => turn.role !== "user"),
   ];
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  // The requester's LOCAL calendar date, pinned at UTC midnight so the day
+  // math below (setUTCDate / getUTCDay / toISOString) stays DST-proof. Built
+  // from local getters: UTC getters made "by today" resolve to tomorrow for
+  // evening users west of UTC (cave-t7uz).
+  const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
   for (const turn of ranked) {
     const text = turn.text.toLowerCase();
 

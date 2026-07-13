@@ -58,6 +58,7 @@ import {
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import { openExternalUrl } from "@/lib/open-external";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1698,18 +1699,12 @@ function useGitHubChecks(item: GitHubItem | null, enabled: boolean): ChecksState
   }, [enabled, repo, number, tick]);
 
   // Live-refresh while CI is still running: poll every 30s until the rollup
-  // leaves "pending". Fetches are skipped while the tab is hidden (the interval
-  // itself is a no-op then) so a backgrounded tab doesn't spend rate limit —
-  // mirroring the surface's own activity-poll discipline.
+  // leaves "pending". usePausablePoll (cave-e794) keeps the hidden-tab skip
+  // (a backgrounded tab doesn't spend rate limit) and adds an immediate
+  // refresh on return, so CI status is current the moment the tab comes back
+  // instead of up to 30s later.
   const rollup = state.status === "ready" ? state.data.rollup : null;
-  useEffect(() => {
-    if (rollup !== "pending") return;
-    const id = window.setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      setTick((t) => t + 1);
-    }, 30_000);
-    return () => window.clearInterval(id);
-  }, [rollup]);
+  usePausablePoll(() => setTick((t) => t + 1), 30_000, { enabled: rollup === "pending" });
 
   return state;
 }

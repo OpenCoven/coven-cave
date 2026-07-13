@@ -93,8 +93,14 @@ assert.match(
 
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*setAssistantLifecycle\(assistantId, "streaming", liveGeneration\.sessionId\)/,
+  /const applyAssistantChunk = \([\s\S]*?setAssistantLifecycle\(assistantId, "streaming", liveGeneration\.sessionId\)/,
   "Assistant chunks should move the turn into a streaming lifecycle",
+);
+
+assert.match(
+  source,
+  /case "assistant_chunk": \{[\s\S]{0,400}?applyAssistantChunk\(ev\.text, assistantId, liveGeneration\)/,
+  "The assistant_chunk event delegates to the shared streaming-lifecycle application",
 );
 
 assert.match(
@@ -423,10 +429,12 @@ assert.doesNotMatch(
 // (b) The synthetic "Receiving response" progress row settles at the first
 // assistant chunk instead of staying "running" for the whole stream — the
 // streamed text itself is the live signal, and the auto-open ProgressGroup
-// quiets down to real connect/tool events.
+// quiets down to real connect/tool events. (The chunk application lives in
+// applyAssistantChunk; both the coalesced stream-loop path and handleEvent's
+// assistant_chunk case delegate to it — see chat-view-chunk-coalescing.)
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
+  /const applyAssistantChunk = \([\s\S]*?id: "stream",\s*\n\s*label: "Receiving response",\s*\n\s*status: "done",/,
   "The synthetic Receiving-response row settles (done) at first chunk (CHAT-D12-01)",
 );
 

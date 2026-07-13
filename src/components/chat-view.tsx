@@ -138,6 +138,7 @@ import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
 import { ComposerGitChip } from "@/components/composer-git-chip";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
+import { createChunkCoalescer } from "@/lib/chunk-coalescer";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
@@ -404,6 +405,12 @@ const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
 // the find effect — the full transcript renders, so seeking, find, and deep
 // scroll are never limited by the cap.
 const TRANSCRIPT_RENDER_CAP = 60;
+// Streaming text flush window (cave-w50e): assistant_chunk frames arrive
+// ~one per token; buffering them for this long collapses dozens of React
+// commits (each a full turns map + registry advance) into one, while staying
+// well under perception threshold (~2-3 frames). Non-chunk events and stream
+// end flush immediately, so ordering and final text are exact.
+const CHUNK_FLUSH_MS = 40;
 const THINKING_OPTIONS = COMMAND_THINKING_OPTIONS;
 const SPEED_OPTIONS = COMMAND_RESPONSE_SPEED_OPTIONS;
 const CHAT_ATTACHMENT_ACCEPT = [
@@ -1952,8 +1959,12 @@ function LinkedContextRow({
       announce(
         `Task "${result.card.title}" created from this chat${filled.length ? ` with ${filled.join(", ")}` : ""}.`,
       );
-    } catch {
-      announce("Couldn't create a task from this chat — check your connection.", "assertive");
+    } catch (err) {
+      // Surface the server's specific reason (validation message, HTTP status)
+      // instead of always blaming the connection (cave-t7uz).
+      const reason =
+        err instanceof Error && err.message ? err.message.replace(/\.$/, "") : "check your connection";
+      announce(`Couldn't create a task from this chat — ${reason}.`, "assertive");
     } finally {
       setCreatingTask(false);
     }
@@ -3983,6 +3994,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // background generation (user switched threads mid-stream) can tell it no
     // longer owns the displayed view and must not adopt its late session id.
     const liveGeneration = { sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller };
+    // Coalesce assistant_chunk frames (~one per token → one React commit per
+    // token) into one applyAssistantChunk per CHUNK_FLUSH_MS window. Declared
+    // outside the try so the catch (abort/error) can flush buffered text
+    // before it derives labels from t.text (cave-w50e).
+    const chunkCoalescer = createChunkCoalescer({
+      flushMs: CHUNK_FLUSH_MS,
+      apply: (text) => applyAssistantChunk(text, assistantId, liveGeneration),
+    });
     const runId = crypto.randomUUID();
     abortRef.current = controller;
     stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
@@ -4124,13 +4143,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (!payload) continue;
           try {
             const ev = JSON.parse(payload) as StreamEvent;
-            handleEvent(ev, assistantId, request, liveGeneration);
+            if (ev.kind === "assistant_chunk") {
+              // Hot path: buffer instead of committing per token.
+              chunkCoalescer.push(ev.text);
+            } else {
+              // Ordering: buffered text must land before any progress /
+              // attachment / done record derived from later frames.
+              chunkCoalescer.flush();
+              handleEvent(ev, assistantId, request, liveGeneration);
+            }
           } catch {
             /* skip malformed */
           }
         }
       }
+      chunkCoalescer.flush();
     } catch (err) {
+      // Apply any buffered streamed text FIRST — the handlers below read
+      // t.text (e.g. the cancelled fallback label) and must see all of it.
+      chunkCoalescer.flush();
       if ((err as Error)?.name === "AbortError") {
         updateLiveTurns((prev) =>
           prev.map((t) =>
@@ -4507,6 +4538,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
+  /**
+   * Apply streamed assistant text to the live turn in ONE state update.
+   * Extracted from handleEvent's assistant_chunk case (cave-w50e) so the
+   * stream loop's coalescer can flush a whole buffered window — dozens of
+   * tokens — as a single turns map + registry advance instead of one per
+   * SSE frame. appendCollapsingNewlines is chunking-invariant (see
+   * stream-text.test.ts), so buffering never changes the final text.
+   */
+  const applyAssistantChunk = (
+    text: string,
+    assistantId: string,
+    liveGeneration: { sessionId: string | null },
+  ) => {
+    setAssistantLifecycle(assistantId, "streaming", liveGeneration.sessionId);
+    updateLiveTurns((prev) =>
+      prev.map((t) =>
+        t.id === assistantId
+          ? {
+              ...t,
+              text: appendCollapsingNewlines(t.text, text),
+              pending: true,
+              lifecycle: "streaming",
+              // CHAT-D12-01: settle the synthetic row the moment text is
+              // flowing — the streamed text IS the live signal from here
+              // on. Leaving it "running" kept the auto-open ProgressGroup
+              // pulsing for the entire stream.
+              progress: upsertProgressEvent(t.progress, {
+                id: "stream",
+                label: "Receiving response",
+                status: "done",
+              }),
+            }
+          : t,
+      ),
+      assistantId,
+      undefined,
+      liveGeneration.sessionId,
+    );
+  };
+
   const handleEvent = (
     ev: StreamEvent,
     assistantId: string,
@@ -4543,31 +4614,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       case "assistant_chunk": {
-        setAssistantLifecycle(assistantId, "streaming", liveGeneration.sessionId);
-        updateLiveTurns((prev) =>
-          prev.map((t) =>
-            t.id === assistantId
-              ? {
-                  ...t,
-                  text: appendCollapsingNewlines(t.text, ev.text),
-                  pending: true,
-                  lifecycle: "streaming",
-                  // CHAT-D12-01: settle the synthetic row the moment text is
-                  // flowing — the streamed text IS the live signal from here
-                  // on. Leaving it "running" kept the auto-open ProgressGroup
-                  // pulsing for the entire stream.
-                  progress: upsertProgressEvent(t.progress, {
-                    id: "stream",
-                    label: "Receiving response",
-                    status: "done",
-                  }),
-                }
-              : t,
-          ),
-          assistantId,
-          undefined,
-          liveGeneration.sessionId,
-        );
+        // Direct (non-coalesced) path — the stream loop routes chunks through
+        // chunkCoalescer and never reaches this case; it stays for any other
+        // handleEvent caller so a chunk is never silently dropped.
+        applyAssistantChunk(ev.text, assistantId, liveGeneration);
         return;
       }
       case "attachment": {

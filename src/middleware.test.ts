@@ -21,6 +21,16 @@ assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject un
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
 assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated \|\| tailnetTrusted\)/, "valid mobile access or tailnet-trust should satisfy the API host gate");
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless app mode (COVEN_CAVE_TAILNET_TRUST) should relax the host gate for tailnet-forwarded requests");
+assert.match(
+  source,
+  /const mobileAccessMarker =\s*mobileAccessAuthenticated \|\| \(tailnetTrusted && isTailscaleServeHost\(requestHost\)\)/,
+  "tokenless tailnet-trust mode should still stamp the mobile-access marker for ts.net hosts",
+);
+assert.match(
+  source,
+  /nextWithMobileAccessMarker\(req, mobileAccessMarker\)/,
+  "proxy should forward the derived mobile marker into downstream request headers",
+);
 assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
 assert.match(source, /const referer = req\.headers\.get\("referer"\)/, "API referer gate should read the source referer header once");
 assert.match(source, /isAllowedRequestSourceAny\(origin, expectedOrigins\)/, "API origin gate should require same-origin sources unless header-CSRF-trusted");
@@ -144,6 +154,7 @@ assert.match(mobileScriptSource, /"authorization": `Bearer \$\{createMobileAcces
 assert.match(nextConfigSource, /allowedDevOrigins:\s*\[[\s\S]*"\*\*\.ts\.net"/, "Next dev should allow Tailscale Serve origins for mobile browser access");
 assert.match(nextConfigSource, /devIndicators:\s*false/, "Next dev tools launcher should not intercept mobile bottom-tab taps");
 assert.match(mobileDocsSource, /signed (?:expiring )?invites?/, "mobile docs should describe the signed access token invite");
+assert.match(proxyHelpersSource, /export function isTailscaleServeHost\(host: string \| null\)/, "proxy helpers should expose ts.net host detection so marker logic is testable and shared");
 assert.match(tauriSource, /sidecar_auth_token\(\)/, "Tauri sidecar should generate a per-launch token");
 assert.match(tauriSource, /\.env\("COVEN_CAVE_AUTH_TOKEN", &auth_token\)/, "Tauri sidecar should pass the token to Next.js");
 assert.match(tauriSource, /\.env\("COVEN_CAVE_ACCESS_TOKEN", &mobile_access_token\)/, "Tauri sidecar should pass the mobile access secret to Next.js");

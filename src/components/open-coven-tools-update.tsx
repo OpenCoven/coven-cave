@@ -10,6 +10,7 @@ import {
   type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
 import { useShellBanners } from "@/lib/shell-banners";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { buildSafeToolDiagnostics } from "@/lib/about-diagnostics";
 import {
   openCovenToolActionLabel,
@@ -174,8 +175,17 @@ function installResultFromCompletion(
       detail: "Post-install recheck could not verify npm latest. Check the network or registry, then retry.",
     };
   }
+  // `where` on Windows can report the same executable with different casing
+  // or slash direction than the verification probe; normalize before
+  // comparing so a cosmetic path difference doesn't fail the recheck.
+  const normalizePath = (value: string | null | undefined) => {
+    if (!value) return null;
+    const looksWindows = /[A-Za-z]:\\/.test(value) || value.includes("\\");
+    const normalized = value.replace(/\//g, "\\");
+    return looksWindows ? normalized.toLowerCase() : value;
+  };
   const consistent =
-    rechecked.path === verification.path &&
+    normalizePath(rechecked.path) === normalizePath(verification.path) &&
     rechecked.current === verification.current &&
     rechecked.latest === verification.latest &&
     rechecked.packageVerified &&
@@ -388,12 +398,17 @@ export function OpenCovenToolsUpdate() {
     mounted.current = true;
     void load();
     void refreshNpmLane();
-    const pollLane = setInterval(() => void refreshNpmLane(), 2000);
     return () => {
       mounted.current = false;
-      clearInterval(pollLane);
     };
   }, [load, refreshNpmLane]);
+
+  // Shared npm lane: 2s poll so a concurrently running install started by any
+  // OTHER surface (onboarding, capabilities) shows here too. usePausablePoll
+  // (cave-e794): the raw interval fetched every 2s even in hidden windows —
+  // this surface is always mounted, so that was a permanent background drip.
+  // Now it pauses while hidden and refreshes instantly on return.
+  usePausablePoll(() => void refreshNpmLane(), 2000);
 
   const runningInstallKey = useMemo(
     () =>
@@ -452,7 +467,13 @@ export function OpenCovenToolsUpdate() {
       }
     };
     void tick();
-    const id = setInterval(() => void tick(), 2000);
+    const id = setInterval(() => {
+      // Hidden-window pause (cave-e794): the job completes server-side either
+      // way; polling from a hidden window only spends network. The visible
+      // poll (or the on-return lane refresh) catches the terminal state.
+      if (typeof document !== "undefined" && document.hidden) return;
+      void tick();
+    }, 2000);
     return () => {
       cancelled = true;
       clearInterval(id);

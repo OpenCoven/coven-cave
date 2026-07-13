@@ -36,6 +36,8 @@ function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
 ): SessionRow {
+  const keep = Boolean(state.sessionKeep?.[conv.sessionId]);
+  const extendedUntil = state.sessionArchiveExtendedUntil?.[conv.sessionId] ?? null;
   const title =
     state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
   const familiarId = state.sessionFamiliar[conv.sessionId] ?? conv.familiarId ?? null;
@@ -55,6 +57,8 @@ function localConversationToSession(
     familiarId,
     origin: conv.origin ?? "chat",
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
+    ...(keep ? { keep: true } : {}),
+    ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
   };
 }
 
@@ -106,6 +110,8 @@ export function mergeSessionRows({
     seen.add(session.id);
     const titleOverride = state.sessionTitles[session.id];
     const archivedLocal = state.sessionArchived[session.id] ?? null;
+    const keep = Boolean(state.sessionKeep?.[session.id]);
+    const extendedUntil = state.sessionArchiveExtendedUntil?.[session.id] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
     const localUpdatedAt = localUpdatedById.get(session.id);
     const local = localById.get(session.id);
@@ -135,6 +141,8 @@ export function mergeSessionRows({
       // a run some generator spawned (journal narrative, flow, automation,
       // CLI), not something a person typed into a chat surface.
       ...(!local && inferOrigin(session) === "chat" ? { generated: true } : {}),
+      ...(keep ? { keep: true } : {}),
+      ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
       initiator:
         session.initiator ??
         initiatorFromSessionKey("", state.sessionFamiliar[session.id] ?? session.harness),

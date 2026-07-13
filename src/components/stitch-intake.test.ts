@@ -23,6 +23,13 @@ describe("stitch intake panel", () => {
     assert.match(intake, /\/api\/sessions\/list/, "chat pins pick from real sessions");
   });
 
+  it("autofills GitHub refs with the GitHub URL prefix", () => {
+    assert.match(intake, /const GITHUB_SOURCE_PREFIX = "https:\/\/github\.com\/";/, "the prefix is a named constant");
+    assert.match(intake, /setRef\(defaultRefForKind\(k\)\)/, "choosing GitHub primes the source field");
+    assert.match(intake, /setRef\(defaultRefForKind\(kind\)\)/, "adding another GitHub pin restores the prefix");
+    assert.match(intake, /kind === "github" && sourceRef === GITHUB_SOURCE_PREFIX/, "the prefix alone is not submitted");
+  });
+
   it("sews agentically, in chat, and manually", () => {
     assert.match(intake, /fetch\("\/api\/stitches\/sew"/, "agentic + manual sew post to the sew route");
     assert.match(intake, /mode, title/, "the sew carries the latest working title");

@@ -142,4 +142,20 @@ assert.match(
   "Open is a tinted pill, not a solid accent block (accent = presence, not CTA)",
 );
 
+// ── Bell "Open" lands on the Inbox surface (cave-ipze) ──────────────────────
+// The popover is a triage list, not a chat launcher: a row's Open marks the
+// item read, scopes to its familiar, and opens the Inbox (Schedules) view.
+// Session jumps stay on the chat surface and Home needs-you paths, which
+// share openInspectorInboxItem.
+assert.match(
+  workspace,
+  /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);\s*\}\}/,
+  "the bell's Open routes to the Inbox view (mark read, scope familiar, mode inbox)",
+);
+assert.doesNotMatch(
+  workspace,
+  /<TopBar[\s\S]*?onOpenInboxItem=\{\(item\) => \{[\s\S]{0,200}?openFamiliarSession/,
+  "the bell's Open never jumps straight into a chat session",
+);
+
 console.log("daily-summary-notifications.test.ts: ok");

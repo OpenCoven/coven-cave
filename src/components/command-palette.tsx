@@ -13,6 +13,25 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
 import { useProjects } from "@/lib/use-projects";
+import {
+  PALETTE_CATEGORIES,
+  PALETTE_CATEGORY_LABEL,
+  filterPaletteRows,
+  paletteCategoryForKind,
+  paletteResultCounts,
+  paletteResultSummary,
+  type PaletteCategory,
+} from "@/lib/command-palette-search";
+import {
+  clearRecentSearches,
+  readRecentSearches,
+  recordRecentSearch,
+} from "@/lib/recent-searches";
+import {
+  SETTINGS_INDEX,
+  settingsSectionLabel,
+  type SettingsIndexEntry,
+} from "@/components/settings-sections";
 
 function shortProjectRoot(root: string): string {
   const parts = root.replace(/\/+$/, "").split("/").filter(Boolean);
@@ -25,7 +44,7 @@ function shortProjectRoot(root: string): string {
 function browseGroup(row: Row): string {
   switch (row.kind) {
     case "session":
-      return "Recent";
+      return "Recent chats";
     case "command":
       if (row.id.startsWith("surface:")) return "Go to";
       if (row.id.startsWith("project:")) return "Projects";
@@ -39,6 +58,8 @@ function browseGroup(row: Row): string {
       return "Memory";
     case "shortcut":
       return "Shortcuts";
+    case "setting":
+      return "Settings";
     default:
       return "";
   }
@@ -48,8 +69,8 @@ function browseGroup(row: Row): string {
 // "Conversations" header in BOTH browse and search mode (they're a distinct
 // content-search cluster); everything else only groups while browsing.
 function paletteGroup(row: Row, browsing: boolean): string {
-  if (row.kind === "conversation-hit") return "Conversations";
-  return browsing ? browseGroup(row) : "";
+  if (browsing) return browseGroup(row);
+  return PALETTE_CATEGORY_LABEL[paletteCategoryForKind(row.kind)];
 }
 
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
@@ -75,7 +96,13 @@ type PaletteIntent =
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
   | { kind: "create-task"; title: string }
-  | { kind: "open-memory-file"; path: string };
+  | { kind: "open-memory-file"; path: string }
+  | {
+      kind: "open-setting";
+      section: SettingsIndexEntry["section"];
+      group?: string;
+      familiarTab?: SettingsIndexEntry["familiarTab"];
+    };
 
 type Card = {
   id: string;
@@ -133,6 +160,7 @@ type Row =
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
   | { id: string; kind: "create-task"; title: string }
   | { id: string; kind: "conversation-hit"; hit: ConversationHit }
+  | { id: string; kind: "setting"; entry: SettingsIndexEntry }
   | { id: string; kind: "salem-answer"; query: string };
 
 type SalemSearchContextItem = {
@@ -155,6 +183,7 @@ const RESULT_LIMITS = {
   fsMemory: 8,
   command: 6,
   conversation: 6,
+  setting: 8,
 };
 
 const SALEM_CONTEXT_LIMIT = 8;
@@ -247,6 +276,8 @@ export function CommandPalette({
   // change while the user can't even see the palette.
   const { projects } = useProjects({ familiarId: activeFamiliarId, enabled: open });
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState<PaletteCategory>("all");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [cards, setCards] = useState<Card[]>([]);
   const [covenMemory, setCovenMemory] = useState<CovenMemoryEntry[]>([]);
@@ -303,6 +334,8 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
+    setCategory("all");
+    setRecentSearches(readRecentSearches(window.localStorage));
     setActiveIdx(0);
     setSalemAnswer(null);
     setSalemError(null);
@@ -344,13 +377,14 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     setQuery(initialQuery);
+    setCategory("all");
     setActiveIdx(0);
     setSalemAnswer(null);
     setSalemError(null);
   }, [initialQuery, open]);
 
   const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  const rows: Row[] = useMemo(() => {
+  const allRows: Row[] = useMemo(() => {
     const { token, rest } = parseFamiliarToken(query);
     const q = rest.trim().toLowerCase();
     // Fuzzy match: power users type subsequences ("brd" → Board). `fz` widens the
@@ -488,6 +522,29 @@ export function CommandPalette({
             },
           }));
 
+    // Reuse Settings' canonical index so a control relocated behind progressive
+    // disclosure remains one search away. Settings stay out of empty browse mode
+    // (83 rows would drown the useful recency list) and appear only for a query.
+    const settingRows: Row[] = (scoped || slashToken || !q)
+      ? []
+      : rank(
+          SETTINGS_INDEX.filter((entry) => {
+            const section = settingsSectionLabel(entry.section);
+            return (
+              fz(section) ||
+              fz(entry.group ?? "") ||
+              entry.keywords.toLowerCase().includes(q)
+            );
+          }),
+          (entry) => [settingsSectionLabel(entry.section), entry.group, entry.keywords],
+        )
+          .slice(0, RESULT_LIMITS.setting)
+          .map((entry) => ({
+            id: `setting:${entry.section}:${entry.group ?? "overview"}:${entry.familiarTab ?? "root"}`,
+            kind: "setting" as const,
+            entry,
+          }));
+
     const shortcutRows: Row[] = [];
     const toggleLabel = "Toggle Familiar Chat";
     if (!scoped && (!q || fz(toggleLabel) || "⌘⇧b".includes(q))) {
@@ -607,6 +664,7 @@ export function CommandPalette({
           ...cardRows,
           ...covenMemoryRows,
           ...fsMemoryRows,
+          ...settingRows,
           ...cmdRows,
           ...surfaceRows,
           ...boardViewRows,
@@ -627,6 +685,16 @@ export function CommandPalette({
     // AI path.
     return [...localRows, ...salemRows];
   }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects]);
+
+  const counts = useMemo(() => paletteResultCounts(allRows), [allRows]);
+  const rows = useMemo(
+    () => filterPaletteRows(allRows, category) as Row[],
+    [allRows, category],
+  );
+  const resultSummary = useMemo(
+    () => paletteResultSummary(rows, category, parseFamiliarToken(query).rest),
+    [rows, category, query],
+  );
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));
@@ -697,6 +765,10 @@ export function CommandPalette({
       void askSalem();
       return;
     }
+    const search = query.trim();
+    if (search.length >= 2 && row.kind !== "create-task") {
+      setRecentSearches(recordRecentSearch(window.localStorage, search));
+    }
     if (row.kind === "familiar") {
       onIntent({ kind: "switch-familiar", familiarId: row.familiar.id });
     } else if (row.kind === "session") {
@@ -725,6 +797,13 @@ export function CommandPalette({
         sessionId: row.hit.sessionId,
         familiarId,
         findQuery: parseFamiliarToken(query).rest.trim(),
+      });
+    } else if (row.kind === "setting") {
+      onIntent({
+        kind: "open-setting",
+        section: row.entry.section,
+        ...(row.entry.group ? { group: row.entry.group } : {}),
+        ...(row.entry.familiarTab ? { familiarTab: row.entry.familiarTab } : {}),
       });
     } else {
       onIntent(row.intent);
@@ -810,25 +889,73 @@ export function CommandPalette({
         className="glass-overlay mt-[12vh] w-[640px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-strong)] shadow-2xl"
         style={{ animation: "ui-modal-enter var(--duration-base) var(--ease-decelerate)" }}
       >
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            updateQuery(e.target.value);
-            setActiveIdx(0);
-          }}
-          onKeyDown={onComposerKey}
-          placeholder="Search familiars · chats · cards · memory · commands… (try @familiar to scope)"
-          role="combobox"
-          aria-label="Search and jump to anything"
-          aria-expanded={rows.length > 0}
-          aria-autocomplete="list"
-          aria-controls="command-palette-listbox"
-          aria-activedescendant={
-            rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
-          }
-          className="focus-ring-inset w-full border-b border-[var(--border-hairline)] bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-        />
+        <div className="flex items-center border-b border-[var(--border-hairline)]">
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => {
+              updateQuery(e.target.value);
+              setActiveIdx(0);
+            }}
+            onKeyDown={onComposerKey}
+            placeholder="Search familiars · chats · tasks · memory · settings… (try @familiar)"
+            role="combobox"
+            aria-label="Search and jump to anything"
+            aria-expanded={rows.length > 0}
+            aria-autocomplete="list"
+            aria-controls="command-palette-listbox"
+            aria-activedescendant={
+              rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
+            }
+            className="focus-ring-inset min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+          />
+          {query ? (
+            <button
+              type="button"
+              className="focus-ring mr-3 rounded-full p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              aria-label="Clear search query"
+              onClick={() => {
+                updateQuery("");
+                setCategory("all");
+                setActiveIdx(0);
+                inputRef.current?.focus();
+              }}
+            >
+              <Icon name="ph:x-circle-fill" width="1rem" height="1rem" aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        {browsing && recentSearches.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto border-b border-[var(--border-hairline)] px-4 py-2" aria-label="Recent searches">
+            <Icon name="ph:clock-counter-clockwise" width="0.9rem" height="0.9rem" className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+            {recentSearches.map((recent) => (
+              <button
+                key={recent}
+                type="button"
+                className="focus-ring shrink-0 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-subtle)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                onClick={() => {
+                  updateQuery(recent);
+                  setActiveIdx(0);
+                  inputRef.current?.focus();
+                }}
+              >
+                {recent}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="focus-ring ml-auto shrink-0 rounded px-1.5 py-1 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              aria-label="Clear recent searches"
+              onClick={() => {
+                clearRecentSearches(window.localStorage);
+                setRecentSearches([]);
+                inputRef.current?.focus();
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
         {salemLoading || salemAnswer || salemError ? (
           <div
             role={salemLoading ? "status" : salemError ? "alert" : "region"}
@@ -880,13 +1007,53 @@ export function CommandPalette({
             </span>
           </div>
         ) : null}
+        <div
+          role="toolbar"
+          aria-label="Filter search results"
+          className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-3 py-2"
+        >
+          {PALETTE_CATEGORIES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={category === option}
+              className={`focus-ring shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                category === option
+                  ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,var(--border-strong))] bg-[var(--accent-presence-soft)] text-[var(--text-primary)]"
+                  : "border-transparent text-[var(--text-muted)] hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+              }`}
+              onClick={() => {
+                setCategory(option);
+                setActiveIdx(0);
+                inputRef.current?.focus();
+              }}
+            >
+              {PALETTE_CATEGORY_LABEL[option]}
+              <span className="ml-1 font-mono opacity-70">{counts[option]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {resultSummary}
+        </div>
         <ul
           id="command-palette-listbox"
           role="listbox"
           className="max-h-[60vh] overflow-y-auto py-1"
         >
           {rows.length === 0 ? (
-            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">No matches.</li>
+            <li role="presentation" className="px-4 py-6 text-center text-xs text-[var(--text-muted)]">
+              <p>{resultSummary}</p>
+              {category !== "all" ? (
+                <button
+                  type="button"
+                  className="focus-ring mt-2 rounded-full border border-[var(--border-hairline)] px-3 py-1.5 text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  onClick={() => setCategory("all")}
+                >
+                  Search all categories
+                </button>
+              ) : null}
+            </li>
           ) : null}
           {rows.map((row, i) => {
             const active = i === activeIdx;
@@ -1002,6 +1169,21 @@ export function CommandPalette({
                       <span className="text-[10px] text-[var(--text-muted)]">file</span>
                     </>
                   ) : null}
+                  {row.kind === "setting" ? (
+                    <>
+                      <Icon name="ph:gear-six" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" aria-hidden />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[var(--text-primary)]">
+                          {settingsSectionLabel(row.entry.section)}
+                          {row.entry.group ? ` › ${row.entry.group}` : ""}
+                        </span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                          {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
+                        </span>
+                      </span>
+                      <span className="text-[10px] text-[var(--text-muted)]">open</span>
+                    </>
+                  ) : null}
                   {row.kind === "command" ? (
                     <>
                       <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
@@ -1064,7 +1246,7 @@ export function CommandPalette({
         <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
           <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
           <span className="hidden sm:inline">@familiar scopes results</span>
-          <span>{keys.mod}K</span>
+          <span>{counts[category]} local · {keys.mod}K</span>
         </div>
       </div>
     </div>

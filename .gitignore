@@ -104,3 +104,4 @@ package-lock.json
 /public/sandbox/
 /docs/audits
 test-results/
+/.agents
