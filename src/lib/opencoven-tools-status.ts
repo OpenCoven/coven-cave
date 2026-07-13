@@ -6,7 +6,7 @@ import { compareSemver } from "./app-update.ts";
 import {
   openCovenToolState,
   type OpenCovenToolState,
-} from "@/lib/opencoven-tools-state";
+} from "./opencoven-tools-state.ts";
 import {
   covenLaunchCommandForBinary,
   covenSpawnEnv,
