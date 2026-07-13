@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import path from "node:path";
 import { callDaemon } from "@/lib/coven-daemon";
 import { archiveSessionsForMergedPrs, loadState, type CaveState } from "@/lib/cave-config";
 import { listConversations } from "@/lib/cave-conversations";
-import { branchPrCache } from "@/lib/branch-pr-context";
 import {
   MERGED_AUTO_ARCHIVE_DISABLE_ENV,
   mergedChatAutoArchiveDecisions,
@@ -16,11 +13,12 @@ import {
   localConversationSessionRows,
   mergeSessionRows,
 } from "@/lib/session-list-merge";
+import { enrichSessionsWithGitContext } from "@/lib/session-git-enrich";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
-import type { SessionGitContext, SessionInitiator, SessionRow } from "@/lib/types";
+import type { SessionInitiator, SessionRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -74,126 +72,9 @@ function isTrueProjectCwd(projectRoot: string): boolean {
   }
 }
 
-function git(projectRoot: string, args: string[]): string | null {
-  try {
-    const output = execFileSync("git", args, {
-      cwd: projectRoot,
-      encoding: "utf8",
-      timeout: 1000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    const value = output.trim();
-    return value || null;
-  } catch {
-    return null;
-  }
-}
-
-function isGitWorkTree(projectRoot: string): boolean {
-  return git(projectRoot, ["rev-parse", "--is-inside-work-tree"]) === "true";
-}
-
-function resolveGitPath(projectRoot: string, value: string | null): string | null {
-  if (!value) return null;
-  return path.resolve(path.isAbsolute(value) ? value : path.join(projectRoot, value));
-}
-
-function readGitContext(projectRoot: string): SessionGitContext | null {
-  const trimmed = projectRoot.trim();
-  if (!isTrueProjectCwd(trimmed)) return null;
-  if (!isGitWorkTree(trimmed)) return null;
-
-  const branch =
-    git(trimmed, ["branch", "--show-current"]) ??
-    git(trimmed, ["rev-parse", "--short", "HEAD"]);
-  const worktreeRoot = git(trimmed, ["rev-parse", "--show-toplevel"]);
-  const gitDir = resolveGitPath(trimmed, git(trimmed, ["rev-parse", "--git-dir"]));
-  const commonDir = resolveGitPath(trimmed, git(trimmed, ["rev-parse", "--git-common-dir"]));
-  const isWorktree = Boolean(gitDir && commonDir && gitDir !== commonDir);
-
-  if (!branch && !worktreeRoot && !isWorktree) return null;
-  return { branch, worktreeRoot, isWorktree };
-}
-
-type DiffStat = { additions: number; deletions: number };
-
-function parseShortstat(out: string | null): DiffStat | null {
-  if (out == null) return null;
-  const add = /(\d+) insertion/.exec(out);
-  const del = /(\d+) deletion/.exec(out);
-  return { additions: add ? Number(add[1]) : 0, deletions: del ? Number(del[1]) : 0 };
-}
-
-/**
- * The repo's default base ref (e.g. `origin/main`) to diff a session branch
- * against. Prefers `origin/HEAD`, then common fallbacks.
- */
-function defaultBaseRef(root: string): string | null {
-  const originHead = git(root, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
-  if (originHead) return originHead;
-  for (const ref of ["origin/main", "origin/master", "main", "master"]) {
-    if (git(root, ["rev-parse", "--verify", "--quiet", ref]) != null) return ref;
-  }
-  return null;
-}
-
-// Bound the per-request git work; sessions arrive most-recent-first, so the
-// roll-up's visible rows are covered well within this cap.
-const MAX_DIFF_CALLS = 32;
-
-function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
-  const gitContextByRoot = new Map<string, SessionGitContext | null>();
-  const baseByRoot = new Map<string, string | null>();
-  const diffByKey = new Map<string, DiffStat | null>();
-  let diffCalls = 0;
-
-  return sessions.map((session) => {
-    const root = session.project_root?.trim();
-    if (!root) return session;
-    if (!gitContextByRoot.has(root)) {
-      gitContextByRoot.set(root, readGitContext(root));
-    }
-    const gitContext = gitContextByRoot.get(root) ?? null;
-
-    // Per-session diff = the session's own branch vs the repo base (committed
-    // changes since it diverged), cached per (root, branch) so sessions on the
-    // same branch share the figure but different branches read distinctly.
-    let diff: DiffStat | null = null;
-    const branch = gitContext?.branch;
-    if (branch) {
-      const key = `${root}\u0000${branch}`;
-      if (diffByKey.has(key)) {
-        diff = diffByKey.get(key) ?? null;
-      } else if (diffCalls < MAX_DIFF_CALLS) {
-        if (!baseByRoot.has(root)) baseByRoot.set(root, defaultBaseRef(root));
-        const base = baseByRoot.get(root) ?? null;
-        let computed: DiffStat | null = null;
-        if (base) {
-          diffCalls += 1;
-          computed = parseShortstat(git(root, ["diff", `${base}...${branch}`, "--shortstat"])) ?? {
-            additions: 0,
-            deletions: 0,
-          };
-        }
-        diffByKey.set(key, computed);
-        diff = computed;
-      }
-    }
-
-    const enriched: SessionRow = { ...session };
-    if (gitContext) enriched.git = gitContext;
-    if (diff) enriched.diff = diff;
-    // PR context for the thread's branch — synchronous read from the
-    // stale-while-revalidate cache (never blocks the poll; see
-    // branch-pr-context.ts). Powers the chat list's PR-status signal and the
-    // merged-chat auto-archive sweep.
-    if (branch) {
-      const pr = branchPrCache.get(root, branch);
-      if (pr) enriched.pullRequest = pr;
-    }
-    return enriched;
-  });
-}
+// Git enrichment (branch/worktree context, diffstat vs base, PR context) lives
+// in @/lib/session-git-enrich — fully async so the polled list request never
+// blocks the event loop on git subprocesses (cave-n37w).
 
 /**
  * Merged-chat auto-archive sweep, piggybacked on the session list read: any
@@ -295,7 +176,7 @@ async function computeSessionsList(
           degraded: true,
           error: res.error ?? `daemon http ${res.status}`,
           sessions: await applyMergedPrAutoArchive(
-            enrichSessionsWithGitContext(
+            await enrichSessionsWithGitContext(
               await scopeForFamiliar(localSessions, projects, familiarId),
             ),
             state,
@@ -332,7 +213,7 @@ async function computeSessionsList(
     payload: {
       ok: true,
       sessions: await applyMergedPrAutoArchive(
-        enrichSessionsWithGitContext(scoped),
+        await enrichSessionsWithGitContext(scoped),
         state,
         includeArchived,
       ),

@@ -449,23 +449,18 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /execFileSync\("git"/,
-    "/sessions/list: sessions should be enriched from local git context",
+    /import \{ enrichSessionsWithGitContext \} from "@\/lib\/session-git-enrich"/,
+    "/sessions/list: sessions should be enriched from local git context (async lib)",
+  );
+  assert.doesNotMatch(
+    sessionsListSource,
+    /execFileSync|execSync|spawnSync/,
+    "/sessions/list: the polled list route must never run sync subprocesses on the event loop (cave-n37w)",
   );
   assert.match(
     sessionsListSource,
-    /"branch", "--show-current"[\s\S]*"rev-parse", "--short", "HEAD"/,
-    "/sessions/list: git context should expose branch or detached head",
-  );
-  assert.match(
-    sessionsListSource,
-    /"rev-parse", "--show-toplevel"[\s\S]*"rev-parse", "--git-common-dir"/,
-    "/sessions/list: git context should detect worktree-backed roots",
-  );
-  assert.match(
-    sessionsListSource,
-    /"rev-parse", "--is-inside-work-tree"/,
-    "/sessions/list: git context should skip non-worktree roots before slower git probes",
+    /await enrichSessionsWithGitContext\(/,
+    "/sessions/list: git enrichment should be awaited (async), not run synchronously",
   );
   assert.match(
     sessionsListSource,
@@ -476,6 +471,36 @@ for (const contract of contracts) {
     sessionsListSource,
     /const inFlight = sessionsListInFlight\.get\(cacheKey\);[\s\S]*if \(inFlight\) return inFlight;/,
     "/sessions/list: concurrent callers should await one in-flight session list computation",
+  );
+
+  const sessionGitEnrichSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "session-git-enrich.ts"),
+    "utf8",
+  );
+  assert.match(
+    sessionGitEnrichSource,
+    /promisify\(execFile\)/,
+    "session-git-enrich: git must run through async execFile (no event-loop block)",
+  );
+  assert.doesNotMatch(
+    sessionGitEnrichSource,
+    /execFileSync|execSync|spawnSync/,
+    "session-git-enrich: no sync subprocess fallbacks",
+  );
+  assert.match(
+    sessionGitEnrichSource,
+    /"branch", "--show-current"[\s\S]*"rev-parse", "--short", "HEAD"/,
+    "session-git-enrich: git context should expose branch or detached head",
+  );
+  assert.match(
+    sessionGitEnrichSource,
+    /"rev-parse", "--show-toplevel"[\s\S]*"rev-parse", "--git-common-dir"/,
+    "session-git-enrich: git context should detect worktree-backed roots",
+  );
+  assert.match(
+    sessionGitEnrichSource,
+    /"rev-parse", "--is-inside-work-tree"/,
+    "session-git-enrich: git context should skip non-worktree roots before slower git probes",
   );
 }
 
