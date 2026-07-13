@@ -277,8 +277,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /onOpenInboxItem=\{\(item\) => \{[\s\S]*openFamiliarSession\(item\.sessionId, item\.familiarId\)[\s\S]*setMode\("inbox"\)/,
-  "Workspace should keep notification-bell inbox routing intact for session and non-session items",
+  /onOpenInboxItem=\{\(item\) => \{\s*markInboxItemRead\(item\.id\);\s*if \(item\.familiarId\) setActiveId\(item\.familiarId\);\s*setMode\("inbox"\);/,
+  "Workspace should route notification-bell Open to the Inbox view (cave-ipze), never straight into a session",
 );
 
 // The agents-new-chat bridge forwards an optional initialPrompt so callers
