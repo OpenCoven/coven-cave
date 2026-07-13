@@ -572,6 +572,11 @@ test("Windows first launch paints progress and supports recovery while the sidec
     "startup must expose retry and cancellation commands",
   );
   assert.match(
+    launcher,
+    /window\.location\.replace\(/,
+    "readiness must replace startup.html in session history so history.back() cannot return to the splash screen",
+  );
+  assert.match(
     startupPage,
     /role="progressbar"[\s\S]*aria-live="polite"/,
     "startup page must expose accessible progress",
