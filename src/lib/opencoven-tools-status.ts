@@ -58,7 +58,7 @@ export type OpenCovenToolSpec = (typeof OPEN_COVEN_TOOLS)[number];
 
 type CommandPathResult = { path: string | null; error?: "lookup-failed" };
 
-type NpmLatestCheckError =
+export type NpmLatestCheckError =
   | "npm_unavailable"
   | "timeout"
   | "registry_error"
