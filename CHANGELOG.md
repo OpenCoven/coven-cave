@@ -7,14 +7,43 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-12
+
+> 🌙 **First minor milestone.** CovenCave steps out of the 0.0.x patch stream with a rebuilt marketplace (Capabilities retired, Skills modernized, Crafts agentically buildable), familiar access groups with per-project read/write levels, cross-platform find-anything search, first-class OpenCode, a bounded research mission desk, the CovenWiki Phase 3 regeneration CLI, and a wide band of chat/settings/perf/a11y hardening — with React Compiler now on across the app.
+
 ### Features
-- **Runtimes: OpenCode enabled comprehensively** — the registry-accepted OpenCode runtime now gets first-class treatment across Cave: a deliberate runtime glyph in the composer chip and adapter surfaces (instead of the generic fallback), and sign-in failure detection that offers the copyable `opencode auth login` fix. Everything else (onboarding detection, chat trust, adapter-manifest scaffolding, model selection, raw-stdout chat passthrough) already flows from the synced runtime registry.
-- **Chat: consolidated Settings tab + auto-archive on thread reflections** — the chat page gains a Settings tab (beside Sessions and Projects) consolidating device-wide chat behavior: the full auto-archive policy (master switch, archive on task completion, idle windows for external and any chats) is now editable in the app instead of config-file only. It also introduces a new trigger — archive on thread reflection: when enabled, a thread archives itself the moment its reflection (self-report) lands, for manual and auto reflections alike; periodic reports and keep-marked chats never auto-archive, and the reflect flow refreshes the session list so the row moves immediately.
+- **Marketplace: Capabilities retired, Skills modernized, Crafts agentically buildable** — the marketplace drops the legacy Capabilities surface, refreshes the Skills experience, and makes Crafts something familiars can build agentically rather than hand-authored only (cave-4n7j) (#3072).
+- **Permissions: familiar access groups** — familiars can be organized into access groups with read/write project levels, so project visibility and mutation rights are governed per group instead of all-or-nothing (#3071).
+- **Search: cross-platform find-anything** — global search on iOS plus a command-palette search on web, so "find anything" works consistently across platforms (#3070).
+- **Research: bounded mission desk** — a bounded research mission desk for scoping and running research missions inside Cave (#3046).
+- **CovenWiki: Phase 3 regeneration hook CLI** — a `scan / diff / plan / run` CLI for the CovenWiki Phase 3 regeneration hook (#3064).
+- **Runtimes: first-class OpenCode** — the registry-accepted OpenCode runtime now gets first-class treatment across Cave: a deliberate runtime glyph in the composer chip and adapter surfaces (instead of the generic fallback), and sign-in failure detection that offers the copyable `opencode auth login` fix. Everything else (onboarding detection, chat trust, adapter-manifest scaffolding, model selection, raw-stdout chat passthrough) already flows from the synced runtime registry (#3062).
+- **Chat: consolidated Settings tab + auto-archive on thread reflections** — the chat page gains a Settings tab (beside Sessions and Projects) consolidating device-wide chat behavior: the full auto-archive policy (master switch, archive on task completion, idle windows for external and any chats) is now editable in the app instead of config-file only. It also introduces a new trigger — archive on thread reflection: when enabled, a thread archives itself the moment its reflection (self-report) lands, for manual and auto reflections alike; periodic reports and keep-marked chats never auto-archive, and the reflect flow refreshes the session list so the row moves immediately (#3050).
 - **Onboarding: hand-held first run through the first chat** — the setup wizard now shows a three-beat journey strip (Set up Cave → Summon a familiar → First chat) so it never reads as a dead-ended infra checklist; completing setup surfaces an above-the-fold success banner, and the finish CTA keeps its promise by opening the Summoning Circle directly (decided on the wizard's own fresh status, immune to the workspace's slower daemon poll). In the circle, the name stage gains one-click identity templates (Code reviewer, Research assistant, Project planner, Writing partner) that fill the role and required description, and the success stage hands keyboard focus to "Begin the first conversation" so Enter completes the funnel (cave-uvv7).
+- **Chat: keep/extend controls in the chat list** — per-chat keep/extend controls surface directly in the chat list, alongside a tailnet mobile-access marker fix in the proxy path (#3068).
+- **Quick-chat: one shared notch route** — the notch is served from `/quick-chat?notch=1`, a single shared route instead of a divergent surface (#3043).
 
 ### Fixes
-- **Notifications: bell Open lands on the Inbox view** — a notification row's Open now marks the item read, scopes to its familiar, and opens the Inbox (Schedules) surface instead of jumping straight into a chat session; session jumps remain on the chat surface and Home "needs you" paths (cave-ipze).
-- **Familiars: no phantom Summoning Circle on revisit** — a summon request handled by an already-open Familiars surface left the cross-surface latch armed, so the next visit to Familiars popped the circle open uninvited; the event listener now consumes the latch too (cave-ibvl).
+- **iOS: search deep link no longer tears down the tab tree** — the `.search` deep link is consumed so a stale marker can't collapse the tab tree on iOS (#3073).
+- **Notifications: bell Open lands on the Inbox view** — a notification row's Open now marks the item read, scopes to its familiar, and opens the Inbox (Schedules) surface instead of jumping straight into a chat session; session jumps remain on the chat surface and Home "needs you" paths (cave-ipze) (#3067).
+- **UI: stop consuming `--accent` as the brand accent** — the shadcn surface token `--accent` is no longer hijacked as the brand accent color (cave-ilkk) (#3066).
+- **a11y: tablist semantics restored on the chat right-panel section tabs** — the right-panel section tabs regain proper tablist roles/keyboard semantics (cave-t7uz) (#3065).
+- **Stitches: GitHub pin field primed with the repo prefix** — the GitHub pin input is pre-filled with the repo prefix (#3063).
+- **Familiars: no phantom Summoning Circle on revisit** — a summon request handled by an already-open Familiars surface left the cross-surface latch armed, so the next visit popped the circle open uninvited; the event listener now consumes the latch too (cave-ibvl) (#3054).
+- **Settings: recover missing OpenCoven tools** — a recovery path for missing OpenCoven tool installs, plus verified tool-update handling (#3031, #3029).
+- **Settings: normalize Windows paths in post-install recheck** — the post-install recheck comparison normalizes Windows paths so a valid install isn't misread as missing (#3058).
+- **Knowledge: hardened knowledge packs** — code-review follow-ups hardening the knowledge packs flow (#3051, #3045).
+- **UI: guard fire-and-forget fetches** — a dead daemon can no longer crash the app through unguarded fire-and-forget fetches (cave-nwm5) (#3053).
+- **About: diagnostics path redaction hardened + safe diagnostic states** — About diagnostics redact paths more strictly and preserve safe diagnostic states (#3059, #3061).
+- **Settings: reattach to running OpenCoven installs** — Settings correctly reattaches to already-running OpenCoven installs (#3060).
+- **Familiars: consume the summon latch in the already-mounted path** — the summon latch is consumed when Familiars is already mounted (cave-ibvl) (#3054).
+
+### Performance
+- **React Compiler enabled** — the React Compiler is turned on across the app (cave-n9a8) (#3056).
+- **Chat: coalesce SSE assistant chunks** — `assistant_chunk` frames are coalesced into one commit per flush window (cave-w50e) (#3055).
+- **Chat: memoize the transcript subtree** — the transcript subtree is memoized out of ChatView's keystroke path (cave-likl) (#3049).
+- **Polls: hidden-window discipline** — client polls pause for hidden windows, with a structural guard (cave-e794) (#3057).
+- **Sessions: async git enrichment + SWR cache** — `/api/sessions/list` git enrichment goes async, and the list gains a stale-while-revalidate cache (cave-n37w, cave-5m1c) (#3044, #3052).
 
 ## [0.0.182] - 2026-07-12
 
