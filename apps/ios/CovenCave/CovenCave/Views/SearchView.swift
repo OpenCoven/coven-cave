@@ -72,6 +72,13 @@ struct SearchView: View {
                 async let reminders: Void = app.loadReminders()
                 _ = await (sessions, tasks, reminders)
             }
+            // The .search deep link is consumed once the connected tab tree
+            // hosts this view; only the pre-connection standalone SearchView
+            // keeps the marker (it gates that presentation in RootView).
+            .onAppear { consumeSearchDeepLinkIfConnected() }
+            .onChange(of: app.connectionState) { _, state in
+                if state == .connected { consumeSearchDeepLinkIfConnected() }
+            }
             .refreshable {
                 async let familiars: Void = app.loadFamiliars()
                 async let sessions: Void = app.loadSessions()
@@ -143,7 +150,18 @@ struct SearchView: View {
         .themedListBackground()
     }
 
+    private func consumeSearchDeepLinkIfConnected() {
+        if app.deepLink == .search && app.connectionState == .connected {
+            app.selectedTab = .search
+            app.deepLink = nil
+        }
+    }
+
     private func open(_ item: CaveSearchItem) {
+        // Routing into the tab tree consumes the search deep link — a stale
+        // .search marker would otherwise re-hijack RootView on the next
+        // connection blip and leave these taps pointing at an unmounted tree.
+        if app.deepLink == .search { app.deepLink = nil }
         switch item.destination {
         case .familiar(let id):
             if let familiar = app.familiar(id) { app.requestOpenFamiliar(familiar) }
