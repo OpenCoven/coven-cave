@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { buildCraftAgentPrompt } from "@/lib/craft-agent-prompt";
 import type { RoleEntry } from "@/app/api/roles/route";
 
 type RolesResponse = {
@@ -19,6 +21,15 @@ type DraftResponse = {
   error?: string;
 };
 
+/** Two ways in: hand-pick roles, or describe the Craft and let a familiar
+ *  build it agentically through the drafts API. */
+type CreateMode = "extract" | "describe";
+
+const CREATE_MODES: ReadonlyArray<TabItem<CreateMode>> = [
+  { id: "extract", label: "Pick roles", icon: "ph:stack" },
+  { id: "describe", label: "Describe it", icon: "ph:sparkle" },
+];
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -27,12 +38,14 @@ type Props = {
 
 export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const [mode, setMode] = useState<CreateMode>("extract");
   const [roles, setRoles] = useState<RoleEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [familiar, setFamiliar] = useState("");
   const [selectedRoleIds, setSelectedRoleIds] = useState<ReadonlySet<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [goal, setGoal] = useState("");
   useFocusTrap(open, ref, { onEscape: onClose });
 
   useEffect(() => {
@@ -135,6 +148,21 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
     }
   }, [familiar, onCreated, selectedRoleIds]);
 
+  /** Describe mode: hand the goal to a familiar as a complete agentic build
+   *  prompt (role discovery → draft → plan verification), the same
+   *  chat-dispatch contract the skills "Use" action rides. */
+  const draftWithFamiliar = useCallback(() => {
+    const description = goal.trim();
+    if (!description) return;
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: { initialPrompt: buildCraftAgentPrompt({ description, familiar: familiar || undefined }) },
+      }),
+    );
+    setGoal("");
+    onClose();
+  }, [familiar, goal, onClose]);
+
   if (!open) return null;
 
   return (
@@ -152,12 +180,26 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
           <div className="craft-create-drawer__headline">
             <p className="craft-create-drawer__eyebrow">Craft authoring</p>
             <h2 className="craft-create-drawer__title">Create Craft</h2>
-            <p className="craft-create-drawer__subtitle">Extract a reusable bundle from a familiar&apos;s roles.</p>
+            <p className="craft-create-drawer__subtitle">
+              {mode === "extract"
+                ? "Extract a reusable bundle from a familiar's roles."
+                : "Describe the Craft — a familiar builds and verifies the draft for you."}
+            </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="focus-ring craft-create-drawer__close">
             <Icon name="ph:x" width={16} />
           </button>
         </div>
+
+        <Tabs
+          items={CREATE_MODES}
+          value={mode}
+          onChange={setMode}
+          ariaLabel="How to create this Craft"
+          variant="segment"
+          size="sm"
+          className="craft-create-drawer__modes"
+        />
 
         {error ? (
           <p role="alert" className="craft-create-drawer__alert">
@@ -165,64 +207,111 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
           </p>
         ) : null}
 
-        <label className="craft-create-drawer__field">
-          <span>Familiar</span>
-          <StandardSelect
-            label="Familiar"
-            value={familiar}
-            onChange={chooseFamiliar}
-            options={familiarOptions}
-            className="focus-ring craft-create-drawer__select"
-          />
-        </label>
+        {mode === "describe" ? (
+          <>
+            <label className="craft-create-drawer__field">
+              <span>What should this Craft equip?</span>
+              <textarea
+                className="focus-ring craft-create-drawer__goal"
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                rows={4}
+                placeholder="e.g. Everything my reviewer uses to triage PRs — the review skills, the GitHub tools, and the weekly summary workflow."
+              />
+            </label>
+            <label className="craft-create-drawer__field">
+              <span>Preferred familiar (optional)</span>
+              <StandardSelect
+                label="Preferred familiar"
+                value={familiar}
+                onChange={chooseFamiliar}
+                options={[{ value: "", label: "Let the familiar decide" }, ...familiarOptions]}
+                className="focus-ring craft-create-drawer__select"
+              />
+            </label>
+            <section className="craft-create-drawer__how" aria-label="How agentic drafting works">
+              <h3>What happens next</h3>
+              <ol>
+                <li>A chat opens with the build brief and the drafts API contract.</li>
+                <li>The familiar inspects your roles, creates the draft, and verifies its install plan.</li>
+                <li>The finished draft appears here in Crafts, ready to review and equip.</li>
+              </ol>
+            </section>
+          </>
+        ) : (
+          <>
+            <label className="craft-create-drawer__field">
+              <span>Familiar</span>
+              <StandardSelect
+                label="Familiar"
+                value={familiar}
+                onChange={chooseFamiliar}
+                options={familiarOptions}
+                className="focus-ring craft-create-drawer__select"
+              />
+            </label>
 
-        <section className="craft-create-drawer__roles" aria-label="Roles to extract">
-          <h3>Roles</h3>
-          {!loaded ? (
-            <p className="craft-create-drawer__status">Loading roles...</p>
-          ) : visibleRoles.length === 0 ? (
-            <p className="craft-create-drawer__status">No roles found for this familiar.</p>
-          ) : (
-            <div className="craft-create-drawer__role-list">
-              {visibleRoles.map((role) => (
-                <label key={`${role.familiar}:${role.id}`} className="craft-create-drawer__role">
-                  <input
-                    type="checkbox"
-                    checked={selectedRoleIds.has(role.id)}
-                    onChange={() => toggleRole(role.id)}
-                  />
-                  <span>
-                    <strong>{role.name}</strong>
-                    <em>{role.description ?? `${role.skills.length} skills · ${role.tools.length} capabilities`}</em>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </section>
+            <section className="craft-create-drawer__roles" aria-label="Roles to extract">
+              <h3>Roles</h3>
+              {!loaded ? (
+                <p className="craft-create-drawer__status">Loading roles...</p>
+              ) : visibleRoles.length === 0 ? (
+                <p className="craft-create-drawer__status">No roles found for this familiar.</p>
+              ) : (
+                <div className="craft-create-drawer__role-list">
+                  {visibleRoles.map((role) => (
+                    <label key={`${role.familiar}:${role.id}`} className="craft-create-drawer__role">
+                      <input
+                        type="checkbox"
+                        checked={selectedRoleIds.has(role.id)}
+                        onChange={() => toggleRole(role.id)}
+                      />
+                      <span>
+                        <strong>{role.name}</strong>
+                        <em>{role.description ?? `${role.skills.length} skills · ${role.tools.length} capabilities`}</em>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </section>
 
-        <section className="craft-draft-ledger" aria-label="Extraction preview">
-          <h3>Extraction preview</h3>
-          <div className="craft-draft-ledger__stats">
-            <span><strong>{counts.components}</strong> components</span>
-            <span><strong>{counts.skills}</strong> skills</span>
-            <span><strong>{counts.workflows}</strong> workflows</span>
-            <span><strong>{counts.capabilities}</strong> capabilities</span>
-          </div>
-        </section>
+            <section className="craft-draft-ledger" aria-label="Extraction preview">
+              <h3>Extraction preview</h3>
+              <div className="craft-draft-ledger__stats">
+                <span><strong>{counts.components}</strong> components</span>
+                <span><strong>{counts.skills}</strong> skills</span>
+                <span><strong>{counts.workflows}</strong> workflows</span>
+                <span><strong>{counts.capabilities}</strong> capabilities</span>
+              </div>
+            </section>
+          </>
+        )}
 
         <div className="craft-create-drawer__actions">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            size="sm"
-            leadingIcon="ph:package-bold"
-            loading={saving}
-            disabled={!familiar || selectedRoleIds.size === 0}
-            onClick={save}
-          >
-            Save draft
-          </Button>
+          {mode === "describe" ? (
+            <Button
+              variant="primary"
+              size="sm"
+              leadingIcon="ph:sparkle"
+              disabled={!goal.trim()}
+              onClick={draftWithFamiliar}
+            >
+              Draft with familiar
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              leadingIcon="ph:package-bold"
+              loading={saving}
+              disabled={!familiar || selectedRoleIds.size === 0}
+              onClick={save}
+            >
+              Save draft
+            </Button>
+          )}
         </div>
       </div>
     </div>

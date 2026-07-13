@@ -57,6 +57,14 @@ const nextConfig: NextConfig = {
       "./node_modules/node-pty/**/*",
     ],
   },
+  // React Compiler (cave-n9a8): automatic memoization across the component
+  // tree. This codebase concentrates UI in a few very large stateful
+  // components (chat-view ~7k lines / ~69 useState; workspace ~47) where
+  // hand-memoization can't keep up — the compiler memoizes every component
+  // and hook by default, eliminating whole-surface re-render cascades from
+  // unrelated state updates. Build-time cost is the accepted tradeoff; the
+  // bundle-budget postbuild gate and the e2e suite guard the output.
+  reactCompiler: true,
   experimental: {
     // Tree-shake the icon + syntax-highlight kitchens so the per-route
     // bundle only includes the icons and grammars actually referenced.

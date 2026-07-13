@@ -80,7 +80,9 @@ assert.equal(
 );
 
 // ── due date inference ───────────────────────────────────────────────────────
-const wed = new Date("2026-07-15T14:30:00.000Z"); // a Wednesday
+// Local-time literal (not a Z-instant): "today" means the requester's local
+// calendar date, so the fixture must be the same Wednesday in every runner TZ.
+const wed = new Date(2026, 6, 15, 14, 30); // Wed 2026-07-15, local
 assert.equal(
   inferDueDateFromTurns([t("u1", "user", "ship it, due 2026-08-01")], wed),
   "2026-08-01",
@@ -116,6 +118,32 @@ assert.equal(
   null,
   "no deadline → null endDate",
 );
+
+// cave-t7uz regression: UTC getters made "by today" resolve to tomorrow for
+// evening users west of UTC. Pin the local-calendar-date contract with a UTC
+// instant that falls on the previous local evening in western zones (e.g.
+// 21:30 CDT), computing expectations from local getters so the assertion
+// holds in any runner TZ.
+{
+  const lateEvening = new Date("2026-07-13T02:30:00.000Z");
+  const pad = (n) => String(n).padStart(2, "0");
+  const localDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  assert.equal(
+    inferDueDateFromTurns([t("u1", "user", "need this done by today")], lateEvening),
+    localDate(lateEvening),
+    "'by today' → the requester's local calendar date, not the UTC date",
+  );
+  const localTomorrow = new Date(
+    lateEvening.getFullYear(),
+    lateEvening.getMonth(),
+    lateEvening.getDate() + 1,
+  );
+  assert.equal(
+    inferDueDateFromTurns([t("u1", "user", "due tomorrow")], lateEvening),
+    localDate(localTomorrow),
+    "'tomorrow' → local today + 1",
+  );
+}
 
 // ── subtask extraction ───────────────────────────────────────────────────────
 {

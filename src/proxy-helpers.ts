@@ -44,7 +44,7 @@ function portFromHost(host: string | null) {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
-function isTailscaleServeHost(host: string | null) {
+export function isTailscaleServeHost(host: string | null) {
   const hostname = hostnameFromHost(host);
   return Boolean(hostname?.endsWith(".ts.net"));
 }

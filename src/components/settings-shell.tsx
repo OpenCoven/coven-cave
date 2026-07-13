@@ -37,6 +37,7 @@ import { FontSettings } from "./settings-fonts";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
+import { AccessGroupsSection } from "./access-groups-section";
 import { SettingsOverview } from "./settings-overview";
 import {
   SECTIONS,
@@ -193,8 +194,18 @@ export function SettingsShell() {
     const applyHashSection = () => {
       const hash = window.location.hash.replace("#", "") as Section;
       if (SECTIONS.some((s) => s.id === hash)) {
+        const params = new URLSearchParams(window.location.search);
+        const group = params.get("group")?.trim();
+        const familiarTab = params.get("familiarTab")?.trim() as FamiliarStudioTab | undefined;
         setSection(hash);
         setPickerView(false);
+        if (familiarTab && SETTINGS_INDEX.some((entry) => entry.familiarTab === familiarTab)) {
+          setFamiliarsTabTarget(familiarTab);
+          setScrollTarget(null);
+        } else {
+          setFamiliarsTabTarget(null);
+          setScrollTarget(group ? settingsGroupId(group) : null);
+        }
         return;
       }
       setPickerView(true);
@@ -946,6 +957,12 @@ function FamiliarsSection({
         onSummon={() => setCreateOpen(true)}
         onRosterChanged={() => void load()}
       />
+      {/* Cross-familiar access groups — shared base project grants at read or
+          write level; per-familiar effective access renders in the studio's
+          Projects tab. */}
+      <div className="mt-4">
+        <AccessGroupsSection familiars={familiars} />
+      </div>
       {createDialog}
     </>
   );

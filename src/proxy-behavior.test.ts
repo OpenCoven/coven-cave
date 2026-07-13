@@ -16,6 +16,7 @@
 import assert from "node:assert/strict";
 import {
   isLoopbackHost,
+  isTailscaleServeHost,
   isAllowedApiHost,
   sameOrigin,
   isAllowedRequestSource,
@@ -81,6 +82,12 @@ assert.equal(
   true,
   "mobile token authentication should not depend on a loopback Host header",
 );
+
+// ─── isTailscaleServeHost ──────────────────────────────────────────────────
+assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net"), true);
+assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net:8443"), true);
+assert.equal(isTailscaleServeHost("localhost:3000"), false);
+assert.equal(isTailscaleServeHost("127.0.0.1:3000"), false);
 
 // ─── sameOrigin ────────────────────────────────────────────────────────────
 const expected = "http://localhost:3000";

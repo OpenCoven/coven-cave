@@ -13,6 +13,8 @@ import { sessionPrStatus } from "@/lib/session-pr-status";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { cancelHoverPrefetch, hoverPrefetchConversation, invalidateConversation } from "@/lib/conversation-cache";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
@@ -606,28 +608,61 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     toggleStoredPinnedSession(sessionId);
   };
 
+  const patchSessionArchivePrefs = useCallback(
+    async (
+      sessionId: string,
+      patch: Record<string, unknown>,
+      fallbackError: string,
+    ): Promise<boolean> => {
+      setArchivingId(sessionId);
+      setError(null);
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (!res.ok || !json.ok) {
+          setError(json.error ?? fallbackError);
+          return false;
+        }
+        setArchiveNonce((n) => n + 1);
+        onSessionsChanged?.();
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : fallbackError);
+        return false;
+      } finally {
+        setArchivingId(null);
+      }
+    },
+    [onSessionsChanged],
+  );
+
   const setSessionArchived = async (e: React.MouseEvent, sessionId: string, archived: boolean) => {
     e.stopPropagation();
-    setArchivingId(sessionId);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ archived }),
-      });
-      const json = await res.json().catch(() => ({ ok: false }));
-      if (!res.ok || !json.ok) {
-        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
-        return;
-      }
-      setArchiveNonce((n) => n + 1);
-      onSessionsChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "archive failed");
-    } finally {
-      setArchivingId(null);
-    }
+    await patchSessionArchivePrefs(
+      sessionId,
+      { archived },
+      archived ? "archive failed" : "unarchive failed",
+    );
+  };
+
+  const setSessionKeep = async (sessionId: string, keep: boolean) => {
+    await patchSessionArchivePrefs(
+      sessionId,
+      { keep },
+      keep ? "keep failed" : "clear keep failed",
+    );
+  };
+
+  const extendSessionAutoArchive = async (sessionId: string, days: number) => {
+    await patchSessionArchivePrefs(
+      sessionId,
+      { extendDays: days },
+      "extend archive deadline failed",
+    );
   };
 
   // ── Bulk-select actions (reuse the per-row delete/archive endpoints) ───────
@@ -1288,6 +1323,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
                             {/* Row 3: status preview */}
                             <span className={`chat-list-row-preview truncate text-[12px] ${st.preview}`}>
+                              {s.keep ? <span className="text-[var(--accent-presence)]">Keep · </span> : null}
+                              {!s.keep && s.archive_extended_until ? (
+                                <span
+                                  className="text-[var(--text-muted)]"
+                                  title={`Auto-archive deferred until ${chatDate(s.archive_extended_until, dtPrefs)}`}
+                                >
+                                  Extended ·{" "}
+                                </span>
+                              ) : null}
                               {s.archived_at ? <span className="text-[var(--text-muted)]">Archived · </span> : null}
                               {st.label === "running"
                                 ? "Active now…"
@@ -1364,6 +1408,32 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               >
                                 <Icon name={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
                               </button>
+                              <span
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
+                              >
+                                <OverflowMenu
+                                  ariaLabel={`Archive controls for chat ${rowName}`}
+                                  icon="ph:clock-counter-clockwise"
+                                  disabled={archivingId !== null}
+                                  className="touch-always-visible h-6 w-6 shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                                  minWidth={208}
+                                >
+                                  <PopoverItem
+                                    checked={Boolean(s.keep)}
+                                    onSelect={() => void setSessionKeep(s.id, !s.keep)}
+                                  >
+                                    {s.keep ? "Remove keep mark" : "Keep chat"}
+                                  </PopoverItem>
+                                  <PopoverSeparator />
+                                  <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 7)}>
+                                    Extend auto-archive +7 days
+                                  </PopoverItem>
+                                  <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 30)}>
+                                    Extend auto-archive +30 days
+                                  </PopoverItem>
+                                </OverflowMenu>
+                              </span>
                               <button
                                 type="button"
                                 onClick={(e) => debugSession(e, s)}

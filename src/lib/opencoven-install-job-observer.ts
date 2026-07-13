@@ -36,7 +36,10 @@ export function createOpenCovenInstallJobObserver({
   onTerminal,
   onLaneCleared,
   intervalMs = 2_000,
-  schedule = (callback, ms) => window.setInterval(callback, ms),
+  schedule = (callback, ms) => window.setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    callback();
+  }, ms),
   unschedule = (id) => window.clearInterval(id as number),
 }: {
   fetchLane: () => Promise<{

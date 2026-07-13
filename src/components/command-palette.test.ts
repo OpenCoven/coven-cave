@@ -56,6 +56,15 @@ assert.match(
   "CommandPalette reports query edits back to the top-bar search",
 );
 
+assert.match(source, /SETTINGS_INDEX/, "the palette reuses the canonical Settings search index");
+assert.match(source, /kind:\s*"open-setting"/, "Settings results dispatch an exact navigation intent");
+assert.match(source, /aria-label="Filter search results"/, "result categories expose an accessible filter toolbar");
+assert.match(source, /paletteResultSummary/, "query and category changes produce a result summary");
+assert.match(source, /aria-live="polite"/, "result summaries are announced without interrupting the user");
+assert.match(source, /recentSearches\.map/, "empty-query browse mode exposes recent searches");
+assert.match(source, /Clear recent searches/, "recent search history is explicitly clearable");
+assert.match(source, /aria-label="Clear search query"/, "the palette offers a visible clear-query action");
+
 assert.match(
   source,
   /kind:\s*"salem-answer"/,

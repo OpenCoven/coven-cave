@@ -17,6 +17,7 @@ import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -152,6 +153,22 @@ function RightPanel({
     ? inboxItems.filter((i) => i.familiarId === activeFamiliar.id && i.status === "fired").length
     : 0;
 
+  // cave-t7uz: the promoted section strip is a real WAI-ARIA tablist again —
+  // tab roles, aria-selected, and arrow-key roving focus (same contract the
+  // shared Tabs component provides). Debug/close stay outside the tablist:
+  // they're controls beside the tabs, not co-equal sections.
+  const tablistRef = useRef<HTMLDivElement>(null);
+  const { setActiveIndex } = useRovingTabIndex({
+    containerRef: tablistRef,
+    itemSelector: '[role="tab"]',
+    orientation: "horizontal",
+    loop: false,
+  });
+  useEffect(() => {
+    const idx = INSPECTOR_SECTIONS.findIndex((sec) => sec.id === section);
+    if (idx >= 0) setActiveIndex(idx);
+  }, [section, setActiveIndex]);
+
   return (
     // CHAT-D13-05: this panel renders inside the shell's <main>, where a
     // complementary landmark is invalid (axe landmark-complementary-is-top-level)
@@ -161,27 +178,36 @@ function RightPanel({
       <Group className="right-panel-split" orientation="vertical">
         <Panel id="right-panel-primary" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
           <div className="right-panel-tabs">
-            {INSPECTOR_SECTIONS.map((sec) => (
-              <button
-                key={sec.id}
-                type="button"
-                className={`right-panel-tab${primaryPanel === "inspector" && section === sec.id ? " right-panel-tab--active" : ""}`}
-                onClick={() => {
-                  onSetSection(sec.id);
-                  onSetPanel("inspector");
-                }}
-              >
-                {sec.label}
-                {sec.id === "inbox" && inboxBadge > 0 ? (
-                  <span
-                    className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
-                    aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
+            <div ref={tablistRef} role="tablist" aria-label="Inspector sections" className="right-panel-tablist">
+              {INSPECTOR_SECTIONS.map((sec) => {
+                const active = primaryPanel === "inspector" && section === sec.id;
+                return (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    role="tab"
+                    id={`right-panel-tab-${sec.id}`}
+                    aria-selected={active}
+                    aria-controls="right-panel-section-panel"
+                    className={`right-panel-tab${active ? " right-panel-tab--active" : ""}`}
+                    onClick={() => {
+                      onSetSection(sec.id);
+                      onSetPanel("inspector");
+                    }}
                   >
-                    {inboxBadge}
-                  </span>
-                ) : null}
-              </button>
-            ))}
+                    {sec.label}
+                    {sec.id === "inbox" && inboxBadge > 0 ? (
+                      <span
+                        className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
+                        aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
+                      >
+                        {inboxBadge}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
             {/* Debug is diagnostics, not a co-equal section — a quiet icon
                 toggle beside the close control (same demotion vocabulary as
                 the Group icon in the scope-tab strip). */}
@@ -199,7 +225,12 @@ function RightPanel({
               <Icon name="ph:x-bold" width={11} />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <div
+            id="right-panel-section-panel"
+            role={primaryPanel === "inspector" ? "tabpanel" : undefined}
+            aria-labelledby={primaryPanel === "inspector" ? `right-panel-tab-${section}` : undefined}
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+          >
             {primaryPanel === "inspector" && (
               <InspectorPane
                 familiar={activeFamiliar}

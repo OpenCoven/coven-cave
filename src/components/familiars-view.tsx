@@ -95,10 +95,17 @@ export function FamiliarsView({
   const [createOpen, setCreateOpen] = useState(false);
   // Other surfaces request the Summoning Circle through summon-events: the
   // retained latch covers the fresh-mount race (mode flip → this view mounts
-  // after the event fired); the event covers the already-mounted case.
+  // after the event fired); the event covers the already-mounted case. The
+  // listener consumes the latch too — requestSummonFamiliar arms it
+  // unconditionally, so an already-mounted view that only reacted to the
+  // event left it armed and the NEXT mount popped the circle open uninvited
+  // (cave-ibvl).
   useEffect(() => {
     if (consumeSummonPending()) setCreateOpen(true);
-    const open = () => setCreateOpen(true);
+    const open = () => {
+      consumeSummonPending();
+      setCreateOpen(true);
+    };
     window.addEventListener(SUMMON_FAMILIAR_EVENT, open);
     return () => window.removeEventListener(SUMMON_FAMILIAR_EVENT, open);
   }, []);

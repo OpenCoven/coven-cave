@@ -172,7 +172,13 @@ export function RemoteThemeController() {
     colorScheme.addEventListener("change", onColorSchemeChange);
     reconcileCanonical();
     void reconcileRemote();
-    const interval = window.setInterval(() => void reconcileRemote(), POLL_MS);
+    const interval = window.setInterval(() => {
+      // Hidden-window pause (cave-e794): remote theme reconciliation is a
+      // visual concern — nothing to reconcile while nothing is visible. The
+      // onVisible listener below refreshes immediately on return.
+      if (document.hidden) return;
+      void reconcileRemote();
+    }, POLL_MS);
     const onVisible = () => {
       if (!document.hidden) void reconcileRemote();
     };
