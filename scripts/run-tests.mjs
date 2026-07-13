@@ -324,6 +324,7 @@ export const SUITES = {
     "src/lib/github-search.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/use-pausable-poll.test.ts",
+    "src/lib/pausable-poll-discipline.test.ts",
     "src/lib/use-autogrow-textarea.test.ts",
     "src/lib/use-composer-draft.test.ts",
     "src/lib/use-composer-history.test.ts",
