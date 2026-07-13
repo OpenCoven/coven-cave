@@ -696,6 +696,7 @@ export const SUITES = {
     "src/app/api/travel/offline-work-queue.test.ts",
     "src/lib/executor-status.test.ts",
     "src/lib/daemon-start.test.ts",
+    "src/lib/daemon-update-lifecycle.test.ts",
     "src/app/api/projects/route.test.ts",
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",
