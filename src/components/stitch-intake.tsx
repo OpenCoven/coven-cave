@@ -46,6 +46,12 @@ const KIND_PLACEHOLDER: Record<PinKind, string> = {
   memory: "/path/to/memory.md#optional-heading",
 };
 
+const GITHUB_SOURCE_PREFIX = "https://github.com/";
+
+function defaultRefForKind(kind: PinKind): string {
+  return kind === "github" ? GITHUB_SOURCE_PREFIX : "";
+}
+
 type SessionOption = { id: string; title: string };
 
 export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) {
@@ -128,6 +134,10 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
       setError(kind === "chat" ? "Pick a chat session to pin." : "Enter a source to pin.");
       return;
     }
+    if (kind === "github" && sourceRef === GITHUB_SOURCE_PREFIX) {
+      setError("Enter a GitHub source to pin.");
+      return;
+    }
     if (kind === "paste" && !paste.trim()) {
       setError("Paste some text to pin.");
       return;
@@ -152,7 +162,7 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
         return;
       }
       setThread(json.thread as StitchThread);
-      setRef("");
+      setRef(defaultRefForKind(kind));
       setPaste("");
       announce(`Pinned ${pinKindLabel(kind)}.`);
     } catch {
@@ -252,6 +262,7 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
             aria-pressed={kind === k}
             onClick={() => {
               setKind(k);
+              setRef(defaultRefForKind(k));
               setError(null);
             }}
             className={`focus-ring inline-flex h-[26px] items-center gap-1 rounded-md border px-2 text-[11px] transition-colors ${
