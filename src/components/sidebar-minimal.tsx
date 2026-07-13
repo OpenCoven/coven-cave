@@ -82,7 +82,6 @@ export type SidebarMinimalProps = {
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
-  onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged?: () => void;
   /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
   boardOpenCount?: number;

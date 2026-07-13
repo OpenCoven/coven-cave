@@ -2313,14 +2313,6 @@ export function Workspace() {
       responseNeeded={responseNeeded}
       notificationBadgeCount={notificationUnreadCount}
       onOpenInbox={() => setMode("inbox")}
-      onOpenInboxItem={(item) => {
-        markInboxItemRead(item.id);
-        if (item.sessionId) {
-          openFamiliarSession(item.sessionId, item.familiarId);
-        } else {
-          setMode("inbox");
-        }
-      }}
       onNotificationPrefsChanged={refreshPrefs}
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
@@ -2669,10 +2661,14 @@ export function Workspace() {
               familiarSwitcherLabeled={mode === "chat"}
               inboxPrefs={inboxPrefs}
               inboxBadgeCount={notificationUnreadCount}
+              // Bell rows open in the Inbox (Schedules) surface — the popover
+              // is a triage list, not a chat launcher. Session jumps stay on
+              // the chat surface and Home needs-you paths
+              // (openInspectorInboxItem).
               onOpenInboxItem={(item) => {
                 markInboxItemRead(item.id);
-                if (item.sessionId) openFamiliarSession(item.sessionId, item.familiarId);
-                else setMode("inbox");
+                if (item.familiarId) setActiveId(item.familiarId);
+                setMode("inbox");
               }}
               onNotificationPrefsChanged={refreshPrefs}
               onToggleNav={() => shellRef.current?.toggleNav()}
