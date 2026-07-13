@@ -5,6 +5,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { ProjectsView } from "@/components/projects-view";
+import { ChatSettingsView } from "@/components/chat-settings-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import { InspectorPane, type Tab as InspectorSection } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
@@ -57,7 +58,8 @@ const chatStorage = {
 
 // Memory is deliberately absent: familiar memory lives in the Familiars
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
-type FamiliarsScope = "conversation" | "projects" | "coven";
+// "settings" is the consolidated chat-settings tab (auto-archive policy et al).
+type FamiliarsScope = "conversation" | "projects" | "coven" | "settings";
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -685,6 +687,7 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
+              { id: "settings", label: "Settings" },
             ]}
           />
           <div className="flex items-center gap-1.5">
@@ -732,6 +735,13 @@ export function ChatSurface({
 
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+        ) : scope === "settings" ? (
+          // Consolidated chat settings (cave-wide auto-archive policy, incl.
+          // archive-on-reflection) as a first-class chat tab — the knobs govern
+          // chat behavior, so they live where chats live.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <ChatSettingsView />
+          </div>
         ) : scope === "coven" ? (
           // Group Chat ("coven") lives here as a first-class chat tab instead of
           // a standalone surface. It broadcasts one prompt to several familiars,

@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 import {
+  autoArchiveSessionsLocal,
+  loadConfig,
+  loadState,
+} from "@/lib/cave-config";
+import {
+  normalizeChatAutoArchivePolicy,
+  shouldAutoArchiveOnReflection,
+  type ReflectionTrigger,
+} from "@/lib/chat-auto-archive";
+import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
+import {
   appendSelfReport,
   listSelfReports,
   SELF_REPORT_SESSION_ID_RE,
@@ -66,6 +77,34 @@ function enumValue<T extends string>(value: unknown, allowed: Set<T>, field: str
 
 function objectArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+/**
+ * Auto-archive the reflected thread when the chat auto-archive policy opts in
+ * (`archiveOnReflection`, edited from the chat page's Settings tab). A landed
+ * reflection marks the thread as wrapped up. Best-effort: an archive failure
+ * must never fail the self-report that triggered it. Returns the archive
+ * timestamp when the session was archived by this call, else null.
+ */
+async function maybeAutoArchiveReflectedThread(
+  sessionId: string,
+  trigger: ReflectionTrigger,
+): Promise<string | null> {
+  try {
+    const [config, state] = await Promise.all([loadConfig(), loadState()]);
+    const policy = normalizeChatAutoArchivePolicy(config.chatAutoArchive);
+    const due = shouldAutoArchiveOnReflection(sessionId, trigger, policy, {
+      keep: state.sessionKeep,
+      archivedSessionIds: Object.keys(state.sessionArchived),
+    });
+    if (!due) return null;
+    const archived = await autoArchiveSessionsLocal([sessionId]);
+    const archivedAt = archived.get(sessionId) ?? null;
+    if (archivedAt) await resolveArchiveNudges(sessionId);
+    return archivedAt;
+  } catch {
+    return null;
+  }
 }
 
 function normalizePayload(payload: Record<string, unknown>, meta: {
@@ -161,7 +200,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       threadTitle: optionalText(body.threadTitle),
     }));
     await appendSelfReport(id, report);
-    return NextResponse.json({ ok: true, report });
+    const archivedAt = await maybeAutoArchiveReflectedThread(
+      sessionId,
+      body.trigger as ReflectionTrigger,
+    );
+    return NextResponse.json({ ok: true, report, ...(archivedAt ? { archivedAt } : {}) });
   } catch (err) {
     const message = err instanceof Error ? err.message : "self-report failed";
     return NextResponse.json({ ok: false, error: redactSecretText(message) });

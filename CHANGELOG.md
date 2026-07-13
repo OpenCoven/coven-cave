@@ -8,6 +8,7 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Features
+- **Chat: consolidated Settings tab + auto-archive on thread reflections** — the chat page gains a Settings tab (beside Sessions and Projects) consolidating device-wide chat behavior: the full auto-archive policy (master switch, archive on task completion, idle windows for external and any chats) is now editable in the app instead of config-file only. It also introduces a new trigger — archive on thread reflection: when enabled, a thread archives itself the moment its reflection (self-report) lands, for manual and auto reflections alike; periodic reports and keep-marked chats never auto-archive, and the reflect flow refreshes the session list so the row moves immediately.
 - **Onboarding: hand-held first run through the first chat** — the setup wizard now shows a three-beat journey strip (Set up Cave → Summon a familiar → First chat) so it never reads as a dead-ended infra checklist; completing setup surfaces an above-the-fold success banner, and the finish CTA keeps its promise by opening the Summoning Circle directly (decided on the wizard's own fresh status, immune to the workspace's slower daemon poll). In the circle, the name stage gains one-click identity templates (Code reviewer, Research assistant, Project planner, Writing partner) that fill the role and required description, and the success stage hands keyboard focus to "Begin the first conversation" so Enter completes the funnel (cave-uvv7).
 
 ## [0.0.182] - 2026-07-12

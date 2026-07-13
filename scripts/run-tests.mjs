@@ -533,6 +533,7 @@ export const SUITES = {
     "src/components/board-chat-link.test.ts",
     "src/components/chat-list-panel.test.ts",
     "src/components/chat-surface.test.ts",
+    "src/components/chat-settings-view.test.ts",
     "src/components/chat-switching.test.ts",
     "src/components/chat-view-first-class.test.ts",
     "src/components/labels-and-live-regions.test.ts",

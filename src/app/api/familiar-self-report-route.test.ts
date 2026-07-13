@@ -12,6 +12,44 @@ const routeSource = readFileSync(
   "utf8",
 );
 
+describe("reflection auto-archive wiring", () => {
+  it("archives the reflected thread through the shared policy helper", () => {
+    assert.match(
+      routeSource,
+      /shouldAutoArchiveOnReflection\(sessionId, trigger, policy, \{/,
+      "route must delegate the archive decision to the pure policy helper",
+    );
+    assert.match(
+      routeSource,
+      /normalizeChatAutoArchivePolicy\(config\.chatAutoArchive\)/,
+      "route must read the policy from cave config, tolerating partial storage",
+    );
+    assert.match(
+      routeSource,
+      /autoArchiveSessionsLocal\(\[sessionId\]\)/,
+      "route must archive through the shared batch helper (skips sacrificed/archived)",
+    );
+    assert.match(
+      routeSource,
+      /await resolveArchiveNudges\(sessionId\)/,
+      "archiving on reflection must resolve any pending archive nudges",
+    );
+  });
+
+  it("keeps the archive best-effort and reports archivedAt to the client", () => {
+    assert.match(
+      routeSource,
+      /async function maybeAutoArchiveReflectedThread[\s\S]*?catch \{\s*return null;\s*\}/,
+      "an archive failure must never fail the self-report that triggered it",
+    );
+    assert.match(
+      routeSource,
+      /\{ ok: true, report, \.\.\.\(archivedAt \? \{ archivedAt \} : \{\}\) \}/,
+      "POST response must carry archivedAt so the chat can refresh its list",
+    );
+  });
+});
+
 describe("self-report route JSON parsing", () => {
   it("parses fenced JSON without using an ambiguous closing-fence regex in the route", () => {
     assert.doesNotMatch(

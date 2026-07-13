@@ -2295,15 +2295,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           payload: text,
         }),
       });
-      const json = await res.json() as { ok: true; report: ThreadSelfReport } | { ok: false; error?: string };
+      const json = await res.json() as
+        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
+        | { ok: false; error?: string };
       if (!json.ok) throw new Error(json.error ?? "reflection failed");
       setThreadSignalReport(json.report);
+      // Chat settings can auto-archive a thread once its reflection lands
+      // (archiveOnReflection); refresh the list so the row moves immediately.
+      if (json.archivedAt) onSessionsChanged?.();
     } catch (err) {
       setReflectError(err instanceof Error ? err.message : "reflection failed");
     } finally {
       setReflecting(false);
     }
-  }, [familiar.display_name, familiar.id, reflecting, session?.title, sessionId, turns]);
+  }, [familiar.display_name, familiar.id, onSessionsChanged, reflecting, session?.title, sessionId, turns]);
 
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
     if (!familiar.autoSelfReport) return;
@@ -2322,14 +2327,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
       });
       const json = await res.json().catch(() => null) as
-        | { ok: true; report: ThreadSelfReport }
+        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
         | { ok: false; error?: string }
         | null;
-      if (json?.ok) setThreadSignalReport(json.report);
+      if (json?.ok) {
+        setThreadSignalReport(json.report);
+        if (json.archivedAt) onSessionsChanged?.();
+      }
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
-  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, session?.title, turns]);
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, session?.title, turns]);
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();

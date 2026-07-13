@@ -7,6 +7,7 @@ import {
   extendUntilIso,
   normalizeChatAutoArchivePolicy,
   sessionCreatedExternally,
+  shouldAutoArchiveOnReflection,
   shouldAutoArchiveOnTaskCompletion,
   SUMMON_GRACE_DAYS,
 } from "./chat-auto-archive.ts";
@@ -56,6 +57,20 @@ assert.equal(
 assert.equal(
   normalizeChatAutoArchivePolicy({ archiveOnTaskCompletion: true }).archiveOnTaskCompletion,
   true,
+);
+assert.equal(
+  normalizeChatAutoArchivePolicy({ archiveOnReflection: true }).archiveOnReflection,
+  true,
+);
+assert.equal(
+  DEFAULT_CHAT_AUTO_ARCHIVE_POLICY.archiveOnReflection,
+  false,
+  "reflection auto-archive is opt-in via the chat Settings tab",
+);
+assert.equal(
+  normalizeChatAutoArchivePolicy({ archiveOnReflection: "yes" }).archiveOnReflection,
+  false,
+  "non-boolean reflection flags fall back to the default",
 );
 
 // --- sessionCreatedExternally ------------------------------------------------
@@ -212,6 +227,61 @@ assert.equal(
 );
 assert.equal(
   shouldAutoArchiveOnTaskCompletion("s-1", completionPolicy, {
+    keep: {},
+    archivedSessionIds: ["s-1"],
+  }),
+  false,
+);
+
+// --- shouldAutoArchiveOnReflection --------------------------------------------
+
+const reflectionPolicy = { ...policy, archiveOnReflection: true };
+
+// 13. A landed reflection archives only when opted in, with a session, not
+//     kept, not already archived — and never for periodic (mid-flight) reports.
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),
+  true,
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),
+  true,
+  "auto self-reports archive too — the thread already reached a closed state",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "periodic", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),
+  false,
+  "periodic reports are mid-flight health checks, never an archive trigger",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", policy, { keep: {}, archivedSessionIds: [] }),
+  false,
+  "default policy leaves reflected threads alone",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection(null, "manual", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),
+  false,
+);
+assert.equal(
+  shouldAutoArchiveOnReflection(
+    "s-1",
+    "manual",
+    { ...reflectionPolicy, enabled: false },
+    { keep: {}, archivedSessionIds: [] },
+  ),
+  false,
+  "the master switch also gates reflection archiving",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", reflectionPolicy, {
+    keep: { "s-1": daysAgo(1) },
+    archivedSessionIds: [],
+  }),
+  false,
+  "keep-marked chats are never auto-archived on reflection",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", reflectionPolicy, {
     keep: {},
     archivedSessionIds: ["s-1"],
   }),

@@ -8,6 +8,10 @@ import type { SessionOrigin, SessionRow } from "./types.ts";
  *    reaches the end of its execution lifecycle (card → `completed`). Off by
  *    default — the inline/inbox nudge (see task-archive-nudge*) remains the
  *    default behavior; enabling this flips the nudge into an automatic archive.
+ *  - `archiveOnReflection`: archive a chat as soon as a thread reflection
+ *    (self-report) lands for it — a reflection marks the thread as wrapped up.
+ *    Off by default; toggled from the chat page's Settings tab. Periodic
+ *    (mid-flight) reports never archive, only `manual`/`auto` reflections.
  *  - `externalAfterDays`: chats created outside the chat interface (cron,
  *    heartbeat, journal narratives, board/workflow-invoked runs, generated
  *    daemon sessions) archive after this many days without activity.
@@ -27,6 +31,8 @@ export type ChatAutoArchivePolicy = {
   enabled: boolean;
   /** Archive the linked chat when its task completes (instead of only nudging). */
   archiveOnTaskCompletion: boolean;
+  /** Archive the chat when a thread reflection (self-report) lands for it. */
+  archiveOnReflection: boolean;
   /** Days of inactivity before externally-created chats archive. 0 = off. */
   externalAfterDays: number;
   /** Days of inactivity before any chat archives. 0 = off. */
@@ -36,6 +42,7 @@ export type ChatAutoArchivePolicy = {
 export const DEFAULT_CHAT_AUTO_ARCHIVE_POLICY: ChatAutoArchivePolicy = {
   enabled: true,
   archiveOnTaskCompletion: false,
+  archiveOnReflection: false,
   externalAfterDays: 7,
   idleAfterDays: 30,
 };
@@ -65,6 +72,10 @@ export function normalizeChatAutoArchivePolicy(
       typeof raw.archiveOnTaskCompletion === "boolean"
         ? raw.archiveOnTaskCompletion
         : d.archiveOnTaskCompletion,
+    archiveOnReflection:
+      typeof raw.archiveOnReflection === "boolean"
+        ? raw.archiveOnReflection
+        : d.archiveOnReflection,
     externalAfterDays: clampDays(raw.externalAfterDays, d.externalAfterDays),
     idleAfterDays: clampDays(raw.idleAfterDays, d.idleAfterDays),
   };
@@ -184,6 +195,31 @@ export function shouldAutoArchiveOnTaskCompletion(
 ): boolean {
   if (!sessionId) return false;
   if (!policy.enabled || !policy.archiveOnTaskCompletion) return false;
+  if (context.keep[sessionId]) return false;
+  return !context.archivedSessionIds.includes(sessionId);
+}
+
+/** How a thread reflection (self-report) was triggered. Mirrors the triggers
+ *  the self-report route accepts. */
+export type ReflectionTrigger = "auto" | "manual" | "periodic";
+
+/**
+ * Whether a thread whose reflection just landed should be archived
+ * automatically. `periodic` reports are mid-flight health checks — they never
+ * archive. Keep-marked and already-archived sessions are left alone, same as
+ * the task-completion path.
+ */
+export function shouldAutoArchiveOnReflection(
+  sessionId: string | null | undefined,
+  trigger: ReflectionTrigger,
+  policy: ChatAutoArchivePolicy,
+  context: Pick<AutoArchiveContext, "keep"> & {
+    archivedSessionIds: readonly string[];
+  },
+): boolean {
+  if (!sessionId) return false;
+  if (trigger === "periodic") return false;
+  if (!policy.enabled || !policy.archiveOnReflection) return false;
   if (context.keep[sessionId]) return false;
   return !context.archivedSessionIds.includes(sessionId);
 }
