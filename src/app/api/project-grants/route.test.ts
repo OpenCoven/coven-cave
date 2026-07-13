@@ -46,6 +46,26 @@ assert.match(
   /revokeProjectFromFamiliar/,
   "direct grants route should call the revocation primitive",
 );
+assert.match(
+  grantsRoute,
+  /listAccessGroups/,
+  "grants GET should ride access groups along so one fetch renders effective access",
+);
+assert.match(
+  grantsRoute,
+  /if \(payload\.access === undefined\) return "write";/,
+  "grants POST should default the access level to write (v1 semantics)",
+);
+assert.match(
+  grantsRoute,
+  /payload\.access === "read" \|\| payload\.access === "write"/,
+  "grants POST should only accept read|write access levels",
+);
+assert.match(
+  permissions,
+  /requiredAccessLevel/,
+  "the enforcement chokepoint should map surfaces to required access levels",
+);
 
 assert.match(proposalsRoute, /export async function GET\(/, "grant proposals route should list proposals");
 assert.match(proposalsRoute, /export async function POST\(/, "grant proposals route should create proposals");

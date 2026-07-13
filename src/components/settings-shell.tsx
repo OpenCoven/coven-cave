@@ -37,6 +37,7 @@ import { FontSettings } from "./settings-fonts";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
 import { ProfileSection } from "./settings-profile";
+import { AccessGroupsSection } from "./access-groups-section";
 import { SettingsOverview } from "./settings-overview";
 import {
   SECTIONS,
@@ -956,6 +957,12 @@ function FamiliarsSection({
         onSummon={() => setCreateOpen(true)}
         onRosterChanged={() => void load()}
       />
+      {/* Cross-familiar access groups — shared base project grants at read or
+          write level; per-familiar effective access renders in the studio's
+          Projects tab. */}
+      <div className="mt-4">
+        <AccessGroupsSection familiars={familiars} />
+      </div>
       {createDialog}
     </>
   );
