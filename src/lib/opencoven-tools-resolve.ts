@@ -6,6 +6,7 @@ import { compareSemver } from "./app-update.ts";
 import { pickWindowsLauncher, refreshCovenSpawnEnv } from "./coven-bin.ts";
 import {
   discoverOpenCovenTool,
+  npmViewLaunchCommandForPath,
   probeOpenCovenBinaryAt,
   OPEN_COVEN_TOOLS,
   type OpenCovenToolId,
@@ -33,8 +34,10 @@ const execFileAsync = promisify(execFile);
  *     (same npm package, version >= the tool minimum and >= npm latest when
  *     known) BEFORE anything is touched. Never delete the only working copy.
  *   - Only launcher FILES whose resolved target belongs to the same npm
- *     package are removed — never directories, never binaries owned by other
- *     packages or by non-npm builds, never the fresh copy itself.
+ *     package — proven by a verifying package.json bin entry inside a
+ *     node_modules tree — are removed. Never directories, never binaries
+ *     owned by other packages, never same-named source checkouts or
+ *     non-npm builds, never the fresh copy itself.
  *   - When removal is not safe or not permitted, the caller gets an exact,
  *     copyable manual command instead of a silent failure.
  */
@@ -85,6 +88,30 @@ function samePath(left: string, right: string, platform: NodeJS.Platform): boole
   return normalize(left) === normalize(right);
 }
 
+/** Read npm's global prefix from an already-located npm launcher. Routed
+ *  through npmViewLaunchCommandForPath because npm on Windows is a .cmd shim
+ *  that Node (>= 21.7 / CVE-2024-27980) refuses to execFile without a shell —
+ *  the shim is remapped onto `node npm-cli.js`, keeping the query argv-only. */
+export async function npmGlobalPrefixFromNpmPath(
+  npmPath: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  const launch = npmViewLaunchCommandForPath(npmPath, platform);
+  if (!launch) return null;
+  try {
+    const { stdout } = await execFileAsync(
+      launch.command,
+      [...launch.fixedArgs, "prefix", "-g"],
+      { env, timeout: 5000 },
+    );
+    const prefix = stdout.trim();
+    return prefix || null;
+  } catch {
+    return null;
+  }
+}
+
 async function defaultNpmGlobalPrefix(env: NodeJS.ProcessEnv): Promise<string | null> {
   const finder = process.platform === "win32" ? "where" : "which";
   try {
@@ -94,9 +121,7 @@ async function defaultNpmGlobalPrefix(env: NodeJS.ProcessEnv): Promise<string | 
         ? pickWindowsLauncher(npmOut.split(/\r?\n/))
         : npmOut.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? null;
     if (!npm) return null;
-    const { stdout } = await execFileAsync(npm, ["prefix", "-g"], { env, timeout: 5000 });
-    const prefix = stdout.trim();
-    return prefix || null;
+    return await npmGlobalPrefixFromNpmPath(npm, env);
   } catch {
     return null;
   }
@@ -158,12 +183,40 @@ function manualRemovalHint(paths: string[], platform: NodeJS.Platform): string {
   return `Remove it manually (${command}), then re-check.`;
 }
 
+/** True when `packagePath` is a `node_modules/<packageName>` directory —
+ *  the layout every npm-managed global install uses. A source checkout whose
+ *  root package.json carries the same name fails this test, which is the
+ *  point: deletion demands npm-launcher provenance, not just a name match. */
+export function isNodeModulesPackagePath(
+  packagePath: string,
+  packageName: string,
+  platform: NodeJS.Platform,
+): boolean {
+  const api = pathApiFor(platform);
+  const segments = api.normalize(packagePath).split(api.sep).filter(Boolean);
+  const expected = ["node_modules", ...packageName.split("/")];
+  if (segments.length < expected.length) return false;
+  const tail = segments.slice(-expected.length);
+  const matches = (left: string, right: string) =>
+    platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+  return expected.every((segment, index) => matches(tail[index]!, segment));
+}
+
 function staleProbeIsRemovableSamePackage(
   tool: OpenCovenToolSpec,
   probe: OpenCovenToolProbe,
   goodVersion: string,
+  platform: NodeJS.Platform,
 ): boolean {
   if (!probe.path || probe.packageName !== tool.packageName) return false;
+  // Deletion demands proven npm-launcher provenance, not just an ancestor
+  // package.json with the right name: the manifest's bin entry must resolve
+  // to this executable, and the package must live in a node_modules tree.
+  // A same-named source checkout or non-npm build on PATH is never removed.
+  if (!probe.executableVerified) return false;
+  if (!probe.packagePath || !isNodeModulesPackagePath(probe.packagePath, tool.packageName, platform)) {
+    return false;
+  }
   // Only remove copies that are strictly behind the verified fresh install;
   // an equal-or-newer copy failing verification is a different problem that
   // deletion would not fix.
@@ -264,7 +317,7 @@ export async function resolveStaleOpenCovenLaunchers(
       // verification — removal has nothing left to fix.
       return resolution;
     }
-    if (!staleProbeIsRemovableSamePackage(tool, probe, goodVersion)) {
+    if (!staleProbeIsRemovableSamePackage(tool, probe, goodVersion, platform)) {
       const owner = probe.packageName ?? "an unrecognized launcher";
       resolution.hint =
         `${tool.binary} at ${probe.path} belongs to ${owner}, so Cave will not remove it. ` +
