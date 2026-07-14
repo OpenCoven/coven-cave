@@ -5,6 +5,7 @@
  */
 
 import type { IconName } from "@/lib/icon";
+import { INTERNAL_COVEN_FAMILIAR_IDS } from "./familiar-roster-guard.ts";
 
 export type RoleAffinity = { familiar: string; roles: string[] };
 
@@ -218,12 +219,15 @@ function authorName(author: PluginManifest["author"]): string {
   return "OpenCoven";
 }
 
-const FAMILIAR_MARKETPLACE_NAMES = new Set(["nova", "kitty", "cody", "charm", "sage", "astra", "echo"]);
-const FAMILIAR_PLUGIN_RE = /^coven-(nova|kitty|cody|charm|sage|astra|echo)$/i;
-const FAMILIAR_NAME_RE = /\b(nova|kitty|cody|charm|sage|astra|echo)\b/i;
+// One source of truth for the internal coven familiar names that must never
+// leak into the shared catalog: the roster guard's list (ids are plain
+// lowercase alphanumerics, so joining them into a regex needs no escaping).
+const FAMILIAR_NAME_ALTERNATION = [...INTERNAL_COVEN_FAMILIAR_IDS].join("|");
+const FAMILIAR_PLUGIN_RE = new RegExp(`^coven-(${FAMILIAR_NAME_ALTERNATION})$`, "i");
+const FAMILIAR_NAME_RE = new RegExp(`\\b(${FAMILIAR_NAME_ALTERNATION})\\b`, "i");
 
 function hasHardcodedFamiliarName(value: string): boolean {
-  return FAMILIAR_MARKETPLACE_NAMES.has(value.trim().toLowerCase());
+  return INTERNAL_COVEN_FAMILIAR_IDS.has(value.trim().toLowerCase());
 }
 
 export function sanitizeMarketplacePlugins(

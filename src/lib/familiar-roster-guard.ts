@@ -2,6 +2,7 @@ export const INTERNAL_COVEN_FAMILIAR_IDS = new Set([
   "nova",
   "kitty",
   "cody",
+  "charm",
   "sage",
   "astra",
   "echo",
@@ -20,6 +21,9 @@ type FamiliarRosterEntry = {
   id: string;
   display_name?: string | null;
   role?: string | null;
+  last_seen?: string | null;
+  active_sessions?: number | null;
+  memory_freshness?: string | null;
 };
 
 function normalizeId(value: string): string {
@@ -67,6 +71,21 @@ function isInstallDefaultFamiliar(familiar: FamiliarRosterEntry): boolean {
   );
 }
 
+/**
+ * Evidence that a roster entry is a real, living familiar rather than a
+ * daemon-seeded suggestion: seeded defaults carry only id/name/role, while a
+ * familiar that has actually run has activity fields. A coven can genuinely
+ * contain a familiar named Sage or Salem (on this machine or a remote host),
+ * so live entries are exempt from every name-based hide heuristic below.
+ */
+export function hasLiveFamiliarState(familiar: FamiliarRosterEntry): boolean {
+  return Boolean(
+    (familiar.last_seen ?? "").trim() ||
+      (familiar.memory_freshness ?? "").trim() ||
+      (typeof familiar.active_sessions === "number" && familiar.active_sessions > 0),
+  );
+}
+
 export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
   familiars: readonly T[],
   explicitIdsInput: ReadonlySet<string> | readonly string[],
@@ -76,9 +95,12 @@ export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
     ? new Set(explicitIdsInput.map(normalizeId))
     : new Set(Array.from(explicitIdsInput, normalizeId));
 
-  if (familiars.every(isInstallDefaultFamiliar)) return [];
+  if (familiars.every((familiar) => isInstallDefaultFamiliar(familiar) && !hasLiveFamiliarState(familiar))) {
+    return [];
+  }
 
   return familiars.filter((familiar) => {
+    if (hasLiveFamiliarState(familiar)) return true;
     const id = normalizeId(familiar.id);
     const explicit = explicitIds.has(id);
     if (isInstallDefaultFamiliar(familiar) && !explicit) return false;

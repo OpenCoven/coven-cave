@@ -104,7 +104,7 @@ assert.match(source, /NAME_POOL/, "the name stage offers suggested names");
   const poolMatch = source.match(/const NAME_POOL = \[([\s\S]*?)\] as const;/);
   assert.ok(poolMatch, "NAME_POOL should stay a literal array so reserved-name filtering is reviewable");
   const poolSource = poolMatch[1] ?? "";
-  for (const reserved of ["Nova", "Kitty", "Cody", "Sage", "Astra", "Echo", "Salem"]) {
+  for (const reserved of ["Nova", "Kitty", "Cody", "Charm", "Sage", "Astra", "Echo", "Salem"]) {
     assert.doesNotMatch(
       poolSource,
       new RegExp(`"${reserved}"`),

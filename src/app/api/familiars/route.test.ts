@@ -31,8 +31,31 @@ assert.match(
 );
 assert.match(
   source,
-  /explicitFamiliarIdsFromToml/,
-  "Familiars API should distinguish user-authored familiar ids from daemon fallback defaults",
+  /parseFamiliarsToml/,
+  "Familiars API should read the locally-declared familiars so they can be merged and exempted",
+);
+
+// ── GET: the list must reflect the coven's real state (cave-7cv4) ────────────
+// Hub rosters are real registered familiars — the install-seed guard judges
+// entries against the LOCAL familiars.toml, which knows nothing about a
+// remote coven, so it must not run in hub mode.
+assert.match(
+  source,
+  /daemonTargetForConfig\(config\)\.mode === "hub"\s*\?\s*\(res\.data \?\? \[\]\)\s*:\s*filterInstallSeedFamiliars\(/,
+  "hub rosters bypass the local-toml install-seed guard",
+);
+// Familiars declared in the local familiars.toml but missing from the daemon
+// roster (not re-read yet / hub unaware) merge into the response — everything
+// the POST duplicate check can 409 on must be visible in the list.
+assert.match(
+  source,
+  /const declaredOnly[^=]*= declaredEntries\s*\.filter\(\(entry\) => !rosterIds\.has\(entry\.id\.toLowerCase\(\)\) && !removedIds\.has\(entry\.id\)\)/,
+  "locally-declared familiars missing from the daemon roster are merged in (minus tombstones)",
+);
+assert.match(
+  source,
+  /\[\.\.\.visibleRoster, \.\.\.declaredOnly\]\.map\(/,
+  "daemon roster and declared-only familiars flow through the same enrichment",
 );
 
 // ── POST: in-app "create a familiar" write path ──────────────────────────────
@@ -62,6 +85,17 @@ assert.match(
   "POST should detect an existing id before appending",
 );
 assert.match(source, /status:\s*409/, "POST should return 409 on a duplicate id");
+
+// The local familiars.toml is only half the truth — in hub mode (or before
+// the local daemon re-reads the file) the roster can hold ids this machine
+// has never declared. POST checks the live roster best-effort (daemon failure
+// must not block creation) so it never shadows an existing remote familiar;
+// tombstoned ids are exempt so Remove → re-create keeps working (cave-7cv4).
+assert.match(
+  source,
+  /liveRoster\.ok &&\s*!removed\.has\(draft\.id\) &&\s*\(liveRoster\.data \?\? \[\]\)\.some\(\(f\) => f\.id\.toLowerCase\(\) === draft\.id\.toLowerCase\(\)\)/,
+  "POST rejects ids that already exist in the live roster (best-effort, tombstone-exempt)",
+);
 
 // CRITICAL: creating an additional familiar must NOT rewrite the global
 // defaults (that's onboarding's job for the first familiar). The route only
