@@ -35,6 +35,79 @@
   gap: 4px;
 }
 
+/* The branch segment is a real button — it opens the switch-branch menu
+   without triggering the chip's open-changes click. */
+.cave-composer-git-chip__branch-button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 2px 4px;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+.cave-composer-git-chip__branch-button:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.cave-composer-git-chip__branch-button svg:last-child {
+  color: var(--text-muted);
+}
+
+.cave-composer-git-chip__menu-note,
+.cave-composer-git-chip__menu-error {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.cave-composer-git-chip__menu-error {
+  color: var(--color-danger, oklch(0.65 0.2 25));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 280px;
+}
+
+.cave-composer-git-chip__worktree-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+.cave-composer-git-chip__worktree-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-family: inherit;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.cave-composer-git-chip__worktree-create {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--accent-presence);
+  color: var(--accent-presence-foreground);
+}
+.cave-composer-git-chip__worktree-create:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .cave-composer-git-chip svg {
   flex-shrink: 0;
   color: var(--composer-pill-gold, oklch(0.81 0.105 83));

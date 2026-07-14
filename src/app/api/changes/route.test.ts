@@ -51,4 +51,74 @@ assert.match(
   "branchPr validates the PR URL shape before returning it",
 );
 
+// ── Branch menu (?branches=1, switch-branch, create-worktree) ────────────────
+
+// Every user-supplied branch name is gated by the shared strict allow-list
+// BEFORE it can reach a git argv — both actions, plus the client mirrors it.
+assert.match(
+  source,
+  /if \(action === "switch-branch"\) \{[\s\S]*?if \(!isSafeBranchName\(branch\)\) \{/,
+  "switch-branch validates the branch name with the shared strict rule",
+);
+assert.match(
+  source,
+  /if \(action === "create-worktree"\) \{[\s\S]*?if \(!isSafeBranchName\(branch\)\) \{/,
+  "create-worktree validates the branch name with the shared strict rule",
+);
+
+// switch-branch requires the ref to already exist (local or origin) and uses
+// `git switch` — carrying edits when safe, surfacing git's refusal otherwise —
+// never a forced checkout.
+assert.match(
+  source,
+  /refExists\(root\.repoRoot, `refs\/heads\/\$\{branch\}`\)/,
+  "switch-branch checks for the local ref before switching",
+);
+assert.match(
+  source,
+  /refExists\(root\.repoRoot, `refs\/remotes\/origin\/\$\{branch\}`\)/,
+  "switch-branch accepts an origin-only branch (git switch dwims the tracking branch)",
+);
+assert.match(
+  source,
+  /await git\(root\.repoRoot, \["switch", branch\]\);/,
+  "the switch is a plain `git switch` via the argv helper (no shell, no -f)",
+);
+assert.doesNotMatch(
+  source,
+  /"switch", "-f"|"switch", "--force"|"checkout", "-f"/,
+  "branch switching must never force-discard local state",
+);
+
+// create-worktree delegates to the shared provisioning lib (containment under
+// .worktrees/, idempotent reuse, origin/main base) rather than reimplementing.
+assert.match(
+  source,
+  /provisionBranchWorktree\(\s*root\.repoRoot,\s*branch,/,
+  "create-worktree provisions through the shared issue-worktree-provision lib",
+);
+
+// The branch listing marks the current branch and which worktree holds each
+// checked-out branch, so the menu can disable non-switchable rows.
+assert.match(
+  source,
+  /\["for-each-ref", "refs\/heads", "--sort=-committerdate", "--format=%\(refname:short\)"\]/,
+  "listBranches reads local branches newest-first via for-each-ref",
+);
+assert.match(
+  source,
+  /\["worktree", "list", "--porcelain"\]/,
+  "listBranches maps branches to their checkouts from the porcelain worktree list",
+);
+assert.match(
+  source,
+  /if \(wantBranches !== null\) return await listBranches\(root\.repoRoot\);/,
+  "the GET handler routes ?branches=1 to the branch listing",
+);
+assert.match(
+  source,
+  /if \(\/\^__\.\*__\$\/\.test\(name\)\) continue;/,
+  "tool-internal dunder refs (beads' __dolt_remote_info__) stay out of the menu",
+);
+
 console.log("changes route.test.ts: ok");

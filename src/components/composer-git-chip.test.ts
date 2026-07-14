@@ -74,4 +74,51 @@ assert.match(
   "branch/worktree labels truncate with an ellipsis",
 );
 
+// ── The branch segment is a menu: switch branches / create a worktree ───────
+assert.match(
+  chip,
+  /aria-haspopup="menu"[\s\S]*?aria-expanded=\{menuOpen\}/,
+  "the branch segment is a real menu trigger with ARIA state",
+);
+assert.match(
+  chip,
+  /\/api\/changes\?projectRoot=\$\{encodeURIComponent\(root\)\}&branches=1/,
+  "opening the menu lists local branches via the changes route's ?branches=1 query",
+);
+assert.match(
+  chip,
+  /action: "switch-branch", branch: name/,
+  "picking a branch posts the switch-branch action",
+);
+assert.match(
+  chip,
+  /closeMenu\(\);\s*\n\s*reload\(\);/,
+  "a successful switch refreshes the summary immediately instead of waiting out the poll",
+);
+assert.match(
+  chip,
+  /disabled=\{menuBusy \|\| row\.current \|\| row\.worktree !== null\}/,
+  "branches checked out in another worktree (and the current one) are not switch targets",
+);
+assert.match(
+  chip,
+  /isSafeBranchName\(name\)/,
+  "the worktree form validates the branch name client-side with the shared rule",
+);
+assert.match(
+  chip,
+  /action: "create-worktree", branch: name/,
+  "creating a worktree posts the create-worktree action",
+);
+assert.match(
+  chip,
+  /new CustomEvent\("cave:agents-new-chat", \{\s*\n\s*detail: \{ projectRoot: json\.worktree \}/,
+  "a created worktree opens as a fresh chat rooted in it (safe-merge hand-off pattern)",
+);
+assert.match(
+  chip,
+  /onClick=\{\(event\) => \{\s*\n\s*event\.stopPropagation\(\);\s*\n\s*setMenuOpen/,
+  "the branch trigger stops propagation so it never fires the chip's open-changes click",
+);
+
 console.log("composer-git-chip.test.ts: ok");

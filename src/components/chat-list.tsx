@@ -333,8 +333,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     // server; restored if the user hits Undo).
     const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
     if (hidden.size) rows = rows.filter((s) => !hidden.has(s.id));
-    return filterVisibleChatSessions(rows, familiar?.id ?? null);
+    return filterVisibleChatSessions(rows, familiar?.id ?? null, { includeArchived: showArchived });
   }, [sessions, showArchived, archivedRows, familiar?.id, deletePending]);
+
+  // The siderail never shows archived chats: even while the list's "Show
+  // archived" toggle is on, rail groups build from an archive-free view.
+  const railSessions = useMemo(() => mine.filter((s) => !s.archived_at), [mine]);
 
   const filtered = useMemo(() => {
     let rows = mine;
@@ -363,7 +367,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   // every render: stale projects degrade to "all" silently. Below lg the
   // sidebar is hidden, so a persisted project selection must not scope the
   // list there — no affordance would exist to unscope it.
-  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(mine, projectOverrides), projects), [mine, projects, projectOverrides]);
+  const sidebarGroups = useMemo(() => deriveChatProjectGroups(applyProjectOverrides(railSessions, projectOverrides), projects), [railSessions, projects, projectOverrides]);
   const effectiveSelection = useMemo(
     () => normalizeSelection(isMobile ? "all" : selection, sidebarGroups),
     [isMobile, selection, sidebarGroups],
