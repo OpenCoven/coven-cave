@@ -32,13 +32,14 @@ import { needsAuthedImageFetch } from "./authed-image.ts";
   );
 }
 
-// No window (SSR/node): a bare `/api/...` path can't be resolved, so we must not
-// claim it needs an authed fetch — the effect re-runs client-side anyway.
+// No window (SSR/node): still treat a relative `/api/...` path as needing an
+// authed fetch so server-rendered HTML never emits a raw <img src="/api/...">
+// that will 401 before hydration.
 {
   assert.equal(
     needsAuthedImageFetch("/api/familiars/x/avatar"),
-    false,
-    "no window → false (SSR defers to the client effect)",
+    true,
+    "no window + relative /api/* → true (avoid SSR broken-image fetch)",
   );
 }
 
