@@ -69,12 +69,15 @@ const MAX_CACHE_ENTRIES = 64;
 const cache = new Map<string, CacheEntry>();
 
 function evictOldestIfNeeded(): void {
-  while (cache.size > MAX_CACHE_ENTRIES) {
-    const oldestKey = cache.keys().next().value as string | undefined;
-    if (oldestKey === undefined) break;
-    const evicted = cache.get(oldestKey);
-    cache.delete(oldestKey);
-    if (evicted?.objectUrl) URL.revokeObjectURL(evicted.objectUrl);
+  if (cache.size <= MAX_CACHE_ENTRIES) return;
+
+  // Only evict entries that have an object URL. Evicting an in-flight entry
+  // would lose the reference needed to revoke its eventual object URL.
+  for (const [key, entry] of cache) {
+    if (cache.size <= MAX_CACHE_ENTRIES) break;
+    if (!entry.objectUrl) continue;
+    cache.delete(key);
+    URL.revokeObjectURL(entry.objectUrl);
   }
 }
 
