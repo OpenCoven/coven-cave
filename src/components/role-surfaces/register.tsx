@@ -23,7 +23,14 @@ import {
 } from "@/lib/role-surfaces";
 import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-state";
 import { watchtowerStatus } from "./sentinel-watch";
-import { INDEXER_SURFACE_ID, MESSENGER_SURFACE_ID, RESEARCHER_SURFACE_ID, SENTINEL_SURFACE_ID } from "./ids";
+import { deskSummary, scribeStatus } from "./scribe-craft";
+import {
+  INDEXER_SURFACE_ID,
+  MESSENGER_SURFACE_ID,
+  RESEARCHER_SURFACE_ID,
+  SCRIBE_SURFACE_ID,
+  SENTINEL_SURFACE_ID,
+} from "./ids";
 
 function RoomFallback() {
   return (
@@ -47,6 +54,10 @@ const IndexerSurface = dynamic(
 );
 const SentinelSurface = dynamic(
   () => import("./sentinel-surface").then((m) => m.SentinelSurface),
+  { ssr: false, loading: RoomFallback },
+);
+const ScribeSurface = dynamic(
+  () => import("./scribe-surface").then((m) => m.ScribeSurface),
   { ssr: false, loading: RoomFallback },
 );
 
@@ -204,6 +215,61 @@ registerRoleSurface({
     };
   },
   render: (context) => <SentinelSurface context={context} />,
+});
+
+registerRoleSurface({
+  id: SCRIBE_SURFACE_ID,
+  role: "scribe",
+  title: "Writing Desk",
+  iconName: "ph:feather",
+  description: "Drafts, source material, and publishing into the Knowledge Vault",
+  accentHue: 320,
+  priority: 18,
+  shouldDisplay: () => true,
+  getContributions(context) {
+    const state = readRoleSurfaceState<{ drafts?: Array<{ body?: string; publishedId?: string | null }> }>(
+      context.activeFamiliar.id,
+      SCRIBE_SURFACE_ID,
+    );
+    const drafts = (state?.drafts ?? []).map((d) => ({ body: d.body ?? "", publishedId: d.publishedId ?? null }));
+    const status = scribeStatus(deskSummary(drafts));
+    return {
+      commands: [
+        {
+          id: "scribe.toggle-drawer",
+          title: "Toggle published works",
+          hint: "⌘⇧D",
+          run: (ctx) => toggleDrawer(ctx, SCRIBE_SURFACE_ID),
+        },
+      ],
+      toolbarActions: [
+        {
+          id: "scribe.drawer",
+          title: "Published works",
+          iconName: "ph:list",
+          run: (ctx) => toggleDrawer(ctx, SCRIBE_SURFACE_ID),
+        },
+      ],
+      keyboardShortcuts: [
+        {
+          id: "scribe.drawer.kbd",
+          combo: "mod+shift+d",
+          description: "Toggle the published works drawer",
+          run: (ctx) => toggleDrawer(ctx, SCRIBE_SURFACE_ID),
+        },
+      ],
+      notifications: daemonNotices(context),
+      statusIndicators: [
+        {
+          id: "scribe.desk",
+          label: status.label,
+          tone: status.tone,
+          detail: "Local drafts on the desk; publishing writes real Knowledge Vault entries",
+        },
+      ],
+    };
+  },
+  render: (context) => <ScribeSurface context={context} />,
 });
 
 registerRoleSurface({

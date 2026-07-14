@@ -80,3 +80,7 @@ never fake production data.
   escalations as a triageable alert board (acknowledge/snooze/resolve/dismiss
   through the shared Inbox store), session watch over running/failed sessions,
   perimeter reachability from live ssh-host probes, watch-log drawer.
+- **Writing Desk** (`scribe-writing-desk`, role `scribe`) — local drafts with
+  live word counts, source material from the familiar's real memory and recent
+  journal days, real publishing into the Knowledge Vault (republish-in-place,
+  Grimoire deep links), published-works drawer.

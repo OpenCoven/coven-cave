@@ -6,3 +6,4 @@ export const RESEARCHER_SURFACE_ID = "researcher-desk";
 export const MESSENGER_SURFACE_ID = "messenger-ops";
 export const INDEXER_SURFACE_ID = "indexer-archive";
 export const SENTINEL_SURFACE_ID = "sentinel-watchtower";
+export const SCRIBE_SURFACE_ID = "scribe-writing-desk";
