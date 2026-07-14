@@ -47,13 +47,11 @@ export async function GET() {
     // Installed ids were validated against the catalog allowlist on install;
     // the shape guard keeps a hand-edited config from escaping the plugins dir.
     const installed = Object.keys(cfg.marketplace.installed).filter((id) => /^[\w.-]+$/.test(id));
-    await Promise.all(
-      installed.map(async (id) => {
-        const scanned: PromptOption[] = [];
-        await scanPromptsDir(path.join(MARKETPLACE_PLUGINS_DIR, id, "skill-templates"), `pack:${id}`, scanned);
-        for (const option of scanned) packs.push(toSkillTemplate(option, `pack:${id}`));
-      }),
-    );
+    for (const id of installed) {
+      const scanned: PromptOption[] = [];
+      await scanPromptsDir(path.join(MARKETPLACE_PLUGINS_DIR, id, "skill-templates"), `pack:${id}`, scanned);
+      for (const option of scanned) packs.push(toSkillTemplate(option, `pack:${id}`));
+    }
   } catch {
     // Config unreadable → built-ins + user files still serve.
   }
