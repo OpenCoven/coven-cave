@@ -555,6 +555,7 @@ export const SUITES = {
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
     "src/lib/cave-backdrop.test.ts",
+    "src/components/backdrop-scrim.test.ts",
     "src/lib/url-safety.test.ts",
     "src/lib/use-focus-trap.test.ts",
     "src/lib/use-prefers-reduced-motion.test.ts",
