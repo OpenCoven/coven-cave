@@ -313,6 +313,7 @@ export const SUITES = {
     "src/components/board-inspector-a11y.test.ts",
     "src/lib/session-status.test.ts",
     "src/components/board-grouping.test.ts",
+    "src/components/board-card-chip-diet.test.ts",
     "src/components/board-project-picker.test.ts",
     "src/components/board-ux-polish.test.ts",
     "src/components/board-card-stack-a11y.test.ts",

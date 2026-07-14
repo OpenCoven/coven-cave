@@ -373,6 +373,10 @@
 .board-kanban-priority-pill--high { background:color-mix(in oklch,var(--color-warning) 18%,transparent); color:color-mix(in oklch,var(--color-warning) 70%,#fff); }
 .board-kanban-priority-pill--medium { background:color-mix(in oklch,var(--accent-presence) 18%,transparent); color:color-mix(in oklch,var(--accent-presence) 80%,#fff); }
 .board-kanban-priority-pill--low { background:var(--bg-elevated); color:var(--text-muted); }
+/* Glyph-only marker: the loud all-caps text pill became a tiny flag that
+   echoes the card's left color bar (cave-8nw2). Same per-priority color
+   classes; the tint square stays compact. */
+.board-kanban-priority-pill--glyph { padding:2px; border-radius:4px; }
 /* The pill text is lightened toward #fff for legibility on the dark-mode tint.
    In light mode that lightened text fails WCAG on the faint tint, so darken it
    toward #000 instead (≈5.8–7:1 vs the prior 2.0–2.6:1). */
