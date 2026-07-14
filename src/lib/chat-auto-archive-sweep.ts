@@ -58,11 +58,12 @@ export async function sweepAutoArchive(
 /**
  * Sweep `rows` whose pull request has merged and archive them, recording each
  * (session, PR) pair in cave state so the sweep is one-shot — summoning the
- * chat later won't be undone by the next poll. Shares the policy sweep's
- * opt-outs (keep marks, extension windows / summon grace) and env kill-switch
- * (COVEN_CAVE_NO_MERGED_AUTO_ARCHIVE=1). Returns sessionId → archivedAt for
- * rows archived by this call (empty when nothing was due or the sweep
- * failed).
+ * chat later won't be undone by the next poll. Gated by the configured policy
+ * (master switch + the `archiveOnPrMerge` toggle in the chat Settings tab)
+ * and the env kill-switch (COVEN_CAVE_NO_MERGED_AUTO_ARCHIVE=1); shares the
+ * policy sweep's opt-outs (keep marks, extension windows / summon grace).
+ * Returns sessionId → archivedAt for rows archived by this call (empty when
+ * nothing was due or the sweep failed).
  */
 export async function sweepMergedPrAutoArchive(
   rows: MergedAutoArchiveRow[],
@@ -71,6 +72,9 @@ export async function sweepMergedPrAutoArchive(
 ): Promise<Map<string, string>> {
   try {
     if (process.env[MERGED_AUTO_ARCHIVE_DISABLE_ENV] === "1") return new Map();
+    const config = await loadConfig();
+    const policy = normalizeChatAutoArchivePolicy(config.chatAutoArchive);
+    if (!policy.enabled || !policy.archiveOnPrMerge) return new Map();
     const decisions = mergedChatAutoArchiveDecisions(
       rows,
       state.mergedPrAutoArchived ?? {},

@@ -12,6 +12,9 @@ import type { SessionOrigin, SessionRow } from "./types.ts";
  *    (self-report) lands for it — a reflection marks the thread as wrapped up.
  *    Off by default; toggled from the chat page's Settings tab. Periodic
  *    (mid-flight) reports never archive, only `manual`/`auto` reflections.
+ *  - `archiveOnPrMerge`: archive a chat when the pull request its work
+ *    produced merges (see merged-chat-auto-archive.ts). On by default —
+ *    a merged PR is the strongest "this thread is done" signal.
  *  - `externalAfterDays`: chats created outside the chat interface (cron,
  *    heartbeat, journal narratives, board/workflow-invoked runs, generated
  *    daemon sessions) archive after this many days without activity.
@@ -33,6 +36,8 @@ export type ChatAutoArchivePolicy = {
   archiveOnTaskCompletion: boolean;
   /** Archive the chat when a thread reflection (self-report) lands for it. */
   archiveOnReflection: boolean;
+  /** Archive the chat when the PR its work produced merges. */
+  archiveOnPrMerge: boolean;
   /** Days of inactivity before externally-created chats archive. 0 = off. */
   externalAfterDays: number;
   /** Days of inactivity before any chat archives. 0 = off. */
@@ -43,6 +48,7 @@ export const DEFAULT_CHAT_AUTO_ARCHIVE_POLICY: ChatAutoArchivePolicy = {
   enabled: true,
   archiveOnTaskCompletion: false,
   archiveOnReflection: false,
+  archiveOnPrMerge: true,
   externalAfterDays: 7,
   idleAfterDays: 30,
 };
@@ -77,6 +83,10 @@ export function normalizeChatAutoArchivePolicy(
       typeof raw.archiveOnReflection === "boolean"
         ? raw.archiveOnReflection
         : d.archiveOnReflection,
+    archiveOnPrMerge:
+      typeof raw.archiveOnPrMerge === "boolean"
+        ? raw.archiveOnPrMerge
+        : d.archiveOnPrMerge,
     externalAfterDays: clampDays(raw.externalAfterDays, d.externalAfterDays),
     idleAfterDays: clampDays(raw.idleAfterDays, d.idleAfterDays),
   };

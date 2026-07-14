@@ -15,6 +15,8 @@
 //    (`sessionKeep`, "never auto-archive") and chats inside an extension
 //    window (`sessionArchiveExtendedUntil` — explicit extensions and the
 //    summon grace) are never swept.
+//  - Gated by the chat auto-archive policy: the Settings tab's master switch
+//    and `archiveOnPrMerge` toggle both must be on (see the sweep wiring).
 //  - Opt-out via COVEN_CAVE_NO_MERGED_AUTO_ARCHIVE=1.
 
 import {

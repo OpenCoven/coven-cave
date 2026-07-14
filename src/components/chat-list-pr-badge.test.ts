@@ -84,6 +84,11 @@ assert.match(
 );
 assert.match(
   sweepModule,
+  /if \(!policy\.enabled \|\| !policy\.archiveOnPrMerge\) return new Map\(\);/,
+  "the merged sweep is gated by the Settings-tab policy (master switch + PR-merge toggle)",
+);
+assert.match(
+  sweepModule,
   /sweepMergedPrAutoArchive[\s\S]*?resolveArchiveNudges\(sessionId\)/,
   "swept chats clear their pending archive nudges",
 );

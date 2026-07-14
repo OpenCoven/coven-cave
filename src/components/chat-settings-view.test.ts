@@ -53,13 +53,14 @@ assert.match(
   "settings view persists partial policies through the config PATCH merge",
 );
 
-// Every policy field is editable from the tab — master switch, both event
-// triggers (task completion + the new thread-reflection trigger), and the two
+// Every policy field is editable from the tab — master switch, the event
+// triggers (task completion, thread reflection, PR merge), and the two
 // idle windows.
 for (const field of [
   "enabled",
   "archiveOnTaskCompletion",
   "archiveOnReflection",
+  "archiveOnPrMerge",
   "externalAfterDays",
   "idleAfterDays",
 ]) {
@@ -78,6 +79,11 @@ assert.match(
   settingsView,
   /After thread reflection/,
   "the reflection auto-archive toggle is labeled for what it does",
+);
+assert.match(
+  settingsView,
+  /After PR merge/,
+  "the merged-PR auto-archive toggle is labeled for what it does",
 );
 
 // A failed save must not lie about state: revert the optimistic change.
