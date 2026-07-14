@@ -17,7 +17,8 @@
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
@@ -175,6 +176,27 @@ export function validateOpRef(ref: unknown): string | null {
   return null;
 }
 
+// Apps launched from Finder/Spotlight inherit a minimal PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin), so a CLI installed under Homebrew or the
+// user's local bin — where `op` (and other resolver CLIs) typically live — is
+// not found, and every reference silently resolves to "unresolved" in packaged
+// builds even when the CLI is installed and authenticated. Augment PATH with
+// the well-known install locations before spawning, so resolution works the
+// same in a packaged app as it does when launched from a shell.
+function resolverEnv(): NodeJS.ProcessEnv {
+  const home = homedir();
+  const candidates = [
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    join(home, ".local", "bin"),
+    join(home, "bin"),
+  ];
+  const current = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const merged = [...current, ...candidates.filter((dir) => !current.includes(dir))];
+  return { ...process.env, PATH: merged.join(delimiter) };
+}
+
 /** Call `op read` to fetch a secret reference. Returns null on failure. */
 function opRead(ref: string): string | null {
   if (validateOpRef(ref)) return null;
@@ -184,6 +206,7 @@ function opRead(ref: string): string | null {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 8000,
+      env: resolverEnv(),
     }).trim();
     return value || null;
   } catch {

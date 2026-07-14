@@ -1945,8 +1945,17 @@ fn spawn_sidecar_startup(
                         .get_webview_window("main")
                         .ok_or_else(|| "startup window is unavailable".to_string())
                         .and_then(|window| {
+                            // location.replace() swaps startup.html out of the
+                            // webview's session history; window.navigate() pushes
+                            // a new entry instead, so the shell's Back control
+                            // (history.back) could land users on the dead splash
+                            // screen. Fall back to navigate() if eval cannot
+                            // reach the page — a stale history entry beats a
+                            // startup failure.
+                            let escaped = url.to_string().replace('"', "%22");
                             window
-                                .navigate(url)
+                                .eval(format!("window.location.replace(\"{escaped}\");"))
+                                .or_else(|_| window.navigate(url))
                                 .map_err(|error| format!("could not open CovenCave: {error}"))
                         });
                     match navigation {
