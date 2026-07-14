@@ -61,15 +61,19 @@ assert.match(
   "Notification bell should render daily summaries with the same distinct icon",
 );
 
+// The old Schedules reminders list (and its isScheduleInboxItem gate) is gone —
+// daily summaries now ride the FULL inbox feed alongside every other kind,
+// grouped via the pure buildInboxGroups (attention/kind/familiar) and badged
+// by inboxKindLabel, so they stay visible after their popup dismisses.
 assert.match(
   automations,
-  /function isScheduleInboxItem\(item: InboxItem\)/,
-  "Schedules should centralize which inbox kinds appear in the reminders list",
+  /buildInboxGroups\(inboxVisible/,
+  "the inbox feed groups every item kind — daily summaries included",
 );
 assert.match(
   automations,
-  /item\.kind === "reminder" \|\| item\.kind === "daily-summary"/,
-  "Schedules should retain daily summary notifications after their popup dismisses",
+  /<InboxKindBadge kind=\{item\.kind\} \/>/,
+  "feed rows badge their kind so summaries stay distinguishable",
 );
 
 assert.match(

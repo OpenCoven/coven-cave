@@ -1,7 +1,9 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  buildInboxGroups,
   groupInboxFeed,
+  INBOX_GROUP_BY_OPTIONS,
   inboxActivityTime,
   inboxKindLabel,
   isInboxItemUnread,
@@ -125,6 +127,80 @@ const item = (over = {}) => ({
   ];
   assert.equal(unreadInboxCount(items), 2, "one unread fired + one pending response-needed");
   assert.equal(unreadInboxCount([]), 0);
+}
+
+// ── buildInboxGroups: attention mode mirrors the tiers, empty tiers dropped ──
+{
+  const groups = buildInboxGroups(
+    [
+      item({ id: "fired", status: "fired" }),
+      item({ id: "pending", status: "pending" }),
+    ],
+    "attention",
+  );
+  assert.deepEqual(groups.map((g) => g.id), ["attention:needs-you", "attention:active"], "resolved tier absent when empty");
+  assert.equal(groups[0].title, "Needs you");
+  assert.equal(groups[0].accent, true, "needs-you keeps the warning badge");
+  assert.deepEqual(groups[0].items.map((i) => i.id), ["fired"]);
+}
+
+// ── buildInboxGroups: kind mode orders demanding kinds first, recent first ──
+{
+  const groups = buildInboxGroups(
+    [
+      item({ id: "sum", kind: "daily-summary", updatedAt: "2026-06-03T00:00:00Z" }),
+      item({ id: "rem-old", kind: "reminder", updatedAt: "2026-06-01T00:00:00Z" }),
+      item({ id: "rem-new", kind: "reminder", updatedAt: "2026-06-02T00:00:00Z" }),
+      item({ id: "resp", kind: "response-needed" }),
+    ],
+    "kind",
+  );
+  assert.deepEqual(groups.map((g) => g.id), ["kind:response-needed", "kind:reminder", "kind:daily-summary"]);
+  assert.equal(groups[0].title, "Response", "titles reuse inboxKindLabel");
+  assert.deepEqual(groups[1].items.map((i) => i.id), ["rem-new", "rem-old"], "kind groups sort by recency");
+}
+
+// ── buildInboxGroups: familiar mode labels via callback, unassigned last ────
+{
+  const groups = buildInboxGroups(
+    [
+      item({ id: "z1", familiarId: "zelda" }),
+      item({ id: "a1", familiarId: "arch" }),
+      item({ id: "loose" }),
+    ],
+    "familiar",
+    (fid) => (fid === "arch" ? "Archivist" : fid === "zelda" ? "Zelda" : null),
+  );
+  assert.deepEqual(groups.map((g) => g.id), ["familiar:arch", "familiar:zelda", "familiar:none"], "alphabetical by label, unassigned trailing");
+  assert.equal(groups[0].title, "Archivist");
+  assert.equal(groups[2].title, "No familiar");
+  assert.deepEqual(groups[2].items.map((i) => i.id), ["loose"]);
+}
+
+// ── buildInboxGroups: falls back to the raw familiar id without a label ─────
+{
+  const groups = buildInboxGroups([item({ id: "x", familiarId: "ghost" })], "familiar");
+  assert.equal(groups[0].title, "ghost");
+}
+
+// ── every mode partitions: no item duplicated or dropped ────────────────────
+{
+  const items = [
+    item({ id: "a", kind: "agent", status: "fired", familiarId: "f1" }),
+    item({ id: "b", kind: "reminder", status: "done" }),
+    item({ id: "c", kind: "response-needed", status: "pending", familiarId: "f2" }),
+  ];
+  for (const mode of ["attention", "kind", "familiar"]) {
+    const groups = buildInboxGroups(items, mode);
+    const ids = groups.flatMap((g) => g.items.map((i) => i.id)).sort();
+    assert.deepEqual(ids, ["a", "b", "c"], `${mode} mode keeps every item exactly once`);
+  }
+  assert.deepEqual(buildInboxGroups([], "attention"), [], "empty feed → no groups");
+}
+
+// ── the group-by options cover every mode exactly once ──────────────────────
+{
+  assert.deepEqual(INBOX_GROUP_BY_OPTIONS.map((o) => o.value), ["attention", "kind", "familiar"]);
 }
 
 console.log("inbox-feed.test.ts passed");
