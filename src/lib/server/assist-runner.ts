@@ -21,6 +21,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 
 export type AssistInvocation = {
   command: string;
@@ -72,7 +73,13 @@ export async function runBoundedAssist(opts: {
       };
       // Neutral cwd: the assist's temp dir, not the server checkout — even a
       // read-only sandbox shouldn't be pointed at the repo as its workspace.
-      const child = spawn(inv.command, inv.args, { cwd: dir, stdio: ["pipe", "ignore", "ignore"] });
+      // No familiar context: shared vault keys only (assists embed
+      // attacker-influenceable content; scoped secrets never reach them).
+      const child = spawn(inv.command, inv.args, {
+        cwd: dir,
+        stdio: ["pipe", "ignore", "ignore"],
+        env: harnessSpawnEnv(),
+      });
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
         settle({ code: null, error: "assist timed out" });

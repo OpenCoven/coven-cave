@@ -47,7 +47,11 @@ const serverProvider: Pick<VoiceProvider, "id" | "label" | "mintSession"> = {
       expiresAt: new Date((expiresAtSec ?? Math.floor(Date.now() / 1000) + 60) * 1000).toISOString(),
       connection: {
         kind: "openai-realtime",
-        url: `${REALTIME_BASE}?model=${encodeURIComponent(req.model)}`,
+        // GA WebRTC SDP exchange endpoint. The ephemeral token is bound to the
+        // model at mint time, so no ?model= query param (a mismatched param is
+        // rejected with invalid_model; the legacy /v1/realtime?model= shape now
+        // returns beta_api_shape_disabled).
+        url: `${REALTIME_BASE}/calls`,
         model: req.model,
         voice: req.voice,
       },
@@ -128,9 +132,10 @@ function handleEvent(raw: unknown, callbacks: VoiceCallbacks) {
   if (!type) return;
   if (type === "conversation.item.input_audio_transcription.completed") {
     if (typeof ev.transcript === "string") callbacks.onUserTranscriptFinal(ev.transcript);
-  } else if (type === "response.audio_transcript.done") {
+  } else if (type === "response.output_audio_transcript.done" || type === "response.audio_transcript.done") {
+    // GA name first; beta name kept for compatibility.
     if (typeof ev.transcript === "string") callbacks.onAssistantTranscriptFinal(ev.transcript);
-  } else if (type === "response.audio_transcript.delta") {
+  } else if (type === "response.output_audio_transcript.delta" || type === "response.audio_transcript.delta") {
     if (typeof ev.delta === "string") callbacks.onPartialTranscript("assistant", ev.delta);
   } else if (type === "conversation.item.input_audio_transcription.delta") {
     if (typeof ev.delta === "string") callbacks.onPartialTranscript("user", ev.delta);

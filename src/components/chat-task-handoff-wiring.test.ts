@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /handoff=\{\{ turns, familiarId: familiar\.id \?\? null, projectId: projectIdDraft \}\}/,
-  "chat-view hands the picker its turns plus the chat's familiar and project",
+  /handoff=\{\{ turns: activePath, familiarId: familiar\.id \?\? null, projectId: projectIdDraft \}\}/,
+  "chat-view hands the picker the ACTIVE branch's turns (not abandoned edit/retry branches) plus the chat's familiar and project",
 );
 assert.match(
   chatView,

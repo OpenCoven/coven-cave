@@ -63,6 +63,9 @@ export async function POST(req: NextRequest) {
   const baseEntry = {
     description: typeof body.description === "string" ? body.description.trim() : undefined,
     required: body.required ?? false,
+    // Grants are edited elsewhere (per-familiar Vault tab) — re-saving a
+    // mapping here must not silently reset a key back to shared.
+    scope: map[key]?.scope,
   };
 
   let entry: VaultEntry;

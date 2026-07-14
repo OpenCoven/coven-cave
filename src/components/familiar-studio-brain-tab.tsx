@@ -294,7 +294,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       value={draftVoiceModel}
                       onChange={(e) => setDraftVoiceModel(e.target.value)}
                       onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || null })}
-                      placeholder="gpt-4o-realtime-preview"
+                      placeholder="gpt-realtime"
                       className="familiar-studio-brain__input"
                     />
                   </div>
