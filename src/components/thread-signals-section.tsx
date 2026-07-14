@@ -1,14 +1,30 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
+import { UndoToast } from "@/components/ui/undo-toast";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
+import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { useUndoDelete } from "@/lib/use-undo-delete";
+import {
+  addSignalDismissal,
+  clearSignalDismissals,
+  loadSignalDismissals,
+  partitionDismissedSignals,
+  signalIdentity,
+  type SignalDismissalMap,
+} from "@/lib/thread-signal-dismissals";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
   buildThreadSignalResolutionPrompt,
+  REVIEW_KIND_LABEL,
   THREAD_SIGNALS_EMPTY_STATE,
   type ThreadSignalsAggregate,
   type ThreadSignalReviewItem,
@@ -205,6 +221,7 @@ function ThreadSignalsTable({
   sections: ThreadSignalTableSection[];
 }) {
   const { announce } = useAnnouncer();
+  const coarsePointer = useIsCoarsePointer();
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -316,37 +333,72 @@ function ThreadSignalsTable({
         <td><span className="fa-thread-table__detail">{row.detail}</span></td>
         <td><span className="board-table-cell-time">{row.count ? `${row.count}x` : "-"}</span></td>
         <td className="fa-thread-table__actions">
-          {row.kind ? (
-            <Button
-              variant="ghost"
-              size="xs"
-              leadingIcon="ph:chat-circle-dots"
-              onClick={() => resolveRow(familiarId, row)}
-              aria-label={`Launch a thread to resolve ${row.signal}`}
-              title="Launch a new thread with this familiar, primed to resolve this signal"
-            >
-              Resolve
-            </Button>
-          ) : null}
-          {isAdded ? (
-            <span className="fa-thread-table__added" title="A task card exists on the board for this signal">
-              <Icon name="ph:check-circle" width={13} aria-hidden /> Task
-            </span>
+          {coarsePointer ? (
+            // Coarse pointers: one ⋯ menu instead of a row of 44px buttons
+            // (chat-list-coarse-actions precedent). Fine pointers keep the
+            // always-visible pair below.
+            <OverflowMenu ariaLabel={`Actions for signal ${row.signal}`} size="sm">
+              {row.kind ? (
+                <PopoverItem icon="ph:chat-circle-dots" onSelect={() => resolveRow(familiarId, row)}>
+                  Resolve in a thread
+                </PopoverItem>
+              ) : null}
+              <PopoverItem
+                icon="ph:plus"
+                disabled={isAdded || isPending}
+                onSelect={() => void createTasks([row])}
+              >
+                {isAdded ? "Task already on board" : "Add task to board"}
+              </PopoverItem>
+            </OverflowMenu>
           ) : (
-            <Button
-              variant="ghost"
-              size="xs"
-              loading={isPending}
-              leadingIcon="ph:plus"
-              onClick={() => void createTasks([row])}
-              aria-label={`Add task for ${row.signal}`}
-              title="Create a task card on the board from this signal"
-            >
-              Task
-            </Button>
+            <>
+              {row.kind ? (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  leadingIcon="ph:chat-circle-dots"
+                  onClick={() => resolveRow(familiarId, row)}
+                  aria-label={`Launch a thread to resolve ${row.signal}`}
+                  title="Launch a new thread with this familiar, primed to resolve this signal"
+                >
+                  Resolve
+                </Button>
+              ) : null}
+              {isAdded ? (
+                <span className="fa-thread-table__added" title="A task card exists on the board for this signal">
+                  <Icon name="ph:check-circle" width={13} aria-hidden /> Task
+                </span>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  loading={isPending}
+                  leadingIcon="ph:plus"
+                  onClick={() => void createTasks([row])}
+                  aria-label={`Add task for ${row.signal}`}
+                  title="Create a task card on the board from this signal"
+                >
+                  Task
+                </Button>
+              )}
+            </>
           )}
         </td>
       </tr>
+    );
+  }
+
+  // Loading is the page's skeleton; a signal-free aggregate is a real state
+  // and says so once, instead of six empty category groups.
+  if (allRows.length === 0) {
+    return (
+      <EmptyState
+        compact
+        icon="ph:waveform-bold"
+        headline="No signals in these reports."
+        subtitle="Blockers, skill gaps, and pressure land here as reflections report them."
+      />
     );
   }
 
@@ -472,23 +524,220 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
 
   return (
     <div className="fa-thread-signals" data-familiar-id={familiarId}>
-      <div className="fa-thread-review">
-        <div className="fa-thread-review-head">
-          <div>
-            <h3>Review queue</h3>
-            <p>{reports.length} reports · Latest report {latestReportDate(reports)}</p>
-          </div>
-          <span>{reviewQueue.length} items</span>
+      <ThreadSignalReviewQueue familiarId={familiarId} reports={reports} queue={reviewQueue} />
+      {/* The metric averages + context-pressure mix live in the "Confidence
+          from thread analysis" panel (fa-confidence) — this section stays
+          focused on the actionable review queue and the signal table. */}
+      <ThreadSignalsTable familiarId={familiarId} sections={sections} />
+    </div>
+  );
+}
+
+/** Short chip labels per review kind (REVIEW_KIND_LABEL carries the long form). */
+const KIND_CHIP_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
+  blocker: "Blockers",
+  "skill-access": "Skill access",
+  "skill-clarity": "Skill clarity",
+  capability: "Capabilities",
+  "context-pressure": "Context",
+  "low-score": "Low scores",
+};
+
+const KIND_CHIP_ORDER: ThreadSignalReviewItem["kind"][] = [
+  "blocker",
+  "skill-access",
+  "capability",
+  "context-pressure",
+  "skill-clarity",
+  "low-score",
+];
+
+function safeLocalStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The prioritized review queue: severity-first items, kind filter chips,
+ * dismiss/acknowledge behind a 4s undo toast (persisted per familiar via
+ * thread-signal-dismissals), a restore path for acknowledged signals, and
+ * roving-tabindex keyboard parity — arrows move, Enter resolves,
+ * Delete/Backspace dismisses. The item count is an aria-live region so AT
+ * hears queue changes without re-reading the list.
+ */
+function ThreadSignalReviewQueue({
+  familiarId,
+  reports,
+  queue,
+}: {
+  familiarId: string;
+  reports: ThreadSelfReport[];
+  queue: ThreadSignalReviewItem[];
+}) {
+  const { announce } = useAnnouncer();
+  const listRef = useRef<HTMLUListElement>(null);
+  const [kindFilter, setKindFilter] = useState<ThreadSignalReviewItem["kind"] | null>(null);
+  // Dismissals load after mount — localStorage isn't SSR-safe.
+  const [dismissals, setDismissals] = useState<SignalDismissalMap>({});
+  useEffect(() => {
+    setDismissals(loadSignalDismissals(familiarId, safeLocalStorage()));
+  }, [familiarId]);
+
+  const { pending, scheduleDelete, undo, commit } = useUndoDelete<ThreadSignalReviewItem>();
+
+  const { visible, dismissed } = useMemo(
+    () => partitionDismissedSignals(queue, dismissals),
+    [queue, dismissals],
+  );
+  // Hide the item whose dismissal is pending in the undo window.
+  const pendingIdentity = pending ? signalIdentity(pending.item) : null;
+  const actionable = useMemo(
+    () => visible.filter((item) => signalIdentity(item) !== pendingIdentity),
+    [visible, pendingIdentity],
+  );
+  const kindCounts = useMemo(() => {
+    const counts = new Map<ThreadSignalReviewItem["kind"], number>();
+    for (const item of actionable) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
+    return counts;
+  }, [actionable]);
+  // A filter never points at an empty kind — clear it when its items go away.
+  useEffect(() => {
+    if (kindFilter && !kindCounts.has(kindFilter)) setKindFilter(null);
+  }, [kindFilter, kindCounts]);
+  const shown = kindFilter ? actionable.filter((item) => item.kind === kindFilter) : actionable;
+
+  useRovingTabIndex({
+    containerRef: listRef,
+    itemSelector: ".fa-thread-review-item",
+    orientation: "vertical",
+  });
+
+  const dismissItem = useCallback(
+    (item: ThreadSignalReviewItem) => {
+      scheduleDelete(item, item.title, async () => {
+        setDismissals(addSignalDismissal(familiarId, item, safeLocalStorage()));
+      });
+      announce(`Dismissed ${item.title}.`);
+    },
+    [announce, familiarId, scheduleDelete],
+  );
+
+  const restoreDismissed = useCallback(() => {
+    setDismissals(clearSignalDismissals(familiarId, safeLocalStorage()));
+    announce(
+      dismissed.length === 1
+        ? "Restored 1 dismissed signal."
+        : `Restored ${dismissed.length} dismissed signals.`,
+    );
+  }, [announce, dismissed.length, familiarId]);
+
+  // Keyboard parity: Delete/Backspace dismisses the focused review item.
+  const onListKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLUListElement>) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      const target = (event.target as HTMLElement).closest<HTMLElement>(".fa-thread-review-item");
+      const identity = target?.getAttribute("data-signal-identity");
+      if (!identity) return;
+      const item = shown.find((candidate) => signalIdentity(candidate) === identity);
+      if (!item) return;
+      event.preventDefault();
+      dismissItem(item);
+    },
+    [dismissItem, shown],
+  );
+
+  return (
+    <div className="fa-thread-review">
+      <div className="fa-thread-review-head">
+        <div>
+          <h3>Review queue</h3>
+          <p>{reports.length} reports · Latest report {latestReportDate(reports)}</p>
         </div>
-        {reviewQueue.length === 0 ? (
-          <p className="fa-thread-review-empty">No urgent review items in the current summary.</p>
-        ) : (
-          <ul className="fa-thread-review-list">
-            {reviewQueue.map((item, index) => (
-              <li key={`${item.kind}-${item.title}-${index}`} className={`is-${item.severity}`}>
+        {/* Live count — AT hears dismissals/filters without re-reading the list. */}
+        <span aria-live="polite">
+          {shown.length === queue.length
+            ? `${shown.length} item${shown.length === 1 ? "" : "s"}`
+            : `${shown.length} of ${queue.length} item${queue.length === 1 ? "" : "s"}`}
+        </span>
+      </div>
+      {actionable.length > 0 || dismissed.length > 0 ? (
+        <div className="fa-thread-review-filters" role="group" aria-label="Filter review queue by signal kind">
+          <Button
+            variant="ghost"
+            size="xs"
+            className={`fa-thread-review-chip${kindFilter === null ? " is-active" : ""}`}
+            aria-pressed={kindFilter === null}
+            onClick={() => {
+              setKindFilter(null);
+              announce("Showing all review signals.");
+            }}
+          >
+            All <b>{actionable.length}</b>
+          </Button>
+          {KIND_CHIP_ORDER.filter((kind) => kindCounts.has(kind)).map((kind) => (
+            <Button
+              key={kind}
+              variant="ghost"
+              size="xs"
+              className={`fa-thread-review-chip${kindFilter === kind ? " is-active" : ""}`}
+              aria-pressed={kindFilter === kind}
+              title={`Show only ${REVIEW_KIND_LABEL[kind]} signals`}
+              onClick={() => {
+                const next = kindFilter === kind ? null : kind;
+                setKindFilter(next);
+                announce(
+                  next
+                    ? `Filtered to ${kindCounts.get(kind)} ${KIND_CHIP_LABEL[kind].toLowerCase()} signal${(kindCounts.get(kind) ?? 0) === 1 ? "" : "s"}.`
+                    : "Showing all review signals.",
+                );
+              }}
+            >
+              {KIND_CHIP_LABEL[kind]} <b>{kindCounts.get(kind)}</b>
+            </Button>
+          ))}
+          {dismissed.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="fa-thread-review-chip fa-thread-review-chip--restore"
+              leadingIcon="ph:arrow-counter-clockwise"
+              title="Bring every acknowledged signal back into the queue"
+              onClick={restoreDismissed}
+            >
+              Restore {dismissed.length} dismissed
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {shown.length === 0 ? (
+        <p className="fa-thread-review-empty">
+          {queue.length === 0
+            ? "No urgent review items in the current summary."
+            : dismissed.length > 0 && actionable.length === 0
+              ? "Every review item is acknowledged — restore them above to take another look."
+              : "No signals of this kind — pick another filter."}
+        </p>
+      ) : (
+        <>
+          <p id={`fa-review-keys-${familiarId}`} className="sr-only">
+            Use the arrow keys to move between signals. Press Enter to open a resolution
+            thread, or Delete to dismiss the focused signal.
+          </p>
+          <ul
+            ref={listRef}
+            className="fa-thread-review-list"
+            aria-describedby={`fa-review-keys-${familiarId}`}
+            onKeyDown={onListKeyDown}
+          >
+            {shown.map((item) => (
+              <li key={signalIdentity(item)} className={`is-${item.severity}`}>
                 <Button
                   variant="ghost"
                   className="fa-thread-review-item"
+                  data-signal-identity={signalIdentity(item)}
                   onClick={() => launchResolutionThread(familiarId, item)}
                   title={`Launch a thread to resolve "${item.title}"`}
                   aria-label={`Resolve ${item.title}`}
@@ -500,15 +749,33 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
                     {item.detail}
                   </span>
                 </Button>
+                <IconButton
+                  icon="ph:x"
+                  size="xs"
+                  className="fa-thread-review-dismiss"
+                  aria-label={`Dismiss ${item.title}`}
+                  title="Acknowledge this signal and remove it from the queue"
+                  tabIndex={-1}
+                  onClick={() => dismissItem(item)}
+                />
               </li>
             ))}
           </ul>
-        )}
-      </div>
-      {/* The metric averages + context-pressure mix live in the "Confidence
-          from thread analysis" panel (fa-confidence) — this section stays
-          focused on the actionable review queue and the signal table. */}
-      <ThreadSignalsTable familiarId={familiarId} sections={sections} />
+        </>
+      )}
+      {pending ? (
+        <UndoToast
+          key={pending.id}
+          message={<>Dismissed <strong>{pending.label}</strong></>}
+          icon="ph:x"
+          undoAriaLabel={`Undo dismissing ${pending.label}`}
+          onUndo={() => {
+            announce(`Restored ${pending.label}.`);
+            undo();
+          }}
+          onDismiss={commit}
+        />
+      ) : null}
     </div>
   );
 }

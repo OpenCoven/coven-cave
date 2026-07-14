@@ -228,7 +228,13 @@ export type ThreadSignalReviewItem = {
   detail: string;
 };
 
-const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
+export const REVIEW_SEVERITY_ORDER: Record<ThreadSignalReviewItem["severity"], number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+export const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
   blocker: "persistent blocker",
   "skill-access": "skill access gap",
   "skill-clarity": "skill clarity gap",
@@ -463,7 +469,15 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
   }
 
   return items
-    .sort((a, b) => b.rank - a.rank || a.title.localeCompare(b.title))
+    // Severity first — a stack of warnings must never outrank a critical
+    // (rankScore-boosted warning blockers previously could). Rank breaks ties
+    // within a severity tier; title keeps the order stable.
+    .sort(
+      (a, b) =>
+        REVIEW_SEVERITY_ORDER[a.severity] - REVIEW_SEVERITY_ORDER[b.severity] ||
+        b.rank - a.rank ||
+        a.title.localeCompare(b.title),
+    )
     .slice(0, 8)
     .map(({ rank: _rank, ...item }) => item);
 }
