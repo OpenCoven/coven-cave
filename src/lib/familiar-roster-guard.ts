@@ -22,6 +22,18 @@ type FamiliarRosterEntry = {
   role?: string | null;
 };
 
+type LocalFamiliarRosterFilter<T extends FamiliarRosterEntry> = {
+  authority: "local";
+  familiars: readonly T[];
+  explicitIds: ReadonlySet<string> | readonly string[];
+  removedIds: ReadonlySet<string>;
+};
+
+type RemoteFamiliarRosterFilter<T extends FamiliarRosterEntry> = {
+  authority: "remote";
+  familiars: readonly T[];
+};
+
 function normalizeId(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -76,8 +88,6 @@ export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
     ? new Set(explicitIdsInput.map(normalizeId))
     : new Set(Array.from(explicitIdsInput, normalizeId));
 
-  if (familiars.every(isInstallDefaultFamiliar)) return [];
-
   return familiars.filter((familiar) => {
     const id = normalizeId(familiar.id);
     const explicit = explicitIds.has(id);
@@ -86,4 +96,18 @@ export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
     if (isInternalCovenFamiliarName(familiar.display_name ?? "") && !explicit) return false;
     return true;
   });
+}
+
+/**
+ * Apply Cave-local roster policy only when the queried daemon shares Cave's
+ * local files. A server hub owns a different COVEN_HOME, so local TOML and
+ * tombstones are not evidence about whether a hub-returned familiar is real.
+ */
+export function filterFamiliarRosterForAuthority<T extends FamiliarRosterEntry>(
+  args: LocalFamiliarRosterFilter<T> | RemoteFamiliarRosterFilter<T>,
+): T[] {
+  if (args.authority === "remote") return [...args.familiars];
+  return filterInstallSeedFamiliars(args.familiars, args.explicitIds).filter(
+    (familiar) => !args.removedIds.has(familiar.id),
+  );
 }

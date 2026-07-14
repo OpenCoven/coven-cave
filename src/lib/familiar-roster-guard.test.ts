@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {
   explicitFamiliarIdsFromToml,
+  filterFamiliarRosterForAuthority,
   filterInstallSeedFamiliars,
   filterInternalCovenNameSuggestions,
   isInternalCovenFamiliarName,
@@ -38,6 +39,15 @@ assert.deepEqual(
 
 assert.deepEqual(
   filterInstallSeedFamiliars(
+    installDefaults,
+    new Set(["sage", "forge", "opencode-local"]),
+  ).map((f) => f.id),
+  ["sage", "forge", "opencode-local"],
+  "explicit ids must win even when the complete roster matches the install defaults",
+);
+
+assert.deepEqual(
+  filterInstallSeedFamiliars(
     [
       ...installDefaults,
       { id: "wren", display_name: "Wren", role: "Research" },
@@ -63,6 +73,32 @@ id = "wren"
   ).map((f) => f.id),
   ["sage", "wren"],
   "an intentionally user-authored reserved id is preserved outside the generated default trio",
+);
+
+const remoteRoster = [
+  { id: "nova", display_name: "Nova", role: "Orchestrator" },
+  { id: "salem", display_name: "Salem", role: "Reviewer" },
+  { id: "wren", display_name: "Wren", role: "Research" },
+];
+
+assert.deepEqual(
+  filterFamiliarRosterForAuthority({
+    authority: "remote",
+    familiars: remoteRoster,
+  }).map((f) => f.id),
+  ["nova", "salem", "wren"],
+  "hub-owned familiars must not be filtered against Cave-local TOML or reserved names",
+);
+
+assert.deepEqual(
+  filterFamiliarRosterForAuthority({
+    authority: "local",
+    familiars: remoteRoster,
+    explicitIds: new Set(["wren"]),
+    removedIds: new Set(["wren"]),
+  }),
+  [],
+  "local roster filtering still applies seed policy and Cave-local tombstones",
 );
 
 console.log("familiar-roster-guard.test.ts: ok");

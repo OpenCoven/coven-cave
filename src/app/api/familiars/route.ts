@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
-import { callDaemon } from "@/lib/coven-daemon";
+import { callDaemonTarget, daemonTargetForConfig } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
+import { covenHome } from "@/lib/coven-paths";
 import {
   explicitFamiliarIdsFromToml,
-  filterInstallSeedFamiliars,
+  filterFamiliarRosterForAuthority,
 } from "@/lib/familiar-roster-guard";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import {
@@ -34,17 +34,23 @@ export type DaemonFamiliar = {
 };
 
 export async function GET() {
-  const covenDir = path.join(homedir(), ".coven");
+  const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
-  const [res, config, removedIds, explicitIds] = await Promise.all([
-    callDaemon<(DaemonFamiliar & { emoji?: string; icon?: string })[]>({
+  const config = await loadConfig();
+  const target = daemonTargetForConfig(config);
+  const localAuthority = target.mode === "local";
+  const [res, removedIds, explicitIds] = await Promise.all([
+    callDaemonTarget<(DaemonFamiliar & { emoji?: string; icon?: string })[]>(target, {
       path: "/api/v1/familiars",
     }),
-    loadConfig(),
-    removedFamiliarIds().catch(() => new Set<string>()),
-    readFile(familiarsToml, "utf8")
-      .then(explicitFamiliarIdsFromToml)
-      .catch(() => new Set<string>()),
+    localAuthority
+      ? removedFamiliarIds().catch(() => new Set<string>())
+      : Promise.resolve(new Set<string>()),
+    localAuthority
+      ? readFile(familiarsToml, "utf8")
+          .then(explicitFamiliarIdsFromToml)
+          .catch(() => new Set<string>())
+      : Promise.resolve(new Set<string>()),
   ]);
   if (!res.ok) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
@@ -81,10 +87,22 @@ export async function GET() {
   // A removed familiar (DELETE /api/familiars/[id]) can linger in the daemon's
   // in-memory roster until it re-reads familiars.toml — hide tombstoned ids so
   // Remove takes effect immediately in every client.
+  //
+  // Both policies are local-file policies. A server hub owns a different
+  // COVEN_HOME, so filtering its roster with this machine's TOML/tombstones can
+  // erase valid remote familiars (especially reserved/default ids).
+  const visibleRoster = filterFamiliarRosterForAuthority(
+    localAuthority
+      ? {
+          authority: "local",
+          familiars: res.data ?? [],
+          explicitIds,
+          removedIds,
+        }
+      : { authority: "remote", familiars: res.data ?? [] },
+  );
   const familiars = await Promise.all(
-    filterInstallSeedFamiliars(res.data ?? [], explicitIds)
-      .filter((f) => !removedIds.has(f.id))
-      .map(async (f) => {
+    visibleRoster.map(async (f) => {
       const configEntry = config.familiars[f.id] ?? {};
       const binding = bindingFor(config, f.id);
       const avatar = await resolveFamiliarAvatar(f.id);
@@ -165,7 +183,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const covenDir = path.join(homedir(), ".coven");
+  const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
   const adaptersDir = path.join(covenDir, "adapters");
 

@@ -26,13 +26,28 @@ assert.match(
 );
 assert.match(
   source,
-  /filterInstallSeedFamiliars\(/,
-  "Familiars API should hide the known first-install default roster before the picker sees it",
+  /authority: "local"[\s\S]*explicitIds[\s\S]*removedIds/,
+  "Familiars API should apply seed and tombstone filtering only to a locally authoritative roster",
 );
 assert.match(
   source,
   /explicitFamiliarIdsFromToml/,
   "Familiars API should distinguish user-authored familiar ids from daemon fallback defaults",
+);
+assert.match(
+  source,
+  /daemonTargetForConfig\(config\)/,
+  "Familiars API should resolve the roster authority from the same config used for the daemon target",
+);
+assert.match(
+  source,
+  /filterFamiliarRosterForAuthority/,
+  "Familiars API should not apply Cave-local roster filters to a server hub response",
+);
+assert.equal(
+  source.match(/const covenDir = covenHome\(\)/g)?.length,
+  2,
+  "Familiars GET and POST should honor a custom COVEN_HOME",
 );
 
 // ── POST: in-app "create a familiar" write path ──────────────────────────────
