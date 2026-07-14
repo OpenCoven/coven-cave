@@ -2354,8 +2354,8 @@ function AboutSection() {
             <Button
               key={l.href}
               variant="secondary"
-              size="sm"
-              className="settings-touch-action"
+              size="xs"
+              className="settings-touch-action settings-tool-action gap-1.5 px-2.5 text-[11px]"
               onClick={() => openExternalUrl(l.href)}
               leadingIcon={l.icon}
             >

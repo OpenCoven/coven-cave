@@ -320,7 +320,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--touch-target);
   line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
@@ -330,6 +329,15 @@
   height: 28px;
   min-height: 28px;
   line-height: 1;
+}
+
+/* Touch widths keep the WCAG floor; on desktop the shared action stays as
+   compact as the neighboring xs/tool-action buttons. Placed after
+   .settings-tool-action so the floor wins when both classes are present. */
+@media (max-width: 767px) {
+  .settings-touch-action {
+    min-height: var(--touch-target);
+  }
 }
 
 .settings-tool-action--primary {
