@@ -96,9 +96,11 @@ function loadAuthedObjectUrl(src: string): Promise<string | null> {
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
       const entry = cache.get(src);
-      if (entry) entry.objectUrl = objectUrl;
+      if (entry) {
+        entry.objectUrl = objectUrl;
+        evictOldestIfNeeded();
+      }
       return objectUrl;
-    } catch {
       // Drop the failed entry so a later mount can retry (e.g. daemon came
       // back online); callers render their initial/glyph fallback meanwhile.
       cache.delete(src);
