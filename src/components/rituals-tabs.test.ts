@@ -67,20 +67,21 @@ assert.match(
 // ── Slim typed tab model ────────────────────────────────────────────────────
 assert.match(
   automations,
-  /type AutomationTab = "calendar" \| "crons"/,
-  "Surface exposes only Calendar and Crons tabs",
+  /type AutomationTab = "inbox" \| "calendar" \| "crons"/,
+  "Surface exposes Inbox, Calendar, and Crons tabs",
 );
 assert.match(
   automations,
-  // Defaults to Calendar when present; otherwise Crons remains usable alone.
-  // may override on mount.
-  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*calendarSlot \? "calendar" : "crons",?\s*\)/,
-  "Surface defaults to Calendar when it has a calendar slot",
+  // Inbox is the default landing tab; explicit deep links (Calendar nav,
+  // legacy crons links) may override on mount.
+  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*initialTab === "crons" \? "crons" : "inbox",?\s*\)/,
+  "Surface defaults to the Inbox tab unless a deep link asks otherwise",
 );
 assert.match(automations, /<h1[\s\S]*?>\s*Rituals\s*<\/h1>/, "Surface header reads Rituals");
 assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Tabs use the shared segment Tabs");
 
-// Tabs present, in order.
+// Tabs present, in order: Inbox first (the landing tab), then Calendar, Crons.
+assert.match(automations, /\{ id: "inbox" as const, label: "Inbox", count: inboxFeed\.needsYou\.length \}/, "Inbox tab with the needs-you count");
 assert.match(automations, /\{ id: "calendar" as const, label: "Calendar" \}/, "Calendar tab");
 assert.match(automations, /\{ id: "crons", label: "Crons", count: codexAutos\.length \}/, "Crons tab");
 assert.doesNotMatch(automations, /\{ id: "all", label: "All"/, "All tab moved out with Automations");
@@ -90,8 +91,25 @@ assert.doesNotMatch(automations, /\{ id: "activity", label: "Activity"/, "Activi
 assert.doesNotMatch(automations, /\{ id: "templates", label: "Templates"/, "Templates tab moved out with Automations");
 assert.match(
   automations,
-  /id: "calendar"[\s\S]*id: "crons"/,
-  "tabs ordered Calendar, Crons",
+  /id: "inbox"[\s\S]*id: "calendar"[\s\S]*id: "crons"/,
+  "tabs ordered Inbox, Calendar, Crons",
+);
+// The Inbox tab renders the full grouped feed and lands there by default from
+// the workspace (Calendar deep links still open Calendar).
+assert.match(
+  automations,
+  /activeTab === "inbox" \?[\s\S]*?<InboxFeedList/,
+  "the Inbox tab renders the grouped inbox feed",
+);
+assert.match(
+  automations,
+  /<InboxFeedList[\s\S]*?onDone=\{\(item\) => void completeInboxItem\(item\)\}[\s\S]*?onSnooze=\{\(item\) => void snoozeInboxItem\(item\)\}[\s\S]*?onDismiss=\{\(item\) => void dismissInboxItem\(item\)\}/,
+  "feed rows wire Done / Snooze / Dismiss to the inbox action endpoints",
+);
+assert.match(
+  workspace,
+  /initialTab=\{mode === "calendar" \? "calendar" : "inbox"\}/,
+  "Workspace lands the surface on Inbox unless the Calendar deep link asked for Calendar",
 );
 assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
 
