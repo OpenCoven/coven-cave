@@ -2514,7 +2514,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={index}
-                  className="h-14 animate-pulse rounded-lg bg-[var(--bg-raised)]"
+                  className="ui-skeleton ui-skeleton--row"
+                  style={{ height: 56 }}
                 />
               ))}
             </div>

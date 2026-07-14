@@ -41,8 +41,8 @@ assert.match(card, /this week/, "Activity line shows sessionsLast7d label");
 
 assert.match(
   card,
-  /memoryStatus === "loading"[\s\S]*Loading memory/,
-  "Memory snapshot shows 'Loading memory…' while the fetch is in flight",
+  /memoryStatus === "loading"[\s\S]*<Skeleton variant="text-sm"/,
+  "Memory snapshot shimmers (shared Skeleton) while the fetch is in flight — no dead 'Loading memory…' text (cave-5qmm)",
 );
 
 assert.match(

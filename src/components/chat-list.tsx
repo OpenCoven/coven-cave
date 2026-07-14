@@ -981,12 +981,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         {!sessionsLoaded && !hasAny ? (
           <div aria-hidden className="space-y-px px-4 py-3">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse flex gap-3 px-0 py-3.5">
-                <span className="mt-1 block h-2 w-2 rounded-full bg-[var(--bg-hover)]" />
+              <div key={i} className="flex gap-3 px-0 py-3.5">
+                <span className="ui-skeleton ui-skeleton--avatar mt-1" style={{ height: 8, width: 8 }} />
                 <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <span className="h-2.5 w-1/4 rounded bg-[var(--bg-hover)] opacity-70" />
-                  <span className="h-3 w-1/2 rounded bg-[var(--bg-hover)]" />
-                  <span className="h-2.5 w-1/3 rounded bg-[var(--bg-hover)] opacity-50" />
+                  <span className="ui-skeleton h-2.5 w-1/4" />
+                  <span className="ui-skeleton h-3 w-1/2" />
+                  <span className="ui-skeleton h-2.5 w-1/3 opacity-60" />
                 </span>
               </div>
             ))}
@@ -1536,9 +1536,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
               {contentLoading && contentMatches.length === 0 ? (
                 <div aria-hidden className="space-y-px px-4 py-2">
                   {[0, 1].map((i) => (
-                    <div key={i} className="animate-pulse flex flex-col gap-1.5 py-2.5">
-                      <span className="h-3 w-1/2 rounded bg-[var(--bg-hover)]" />
-                      <span className="h-2.5 w-3/4 rounded bg-[var(--bg-hover)] opacity-60" />
+                    <div key={i} className="flex flex-col gap-1.5 py-2.5">
+                      <span className="ui-skeleton h-3 w-1/2" />
+                      <span className="ui-skeleton h-2.5 w-3/4 opacity-60" />
                     </div>
                   ))}
                 </div>

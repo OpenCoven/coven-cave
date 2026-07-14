@@ -2832,6 +2832,28 @@ details[open] > .cave-tool-summary::before {
   color: var(--color-danger);
 }
 
+/* Inline remedy inside the offline meta line — a real button (keyboard
+   focusable) styled as a quiet text action so the notice stays one line. */
+.cave-chat-meta-line__action {
+  margin-left: 6px;
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  color: var(--text-primary);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cave-chat-meta-line__action:hover {
+  color: var(--accent-presence);
+}
+.cave-chat-meta-line__action:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: default;
+}
+
 .cave-chat-model-wrap {
   position: relative;
   min-width: 0;

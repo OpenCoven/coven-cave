@@ -286,6 +286,7 @@ export const SUITES = {
     "src/components/surface-error-states.test.ts",
     "src/components/glass-overlay-chrome.test.ts",
     "src/components/surface-loading-states.test.ts",
+    "src/components/loading-discipline.test.ts",
     "src/components/chat-header-row.test.ts",
     "src/components/chat-usage-plan-ui.test.ts",
     "src/components/sidebar-minimal.test.ts",

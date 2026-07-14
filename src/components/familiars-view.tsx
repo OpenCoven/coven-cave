@@ -20,6 +20,7 @@ import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
 import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
@@ -556,7 +557,12 @@ function FamiliarRosterCard({
 
         <div className="mt-auto border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-secondary)]">
           {memoryStatus === "loading" ? (
-            <span className="text-[var(--text-muted)]">Loading memory…</span>
+            // Shimmer instead of a "Loading memory…" string — one loading
+            // language across the roster, and no dead-looking text while the
+            // first fetch is cold (cave-5qmm).
+            <span aria-hidden className="block py-0.5">
+              <Skeleton variant="text-sm" width="55%" />
+            </span>
           ) : memoryStatus === "error" ? (
             <span className="text-[var(--text-muted)]">Memory unavailable</span>
           ) : stats.memoryCount === 0 ? (
