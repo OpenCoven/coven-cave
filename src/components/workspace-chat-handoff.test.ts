@@ -230,3 +230,28 @@ assert.match(
   /focusPath\?: string \| null[\s\S]*focusNonce\?: number[\s\S]*useEffect\(\(\) => \{[\s\S]*setSelectedPath\([\s\S]*focusPath/,
   "RailFilesPanel should update its selected file from an external focus target",
 );
+
+// Cross-page handoff (cave-hbpb): standalone routes (familiar analytics) have no
+// cave:agents-new-chat listener — they persist the request and navigate to /,
+// where Workspace must consume it at boot into a primed chat.
+const agentsNewChatLib = await readFile(new URL("../lib/agents-new-chat.ts", import.meta.url), "utf8");
+assert.match(
+  agentsNewChatLib,
+  /window\.location\.pathname === "\/"[\s\S]*dispatchEvent\(new CustomEvent\(AGENTS_NEW_CHAT_EVENT/,
+  "same-page callers keep dispatching the live event",
+);
+assert.match(
+  agentsNewChatLib,
+  /sessionStorage\.setItem\(PENDING_AGENTS_NEW_CHAT_KEY[\s\S]*window\.location\.assign\("\/"\)/,
+  "off-page callers persist the request and navigate to the workspace",
+);
+assert.match(
+  workspace,
+  /import \{ consumePendingAgentsNewChat \} from "@\/lib\/agents-new-chat"/,
+  "Workspace should import the cross-page chat handoff consumer",
+);
+assert.match(
+  workspace,
+  /const pending = consumePendingAgentsNewChat\(\);[\s\S]{0,200}startFamiliarChat\(\s*pending\.familiarId \?\? null,\s*pending\.projectRoot \?\? null,\s*pending\.initialPrompt \?\? null,\s*pending\.initialControls \?\? null,?\s*\)/,
+  "Workspace boot should turn a pending cross-page request into a primed familiar chat",
+);

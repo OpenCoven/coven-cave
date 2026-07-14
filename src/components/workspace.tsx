@@ -103,6 +103,7 @@ import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
+import { consumePendingAgentsNewChat } from "@/lib/agents-new-chat";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
@@ -1708,6 +1709,20 @@ export function Workspace() {
     };
     window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
     return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+  }, [startFamiliarChat]);
+
+  // Consume a cross-page "new chat" handoff (cave-hbpb): standalone routes like
+  // the familiar analytics pages have no workspace listeners, so their Resolve
+  // actions persist the request to sessionStorage and navigate here.
+  useEffect(() => {
+    const pending = consumePendingAgentsNewChat();
+    if (!pending) return;
+    startFamiliarChat(
+      pending.familiarId ?? null,
+      pending.projectRoot ?? null,
+      pending.initialPrompt ?? null,
+      pending.initialControls ?? null,
+    );
   }, [startFamiliarChat]);
 
   useEffect(() => {

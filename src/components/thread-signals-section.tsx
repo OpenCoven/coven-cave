@@ -20,6 +20,7 @@ import {
   signalIdentity,
   type SignalDismissalMap,
 } from "@/lib/thread-signal-dismissals";
+import { requestAgentsNewChat } from "@/lib/agents-new-chat";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
@@ -154,18 +155,17 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
   ];
 }
 
-/** Launch a new working thread with this familiar, primed with an auto-sent prompt to resolve the signal. */
+/** Launch a new working thread with this familiar, primed with an auto-sent prompt to resolve the signal.
+ *  Uses the cross-page launcher: this section renders on the standalone analytics
+ *  routes, where no `cave:agents-new-chat` listener is mounted — a raw dispatch
+ *  there would be a silent no-op (cave-hbpb). */
 function launchResolutionThread(familiarId: string, item: ThreadSignalReviewItem) {
   const analyticsPath = `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics`;
-  window.dispatchEvent(
-    new CustomEvent("cave:agents-new-chat", {
-      detail: {
-        familiarId,
-        initialPrompt: `${buildThreadSignalResolutionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
-        origin: "chat" as const,
-      },
-    }),
-  );
+  requestAgentsNewChat({
+    familiarId,
+    initialPrompt: `${buildThreadSignalResolutionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
+    origin: "chat" as const,
+  });
 }
 
 /** Shape a table row into a review item so it can launch the same resolution thread. */

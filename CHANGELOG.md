@@ -19,6 +19,7 @@ breaking config changes; patch releases stay additive.
 - **Shared assist runner** — the stitch sew's bounded `codex exec` lane (read-only sandbox pinned inside the module, stdin prompt, `--output-last-message` parse) is extracted to `src/lib/server/assist-runner.ts` for every authoring assist to reuse (cave-c40b).
 
 ### Fixed
+- **Analytics: Resolve actually launches the thread** — thread-signal Resolve buttons on the familiar analytics pages dispatched `cave:agents-new-chat` into the void: those pages are standalone routes where no workspace listener is mounted, so the click was a silent no-op. Resolve now hands the primed resolution prompt off through sessionStorage and navigates to the workspace, which consumes it at boot into an auto-sent familiar chat — same handoff shape the in-app browser uses (cave-hbpb).
 - **Tools: Update can now clear stale PATH launchers** — when `npm install -g` succeeds but an older copy of the same package still shadows the fresh install on PATH (orphaned nvm trees, old Homebrew-node prefixes), the Update/Repair flow no longer fails forever with "a stale executable is still first on PATH": it removes the stale same-package launcher under strict identity gates (the fresh npm-prefix copy must verify first; unrelated binaries and directories are never touched) and re-verifies — and when removal isn't safe or permitted, the error now carries the exact manual command instead of a dead end (cave-kii6).
 
 

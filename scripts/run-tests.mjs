@@ -62,6 +62,7 @@ export const SUITES = {
     "src/lib/about-diagnostics.test.ts",
     "src/lib/browser-navigation-queue.test.ts",
     "src/lib/open-external.test.ts",
+    "src/lib/agents-new-chat.test.ts",
     "src/lib/coven-version.test.ts",
     "src/lib/opencoven-tools-status-display.test.ts",
     "src/components/update-available.test.ts",

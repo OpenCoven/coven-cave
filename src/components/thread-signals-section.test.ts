@@ -220,7 +220,12 @@ describe("aggregateThreadSignals", () => {
 
   it("launches a resolution thread from a review item, primed with an auto-sent fix prompt", () => {
     assert.match(source, /buildThreadSignalResolutionPrompt/, "seeds the thread with a resolution-directive prompt");
-    assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat thread with the familiar");
+    assert.match(source, /requestAgentsNewChat\(\{/, "opens a new chat thread via the cross-page launcher");
+    assert.doesNotMatch(
+      source,
+      /new CustomEvent\("cave:agents-new-chat"/,
+      "no raw dispatch — this section renders on standalone routes where no listener is mounted (cave-hbpb)",
+    );
     assert.match(source, /Analytics source: \$\{analyticsPath\}/, "ties the thread back to the familiar analytics page");
     assert.match(source, /origin: "chat"/, "thread signal resolutions stay regular chat threads");
     assert.doesNotMatch(source, /origin: "eval"/, "thread signal resolutions are not routed through Evals");
