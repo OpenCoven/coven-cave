@@ -160,7 +160,19 @@ export function ChatSplitHost({
       return <div className="chat-split__pane-body">{tile.content}</div>;
     }
     return (
-      <section className="chat-split__tile" aria-label={`${tile.title} (split pane)`}>
+      <section
+        className="chat-split__tile"
+        aria-label={`${tile.title} (split pane)`}
+        aria-describedby={enableDrop ? `chat-split-hint-${tile.id}` : undefined}
+      >
+        {/* title tooltips aren't reliably announced — the reposition hint
+            (drag OR the keyboard shortcut) rides an sr-only description. */}
+        {enableDrop ? (
+          <span className="sr-only" id={`chat-split-hint-${tile.id}`}>
+            Drag this pane&apos;s header, or press Control or Command with Alt, Shift and an
+            arrow key while the pane is focused, to reposition it.
+          </span>
+        ) : null}
         {/* The header is the pane's drag handle: dragging it re-enters the
             same session-drag protocol the thread rail uses, so the snap
             overlay lights up and dropping MOVES the pane (the layout's

@@ -366,8 +366,16 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     if (!sessions.some((entry) => entry.id === sessionId)) return;
     // A session already open in a pane is MOVED to the drop edge (the pure
     // layout dedupes) — header drags land here, so announce them honestly.
+    // Dropping a pane back onto its current edge changes nothing: bail before
+    // any state churn or a misleading "moved" announcement.
     const repositioning = split.panes.includes(sessionId);
-    setSplit((prev) => dropSessionIntoChatSplit(prev, sessionId, zone));
+    const next = dropSessionIntoChatSplit(split, sessionId, zone);
+    const unchanged =
+      next.axis === split.axis &&
+      next.panes.length === split.panes.length &&
+      next.panes.every((id, index) => id === split.panes[index]);
+    if (unchanged) return;
+    setSplit(next);
     setFocusedPane(sessionId);
     announce(`${paneTitle(sessionId)} ${repositioning ? `pane moved ${chatDropZoneLabel(zone)}` : "opened in a split pane"}`);
   }

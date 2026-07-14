@@ -89,6 +89,8 @@ assert.match(
 );
 assert.match(host, /onDragEnd=\{\(\) => emitChatSessionDragEnd\(\)\}/, "drag end always clears the overlay");
 assert.match(host, /Drag to reposition this pane/, "the handle says what it does");
+assert.match(host, /aria-describedby=\{enableDrop \? `chat-split-hint-\$\{tile\.id\}` : undefined\}/, "the reposition hint is a real accessible description, not a title tooltip");
+assert.match(host, /or press Control or Command with Alt, Shift and an/, "the sr-only hint teaches the keyboard path too");
 assert.match(host, /chat-split__pane-grip/, "a grip glyph carries the drag affordance");
 assert.match(
   css,
@@ -191,6 +193,11 @@ assert.match(router, /if \(next === split\) return; \/\/ edge/, "clamped edge mo
 assert.match(router, /pane moved \$\{delta === -1 \? "back" : "forward"\}/, "keyboard moves are announced");
 assert.match(router, /pane moved \$\{chatDropZoneLabel\(zone\)\}/, "a header-drag reposition announces as a move, not an open");
 assert.match(router, /const repositioning = split\.panes\.includes\(sessionId\);/, "drops distinguish repositioning from opening");
+assert.match(
+  router,
+  /next\.panes\.every\(\(id, index\) => id === split\.panes\[index\]\);\s*if \(unchanged\) return;/,
+  "dropping a pane back onto its current edge changes nothing — no state churn, no false announcement",
+);
 assert.match(router, /e\.code === "KeyW"/, "close matches on e.code (⌥ composes e.key on macOS)");
 assert.match(router, /closest\?\.\('\[aria-modal="true"\]'\)/, "modals own the keyboard");
 assert.match(router, /chatSplitKeyboardZone\(split\)/, "keyboard split lands on the current axis");
