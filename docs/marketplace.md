@@ -53,6 +53,92 @@ copied `templates/` and whole `skills/<id>/` directories (so `references/`
 ship). Install & seed flows, the vault/project seed targets, and the skill
 package install API are documented in [knowledge-packs.md](knowledge-packs.md).
 
+## Crafts
+
+Crafts sit between Roles and Skills: a Craft is a **versioned, installable
+Role loadout** — a bundle of marketplace plugins plus bundled skills, prompt
+templates, and workflows that a Role equips as one unit. The model composes as:
+
+```
+Familiar → Role → Craft → Skills / MCPs / prompts / workflows / capabilities
+```
+
+- **Plugin** stays the distribution format. Every Craft is a `catalog.json`
+  entry with `kind: "craft"`, and `scripts/sync-marketplace.py` expands it into
+  a standard multi-resource Codex plugin package under
+  `marketplace/plugins/<name>/` like any other package.
+- **Craft** adds a `craft` specification (`schemaVersion:
+  "opencoven.craft.v1"`): `components.required` / `components.optional`
+  reference other catalog plugins by name; `bundled.skills` / `bundled.prompts`
+  / `bundled.workflows` carry sourced resources with per-file `contentHash`
+  (`sha256:`) pins; plus `requiredCapabilities`, `recommendedRoles`, and
+  `provenance` (upstream, commit, license, modifications, source, licensePath).
+  Optional `mcpServers` declare servers the bundle needs.
+- **Collection** is the curated presentation layer — the "Featured
+  collections" strips defined in `COLLECTIONS`
+  (`src/lib/marketplace-catalog.ts`) group catalog entries, including Crafts,
+  for browsing. Collections are ordering/curation only; they carry no install
+  semantics.
+- **Grimoire** is the human-reviewed publication analog: audited research
+  Craft content follows the same draft-first, human-approved trail the Coven
+  Grimoire uses for public writing. No Craft content reaches the catalog
+  without a human-reviewed PR.
+
+Equipping is a **routing and presentation boundary, not a security sandbox**:
+an equipped Craft changes what a Role surfaces and routes to, and effective
+composition is resolved by `src/lib/role-craft-composition.ts`, but it grants
+no isolation beyond what the underlying runtime enforces.
+
+### Lifecycle
+
+Preview → verify/install → equip → resolve → detach → remove:
+
+- **Preview.** `GET /api/marketplace/crafts/plan?id=<craft>` returns the exact
+  install plan (components, bundled resources, required config) before
+  anything is written. Read-only, so it is not local-origin gated.
+- **Install (verified).** `POST /api/marketplace/crafts/install` runs the
+  transactional installer (`src/lib/server/craft-install-service.ts`): every
+  component installs through the runtime (Codex) with verification, and the
+  install is recorded in `~/.coven/cave/config.json` under
+  `marketplace.installed` with `runtime`, `verifiedAt`, and `craftVersion`.
+  Failures roll back under a keyed transaction lock, preserving diagnostics.
+  The generic `/api/marketplace/install` track-only route refuses Crafts.
+- **Equip / detach.** `POST /api/roles/crafts` attaches or detaches an
+  installed Craft on a Role manifest (`src/lib/server/role-crafts.ts`).
+  Version drift surfaces as `craft_update_required`.
+- **Remove.** `POST /api/marketplace/crafts/uninstall` refuses while any Role
+  still has the Craft equipped (`craft_equipped`, with affected-role
+  diagnostics) — detach everywhere first.
+
+All mutating Craft routes are local-origin gated and guard malformed JSON
+bodies; the contract is asserted in `src/app/api/api-contracts.test.ts` and
+`src/app/api/marketplace/crafts-routes.test.ts`.
+
+### Draft Crafts
+
+The Crafts tab can extract a **reversible local draft Craft** from a
+familiar's selected Roles (`POST /api/marketplace/crafts/drafts`, drawer in
+`src/components/marketplace/craft-create-drawer.tsx`): direct and effective
+skills, tools, MCP servers, plugins, prompts, and workflows are collected with
+origin labels and a review ledger before anything is saved. Drafts are local
+authoring state — publishing one into the catalog still goes through the
+human-reviewed update process below.
+
+### Human-Reviewed Upstream Updates
+
+Craft content is vendored, pinned, and only updated by humans:
+
+- Upstream sources are vendored under `marketplace/craft-sources/<craft>/`,
+  and each bundled resource records its `sourcePath` and `contentHash`.
+- `provenance` pins the upstream `commit`, `license`, `licensePath`, and lists
+  every local `modification`.
+- Updating a Craft from upstream means a **human-reviewed PR** that
+  re-vendors the content, refreshes hashes/commit/modifications, bumps the
+  Craft `version`, and re-runs `python3 scripts/sync-marketplace.py --check`
+  plus `scripts/crafts-audited-content.test.mjs` (which asserts the pinned
+  commit, license, per-skill content hashes, and generated plugin packages).
+  No automated pipeline pulls upstream changes into the catalog.
+
 ## Trust Levels
 
 `official-remote` packages point at a service-operated remote MCP endpoint, such as Linear, Vercel, Canva, or Asana.
