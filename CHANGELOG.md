@@ -7,6 +7,10 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Features
+- **Crafts: "Describe it" closes its loop** — the create drawer now waits for the familiar's build: it snapshots the drafts store when the brief dispatches, polls while you watch the chat, and opens the arrived draft for review (with a cancelable waiting state). Draft detail gains **Refine in chat** (recreate-and-replace through a brief that carries the draft id + ledger), **Prepare for catalog** (a brief that walks the human-reviewed vendored-sources → catalog.json → sync-check → PR path, never writing the catalog directly), and a two-step **Delete draft** backed by a new guarded `DELETE /api/marketplace/crafts/drafts` (cave-46wg).
+
+
 ## [0.1.0] - 2026-07-12
 
 > 🌙 **First minor milestone.** CovenCave steps out of the 0.0.x patch stream with a rebuilt marketplace (Capabilities retired, Skills modernized, Crafts agentically buildable), familiar access groups with per-project read/write levels, cross-platform find-anything search, first-class OpenCode, a bounded research mission desk, the CovenWiki Phase 3 regeneration CLI, and a wide band of chat/settings/perf/a11y hardening — with React Compiler now on across the app.

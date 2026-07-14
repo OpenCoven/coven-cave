@@ -1,10 +1,17 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { writeJsonAtomic } from "./atomic-write.ts";
 import type { CraftDraft } from "../craft-draft.ts";
 
 const DRAFTS_DIR = "craft-drafts";
+
+/** Same shape the reader accepts as a draft filename stem. */
+const DRAFT_ID_RE = /^[a-z0-9][a-z0-9.-]*$/;
+
+export function isValidCraftDraftId(id: unknown): id is string {
+  return typeof id === "string" && DRAFT_ID_RE.test(id);
+}
 
 export type CraftDraftStoreOptions = {
   covenHome?: string;
@@ -88,4 +95,21 @@ export async function saveCraftDraft(
   await mkdir(draftDir(opts), { recursive: true });
   await writeJsonAtomic(draftPath(draft.id, opts), draft);
   return draft;
+}
+
+/** Delete a local draft (the refine loop's recreate-and-replace, cave-46wg).
+ *  The id is slug-guarded before any path is built; missing drafts are a
+ *  quiet false, never a throw. */
+export async function deleteCraftDraft(id: string, opts: CraftDraftStoreOptions = {}): Promise<boolean> {
+  if (!isValidCraftDraftId(id)) return false;
+  const target = draftPath(id, opts);
+  const dir = path.resolve(draftDir(opts));
+  const resolved = path.resolve(target);
+  if (!resolved.startsWith(dir + path.sep) || path.dirname(resolved) !== dir) return false;
+  try {
+    await rm(resolved);
+    return true;
+  } catch {
+    return false;
+  }
 }

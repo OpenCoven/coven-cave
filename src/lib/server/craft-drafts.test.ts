@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { readCraftDrafts, saveCraftDraft } from "./craft-drafts.ts";
+import { deleteCraftDraft, isValidCraftDraftId, readCraftDrafts, saveCraftDraft } from "./craft-drafts.ts";
 import { buildCraftDraftFromRoles } from "../craft-draft.ts";
 
 const root = await mkdtemp(path.join(tmpdir(), "cave-craft-drafts-"));
@@ -59,6 +59,15 @@ try {
   assert.equal(drafts[0].extraction.familiar, "sage");
   assert.deepEqual(drafts[0].plugin.craft?.components.required, ["fetch"]);
   assert.deepEqual(drafts[0].plugin.craft?.requiredCapabilities, ["read_files", "network"]);
+
+  // ── delete: the refine loop's recreate-and-replace step (cave-46wg) ───────
+  assert.equal(await deleteCraftDraft("sage-researcher", { covenHome: root }), true);
+  assert.equal((await readCraftDrafts({ covenHome: root })).length, 0, "deleted draft is gone");
+  assert.equal(await deleteCraftDraft("sage-researcher", { covenHome: root }), false, "missing draft is a quiet false");
+  assert.equal(await deleteCraftDraft("../escape", { covenHome: root }), false, "traversal ids never build a path");
+  assert.equal(await deleteCraftDraft("", { covenHome: root }), false, "empty id rejected");
+  assert.equal(isValidCraftDraftId("sage-researcher"), true);
+  assert.equal(isValidCraftDraftId("Bad/Name"), false);
 } finally {
   await rm(root, { recursive: true, force: true });
 }

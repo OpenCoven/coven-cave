@@ -4,12 +4,18 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
 import { openExternalUrl } from "@/lib/open-external";
 import { HOME_DRAFT_KEY, writeComposerDraft } from "@/lib/use-composer-draft";
 import { promptIconName } from "@/components/prompt-snippets-modal";
 import type { PromptOption } from "@/lib/slash-prompt";
+import {
+  buildCraftPublishPrompt,
+  buildCraftRefinePrompt,
+  type CraftDraftBriefInput,
+} from "@/lib/craft-agent-prompt";
 import { CraftDetail, type CraftActionError } from "@/components/marketplace/craft-detail";
 import { KnowledgePackDetail } from "@/components/marketplace/knowledge-pack-detail";
 
@@ -31,6 +37,8 @@ type Props = {
   onRemove: () => void;
   actionError?: CraftActionError | null;
   onActionCleared?: () => void;
+  /** Fired after a local draft Craft is deleted so the hub can refresh. */
+  onDraftDeleted?: () => void;
 };
 
 function kindIcon(kind: MarketplacePlugin["kind"]) {
@@ -108,7 +116,7 @@ function detailDecisionItems(plugin: MarketplacePlugin) {
 
 export function MarketplaceDetail(props: Props) {
   if (props.plugin.kind === "craft" && props.plugin.draft) {
-    return <DraftCraftDetail plugin={props.plugin} onClose={props.onClose} />;
+    return <DraftCraftDetail plugin={props.plugin} onClose={props.onClose} onDeleted={props.onDraftDeleted} />;
   }
   if (props.plugin.kind === "craft") {
     return (
@@ -129,13 +137,88 @@ export function MarketplaceDetail(props: Props) {
   return <StandardMarketplaceDetail {...props} />;
 }
 
-function DraftCraftDetail({ plugin, onClose }: { plugin: MarketplacePlugin; onClose: () => void }) {
+function DraftCraftDetail({
+  plugin,
+  onClose,
+  onDeleted,
+}: {
+  plugin: MarketplacePlugin;
+  onClose: () => void;
+  onDeleted?: () => void;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   useFocusTrap(true, ref, { onEscape: onClose });
+  const { announce } = useAnnouncer();
   const craft = plugin.craft;
   const skills = craft?.bundled.skills ?? [];
   const prompts = craft?.bundled.prompts ?? [];
   const workflows = craft?.bundled.workflows ?? [];
+  // Deleting a gathered draft has no undo — two-step, auto-disarming.
+  const [armedDelete, setArmedDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armedDelete) return;
+    const t = window.setTimeout(() => setArmedDelete(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [armedDelete]);
+
+  /** The refine/publish briefs carry the draft's identity + ledger shape
+   *  (cave-46wg) so the familiar starts from what exists. */
+  const briefInput = useCallback((): CraftDraftBriefInput => ({
+    draftId: plugin.draftId ?? plugin.id,
+    displayName: plugin.displayName,
+    familiar: plugin.roleAffinity[0]?.familiar ?? "",
+    roles: plugin.roleAffinity.flatMap((entry) => entry.roles),
+    ledgerCounts: {
+      components: craft?.components.required.length ?? 0,
+      skills: skills.length,
+      prompts: prompts.length,
+      workflows: workflows.length,
+      capabilities: craft?.requiredCapabilities.length ?? 0,
+    },
+  }), [craft, plugin, prompts.length, skills.length, workflows.length]);
+
+  const refineInChat = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: { initialPrompt: buildCraftRefinePrompt(briefInput()) },
+      }),
+    );
+    announce("Opened a chat to refine this draft.", "polite");
+    onClose();
+  }, [announce, briefInput, onClose]);
+
+  const prepareForCatalog = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: { initialPrompt: buildCraftPublishPrompt(briefInput()) },
+      }),
+    );
+    announce("Opened a chat to prepare the catalog PR.", "polite");
+    onClose();
+  }, [announce, briefInput, onClose]);
+
+  const deleteDraft = useCallback(async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      const id = plugin.draftId ?? plugin.id;
+      const res = await fetch(`/api/marketplace/crafts/drafts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = (await res.json()) as { ok?: boolean; deleted?: boolean; error?: string };
+      if (!json.ok || !json.deleted) throw new Error(json.error ?? "draft delete failed");
+      announce(`Draft ${plugin.displayName} deleted.`, "polite");
+      onDeleted?.();
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "draft delete failed";
+      setError(message);
+      announce(message, "assertive");
+    } finally {
+      setDeleting(false);
+    }
+  }, [announce, onClose, onDeleted, plugin.displayName, plugin.draftId, plugin.id]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
       <div
@@ -168,6 +251,50 @@ function DraftCraftDetail({ plugin, onClose }: { plugin: MarketplacePlugin; onCl
 
         <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[12px] text-[var(--text-muted)]">
           Drafts are local and reversible. Review the extracted bundle before publishing or installing it as a versioned Craft.
+        </div>
+
+        {error ? (
+          <p role="alert" className="text-[12px] text-[var(--color-danger)]">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] pt-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:chat-circle-dots"
+            onClick={refineInChat}
+            title="Open a chat where a familiar adjusts the bundle (recreate-and-replace)"
+          >
+            Refine in chat
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:git-pull-request"
+            onClick={prepareForCatalog}
+            title="Open a chat that prepares the human-reviewed catalog PR"
+          >
+            Prepare for catalog
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:trash"
+            loading={deleting}
+            onClick={() => {
+              if (armedDelete) {
+                setArmedDelete(false);
+                void deleteDraft();
+              } else {
+                setArmedDelete(true);
+              }
+            }}
+            aria-label={armedDelete ? `Really delete draft ${plugin.displayName}? Click again to confirm` : `Delete draft ${plugin.displayName}`}
+          >
+            {armedDelete ? "Really delete?" : "Delete draft"}
+          </Button>
         </div>
       </div>
     </div>

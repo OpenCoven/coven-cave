@@ -27,9 +27,12 @@ for (const [name, source, method] of [
 
 assert.match(drafts, /export async function GET/);
 assert.match(drafts, /export async function POST/);
+assert.match(drafts, /export async function DELETE/);
 for (const handler of drafts.split("export async function").slice(1)) {
   assert.match(handler, /rejectNonLocalRequest\(req\)/, "every drafts handler is local-origin guarded");
 }
+assert.match(drafts, /isValidCraftDraftId\(id\)/, "draft deletion slug-guards the id before any path is built");
+assert.match(drafts, /deleteCraftDraft/, "draft deletion goes through the guarded store helper");
 assert.match(drafts, /readJsonBody/, "draft creation uses the bounded JSON-body helper");
 assert.match(drafts, /familiar and roleIds required/, "draft creation validates familiar + roleIds");
 assert.match(drafts, /role\.familiar === familiar/, "draft roles are scoped to the requested familiar");

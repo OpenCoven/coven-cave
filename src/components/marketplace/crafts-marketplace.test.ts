@@ -49,6 +49,30 @@ assert.match(createDrawer, /new CustomEvent\("cave:agents-new-chat"/, "describe 
 assert.match(createDrawer, /initialPrompt: buildCraftAgentPrompt\(\{ description, familiar: familiar \|\| undefined \}\)/, "the chat opens with the complete build brief");
 assert.match(createDrawer, /Draft with familiar/, "describe mode has an explicit agentic CTA");
 assert.match(createDrawer, /What happens next/, "describe mode explains the agentic loop");
+
+// ── Describe-it closes its loop (cave-46wg) ──────────────────────────────────
+// The dispatched brief is no longer fire-and-forget: the drawer snapshots the
+// drafts store, polls while waiting, and hands an ARRIVED draft to the same
+// onCreated the manual path uses — plus the draft detail can refine, publish,
+// and delete through the new briefs and DELETE route.
+assert.match(createDrawer, /baselineDraftIds/, "arrival = a draft id NOT in the dispatch-time snapshot");
+assert.match(createDrawer, /usePausablePoll\(\(\) => void checkForArrivedDraft\(\), 5000, \{ enabled: open && awaiting \}\)/, "the drawer polls the drafts store while waiting, visibility-paused via the shared hook");
+assert.match(createDrawer, /onCreated\(arrived\.id\)/, "an arrived draft opens through the shared onCreated path");
+assert.match(createDrawer, /Stop waiting/, "waiting is cancelable");
+assert.match(createDrawer, /Waiting for the familiar(?:'|&apos;)s draft/, "the waiting state explains itself");
+assert.match(createDrawer, /awaiting \? "Drafting…" : "Draft with familiar"/, "the CTA reflects the in-flight build");
+{
+  const draftsRoute = await readFile(new URL("../../app/api/marketplace/crafts/drafts/route.ts", import.meta.url), "utf8");
+  assert.match(draftsRoute, /export async function DELETE/, "drafts support recreate-and-replace refinement");
+}
+assert.match(detail, /buildCraftRefinePrompt/, "draft detail can refine in chat");
+assert.match(detail, /buildCraftPublishPrompt/, "draft detail can prepare the catalog PR");
+assert.match(detail, /Refine in chat/, "refine is an explicit action");
+assert.match(detail, /Prepare for catalog/, "publication prep is an explicit action");
+assert.match(detail, /\/api\/marketplace\/crafts\/drafts\?id=/, "draft deletion uses the DELETE route");
+assert.match(detail, /Really delete\?/, "draft deletion is two-step");
+assert.match(detail, /onDraftDeleted/, "a deleted draft refreshes the hub");
+assert.match(view, /onDraftDeleted=\{\(\) =>/, "the hub clears selection and reloads after a draft delete");
 {
   const promptLib = await readFile(new URL("../../lib/craft-agent-prompt.ts", import.meta.url), "utf8");
   assert.match(promptLib, /GET \/api\/roles/, "the brief documents role discovery");
