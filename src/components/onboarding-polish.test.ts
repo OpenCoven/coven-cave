@@ -144,7 +144,7 @@ assert.match(
 
 // ── cave-4op: the wizard's primary CTAs use the shared Button primitive ──────
 // The four accent-background call-to-action buttons (Create Coven home, Start
-// local daemon, Install both tools, Install <adapter>) render through
+// local daemon, Install the Coven CLI, Install <adapter>) render through
 // <Button variant="primary">, so their radius / height / focus ring /
 // disabled + busy treatment come from one place. The two install CTAs use the
 // primitive's `loading` prop for their spinner. Bordered secondary actions,
@@ -220,8 +220,8 @@ for (const beat of ["Set up Cave", "Summon a familiar", "First chat"]) {
 }
 assert.match(
   source,
-  /<JourneyStrip\s+setupDone=\{effectiveComplete\}\s+familiarDone=\{hasFamiliars\}/,
-  "the strip's beats derive from live status (effectiveComplete / familiars step)",
+  /<JourneyStrip\s+setupDone=\{setupComplete\}\s+familiarDone=\{hasFamiliars\}/,
+  "the strip's beats derive from live status (server complete / familiars step)",
 );
 
 // ── cave-uvv7: completion surfaces above the fold ────────────────────────────
@@ -229,7 +229,7 @@ assert.match(
 // the user must see the next action without scrolling.
 assert.match(
   source,
-  /\{effectiveComplete \? \([\s\S]{0,1200}?Setup complete — Cave is ready\./,
+  /\{setupComplete \? \([\s\S]{0,1200}?Setup complete — Cave is ready\./,
   "a completion banner renders at the top of the wizard once setup is done",
 );
 assert.match(

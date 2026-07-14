@@ -44,8 +44,9 @@ const DAEMON_DOWN_VETERAN_STATUS = {
 };
 
 // Every step healthy but the roster empty — the state the finish CTA's
-// "summon your familiar" promise is about. Coven Code must be present and
-// current in tools[]: the wizard ANDs it into effectiveComplete.
+// "summon your familiar" promise is about. Server `complete` alone drives the
+// wizard's finish state: Coven Code is an optional runtime adapter, so it is
+// deliberately ABSENT from tools[] here — the banner must still appear.
 const COMPLETE_NO_FAMILIARS_STATUS = {
   ok: true,
   complete: true,
@@ -71,22 +72,8 @@ const COMPLETE_NO_FAMILIARS_STATUS = {
       outdated: false,
       compatible: true,
       minimumVersion: "0.0.50",
-      // effectiveComplete requires hasVerifiedLatestVersion(tool): a verified
-      // latestCheck, not just current === latest.
-      latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
-    },
-    {
-      id: "coven-code",
-      label: "Coven Code",
-      packageName: "@opencoven/coven-code",
-      binary: "coven-code",
-      installed: true,
-      path: "/usr/local/bin/coven-code",
-      current: "0.0.60",
-      latest: "0.0.60",
-      outdated: false,
-      compatible: true,
-      minimumVersion: "0.0.50",
+      // Display-only now: the tools card shows verified freshness, but
+      // completion is the server's `complete` — no client-side tool AND.
       latestCheck: { status: "verified", checkedAt: "2026-07-12T00:00:00.000Z", latest: "0.0.60" },
     },
   ],
@@ -131,7 +118,7 @@ test.describe("onboarding wizard", () => {
     await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
     const current = wizard(page).locator('li[aria-current="step"]');
     await expect(current).toHaveCount(1);
-    await expect(current.first()).toContainText("Install the OpenCoven tools");
+    await expect(current.first()).toContainText("Install the Coven CLI");
   });
 
   test("Escape closes for the session without permanently skipping", async ({ page }) => {

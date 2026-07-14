@@ -22,7 +22,6 @@ import {
   toolStatusText,
   type LatestCheckDisplay,
 } from "@/lib/opencoven-tools-status-display";
-import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
   openCovenToolActionTargets,
@@ -154,9 +153,6 @@ function isInstallTargetValue(value: string): value is InstallTarget {
   return ALL_INSTALL_TARGETS.includes(value as InstallTarget);
 }
 
-// The "skip Coven Code" choice persists under COVEN_CODE_SKIP_KEY (shared
-// with the workspace auto-open gate via @/lib/onboarding-gate — cave-219) so
-// a failing install can't permanently strand onboarding.
 // ~30s of 2s ticks: long enough to ride out a slow sidecar start, short
 // enough that a genuinely broken /api/harnesses surfaces as a retryable
 // error instead of an empty runtime grid polling silently forever.
@@ -201,6 +197,12 @@ const HARNESS_ONE_CLICK: Partial<
     afterInstall:
       `then summon a familiar from an agent in ${OPENCLAW_AGENT_ROOT} once you're inside Cave (Familiars → Summon familiar)`,
   },
+  "coven-code": {
+    target: "coven-code",
+    command: "npm i -g @opencoven/coven-code@latest",
+    afterInstall:
+      "then run `coven-code` in a terminal once to connect a provider",
+  },
   hermes: {
     target: "hermes",
     command:
@@ -242,9 +244,9 @@ const PLATFORM_COPY: Record<
       "Install CovenCave, then open it from Start.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
-      "Make sure coven.exe and coven-code are on PATH after the global npm install.",
-      "Click Re-check after Windows can run both tools from a new terminal.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure coven.exe is on PATH after the global npm install.",
+      "Click Re-check after Windows can run coven from a new terminal.",
     ],
   },
   linux: {
@@ -260,8 +262,8 @@ const PLATFORM_COPY: Record<
       "Launch the AppImage from your file manager or terminal.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
-      "Make sure coven and coven-code are on PATH after the global npm install.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure coven is on PATH after the global npm install.",
       "If your desktop shell has an older PATH, restart Cave after installing the tools.",
     ],
   },
@@ -278,8 +280,8 @@ const PLATFORM_COPY: Record<
       "Open CovenCave from Applications.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
-      "Make sure a terminal can run coven and coven-code after the global npm install.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure a terminal can run coven after the global npm install.",
       "Click Re-check here after install.",
     ],
   },
@@ -296,8 +298,8 @@ const PLATFORM_COPY: Record<
       "Open CovenCave and continue setup here.",
     ],
     cliInstall: [
-      "Install the OpenCoven tools with npm: npm i -g @opencoven/cli@latest @opencoven/coven-code@latest.",
-      "Make sure coven and coven-code are on PATH.",
+      "Install the Coven CLI with npm: npm i -g @opencoven/cli@latest.",
+      "Make sure coven is on PATH.",
       "Click Re-check here after install.",
     ],
   },
@@ -378,9 +380,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // concurrent one), so a user who clicks "install both" otherwise gets a
   // failure on the second. Queue npm targets here and drain them one at a time.
   const [installQueue, setInstallQueue] = useState<InstallTarget[]>([]);
-  // "Required + skippable": Coven Code is required to finish setup, but a
-  // user can skip it so a failing install never permanently strands onboarding.
-  const [covenCodeSkipped, setCovenCodeSkipped] = useState(false);
   const [nodeHint, setNodeHint] = useState<string | null>(null);
   const [onboardingMultiHostMode, setOnboardingMultiHostMode] =
     useState<MultiHostMode>("local");
@@ -1006,53 +1005,21 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   };
 
 
-  // Restore a prior "skip Coven Code" choice so a failing install can't trap
-  // the user on this step across reloads.
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1") setCovenCodeSkipped(true);
-    } catch {
-      /* private mode */
-    }
-  }, []);
-
-  const skipCovenCode = () => {
-    setCovenCodeSkipped(true);
-    try {
-      localStorage.setItem(COVEN_CODE_SKIP_KEY, "1");
-    } catch {
-      /* private mode */
-    }
-  };
-
-  // Coven Code is a required OpenCoven tool, but skippable so a failed install
-  // can never permanently strand onboarding (see covenCodeSkipped).
-  const covenCodeTool = status?.tools?.find((t) => t.id === "coven-code");
-  const covenCodeInstalled = !!covenCodeTool?.installed;
-  const covenCodeReady =
-    !!covenCodeTool?.installed &&
-    hasVerifiedLatestVersion(covenCodeTool) &&
-    !covenCodeTool.outdated &&
-    covenCodeTool.compatible;
-  const covenCodeSatisfied = covenCodeReady || covenCodeSkipped;
-  // Server `complete` already requires every other step; AND-in the Coven Code
-  // requirement so the finish CTA only appears once both tools are handled.
-  const effectiveComplete = (status?.complete ?? false) && covenCodeSatisfied;
+  // Server `complete` is the single source of truth for setup — the Coven CLI
+  // is the only required OpenCoven tool. Coven Code is an ordinary optional
+  // runtime adapter offered in the runtime step (cave-219 history: it used to
+  // be "required + skippable" via a client-side AND that could diverge from
+  // the workspace auto-open gate).
+  const setupComplete = status?.complete ?? false;
 
   const steps = useMemo<GuidedStep[]>(() => {
     const s = status?.steps;
     return [
       {
         key: "covenCli",
-        title: "Install the OpenCoven tools",
-        // Require both Coven CLI (server step) and Coven Code (required, but
-        // skippable) before this step counts as done.
-        ok: !!s?.covenCli.ok && covenCodeSatisfied,
-        detail: !s?.covenCli.ok
-          ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…")
-          : covenCodeSatisfied
-            ? (s?.covenCli.detail ?? "Installed")
-            : "Coven CLI ready — Coven Code still needs installing.",
+        title: "Install the Coven CLI",
+        ok: !!s?.covenCli.ok,
+        detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…",
         icon: "ph:gear-six",
       },
       {
@@ -1089,7 +1056,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:git-branch-bold",
       },
     ];
-  }, [status, covenCodeSatisfied]);
+  }, [status]);
 
   // The step the guide spotlights: the first required step that isn't done.
   const activeStepKey = useMemo(() => {
@@ -1222,11 +1189,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             Without it the page reads as a dead-ended infra checklist — users
             can't see that a 30-second summoning and a first chat follow. */}
         <JourneyStrip
-          setupDone={effectiveComplete}
+          setupDone={setupComplete}
           familiarDone={hasFamiliars}
         />
 
-        {effectiveComplete ? (
+        {setupComplete ? (
           // The finish CTA lives in the footer of a long scrolling page; when
           // the last step ticks, the counter reads 4/4 but the next action is
           // below the fold. Surface it above the fold the moment setup
@@ -1419,15 +1386,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             platformCopy={platformCopy}
                             installJobs={installJobs}
                             installResults={installResults}
-                            tools={status?.tools ?? []}
+                            tools={(status?.tools ?? []).filter(
+                              (tool) => tool.id === "coven-cli",
+                            )}
                             nodeHint={nodeHint}
                             npmBusy={
                               npmLane !== null || anyNpmInstallRunning(installJobs)
                             }
                             npmBusyLabel={npmLane?.label ?? "another npm update"}
-                            covenCodeInstalled={covenCodeInstalled}
-                            covenCodeSkipped={covenCodeSkipped}
-                            onSkipCovenCode={skipCovenCode}
                             onInstall={(target) => void runInstall(target)}
                             onCopy={copyText}
                           />
@@ -1618,7 +1584,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           >
             Skip for now
           </button>
-          {effectiveComplete ? (
+          {setupComplete ? (
             <button
               onClick={finishOnboarding}
               className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
@@ -1842,9 +1808,6 @@ function StepCovenCli({
   nodeHint,
   npmBusy,
   npmBusyLabel,
-  covenCodeInstalled,
-  covenCodeSkipped,
-  onSkipCovenCode,
   onInstall,
   onCopy,
 }: {
@@ -1855,32 +1818,23 @@ function StepCovenCli({
   nodeHint: string | null;
   npmBusy: boolean;
   npmBusyLabel: string;
-  covenCodeInstalled: boolean;
-  covenCodeSkipped: boolean;
-  onSkipCovenCode: () => void;
   onInstall: (target: "coven-cli" | "coven-code") => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
   const job = installJobs["coven-cli"];
   const busy = job?.status === "running";
-  // Per-target busy — track coven-code's running state separately so the
-  // "Install both" button reflects either job. npm installs are queued
-  // client-side now, so per-target busy is enough to coordinate them.
-  const covenCodeJob = installJobs["coven-code"];
-  const covenCodeJobRunning = covenCodeJob?.status === "running";
   const actionTargets = openCovenToolActionTargets(tools);
   const manualInstallCommand = openCovenToolsInstallCommand(tools);
   const primaryActionLabel = openCovenToolsPrimaryActionLabel(tools);
-  const ownInstallBusy = busy || covenCodeJobRunning;
+  const ownInstallBusy = busy;
   const installBusy = ownInstallBusy || npmBusy;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        Cave needs two OpenCoven tools — the <strong>Coven CLI</strong> (powers
-        everything) and <strong>Coven Code</strong> (required). Use the main
-        action to install or update whichever tools need attention — Cave runs
-        npm installs one after another so they never collide — or copy the
-        matching command to run it yourself.
+        Cave needs one tool — the <strong>Coven CLI</strong> powers everything.
+        Use the main action to install or update it — Cave runs npm installs
+        one after another so they never collide — or copy the matching command
+        to run it yourself.
       </p>
       {npmBusy && !ownInstallBusy ? (
         <p role="status" className="text-[11px] text-[var(--text-muted)]">
@@ -1917,7 +1871,7 @@ function StepCovenCli({
       {tools.length > 0 ? (
         <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            OpenCoven tools
+            Coven CLI
           </div>
           <div className="grid gap-2">
             {tools.map((tool) => {
@@ -1931,8 +1885,6 @@ function StepCovenCli({
                 !tool.outdated &&
                 tool.compatible;
               const result = installResults[tool.id];
-              const isCovenCode = tool.id === "coven-code";
-              const showSkip = isCovenCode && !tool.installed && !covenCodeSkipped;
               return (
                 <div
                   key={tool.id}
@@ -1942,11 +1894,6 @@ function StepCovenCli({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 truncate text-[12px] font-medium text-[var(--text-primary)]">
                         {tool.label}
-                        {isCovenCode ? (
-                          <span className="rounded-full border border-[var(--border-hairline)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
-                            {covenCodeInstalled ? "Required" : covenCodeSkipped ? "Skipped" : "Required"}
-                          </span>
-                        ) : null}
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-muted)]">
                         {openCovenToolVersionText(tool)}
@@ -1990,16 +1937,6 @@ function StepCovenCli({
                             : tool.outdated || !tool.compatible
                               ? "Update"
                               : "Install"}
-                        </button>
-                      ) : null}
-                      {showSkip ? (
-                        <button
-                          type="button"
-                          onClick={onSkipCovenCode}
-                          className="focus-ring rounded-md px-2 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:underline"
-                          title="Continue setup without Coven Code — you can install it later from Settings."
-                        >
-                          Skip for now
                         </button>
                       ) : null}
                     </div>

@@ -19,7 +19,6 @@ import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import {
-  COVEN_CODE_SKIP_KEY,
   shouldAutoOpenOnboarding,
   type OnboardingStatusPayload,
 } from "@/lib/onboarding-gate";
@@ -1207,10 +1206,9 @@ export function Workspace() {
   // First-run: auto-open onboarding if setup is missing and the user hasn't
   // explicitly skipped or finished it. The decision lives in the shared
   // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
-  // finish-state again (cave-219): server `complete` ignores Coven Code
-  // (client-side tools[] check + skip choice), so bare `complete` must not
-  // short-circuit the gate. See onboarding-gate.ts for the structural-steps
-  // vs daemon-down rationale.
+  // finish-state (cave-219): both read bare server `complete` now that Coven
+  // Code is an optional runtime rather than a requirement. See
+  // onboarding-gate.ts for the structural-steps vs daemon-down rationale.
   useEffect(() => {
     let cancelled = false;
     const skipped =
@@ -1221,8 +1219,7 @@ export function Workspace() {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
-        const covenCodeSkipped = window.localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1";
-        if (shouldAutoOpenOnboarding(json, covenCodeSkipped)) setOnboardingOpen(true);
+        if (shouldAutoOpenOnboarding(json)) setOnboardingOpen(true);
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       }
