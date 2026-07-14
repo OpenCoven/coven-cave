@@ -228,6 +228,7 @@ export const SUITES = {
     "src/components/top-bar.test.ts",
     "src/components/command-palette.test.ts",
     "src/components/command-palette-a11y.test.ts",
+    "src/components/command-palette-polish.test.ts",
     "src/components/command-palette-save-link.test.ts",
     "src/lib/command-palette-search.test.ts",
     "src/lib/command-palette-scope.test.ts",

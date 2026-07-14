@@ -2872,6 +2872,13 @@ textarea.required-inputs-control {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
+/* Contrast floor while a scene backdrop is frontmost: 74% glass over a busy
+   custom image lets the scene bleed through the command surface — raise the
+   fill so results stay legible over any scene (cave-4gg0). */
+html[data-backdrop-on] .glass-overlay {
+  background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
+}
+
 /* Glass is only legible while the backdrop actually blurs: with no
  * backdrop-filter support, a translucent fill over scrolling content is
  * unreadable soup — restore the opaque theme surfaces. */
@@ -7438,6 +7445,30 @@ a.mobile-handoff__link:hover {
   .touch-always-visible {
     opacity: 1 !important;
   }
+}
+
+/* Complement of .touch-always-visible: desktop keyboard vocabulary (kbd
+   hints, shortcut chips) that means nothing on a touch device. */
+@media (hover: none) and (pointer: coarse) {
+  .touch-hidden {
+    display: none !important;
+  }
+}
+
+/* Mono keycap chip used by the command palette (footer hints + shortcut
+   rows) — one consistent kbd treatment instead of ad-hoc text. */
+.palette-kbd {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  padding: 0 4px;
+  min-height: 15px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 
 /* ── Calendar agenda (timeline) ──────────────────────────────────────────────
