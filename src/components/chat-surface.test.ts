@@ -223,7 +223,7 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /scope === "familiar" \? \([\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} \/>/,
+  /scope === "familiar" \? \([\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
   "the familiar scope renders the capability panel for the active familiar",
 );
 

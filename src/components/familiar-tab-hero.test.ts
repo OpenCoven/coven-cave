@@ -18,7 +18,7 @@ test("identity hero leads the Familiar tab and paints before the capability fetc
   assert.match(src, /function FamiliarIdentityHero\(/, "hero component declared");
   // The hero renders in BOTH branches: while loading (skeleton below it) and
   // with the loaded grid — identity never waits on capability plumbing.
-  const heroMounts = src.match(/<FamiliarIdentityHero familiar=\{familiar\} daemonRunning=\{daemonRunning\} \/>/g) ?? [];
+  const heroMounts = src.match(/<FamiliarIdentityHero familiar=\{familiar\} daemonRunning=\{daemonRunning\} onStartChat=\{onStartChat\} \/>/g) ?? [];
   assert.ok(heroMounts.length >= 2, `hero mounts in loading AND loaded branches (got ${heroMounts.length})`);
   assert.match(
     src,
@@ -74,7 +74,7 @@ test("wide-canvas layout: container-query grid, two columns >=900px, single belo
 test("the chat surface gives the tab a wide canvas and threads presence", () => {
   assert.match(
     chatSurface,
-    /scope === "familiar"[\s\S]*?max-w-5xl[\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} \/>/,
+    /scope === "familiar"[\s\S]*?max-w-5xl[\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
     "Familiar tab hosts the pane in a max-w-5xl column with daemonRunning threaded",
   );
 });

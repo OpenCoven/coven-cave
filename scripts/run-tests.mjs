@@ -511,6 +511,7 @@ export const SUITES = {
     "src/components/inspector-pane-surface.test.ts",
     "src/components/familiar-tab-hero.test.ts",
     "src/components/familiar-tab-sections.test.ts",
+    "src/components/familiar-tab-bridges.test.ts",
     "src/components/misc-aria-fixes.test.ts",
     "src/components/modal-trap-adoption.test.ts",
     "src/components/mode-toggle.test.ts",

@@ -18,7 +18,7 @@ test("the pane is a controlled section body — memory + familiar only", () => {
   assert.doesNotMatch(src, /FamiliarAnalyticsView|InboxTab|SnoozeMenu/, "no analytics or automations rendering remains");
   assert.match(
     chatSurface,
-    /<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} \/>/,
+    /<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
     "the chat surface's Familiar tab drives the pane's familiar section (presence threaded)",
   );
   assert.doesNotMatch(chatSurface, /INSPECTOR_SECTIONS/, "the promoted right-panel section strip is gone");

@@ -6244,6 +6244,22 @@ a.mobile-handoff__link:hover {
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent);
 }
 
+/* Coarse pointers: the hero's quiet links/actions and the group toggles are
+   10-11px targets tuned for a cursor — grow their hit areas on touch without
+   changing the pointer-fine rhythm. */
+@media (pointer: coarse) {
+  .familiar-tab__links a,
+  .familiar-tab__links button {
+    padding-block: 6px;
+  }
+  .familiar-tab__list > button {
+    padding-block: 10px;
+  }
+  .familiar-tab__cta {
+    padding-block: 8px;
+  }
+}
+
 /* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)

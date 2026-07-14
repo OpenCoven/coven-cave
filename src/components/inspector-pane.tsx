@@ -16,6 +16,7 @@ import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import type { AdapterReport } from "@/lib/harness-adapters";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
 export type Tab = "memory" | "familiar";
@@ -59,6 +60,9 @@ type Props = {
   /** Daemon reachability — drives the identity hero's presence line on the
    *  chat surface's Familiar tab. Absent for the compact memory rail. */
   daemonRunning?: boolean;
+  /** Starts a fresh chat with this familiar (the hero's primary action).
+   *  Provided by the chat surface; absent for the compact memory rail. */
+  onStartChat?: (familiarId: string) => void;
 };
 
 function InspectorEmpty({
@@ -113,6 +117,7 @@ export function InspectorPane({
   onOpenFullView,
   tab = "memory",
   daemonRunning,
+  onStartChat,
 }: Props) {
   const shellClassName = compact
     ? "flex h-full min-h-0 flex-col bg-[var(--bg-base)]"
@@ -121,7 +126,10 @@ export function InspectorPane({
       "flex h-full min-h-0 flex-col";
 
   return (
-    <aside className={shellClassName}>
+    <aside
+      className={shellClassName}
+      aria-label={tab === "familiar" ? "Familiar profile" : "Familiar memory"}
+    >
       <div
         className={`min-h-0 flex-1 ${
           tab === "memory" ? "overflow-hidden" : "overflow-y-auto"
@@ -129,7 +137,7 @@ export function InspectorPane({
       >
         {tab === "memory" ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
         {tab === "familiar" ? (
-          <FamiliarCapabilityPanel familiar={familiar} daemonRunning={daemonRunning} />
+          <FamiliarCapabilityPanel familiar={familiar} daemonRunning={daemonRunning} onStartChat={onStartChat} />
         ) : null}
       </div>
     </aside>
@@ -682,7 +690,7 @@ function CapCta({ label, onClick }: { label: string; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="focus-ring mt-1.5 inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+      className="familiar-tab__cta focus-ring mt-1.5 inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
     >
       {label}
     </button>
@@ -782,9 +790,11 @@ function CollapsibleSection({
 function FamiliarIdentityHero({
   familiar,
   daemonRunning,
+  onStartChat,
 }: {
   familiar: Familiar;
   daemonRunning?: boolean;
+  onStartChat?: (familiarId: string) => void;
 }) {
   // Resolve Cave-local overrides (display name, avatar image, glyph) the same
   // way every other identity surface does.
@@ -831,13 +841,13 @@ function FamiliarIdentityHero({
             {familiar.description}
           </p>
         ) : null}
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <div className="familiar-tab__links mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
           {runtimeLine ? (
             <span className="font-mono text-[10px] text-[var(--text-muted)]" title="Harness · model">
               {runtimeLine}
             </span>
           ) : null}
-          <span className="flex items-center gap-3">
+          <span className="flex flex-wrap items-center gap-3">
             <Link
               href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
               aria-label={`Open profile card for ${familiar.display_name}`}
@@ -852,9 +862,41 @@ function FamiliarIdentityHero({
             >
               Analytics →
             </Link>
+            {/* The sibling memory pane isn't reachable from this tab — bridge
+                to the Studio's per-familiar Memory tab, its managed home. */}
+            <button
+              type="button"
+              onClick={() => openFamiliarStudioSettingsTab("memory", familiar.id)}
+              aria-label={`Open memory for ${familiar.display_name}`}
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+            >
+              Memory →
+            </button>
+            <button
+              type="button"
+              onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
+              aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+            >
+              Edit in Studio →
+            </button>
           </span>
         </div>
       </div>
+      {onStartChat ? (
+        <div className="shrink-0">
+          {/* The surface's primary action: start a fresh session with this
+              familiar. The one filled-accent control on the tab. */}
+          <button
+            type="button"
+            onClick={() => onStartChat(familiar.id)}
+            className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90"
+          >
+            <Icon name="ph:chat-circle-dots" width={13} aria-hidden />
+            New chat
+          </button>
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -862,9 +904,11 @@ function FamiliarIdentityHero({
 function FamiliarCapabilityPanel({
   familiar,
   daemonRunning,
+  onStartChat,
 }: {
   familiar: Familiar | null;
   daemonRunning?: boolean;
+  onStartChat?: (familiarId: string) => void;
 }) {
   const [roles, setRoles] = useState<RoleEntry[]>([]);
   const [localSkills, setLocalSkills] = useState<LocalSkillEntry[]>([]);
@@ -935,7 +979,7 @@ function FamiliarCapabilityPanel({
   if (loading) {
     return (
       <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
-        <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} />
+        <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} onStartChat={onStartChat} />
         <div className="familiar-tab__grid" aria-hidden>
           <SkeletonRows count={5} className="p-3" />
           <SkeletonRows count={5} className="p-3" />
@@ -980,7 +1024,7 @@ function FamiliarCapabilityPanel({
     <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
 
       {/* ── Identity hero ─────────────────────────────────────────────────── */}
-      <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} />
+      <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} onStartChat={onStartChat} />
 
       {/* Error banner */}
       {errors.length > 0 ? (
