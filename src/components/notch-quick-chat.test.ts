@@ -48,33 +48,34 @@ assert.match(
   "the notch window floats frameless above other windows without a taskbar entry",
 );
 
-// ── Follow the mouse ─────────────────────────────────────────────────────────
-// The collapsed pill glides along the top strip after the cursor, hopping
-// monitors with it; expanded panels stay put and the toggle makes ticks free.
-assert.match(
+// ── Parked top-center, never chasing the mouse ──────────────────────────────
+// The notch stays fixed in the middle of the top bar where a notch belongs.
+// The old follow-mouse follower (a thread that glided the pill after the
+// cursor) is retired for good — these pins keep it from creeping back.
+assert.doesNotMatch(
   shell,
-  /fn spawn_notch_mouse_follower\(app: &tauri::AppHandle\)/,
-  "a follower thread drives the mouse-chasing pill",
+  /spawn_notch_mouse_follower|notch_follow_tick|NOTCH_FOLLOW_TICK/,
+  "no follower thread — the notch never chases the mouse",
+);
+assert.doesNotMatch(
+  shell,
+  /follow_mouse/,
+  "the retired follow-mouse config field stays gone from the shell",
 );
 assert.match(
   shell,
-  /fn notch_follow_tick\(app: &tauri::AppHandle\) \{[\s\S]{0,400}if !config\.follow_mouse \{\s*\n\s*return;/,
-  "ticks are free when follow-mouse is customized off",
+  /let center_x = monitor_x \+ monitor_w \/ 2\.0;\s*\n\s*let x = notch_centered_x\(center_x, monitor_x, monitor_w, width_px\);/,
+  "both notch states center on the exact horizontal middle of the top bar",
 );
 assert.match(
   shell,
-  /if state\.expanded\.load\(std::sync::atomic::Ordering::Relaxed\) \{\s*\n\s*return;/,
-  "an expanded panel never chases the mouse",
+  /fn notch_centered_x\(center_x: f64, monitor_x: f64, monitor_w: f64, width: f64\) -> f64/,
+  "the centering clamps inside the monitor span",
 );
-assert.match(
-  shell,
-  /monitor_from_point\(cursor\.x, cursor\.y\)/,
-  "the pill follows the cursor across monitors",
-);
-assert.match(
-  shell,
-  /fn notch_follow_x\(center_x: f64, monitor_x: f64, monitor_w: f64, width: f64\) -> f64/,
-  "the chase clamps inside the monitor span",
+assert.doesNotMatch(
+  component,
+  /followMouse/,
+  "the page has no follow-mouse state or toggle",
 );
 
 // ── Fit inside the top bar ───────────────────────────────────────────────────
@@ -98,12 +99,12 @@ assert.match(
 );
 
 // ── Customizations ───────────────────────────────────────────────────────────
-// Follow/fit (and hand-editable sizes) persist as notch-config.json; the page
-// toggles patch the shell through notch:config and the URL seeds the initial
+// Fit (and hand-editable sizes) persist as notch-config.json; the page
+// toggle patches the shell through notch:config and the URL seeds the initial
 // state (the page has no invoke permissions).
 assert.match(
   shell,
-  /struct NotchConfig \{[\s\S]{0,400}follow_mouse: bool,[\s\S]{0,200}fit_menu_bar: bool,/,
+  /struct NotchConfig \{[\s\S]{0,400}fit_menu_bar: bool,/,
   "the notch behaviors are a config struct, not hardcoded",
 );
 assert.match(
@@ -120,11 +121,6 @@ assert.match(
   shell,
   /fn notch_url_with_config\(mut url: Url, config: &NotchConfig, strip_height: Option<f64>\)/,
   "the shell seeds the page's presentation state through the URL",
-);
-assert.match(
-  component,
-  /void emitNotch\("notch:config", \{ followMouse \}\);/,
-  "the follow-mouse toggle patches the shell config",
 );
 assert.match(
   component,
