@@ -166,6 +166,7 @@ function CollapsibleSection({
   return (
     <div className="familiar-tab__list">
       <button
+        type="button"
         onClick={onToggle}
         aria-expanded={open}
         className="focus-ring flex w-full items-center gap-1.5 rounded-[inherit] px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]/40"
@@ -338,7 +339,9 @@ function FamiliarCapabilityPanel({
   const [localSkills, setLocalSkills] = useState<LocalSkillEntry[]>([]);
   const [harnessCapabilities, setHarnessCapabilities] = useState<HarnessCapabilityManifest[]>([]);
   const [harnesses, setHarnesses] = useState<AdapterReport[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Start in the shimmer state: the first paint must not flash a fully
+  // populated grid of empty-state copy before the fetch effect runs.
+  const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
 
   // Collapsible state per sub-group
@@ -383,8 +386,7 @@ function FamiliarCapabilityPanel({
       setErrors(errs);
       setLoading(false);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [familiar.id]);
+  }, [familiar.id, harnessId]);
 
   // The identity hero needs nothing from the capability fetches — paint it
   // immediately and keep the shimmer for the capability grid alone, shaped
@@ -739,6 +741,7 @@ export function ChatFamiliarView({
       aria-label="Familiar profile"
     >
       <FamiliarCapabilityPanel
+        key={familiar.id}
         familiar={familiar}
         daemonRunning={daemonRunning}
         onStartChat={onStartChat}
