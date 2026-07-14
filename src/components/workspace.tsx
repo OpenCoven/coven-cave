@@ -2547,7 +2547,7 @@ export function Workspace() {
       <h1 className="sr-only">
         {(isRoleSurfaceMode(mode)
           ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
-          : WORKSPACE_MODE_TITLES[mode]) ?? "Coven Cave"}
+          : WORKSPACE_MODE_TITLES[mode]) ?? "CovenCave"}
       </h1>
       {renderSurface(mode)}
     </div>

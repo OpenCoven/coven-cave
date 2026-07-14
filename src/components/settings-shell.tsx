@@ -1950,7 +1950,7 @@ function describeMobileHandoffError(raw: string): { headline: string; hint: stri
   if (text.includes("pnpm dev") || text.includes("access token")) {
     return {
       headline: "Pairing runs in the packaged Cave app",
-      hint: "This dev server can’t mint pairing codes — open Coven Cave from Applications and pair from there.",
+      hint: "This dev server can’t mint pairing codes — open CovenCave from Applications and pair from there.",
     };
   }
   if (

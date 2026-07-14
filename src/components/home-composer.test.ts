@@ -37,7 +37,7 @@ assert.match(
 
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "Coven Cave"\}/,
+  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "CovenCave"\}/,
   "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
 );
 

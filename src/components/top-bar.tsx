@@ -220,7 +220,7 @@ export function TopBar(props: Props) {
             </OverflowMenu>
             {taskCount && taskCount > 0 ? (
               <span className="top-bar__tasks-badge" aria-hidden="true">
-                {taskCount > 99 ? "99+" : taskCount}
+                {taskCount > 9 ? "9+" : taskCount}
               </span>
             ) : null}
           </span>

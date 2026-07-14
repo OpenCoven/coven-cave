@@ -33,7 +33,10 @@ const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 
 function fmtBadge(n: number): string {
-  return n > 99 ? "99+" : String(n);
+  // Cap at 9+: two adjacent three-glyph "99+" pills read as duplicate noise
+  // in the corner — one glyph says "many" just as well, and the button's
+  // aria-label/tooltip still carries the exact count (cave-gf5l).
+  return n > 9 ? "9+" : String(n);
 }
 
 /**
@@ -132,6 +135,7 @@ export function FamiliarMenuBar({
           className="menu-bar__task focus-ring"
           onClick={onViewTasks}
           aria-label={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
+          title={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
         >
           <Icon name="ph:kanban" width={22} height={22} aria-hidden />
           <span className="menu-bar__task-label">Tasks</span>
@@ -146,6 +150,7 @@ export function FamiliarMenuBar({
           className="menu-bar__task focus-ring"
           onClick={onViewSchedules}
           aria-label={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
+          title={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
         >
           <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
           <span className="menu-bar__task-label">Schedules</span>
