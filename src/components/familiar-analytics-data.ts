@@ -3,7 +3,7 @@ import {
   type CovenMemoryEntry,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
-import { deriveConfidenceScore, type ConfidenceScore } from "@/lib/familiar-confidence";
+import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
@@ -72,7 +72,8 @@ export type FamiliarAnalyticsModel = {
   familiar: Familiar | null;
   contractReport: ContractReport | null;
   growthReport: FamiliarGrowthReport | null;
-  confidence: ConfidenceScore;
+  /** Headline confidence, derived from real thread self-reports. */
+  confidence: ThreadConfidence;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
   responseConfidenceEvents: ResponseConfidenceEvent[];
@@ -212,11 +213,7 @@ export function buildFamiliarAnalyticsModel(
         retroState: retroStateFor(data.retroSnapshot, familiar.id),
       })
     : null;
-  const confidence = deriveConfidenceScore({
-    contractReport: data.contractReport,
-    growthReport,
-    familiar,
-  });
+  const confidence = deriveThreadConfidence(data.threadReports);
   const healRequests = deriveHealRequests({
     familiarId: data.familiarId,
     contractReport: data.contractReport,

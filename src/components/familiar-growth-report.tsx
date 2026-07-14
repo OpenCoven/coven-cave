@@ -66,8 +66,11 @@ function signalAction(
     case "low-accept-rate":
     case "low-retro-volume":
       return {
+        // Lands on the thread-analysis confidence panel — the page's headline
+        // confidence now derives from thread self-reports, so this reads as
+        // "see where confidence actually stands", not a factor drill-down.
         href: `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics#fa-confidence`,
-        label: "See confidence impact",
+        label: "See thread confidence",
       };
     default:
       return null;
