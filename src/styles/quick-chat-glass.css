@@ -139,6 +139,13 @@ html[data-glass] .quick-tab--active {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  /* Readable measure (cave-fdt5): the /quick-chat route can be a full-screen
+     window — cap the working column and center it so the controls row stops
+     reading as a second full-width header and the thread keeps a prose-friendly
+     width. Inert in the ~390px tray and the notch panel. */
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
 }
 
 /* The thread fills whatever height the window has — globals' 46vh cap

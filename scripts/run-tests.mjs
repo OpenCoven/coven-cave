@@ -653,6 +653,7 @@ export const SUITES = {
     "src/components/familiar-menu-bar.test.ts",
     "src/components/menu-bar-icon-size.test.ts",
     "src/components/tray-quick-chat.test.ts",
+    "src/components/quick-chat-polish.test.ts",
     "src/components/notch-quick-chat.test.ts",
     "src/components/quick-chat-controls.test.ts",
     "src/components/familiar-quick-switch.test.ts",
