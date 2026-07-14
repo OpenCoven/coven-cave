@@ -32,12 +32,29 @@ describe("stitch intake panel", () => {
 
   it("sews agentically, in chat, and manually", () => {
     assert.match(intake, /fetch\("\/api\/stitches\/sew"/, "agentic + manual sew post to the sew route");
-    assert.match(intake, /mode, title/, "the sew carries the latest working title");
+    assert.match(intake, /mode,\s*title,/, "the sew carries the latest working title");
     assert.match(intake, /sew\("agentic"\)/, "agentic sew action");
     assert.match(intake, /sew\("manual"\)/, "manual sew action");
     assert.match(intake, /new CustomEvent\("cave:agents-new-chat"/, "sew-in-chat dispatches a primed chat");
     assert.match(intake, /buildSewChatPrompt/, "the chat is seeded with a pin digest");
     assert.match(intake, /disabled=\{pins\.length === 0 \|\| busy\}/, "sewing needs at least one pin");
+  });
+
+  it("aims the sew at a shape and a destination (cave-kwx4)", () => {
+    assert.match(intake, /STITCH_PATTERNS\.map/, "pattern picker renders one chip per pattern");
+    assert.match(intake, /aria-pressed=\{patternId === p\.id\}/, "pattern chips expose their state");
+    assert.match(intake, /prev === p\.id \? null : p\.id/, "re-selecting a pattern clears it");
+    assert.match(intake, /\.\.\.\(patternId \? \{ patternId \} : \{\}\)/, "the sew carries the pattern");
+    assert.match(intake, /\.\.\.\(collection \? \{ collection \} : \{\}\)/, "the sew carries the destination");
+    assert.match(intake, /\/api\/knowledge\/collections/, "destinations come from real collections");
+    assert.match(intake, />Vault root<\/option>/, "root stays the default destination");
+  });
+
+  it("closes the sew-in-chat round trip (cave-x1za)", () => {
+    assert.match(intake, /threadId: thread\.id,/, "the chat brief carries the real thread id");
+    assert.match(intake, /useRefreshOnFocus/, "re-focus re-reads the thread");
+    assert.match(intake, /latest\.sewnEntryId/, "a chat-sewn thread hands its entry to the tab swap");
+    assert.match(intake, /Thread sewn from chat/, "the handoff is announced");
   });
 
   it("stays accessible: announcer, alerts, keyboard-first affordances", () => {

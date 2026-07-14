@@ -27,6 +27,8 @@ import {
   type StitchPinRef,
   type StitchThread,
 } from "@/lib/stitch";
+import { STITCH_PATTERNS, stitchPatternById } from "@/lib/stitch-patterns";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 
 const KIND_ICON: Record<PinKind, IconName> = {
   url: "ph:globe",
@@ -66,6 +68,34 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
   const [pinning, setPinning] = useState(false);
   const [sewing, setSewing] = useState<"agentic" | "manual" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Shape + destination (cave-kwx4): a pattern aims the sew at a body
+  // scaffold; the collection files the entry beside its pack-seeded kin.
+  const [patternId, setPatternId] = useState<string | null>(null);
+  const [collection, setCollection] = useState("");
+  const [collections, setCollections] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/knowledge/collections", { cache: "no-store" });
+        const json = await res.json();
+        if (cancelled || !json.ok || !Array.isArray(json.collections)) return;
+        setCollections(
+          json.collections
+            .map((c: { id?: string; meta?: { name?: string } | null }) => ({
+              id: String(c.id ?? ""),
+              name: typeof c.meta?.name === "string" && c.meta.name ? c.meta.name : String(c.id ?? ""),
+            }))
+            .filter((c: { id: string }) => c.id),
+        );
+      } catch {
+        // Collections stay root-only when the list fails — never block pinning.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Per-pin two-step removal: first tap arms ("Remove?"), auto-disarms (cave-exbq).
   const [armedPinId, setArmedPinId] = useState<string | null>(null);
   useEffect(() => {
@@ -202,7 +232,13 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
       const res = await fetch("/api/stitches/sew", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ threadId: thread.id, mode, title }),
+        body: JSON.stringify({
+          threadId: thread.id,
+          mode,
+          title,
+          ...(patternId ? { patternId } : {}),
+          ...(collection ? { collection } : {}),
+        }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
@@ -220,16 +256,48 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
 
   function sewInChat() {
     if (!thread || thread.pins.length === 0) return;
+    // The brief carries the thread id + API contract (cave-x1za), so the
+    // familiar can finish the sew itself — provenance and thread completion
+    // intact — instead of leaving the draft in scrollback.
+    const pattern = stitchPatternById(patternId);
     window.dispatchEvent(
       new CustomEvent("cave:agents-new-chat", {
         detail: {
-          initialPrompt: buildSewChatPrompt({ title, pins: thread.pins }),
+          initialPrompt: buildSewChatPrompt(
+            { title, pins: thread.pins },
+            {
+              threadId: thread.id,
+              ...(pattern ? { shape: { scaffold: pattern.bodyScaffold, tagHints: pattern.tagHints } } : {}),
+            },
+          ),
           origin: "chat" as const,
         },
       }),
     );
     announce("Opened a chat to sew this thread.");
   }
+
+  // A thread sewn elsewhere (the chat lane) completes here too: on window
+  // re-focus, re-read the thread and hand a landed sewnEntryId to the same
+  // tab replacement an in-intake sew performs (cave-x1za).
+  useRefreshOnFocus(
+    async () => {
+      if (!thread || sewing !== null) return;
+      try {
+        const res = await fetch("/api/stitches", { cache: "no-store" });
+        const json = await res.json();
+        if (!json.ok || !Array.isArray(json.threads)) return;
+        const latest = json.threads.find((t: StitchThread) => t.id === thread.id);
+        if (latest && typeof latest.sewnEntryId === "string" && latest.sewnEntryId) {
+          announce("Thread sewn from chat — opening the entry.");
+          onSewn(latest.sewnEntryId);
+        }
+      } catch {
+        // Stale intake is fine; the next focus retries.
+      }
+    },
+    { enabled: thread !== null },
+  );
 
   const pins = thread?.pins ?? [];
   const busy = pinning || sewing !== null;
@@ -253,6 +321,45 @@ export function StitchIntake({ onSewn }: { onSewn: (entryId: string) => void }) 
           className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
         />
       </label>
+
+      <div role="group" aria-label="Stitch pattern" className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-[11px] text-[var(--text-secondary)]">Shape</span>
+        {STITCH_PATTERNS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            aria-pressed={patternId === p.id}
+            title={p.description}
+            onClick={() => setPatternId((prev) => (prev === p.id ? null : p.id))}
+            className={`focus-ring inline-flex h-[24px] items-center rounded-md border px-2 text-[11px] transition-colors ${
+              patternId === p.id
+                ? "border-[var(--accent-presence)]/40 bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"
+                : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            {p.name}
+          </button>
+        ))}
+      </div>
+
+      {collections.length > 0 ? (
+        <label className="block">
+          <span className="mb-1 block text-[11px] text-[var(--text-secondary)]">Sew into</span>
+          <select
+            value={collection}
+            onChange={(e) => setCollection(e.target.value)}
+            aria-label="Destination collection"
+            className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-transparent px-2 py-1.5 text-[12px] text-[var(--text-primary)]"
+          >
+            <option value="">Vault root</option>
+            {collections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <div role="group" aria-label="Pin source" className="flex flex-wrap gap-1">
         {PIN_KINDS.map((k) => (

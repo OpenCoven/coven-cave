@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Features
+- **Grimoire: stitch patterns + sew destinations** — sewing can aim at a shape (Glossary entry, API contract, Decision record, How-to) whose section scaffold steers the distillation and prefills the manual sew (tags included), and file the entry into an existing vault collection — a collection's schema fields join the scaffold so pack-seeded collections keep their shape (cave-kwx4).
+- **Grimoire: "Sew in chat" round trip** — the chat sew is now a brief carrying the thread id and the local sew API contract (plus a companion `stitch-sewer` agent skill), so the familiar saves the agreed draft itself with pin provenance and thread completion; the intake picks a chat-sewn entry up on re-focus and swaps to it like an in-intake sew (cave-x1za).
+
+### Changed
+- **Shared assist runner** — the stitch sew's bounded `codex exec` lane (read-only sandbox pinned inside the module, stdin prompt, `--output-last-message` parse) is extracted to `src/lib/server/assist-runner.ts` for every authoring assist to reuse (cave-c40b).
+
+
 ## [0.1.0] - 2026-07-12
 
 > 🌙 **First minor milestone.** CovenCave steps out of the 0.0.x patch stream with a rebuilt marketplace (Capabilities retired, Skills modernized, Crafts agentically buildable), familiar access groups with per-project read/write levels, cross-platform find-anything search, first-class OpenCode, a bounded research mission desk, the CovenWiki Phase 3 regeneration CLI, and a wide band of chat/settings/perf/a11y hardening — with React Compiler now on across the app.

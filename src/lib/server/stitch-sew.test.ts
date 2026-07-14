@@ -4,8 +4,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { makePin } from "../stitch.ts";
-import { readKnowledgeEntry } from "./knowledge-vault.ts";
-import { buildSewInvocation, uniqueStitchId, writeSewnEntry } from "./stitch-sew.ts";
+import { readKnowledgeEntry, writeCollectionMeta } from "./knowledge-vault.ts";
+import {
+  buildSewInvocation,
+  normalizeSewDraft,
+  runDraftSew,
+  runManualSew,
+  uniqueStitchId,
+  writeSewnEntry,
+} from "./stitch-sew.ts";
 
 const dir = mkdtempSync(path.join(tmpdir(), "stitch-sew-test-"));
 const prevVault = process.env.COVEN_KNOWLEDGE_DIR;
@@ -34,6 +41,25 @@ try {
   process.env.COVEN_CODEX_BIN = "/opt/custom/codex";
   inv = buildSewInvocation(thread, "/tmp/last.txt");
   assert.equal(inv.command, "/opt/custom/codex");
+  delete process.env.COVEN_CODEX_BIN;
+
+  // A shape rides into the prompt through the same invocation (cave-kwx4).
+  inv = buildSewInvocation(thread, "/tmp/last.txt", { scaffold: ["Steps"], tagHints: ["how-to"] });
+  assert.match(inv.stdinPrompt, /- Steps/);
+  assert.match(inv.stdinPrompt, /Prefer these tags when they fit: how-to/);
+
+  // ── caller-supplied draft normalization (the chat lane, cave-x1za) ────────
+  assert.deepEqual(normalizeSewDraft({ title: " T ", tags: ["A", " b ", 3, ""], body: " Body " }), {
+    title: "T",
+    tags: ["a", "b"],
+    body: "Body",
+  });
+  assert.equal(normalizeSewDraft({ title: "T", body: "" }), null, "empty body rejected");
+  assert.equal(normalizeSewDraft({ title: "", body: "b" }), null, "empty title rejected");
+  assert.equal(normalizeSewDraft("nope"), null);
+  assert.equal(normalizeSewDraft(null), null);
+  assert.equal(normalizeSewDraft({ title: "T", body: "x".repeat(200_001) }), null, "oversize body rejected");
+  assert.equal(normalizeSewDraft({ title: "T", body: "b" })?.tags.length, 0, "tags optional");
 
   // ── unique id derivation ───────────────────────────────────────────────────
   assert.equal(await uniqueStitchId("Webhook Retry Policy!"), "webhook-retry-policy");
@@ -57,6 +83,32 @@ try {
   assert.equal(second.ok, true);
   assert.equal(second.entry.id, "retry-policy-2");
   assert.equal((await readKnowledgeEntry("retry-policy")).body, "Use 5 retries.");
+
+  // ── sew into a collection (cave-kwx4) ──────────────────────────────────────
+  await writeCollectionMeta("policies", { name: "Policies" });
+  const filed = await writeSewnEntry(thread, { title: "Retry Policy", tags: ["ops"], body: "Filed." }, "policies");
+  assert.equal(filed.ok, true);
+  assert.equal(filed.entry.collection, "policies");
+  // Ids are unique per destination — the root entry didn't force a suffix.
+  assert.equal(filed.entry.id, "retry-policy");
+  const rereadFiled = await readKnowledgeEntry("retry-policy", "policies");
+  assert.equal(rereadFiled.body, "Filed.");
+  assert.deepEqual(rereadFiled.pins, [{ kind: "paste", ref: "paste", title: "Note" }]);
+
+  // ── manual sew inherits shape: scaffold headings + tag hints (cave-kwx4) ──
+  const manual = await runManualSew(thread, { shape: { scaffold: ["Steps"], tagHints: ["How-To", ""] } });
+  assert.equal(manual.ok, true);
+  assert.deepEqual(manual.entry.tags, ["how-to"], "tag hints replace the old empty default");
+  assert.match(manual.entry.body, /^## Steps\n\n_Fill in\._/);
+  assert.match(manual.entry.body, /## Note/, "pins still concatenated below");
+
+  // ── draft sew: the chat lane's finish (cave-x1za) ──────────────────────────
+  const drafted = await runDraftSew(thread, { title: "Chat Drafted", tags: ["chat"], body: "From chat." });
+  assert.equal(drafted.ok, true);
+  assert.equal(drafted.entry.id, "chat-drafted");
+  assert.deepEqual(drafted.entry.pins, [{ kind: "paste", ref: "paste", title: "Note" }], "provenance intact");
+  const noPins = await runDraftSew({ ...thread, pins: [] }, { title: "X", tags: [], body: "b" });
+  assert.equal(noPins.ok, false, "a draft still needs a pinned thread");
 
   console.log("stitch-sew.test.ts OK");
 } finally {
