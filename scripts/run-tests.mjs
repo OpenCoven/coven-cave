@@ -42,6 +42,7 @@ export const SUITES = {
     "src/components/role-surfaces/sentinel-surface.test.ts",
     "src/components/role-surfaces/scribe-surface.test.ts",
     "src/components/role-surfaces/navigator-surface.test.ts",
+    "src/components/role-surfaces/reviewer-surface.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/components/chat-view-transcript-memo.test.ts",
     "src/components/chat-view-chunk-coalescing.test.ts",

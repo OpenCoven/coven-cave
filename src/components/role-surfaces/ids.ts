@@ -8,3 +8,4 @@ export const INDEXER_SURFACE_ID = "indexer-archive";
 export const SENTINEL_SURFACE_ID = "sentinel-watchtower";
 export const SCRIBE_SURFACE_ID = "scribe-writing-desk";
 export const NAVIGATOR_SURFACE_ID = "navigator-chart-room";
+export const REVIEWER_SURFACE_ID = "reviewer-review-deck";

@@ -88,3 +88,7 @@ never fake production data.
   as a plotted course: lane queues, task intake that charts real cards,
   scheduled legs with overdue flags from card dates, real lane moves, and a
   voyage-log drawer of completed and blocked cards.
+- **Review Deck** (`reviewer-review-deck`, role `reviewer`) — a review queue
+  built from sessions carrying PRs, working changes, or branches; real
+  working-tree file lists and capped unified diffs from the changes API;
+  PR/session jumps; saved-checkpoints drawer. Read-only over git state.

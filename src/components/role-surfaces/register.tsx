@@ -25,11 +25,13 @@ import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-
 import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
 import { chartRoomStatus } from "./navigator-charts";
+import { reviewDeckStatus } from "./review-deck";
 import {
   INDEXER_SURFACE_ID,
   MESSENGER_SURFACE_ID,
   NAVIGATOR_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
+  REVIEWER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
 } from "./ids";
@@ -64,6 +66,10 @@ const ScribeSurface = dynamic(
 );
 const NavigatorSurface = dynamic(
   () => import("./navigator-surface").then((m) => m.NavigatorSurface),
+  { ssr: false, loading: RoomFallback },
+);
+const ReviewerSurface = dynamic(
+  () => import("./reviewer-surface").then((m) => m.ReviewerSurface),
   { ssr: false, loading: RoomFallback },
 );
 
@@ -338,6 +344,68 @@ registerRoleSurface({
     };
   },
   render: (context) => <NavigatorSurface context={context} />,
+});
+
+registerRoleSurface({
+  id: REVIEWER_SURFACE_ID,
+  role: "reviewer",
+  title: "Review Deck",
+  iconName: "ph:git-diff",
+  description: "Review queue, working-tree diffs, and pull-request context",
+  accentHue: 0,
+  priority: 26,
+  shouldDisplay: () => true,
+  getContributions(context) {
+    const state = readRoleSurfaceState<{ lastCounts?: { queue: number; pullRequests: number } | null }>(
+      context.activeFamiliar.id,
+      REVIEWER_SURFACE_ID,
+    );
+    const counts = state?.lastCounts ?? null;
+    const status = counts ? reviewDeckStatus(counts) : null;
+    return {
+      commands: [
+        {
+          id: "reviewer.toggle-drawer",
+          title: "Toggle checkpoints",
+          hint: "⌘⇧D",
+          run: (ctx) => toggleDrawer(ctx, REVIEWER_SURFACE_ID),
+        },
+      ],
+      toolbarActions: [
+        {
+          id: "reviewer.drawer",
+          title: "Checkpoints",
+          iconName: "ph:list",
+          run: (ctx) => toggleDrawer(ctx, REVIEWER_SURFACE_ID),
+        },
+      ],
+      keyboardShortcuts: [
+        {
+          id: "reviewer.drawer.kbd",
+          combo: "mod+shift+d",
+          description: "Toggle the checkpoints drawer",
+          run: (ctx) => toggleDrawer(ctx, REVIEWER_SURFACE_ID),
+        },
+      ],
+      notifications: daemonNotices(context),
+      statusIndicators: [
+        status == null
+          ? {
+              id: "reviewer.queue",
+              label: "queue unread",
+              tone: "muted" as const,
+              detail: "Queue counts appear after the Review Deck's first pass over the sessions",
+            }
+          : {
+              id: "reviewer.queue",
+              label: status.label,
+              tone: status.tone,
+              detail: "Sessions carrying a PR, working changes, or a branch",
+            },
+      ],
+    };
+  },
+  render: (context) => <ReviewerSurface context={context} />,
 });
 
 registerRoleSurface({
