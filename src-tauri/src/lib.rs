@@ -176,6 +176,37 @@ fn quick_chat_position(app: &tauri::AppHandle) -> (f64, f64) {
     (24.0, 40.0)
 }
 
+/// The token-bearing URL the main window was launched with. The page's
+/// sidecar auth bridge moves `covenCaveToken` into per-window sessionStorage
+/// and strips it from the visible URL right after load, so scraping the main
+/// window's URL later returns a token-less one. A child window built from
+/// that scrape (detached quick chat, notch) starts with a fresh
+/// sessionStorage and no token, and every one of its `/api/` requests is
+/// rejected 401 "unauthorized". Child windows derive from this remembered
+/// URL instead; the live scrape remains only as a fallback for tokenless dev
+/// servers.
+#[cfg(desktop)]
+static MAIN_STARTUP_URL: Mutex<Option<Url>> = Mutex::new(None);
+
+#[cfg(desktop)]
+fn remember_main_startup_url(url: &Url) {
+    if let Ok(mut remembered) = MAIN_STARTUP_URL.lock() {
+        *remembered = Some(url.clone());
+    }
+}
+
+#[cfg(desktop)]
+fn main_url_for_child_windows(app: &tauri::AppHandle) -> Option<Url> {
+    MAIN_STARTUP_URL
+        .lock()
+        .ok()
+        .and_then(|remembered| remembered.clone())
+        .or_else(|| {
+            app.get_webview_window("main")
+                .and_then(|window| window.url().ok())
+        })
+}
+
 #[cfg(desktop)]
 fn quick_chat_url_from_main(mut url: Url) -> Option<Url> {
     let trusted_loopback = url.scheme() == "http"
@@ -190,11 +221,7 @@ fn quick_chat_url_from_main(mut url: Url) -> Option<Url> {
 
 #[cfg(desktop)]
 fn show_quick_chat_from_main(app: &tauri::AppHandle) {
-    let Some(url) = app
-        .get_webview_window("main")
-        .and_then(|window| window.url().ok())
-        .and_then(quick_chat_url_from_main)
-    else {
+    let Some(url) = main_url_for_child_windows(app).and_then(quick_chat_url_from_main) else {
         focus_main_window(app);
         return;
     };
@@ -581,11 +608,7 @@ fn set_tray_visible(app: &tauri::AppHandle, visible: bool) {
 
 #[cfg(desktop)]
 fn show_notch_from_main(app: &tauri::AppHandle) {
-    let Some(url) = app
-        .get_webview_window("main")
-        .and_then(|window| window.url().ok())
-        .and_then(notch_url_from_main)
-    else {
+    let Some(url) = main_url_for_child_windows(app).and_then(notch_url_from_main) else {
         return;
     };
     show_notch_window(app, &url);
@@ -1941,6 +1964,7 @@ fn spawn_sidecar_startup(
                 }
                 Ok(url) => {
                     pty::trust_main_origin(&url);
+                    remember_main_startup_url(&url);
                     let navigation = app
                         .get_webview_window("main")
                         .ok_or_else(|| "startup window is unavailable".to_string())
@@ -2128,6 +2152,31 @@ mod tests {
             Url::parse("tauri://localhost/startup.html").expect("local startup URL")
         )
         .is_none());
+    }
+
+    // The main window's auth bridge strips covenCaveToken from the visible URL
+    // after load (the token moves into per-window sessionStorage), so a child
+    // window scraped from the live URL would open /quick-chat without the
+    // sidecar token and 401 "unauthorized" on every /api/ call. Detach and the
+    // tray Quick Chat must reuse the remembered token-bearing startup URL.
+    #[test]
+    fn child_windows_reuse_the_remembered_token_bearing_startup_url() {
+        let startup =
+            Url::parse("http://127.0.0.1:43123/?covenCaveToken=tok&coven_access_token=acc")
+                .expect("startup URL");
+        remember_main_startup_url(&startup);
+
+        let remembered = MAIN_STARTUP_URL
+            .lock()
+            .expect("startup URL lock")
+            .clone()
+            .expect("remembered startup URL");
+        let quick_chat = quick_chat_url_from_main(remembered).expect("trusted quick chat URL");
+        assert_eq!(quick_chat.path(), "/quick-chat");
+        assert_eq!(
+            quick_chat.query(),
+            Some("covenCaveToken=tok&coven_access_token=acc")
+        );
     }
 
     #[test]
@@ -3085,6 +3134,7 @@ pub fn run() {
 
             if let Some(main_url) = main_url {
                 pty::trust_main_origin(&main_url);
+                remember_main_startup_url(&main_url);
                 let mut main_window =
                     WebviewWindowBuilder::new(app, "main", WebviewUrl::External(main_url))
                         .title("CovenCave")
