@@ -15,8 +15,6 @@ import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 
-const CONTEXTS = ["adequate", "tight", "excess", "critical"] as const;
-
 type ThreadSignalTableRow = {
   id: string;
   signal: string;
@@ -43,31 +41,6 @@ const SEVERITY_TO_PRIORITY: Record<"critical" | "warning" | "info", "urgent" | "
   critical: "urgent",
   warning: "high",
   info: "medium",
-};
-
-function ScoreBar({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="fa-thread-score">
-      <div>
-        <span>{label}</span>
-        <b>
-          {value}
-          <span className="fa-metric-unit">/100</span>
-        </b>
-      </div>
-      <div className="fa-factor-bar" aria-label={`${label} ${value} of 100`}>
-        <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
-      </div>
-    </div>
-  );
-}
-
-// Plain-language explanation of each context-pressure bucket, for the pill tooltip.
-const CONTEXT_PRESSURE_HINT: Record<(typeof CONTEXTS)[number], string> = {
-  adequate: "Comfortable context headroom.",
-  tight: "Context was near the limit.",
-  excess: "More context than needed — wasted budget.",
-  critical: "Ran out of context.",
 };
 
 function latestReportDate(reports: ThreadSelfReport[]): string {
@@ -532,23 +505,9 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
           </ul>
         )}
       </div>
-      <div className="fa-thread-score-grid">
-        <ScoreBar label="Avg confidence" value={aggregate.averageConfidence} />
-        <ScoreBar label="Avg tool reliability" value={aggregate.averageToolReliability} />
-        <ScoreBar label="Avg memory recall" value={aggregate.averageMemoryRecall} />
-        <ScoreBar label="Avg file-finding" value={aggregate.averageFileLocatability} />
-      </div>
-      <div className="fa-thread-contexts" aria-label="Context pressure distribution">
-        {CONTEXTS.map((pressure) => (
-          <span
-            key={pressure}
-            className={`fa-thread-pill fa-thread-pill--${pressure}`}
-            title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
-          >
-            {pressure} <b>{aggregate.contextCounts[pressure]}</b>
-          </span>
-        ))}
-      </div>
+      {/* The metric averages + context-pressure mix live in the "Confidence
+          from thread analysis" panel (fa-confidence) — this section stays
+          focused on the actionable review queue and the signal table. */}
       <ThreadSignalsTable familiarId={familiarId} sections={sections} />
     </div>
   );

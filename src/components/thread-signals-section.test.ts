@@ -207,11 +207,14 @@ describe("aggregateThreadSignals", () => {
   });
 });
 
-describe("thread-signals metric labeling", () => {
-  it("uses plain labels + units for the score bars and context pills", () => {
-    assert.match(source, /label="Avg file-finding"/, "jargon 'file locatability' is renamed to plain 'file-finding'");
-    assert.doesNotMatch(source, /file locatability/, "the 'locatability' jargon is gone from the UI label");
-    assert.match(source, /CONTEXT_PRESSURE_HINT/, "context-pressure pills carry a plain-language legend tooltip");
-    assert.match(source, /<span className="fa-metric-unit">\/100<\/span>/, "score bars show their /100 unit");
+describe("thread-signals metric ownership", () => {
+  it("leaves the metric averages + context mix to the fa-confidence panel (no duplication)", () => {
+    // The score bars and context-pressure pills moved to the "Confidence from
+    // thread analysis" section (familiar-analytics-view.tsx) — this section
+    // owns the review queue + signal table only.
+    assert.doesNotMatch(source, /fa-thread-score-grid/, "no duplicate metric grid in the signals section");
+    assert.doesNotMatch(source, /fa-thread-contexts/, "no duplicate context pills in the signals section");
+    assert.doesNotMatch(source, /file locatability/, "the 'locatability' jargon stays out of UI labels");
+    assert.match(source, /fa-confidence/, "the section comments point readers at the metrics' new home");
   });
 });

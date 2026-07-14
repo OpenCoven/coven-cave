@@ -18,7 +18,11 @@ import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
-import type { ConfidenceFactor, ConfidenceScore } from "@/lib/familiar-confidence";
+import {
+  THREAD_CONFIDENCE_EMPTY_STATE,
+  type ThreadConfidence,
+  type ThreadMetricKey,
+} from "@/lib/thread-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
@@ -31,6 +35,7 @@ import {
   RESPONSE_CONFIDENCE_EMPTY_STATE,
   RESPONSE_CONFIDENCE_FACTOR_KEYS,
   aggregateThreadSignals,
+  type ContextPressure,
   type ResponseConfidenceEvent,
   type ResponseConfidenceFactorKey,
   type ResponseConfidenceRollup,
@@ -129,81 +134,117 @@ function FaSection({
   );
 }
 
-// Plain-language name + one-sentence meaning for each confidence factor, keyed by
-// the raw `label` from familiar-confidence.ts. Presentation-only — the score math
-// is unchanged. Falls back to a de-underscored label for any unknown factor.
-const CONFIDENCE_FACTOR_COPY: Record<string, { name: string; desc: string }> = {
-  contract_score: {
-    name: "Identity contract",
-    desc: "Share of this familiar's identity-contract checks currently passing.",
-  },
-  accept_rate: {
-    name: "Retro acceptance",
-    desc: "Share of self-improvement (retro) runs you accepted. Needs at least 3 runs to count.",
-  },
-  freshness_score: {
-    name: "Memory freshness",
-    desc: "How current this familiar's memory is — fresh, aging, or stale.",
-  },
-  activity_score: {
-    name: "Recent activity",
-    desc: "Sessions in the last 7 days (capped at 10).",
-  },
+// Plain-language meaning for each thread-analysis metric (0–100 average across
+// this familiar's thread self-reports). Presentation-only — the averages and
+// weights come from deriveThreadConfidence in thread-confidence.ts.
+const THREAD_METRIC_COPY: Record<ThreadMetricKey, string> = {
+  confidence: "How confident the familiar reported feeling across whole threads.",
+  toolReliability: "How reliably tools worked when the familiar reached for them.",
+  memoryRecall: "How well earlier context and memory could be recalled mid-thread.",
+  fileLocatability: "How easily the familiar found the files it needed.",
 };
 
-function confidenceFactorCopy(label: string): { name: string; desc: string } {
-  return CONFIDENCE_FACTOR_COPY[label] ?? { name: label.replaceAll("_", " "), desc: "" };
-}
+const CONTEXT_PRESSURES: ContextPressure[] = ["adequate", "tight", "excess", "critical"];
 
-/** The most points a factor can add to the 0–100 score = its weight × 100. */
-function maxContribution(factor: ConfidenceFactor): number {
-  return Math.round(factor.weight * 100);
-}
+// Plain-language explanation of each context-pressure bucket, for the pill tooltip.
+const CONTEXT_PRESSURE_HINT: Record<ContextPressure, string> = {
+  adequate: "Comfortable context headroom.",
+  tight: "Context was near the limit.",
+  excess: "More context than needed — wasted budget.",
+  critical: "Ran out of context.",
+};
 
-const ConfidenceBreakdown = memo(function ConfidenceBreakdown({ confidence }: { confidence: ConfidenceScore }) {
-  // Scale each factor's bar TRACK to its weight (relative to the heaviest factor),
-  // so the filled length ∝ contribution (value × weight) — i.e. the factor's real
-  // influence on the score, not its raw value. A long half-full bar (high weight)
-  // clearly outweighs a short full bar (low weight).
-  const maxWeight = Math.max(0.0001, ...confidence.factors.map((factor) => factor.weight));
+/** One thread-analysis metric row: averaged value bar + weight-aware tooltip. */
+function ThreadMetricBar({
+  label,
+  value,
+  weight,
+  desc,
+}: {
+  label: string;
+  value: number;
+  weight: number;
+  desc: string;
+}) {
+  const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} of the headline score's 100 points.`;
   return (
-    <FaSection id="fa-confidence" title="Confidence breakdown" count={`${confidence.factors.length} factors`}>
-      <div className="fa-factor-list">
-        {confidence.factors.map((factor) => {
-          const copy = confidenceFactorCopy(factor.label);
-          const max = maxContribution(factor);
-          const trackPct = Math.round((factor.weight / maxWeight) * 100);
-          const tip = `${copy.desc} Worth up to ${max} of 100 points.`.trim();
-          return (
-            <div key={factor.label} className="fa-factor">
-              <div className="fa-factor__meta">
-                <b>
-                  {copy.name}
-                  {copy.desc ? (
-                    <button type="button" className="fa-factor-info" title={tip} aria-label={`${copy.name}: ${tip}`}>
-                      <Icon name="ph:info" width={12} aria-hidden />
-                    </button>
-                  ) : null}
-                </b>
-                <span>
-                  {Math.round(factor.value)}<span className="fa-metric-unit">/100</span>
-                </span>
-              </div>
-              <div
-                className="fa-factor-bar"
-                style={{ width: `${trackPct}%` }}
-                aria-label={`${copy.name}: earned ${factor.contribution.toFixed(1)} of ${max} points`}
-              >
-                <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, factor.value))}%` }} />
-              </div>
-              <small className="fa-factor-earned">
-                <b>{factor.contribution.toFixed(1)}</b>
-                <span className="fa-metric-unit"> / {max} pts</span>
-              </small>
-            </div>
-          );
-        })}
+    <div className="fa-thread-score">
+      <div>
+        <span>
+          {label}
+          <button type="button" className="fa-factor-info" title={tip} aria-label={`${label}: ${tip}`}>
+            <Icon name="ph:info" width={12} aria-hidden />
+          </button>
+        </span>
+        <b>
+          {value}
+          <span className="fa-metric-unit">/100</span>
+        </b>
       </div>
+      <div className="fa-factor-bar" aria-label={`${label} ${value} of 100`}>
+        <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Confidence from thread analysis — the real self-reported metric averages
+ * behind the headline score (replacing the retired synthetic factor weights).
+ * With no reports yet it teaches the fix: enable response self-reporting.
+ */
+const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
+  confidence,
+  familiar,
+  onSelfReportEnabled,
+}: {
+  confidence: ThreadConfidence;
+  familiar: Familiar | null;
+  onSelfReportEnabled?: () => void;
+}) {
+  return (
+    <FaSection
+      id="fa-confidence"
+      title="Confidence from thread analysis"
+      count={
+        confidence.hasData
+          ? `${confidence.reportCount} ${confidence.reportCount === 1 ? "report" : "reports"}`
+          : "no reports"
+      }
+    >
+      {confidence.hasData ? (
+        <div className="fa-thread-analysis">
+          <div className="fa-thread-score-grid">
+            {confidence.metrics.map((metric) => (
+              <ThreadMetricBar
+                key={metric.key}
+                label={metric.label}
+                value={metric.value}
+                weight={metric.weight}
+                desc={THREAD_METRIC_COPY[metric.key]}
+              />
+            ))}
+          </div>
+          <div className="fa-thread-contexts" aria-label="Context pressure distribution">
+            {CONTEXT_PRESSURES.map((pressure) => (
+              <span
+                key={pressure}
+                className={`fa-thread-pill fa-thread-pill--${pressure}`}
+                title={`${pressure} — ${CONTEXT_PRESSURE_HINT[pressure]}`}
+              >
+                {pressure} <b>{confidence.contextCounts[pressure]}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <SelfReportEmptyState
+          familiar={familiar}
+          onSelfReportEnabled={onSelfReportEnabled}
+          headline={THREAD_CONFIDENCE_EMPTY_STATE}
+          enabledHeadline="No thread reports yet."
+        />
+      )}
     </FaSection>
   );
 });
@@ -240,18 +281,24 @@ function trendColor(averageConfidence: number): string {
 }
 
 /**
- * Empty state for the Response confidence panel. When the familiar hasn't
- * enabled response self-reporting, the notice carries the fix — a one-click
- * enable that persists `autoSelfReport` to cave-config (the same key the
- * Studio's Brain tab toggles) instead of sending the user hunting through
- * Settings.
+ * Empty state for the self-report-driven panels (Response confidence, thread
+ * analysis). When the familiar hasn't enabled response self-reporting, the
+ * notice carries the fix — a one-click enable that persists `autoSelfReport`
+ * to cave-config (the same key the Studio's Brain tab toggles) instead of
+ * sending the user hunting through Settings.
  */
 function SelfReportEmptyState({
   familiar,
   onSelfReportEnabled,
+  headline = RESPONSE_CONFIDENCE_EMPTY_STATE,
+  enabledHeadline = "No response confidence events yet.",
 }: {
   familiar: Familiar | null;
   onSelfReportEnabled?: () => void;
+  /** Teach copy when self-reporting is still off. */
+  headline?: string;
+  /** Headline once self-reporting is on but no data has landed yet. */
+  enabledHeadline?: string;
 }) {
   const { announce } = useAnnouncer();
   const [enabling, setEnabling] = useState(false);
@@ -289,7 +336,7 @@ function SelfReportEmptyState({
       <EmptyState
         compact
         icon="ph:chart-bar-bold"
-        headline="No response confidence events yet."
+        headline={enabledHeadline}
         subtitle={
           justEnabled
             ? "Self-reporting enabled — reports are written when a chat closes or is archived."
@@ -303,7 +350,7 @@ function SelfReportEmptyState({
     <EmptyState
       compact
       icon="ph:chart-bar-bold"
-      headline={RESPONSE_CONFIDENCE_EMPTY_STATE}
+      headline={headline}
       subtitle={error ? `Couldn't enable: ${error}` : undefined}
       actions={
         familiar ? (
@@ -626,7 +673,7 @@ const ContractCompliance = memo(function ContractCompliance({ report }: { report
 });
 
 /** Map a confidence label to a tier class so the ring + KPIs read at a glance. */
-function confidenceTier(label: ConfidenceScore["label"]): "low" | "developing" | "reliable" | "trusted" {
+function confidenceTier(label: ThreadConfidence["label"]): "low" | "developing" | "reliable" | "trusted" {
   switch (label) {
     case "Trusted": return "trusted";
     case "Reliable": return "reliable";
@@ -635,18 +682,25 @@ function confidenceTier(label: ConfidenceScore["label"]): "low" | "developing" |
   }
 }
 
-/** Radial progress ring for the confidence score — a glanceable hero metric. */
-const ConfidenceRing = memo(function ConfidenceRing({ confidence }: { confidence: ConfidenceScore }) {
+/** Radial progress ring for the thread-confidence score — a glanceable hero metric.
+ *  With no self-reports yet the ring reads as unmeasured, never a fake "Low". */
+const ConfidenceRing = memo(function ConfidenceRing({ confidence }: { confidence: ThreadConfidence }) {
   const score = Math.max(0, Math.min(100, confidence.score));
   const r = 42;
   const circ = 2 * Math.PI * r;
-  const dash = (score / 100) * circ;
-  const tier = confidenceTier(confidence.label);
+  const dash = confidence.hasData ? (score / 100) * circ : 0;
+  const tier = confidence.hasData ? confidenceTier(confidence.label) : "none";
+  const reportPhrase = `${confidence.reportCount} thread report${confidence.reportCount === 1 ? "" : "s"}`;
   return (
     <div
       className={`fa-ring fa-ring--${tier}`}
       role="img"
-      aria-label={`Confidence score ${confidence.score} of 100, ${confidence.label}`}
+      aria-label={
+        confidence.hasData
+          ? `Thread confidence ${confidence.score} of 100, ${confidence.label}, from ${reportPhrase}`
+          : "Thread confidence not measured yet — no thread self-reports"
+      }
+      title={confidence.hasData ? `From ${reportPhrase}` : "No thread self-reports yet"}
     >
       <svg viewBox="0 0 100 100" aria-hidden>
         <circle className="fa-ring__track" cx="50" cy="50" r={r} />
@@ -660,8 +714,17 @@ const ConfidenceRing = memo(function ConfidenceRing({ confidence }: { confidence
         />
       </svg>
       <div className="fa-ring__label">
-        <strong>{confidence.score}</strong>
-        <span>{confidence.label}</span>
+        {confidence.hasData ? (
+          <>
+            <strong>{confidence.score}</strong>
+            <span>{confidence.label}</span>
+          </>
+        ) : (
+          <>
+            <strong aria-hidden>—</strong>
+            <span>No data</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -954,9 +1017,13 @@ export function FamiliarAnalyticsContent({
           />
         </FaSection>
 
-        <ConfidenceBreakdown confidence={model.confidence} />
+        <ThreadAnalysisSection
+          confidence={model.confidence}
+          familiar={model.familiar}
+          onSelfReportEnabled={onRefresh}
+        />
 
-        {/* Contract compliance pairs with the confidence breakdown — both read
+        {/* Contract compliance pairs with the thread-analysis panel — both read
             on identity health — and sits above the fold instead of dangling
             under the operational panels. The #fa-contract KPI drill-through
             keeps working wherever the section lives. */}

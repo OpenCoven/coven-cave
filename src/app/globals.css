@@ -10410,6 +10410,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-ring--developing { --fa-ring-color: var(--color-warning); }
 .fa-ring--reliable { --fa-ring-color: var(--accent-presence); }
 .fa-ring--trusted { --fa-ring-color: var(--color-success); }
+/* Unmeasured — no thread self-reports yet; the ring stays neutral, never red. */
+.fa-ring--none { --fa-ring-color: var(--border-strong); }
+.fa-ring--none .fa-ring__label strong { color: var(--text-muted); }
 .fa-ring svg {
   width: 100%;
   height: 100%;
@@ -10909,35 +10912,25 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: 14px;
   letter-spacing: 0;
 }
-.fa-factor-list,
 .fa-heal-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.fa-factor {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(160px, 1.6fr) 72px;
-  align-items: center;
+/* Confidence from thread analysis — metric average bars + context-pressure mix. */
+.fa-thread-analysis {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
-.fa-factor__meta b {
-  display: block;
-  font-size: 13px;
-  /* Names are curated (see CONFIDENCE_FACTOR_COPY) — no title-casing. */
-  text-transform: none;
-}
-.fa-factor__meta span,
-.fa-factor small {
-  color: var(--text-muted);
-  font-size: 11px;
+.fa-thread-analysis .fa-thread-score-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .fa-factor-bar {
   position: relative;
   overflow: hidden;
   height: 10px;
-  /* Confidence-breakdown bars set an inline width to scale the track to the
-     factor's weight; this floor keeps a low-weight (e.g. 10%) track visible. */
+  /* Keeps bars visible inside the narrowest metric cells. */
   min-width: 44px;
   border-radius: 999px;
   background: var(--bg-raised);
@@ -10970,16 +10963,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-muted);
   font-weight: 400;
   font-size: 0.85em;
-}
-/* Earned-points column of a confidence factor row. */
-.fa-factor-earned {
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.fa-factor-earned b {
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 .fa-heal-card {
   display: flex;
@@ -11621,10 +11604,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-section__head {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .fa-factor {
-    grid-template-columns: 1fr;
-    align-items: stretch;
   }
   .fa-response-factor-grid,
   .fa-thread-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
