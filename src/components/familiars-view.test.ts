@@ -172,8 +172,8 @@ assert.match(
 
 assert.match(
   source,
-  /familiar\.avatarImage \?[\s\S]*className="h-full w-full object-cover"/,
-  "Avatar preview enlarges uploaded avatar images",
+  /<AuthedImage[\s\S]*src=\{familiar\.avatarImage\}[\s\S]*className="h-full w-full object-cover"[\s\S]*fallback=/,
+  "Avatar preview enlarges uploaded avatar images via the authenticated image renderer",
 );
 
 assert.match(

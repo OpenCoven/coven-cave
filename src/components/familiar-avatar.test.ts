@@ -20,7 +20,9 @@ assert.match(source, /rounded-\[var\(--radius-control\)\]/, "default avatar radi
 // avatar → Cave-local upload) and only renders the glyph once all sources fail.
 assert.match(source, /avatarImageFallback/, "must consume the fallback image source");
 assert.match(source, /onError=\{\(\) => setSrcIdx\(\(i\) => i \+ 1\)\}/, "img must advance to the next source on load error");
-assert.match(source, /const hasImage = Boolean\(currentSrc\)/, "render must gate the img on a resolvable current source");
+assert.match(source, /const hasImage = Boolean\(resolvedSrc\)/, "render must gate the img on a resolved authed source");
+assert.match(source, /useAuthedImageState\(rawSrc\)/, "current source must resolve through the authed image state");
+assert.match(source, /if \(status === "error"\) setSrcIdx\(\(i\) => i \+ 1\);/, "a failed authed fetch must advance to the next source");
 assert.match(source, /useEffect\(\s*\(\) => \{\s*setSrcIdx\(0\);\s*\}, \[familiar\.avatarImage, familiar\.avatarImageFallback\]\)/, "source index must reset when either avatar src changes");
 
 // The enlarged preview can carry footer actions (e.g. the inline card's
