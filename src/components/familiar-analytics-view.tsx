@@ -23,6 +23,7 @@ import {
   type ThreadConfidence,
   type ThreadMetricKey,
 } from "@/lib/thread-confidence";
+import type { MetricTrend, SignalTrends, TrendDirection } from "@/lib/signal-trends";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon } from "@/lib/icon";
@@ -154,19 +155,22 @@ const CONTEXT_PRESSURE_HINT: Record<ContextPressure, string> = {
   critical: "Ran out of context.",
 };
 
-/** One thread-analysis metric row: averaged value bar + weight-aware tooltip. */
+/** One thread-analysis metric row: averaged value bar + weight-aware tooltip
+ *  + a delta chip against the previous trend bucket when history allows. */
 function ThreadMetricBar({
   label,
   value,
   weight,
   desc,
+  trend,
 }: {
   label: string;
   value: number;
   weight: number;
   desc: string;
+  trend?: MetricTrend;
 }) {
-  const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} of the headline score's 100 points.`;
+  const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} points of the headline score's 100.`;
   return (
     <div className="fa-thread-score">
       <div>
@@ -177,6 +181,7 @@ function ThreadMetricBar({
           </button>
         </span>
         <b>
+          {trend ? <TrendDeltaChip label={label} trend={trend} /> : null}
           {value}
           <span className="fa-metric-unit">/100</span>
         </b>
@@ -188,20 +193,128 @@ function ThreadMetricBar({
   );
 }
 
+// ─── Signal trends (is the familiar improving?) ──────────────────────────────
+
+const TREND_VERDICT_COPY: Record<TrendDirection, string> = {
+  improving: "Improving",
+  flat: "Holding steady",
+  regressing: "Regressing",
+  insufficient: "Not enough history yet",
+};
+
+const TREND_VERDICT_ICON: Record<TrendDirection, Parameters<typeof Icon>[0]["name"]> = {
+  improving: "ph:trend-up",
+  flat: "ph:minus",
+  regressing: "ph:trend-down",
+  insufficient: "ph:clock",
+};
+
+function formatDelta(delta: number): string {
+  return delta > 0 ? `+${delta}` : `${delta}`;
+}
+
+/** Compact per-metric delta against the previous trend bucket (▲ +8 / ▼ -6 / — ±2). */
+function TrendDeltaChip({ label, trend }: { label: string; trend: MetricTrend }) {
+  if (trend.delta === null || trend.direction === "insufficient") return null;
+  const icon =
+    trend.direction === "improving" ? "ph:caret-up" : trend.direction === "regressing" ? "ph:caret-down" : "ph:minus";
+  const phrase =
+    trend.direction === "flat"
+      ? `${label} holding steady (${formatDelta(trend.delta)} vs the previous period)`
+      : `${label} ${trend.direction} — ${formatDelta(trend.delta)} vs the previous period`;
+  return (
+    <span
+      className={`fa-trend-chip fa-trend-chip--${trend.direction}`}
+      role="img"
+      aria-label={phrase}
+      title={phrase}
+    >
+      <Icon name={icon} width={11} aria-hidden />
+      {formatDelta(trend.delta)}
+    </span>
+  );
+}
+
+/**
+ * Changes over time — the honest "is the familiar improving?" read. A verdict
+ * chip on the weighted headline score, plus a bucket-scored sparkline (day or
+ * week granularity, per the data's span). Insufficient history says so
+ * instead of inventing a direction.
+ */
+function ThreadTrendBlock({ trends }: { trends: SignalTrends }) {
+  const overall = trends.overall;
+  const dataBuckets = trends.buckets.filter((bucket) => bucket.score !== null);
+  const points: SparkPoint[] = trends.buckets.map((bucket) => ({
+    label: `${bucket.label}${bucket.count > 0 ? ` · ${bucket.count} report${bucket.count === 1 ? "" : "s"}` : ""}`,
+    value: bucket.score,
+  }));
+  const granularityNoun = trends.granularity === "week" ? "weeks" : "days";
+  const windowPhrase = `last ${trends.buckets.length} ${granularityNoun}`;
+
+  return (
+    <div className="fa-trend" role="group" aria-label="Thread metric changes over time">
+      <div className="fa-trend__head">
+        <span
+          className={`fa-trend-verdict fa-trend-verdict--${overall.direction}`}
+          title={
+            overall.delta !== null
+              ? `Weighted score ${overall.latest} vs ${overall.previous} in the previous period (${formatDelta(overall.delta)})`
+              : "A verdict needs reports in at least two different periods."
+          }
+        >
+          <Icon name={TREND_VERDICT_ICON[overall.direction]} width={13} aria-hidden />
+          {TREND_VERDICT_COPY[overall.direction]}
+          {overall.delta !== null ? <b>{formatDelta(overall.delta)}</b> : null}
+        </span>
+        <span className="fa-trend__meta">
+          {windowPhrase} · {trends.snapshotCount} report{trends.snapshotCount === 1 ? "" : "s"}
+        </span>
+      </div>
+      {dataBuckets.length >= 2 ? (
+        <figure
+          className="fa-trend__spark"
+          role="img"
+          aria-label={`Weighted thread score per ${trends.granularity} over the ${windowPhrase}: ${TREND_VERDICT_COPY[overall.direction].toLowerCase()}`}
+        >
+          <Sparkline points={points} color={trendTokenFor(overall.direction)} height={40} />
+          <figcaption aria-hidden>
+            Weighted score per {trends.granularity}, oldest to newest · hover for values
+          </figcaption>
+        </figure>
+      ) : (
+        <p className="fa-trend__empty">
+          Trends appear once reports land on two different {granularityNoun.slice(0, -1)}s.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Trend tone tokens: improving = presence accent, regressing = warning. */
+function trendTokenFor(direction: TrendDirection): string {
+  if (direction === "improving") return "var(--accent-presence)";
+  if (direction === "regressing") return "var(--color-warning)";
+  return "var(--text-muted)";
+}
+
 /**
  * Confidence from thread analysis — the real self-reported metric averages
- * behind the headline score (replacing the retired synthetic factor weights).
- * With no reports yet it teaches the fix: enable response self-reporting.
+ * behind the headline score (replacing the retired synthetic factor weights),
+ * plus the changes-over-time read. With no reports yet it teaches the fix:
+ * enable response self-reporting.
  */
 const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
   confidence,
+  trends,
   familiar,
   onSelfReportEnabled,
 }: {
   confidence: ThreadConfidence;
+  trends: SignalTrends;
   familiar: Familiar | null;
   onSelfReportEnabled?: () => void;
 }) {
+  const trendByKey = new Map(trends.metrics.map((metric) => [metric.key, metric]));
   return (
     <FaSection
       id="fa-confidence"
@@ -214,6 +327,7 @@ const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
     >
       {confidence.hasData ? (
         <div className="fa-thread-analysis">
+          <ThreadTrendBlock trends={trends} />
           <div className="fa-thread-score-grid">
             {confidence.metrics.map((metric) => (
               <ThreadMetricBar
@@ -222,6 +336,7 @@ const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
                 value={metric.value}
                 weight={metric.weight}
                 desc={THREAD_METRIC_COPY[metric.key]}
+                trend={trendByKey.get(metric.key)}
               />
             ))}
           </div>
@@ -1019,6 +1134,7 @@ export function FamiliarAnalyticsContent({
 
         <ThreadAnalysisSection
           confidence={model.confidence}
+          trends={model.signalTrends}
           familiar={model.familiar}
           onSelfReportEnabled={onRefresh}
         />
