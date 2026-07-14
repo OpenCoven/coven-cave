@@ -10926,6 +10926,66 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-analysis .fa-thread-score-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+/* Changes over time — verdict chip + bucket-scored sparkline. */
+.fa-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+}
+.fa-trend__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fa-trend-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.fa-trend-verdict b {
+  font-variant-numeric: tabular-nums;
+}
+.fa-trend-verdict--improving { color: var(--accent-presence); }
+.fa-trend-verdict--regressing { color: var(--color-warning); }
+.fa-trend-verdict--insufficient { color: var(--text-muted); font-weight: 400; }
+.fa-trend__meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.fa-trend__spark { margin: 0; }
+.fa-trend__spark figcaption {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.fa-trend__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+/* Per-metric delta against the previous trend bucket. */
+.fa-trend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+  color: var(--text-muted);
+}
+.fa-trend-chip--improving { color: var(--accent-presence); }
+.fa-trend-chip--regressing { color: var(--color-warning); }
 .fa-factor-bar {
   position: relative;
   overflow: hidden;

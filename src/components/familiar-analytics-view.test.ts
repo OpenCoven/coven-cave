@@ -234,6 +234,37 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
+      "/api/familiars/cody/self-reports/snapshots",
+      {
+        ok: true,
+        total: score === "trusted" ? 2 : 0,
+        snapshots: score === "trusted"
+          ? [
+              {
+                id: "thread-report-0",
+                sessionId: "session-0",
+                reportedAt: "2026-06-20T12:00:00.000Z",
+                confidence: 60,
+                toolReliability: 60,
+                memoryRecall: 60,
+                fileLocatability: 60,
+                contextPressure: "adequate",
+              },
+              {
+                id: "thread-report-1",
+                sessionId: "session-1",
+                reportedAt: "2026-06-25T12:00:00.000Z",
+                confidence: 90,
+                toolReliability: 85,
+                memoryRecall: 80,
+                fileLocatability: 80,
+                contextPressure: "adequate",
+              },
+            ]
+          : [],
+      },
+    ],
+    [
       "/api/familiars/cody/response-confidence?limit=100",
       {
         ok: true,
@@ -329,6 +360,30 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.confidence.score, 85);
     assert.equal(model.confidence.label, "Trusted");
     assert.equal(model.confidence.reportCount, 1);
+  });
+
+  it("derives signal trends from metric snapshots under a fixed clock", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
+
+    assert.equal(model.signalTrends.granularity, "day");
+    assert.equal(model.signalTrends.snapshotCount, 2);
+    // Bucket scores: Jun 20 → 60, Jun 25 → 85 (weighted like the headline).
+    assert.equal(model.signalTrends.overall.latest, 85);
+    assert.equal(model.signalTrends.overall.previous, 60);
+    assert.equal(model.signalTrends.overall.direction, "improving");
+    assert.ok(model.signalTrends.metrics.every((metric) => metric.direction === "improving"));
+  });
+
+  it("keeps trends honestly insufficient with no snapshots", async () => {
+    mockFetchFor("low");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
+
+    assert.equal(model.signalTrends.snapshotCount, 0);
+    assert.equal(model.signalTrends.overall.direction, "insufficient");
+    assert.equal(model.signalTrends.overall.delta, null);
   });
 
   it("degrades gracefully when an endpoint fails instead of blanking the view", async () => {
@@ -565,6 +620,36 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /headline=\{THREAD_CONFIDENCE_EMPTY_STATE\}/, "the shared enable-CTA empty state is reused");
     assert.match(source, /enabledHeadline="No thread reports yet\."/, "already-enabled familiars get truthful copy");
     assert.match(source, /confidence\.hasData \?/, "the panel branches on real data presence");
+  });
+
+  it("renders the changes-over-time trend block with honest verdicts (tokens only)", () => {
+    // The verdict chip answers "is the familiar improving?" from the weighted score.
+    assert.match(source, /function ThreadTrendBlock/, "the trend block is its own component");
+    assert.match(source, /<ThreadTrendBlock trends=\{trends\}/, "the thread-analysis panel renders it");
+    assert.match(source, /trends=\{model\.signalTrends\}/, "trends ride the model, computed by the pure lib");
+    assert.match(source, /insufficient: "Not enough history yet"/, "insufficient history says so — no invented direction");
+    assert.match(source, /fa-trend-verdict--\$\{overall\.direction\}/, "verdict chip carries its direction class");
+    // Tokens only: improving = presence accent, regressing = warning.
+    assert.match(source, /if \(direction === "improving"\) return "var\(--accent-presence\)"/, "improving uses the presence accent token");
+    assert.match(source, /if \(direction === "regressing"\) return "var\(--color-warning\)"/, "regressing uses the warning token");
+    assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b(?![\w-])/, "no hard-coded hex colors in the view");
+    // Sparkline reuses the shared primitive (no new chart deps), with gaps kept.
+    assert.match(source, /<Sparkline points=\{points\} color=\{trendTokenFor\(overall\.direction\)\}/, "the trend sparkline reuses ui/sparkline");
+    assert.match(source, /value: bucket\.score/, "sparkline points come from bucket scores (nulls = honest gaps)");
+    assert.match(source, /Trends appear once reports land on two different/, "sparse data explains itself");
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    assert.match(globals, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
+    assert.match(globals, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
+    assert.match(globals, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
+    assert.match(globals, /\.fa-trend-chip--regressing \{ color: var\(--color-warning\); \}/, "chip regressing tint is tokenized");
+  });
+
+  it("annotates each metric bar with a delta chip against the previous period", () => {
+    assert.match(source, /function TrendDeltaChip/, "delta chips are a dedicated affordance");
+    assert.match(source, /if \(trend\.delta === null \|\| trend\.direction === "insufficient"\) return null;/, "no chip without two data buckets");
+    assert.match(source, /trend=\{trendByKey\.get\(metric\.key\)\}/, "each metric bar receives its own trend");
+    assert.match(source, /vs the previous period/, "chip aria/tooltip names the comparison window");
+    assert.match(source, /formatDelta/, "deltas render signed (+8 / -6)");
   });
 
   it("renders the hero ring from thread confidence with an unmeasured state", () => {
