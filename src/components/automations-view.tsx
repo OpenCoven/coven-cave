@@ -831,7 +831,7 @@ function CodexDetailPanel({
   // while the expanded canvas pairs them into two independent column stacks so
   // a short section never leaves a row-aligned hole beside a tall one.
   const identitySection = (
-    <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
+    <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Rituals.">
       <div>
         <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
         <input
@@ -2435,12 +2435,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             gh-compact-header so operational surfaces share the same
             minimalist chrome. */}
         <div className="surface-compact-header">
-          <h1 className="surface-compact-title">Schedules</h1>
+          <h1 className="surface-compact-title">Rituals</h1>
           <Tabs
             className="surface-compact-tabs"
             variant="segment"
             size="sm"
-            ariaLabel="Schedules tabs"
+            ariaLabel="Rituals tabs"
             idPrefix="automations"
             value={activeTab}
             onChange={selectTab}

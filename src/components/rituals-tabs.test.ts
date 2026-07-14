@@ -1,7 +1,8 @@
 // @ts-nocheck
-// The Schedules surface (nav id `inbox`) is the slimmed-down schedule home:
-// Calendar plus Crons only. Full Automations/Flow work lives on the feature
-// branch and must not be surfaced from the main navigation.
+// The Rituals surface (nav id `inbox`, formerly "Schedules") is the
+// slimmed-down schedule home: Calendar plus Crons only. Full Automations/Flow
+// work lives on the feature branch and must not be surfaced from the main
+// navigation.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -13,34 +14,34 @@ const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.
 const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
-// ── The surface is "Schedules" everywhere it's named ────────────────────────
+// ── The surface is "Rituals" everywhere it's named ──────────────────────────
 assert.match(
   sidebar,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check"/,
-  "Sidebar should label the slim surface Schedules",
+  /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check"/,
+  "Sidebar should label the slim surface Rituals",
 );
 assert.match(
   workspace,
-  /inbox: "Schedules"/,
-  "Workspace title map should call the surface Schedules",
+  /inbox: "Rituals"/,
+  "Workspace title map should call the surface Rituals",
 );
 assert.match(
   mobileTabs,
-  /\{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-check" \}/,
-  "Mobile bottom tab uses a short visible Schedules label and full aria label",
+  /\{ id: "inbox", label: "Rites", ariaLabel: "Rituals", iconName: "ph:calendar-check" \}/,
+  "Mobile bottom tab uses a short visible Rites label and full Rituals aria label",
 );
 assert.match(
   notificationBell,
-  /Open Schedules/,
-  "Notification bell routes users to the renamed Schedules surface",
+  /Open Rituals/,
+  "Notification bell routes users to the renamed Rituals surface",
 );
 // The desktop menu bar button that opens this surface (mode "inbox") says
-// Schedules — an "Inbox" label would be dishonest since the slim surface has
+// Rituals — an "Inbox" label would be dishonest since the slim surface has
 // no inbox tab and inbox items live in the notification bell instead.
 assert.match(
   menuBar,
-  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Schedules<\/span>/,
-  "Desktop menu bar names the surface Schedules with the calendar-check icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Rituals<\/span>/,
+  "Desktop menu bar names the surface Rituals with the calendar-check icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
 );
 assert.doesNotMatch(
   menuBar,
@@ -50,17 +51,17 @@ assert.doesNotMatch(
 assert.match(
   workspace,
   /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
-  "Menu-bar Schedules button routes to the Schedules surface (mode id 'inbox')",
+  "Menu-bar Rituals button routes to the Rituals surface (mode id 'inbox')",
 );
 assert.match(
   slashCommands,
-  /name: "\/schedules", hint: "Schedules", description: "Open Schedules\."/,
-  "A /schedules slash command opens the surface",
+  /name: "\/rituals", hint: "Rituals", description: "Open Rituals — calendar and scheduled jobs\."/,
+  "A /rituals slash command opens the surface",
 );
 assert.match(
   workspace,
-  /case "\/schedules":\s*\n\s*case "\/automations":\s*\n\s*case "\/inbox":/,
-  "/schedules plus legacy /automations and /inbox aliases route to the inbox mode",
+  /case "\/rituals":\s*\n\s*case "\/schedules":\s*\n\s*case "\/automations":\s*\n\s*case "\/inbox":/,
+  "/rituals plus legacy /schedules, /automations and /inbox aliases route to the inbox mode",
 );
 
 // ── Slim typed tab model ────────────────────────────────────────────────────
@@ -76,7 +77,7 @@ assert.match(
   /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*calendarSlot \? "calendar" : "crons",?\s*\)/,
   "Surface defaults to Calendar when it has a calendar slot",
 );
-assert.match(automations, /<h1[\s\S]*?>\s*Schedules\s*<\/h1>/, "Surface header reads Schedules");
+assert.match(automations, /<h1[\s\S]*?>\s*Rituals\s*<\/h1>/, "Surface header reads Rituals");
 assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Tabs use the shared segment Tabs");
 
 // Tabs present, in order.
@@ -94,10 +95,10 @@ assert.match(
 );
 assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
 
-assert.doesNotMatch(automations, /listFlows\(\)/, "Schedules does not load flow docs");
-assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Schedules does not run flows");
-assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Schedules does not route into Flow");
+assert.doesNotMatch(automations, /listFlows\(\)/, "Rituals does not load flow docs");
+assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Rituals does not run flows");
+assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Rituals does not route into Flow");
 assert.doesNotMatch(workspace, /mode === "flow" \?\s*\(\s*<FlowView/, "Persisted Flow mode does not render FlowView on the active branch");
-assert.match(workspace, /targetMode === "flow"[\s\S]{0,80}setMode\("inbox"\)/, "Flow navigation events normalize to Schedules");
+assert.match(workspace, /targetMode === "flow"[\s\S]{0,80}setMode\("inbox"\)/, "Flow navigation events normalize to Rituals");
 
-console.log("schedules-tabs.test.ts: ok");
+console.log("rituals-tabs.test.ts: ok");

@@ -157,8 +157,8 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Familiars",
   groupchat: "Group Chat",
   board: "Tasks",
-  calendar: "Schedules",
-  inbox: "Schedules",
+  calendar: "Rituals",
+  inbox: "Rituals",
   browser: "Browser",
   github: "GitHub",
   roles: "Roles",
@@ -2036,6 +2036,7 @@ export function Workspace() {
       case "/chat":
         showFamiliarChatList();
         return true;
+      case "/rituals":
       case "/schedules":
       case "/automations":
       case "/inbox":
