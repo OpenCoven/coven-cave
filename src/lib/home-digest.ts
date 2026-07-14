@@ -44,6 +44,19 @@ export type DigestSessionCard = {
   subtitle: string;
 };
 
+/** A session a familiar is working RIGHT NOW — the agentic-presence tier.
+ *  Leads the chats track (after needs-you) so "what's happening" reads from
+ *  Home without opening a chat (cave-9j6a). */
+export type DigestLiveCard = {
+  kind: "live";
+  id: string;
+  sessionId: string;
+  familiarId: string | null;
+  title: string;
+  /** "Nova · working · 2m" (only the present parts). */
+  subtitle: string;
+};
+
 export type DigestRssCard = {
   kind: "rss";
   id: string;
@@ -87,6 +100,7 @@ export type DigestSuggestionCard = {
 export type DigestCard =
   | DigestNeedsCard
   | DigestNeedsMoreCard
+  | DigestLiveCard
   | DigestSummaryCard
   | DigestSessionCard
   | DigestSuggestionCard
@@ -108,6 +122,8 @@ export type BuildDigestInput = {
   maxSessions?: number;
   maxRss?: number;
   maxNeeds?: number;
+  /** Max live "working now" cards (default 4). */
+  maxLive?: number;
 };
 
 function sameLocalDay(iso: string | null | undefined, now: Date): boolean {
@@ -190,12 +206,33 @@ export function buildDigestCards(input: BuildDigestInput): DigestCard[] {
   const maxSessions = input.maxSessions ?? 6;
   const maxRss = input.maxRss ?? 14;
   const maxNeeds = input.maxNeeds ?? 6;
+  const maxLive = input.maxLive ?? 4;
   const needsYou = input.needsYou ?? [];
   const suggestions = input.suggestions ?? [];
   const now = new Date(nowMs);
 
+  // Sessions a familiar is actively working — the presence tier. Not gated to
+  // "today": a long-running job started yesterday is still happening now.
+  const liveSessions = sessions
+    .filter((s) => !s.archived_at && s.status === "running")
+    .sort((a, b) =>
+      (b.updated_at ?? b.created_at ?? "").localeCompare(a.updated_at ?? a.created_at ?? ""),
+    );
+  const liveIds = new Set(liveSessions.slice(0, maxLive).map((s) => s.id));
+
+  // Summary counts every session touched today (live included) …
+  const todayTouchedCount = sessions.filter(
+    (s) => !s.archived_at && sameLocalDay(s.updated_at ?? s.created_at, now),
+  ).length;
+
+  // … while the resumable-session cards exclude the live tier (no doubles).
   const todaySessions = sessions
-    .filter((s) => !s.archived_at && sameLocalDay(s.updated_at ?? s.created_at, now))
+    .filter(
+      (s) =>
+        !s.archived_at &&
+        !liveIds.has(s.id) &&
+        sameLocalDay(s.updated_at ?? s.created_at, now),
+    )
     .sort((a, b) =>
       (b.updated_at ?? b.created_at ?? "").localeCompare(a.updated_at ?? a.created_at ?? ""),
     );
@@ -233,8 +270,24 @@ export function buildDigestCards(input: BuildDigestInput): DigestCard[] {
     cards.push({ kind: "needs-more", id: "needs-more", count: needsYou.length - maxNeeds });
   }
 
+  // Live tier — what familiars are doing right now, right after what needs
+  // you. Elapsed reads from last activity so the card stays honest while a
+  // long task streams.
+  for (const s of liveSessions.slice(0, maxLive)) {
+    const fam = s.familiarId ? familiarNameById?.get(s.familiarId) ?? null : null;
+    const age = relativeAge(s.updated_at ?? s.created_at ?? null, nowMs);
+    cards.push({
+      kind: "live",
+      id: `live:${s.id}`,
+      sessionId: s.id,
+      familiarId: s.familiarId ?? null,
+      title: s.title?.trim() || "Untitled session",
+      subtitle: [fam, "working", age].filter(Boolean).join(" · "),
+    });
+  }
+
   const summaryLines: string[] = [];
-  if (todaySessions.length) summaryLines.push(plural(todaySessions.length, "session"));
+  if (todayTouchedCount) summaryLines.push(plural(todayTouchedCount, "session"));
   if (remindersFired) summaryLines.push(plural(remindersFired, "reminder"));
   if (responsesWaiting) summaryLines.push(`${responsesWaiting} waiting`);
   if (familiarUpdates) summaryLines.push(plural(familiarUpdates, "familiar update"));
