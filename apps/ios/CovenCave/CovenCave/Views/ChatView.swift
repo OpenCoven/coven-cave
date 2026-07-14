@@ -785,7 +785,7 @@ struct ChatView: View {
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
         case .openCalendar:
             app.selectedTab = .calendar
-            app.showToast("Opened Schedules", systemImage: "calendar", style: .info)
+            app.showToast("Opened Rituals", systemImage: "calendar", style: .info)
         case .openDeveloper(let section):
             devSectionRaw = section
             app.selectedTab = .dev
