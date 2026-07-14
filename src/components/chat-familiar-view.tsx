@@ -24,6 +24,7 @@ import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import type { AdapterReport } from "@/lib/harness-adapters";
 import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
+import { getVoiceProvider } from "@/lib/voice/registry";
 import { relativeTime } from "@/lib/relative-time";
 
 // ── Building blocks ──────────────────────────────────────────────────────────
@@ -218,6 +219,17 @@ function FamiliarIdentityHero({
     .filter(Boolean)
     .join(" · ");
   const runtimeLine = [familiar.harness, familiar.model].filter(Boolean).join(" · ");
+  // The familiar's speaking voice (bound in the Studio's Brain tab), labelled
+  // by the canonical voice-provider registry. Silent familiars add no noise —
+  // the line only renders when a provider is set.
+  const voiceLine = familiar.voiceProvider
+    ? [
+        getVoiceProvider(familiar.voiceProvider)?.label ?? familiar.voiceProvider,
+        familiar.voiceName || familiar.voiceModel,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
   // "offline · last seen 2h ago" — the honest half of presence: reachability
   // comes from the daemon, recency from the familiar's own activity record.
   const lastSeen = daemonRunning ? "" : relativeTime(familiar.last_seen);
@@ -268,6 +280,18 @@ function FamiliarIdentityHero({
             <span className="font-mono text-[11px] text-[var(--text-muted)]" title="Harness · model">
               {runtimeLine}
             </span>
+          ) : null}
+          {voiceLine ? (
+            <button
+              type="button"
+              onClick={() => openFamiliarStudioSettingsTab("brain", familiar.id)}
+              aria-label={`Voice settings for ${resolved?.display_name ?? familiar.display_name} — ${voiceLine}`}
+              title="Speaking voice — manage in the Studio's Brain tab"
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-[var(--radius-sm)] font-mono text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+            >
+              <Icon name="ph:waveform-bold" width={11} aria-hidden />
+              {voiceLine}
+            </button>
           ) : null}
           <span className="flex flex-wrap items-center gap-3">
             <Link
@@ -352,6 +376,10 @@ function FamiliarCapabilityPanel({
   const harnessId = familiar.harness ?? "codex";
 
   useEffect(() => {
+    // Guard against stale / post-unmount responses: switching familiars
+    // remounts the panel (keyed host), but a slow response from THIS mount
+    // must still not apply after cleanup.
+    let cancelled = false;
     setLoading(true);
     setErrors([]);
 
@@ -371,6 +399,7 @@ function FamiliarCapabilityPanel({
         .then((r) => r.json() as Promise<{ ok: boolean; harnesses?: AdapterReport[]; error?: string }>)
         .catch(() => ({ ok: false as const, error: "harnesses fetch failed" })),
     ]).then(([rolesRes, skillsRes, capsRes, harnessesRes]) => {
+      if (cancelled) return;
       if (rolesRes.ok) setRoles(rolesRes.roles ?? []);
       else errs.push(rolesRes.error ?? "roles unavailable");
 
@@ -386,6 +415,7 @@ function FamiliarCapabilityPanel({
       setErrors(errs);
       setLoading(false);
     });
+    return () => { cancelled = true; };
   }, [familiar.id, harnessId]);
 
   // The identity hero needs nothing from the capability fetches — paint it
