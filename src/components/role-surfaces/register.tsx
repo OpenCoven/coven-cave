@@ -232,6 +232,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: SCRIBE_SURFACE_ID,
   role: "scribe",
+  aliases: ["editor", "writer"],
   title: "Writing Desk",
   iconName: "ph:feather",
   description: "Drafts, source material, and publishing into the Knowledge Vault",
@@ -287,6 +288,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: NAVIGATOR_SURFACE_ID,
   role: "navigator",
+  aliases: ["planner"],
   title: "Chart Room",
   iconName: "ph:compass",
   description: "Course lanes, scheduled legs, and real board moves",
@@ -349,6 +351,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: REVIEWER_SURFACE_ID,
   role: "reviewer",
+  aliases: ["review"],
   title: "Review Deck",
   iconName: "ph:git-diff",
   description: "Review queue, working-tree diffs, and pull-request context",
@@ -411,6 +414,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: INDEXER_SURFACE_ID,
   role: "indexer",
+  aliases: ["archivist"],
   title: "The Archive",
   iconName: "ph:tree-structure",
   description: "Long-term knowledge, memory, indexes, and provenance",

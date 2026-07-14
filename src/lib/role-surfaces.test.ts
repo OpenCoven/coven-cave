@@ -96,6 +96,24 @@ test("surfaceMatchesRoles is normalization-insensitive", () => {
   assert.ok(!surfaceMatchesRoles({ role: "messenger" }, ids));
 });
 
+test("surfaceMatchesRoles honors alias roles with the same normalization", () => {
+  const planner = familiarRoleIds({ id: "f", role: "Planner" });
+  assert.ok(surfaceMatchesRoles({ role: "navigator", aliases: ["planner"] }, planner));
+  assert.ok(surfaceMatchesRoles({ role: "navigator", aliases: ["Planner"] }, planner));
+  assert.ok(!surfaceMatchesRoles({ role: "navigator" }, planner));
+  assert.ok(!surfaceMatchesRoles({ role: "navigator", aliases: ["editor"] }, planner));
+});
+
+test("resolveVisibleRoleSurfaces shows alias-matched rooms", () => {
+  clearRoleSurfacesForTest();
+  const context = makeContext();
+  const chartRoom = makeSurface({ id: "chart-room", role: "navigator", aliases: ["planner"], title: "Chart Room" });
+  const desk = makeSurface({ id: "desk", role: "scribe", aliases: ["editor"], title: "Desk" });
+  const roleIds = familiarRoleIds({ id: "f", role: "Planner" });
+  const visible = resolveVisibleRoleSurfaces([chartRoom, desk], roleIds, context);
+  assert.deepEqual(visible.map((s) => s.id), ["chart-room"]);
+});
+
 test("resolveVisibleRoleSurfaces filters by role, gates on shouldDisplay, sorts by priority", () => {
   clearRoleSurfacesForTest();
   const context = makeContext();
