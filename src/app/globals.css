@@ -6173,6 +6173,65 @@ a.mobile-handoff__link:hover {
 }
 
 /* ────────────────────────────────────────────────
+   Chat · Familiar tab (identity hero + capability grid)
+   ──────────────────────────────────────────────── */
+
+/* The tab is a first-class surface, not a 320px sidepanel: the panel measures
+   its own inline size so the capability grid can go two-column when the chat
+   canvas is wide enough, independent of the viewport. */
+.familiar-tab {
+  container-type: inline-size;
+}
+
+.familiar-tab__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 2px 16px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.familiar-tab__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: var(--radius-card);
+  /* Soft inset hairline behind transparent avatar corners — same wash idiom
+     as the roster cards, no hard border. */
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+/* Identity moment: the display name is the one serif element on the tab
+   (--font-serif is the display / hero / identity face). */
+.familiar-tab__name {
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: clamp(22px, 3.2cqi, 30px);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.familiar-tab__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* One column by default; two balanced columns once the tab itself is wide
+   enough to earn it (~900px of usable canvas). */
+.familiar-tab__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 20px;
+}
+
+@container (min-width: 900px) {
+  .familiar-tab__grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
    ──────────────────────────────────────────────── */

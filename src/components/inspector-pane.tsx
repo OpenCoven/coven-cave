@@ -2,11 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import type { Familiar } from "@/lib/types";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
@@ -53,6 +56,9 @@ type Props = {
    *  the one section they need, so there is no nested tab strip here.
    *  Defaults to memory for the compact rail variant. */
   tab?: Tab;
+  /** Daemon reachability — drives the identity hero's presence line on the
+   *  chat surface's Familiar tab. Absent for the compact memory rail. */
+  daemonRunning?: boolean;
 };
 
 function InspectorEmpty({
@@ -106,6 +112,7 @@ export function InspectorPane({
   compact = false,
   onOpenFullView,
   tab = "memory",
+  daemonRunning,
 }: Props) {
   const shellClassName = compact
     ? "flex h-full min-h-0 flex-col bg-[var(--bg-base)]"
@@ -121,7 +128,9 @@ export function InspectorPane({
         }`}
       >
         {tab === "memory" ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
-        {tab === "familiar" ? <FamiliarCapabilityPanel familiar={familiar} /> : null}
+        {tab === "familiar" ? (
+          <FamiliarCapabilityPanel familiar={familiar} daemonRunning={daemonRunning} />
+        ) : null}
       </div>
     </aside>
   );
@@ -707,7 +716,101 @@ function CollapsibleSection({
 
 // ── Main panel ───────────────────────────────────────────────────────────────
 
-function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
+/**
+ * Identity hero — answers "who am I chatting with?" before the capability
+ * plumbing below. Needs nothing from the capability fetches (everything here
+ * lives on the Familiar object), so it paints immediately while the grid
+ * below is still loading. Aligned with the roster-card identity idiom
+ * (avatar + name + role + presence) and the profile-card routes from
+ * cave-ujbr rather than inventing a second identity presentation.
+ */
+function FamiliarIdentityHero({
+  familiar,
+  daemonRunning,
+}: {
+  familiar: Familiar;
+  daemonRunning?: boolean;
+}) {
+  // Resolve Cave-local overrides (display name, avatar image, glyph) the same
+  // way every other identity surface does.
+  const heroList = useMemo(() => [familiar], [familiar]);
+  const resolved = useResolvedFamiliars(heroList, { includeArchived: true })[0];
+  const activeSessions = familiar.active_sessions ?? 0;
+  const roleLine = [resolved?.role || familiar.role, familiar.pronouns]
+    .filter(Boolean)
+    .join(" · ");
+  const runtimeLine = [familiar.harness, familiar.model].filter(Boolean).join(" · ");
+
+  return (
+    <header className="familiar-tab__hero">
+      {resolved ? (
+        <span className="familiar-tab__avatar">
+          <FamiliarAvatar familiar={resolved} size="xl" expandable />
+        </span>
+      ) : null}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="familiar-tab__name">{resolved?.display_name ?? familiar.display_name}</h2>
+          <span className="familiar-tab__presence text-[11px] text-[var(--text-muted)]">
+            <span
+              aria-hidden="true"
+              className={`inline-flex h-1.5 w-1.5 rounded-full ${
+                daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"
+              }`}
+            />
+            {daemonRunning ? "online" : "offline"}
+            {activeSessions > 0 ? (
+              <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[10px] text-[var(--accent-presence)]">
+                {activeSessions} active session{activeSessions === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </span>
+        </div>
+        {roleLine ? (
+          <p className="mt-0.5 truncate text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+            {roleLine}
+          </p>
+        ) : null}
+        {familiar.description ? (
+          <p className="mt-1.5 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            {familiar.description}
+          </p>
+        ) : null}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          {runtimeLine ? (
+            <span className="font-mono text-[10px] text-[var(--text-muted)]" title="Harness · model">
+              {runtimeLine}
+            </span>
+          ) : null}
+          <span className="flex items-center gap-3">
+            <Link
+              href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
+              aria-label={`Open profile card for ${familiar.display_name}`}
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+            >
+              Profile →
+            </Link>
+            <Link
+              href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+              aria-label={`Open analytics for ${familiar.display_name}`}
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+            >
+              Analytics →
+            </Link>
+          </span>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function FamiliarCapabilityPanel({
+  familiar,
+  daemonRunning,
+}: {
+  familiar: Familiar | null;
+  daemonRunning?: boolean;
+}) {
   const [roles, setRoles] = useState<RoleEntry[]>([]);
   const [localSkills, setLocalSkills] = useState<LocalSkillEntry[]>([]);
   const [harnessCapabilities, setHarnessCapabilities] = useState<HarnessCapabilityManifest[]>([]);
@@ -771,8 +874,15 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
     );
   }
 
+  // The identity hero needs nothing from the capability fetches — paint it
+  // immediately and keep the skeleton for the capability grid alone.
   if (loading) {
-    return <SkeletonRows count={6} className="p-3" />;
+    return (
+      <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
+        <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} />
+        <SkeletonRows count={6} className="p-3" />
+      </div>
+    );
   }
 
   // ── Derive inheritance layers ────────────────────────────────────────────────
@@ -808,7 +918,10 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
   ]);
 
   return (
-    <div className="flex flex-col gap-2 p-3 text-xs">
+    <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
+
+      {/* ── Identity hero ─────────────────────────────────────────────────── */}
+      <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} />
 
       {/* Error banner */}
       {errors.length > 0 ? (
@@ -824,6 +937,10 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
           </div>
         </div>
       ) : null}
+
+      {/* ── Capability grid: two columns on a wide canvas, one below ─────── */}
+      <div className="familiar-tab__grid">
+      <div className="familiar-tab__col flex min-w-0 flex-col gap-2">
 
       {/* ── Section 1: Roles ──────────────────────────────────────────────── */}
       <CapSection title="Roles" scope={`active: ${activeRoles.length}`}>
@@ -1005,6 +1122,9 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
         </div>
       </CapSection>
 
+      </div>{/* end left column */}
+      <div className="familiar-tab__col flex min-w-0 flex-col gap-2">
+
       {/* ── Section 3: Plugins ────────────────────────────────────────────── */}
       <CapSection title="Plugins" scope={`${nonMcpPlugins.length} from runtime`}>
         {nonMcpPlugins.length === 0 ? (
@@ -1118,6 +1238,9 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
           </ul>
         </CapSection>
       ) : null}
+
+      </div>{/* end right column */}
+      </div>{/* end capability grid */}
 
     </div>
   );

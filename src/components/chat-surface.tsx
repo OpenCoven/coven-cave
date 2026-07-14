@@ -558,12 +558,12 @@ export function ChatSurface({
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
         ) : scope === "familiar" ? (
-          // The active familiar's capability panel (identity, role, skills,
-          // tools) — promoted from the retired inspector sidepanel to a
+          // The active familiar's identity + capability surface (hero, role,
+          // skills, tools) — promoted from the retired inspector sidepanel to a
           // first-class chat tab, since it describes who you're chatting with.
           <div className="flex min-h-0 min-w-0 flex-1 justify-center">
-            <div className="h-full w-full max-w-3xl">
-              <InspectorPane familiar={activeFamiliar} tab="familiar" />
+            <div className="h-full w-full max-w-5xl">
+              <InspectorPane familiar={activeFamiliar} tab="familiar" daemonRunning={daemonRunning} />
             </div>
           </div>
         ) : scope === "settings" ? (
