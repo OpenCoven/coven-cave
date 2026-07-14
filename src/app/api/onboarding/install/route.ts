@@ -24,6 +24,7 @@ import {
   type OpenCovenToolVerification,
 } from "@/lib/opencoven-tools-status";
 import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
+import { resolveStaleOpenCovenLaunchers } from "@/lib/opencoven-tools-resolve";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
 import { startLocalDaemon } from "@/lib/daemon-start";
 import { redactSecretText } from "@/lib/secret-redaction";
@@ -613,9 +614,31 @@ async function finishInstallJob(
       try {
         verification = await verifyOpenCovenToolInstall(targetName);
         installed = { path: verification.path };
+        let resolutionHint: string | null = null;
         if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
-          verificationError = verification.error ??
-            `Could not verify ${target.binary} after install.`;
+          // npm succeeded but PATH still resolves something that fails
+          // verification — usually a stale launcher shadowing the fresh
+          // npm-prefix copy. Try the identity-gated cleanup so the Update
+          // button can actually resolve that state instead of reporting it
+          // forever; when cleanup is unsafe, surface its manual hint.
+          const resolution = await resolveStaleOpenCovenLaunchers(
+            targetName,
+            verification.latest,
+          );
+          for (const line of resolution.log) appendOutput(job, `${line}\n`);
+          resolutionHint = resolution.hint;
+          if (resolution.verification) {
+            verification = resolution.verification;
+            installed = { path: verification.path };
+          }
+        }
+        if (!isVerifiedOpenCovenInstallSuccess(code, verification)) {
+          verificationError = [
+            verification.error ?? `Could not verify ${target.binary} after install.`,
+            resolutionHint,
+          ]
+            .filter(Boolean)
+            .join(" ");
         }
       } catch {
         installed = { path: null };

@@ -69,6 +69,7 @@ export const SUITES = {
     "src/lib/opencoven-install-job-observer.test.ts",
     "src/lib/opencoven-tools-install.test.ts",
     "src/lib/opencoven-tool-verification.test.ts",
+    "src/lib/opencoven-tools-resolve.test.ts",
     "src/components/cave-home-migration-banner.test.ts",
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",
