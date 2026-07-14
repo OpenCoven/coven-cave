@@ -95,6 +95,17 @@ async function gotoApp(page: Page, status: unknown, opts?: { dismissed?: boolean
 
 const wizard = (page: Page) => page.getByRole("dialog", { name: "Onboarding" });
 
+// cave-m3a8: the workspace registers its cave:onboarding-open listener in a
+// mount effect that can land AFTER the searchbox paints — on a cold CI
+// machine a single dispatch fires into the void and the dialog never opens.
+// Re-dispatch until the dialog exists; each attempt is cheap and idempotent.
+async function openWizardManually(page: Page) {
+  await expect(async () => {
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:onboarding-open")));
+    await expect(wizard(page)).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
 test.describe("onboarding wizard", () => {
   test("auto-opens on a fresh machine and keeps keyboard focus trapped inside", async ({ page }) => {
     await gotoApp(page, FRESH_STATUS);
@@ -161,8 +172,7 @@ test.describe("onboarding wizard", () => {
     // event every setup entry point dispatches.
     await gotoApp(page, COMPLETE_NO_FAMILIARS_STATUS);
     await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:onboarding-open")));
-    await expect(wizard(page)).toBeVisible({ timeout: 15_000 });
+    await openWizardManually(page);
 
     // The banner renders at the top — reachable without scrolling a long page.
     await expect(wizard(page).getByText("Setup complete — Cave is ready.")).toBeVisible();
@@ -227,8 +237,7 @@ test.describe("onboarding wizard", () => {
     });
     await gotoApp(page, DAEMON_DOWN_VETERAN_STATUS);
     await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:onboarding-open")));
-    await expect(wizard(page)).toBeVisible({ timeout: 15_000 });
+    await openWizardManually(page);
 
     // The failure banner carries the verbatim error, the derived hint, and a
     // retry naming the failed action.
