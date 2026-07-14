@@ -143,6 +143,10 @@ export interface RoleSurface {
   id: RoleSurfaceId;
   /** The role this surface serves. Familiars with a matching role see it. */
   role: FamiliarRole;
+  /** Synonym roles that also open this room (e.g. the Chart Room serves
+   *  "navigator" and the "planner" summoning preset). Matched exactly like
+   *  `role`, after the same normalization. */
+  aliases?: FamiliarRole[];
   title: string;
   /** Registered Phosphor icon (compile-checked against ICON_NAMES). */
   iconName: IconName;
@@ -228,8 +232,12 @@ export function familiarRoleIds(
   return ids;
 }
 
-export function surfaceMatchesRoles(surface: Pick<RoleSurface, "role">, roleIds: ReadonlySet<string>): boolean {
-  return roleIds.has(normalizeRoleId(surface.role));
+export function surfaceMatchesRoles(
+  surface: Pick<RoleSurface, "role" | "aliases">,
+  roleIds: ReadonlySet<string>,
+): boolean {
+  if (roleIds.has(normalizeRoleId(surface.role))) return true;
+  return (surface.aliases ?? []).some((alias) => roleIds.has(normalizeRoleId(alias)));
 }
 
 /**

@@ -40,6 +40,10 @@ Analyst"` → `research-analyst` + `research` + `analyst`):
 - its `role` label (whole string or any word token), or
 - an **active** role manifest (`/api/roles` entry) with that id or name.
 
+A surface may also declare `aliases` — synonym roles matched exactly like its
+primary `role` (the Chart Room serves `navigator` and the `planner` summoning
+preset; the Writing Desk serves `scribe` and `editor`).
+
 ## Adding a new role surface
 
 ```tsx

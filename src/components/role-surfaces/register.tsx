@@ -232,6 +232,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: SCRIBE_SURFACE_ID,
   role: "scribe",
+  aliases: ["editor"],
   title: "Writing Desk",
   iconName: "ph:feather",
   description: "Drafts, source material, and publishing into the Knowledge Vault",
@@ -287,6 +288,7 @@ registerRoleSurface({
 registerRoleSurface({
   id: NAVIGATOR_SURFACE_ID,
   role: "navigator",
+  aliases: ["planner"],
   title: "Chart Room",
   iconName: "ph:compass",
   description: "Course lanes, scheduled legs, and real board moves",
