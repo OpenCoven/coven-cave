@@ -170,7 +170,7 @@ function ThreadMetricBar({
   desc: string;
   trend?: MetricTrend;
 }) {
-  const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} of the headline score's 100 points.`;
+  const tip = `${desc} Weighted at ${Math.round(weight * 100)}% — adds up to ${Math.round(weight * 100)} points of the headline score's 100.`;
   return (
     <div className="fa-thread-score">
       <div>

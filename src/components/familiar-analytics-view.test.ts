@@ -609,7 +609,7 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(source, /title="Confidence from thread analysis"/, "the panel is named for its real source");
     assert.match(source, /THREAD_METRIC_COPY/, "each metric carries plain-language meaning");
     assert.match(source, /className="fa-factor-info"/, "an info affordance explains each metric");
-    assert.match(source, /adds up to \$\{Math\.round\(weight \* 100\)\} of the headline score's 100 points/, "tooltips state each metric's max contribution, not a fixed share");
+    assert.match(source, /adds up to \$\{Math\.round\(weight \* 100\)\} points of the headline score's 100/, "tooltips state each metric's max contribution, not a fixed share");
     assert.match(source, /confidence\.metrics\.map/, "bars render from the derived metric list");
     assert.match(source, /aria-label="Context pressure distribution"/, "the context-pressure mix rides along");
     assert.match(source, /CONTEXT_PRESSURE_HINT/, "context pills carry a plain-language legend tooltip");

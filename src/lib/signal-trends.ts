@@ -96,6 +96,8 @@ export function snapshotFromReport(report: ThreadSelfReport): ThreadMetricSnapsh
   };
 }
 
+const CONTEXT_PRESSURE_VALUES: ReadonlySet<string> = new Set(["adequate", "tight", "excess", "critical"]);
+
 /** Runtime guard for snapshot lines read back from append-only storage. */
 export function isThreadMetricSnapshot(value: unknown): value is ThreadMetricSnapshot {
   if (typeof value !== "object" || value === null) return false;
@@ -104,6 +106,9 @@ export function isThreadMetricSnapshot(value: unknown): value is ThreadMetricSna
     typeof candidate.id === "string" &&
     typeof candidate.sessionId === "string" &&
     typeof candidate.reportedAt === "string" &&
+    Number.isFinite(Date.parse(candidate.reportedAt)) &&
+    typeof candidate.contextPressure === "string" &&
+    CONTEXT_PRESSURE_VALUES.has(candidate.contextPressure) &&
     Number.isFinite(candidate.confidence) &&
     Number.isFinite(candidate.toolReliability) &&
     Number.isFinite(candidate.memoryRecall) &&

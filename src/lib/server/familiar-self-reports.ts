@@ -188,8 +188,10 @@ export async function listMetricSnapshots(
     readAllReports(familiarId),
   ]);
   const byId = new Map<string, ThreadMetricSnapshot>();
+  // Append-only store: later lines are newer — on duplicate report ids
+  // (replays, repairs, partial writes) the newest persisted line wins.
   for (const snapshot of persisted) {
-    if (!byId.has(snapshot.id)) byId.set(snapshot.id, snapshot);
+    byId.set(snapshot.id, snapshot);
   }
   for (const report of reports) {
     if (!byId.has(report.id)) byId.set(report.id, snapshotFromReport(report));

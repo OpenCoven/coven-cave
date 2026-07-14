@@ -225,14 +225,29 @@ describe("familiar self-report storage", () => {
     assert.equal(listed.snapshots[0].confidence, 55);
   });
 
-  it("listMetricSnapshots dedupes by report id (persisted rows win) and skips malformed lines", async () => {
-    await appendSelfReport("cody", report({ id: "r1", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z" }));
+  it("listMetricSnapshots dedupes by report id (newest persisted line wins) and skips malformed lines", async () => {
+    await appendSelfReport("cody", report({ id: "r1", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z", overallConfidence: 60 }));
     const snapshotDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports", "metric-snapshots");
-    await appendFile(path.join(snapshotDir, "2026-06-25.jsonl"), "not-json\n{\"id\":\"half\"}\n", "utf8");
+    // A replayed/repaired line for the same report id, appended later: it wins.
+    await appendFile(
+      path.join(snapshotDir, "2026-06-25.jsonl"),
+      `not-json\n{"id":"half"}\n${JSON.stringify({
+        id: "r1",
+        sessionId: "s1",
+        reportedAt: "2026-06-25T10:00:00.000Z",
+        confidence: 72,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`,
+      "utf8",
+    );
 
     const listed = await listMetricSnapshots("cody");
     assert.equal(listed.total, 1);
     assert.equal(listed.snapshots[0].id, "r1");
+    assert.equal(listed.snapshots[0].confidence, 72, "the newest persisted line replaces the stale one");
   });
 
   it("listMetricSnapshots returns an empty result for a missing directory", async () => {

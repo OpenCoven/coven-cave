@@ -67,6 +67,9 @@ describe("snapshotFromReport", () => {
     assert.equal(isThreadMetricSnapshot(null), false);
     assert.equal(isThreadMetricSnapshot({ id: "x" }), false);
     assert.equal(isThreadMetricSnapshot({ ...snapshot(), confidence: "high" }), false);
+    assert.equal(isThreadMetricSnapshot({ ...snapshot(), contextPressure: "extreme" }), false, "unknown context pressure rejected");
+    assert.equal(isThreadMetricSnapshot({ ...snapshot(), contextPressure: undefined }), false, "missing context pressure rejected");
+    assert.equal(isThreadMetricSnapshot({ ...snapshot(), reportedAt: "not-a-date" }), false, "unparseable reflection time rejected");
   });
 });
 
