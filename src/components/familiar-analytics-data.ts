@@ -3,7 +3,8 @@ import {
   type CovenMemoryEntry,
   type FamiliarCardStats,
 } from "@/components/familiars-view-stats";
-import { deriveConfidenceScore, type ConfidenceScore } from "@/lib/familiar-confidence";
+import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
+import { deriveSignalTrends, type SignalTrends, type ThreadMetricSnapshot } from "@/lib/signal-trends";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
@@ -45,6 +46,10 @@ type SelfReportsResponse =
   | { ok: true; reports: ThreadSelfReport[]; total: number }
   | { ok: false; reports?: ThreadSelfReport[]; total?: number; error?: string };
 
+type MetricSnapshotsResponse =
+  | { ok: true; snapshots: ThreadMetricSnapshot[]; total: number }
+  | { ok: false; snapshots?: ThreadMetricSnapshot[]; total?: number; error?: string };
+
 type ResponseConfidenceResponse =
   | { ok: true; events: ResponseConfidenceEvent[]; total: number }
   | { ok: false; events?: ResponseConfidenceEvent[]; total?: number; error?: string };
@@ -61,6 +66,8 @@ export type FamiliarAnalyticsData = {
   covenEntries: CovenMemoryEntry[];
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
+  /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
+  metricSnapshots: ThreadMetricSnapshot[];
   responseConfidenceEvents: ResponseConfidenceEvent[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
@@ -72,7 +79,10 @@ export type FamiliarAnalyticsModel = {
   familiar: Familiar | null;
   contractReport: ContractReport | null;
   growthReport: FamiliarGrowthReport | null;
-  confidence: ConfidenceScore;
+  /** Headline confidence, derived from real thread self-reports. */
+  confidence: ThreadConfidence;
+  /** Metric changes over time — "is the familiar improving?" */
+  signalTrends: SignalTrends;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
   responseConfidenceEvents: ResponseConfidenceEvent[];
@@ -153,6 +163,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     memoryJson,
     retroJson,
     selfReportsJson,
+    metricSnapshotsJson,
     responseConfidenceJson,
     feedbackJson,
   ] = await Promise.all([
@@ -162,6 +173,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
+    fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
     fetchResource<ResponseConfidenceResponse>(`/api/familiars/${encodedId}/response-confidence?limit=100`, { ok: false, events: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
   ]);
@@ -172,6 +184,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(sessionsJson, "sessions unavailable"),
     responseError(memoryJson, "memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
+    responseError(metricSnapshotsJson, "metric snapshots unavailable"),
     responseError(responseConfidenceJson, "response confidence unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
   ].filter((error): error is string => Boolean(error));
@@ -184,6 +197,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     covenEntries: memoryJson.entries ?? [],
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
+    metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
     responseConfidenceEvents: responseConfidenceJson.ok ? responseConfidenceJson.events : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
@@ -212,11 +226,8 @@ export function buildFamiliarAnalyticsModel(
         retroState: retroStateFor(data.retroSnapshot, familiar.id),
       })
     : null;
-  const confidence = deriveConfidenceScore({
-    contractReport: data.contractReport,
-    growthReport,
-    familiar,
-  });
+  const confidence = deriveThreadConfidence(data.threadReports);
+  const signalTrends = deriveSignalTrends(data.metricSnapshots, now);
   const healRequests = deriveHealRequests({
     familiarId: data.familiarId,
     contractReport: data.contractReport,
@@ -229,6 +240,7 @@ export function buildFamiliarAnalyticsModel(
     contractReport: data.contractReport,
     growthReport,
     confidence,
+    signalTrends,
     healRequests,
     threadReports: data.threadReports,
     responseConfidenceEvents: data.responseConfidenceEvents,

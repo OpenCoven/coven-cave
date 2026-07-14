@@ -37,7 +37,7 @@ assert.match(
 
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "Coven Cave"\}/,
+  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "CovenCave"\}/,
   "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
 );
 
@@ -155,8 +155,8 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   destinations,
-  /id: "inbox"[\s\S]*label: "Schedules"/,
-  "HomeComposer should not offer Schedules as an original chat launch destination",
+  /id: "inbox"[\s\S]*label: "(Schedules|Rituals)"/,
+  "HomeComposer should not offer Rituals as an original chat launch destination",
 );
 
 assert.doesNotMatch(

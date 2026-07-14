@@ -15,7 +15,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { SkeletonRows } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -679,7 +679,10 @@ export function MarketplaceViewSurface({
             <div className="marketplace-browse-summary mb-4">
               <p className="min-w-0 self-center truncate text-[12px] text-[var(--text-muted)]">
                 {!loaded ? (
-                  "Loading the catalog…"
+                  // One loading language per surface: the grid below already
+                  // shows skeleton rows, so the count line shimmers too instead
+                  // of mixing in a "Loading…" string (cave-5qmm).
+                  <Skeleton variant="text-sm" width={132} className="self-center" />
                 ) : (
                   <>
                     {scopeLabel ? (

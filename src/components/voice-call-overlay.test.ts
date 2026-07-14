@@ -98,4 +98,34 @@ assert.doesNotMatch(
   "the raw error code is no longer rendered as the headline",
 );
 
+// ── Provider error detail is threaded to the error UI, not swallowed ─────────
+// Was: clientAdapter.connect threw bare `sdp_exchange_failed_<status>` and the
+// PROVIDER_ERROR dispatches dropped everything but the code, so a stale
+// voiceModel surfaced only as "The call ran into a problem." (cave-8c9c)
+assert.match(
+  component,
+  /import\s+\{[^}]*voiceErrorHint[^}]*\}\s+from\s+["']@\/lib\/voice\/types["']/,
+  "overlay imports the shared voiceErrorHint extractor",
+);
+assert.match(
+  component,
+  /onError:\s*\(err\)\s*=>\s*dispatch\(\{\s*type:\s*"PROVIDER_ERROR",\s*errorCode:\s*err\.message,\s*hint:\s*voiceErrorHint\(err\)\s*\}\)/,
+  "live provider errors thread their hint into PROVIDER_ERROR",
+);
+assert.match(
+  component,
+  /type:\s*"PROVIDER_ERROR",[\s\S]{0,120}errorCode:\s*err instanceof Error \? err\.message : "connect_failed",[\s\S]{0,120}hint:\s*voiceErrorHint\(err\)/,
+  "connect failures thread their hint into PROVIDER_ERROR",
+);
+assert.match(
+  component,
+  /startsWith\("sdp_exchange_failed_"\)/,
+  "SDP-exchange failures get their own human headline",
+);
+assert.match(
+  component,
+  /\{state\.hint && <div className="voice-call-overlay__hint">\{state\.hint\}<\/div>\}/,
+  "the provider hint renders under the headline when present",
+);
+
 console.log("voice-call-overlay.test.ts: ok");

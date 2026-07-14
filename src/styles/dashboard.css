@@ -320,7 +320,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--touch-target);
   line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
@@ -330,6 +329,15 @@
   height: 28px;
   min-height: 28px;
   line-height: 1;
+}
+
+/* Touch widths keep the WCAG floor; on desktop the shared action stays as
+   compact as the neighboring xs/tool-action buttons. Placed after
+   .settings-tool-action so the floor wins when both classes are present. */
+@media (max-width: 767px) {
+  .settings-touch-action {
+    min-height: var(--touch-target);
+  }
 }
 
 .settings-tool-action--primary {
@@ -671,15 +679,17 @@ a.cockpit-signal--more:hover { background: var(--bg-hover); color: var(--text-pr
 
 /* ── Coven insight banner — the plain-language "what you should know" read ── */
 .coven-insight {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 12px 15px; border-radius: 12px; font-size: 13px; line-height: 1.5;
+  display: flex; align-items: flex-start; gap: 9px;
+  /* Quiet note, not a hero banner — the headline h1 above already says the
+     same thing; this row adds the numbers (cave-m4oq). */
+  padding: 9px 13px; border-radius: 10px; font-size: 12.5px; line-height: 1.5;
   color: var(--text-secondary);
   border: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  background: color-mix(in oklch, var(--accent-presence) 4%, var(--bg-raised));
 }
-.coven-insight__icon { flex: 0 0 auto; margin-top: 2px; width: 18px; height: 18px; color: var(--accent-presence); }
+.coven-insight__icon { flex: 0 0 auto; margin-top: 2px; width: 15px; height: 15px; color: var(--accent-presence); }
 .coven-insight__text b { color: var(--text-primary); font-weight: 680; }
-.coven-insight--good { border-color: color-mix(in oklch, var(--color-success) 30%, transparent); background: color-mix(in oklch, var(--color-success) 7%, var(--bg-raised)); }
+.coven-insight--good { border-color: color-mix(in oklch, var(--color-success) 18%, var(--border-hairline)); background: color-mix(in oklch, var(--color-success) 4%, var(--bg-raised)); }
 .coven-insight--good .coven-insight__icon { color: var(--color-success); }
 .coven-insight--warn { border-color: color-mix(in oklch, var(--color-warning) 32%, transparent); background: color-mix(in oklch, var(--color-warning) 8%, var(--bg-raised)); }
 .coven-insight--warn .coven-insight__icon { color: var(--color-warning); }

@@ -33,7 +33,10 @@ const ENRICH_TASKS_TITLE =
   "Enhance assigned familiar tasks: update subtasks, dates, description, status, priority, links, issues, and chats";
 
 function fmtBadge(n: number): string {
-  return n > 99 ? "99+" : String(n);
+  // Cap at 9+: two adjacent three-glyph "99+" pills read as duplicate noise
+  // in the corner — one glyph says "many" just as well, and the button's
+  // aria-label/tooltip still carries the exact count (cave-gf5l).
+  return n > 9 ? "9+" : String(n);
 }
 
 /**
@@ -132,23 +135,25 @@ export function FamiliarMenuBar({
           className="menu-bar__task focus-ring"
           onClick={onViewTasks}
           aria-label={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
+          title={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
         >
           <Icon name="ph:kanban" width={22} height={22} aria-hidden />
           <span className="menu-bar__task-label">Tasks</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
-        {/* This button lands on the Schedules surface (workspace mode "inbox"
-            is the Schedules view — calendar + crons), so it is labelled
-            Schedules and badged with the schedule needs-you count. There is no
+        {/* This button lands on the Rituals surface (workspace mode "inbox"
+            is the Rituals view — calendar + crons), so it is labelled
+            Rituals and badged with the schedule needs-you count. There is no
             dedicated Inbox surface; inbox items live in the notification bell. */}
         <button
           type="button"
           className="menu-bar__task focus-ring"
           onClick={onViewSchedules}
-          aria-label={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
+          aria-label={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
+          title={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
         >
           <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">Schedules</span>
+          <span className="menu-bar__task-label">Rituals</span>
           {scheduleNeedsCount > 0 ? (
             <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}

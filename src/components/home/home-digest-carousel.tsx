@@ -53,7 +53,7 @@ type Props = {
   needsYou: InboxItem[];
   /** Open one item's target (session/card) — same handler the bell uses. */
   onOpenInboxItem: (item: InboxItem) => void;
-  /** See the full feed on the Schedules surface (the "+N more" card). */
+  /** See the full feed on the Rituals surface (the "+N more" card). */
   onOpenSchedules: () => void;
   /** Active project name — seasons the suggested prompts. */
   projectName: string | null;
@@ -266,13 +266,32 @@ function DigestCardView({
         className="home-digest__card home-digest__card--needs"
         tabIndex={tabIndex}
         onClick={() => onOpenSchedules?.()}
-        title="Open Schedules"
+        title="Open Rituals"
       >
         <Icon name="ph:alarm-fill" width={13} className="home-digest__icon" aria-hidden />
         <span className="home-digest__body">
           <span className="home-digest__title">+{card.count} more need you</span>
-          <span className="home-digest__meta">Open Schedules</span>
+          <span className="home-digest__meta">Open Rituals</span>
         </span>
+      </button>
+    );
+  }
+
+  if (card.kind === "live") {
+    return (
+      <button
+        type="button"
+        className="home-digest__card home-digest__card--live"
+        tabIndex={tabIndex}
+        onClick={() => onOpenSession?.(card.sessionId, card.familiarId)}
+        title={`Watch “${card.title}” live`}
+      >
+        <span className="home-digest__live-dot" aria-hidden />
+        <span className="home-digest__body">
+          <span className="home-digest__title">{card.title}</span>
+          <span className="home-digest__meta">{card.subtitle}</span>
+        </span>
+        <span className="sr-only">Running now</span>
       </button>
     );
   }

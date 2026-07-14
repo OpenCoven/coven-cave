@@ -19,7 +19,6 @@ import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import {
-  COVEN_CODE_SKIP_KEY,
   shouldAutoOpenOnboarding,
   type OnboardingStatusPayload,
 } from "@/lib/onboarding-gate";
@@ -62,7 +61,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
-import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
+import { ChatSurface } from "@/components/chat-surface";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
@@ -158,8 +157,8 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Familiars",
   groupchat: "Group Chat",
   board: "Tasks",
-  calendar: "Schedules",
-  inbox: "Schedules",
+  calendar: "Rituals",
+  inbox: "Rituals",
   browser: "Browser",
   github: "GitHub",
   roles: "Roles",
@@ -415,10 +414,6 @@ export function Workspace() {
       { duration: 120, easing: "ease-out" },
     );
   }, [mode]);
-  // Chat's right panel (Inspector sections / Debug / Changes) starts closed;
-  // rightPanel is its single owner — the legacy open/closed boolean channel
-  // is retired (cave-liut).
-  const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
   // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
@@ -1211,10 +1206,9 @@ export function Workspace() {
   // First-run: auto-open onboarding if setup is missing and the user hasn't
   // explicitly skipped or finished it. The decision lives in the shared
   // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
-  // finish-state again (cave-219): server `complete` ignores Coven Code
-  // (client-side tools[] check + skip choice), so bare `complete` must not
-  // short-circuit the gate. See onboarding-gate.ts for the structural-steps
-  // vs daemon-down rationale.
+  // finish-state (cave-219): both read bare server `complete` now that Coven
+  // Code is an optional runtime rather than a requirement. See
+  // onboarding-gate.ts for the structural-steps vs daemon-down rationale.
   useEffect(() => {
     let cancelled = false;
     const skipped =
@@ -1225,8 +1219,7 @@ export function Workspace() {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
         const json = (await res.json()) as OnboardingStatusPayload;
-        const covenCodeSkipped = window.localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1";
-        if (shouldAutoOpenOnboarding(json, covenCodeSkipped)) setOnboardingOpen(true);
+        if (shouldAutoOpenOnboarding(json)) setOnboardingOpen(true);
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       }
@@ -1509,11 +1502,6 @@ export function Workspace() {
     setReminderModalDefaults({ fireAt, title, whenText });
     setReminderModalOpen(true);
   }, []);
-
-  const openReminderForFamiliar = useCallback((familiarId: string) => {
-    setActiveId(familiarId);
-    openReminderModal();
-  }, [openReminderModal]);
 
   // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
   // the notification stays listed until dismissed/done. No-ops server-side on
@@ -2048,6 +2036,7 @@ export function Workspace() {
       case "/chat":
         showFamiliarChatList();
         return true;
+      case "/rituals":
       case "/schedules":
       case "/automations":
       case "/inbox":
@@ -2409,12 +2398,9 @@ export function Workspace() {
         familiarsLoaded={familiarsLoaded}
         familiarsError={familiarsError}
         onRetryFamiliars={() => void loadFamiliars()}
-        inboxItems={inboxItemsWithEphemeral}
-        rightPanel={rightPanel}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
-        onSetRightPanel={setRightPanel}
         onSetActiveFamiliar={setActiveId}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
@@ -2422,10 +2408,6 @@ export function Workspace() {
         onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
-        onOpenInbox={() => setMode("inbox")}
-        onCreateReminder={openReminderForFamiliar}
-        onOpenInboxItem={openInspectorInboxItem}
-        onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInAppBrowser}
@@ -2563,7 +2545,7 @@ export function Workspace() {
       <h1 className="sr-only">
         {(isRoleSurfaceMode(mode)
           ? getRoleSurface(parseRoleSurfaceMode(mode) ?? "")?.title
-          : WORKSPACE_MODE_TITLES[mode]) ?? "Coven Cave"}
+          : WORKSPACE_MODE_TITLES[mode]) ?? "CovenCave"}
       </h1>
       {renderSurface(mode)}
     </div>
@@ -2722,6 +2704,7 @@ export function Workspace() {
             ? {
                 id: editingReminder.id,
                 title: editingReminder.title,
+                whenText: editingReminder.whenText ?? undefined,
                 fireAt: editingReminder.fireAt ?? new Date().toISOString(),
                 recurrence: editingReminder.recurrence,
                 link: editingReminder.link ?? null,
@@ -2736,6 +2719,7 @@ export function Workspace() {
               title: draft.title,
               fireAt: draft.fireAt,
               recurrence: draft.recurrence ?? { type: "none" },
+              whenText: draft.whenText ?? null,
               link: draft.link ?? null,
             }),
           });
@@ -2752,6 +2736,7 @@ export function Workspace() {
               fireAt: draft.fireAt,
               familiarId: draft.familiarId,
               recurrence: draft.recurrence ?? { type: "none" },
+              whenText: draft.whenText ?? null,
               link: draft.link ?? null,
               source: "user",
             }),

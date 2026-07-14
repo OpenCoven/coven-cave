@@ -19,8 +19,15 @@ const row = (over = {}) => ({
   ...over,
 });
 
+const ctx = (over = {}) => ({
+  keep: {},
+  extendedUntil: {},
+  now: new Date("2026-07-14T12:00:00Z"),
+  ...over,
+});
+
 test("merged PR on an idle unarchived chat → archive decision", () => {
-  const decisions = mergedChatAutoArchiveDecisions([row()], {});
+  const decisions = mergedChatAutoArchiveDecisions([row()], {}, ctx());
   assert.deepEqual(decisions, [
     { sessionId: "s1", prKey: "OpenCoven/coven-cave#42" },
   ]);
@@ -31,6 +38,7 @@ test("non-merged states never archive (including task lifecycle words)", () => {
     const decisions = mergedChatAutoArchiveDecisions(
       [row({ pullRequest: { ...row().pullRequest, state } })],
       {},
+      ctx(),
     );
     assert.equal(decisions.length, 0, `state=${state} must not archive`);
   }
@@ -40,6 +48,7 @@ test("MERGED (gh casing) matches", () => {
   const decisions = mergedChatAutoArchiveDecisions(
     [row({ pullRequest: { ...row().pullRequest, state: "MERGED" } })],
     {},
+    ctx(),
   );
   assert.equal(decisions.length, 1);
 });
@@ -47,7 +56,7 @@ test("MERGED (gh casing) matches", () => {
 test("sessions that may still be working are never swept", () => {
   for (const status of ["running", "starting", "working", "queued", "streaming", "waiting"]) {
     assert.equal(
-      mergedChatAutoArchiveDecisions([row({ status })], {}).length,
+      mergedChatAutoArchiveDecisions([row({ status })], {}, ctx()).length,
       0,
       `status=${status} must not archive`,
     );
@@ -56,25 +65,52 @@ test("sessions that may still be working are never swept", () => {
 
 test("already-archived rows are skipped", () => {
   assert.equal(
-    mergedChatAutoArchiveDecisions([row({ archived_at: "2026-07-01T00:00:00Z" })], {}).length,
+    mergedChatAutoArchiveDecisions([row({ archived_at: "2026-07-01T00:00:00Z" })], {}, ctx()).length,
     0,
   );
 });
 
 test("one-shot: a session already auto-archived for this PR is not re-archived", () => {
   const handled = { s1: "OpenCoven/coven-cave#42" };
-  assert.equal(mergedChatAutoArchiveDecisions([row()], handled).length, 0);
+  assert.equal(mergedChatAutoArchiveDecisions([row()], handled, ctx()).length, 0);
 });
 
 test("a NEW merged PR re-arms the sweep for the same session", () => {
   const handled = { s1: "OpenCoven/coven-cave#41" };
-  const decisions = mergedChatAutoArchiveDecisions([row()], handled);
+  const decisions = mergedChatAutoArchiveDecisions([row()], handled, ctx());
   assert.equal(decisions.length, 1);
 });
 
 test("rows without PR context are skipped", () => {
-  assert.equal(mergedChatAutoArchiveDecisions([row({ pullRequest: null })], {}).length, 0);
-  assert.equal(mergedChatAutoArchiveDecisions([row({ pullRequest: undefined })], {}).length, 0);
+  assert.equal(mergedChatAutoArchiveDecisions([row({ pullRequest: null })], {}, ctx()).length, 0);
+  assert.equal(mergedChatAutoArchiveDecisions([row({ pullRequest: undefined })], {}, ctx()).length, 0);
+});
+
+test("keep-marked chats are never merged-swept", () => {
+  const decisions = mergedChatAutoArchiveDecisions(
+    [row()],
+    {},
+    ctx({ keep: { s1: "2026-07-01T00:00:00Z" } }),
+  );
+  assert.equal(decisions.length, 0);
+});
+
+test("chats inside an extension window (incl. summon grace) are not swept", () => {
+  const decisions = mergedChatAutoArchiveDecisions(
+    [row()],
+    {},
+    ctx({ extendedUntil: { s1: "2026-07-21T12:00:00Z" } }),
+  );
+  assert.equal(decisions.length, 0);
+});
+
+test("an expired extension no longer blocks the sweep", () => {
+  const decisions = mergedChatAutoArchiveDecisions(
+    [row()],
+    {},
+    ctx({ extendedUntil: { s1: "2026-07-10T00:00:00Z" } }),
+  );
+  assert.equal(decisions.length, 1);
 });
 
 test("mergedPrKey prefers repo#number, falls back to url, else null", () => {

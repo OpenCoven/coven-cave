@@ -2832,6 +2832,28 @@ details[open] > .cave-tool-summary::before {
   color: var(--color-danger);
 }
 
+/* Inline remedy inside the offline meta line — a real button (keyboard
+   focusable) styled as a quiet text action so the notice stays one line. */
+.cave-chat-meta-line__action {
+  margin-left: 6px;
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  color: var(--text-primary);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cave-chat-meta-line__action:hover {
+  color: var(--accent-presence);
+}
+.cave-chat-meta-line__action:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: default;
+}
+
 .cave-chat-model-wrap {
   position: relative;
   min-width: 0;
@@ -5454,15 +5476,13 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Full-height reopen rails on the chat surface's right edge — the reflection
+/* Full-height reopen rail on the chat surface's right edge — the reflection
    of the left nav's collapsed rail (.chat-sidebar__rail): icon over a vertical
-   uppercase label ("Inspector" / "Code"), reading top→bottom with the glyph
-   face to the right/outside (vertical-rl). In-flow flex children (NOT
-   absolutely positioned): the rail reserves its own layout width so content
-   sits beside it, never underneath. Carries the same glass as the left panel
-   and the open right aside. */
-.workspace-rail-reopen,
-.chat-right-rail {
+   uppercase label ("Code"), reading top→bottom with the glyph face to the
+   right/outside (vertical-rl). An in-flow flex child (NOT absolutely
+   positioned): the rail reserves its own layout width so content sits beside
+   it, never underneath. Carries the same glass as the left panel. */
+.workspace-rail-reopen {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -5484,15 +5504,13 @@ details[open] > .cave-tool-summary::before {
     background var(--duration-fast) var(--ease-standard);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .workspace-rail-reopen,
-.chat-right-rail { background: var(--bg-raised); }
+  .workspace-rail-reopen { background: var(--bg-raised); }
   .cave-chat-model-popover { background: var(--bg-elevated); }
   .voice-call-overlay__dialog { background: var(--bg-raised); }
   .cave-table-lightbox__panel { background: var(--bg-panel); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .workspace-rail-reopen,
-.chat-right-rail {
+  .workspace-rail-reopen {
     background: var(--bg-raised);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -5513,13 +5531,11 @@ details[open] > .cave-tool-summary::before {
     -webkit-backdrop-filter: none;
   }
 }
-.workspace-rail-reopen:hover,
-.chat-right-rail:hover {
+.workspace-rail-reopen:hover {
   color: var(--text-primary);
   background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
 }
-.workspace-rail-reopen__label,
-.chat-right-rail__label {
+.workspace-rail-reopen__label {
   writing-mode: vertical-rl;
   font-size: 11px;
   font-weight: 600;

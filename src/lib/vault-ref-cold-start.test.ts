@@ -45,10 +45,15 @@ process.env.COVEN_HOME = home;
 process.env.COVEN_VAULT_FILE = vaultYaml;
 process.env.COVEN_CAVE_ENV_FILE = join(home, ".env.local"); // nonexistent — isolates from the repo's .env.local
 process.env.PATH = `${fakeBin}${delimiter}${process.env.PATH ?? ""}`;
-// Tight base timeout so the cold call is killed quickly; generous retry window.
-// The unfixed code ignores these and uses its fixed 8s timeout — the 10s sleep
-// outlasts it, so this test is red without the retry.
-process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS = "300";
+// Tight base timeout so the cold call is killed quickly — but with enough
+// headroom that the fake `op` reliably STARTS (and drops its marker) before
+// the kill, even on a loaded machine. At 300ms the kill raced shell spawn +
+// marker write under full-suite load: the killed first attempt left no
+// marker, so the RETRY became the "cold" call, slept 10s past its own
+// window, and the read resolved undefined (cave-6azx). The unfixed code
+// ignores these and uses its fixed 8s timeout — the 10s sleep outlasts it,
+// so this test is red without the retry.
+process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS = "2000";
 process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS = "8000";
 delete process.env.COVEN_CAVE_BUNDLE;
 delete process.env.COLD_START_KEY;

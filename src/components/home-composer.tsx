@@ -613,7 +613,7 @@ export function HomeComposer({
         <h1 className="home-composer-headline">
           {"What should we build in "}
           <span className="home-composer-headline-project">
-            {selectedProject?.name ?? "Coven Cave"}
+            {selectedProject?.name ?? "CovenCave"}
           </span>
           ?
         </h1>

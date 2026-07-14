@@ -62,6 +62,12 @@ export type InboxItem = {
   firedAt?: string | null;
   snoozeUntil?: string | null;
   recurrence: Recurrence;
+  /**
+   * The human phrase the schedule was created from ("every tuesday 4pm").
+   * Provenance only — fireAt/recurrence stay the machine truth; editing
+   * surfaces show the phrase so the plan round-trips in the user's words.
+   */
+  whenText?: string | null;
   source: "user" | "agent" | "system";
   familiarId?: string | null;
   sessionId?: string | null;
@@ -135,6 +141,7 @@ export type NewItemInput = {
   body?: string;
   fireAt?: string | null;
   recurrence?: Recurrence;
+  whenText?: string | null;
   source?: "user" | "agent" | "system";
   familiarId?: string | null;
   sessionId?: string | null;
@@ -161,6 +168,7 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
       firedAt: status === "fired" ? now : null,
       snoozeUntil: null,
       recurrence: input.recurrence ?? { type: "none" },
+      whenText: input.whenText ?? null,
       source: input.source ?? "user",
       familiarId: input.familiarId ?? null,
       sessionId: input.sessionId ?? null,

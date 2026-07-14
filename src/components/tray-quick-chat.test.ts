@@ -164,8 +164,13 @@ assert.match(
 );
 assert.match(
   component,
-  /const hintText = selectedFamiliar\s*\?\s*`Thinking: \$\{thinkingEffort\} · Speed: \$\{responseSpeed\} · Model: \$\{modelOverride \?\? "Runtime managed"\}`\s*:\s*"@id switches familiars · ⌘N new chat";/,
-  "once a familiar is chosen, the composer hint area shows thinking/speed/model instead of the @id switch hint",
+  /selectedFamiliar \? \([\s\S]{0,700}?quick-chat-meta-chips[\s\S]{0,900}?\) : \(\s*\n\s*<p className="min-w-0 truncate text-xs text-\[var\(--fg-muted\)\]">\s*\n\s*@id switches familiars · ⌘N new chat/,
+  "once a familiar is chosen, the composer hint area shows thinking/speed/model as quiet meta chips (cave-fdt5); the @id switch hint remains for the unpicked state",
+);
+assert.match(
+  component,
+  /aria-label=\{`Thinking \$\{thinkingEffort\}, speed \$\{responseSpeed\}, model \$\{modelLabel\}`\}/,
+  "the chips group carries one full accessible reading; individual chips stay aria-hidden with sighted tooltips",
 );
 assert.match(component, /<QuickChatComposer/, "tray renders the shared composer");
 assert.match(

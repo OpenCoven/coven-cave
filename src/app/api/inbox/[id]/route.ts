@@ -19,7 +19,7 @@ startScheduler();
 // page rewrite kind/source/firedAt/machine-discriminator fields and persist
 // shapes the scheduler can't handle.
 const PATCHABLE_FIELDS = [
-  "title", "body", "status", "fireAt", "snoozeUntil", "recurrence", "familiarId", "link",
+  "title", "body", "status", "fireAt", "snoozeUntil", "recurrence", "whenText", "familiarId", "link",
 ] as const;
 
 export async function PATCH(
@@ -38,7 +38,13 @@ export async function PATCH(
   }
   const body: Partial<Omit<InboxItem, "id" | "createdAt">> = {};
   for (const key of PATCHABLE_FIELDS) {
-    if (key in raw) (body as Record<string, unknown>)[key] = raw[key];
+    if (!(key in raw)) continue;
+    // whenText is free text persisted verbatim — reject non-string shapes so
+    // a malformed client can't store an object/number on the item.
+    if (key === "whenText" && raw.whenText !== null && typeof raw.whenText !== "string") {
+      return NextResponse.json({ ok: false, error: "whenText must be a string or null" }, { status: 400 });
+    }
+    (body as Record<string, unknown>)[key] = raw[key];
   }
   const item = await updateItem(id, body);
   if (!item) {

@@ -30,14 +30,51 @@ import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encryp
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Who a vault key is injected for at harness-spawn time.
+ * - `"shared"` (or absent): every spawn — backward-compatible default.
+ * - `string[]`: only harness sessions of the listed familiar ids; an empty
+ *   list grants nobody (the Cave server can still resolve the key itself).
+ */
+export type VaultScope = "shared" | string[];
+
 export type VaultEntry = {
   ref?: string;
   storage?: "1password" | "encrypted" | "dashlane";
   description?: string;
   required?: boolean;
+  scope?: VaultScope;
 };
 
 export type VaultMap = Record<string, VaultEntry>;
+
+/**
+ * Normalize a raw `scope` value from vault.yaml. Absent/`"shared"` → shared;
+ * a bare familiar name → single-item grant list; malformed shapes fail closed
+ * (scoped to nobody) so a typo never widens access.
+ */
+export function normalizeVaultScope(scope: unknown): VaultScope {
+  if (scope == null) return "shared";
+  if (typeof scope === "string") {
+    const name = scope.trim().toLowerCase();
+    return name === "" || name === "shared" ? "shared" : [name];
+  }
+  if (Array.isArray(scope)) {
+    return scope
+      .filter((name): name is string => typeof name === "string" && name.trim() !== "")
+      .map((name) => name.trim().toLowerCase());
+  }
+  return [];
+}
+
+/** Whether a vault entry's value may be injected into a spawn for `familiarId`
+ *  (no familiar context — probes, runners, the daemon — gets shared keys only). */
+export function isVaultKeyGrantedTo(entry: VaultEntry | undefined, familiarId?: string | null): boolean {
+  const scope = normalizeVaultScope(entry?.scope);
+  if (scope === "shared") return true;
+  if (!familiarId?.trim()) return false;
+  return scope.includes(familiarId.trim().toLowerCase());
+}
 
 export type VaultStatus = "resolved" | "configured" | "encrypted" | "env-only" | "unresolved" | "error" | "no-ref";
 
@@ -151,6 +188,13 @@ export function saveVaultMap(map: VaultMap): void {
     }
     if (entry.description) lines.push(`  description: "${entry.description.replace(/"/g, "'")}"`);
     if (entry.required) lines.push(`  required: true`);
+    // Persist non-shared scopes (shared is the default and stays implicit).
+    // Grant names are familiar ids — restrict to their charset for YAML safety.
+    const scope = normalizeVaultScope(entry.scope);
+    if (scope !== "shared") {
+      const names = scope.filter((name) => /^[a-z0-9_-]+$/.test(name));
+      lines.push(`  scope: [${names.map((name) => `"${name}"`).join(", ")}]`);
+    }
     lines.push("");
   }
   const vaultYaml = vaultYamlPath();

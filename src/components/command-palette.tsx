@@ -1012,7 +1012,12 @@ export function CommandPalette({
           aria-label="Filter search results"
           className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border-hairline)] px-3 py-2"
         >
-          {PALETTE_CATEGORIES.map((option) => (
+          {PALETTE_CATEGORIES.filter(
+            // Zero-count scopes are dead tabs — hide them. "All" always shows,
+            // and the active scope stays visible even at 0 so the filter can't
+            // vanish from under the user mid-narrowing (cave-4gg0).
+            (option) => option === "all" || option === category || counts[option] > 0,
+          ).map((option) => (
             <button
               key={option}
               type="button"
@@ -1106,7 +1111,7 @@ export function CommandPalette({
                           {row.familiar.role}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">switch</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">switch</span> : null}
                     </>
                   ) : null}
                   {row.kind === "session" ? (
@@ -1143,11 +1148,10 @@ export function CommandPalette({
                           {row.card.labels.length ? ` · ${row.card.labels.join(", ")}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">card</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">card</span> : null}
                     </>
                   ) : null}
-                  {row.kind === "coven-memory" ? (
-                    <>
+                  {row.kind === "coven-memory" ? (                    <>
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate text-[var(--text-primary)]">{row.entry.title}</span>
                         <span className="truncate text-[10px] text-[var(--text-muted)]">
@@ -1155,7 +1159,7 @@ export function CommandPalette({
                           {row.entry.excerpt ? ` · ${row.entry.excerpt.slice(0, 70)}` : ""}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">memory</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">memory</span> : null}
                     </>
                   ) : null}
                   {row.kind === "fs-memory" ? (
@@ -1166,7 +1170,7 @@ export function CommandPalette({
                           {row.entry.rootLabel}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">file</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">file</span> : null}
                     </>
                   ) : null}
                   {row.kind === "setting" ? (
@@ -1181,20 +1185,20 @@ export function CommandPalette({
                           {row.entry.familiarTab ? `Familiars · ${row.entry.familiarTab}` : row.entry.keywords}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">open</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">open</span> : null}
                     </>
                   ) : null}
                   {row.kind === "command" ? (
                     <>
                       <span className="font-mono text-[var(--text-secondary)]">{row.name}</span>
                       <span className="flex-1 text-[var(--text-muted)]">{platformizeHint(row.hint, keys)}</span>
-                      <span className="text-[10px] text-[var(--text-muted)]">run</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">run</span> : null}
                     </>
                   ) : null}
                   {row.kind === "shortcut" ? (
                     <>
                       <span className="flex-1 text-[var(--text-primary)]">{row.label}</span>
-                      <span className="font-mono text-[10px] text-[var(--text-muted)]">{platformizeHint(row.shortcut, keys)}</span>
+                      <kbd className="palette-kbd touch-hidden">{platformizeHint(row.shortcut, keys)}</kbd>
                     </>
                   ) : null}
                   {row.kind === "create-task" ? (
@@ -1206,7 +1210,7 @@ export function CommandPalette({
                           New card on the board, scoped to the active familiar
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">create</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">create</span> : null}
                     </>
                   ) : null}
                   {row.kind === "conversation-hit" ? (
@@ -1234,7 +1238,7 @@ export function CommandPalette({
                           Salem is the docs familiar — answers from the OpenCoven docs
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">ask</span>
+                      {active ? <span className="text-[10px] text-[var(--text-muted)]">ask</span> : null}
                     </>
                   ) : null}
                 </button>
@@ -1243,10 +1247,21 @@ export function CommandPalette({
             );
           })}
         </ul>
-        <div className="flex items-center justify-between border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
-          <span>{keys.up}{keys.down} navigate · {keys.enter} select · esc close</span>
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-2 text-[10px] text-[var(--text-muted)]">
+          {/* Keyboard hints are desktop vocabulary — hidden on coarse-pointer
+              devices where there is no ⌘/esc to press (cave-4gg0). */}
+          <span className="touch-hidden flex items-center gap-1">
+            <kbd className="palette-kbd">{keys.up}{keys.down}</kbd> navigate ·{" "}
+            <kbd className="palette-kbd">{keys.enter}</kbd> select ·{" "}
+            <kbd className="palette-kbd">esc</kbd> close
+          </span>
           <span className="hidden sm:inline">@familiar scopes results</span>
-          <span>{counts[category]} local · {keys.mod}K</span>
+          <span className="flex items-center gap-1">
+            {counts[category]} local
+            <span className="touch-hidden flex items-center gap-1">
+              {" "}· <kbd className="palette-kbd">{keys.mod}K</kbd>
+            </span>
+          </span>
         </div>
       </div>
     </div>

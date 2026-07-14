@@ -36,6 +36,7 @@ export async function POST(req: Request) {
     body?: string;
     fireAt?: string | null;
     recurrence?: Recurrence;
+    whenText?: string | null;
     source?: "user" | "agent" | "system";
     familiarId?: string | null;
     sessionId?: string | null;
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
     body: body.body,
     fireAt: body.fireAt,
     recurrence: body.recurrence,
+    whenText: typeof body.whenText === "string" ? body.whenText : null,
     source: body.source ?? (kind === "agent" ? "agent" : "user"),
     familiarId: body.familiarId,
     sessionId: body.sessionId,

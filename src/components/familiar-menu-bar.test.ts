@@ -102,13 +102,13 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label=\{scheduleNeedsCount > 0 \? `View schedules — \$\{scheduleNeedsCount\} need attention` : "View schedules"\}/,
-  "the Schedules button is announced as schedules, not inbox",
+  /aria-label=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}/,
+  "the Rituals button is announced as rituals, not inbox",
 );
 assert.match(
   source,
-  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Schedules<\/span>/,
-  "the Schedules button matches the sidebar's Schedules label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Rituals<\/span>/,
+  "the Rituals button matches the sidebar's Rituals label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
 );
 assert.doesNotMatch(
   source,

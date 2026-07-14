@@ -137,6 +137,8 @@ export async function POST(req: NextRequest) {
       storage: "encrypted",
       description: "GitHub Personal Access Token",
       required: false,
+      // Re-saving the PAT must not reset per-familiar grants back to shared.
+      scope: map[PAT_KEY]?.scope,
     };
     saveVaultMap(map);
     updates[PAT_KEY] = null;

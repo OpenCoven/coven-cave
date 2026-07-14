@@ -212,6 +212,18 @@ export function ChatSettingsView() {
                 />
               </PolicyRow>
               <PolicyRow
+                label="After PR merge"
+                description="Archive a chat once the pull request its work produced merges."
+                dimmed={sweepOff}
+              >
+                <PolicySwitch
+                  label="Archive after PR merge"
+                  checked={policy.archiveOnPrMerge}
+                  disabled={sweepOff}
+                  onChange={(archiveOnPrMerge) => update({ archiveOnPrMerge })}
+                />
+              </PolicyRow>
+              <PolicyRow
                 label="External chats idle for"
                 description="Chats created outside the chat surface (cron, flows, generated runs). 0 turns this window off."
                 dimmed={sweepOff}

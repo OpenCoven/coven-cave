@@ -241,15 +241,26 @@ export async function discoverOpenCovenTool(
       packagePath: null,
     };
   }
+  return probeOpenCovenBinaryAt(tool, located.path, env);
+}
 
-  const executablePath = await resolvedExecutablePath(located.path);
+/** Probe one explicit launcher path (no PATH lookup): resolve its executable
+ *  target, attribute it to an npm package, and read its version. Shared by
+ *  PATH discovery above and by stale-launcher remediation, which must verify
+ *  a fresh npm-prefix copy at a known location before touching anything. */
+export async function probeOpenCovenBinaryAt(
+  tool: Pick<OpenCovenToolSpec, "binary" | "versionArgs">,
+  binaryPath: string,
+  env: NodeJS.ProcessEnv = refreshCovenSpawnEnv(),
+): Promise<OpenCovenToolProbe> {
+  const executablePath = await resolvedExecutablePath(binaryPath);
   const identity = executablePath
     ? await packageIdentityForExecutable(executablePath, tool.binary)
     : null;
-  const launch = covenLaunchCommandForBinary(located.path);
+  const launch = covenLaunchCommandForBinary(binaryPath);
   if (launch.unresolvedWindowsShim) {
     return {
-      path: located.path,
+      path: binaryPath,
       executablePath: null,
       executableVerified: false,
       version: null,
@@ -266,7 +277,7 @@ export async function discoverOpenCovenTool(
     );
     const version = firstSemver(`${stdout}\n${stderr}`);
     return {
-      path: located.path,
+      path: binaryPath,
       executablePath,
       executableVerified: identity?.binaryVerified ?? false,
       version,
@@ -276,7 +287,7 @@ export async function discoverOpenCovenTool(
     };
   } catch {
     return {
-      path: located.path,
+      path: binaryPath,
       executablePath,
       executableVerified: identity?.binaryVerified ?? false,
       version: null,

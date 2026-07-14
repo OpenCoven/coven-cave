@@ -337,7 +337,7 @@ assert.ok(!prodNames.has("openclaw-skills"), "bundled OpenClaw Skills umbrella s
 for (const name of ["ocr", "higgsfield-generate", "prompt-vault"]) {
   assert.ok(prodNames.has(name), `individual OpenClaw skill "${name}" should be a Cave marketplace card`);
 }
-for (const familiarSkill of ["coven-nova", "coven-kitty", "coven-cody", "coven-charm", "coven-sage", "coven-astra", "coven-echo"]) {
+for (const familiarSkill of ["coven-nova", "coven-kitty", "coven-cody", "coven-charm", "coven-sage", "coven-astra", "coven-echo", "coven-salem"]) {
   assert.ok(!prodNames.has(familiarSkill), `${familiarSkill} should not be exposed as a hardcoded familiar skill`);
 }
 	assert.ok(!prodNames.has("rollcall"), "rollcall should not be exposed as a hardcoded familiar skill");
@@ -346,7 +346,7 @@ for (const plugin of sanitizedProductionPlugins) {
   assert.deepEqual(plugin.roleAffinity ?? [], [], `${plugin.name} should not expose hardcoded familiar role affinity`);
 }
 for (const plugin of sanitizedProductionCards) {
-  assert.doesNotMatch(JSON.stringify(plugin).toLowerCase(), /\b(nova|kitty|cody|charm|sage|astra|echo)\b/, `${plugin.id} should not mention named familiars`);
+  assert.doesNotMatch(JSON.stringify(plugin).toLowerCase(), /\b(nova|kitty|cody|charm|sage|astra|echo|salem)\b/, `${plugin.id} should not mention named familiars`);
 }
 for (const [label, source] of [
   ["/api/marketplace", marketplaceRoute],

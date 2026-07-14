@@ -20,10 +20,16 @@ const OPEN_COVEN_TOOL_PACKAGES: Record<OpenCovenToolInstallTarget, string> = {
   "coven-code": "@opencoven/coven-code@latest",
 };
 
+// The Coven CLI is the only REQUIRED OpenCoven tool: the wizard's tools step
+// passes just the coven-cli status. Coven Code stays a valid target because
+// it is still installable — as an optional runtime from the wizard's runtime
+// grid and from the Settings tools panel.
+const REQUIRED_TOOL: OpenCovenToolInstallTarget = "coven-cli";
+
 export function openCovenToolActionTargets(
   tools: readonly OpenCovenToolInstallStatus[],
 ): OpenCovenToolInstallTarget[] {
-  if (tools.length === 0) return [...OPEN_COVEN_TOOL_ORDER];
+  if (tools.length === 0) return [REQUIRED_TOOL];
   const actionable = new Set(
     tools
       .filter((tool) => !tool.installed || tool.outdated || tool.compatible === false)
@@ -36,7 +42,7 @@ export function openCovenToolsInstallCommand(
   tools: readonly OpenCovenToolInstallStatus[],
 ): string {
   const targets = openCovenToolActionTargets(tools);
-  const packages = (targets.length > 0 ? targets : OPEN_COVEN_TOOL_ORDER).map(
+  const packages = (targets.length > 0 ? targets : [REQUIRED_TOOL]).map(
     (target) => OPEN_COVEN_TOOL_PACKAGES[target],
   );
   return `npm i -g ${packages.join(" ")}`;
@@ -45,16 +51,15 @@ export function openCovenToolsInstallCommand(
 export function openCovenToolsPrimaryActionLabel(
   tools: readonly OpenCovenToolInstallStatus[],
 ): string {
-  if (tools.length === 0) return "Install both tools";
+  if (tools.length === 0) return "Install the Coven CLI";
   const actions = tools.filter((tool) =>
     openCovenToolActionTargets(tools).includes(tool.id),
   );
-  if (actions.length === 0) return "OpenCoven tools ready";
+  if (actions.length === 0) return "Coven CLI ready";
   if (actions.length === 1) {
     const [tool] = actions;
     return `${tool.installed ? "Update" : "Install"} ${tool.label}`;
   }
-  if (actions.every((tool) => !tool.installed)) return "Install both tools";
-  if (actions.every((tool) => tool.installed)) return "Update OpenCoven tools";
+  if (actions.every((tool) => !tool.installed)) return "Install OpenCoven tools";
   return "Update OpenCoven tools";
 }

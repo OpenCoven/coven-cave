@@ -8,6 +8,7 @@ import {
   inferResearchMissionMode,
 } from "@/lib/research-mission-routing";
 import {
+  RESEARCH_BOUND_LIMITS,
   RESEARCH_MISSION_MODES,
   type CreateResearchMissionInput,
   type ResearchBounds,
@@ -32,9 +33,10 @@ const MODE_LABELS: Record<ResearchMissionMode, string> = {
   autoresearch: "Autoresearch",
 };
 
-function boundNumber(value: string, fallback: number): number {
+function boundNumber(value: string, fallback: number, max: number): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.trunc(parsed), max);
 }
 
 export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: Props) {
@@ -146,9 +148,9 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
             <input
               type="number"
               min={1}
-              max={1440}
+              max={RESEARCH_BOUND_LIMITS.wallClockMinutes}
               value={bounds.wallClockMinutes}
-              onChange={(event) => updateBound("wallClockMinutes", boundNumber(event.target.value, 1))}
+              onChange={(event) => updateBound("wallClockMinutes", boundNumber(event.target.value, 1, RESEARCH_BOUND_LIMITS.wallClockMinutes))}
             />
           </label>
           <label>
@@ -156,10 +158,10 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
             <input
               type="number"
               min={1}
-              max={100}
+              max={RESEARCH_BOUND_LIMITS.maxIterations}
               value={bounds.maxIterations}
               onChange={(event) => {
-                const maxIterations = boundNumber(event.target.value, 1);
+                const maxIterations = boundNumber(event.target.value, 1, RESEARCH_BOUND_LIMITS.maxIterations);
                 setBounds((current) => ({
                   ...current,
                   maxIterations,
@@ -173,9 +175,9 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
             <input
               type="number"
               min={1}
-              max={500}
+              max={RESEARCH_BOUND_LIMITS.sourceTarget}
               value={bounds.sourceTarget}
-              onChange={(event) => updateBound("sourceTarget", boundNumber(event.target.value, 1))}
+              onChange={(event) => updateBound("sourceTarget", boundNumber(event.target.value, 1, RESEARCH_BOUND_LIMITS.sourceTarget))}
             />
           </label>
           <label>
@@ -185,7 +187,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
               min={1}
               max={bounds.maxIterations}
               value={bounds.checkpointEvery}
-              onChange={(event) => updateBound("checkpointEvery", boundNumber(event.target.value, 1))}
+              onChange={(event) => updateBound("checkpointEvery", boundNumber(event.target.value, 1, bounds.maxIterations))}
             />
           </label>
         </div>

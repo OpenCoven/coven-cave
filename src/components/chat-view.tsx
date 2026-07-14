@@ -1474,9 +1474,10 @@ function metaLineSegments(args: {
   // reads as a folder.
   const runtime = formatRuntime(args.runtime) ?? formatRuntime(args.projectRoot ? `local:${args.projectRoot}` : null);
   if (args.state === "offline") {
-    // "check Coven" named nothing findable — the banner's Start-daemon action
-    // is the actual remedy (cave-7jzq).
-    segs.push("daemon offline · start it from the banner above");
+    // The remedy renders inline: MetaLine appends its own Start-daemon action
+    // after the segments, so the notice never points at chrome that may not be
+    // visible (the banner can be dismissed or scrolled away) (cave-5qmm).
+    segs.push("daemon offline");
   } else if (args.state === "failed") {
     if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
@@ -1646,6 +1647,35 @@ function ChatFindBar({
  *  the role="status" live region, so the per-second rewrite is excluded from
  *  the accessibility tree and never announced (the rewrites-per-second
  *  problem from CHAT-D12-04). */
+/** Inline remedy for the offline meta line: the old copy said "start it from
+ *  the banner above", but the banner can be dismissed or off-screen — a broken
+ *  reference. The action lives in the notice itself, self-contained like the
+ *  settings/onboarding start buttons; the workspace's 5s status poll picks up
+ *  the flip and clears the offline state (cave-5qmm). */
+function MetaLineStartDaemon() {
+  const [starting, setStarting] = useState(false);
+  return (
+    <button
+      type="button"
+      className="cave-chat-meta-line__action focus-ring"
+      disabled={starting}
+      onClick={async () => {
+        setStarting(true);
+        try {
+          await fetch("/api/daemon/start", { method: "POST" });
+        } catch {
+          // The meta line keeps reading "daemon offline" and the button
+          // re-arms — the workspace banner surfaces start errors in detail.
+        } finally {
+          setStarting(false);
+        }
+      }}
+    >
+      {starting ? "starting…" : "Start daemon"}
+    </button>
+  );
+}
+
 function MetaLineElapsed({ since }: { since: string }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -1813,6 +1843,7 @@ function MetaLine({
         </span>
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
         {state === "streaming" ? " · esc to cancel" : null}
+        {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
       {children}
     </div>
@@ -2267,8 +2298,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     eligible: false,
   });
 
-  // Publish live chat state for the session debug pane (right panel / modal).
-  // Per-instance token: a second ChatView (right-panel Chat tab) unmounting
+  // Publish live chat state for the session debug pane (modal) and the code
+  // rail. Per-instance token: a second ChatView instance unmounting
   // must not clear state this instance published after it.
   const debugToken = useMemo(() => Symbol("chat-debug-publisher"), []);
   useEffect(() => {
@@ -2276,13 +2307,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [debugToken, sessionId, session, familiar, turns]);
   useEffect(() => () => clearChatDebugState(debugToken), [debugToken]);
 
+  // The right-panel debug pane is retired — the modal is the single debug
+  // surface at every breakpoint.
   const openDebug = useCallback(() => {
-    // lg+ has the right panel; below that, fall back to a modal.
-    if (window.matchMedia("(min-width: 1024px)").matches) {
-      window.dispatchEvent(new CustomEvent("cave:debug-open"));
-    } else {
-      setDebugModalOpen(true);
-    }
+    setDebugModalOpen(true);
+  }, []);
+
+  // Other surfaces (chat-list row actions, the thread rail's Debug launcher)
+  // still reach debug through the cave:debug-open window-event bridge.
+  useEffect(() => {
+    const onDebugOpen = () => setDebugModalOpen(true);
+    window.addEventListener("cave:debug-open", onDebugOpen);
+    return () => window.removeEventListener("cave:debug-open", onDebugOpen);
   }, []);
 
   const reflectOnThread = useCallback(async () => {
@@ -5005,7 +5041,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       onOpenTask={onOpenTask}
       sessionId={sessionId}
       onLinkedContextChange={setLinkedContext}
-      handoff={{ turns, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
+      // Handoff carries the ACTIVE branch only: `turns` holds every branch of
+      // an edited/retried conversation, so deriving a task from it would pull
+      // titles, subtasks, links, and deadlines from turns the user abandoned.
+      handoff={{ turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
       sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
     />
   );

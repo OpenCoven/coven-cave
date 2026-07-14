@@ -346,10 +346,10 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   //    colored by meaning, and drills into the surface that owns the number. ──
   const contractPct = vitals.contractTotal ? Math.round((vitals.contractPass / vitals.contractTotal) * 100) : null;
   const acceptPct = vitals.retroAcceptRate != null ? Math.round(vitals.retroAcceptRate * 100) : null;
-  const scoredCoverageSub = coverageSub(vitals.confidenceTier ?? "no scores yet", contractFetchedCount, data.familiars.length, "scored");
+  const scoredCoverageSub = coverageSub(vitals.confidenceTier ?? "fills in after growth reviews", contractFetchedCount, data.familiars.length, "scored");
   const contractCoverageSub = coverageSub(contractSub(vitals), contractFetchedCount, data.familiars.length, "checked");
   const kpis: KpiSpec[] = [
-    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: contractFetchPartial ? scoredCoverageSub : vitals.confidenceTier ?? "no scores yet", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: contractFetchPartial ? scoredCoverageSub : vitals.confidenceTier ?? "fills in after growth reviews", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:sparkle", value: vitals.activeFamiliars, label: "Active familiars", sub: `${vitals.familiarCount} in coven`, accent: "green", metric: "active", good: "up", src: "familiars", href: "/?mode=agents" },
     { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
     { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
@@ -699,7 +699,12 @@ function KpiTile({ icon, value, suffix, label, sub, accent, good, href, loading,
       <span className="cockpit-kpi__value">{display}</span>
       <span className="cockpit-kpi__label">{label}</span>
       {sub ? <span className="cockpit-kpi__sub">{sub}</span> : null}
-      <Sparkline points={series} color={color} height={22} />
+      {/* No wave without data — loading or empty, a flatline under "—" reads
+          as a dead metric (cave-m4oq). One accent for every trend: the wave is
+          texture, the tile icon carries the semantic tint. */}
+      {value == null ? null : (
+        <Sparkline points={series} color="var(--accent-presence)" height={22} />
+      )}
     </>
   );
   return href ? <a className="cockpit-kpi" href={href}>{inner}</a> : <div className="cockpit-kpi">{inner}</div>;
@@ -712,11 +717,12 @@ function wowSub(delta: number): string {
 }
 function retroSub(v: CovenVitals): string {
   const runs = v.retroAccepted + v.retroReverted;
-  if (runs === 0) return "no retro runs";
+  // Teach, don't shrug: name the action that fills the tile (cave-m4oq).
+  if (runs === 0) return "fills in after the first retro run";
   return `${v.retroAccepted}/${runs} accepted`;
 }
 function contractSub(v: CovenVitals): string {
-  if (v.contractTotal === 0) return "no contracts";
+  if (v.contractTotal === 0) return "fills in once familiars have contracts";
   return `${v.contractPass}/${v.contractTotal} passing`;
 }
 function coverageSub(base: string, fetched: number, total: number, verb: "scored" | "checked"): string {
@@ -813,7 +819,7 @@ function FamiliarInsightsTable({ rows, loaded }: { rows: FamiliarInsightRow[]; l
             <span className="cockpit-fam__sessions">{r.sessions7d}<i>/7d</i></span>
           </span>
           <span className="cockpit-fam__trend cockpit-fam__trendcol" role="cell">
-            {r.trend.length ? <Sparkline points={r.trend} color={r.color} height={22} /> : <span className="cockpit-fam__dash">—</span>}
+            {r.trend.length ? <Sparkline points={r.trend} color="var(--accent-presence)" height={22} /> : <span className="cockpit-fam__dash">—</span>}
           </span>
           <span className="cockpit-fam__contract cockpit-fam__contractcol" role="cell">
             {r.contractTotal > 0 ? (
@@ -932,7 +938,7 @@ function AgentsPanel({ familiars, sessions, loaded }: { familiars: Familiar[]; s
                 <span className="cockpit-agent__role" title={f.role || f.model || "familiar"}>{f.role || f.model || "familiar"}</span>
               </span>
               {p ? <span className="cockpit-agent__count">{p.sessionsLast7d}/7d</span> : null}
-              {p ? <span className="cockpit-agent__trend"><Sparkline points={p.trend} color={f.color || "var(--accent-presence)"} height={20} /></span> : null}
+              {p ? <span className="cockpit-agent__trend"><Sparkline points={p.trend} color="var(--accent-presence)" height={20} /></span> : null}
               {active ? <span className="cockpit-agent__busy">{f.active_sessions} active</span> : null}
             </a>
           </li>

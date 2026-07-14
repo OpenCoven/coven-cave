@@ -101,4 +101,24 @@ assert.match(
   "the once-a-minute digest refresh pauses while the user is typing",
 );
 
+// ── Live presence tier (cave-9j6a): running sessions read from Home ──────────
+assert.match(view, /card\.kind === "live"/, "the carousel renders the live-card branch");
+assert.match(
+  view,
+  /className="home-digest__card home-digest__card--live"/,
+  "live cards wear the presence variant",
+);
+assert.match(view, /home-digest__live-dot/, "live cards carry the breathing status dot");
+assert.match(
+  view,
+  /home-digest__card--live"[\s\S]{0,800}Running now/,
+  "clicking a live card opens the session; AT hears 'Running now'",
+);
+assert.match(css, /\.home-digest__card--live \{/, "live variant styled from presence tokens");
+assert.match(
+  css,
+  /home-digest-live-pulse/,
+  "the dot pulse is a named keyframe (token durations zero it under reduced motion)",
+);
+
 console.log("home-digest-carousel.test.ts passed");

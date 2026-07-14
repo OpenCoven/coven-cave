@@ -241,8 +241,8 @@ assert.match(
 );
 assert.match(
   source,
-  /contentLoading && contentMatches\.length === 0 \?[\s\S]{0,200}?animate-pulse/,
-  "Content search shows the shimmer idiom while the first fetch is in flight",
+  /contentLoading && contentMatches\.length === 0 \?[\s\S]{0,300}?ui-skeleton/,
+  "Content search shows the shared shimmer skeleton while the first fetch is in flight",
 );
 assert.match(
   source,

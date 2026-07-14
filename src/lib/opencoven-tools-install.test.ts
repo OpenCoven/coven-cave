@@ -13,12 +13,28 @@ const cliOutdated: OpenCovenToolInstallStatus = {
   outdated: true,
 };
 
-const codeReady: OpenCovenToolInstallStatus = {
-  id: "coven-code",
-  label: "Coven Code",
+const cliReady: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "Coven CLI",
   installed: true,
   outdated: false,
   compatible: true,
+};
+
+const cliMissing: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "Coven CLI",
+  installed: false,
+  outdated: false,
+  compatible: false,
+};
+
+const cliBelowFloor: OpenCovenToolInstallStatus = {
+  id: "coven-cli",
+  label: "Coven CLI",
+  installed: true,
+  outdated: false,
+  compatible: false,
 };
 
 const codeMissing: OpenCovenToolInstallStatus = {
@@ -29,60 +45,82 @@ const codeMissing: OpenCovenToolInstallStatus = {
   compatible: false,
 };
 
-const cliBelowFloor: OpenCovenToolInstallStatus = {
-  id: "coven-cli",
-  label: "coven CLI",
-  installed: true,
-  outdated: false,
-  compatible: false,
-};
-
+// The Coven CLI is the only required OpenCoven tool — a fresh setup (status
+// not loaded yet) must not claim Coven Code is needed.
 assert.deepEqual(
   openCovenToolActionTargets([]),
-  ["coven-cli", "coven-code"],
-  "fresh setup falls back to installing both OpenCoven tools",
+  ["coven-cli"],
+  "fresh setup falls back to installing the Coven CLI only",
 );
 
 assert.equal(
   openCovenToolsInstallCommand([]),
-  "npm i -g @opencoven/cli@latest @opencoven/coven-code@latest",
-  "fresh setup manual command installs both required OpenCoven tools (scoped packages only)",
+  "npm i -g @opencoven/cli@latest",
+  "fresh setup manual command installs the Coven CLI only (scoped package)",
+);
+
+assert.equal(
+  openCovenToolsPrimaryActionLabel([]),
+  "Install the Coven CLI",
+  "fresh setup primary action names the single required tool",
 );
 
 assert.deepEqual(
-  openCovenToolActionTargets([cliOutdated, codeReady]),
+  openCovenToolActionTargets([cliMissing]),
   ["coven-cli"],
-  "when Coven Code is already current, the primary action only updates the CLI",
+  "missing CLI is actionable",
 );
 
 assert.deepEqual(
-  openCovenToolActionTargets([cliBelowFloor, codeReady]),
+  openCovenToolActionTargets([cliOutdated]),
+  ["coven-cli"],
+  "outdated CLI is actionable",
+);
+
+assert.deepEqual(
+  openCovenToolActionTargets([cliBelowFloor]),
   ["coven-cli"],
   "a tool below Cave's compatibility floor is actionable even when latest metadata is unavailable",
 );
 
-assert.equal(
-  openCovenToolsInstallCommand([cliOutdated, codeReady]),
-  "npm i -g @opencoven/cli@latest",
-  "manual command matches the single outdated tool instead of claiming to install both",
+assert.deepEqual(
+  openCovenToolActionTargets([cliReady]),
+  [],
+  "a current, verified CLI needs no action",
 );
 
 assert.equal(
-  openCovenToolsPrimaryActionLabel([cliOutdated, codeReady]),
+  openCovenToolsInstallCommand([cliOutdated]),
+  "npm i -g @opencoven/cli@latest",
+  "manual command targets the CLI",
+);
+
+assert.equal(
+  openCovenToolsPrimaryActionLabel([cliOutdated]),
   "Update Coven CLI",
   "primary action label reflects a single CLI update",
 );
 
 assert.equal(
-  openCovenToolsPrimaryActionLabel([cliBelowFloor, codeReady]),
-  "Update coven CLI",
-  "primary action label treats below-floor tools as updates",
+  openCovenToolsPrimaryActionLabel([cliMissing]),
+  "Install Coven CLI",
+  "primary action label reflects a fresh CLI install",
 );
 
 assert.equal(
-  openCovenToolsPrimaryActionLabel([cliOutdated, codeMissing]),
-  "Update OpenCoven tools",
-  "mixed missing/outdated tools get a neutral update label",
+  openCovenToolsPrimaryActionLabel([cliReady]),
+  "Coven CLI ready",
+  "a satisfied CLI reads as ready",
+);
+
+// The helper stays generic: Coven Code remains a valid OPTIONAL install
+// target (runtime grid, Settings tools panel), so a caller that passes it
+// still gets a correct command — the wizard's required step simply never
+// passes it anymore.
+assert.equal(
+  openCovenToolsInstallCommand([cliOutdated, codeMissing]),
+  "npm i -g @opencoven/cli@latest @opencoven/coven-code@latest",
+  "optional Coven Code is still installable when a caller passes it explicitly",
 );
 
 console.log("opencoven-tools-install.test.ts: ok");

@@ -114,12 +114,12 @@ function GridSkeleton() {
           key={i}
           className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3"
         >
-          <span className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-muted" />
+          <span className="ui-skeleton h-10 w-10 shrink-0" />
           <span className="flex-1 space-y-1.5">
-            <span className="block h-3 w-1/2 animate-pulse rounded bg-muted" />
-            <span className="block h-2.5 w-3/4 animate-pulse rounded bg-muted" />
+            <span className="ui-skeleton block h-3 w-1/2" />
+            <span className="ui-skeleton block h-2.5 w-3/4" />
           </span>
-          <span className="h-5 w-5 animate-pulse rounded-full bg-muted" />
+          <span className="ui-skeleton ui-skeleton--avatar shrink-0" style={{ height: 20, width: 20 }} />
         </div>
       ))}
     </div>

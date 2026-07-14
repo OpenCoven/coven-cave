@@ -56,8 +56,8 @@ const sessionsListRoute = readFileSync(
 );
 assert.match(
   sessionsListRoute,
-  /import \{ sweepAutoArchive \} from "@\/lib\/chat-auto-archive-sweep"/,
-  "sessions list imports the auto-archive sweep",
+  /import \{\s*sweepAutoArchive,\s*sweepMergedPrAutoArchive,?\s*\} from "@\/lib\/chat-auto-archive-sweep"/,
+  "sessions list imports both sweeps from the shared sweep module",
 );
 assert.match(
   sessionsListRoute,

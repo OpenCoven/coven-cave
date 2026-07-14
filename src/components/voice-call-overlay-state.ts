@@ -28,7 +28,7 @@ export type CallEvent =
   | { type: "SESSION_FAILED"; errorCode: string; missingKey?: string; hint?: string }
   | { type: "CONNECTED"; startedAt: number }
   | { type: "DISCONNECTED" }
-  | { type: "PROVIDER_ERROR"; errorCode: string }
+  | { type: "PROVIDER_ERROR"; errorCode: string; hint?: string }
   | { type: "CLOSE_REQUEST" }
   | { type: "MUTE_TOGGLE" }
   | { type: "RETRY" };
@@ -58,7 +58,7 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
       if (s.state !== "connecting") return s;
       return { ...s, state: "live", startedAt: ev.startedAt };
     case "PROVIDER_ERROR":
-      return { ...s, state: "error", errorCode: ev.errorCode };
+      return { ...s, state: "error", errorCode: ev.errorCode, hint: ev.hint };
     case "CLOSE_REQUEST":
       if (s.state === "live") return { ...s, state: "ending" };
       return { ...s, state: "closed" };

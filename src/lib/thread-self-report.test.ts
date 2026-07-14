@@ -209,6 +209,7 @@ describe("buildThreadReflectPrompt", () => {
     const prompt = buildThreadSignalResolutionPrompt({
       kind: "skill-access",
       severity: "critical",
+      sourceId: "github",
       title: "github",
       detail: "needs push access to land PRs",
     });
@@ -221,7 +222,7 @@ describe("buildThreadReflectPrompt", () => {
     assert.match(prompt, /^Resolve this /, "opens as a resolution directive");
     // every review kind maps to a label (no "undefined" leaking into the prompt)
     for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {
-      const p = buildThreadSignalResolutionPrompt({ kind, severity: "info", title: "t", detail: "d" });
+      const p = buildThreadSignalResolutionPrompt({ kind, severity: "info", sourceId: "t", title: "t", detail: "d" });
       assert.doesNotMatch(p, /undefined/, `${kind} resolves to a label`);
     }
   });

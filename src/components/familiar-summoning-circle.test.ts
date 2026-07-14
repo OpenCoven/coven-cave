@@ -104,7 +104,7 @@ assert.match(source, /NAME_POOL/, "the name stage offers suggested names");
   const poolMatch = source.match(/const NAME_POOL = \[([\s\S]*?)\] as const;/);
   assert.ok(poolMatch, "NAME_POOL should stay a literal array so reserved-name filtering is reviewable");
   const poolSource = poolMatch[1] ?? "";
-  for (const reserved of ["Nova", "Kitty", "Cody", "Sage", "Astra", "Echo", "Salem"]) {
+  for (const reserved of ["Nova", "Kitty", "Cody", "Charm", "Sage", "Astra", "Echo", "Salem"]) {
     assert.doesNotMatch(
       poolSource,
       new RegExp(`"${reserved}"`),
@@ -263,6 +263,13 @@ assert.match(
   source,
   /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]*?setRole\(preset\.role\);\s*setDescription\(preset\.description\);/,
   "clicking a preset fills role and description",
+);
+// The template is optional (#3109): clicking the active preset again
+// deselects it, clearing the role + description it filled in.
+assert.match(
+  source,
+  /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]*?if \(active\) \{[\s\S]*?setRole\(""\);\s*setDescription\(""\);\s*return;/,
+  "clicking the active preset again deselects it and clears role + description",
 );
 assert.doesNotMatch(
   source,

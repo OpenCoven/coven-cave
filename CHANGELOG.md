@@ -15,7 +15,11 @@ breaking config changes; patch releases stay additive.
 - **Grimoire: "Sew in chat" round trip** — the chat sew is now a brief carrying the thread id and the local sew API contract (plus a companion `stitch-sewer` agent skill), so the familiar saves the agreed draft itself with pin provenance and thread completion; the intake picks a chat-sewn entry up on re-focus and swaps to it like an in-intake sew (cave-x1za).
 
 ### Changed
+- **Notch: parked top-center, never chasing the mouse** — the notch quick-chat pill no longer follows the cursor along the top strip; it stays fixed in the middle of the top bar where a notch belongs. The follow-mouse follower thread, its config field, and the panel's follow toggle are removed; existing `notch-config.json` files with the old `followMouse` key keep loading (the key is ignored), and the fit-menu-bar toggle and hand-editable sizes are unchanged (cave-cw5c).
 - **Shared assist runner** — the stitch sew's bounded `codex exec` lane (read-only sandbox pinned inside the module, stdin prompt, `--output-last-message` parse) is extracted to `src/lib/server/assist-runner.ts` for every authoring assist to reuse (cave-c40b).
+
+### Fixed
+- **Tools: Update can now clear stale PATH launchers** — when `npm install -g` succeeds but an older copy of the same package still shadows the fresh install on PATH (orphaned nvm trees, old Homebrew-node prefixes), the Update/Repair flow no longer fails forever with "a stale executable is still first on PATH": it removes the stale same-package launcher under strict identity gates (the fresh npm-prefix copy must verify first; unrelated binaries and directories are never touched) and re-verifies — and when removal isn't safe or permitted, the error now carries the exact manual command instead of a dead end (cave-kii6).
 
 
 ## [0.1.0] - 2026-07-12

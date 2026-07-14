@@ -72,6 +72,21 @@ assert.equal(
   false,
   "non-boolean reflection flags fall back to the default",
 );
+assert.equal(
+  DEFAULT_CHAT_AUTO_ARCHIVE_POLICY.archiveOnPrMerge,
+  true,
+  "merged-PR auto-archive is on by default (preserves shipped behavior)",
+);
+assert.equal(
+  normalizeChatAutoArchivePolicy({ archiveOnPrMerge: false }).archiveOnPrMerge,
+  false,
+  "the Settings-tab toggle can turn merged-PR auto-archive off",
+);
+assert.equal(
+  normalizeChatAutoArchivePolicy({ archiveOnPrMerge: "no" }).archiveOnPrMerge,
+  true,
+  "non-boolean merged-PR flags fall back to the default",
+);
 
 // --- sessionCreatedExternally ------------------------------------------------
 

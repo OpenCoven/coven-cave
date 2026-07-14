@@ -76,6 +76,11 @@
   --code-surface: oklch(0.12 0.012 280 / 92%);
   --bg-panel: oklch(0.10 0.020 293);        /* deepest — app shell / sidebar floor */
   --bg-raised: var(--card);
+  /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
+     the raised surface so it tracks every theme — this token was referenced
+     by several components while undefined, which computed to transparent
+     (cave-fdt5). */
+  --bg-subtle: color-mix(in oklch, var(--bg-raised) 72%, transparent);
   --bg-elevated: oklch(0.20 0.028 293);     /* dropdowns / popovers */
   --bg-hover: oklch(0.24 0.030 293);        /* hover state */
   --border-hairline: var(--border);
@@ -2872,6 +2877,13 @@ textarea.required-inputs-control {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
+/* Contrast floor while a scene backdrop is frontmost: 74% glass over a busy
+   custom image lets the scene bleed through the command surface — raise the
+   fill so results stay legible over any scene (cave-4gg0). */
+html[data-backdrop-on] .glass-overlay {
+  background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
+}
+
 /* Glass is only legible while the backdrop actually blurs: with no
  * backdrop-filter support, a translucent fill over scrolling content is
  * unreadable soup — restore the opaque theme surfaces. */
@@ -3497,150 +3509,6 @@ textarea.required-inputs-control {
   color: var(--text-muted);
   border-top: 1px solid var(--border-hairline);
   line-height: 1.5;
-}
-
-/* ════════════════════════════════════════════════════════════════
-   Right panel — open tab bar (the collapsed state is the in-flow
-   .workspace-rail-reopen rail in chat-surface.tsx / cave-chat.css)
-   ════════════════════════════════════════════════════════════════ */
-
-/* Open tab bar (sits at top of the open aside) — translucent so the aside's
-   glass shows through, mirroring the left sidebar's chrome. */
-.right-panel-tabs {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  height: 38px;
-  flex-shrink: 0;
-  min-width: 0;
-  border-bottom: 1px solid var(--border-hairline);
-  background: transparent;
-  padding: 0 4px;
-}
-
-/* The section tabs live in a real tablist (WAI-ARIA tabs pattern, cave-t7uz);
-   debug/close remain plain sibling controls outside it. Shrinkable so the
-   tabs keep truncating inside narrow sidebar widths. */
-.right-panel-tablist {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  height: 100%;
-  min-width: 0;
-}
-
-.right-panel-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-  height: 100%;
-  min-width: 0;
-  font-size: 11px;
-  font-weight: 500;
-  border: none;
-  border-radius: 0;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.12s, border-color 0.12s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.right-panel-tab:hover { color: var(--text-secondary); }
-.right-panel-tab--active {
-  color: var(--text-primary);
-  border-bottom-color: var(--accent-presence);
-}
-
-/* Icon-only tab (Debug): fixed footprint pushed to the right edge with the
-   close control — diagnostics, not a co-equal inspector section. */
-.right-panel-tab--icon {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding: 0 7px;
-}
-
-.right-panel-close {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  margin-left: auto;
-  transition: color 0.1s, background 0.1s;
-}
-.right-panel-close:hover { color: var(--text-primary); background: var(--bg-hover); }
-
-.right-panel-split {
-  height: 100%;
-  min-height: 0;
-  min-width: 0;
-  width: 100%;
-}
-
-/* Chat right sidebar (Inspector / Debug / Changes) — the mirrored twin of the
-   left .shell-nav: the same translucent glass and blur, with the hairline
-   flipped to its left edge, sitting flush against the window's right edge so
-   the backdrop never opens a dark gap at the far right. Inner panes stay
-   transparent; the aside owns the panel chrome. */
-.chat-right-aside {
-  border-left: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .chat-right-aside { background: var(--bg-raised); }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .chat-right-aside {
-    background: var(--bg-raised);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-
-.right-panel-pane {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-}
-
-.right-panel-splitter {
-  flex-shrink: 0;
-}
-
-.right-panel-changes-header {
-  display: flex;
-  align-items: center;
-  height: 38px;
-  flex-shrink: 0;
-  min-width: 0;
-  border-bottom: 1px solid var(--border-hairline);
-  /* Translucent over the aside's glass, like .right-panel-tabs. */
-  background: transparent;
-  padding: 0 10px;
-}
-
-.right-panel-changes-title {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 500;
 }
 
 /* ============================================================
@@ -6275,6 +6143,124 @@ a.mobile-handoff__link:hover {
 }
 
 /* ────────────────────────────────────────────────
+   Familiars roster cards (cave-g2r6)
+   De-boxed: a wash + inset soft hairline instead of a hard border, with a
+   quiet hover lift. The wrapper owns the visual card so the open button and
+   the footer analytics link live inside it as siblings.
+   ──────────────────────────────────────────────── */
+
+.familiars-view__card {
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+.familiars-view__card:hover {
+  background: color-mix(in oklch, var(--bg-raised) 62%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 85%, transparent),
+    0 6px 18px -12px var(--shadow-color, rgb(0 0 0));
+  transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .familiars-view__card,
+  .familiars-view__card:hover {
+    transform: none;
+  }
+}
+
+/* ────────────────────────────────────────────────
+   Chat · Familiar tab (identity hero + capability grid)
+   ──────────────────────────────────────────────── */
+
+/* The tab is a first-class surface, not a 320px sidepanel: the panel measures
+   its own inline size so the capability grid can go two-column when the chat
+   canvas is wide enough, independent of the viewport. */
+.familiar-tab {
+  container-type: inline-size;
+}
+
+.familiar-tab__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 2px 16px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.familiar-tab__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: var(--radius-card);
+  /* Soft inset hairline behind transparent avatar corners — same wash idiom
+     as the roster cards, no hard border. */
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+/* Identity moment: the display name is the one serif element on the tab
+   (--font-serif is the display / hero / identity face). */
+.familiar-tab__name {
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: clamp(22px, 3.2cqi, 30px);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.familiar-tab__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* One column by default; two balanced columns once the tab itself is wide
+   enough to earn it (~900px of usable canvas). */
+.familiar-tab__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 20px;
+}
+
+@container (min-width: 900px) {
+  .familiar-tab__grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* De-boxed capability lists (facelift language): one wash + soft inset
+   hairline per group, hairline dividers between rows — no per-row boxes, no
+   accent tints on metadata. Accent stays reserved for presence. */
+.familiar-tab__list {
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.familiar-tab__rows > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent);
+}
+
+/* Coarse pointers: the hero's quiet links/actions and the group toggles are
+   10-11px targets tuned for a cursor — grow their hit areas on touch without
+   changing the pointer-fine rhythm. */
+@media (pointer: coarse) {
+  .familiar-tab__links a,
+  .familiar-tab__links button {
+    padding-block: 6px;
+  }
+  .familiar-tab__list > button {
+    padding-block: 10px;
+  }
+  .familiar-tab__cta {
+    padding-block: 8px;
+  }
+}
+
+/* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
    ──────────────────────────────────────────────── */
@@ -7582,6 +7568,30 @@ a.mobile-handoff__link:hover {
   .touch-always-visible {
     opacity: 1 !important;
   }
+}
+
+/* Complement of .touch-always-visible: desktop keyboard vocabulary (kbd
+   hints, shortcut chips) that means nothing on a touch device. */
+@media (hover: none) and (pointer: coarse) {
+  .touch-hidden {
+    display: none !important;
+  }
+}
+
+/* Mono keycap chip used by the command palette (footer hints + shortcut
+   rows) — one consistent kbd treatment instead of ad-hoc text. */
+.palette-kbd {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  padding: 0 4px;
+  min-height: 15px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
 }
 
 /* ── Calendar agenda (timeline) ──────────────────────────────────────────────
@@ -10429,6 +10439,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-ring--developing { --fa-ring-color: var(--color-warning); }
 .fa-ring--reliable { --fa-ring-color: var(--accent-presence); }
 .fa-ring--trusted { --fa-ring-color: var(--color-success); }
+/* Unmeasured — no thread self-reports yet; the ring stays neutral, never red. */
+.fa-ring--none { --fa-ring-color: var(--border-strong); }
+.fa-ring--none .fa-ring__label strong { color: var(--text-muted); }
 .fa-ring svg {
   width: 100%;
   height: 100%;
@@ -10928,35 +10941,85 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: 14px;
   letter-spacing: 0;
 }
-.fa-factor-list,
 .fa-heal-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.fa-factor {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(160px, 1.6fr) 72px;
-  align-items: center;
+/* Confidence from thread analysis — metric average bars + context-pressure mix. */
+.fa-thread-analysis {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
-.fa-factor__meta b {
-  display: block;
-  font-size: 13px;
-  /* Names are curated (see CONFIDENCE_FACTOR_COPY) — no title-casing. */
-  text-transform: none;
+.fa-thread-analysis .fa-thread-score-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.fa-factor__meta span,
-.fa-factor small {
+/* Changes over time — verdict chip + bucket-scored sparkline. */
+.fa-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+}
+.fa-trend__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fa-trend-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.fa-trend-verdict b {
+  font-variant-numeric: tabular-nums;
+}
+.fa-trend-verdict--improving { color: var(--accent-presence); }
+.fa-trend-verdict--regressing { color: var(--color-warning); }
+.fa-trend-verdict--insufficient { color: var(--text-muted); font-weight: 400; }
+.fa-trend__meta {
   color: var(--text-muted);
   font-size: 11px;
 }
+.fa-trend__spark { margin: 0; }
+.fa-trend__spark figcaption {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.fa-trend__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+/* Per-metric delta against the previous trend bucket. */
+.fa-trend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+  color: var(--text-muted);
+}
+.fa-trend-chip--improving { color: var(--accent-presence); }
+.fa-trend-chip--regressing { color: var(--color-warning); }
 .fa-factor-bar {
   position: relative;
   overflow: hidden;
   height: 10px;
-  /* Confidence-breakdown bars set an inline width to scale the track to the
-     factor's weight; this floor keeps a low-weight (e.g. 10%) track visible. */
+  /* Keeps bars visible inside the narrowest metric cells. */
   min-width: 44px;
   border-radius: 999px;
   background: var(--bg-raised);
@@ -10989,16 +11052,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-muted);
   font-weight: 400;
   font-size: 0.85em;
-}
-/* Earned-points column of a confidence factor row. */
-.fa-factor-earned {
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.fa-factor-earned b {
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 .fa-heal-card {
   display: flex;
@@ -11225,7 +11278,49 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   overflow-y: auto;
 }
 .fa-thread-review-list li {
+  position: relative;
   min-width: 0;
+}
+/* Dismiss ("acknowledge") — top-right of the item, hover/focus-revealed on
+   fine pointers, always visible on coarse (no hover to reveal it with). */
+.fa-thread-review-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.fa-thread-review-list li:hover .fa-thread-review-dismiss,
+.fa-thread-review-list li:focus-within .fa-thread-review-dismiss {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .fa-thread-review-dismiss { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fa-thread-review-dismiss { transition: none; }
+}
+/* Kind filter chips + the restore affordance. */
+.fa-thread-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fa-thread-review-chip {
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.fa-thread-review-chip b {
+  font-variant-numeric: tabular-nums;
+}
+.fa-thread-review-chip.is-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+  color: var(--accent-presence);
+}
+.fa-thread-review-chip--restore {
+  margin-left: auto;
+  color: var(--text-muted);
 }
 /* Each review item is a button — selecting it opens a discussion on the topic.
    The shared .ui-btn base sets white-space: nowrap (single-line buttons), which
@@ -11375,6 +11470,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
+}
+/* The header row stays pinned while the wrap scrolls. */
+.fa-thread-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-raised);
+  box-shadow: 0 1px 0 var(--border-hairline);
 }
 .fa-thread-table {
   width: 100%;
@@ -11640,10 +11743,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-section__head {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .fa-factor {
-    grid-template-columns: 1fr;
-    align-items: stretch;
   }
   .fa-response-factor-grid,
   .fa-thread-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -12468,6 +12567,41 @@ details[open] > .cave-edit-card__summary::before {
 }
 .quick-chat-overlay__actions button:not(:disabled):hover {
   filter: brightness(1.06);
+}
+
+/* Composer meta chips (cave-fdt5): thinking/speed/model as quiet pills
+   instead of a plain-text run-on sentence. */
+.quick-chat-meta-chips {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.quick-chat-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.quick-chat-meta-chip:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A disabled Send at 50% opacity over the dark composer was near-invisible —
+   keep the control legible as "present but not ready" (cave-fdt5). */
+.quick-chat-overlay__actions .ui-btn--primary:disabled {
+  opacity: 1;
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
 
 /* Drag-and-drop attachments — the composer footer is the drop target; the
@@ -15434,6 +15568,8 @@ details[open] > .cave-edit-card__summary::before {
 .research-mission-row__top { display: flex; align-items: flex-start; gap: 7px; }
 .research-mission-row__top strong { font-size: 11.5px; font-weight: 600; line-height: 1.35; }
 .research-mission-row__meta { display: flex; gap: 7px; padding-left: 13px; font-size: 9.5px; text-transform: capitalize; color: var(--text-muted); }
+.research-mission-row__meta time { margin-left: auto; text-transform: none; }
+.research-mission-detail__eyebrow time { text-transform: none; letter-spacing: 0.02em; }
 
 .research-status-dot {
   flex: 0 0 auto;

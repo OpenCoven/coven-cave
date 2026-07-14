@@ -606,7 +606,8 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                               onPointerDownTouch={(e) => handleCardPointerDown(e, card)}
                               onJumpToSession={onJumpToSession}
                               onOpenTaskChat={onOpenTaskChat}
-                              chatLinking={chatLinkingId === card.id} />
+                              chatLinking={chatLinkingId === card.id}
+                              inStatusColumn={groupBy === "status"} />
                           ))}
                           {onQuickAdd && !selectMode && (
                             <li className="board-kanban-quickadd">
@@ -703,7 +704,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   );
 }
 
-function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
+function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false, inStatusColumn = false }: {
   card: Card; familiarById: Map<string, ResolvedFamiliar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
   isDragging: boolean; isSelected: boolean; isGrabbed: boolean; selectMode?: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
@@ -711,6 +712,9 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinking?: boolean;
+  /** True when the card sits in a column named after its status (groupBy
+   *  "status") — a lifecycle badge that merely restates the column is noise. */
+  inStatusColumn?: boolean;
 }) {
   const draggedRef = useRef(false);
   const resolvedFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
@@ -723,6 +727,16 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
   const attachmentCount = card.attachments?.length ?? 0;
   const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || attachmentCount > 0 || !!session;
+  // A lifecycle badge that just restates the column it sits in ("queued" in
+  // Backlog, "running" in Running…) is chip noise; only divergent states —
+  // dispatched, failed-vs-cancelled in Blocked, needs-human — earn the badge.
+  const lifecycleRedundant =
+    inStatusColumn &&
+    !card.needsHuman &&
+    (((card.status === "backlog" || card.status === "inbox") && card.lifecycle === "queued") ||
+      (card.status === "running" && card.lifecycle === "running") ||
+      (card.status === "review" && card.lifecycle === "review") ||
+      (card.status === "done" && card.lifecycle === "completed"));
   // A card with neither a project nor a cwd can't root its task chats — new
   // chat starts are refused and linked chats can't inherit a project. Nudge.
   const missingProject = !card.projectId && !card.cwd;
@@ -782,8 +796,17 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
         </span>
       )}
       <div className="board-kanban-card-top">
-        <span className={`board-kanban-priority-pill board-kanban-priority-pill--${card.priority}`}>{pri.label}</span>
-        <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+        {/* Priority reads from the card's left color bar; the marker is a
+            tiny matching glyph, not a shouting all-caps pill. The card's
+            aria-label already carries "<priority> priority". */}
+        <span
+          className={`board-kanban-priority-pill board-kanban-priority-pill--glyph board-kanban-priority-pill--${card.priority}`}
+          title={`${pri.label} priority`}
+          aria-hidden
+        >
+          <Icon name={card.priority === "urgent" ? "ph:flag-fill" : "ph:flag"} width={10} />
+        </span>
+        {!lifecycleRedundant && <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />}
         {missingProject && (
           <span
             className="board-kanban-card-chip board-kanban-card-chip--no-project"

@@ -73,15 +73,29 @@ assert.match(
   /applyMergedPrAutoArchive\(\s*await enrichSessionsWithGitContext\(scoped\),/,
   "the merged-PR sweep runs over the (async) enriched rows before the payload returns",
 );
+const sweepModule = readFileSync(
+  new URL("../lib/chat-auto-archive-sweep.ts", import.meta.url),
+  "utf8",
+);
 assert.match(
-  listRoute,
+  sweepModule,
   /process\.env\[MERGED_AUTO_ARCHIVE_DISABLE_ENV\] === "1"/,
   "the sweep honors the opt-out env",
 );
 assert.match(
-  listRoute,
-  /resolveArchiveNudges\(d\.sessionId\)/,
+  sweepModule,
+  /if \(!policy\.enabled \|\| !policy\.archiveOnPrMerge\) return new Map\(\);/,
+  "the merged sweep is gated by the Settings-tab policy (master switch + PR-merge toggle)",
+);
+assert.match(
+  sweepModule,
+  /sweepMergedPrAutoArchive[\s\S]*?resolveArchiveNudges\(sessionId\)/,
   "swept chats clear their pending archive nudges",
+);
+assert.match(
+  sweepModule,
+  /mergedChatAutoArchiveDecisions\(\s*rows,\s*state\.mergedPrAutoArchived \?\? \{\},\s*\{\s*keep: state\.sessionKeep \?\? \{\},\s*extendedUntil: state\.sessionArchiveExtendedUntil \?\? \{\},/,
+  "the merged sweep honors the shared keep/extension opt-outs from cave state",
 );
 
 // ── One-shot state: summoning an auto-archived chat sticks ───────────────────

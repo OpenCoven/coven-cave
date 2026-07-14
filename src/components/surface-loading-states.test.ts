@@ -16,8 +16,8 @@ assert.match(
   inbox,
   // The Calendar tab branch may precede this (calendarSlot is rendered first),
   // so the skeleton ternary need not be the very first child of the list box.
-  /!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : activeTab === "crons" && automationsEmpty \? \(/,
-  "Schedules shows a skeleton before first load, ahead of the Crons empty state",
+  /!initialLoadDone \? \([\s\S]*?ui-skeleton[\s\S]*?\) : activeTab === "crons" && automationsEmpty \? \(/,
+  "Schedules shows a shimmer skeleton before first load, ahead of the Crons empty state",
 );
 
 const chatList = read("./chat-list.tsx");
@@ -28,8 +28,8 @@ assert.match(
 );
 assert.match(
   chatList,
-  /\{!sessionsLoaded && !hasAny \? \([\s\S]*?animate-pulse[\s\S]*?\) : !hasAny \? \(/,
-  "ChatList shows skeleton rows instead of flashing the no-chats empty state on boot",
+  /\{!sessionsLoaded && !hasAny \? \([\s\S]*?ui-skeleton[\s\S]*?\) : !hasAny \? \(/,
+  "ChatList shows shimmer skeleton rows instead of flashing the no-chats empty state on boot",
 );
 
 const workspace = read("./workspace.tsx");
