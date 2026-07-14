@@ -1051,6 +1051,31 @@
   background: color-mix(in oklch, var(--color-warning) 12%, var(--bg-raised));
   border-color: color-mix(in oklch, var(--color-warning) 45%, var(--border-hairline));
 }
+/* Live cards — the agentic-presence tier (cave-9j6a): a familiar is working
+   this session RIGHT NOW. Presence tint + a breathing status dot; the pulse
+   collapses to a static dot under prefers-reduced-motion (token durations
+   zero out globally). */
+.home-digest__card--live {
+  opacity: 1;
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
+}
+.home-digest__card--live:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-hairline));
+}
+.home-digest__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  flex-shrink: 0;
+  animation: home-digest-live-pulse 2s var(--ease-standard, ease-out) infinite;
+}
+@keyframes home-digest-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent-presence) 0%, transparent); }
+}
 /* Suggestion cards — quick actions trail the chats track in the presence
    tint so "start this next" reads apart from resumable sessions. */
 .home-digest__card--suggestion {

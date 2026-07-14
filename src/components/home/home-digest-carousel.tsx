@@ -277,6 +277,25 @@ function DigestCardView({
     );
   }
 
+  if (card.kind === "live") {
+    return (
+      <button
+        type="button"
+        className="home-digest__card home-digest__card--live"
+        tabIndex={tabIndex}
+        onClick={() => onOpenSession?.(card.sessionId, card.familiarId)}
+        title={`Watch “${card.title}” live`}
+      >
+        <span className="home-digest__live-dot" aria-hidden />
+        <span className="home-digest__body">
+          <span className="home-digest__title">{card.title}</span>
+          <span className="home-digest__meta">{card.subtitle}</span>
+        </span>
+        <span className="sr-only">Running now</span>
+      </button>
+    );
+  }
+
   if (card.kind === "summary") {
     return (
       <div className="home-digest__card home-digest__card--summary">
