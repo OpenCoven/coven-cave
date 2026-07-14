@@ -134,4 +134,19 @@ assert.match(
   /historyState === "loading" \? \(\s*<ChatHistorySkeleton \/>/,
   "The blanked transcript renders ChatHistorySkeleton while history loads",
 );
+// The shared Skeleton is phrasing content: it stands in for text runs inside
+// <p>/<span> hosts (e.g. the marketplace count line), where a <div> is invalid
+// HTML and trips React hydration (cave-m97f). `.ui-skeleton` supplies
+// display:block, so a <span> renders identically everywhere.
+const skeleton = read("./ui/skeleton.tsx");
+assert.match(
+  skeleton,
+  /<span\s*\n?\s*className=\{classes\}\s*\n?\s*aria-hidden/,
+  "Skeleton renders a <span> so it stays valid inside <p> hosts",
+);
+assert.doesNotMatch(
+  skeleton,
+  /<div\s*\n?\s*className=\{classes\}/,
+  "Skeleton must not regress to a <div> (hydration error inside <p>)",
+);
 console.log("surface-loading-states.test.ts: ok");
