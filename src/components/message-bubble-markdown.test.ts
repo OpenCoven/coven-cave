@@ -293,4 +293,25 @@ assert.match(
   "cave-chat.css styles the rendered mermaid diagram card",
 );
 
+// ── Block rhythm: the preview shell must be stripped ─────────────────────────
+// renderAsync wraps documents in <div class="cm-preview">; left in place it
+// makes every block a GRANDCHILD of .cave-md, so the owl spacing rule
+// (.cave-md > * + *) never fires and a bulleted list renders glued to the
+// paragraph introducing it — no line break before bullets.
+assert.match(
+  source,
+  /import \{ unwrapPreviewShell \} from "@\/lib\/markdown-preview-shell"/,
+  "the shell unwrap comes from the pure, unit-tested lib",
+);
+assert.match(
+  source,
+  /sanitizedHtml = unwrapPreviewShell\(sanitizedHtml\);/,
+  "mdToHtml strips the cm-preview shell after sanitize/mermaid so blocks are direct .cave-md children",
+);
+assert.match(
+  css,
+  /\.cave-md > \* \+ \* \{ margin-top: 0\.8em; \}/,
+  "the owl block-rhythm rule the unwrap exists to feed",
+);
+
 console.log("message-bubble-markdown.test.ts: ok");

@@ -39,6 +39,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { parseFileRef, type FileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
+import { unwrapPreviewShell } from "@/lib/markdown-preview-shell";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
 
 // ---------------------------------------------------------------------------
@@ -726,6 +727,11 @@ async function mdToHtml(markdown: string, opts?: { transient?: boolean }): Promi
   if (mermaidPlugin?.postProcess) {
     sanitizedHtml = await mermaidPlugin.postProcess(sanitizedHtml);
   }
+  // Strip the renderer's cm-preview shell so blocks land as DIRECT children
+  // of .cave-md — its `> * + *` owl selector is the only block-rhythm rule,
+  // and with the shell in place a list rendered flush against the paragraph
+  // introducing it (no line break before bullets).
+  sanitizedHtml = unwrapPreviewShell(sanitizedHtml);
   // Transient (mid-stream) snapshots are never requested again once the
   // stream advances past them — caching one per throttle tick would churn
   // settled entries out of the LRU for no hit-rate gain.
