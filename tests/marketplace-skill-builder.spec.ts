@@ -42,7 +42,9 @@ test.describe("marketplace skill builder", () => {
     await form.getByLabel("Name").fill("Release Notes Writer");
     await form.getByLabel("Description").fill("Draft release notes from merged PRs.");
     await form.getByLabel(/Tags/).fill("release, notes");
-    await form.getByRole("button", { name: "Insert starter template" }).click();
+    // The template gallery (cave-6ptj): inserting a kind fills the
+    // instructions with a Tab-fillable body.
+    await form.getByRole("group", { name: "Skill templates" }).getByRole("button", { name: "Procedure" }).click();
 
     // The live preview shows the exact composed SKILL.md (frontmatter + slug path).
     const preview = page.locator('section[aria-label="SKILL.md preview"] pre');
@@ -57,6 +59,10 @@ test.describe("marketplace skill builder", () => {
     // Success panel with the written path, then jump to the Skills tab.
     await expect(page.getByRole("region", { name: "Skill saved" })).toBeVisible();
     await expect(page.getByText("/tmp/e2e/.coven/skills/release-notes-writer/SKILL.md")).toBeVisible();
+    // The dry-run tester rides the success panel (cave-cyfc) — presence only;
+    // probes need a codex runtime the e2e job doesn't have.
+    await expect(page.getByTestId("skill-dry-run")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Test trigger" })).toBeDisabled();
     expect(postedBody).toMatchObject({
       name: "Release Notes Writer",
       description: "Draft release notes from merged PRs.",
@@ -81,7 +87,7 @@ test.describe("marketplace skill builder", () => {
     const form = page.getByRole("form", { name: "New skill" });
     await form.getByLabel("Name").fill("Release Notes Writer");
     await form.getByLabel("Description").fill("Draft release notes.");
-    await form.getByRole("button", { name: "Insert starter template" }).click();
+    await form.getByRole("group", { name: "Skill templates" }).getByRole("button", { name: "Procedure" }).click();
     await form.getByRole("button", { name: "Save skill" }).click();
 
     await expect(page.locator("#marketplace-panel-build").getByRole("alert")).toContainText("already exists");
