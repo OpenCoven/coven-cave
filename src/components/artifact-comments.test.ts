@@ -17,6 +17,14 @@ assert.match(
 assert.match(comp, /document\.addEventListener\("mouseup", onMouseUp\)/, "detects selection on mouseup");
 assert.match(comp, /window\.getSelection\(\)/, "reads the live text selection");
 assert.match(comp, /className="cave-artifact-comment-fab"/, "shows a floating Comment affordance on selection");
+// The fab portals to <body>: it is position:fixed with viewport coords, and
+// the backdrop glass (backdrop-filter on .cave-chat-thread) would otherwise
+// become its containing block — landing the pill mid-prose and clipped.
+assert.match(
+  comp,
+  /createPortal\(\s*<button[\s\S]*?cave-artifact-comment-fab[\s\S]*?document\.body,?\s*\)/,
+  "the fab renders through a body portal so ancestor filters can't capture its fixed positioning",
+);
 // The fab's x is clamped so wide selections can't push it off the viewport edge.
 assert.match(
   comp,

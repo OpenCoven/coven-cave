@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import {
   buildCommentsPrompt,
@@ -170,22 +171,31 @@ export function ArtifactComments({
 
   return (
     <>
-      {sel ? (
-        <button
-          type="button"
-          className="cave-artifact-comment-fab"
-          style={{ left: `${sel.x}px`, top: `${Math.max(8, sel.y - 42)}px` }}
-          // Use mouseDown so the click lands before the selection clears.
-          onMouseDown={(e) => {
-            e.preventDefault();
-            addFromSelection();
-          }}
-          aria-label="Comment on selection"
-        >
-          <Icon name="ph:chat-teardrop" width={13} aria-hidden />
-          Comment
-        </button>
-      ) : null}
+      {sel
+        ? // Portal to <body>: the pill is position:fixed with viewport coords,
+          // but it renders inside the chat thread, and the backdrop glass
+          // (html[data-backdrop-on] .cave-chat-thread's backdrop-filter) makes
+          // that ancestor the containing block for fixed descendants — the
+          // pill landed shifted into the prose and clipped at the pane edge.
+          // At body level no ancestor filter/transform can capture it.
+          createPortal(
+            <button
+              type="button"
+              className="cave-artifact-comment-fab"
+              style={{ left: `${sel.x}px`, top: `${Math.max(8, sel.y - 42)}px` }}
+              // Use mouseDown so the click lands before the selection clears.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                addFromSelection();
+              }}
+              aria-label="Comment on selection"
+            >
+              <Icon name="ph:chat-teardrop" width={13} aria-hidden />
+              Comment
+            </button>,
+            document.body,
+          )
+        : null}
 
       {comments.length > 0 ? (
         <div className="cave-artifact-comments" role="group" aria-label="Comments on this document">
