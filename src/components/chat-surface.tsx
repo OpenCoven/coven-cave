@@ -8,7 +8,7 @@ import { ProjectsView } from "@/components/projects-view";
 import { ChatSettingsView } from "@/components/chat-settings-view";
 import { ChatCanvasView } from "@/components/chat-canvas-view";
 import { GroupChatView } from "@/components/group-chat-view";
-import { InspectorPane } from "@/components/inspector-pane";
+import { ChatFamiliarView } from "@/components/chat-familiar-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
 import { WorkspaceRail } from "@/components/workspace-rail";
 import { useCodeRail } from "@/lib/use-code-rail";
@@ -583,11 +583,11 @@ export function ChatSurface({
           </div>
         ) : scope === "familiar" ? (
           // The active familiar's identity + capability surface (hero, role,
-          // skills, tools) — promoted from the retired inspector sidepanel to a
-          // first-class chat tab, since it describes who you're chatting with.
+          // skills, tools) — a purpose-built first-class chat tab, since it
+          // describes who you're chatting with.
           <div className="flex min-h-0 min-w-0 flex-1 justify-center">
             <div className="h-full w-full max-w-7xl">
-              <InspectorPane familiar={activeFamiliar} tab="familiar" daemonRunning={daemonRunning} onStartChat={startFamiliarHeroChat} />
+              <ChatFamiliarView familiar={activeFamiliar} daemonRunning={daemonRunning} onStartChat={startFamiliarHeroChat} />
             </div>
           </div>
         ) : scope === "settings" ? (

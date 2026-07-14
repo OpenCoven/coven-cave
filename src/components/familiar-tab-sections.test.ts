@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 // language: washes + hairlines, accent reserved for presence, CTAs on empty
 // states, paths demoted to tooltips.
 
-const src = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
+const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 test("KindBadge is neutral — the per-kind color map is gone", () => {

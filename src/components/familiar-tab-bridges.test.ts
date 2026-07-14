@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 // fresh chat. Touch targets grow on coarse pointers, and the pane is a
 // labelled landmark.
 
-const src = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
+const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -51,12 +51,14 @@ test("new chat is the hero's primary action — the one filled-accent control", 
   );
 });
 
-test("the pane is a labelled landmark per section", () => {
+test("the tab and the memory rail are separately labelled landmarks", () => {
   assert.match(
     src,
-    /aria-label=\{tab === "familiar" \? "Familiar profile" : "Familiar memory"\}/,
-    "the aside names which pane it is",
+    /className="chat-familiar-view[\s\S]{0,200}?aria-label="Familiar profile"/,
+    "the tab owns its own labelled landmark",
   );
+  const pane = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
+  assert.match(pane, /aria-label="Familiar memory"/, "the memory rail keeps its own label");
 });
 
 test("coarse pointers get honest touch targets without changing pointer-fine rhythm", () => {

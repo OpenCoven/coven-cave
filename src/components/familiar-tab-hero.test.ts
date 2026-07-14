@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 // (avatar, serif display name, role, presence, runtime) before WHAT it can do
 // (the capability grid), and the grid must earn a wide canvas with two columns.
 
-const src = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
+const src = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -74,8 +74,8 @@ test("wide-canvas layout: container-query grid, two columns >=900px, single belo
 test("the chat surface gives the tab a wide canvas and threads presence", () => {
   assert.match(
     chatSurface,
-    /scope === "familiar"[\s\S]*?max-w-7xl[\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
-    "Familiar tab hosts the pane in a max-w-7xl column with daemonRunning threaded",
+    /scope === "familiar"[\s\S]*?max-w-7xl[\s\S]*?<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
+    "Familiar tab hosts the purpose-built view in a max-w-7xl column with daemonRunning threaded",
   );
 });
 

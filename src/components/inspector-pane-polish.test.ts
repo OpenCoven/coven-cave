@@ -8,28 +8,30 @@ const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(resolve(here, "./inspector-pane.tsx"), "utf8");
 const chatSurface = readFileSync(resolve(here, "./chat-surface.tsx"), "utf8");
 
-test("the pane is a controlled section body — memory + familiar only", () => {
-  // The inspector sidepanel is retired. The pane renders the one section its
-  // host drives: the chat surface's Familiar tab or the companion rail's
-  // Memory tab. Analytics/Automations are gone with the panel.
+test("the pane is memory-only — the familiar section moved to its own surface", () => {
+  // The inspector sidepanel is retired and the chat Familiar tab is a
+  // purpose-built surface (chat-familiar-view.tsx) — the pane renders the
+  // memory rail alone. Analytics/Automations are gone with the panel.
   assert.doesNotMatch(src, /ariaLabel="Inspector sections"/, "no nested section strip in the pane");
-  assert.match(src, /tab\?: Tab/, "the pane takes its section as a controlled prop");
-  assert.match(src, /export type Tab = "memory" \| "familiar"/, "analytics/inbox sections are retired");
+  assert.doesNotMatch(src, /export type Tab\b/, "the controlled section prop is retired with the familiar section");
+  assert.doesNotMatch(src, /FamiliarIdentityHero|FamiliarCapabilityPanel/, "no familiar-tab rendering remains in the pane");
   assert.doesNotMatch(src, /FamiliarAnalyticsView|InboxTab|SnoozeMenu/, "no analytics or automations rendering remains");
   assert.match(
     chatSurface,
-    /<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
-    "the chat surface's Familiar tab drives the pane's familiar section (presence threaded)",
+    /<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
+    "the chat surface's Familiar tab mounts the purpose-built view (presence threaded)",
   );
   assert.doesNotMatch(chatSurface, /INSPECTOR_SECTIONS/, "the promoted right-panel section strip is gone");
 });
 
-test("InspectorEmpty helper is defined and used for the no-familiar/error states", () => {
+test("InspectorEmpty helper is defined and used for the memory error state", () => {
   assert.match(src, /function InspectorEmpty\(/, "helper declared");
   const usages = src.match(/<InspectorEmpty\b/g) ?? [];
-  assert.ok(usages.length >= 2, `expected >=2 usages, got ${usages.length}`);
-  assert.match(src, /icon="ph:sparkle"\s+title="No familiar selected"/, "familiar empty state");
+  assert.ok(usages.length >= 1, `expected >=1 usage, got ${usages.length}`);
   assert.match(src, /icon="ph:warning"\s+title="Memory unavailable"/, "memory error state");
+  // The familiar empty state lives with the familiar surface now.
+  const familiarView = readFileSync(resolve(here, "./chat-familiar-view.tsx"), "utf8");
+  assert.match(familiarView, /No familiar selected/, "familiar empty state moved with the tab");
 });
 
 test("memory inner mode toggle uses the shared Vercel-style Tabs (2px underline)", () => {
