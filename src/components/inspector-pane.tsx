@@ -653,7 +653,7 @@ function CapSection({
 function CapRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <li className="flex items-baseline justify-between gap-2">
-      <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+      <span className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
         {label}
       </span>
       <span
@@ -720,7 +720,7 @@ function SkillItem({
         <KindBadge kind={kind} />
       </div>
       {description ? (
-        <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">{description}</p>
+        <p className="mt-0.5 line-clamp-1 text-[11px] text-[var(--text-muted)]">{description}</p>
       ) : null}
       {tags && tags.length > 0 ? (
         <div className="mt-0.5 flex flex-wrap gap-1">
@@ -763,7 +763,7 @@ function CollapsibleSection({
           width={10}
           className="shrink-0 text-[var(--text-muted)]"
         />
-        <span className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+        <span className="text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
           {title}
         </span>
         {badge ? (
@@ -837,13 +837,13 @@ function FamiliarIdentityHero({
           </p>
         ) : null}
         {familiar.description ? (
-          <p className="mt-1.5 max-w-[64ch] text-[12px] leading-relaxed text-[var(--text-secondary)]">
+          <p className="mt-1.5 max-w-[64ch] text-[13px] leading-relaxed text-[var(--text-secondary)]">
             {familiar.description}
           </p>
         ) : null}
         <div className="familiar-tab__links mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
           {runtimeLine ? (
-            <span className="font-mono text-[10px] text-[var(--text-muted)]" title="Harness · model">
+            <span className="font-mono text-[11px] text-[var(--text-muted)]" title="Harness · model">
               {runtimeLine}
             </span>
           ) : null}
@@ -851,14 +851,14 @@ function FamiliarIdentityHero({
             <Link
               href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
               aria-label={`Open profile card for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Profile →
             </Link>
             <Link
               href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
               aria-label={`Open analytics for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Analytics →
             </Link>
@@ -868,7 +868,7 @@ function FamiliarIdentityHero({
               type="button"
               onClick={() => openFamiliarStudioSettingsTab("memory", familiar.id)}
               aria-label={`Open memory for ${familiar.display_name}`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Memory →
             </button>
@@ -876,7 +876,7 @@ function FamiliarIdentityHero({
               type="button"
               onClick={() => openFamiliarStudioSettingsTab("identity", familiar.id)}
               aria-label={`Edit ${familiar.display_name} in the Familiar Studio`}
-              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+              className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
             >
               Edit in Studio →
             </button>

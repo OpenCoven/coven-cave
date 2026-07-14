@@ -122,6 +122,19 @@ html[data-backdrop-on] .cave-chat-empty-shell {
   padding: clamp(16px, 3vh, 28px) clamp(14px, 2.5vw, 24px);
 }
 
+/* Familiar tab over the image: the identity hero and the dense capability
+   rows have no bubbles at all, so their small type sits straight on the
+   photo. Give the tab the transcript's glass-column idiom with a much deeper
+   blur — 50px flattens faces/props into a soft wash that 10–13px metadata
+   stays legible against at any intensity. */
+html[data-backdrop-on] .familiar-tab {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  backdrop-filter: blur(50px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(50px) saturate(var(--glass-saturate));
+  border-radius: 14px;
+  --text-muted: var(--text-secondary);
+}
+
 /* And the same quiet-text contrast lift Home-side. */
 html[data-backdrop-on] .home-composer-root {
   --text-muted: var(--text-secondary);
@@ -135,7 +148,8 @@ html[data-backdrop-on] .home-composer-root {
     background: color-mix(in oklch, var(--bg-base) 92%, transparent);
   }
 
-  html[data-backdrop-on] .cave-chat-empty-shell {
+  html[data-backdrop-on] .cave-chat-empty-shell,
+  html[data-backdrop-on] .familiar-tab {
     background: color-mix(in oklch, var(--bg-base) 92%, transparent);
   }
 }
@@ -168,5 +182,12 @@ html[data-backdrop-on] .home-composer-root {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     padding: 0;
+  }
+
+  /* No image layer → the familiar tab sits on the base surface again. */
+  html[data-backdrop-on] .familiar-tab {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }

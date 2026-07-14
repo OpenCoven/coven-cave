@@ -586,7 +586,7 @@ export function ChatSurface({
           // skills, tools) — promoted from the retired inspector sidepanel to a
           // first-class chat tab, since it describes who you're chatting with.
           <div className="flex min-h-0 min-w-0 flex-1 justify-center">
-            <div className="h-full w-full max-w-5xl">
+            <div className="h-full w-full max-w-7xl">
               <InspectorPane familiar={activeFamiliar} tab="familiar" daemonRunning={daemonRunning} onStartChat={startFamiliarHeroChat} />
             </div>
           </div>

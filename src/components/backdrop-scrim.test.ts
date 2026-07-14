@@ -32,6 +32,18 @@ assert.match(
   "the chat landing cluster earns the same glass ground as the live transcript",
 );
 
+// ── Familiar tab glass ───────────────────────────────────────────────────────
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.familiar-tab \{[^}]*backdrop-filter: blur\(50px\)/s,
+  "the Familiar tab earns a deep-blur glass column over the image",
+);
+assert.match(
+  css,
+  /html\[data-backdrop-on\] \.familiar-tab \{[^}]*--text-muted: var\(--text-secondary\)/s,
+  "muted text reads at secondary strength on the Familiar tab over the image",
+);
+
 // ── Quiet-text lift extends to Home ──────────────────────────────────────────
 assert.match(
   css,
@@ -42,8 +54,8 @@ assert.match(
 // ── Degradation contract ─────────────────────────────────────────────────────
 assert.match(
   css,
-  /@supports not \(\(backdrop-filter[^)]*\)[^{]*\{[\s\S]*?\.cave-chat-empty-shell \{[^}]*92%/,
-  "no backdrop-filter → the landing glass goes near-opaque",
+  /@supports not \(\(backdrop-filter[^)]*\)[^{]*\{[\s\S]*?\.cave-chat-empty-shell,\s*html\[data-backdrop-on\] \.familiar-tab \{[^}]*92%/,
+  "no backdrop-filter → the landing and Familiar-tab glass go near-opaque",
 );
 assert.match(
   css,
@@ -54,6 +66,11 @@ assert.match(
   css,
   /prefers-reduced-transparency: reduce[\s\S]*\.cave-chat-empty-shell \{[^}]*background: transparent/s,
   "reduced transparency drops the landing glass with the image",
+);
+assert.match(
+  css,
+  /prefers-reduced-transparency: reduce[\s\S]*\.familiar-tab \{[^}]*background: transparent/s,
+  "reduced transparency drops the Familiar-tab glass with the image",
 );
 
 console.log("backdrop-scrim.test.ts: ok");

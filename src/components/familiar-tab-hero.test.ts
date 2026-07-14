@@ -74,8 +74,8 @@ test("wide-canvas layout: container-query grid, two columns >=900px, single belo
 test("the chat surface gives the tab a wide canvas and threads presence", () => {
   assert.match(
     chatSurface,
-    /scope === "familiar"[\s\S]*?max-w-5xl[\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
-    "Familiar tab hosts the pane in a max-w-5xl column with daemonRunning threaded",
+    /scope === "familiar"[\s\S]*?max-w-7xl[\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
+    "Familiar tab hosts the pane in a max-w-7xl column with daemonRunning threaded",
   );
 });
 
