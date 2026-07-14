@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
@@ -38,6 +39,13 @@ describe("stitch intake panel", () => {
     assert.match(intake, /new CustomEvent\("cave:agents-new-chat"/, "sew-in-chat dispatches a primed chat");
     assert.match(intake, /buildSewChatPrompt/, "the chat is seeded with a pin digest");
     assert.match(intake, /disabled=\{pins\.length === 0 \|\| busy\}/, "sewing needs at least one pin");
+    // .agents/ is gitignored with tracked exceptions — the companion skill
+    // must stay force-added, or the chat brief references a ghost (cave-x1za).
+    assert.equal(
+      existsSync(new URL("../../.agents/skills/stitch-sewer/SKILL.md", import.meta.url)),
+      true,
+      "the stitch-sewer agent skill documents the sew contract for harness sessions",
+    );
   });
 
   it("aims the sew at a shape and a destination (cave-kwx4)", () => {

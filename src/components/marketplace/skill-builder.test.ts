@@ -3,6 +3,7 @@
 // preview/writer formatter, and the CTA reroute away from the old
 // Capabilities dead-end.
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 const view = await readFile(new URL("../marketplace-view.tsx", import.meta.url), "utf8");
@@ -60,6 +61,13 @@ assert.match(builder, /usePromptEnhance\(\{/, "instructions enhance rides the sh
 assert.match(builder, /enhancer\.state\.phase === "suggested"/, "a raced enhance surfaces as an apply/dismiss suggestion");
 assert.match(builder, /buildSkillAgentPrompt\(\{ description: goal, root \}\)/, "Build in chat carries the full build-API brief");
 assert.match(builder, /new CustomEvent\("cave:agents-new-chat"/, "the brief dispatches the shared chat event");
+// .agents/ is gitignored with tracked exceptions — the companion skill must
+// stay force-added, or the chat brief references a ghost (cave-yz8n).
+assert.equal(
+  existsSync(new URL("../../../.agents/skills/skill-builder/SKILL.md", import.meta.url)),
+  true,
+  "the skill-builder agent skill documents the same build loop for harness sessions",
+);
 
 // ── Dry-run (cave-cyfc) ─────────────────────────────────────────────────────
 // The success panel proves the saved skill fires (and is followable) before
