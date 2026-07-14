@@ -16,7 +16,7 @@ const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8
 
 assert.match(
   surface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "settings"/,
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "settings"/,
   "chat surface must know the settings scope",
 );
 assert.match(

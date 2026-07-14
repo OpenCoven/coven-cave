@@ -7,21 +7,17 @@ import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { ProjectsView } from "@/components/projects-view";
 import { ChatSettingsView } from "@/components/chat-settings-view";
 import { GroupChatView } from "@/components/group-chat-view";
-import { InspectorPane, type Tab as InspectorSection } from "@/components/inspector-pane";
+import { InspectorPane } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
-import { DebugPane } from "@/components/debug-pane";
-import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { WorkspaceRail } from "@/components/workspace-rail";
 import { useCodeRail } from "@/lib/use-code-rail";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
@@ -29,13 +25,10 @@ import type { InitialCommandControls } from "@/lib/command-controls";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
 
-// Persists the chat thread / right-sidebar split width across reloads. Keyed by
-// the set of mounted panel ids, so the no-sidebar layout doesn't clobber the
-// with-sidebar one. localStorage-backed, fails soft under strict privacy modes.
+// Persists the chat thread / code-rail split width across reloads. Keyed by
+// the set of mounted panel ids, so the no-rail layout doesn't clobber the
+// with-rail one. localStorage-backed, fails soft under strict privacy modes.
 const CHAT_GROUP_ID = "cave.chat.widths.v1";
-// Power mode = the standalone chat transforms its side area into an inline
-// chat↔code split (the comux coding surface beside the conversation). Toggle
-// state and the split width persist independently of the inspector layout.
 const chatStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
@@ -59,10 +52,10 @@ const chatStorage = {
 
 // Memory is deliberately absent: familiar memory lives in the Familiars
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
+// "familiar" is the active familiar's capability panel, promoted from the
+// retired inspector sidepanel to a first-class chat tab.
 // "settings" is the consolidated chat-settings tab (auto-archive policy et al).
-type FamiliarsScope = "conversation" | "projects" | "coven" | "settings";
-
-export type RightPanelKind = "inspector" | "changes" | "debug";
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings";
 
 type Props = {
   familiars: Familiar[];
@@ -78,14 +71,9 @@ type Props = {
   /** Roster-load failure + retry, forwarded to ChatRouter's empty state (cave-atzv). */
   familiarsError?: string | null;
   onRetryFamiliars?: () => void;
-  inboxItems: InboxItem[];
-  /** Single owner of the right panel — the legacy open/closed boolean
-   *  fallback is retired (cave-liut). */
-  rightPanel: RightPanelKind | null;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
   pendingCodeRailOpen?: PendingCodeRailOpen | null;
-  onSetRightPanel: (panel: RightPanelKind | null) => void;
   onSetActiveFamiliar: (id: string | null) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
@@ -93,10 +81,6 @@ type Props = {
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
-  onOpenInbox: () => void;
-  onCreateReminder: (familiarId: string) => void;
-  onOpenInboxItem: (item: InboxItem) => void;
-  onInboxItemChanged: () => void | Promise<void>;
   onSessionsChanged?: () => void;
   /** Forwarded to ChatRouter → ChatView so the Task chip in the chat header
    *  routes back to the board with the linked card focused. */
@@ -107,162 +91,6 @@ type Props = {
    *  project-grouped thread list — so the in-surface rail would duplicate it. */
   hideThreadRail?: boolean;
 };
-
-// ── Right panel (inspector / chat) ────────────────────────────────────────────
-
-/** The Inspector's sections, promoted to the right panel's own top-level tabs.
- *  The pane no longer owns a nested tab strip — this panel drives which section
- *  it renders. Memory stays out — it lives in the Familiars surface, not the
- *  chat-side panel. */
-const INSPECTOR_SECTIONS: { id: Exclude<InspectorSection, "memory">; label: string }[] = [
-  { id: "familiar", label: "Familiar" },
-  { id: "analytics", label: "Analytics" },
-  { id: "inbox", label: "Automations" },
-];
-
-function RightPanel({
-  panel,
-  section,
-  activeFamiliar,
-  inboxItems,
-  onSetPanel,
-  onSetSection,
-  onOpenInbox,
-  onCreateReminder,
-  onOpenInboxItem,
-  onInboxItemChanged,
-}: {
-  panel: RightPanelKind;
-  /** Controlled by ChatSurface so the selection survives panel close/reopen
-   *  and the desktop-sidebar ↔ mobile-sheet remount (cave-liut). */
-  section: Exclude<InspectorSection, "memory">;
-  activeFamiliar: Familiar | null;
-  inboxItems: InboxItem[];
-  onSetPanel: (p: RightPanelKind | null) => void;
-  onSetSection: (s: Exclude<InspectorSection, "memory">) => void;
-  onOpenInbox: () => void;
-  onCreateReminder: (familiarId: string) => void;
-  onOpenInboxItem: (item: InboxItem) => void;
-  onInboxItemChanged: () => void | Promise<void>;
-}) {
-  const primaryPanel: Exclude<RightPanelKind, "changes"> = panel === "debug" ? "debug" : "inspector";
-
-  // Fired-reminder count for the active familiar — surfaces on the Automations
-  // tab as a soft warning-tinted badge (softened from the old red danger pill).
-  const inboxBadge = activeFamiliar
-    ? inboxItems.filter((i) => i.familiarId === activeFamiliar.id && i.status === "fired").length
-    : 0;
-
-  // cave-t7uz: the promoted section strip is a real WAI-ARIA tablist again —
-  // tab roles, aria-selected, and arrow-key roving focus (same contract the
-  // shared Tabs component provides). Debug/close stay outside the tablist:
-  // they're controls beside the tabs, not co-equal sections.
-  const tablistRef = useRef<HTMLDivElement>(null);
-  const { setActiveIndex } = useRovingTabIndex({
-    containerRef: tablistRef,
-    itemSelector: '[role="tab"]',
-    orientation: "horizontal",
-    loop: false,
-  });
-  useEffect(() => {
-    const idx = INSPECTOR_SECTIONS.findIndex((sec) => sec.id === section);
-    if (idx >= 0) setActiveIndex(idx);
-  }, [section, setActiveIndex]);
-
-  return (
-    // CHAT-D13-05: this panel renders inside the shell's <main>, where a
-    // complementary landmark is invalid (axe landmark-complementary-is-top-level)
-    // — expose it as a named region instead. .chat-right-aside mirrors the left
-    // sidebar's glass (fit + translucency owned in globals.css).
-    <aside role="region" aria-label="Session panels" className="chat-right-aside relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      <Group className="right-panel-split" orientation="vertical">
-        <Panel id="right-panel-primary" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
-          <div className="right-panel-tabs">
-            <div ref={tablistRef} role="tablist" aria-label="Inspector sections" className="right-panel-tablist">
-              {INSPECTOR_SECTIONS.map((sec) => {
-                const active = primaryPanel === "inspector" && section === sec.id;
-                return (
-                  <button
-                    key={sec.id}
-                    type="button"
-                    role="tab"
-                    id={`right-panel-tab-${sec.id}`}
-                    aria-selected={active}
-                    aria-controls="right-panel-section-panel"
-                    className={`right-panel-tab${active ? " right-panel-tab--active" : ""}`}
-                    onClick={() => {
-                      onSetSection(sec.id);
-                      onSetPanel("inspector");
-                    }}
-                  >
-                    {sec.label}
-                    {sec.id === "inbox" && inboxBadge > 0 ? (
-                      <span
-                        className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
-                        aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
-                      >
-                        {inboxBadge}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-            {/* Debug is diagnostics, not a co-equal section — a quiet icon
-                toggle beside the close control (same demotion vocabulary as
-                the Group icon in the scope-tab strip). */}
-            <button
-              type="button"
-              className={`right-panel-tab right-panel-tab--icon${primaryPanel === "debug" ? " right-panel-tab--active" : ""}`}
-              aria-label="Debug"
-              aria-pressed={primaryPanel === "debug"}
-              title="Debug — session event stream"
-              onClick={() => onSetPanel("debug")}
-            >
-              <Icon name="ph:bug-bold" width={13} />
-            </button>
-            <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
-              <Icon name="ph:x-bold" width={11} />
-            </button>
-          </div>
-          <div
-            id="right-panel-section-panel"
-            role={primaryPanel === "inspector" ? "tabpanel" : undefined}
-            aria-labelledby={primaryPanel === "inspector" ? `right-panel-tab-${section}` : undefined}
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
-          >
-            {primaryPanel === "inspector" && (
-              <InspectorPane
-                familiar={activeFamiliar}
-                inboxItems={inboxItems}
-                onOpenInbox={onOpenInbox}
-                onCreateReminder={onCreateReminder}
-                onOpenInboxItem={onOpenInboxItem}
-                onInboxItemChanged={onInboxItemChanged}
-                tab={section}
-              />
-            )}
-            {primaryPanel === "debug" && <DebugPane />}
-          </div>
-        </Panel>
-        <Separator className="shell-separator-h right-panel-splitter">
-          <SeparatorHandle orientation="row" />
-        </Separator>
-        <Panel id="right-panel-changes" className="right-panel-pane min-h-0" defaultSize="50%" minSize="25%">
-          <div className="right-panel-changes-header">
-            <span className="right-panel-changes-title">
-              <Icon name="ph:git-diff" width={13} />
-              Changes
-            </span>
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <SessionChangesPanel />
-          </div>
-        </Panel>
-      </Group>
-    </aside>
-  );
-}
 
 // ── Main view ─────────────────────────────────────────────────────────────────
 
@@ -278,12 +106,9 @@ export function ChatSurface({
   familiarsLoaded,
   familiarsError,
   onRetryFamiliars,
-  inboxItems,
-  rightPanel,
   pendingProjectRoot,
   pendingChatAction,
   pendingCodeRailOpen,
-  onSetRightPanel,
   onSetActiveFamiliar,
   onClearPendingProjectRoot,
   onPendingChatActionHandled,
@@ -291,10 +116,6 @@ export function ChatSurface({
   onSessionStarted,
   onSlashFromChat,
   onOpenOnboarding,
-  onOpenInbox,
-  onCreateReminder,
-  onOpenInboxItem,
-  onInboxItemChanged,
   onSessionsChanged,
   onOpenTask,
   onOpenUrl,
@@ -304,13 +125,12 @@ export function ChatSurface({
   // left nav owns it).
   const compactRail = hideThreadRail;
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
-  // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
-  // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
-  // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
+  // Below the desktop shell breakpoint there's no room for the code rail
+  // beside the chat thread, so it opens as a right-edge sheet overlay instead.
   const isMobile = useIsMobile();
   // A drag-to-split pane can be far narrower than the viewport, so the
   // inline-vs-sheet decision also tracks the surface's own measured width —
-  // below ~680px the inline sidebar (200px min) would crush the chat thread's
+  // below ~680px the inline code rail would crush the chat thread's
   // 45% minSize. Until the first measurement lands, fall back to the viewport
   // heuristic so SSR and first paint agree with the CSS.
   const surfaceRef = useRef<HTMLElement | null>(null);
@@ -328,30 +148,10 @@ export function ChatSurface({
   const paneNarrow = paneWidth === null ? isMobile : paneWidth < 680;
   const consumedPendingActionNonce = useRef<number | null>(null);
 
-  // The collapsed right rail reopens whatever the user last had — a fresh
-  // session lands on the Inspector.
-  const [lastPanel, setLastPanel] = useState<Exclude<RightPanelKind, "changes">>("inspector");
-  useEffect(() => {
-    if (rightPanel === "inspector" || rightPanel === "debug") setLastPanel(rightPanel);
-  }, [rightPanel]);
-
-  // The inspector's active section is owned here, not by RightPanel — closing
-  // and reopening the panel (or crossing the desktop↔sheet breakpoint, which
-  // remounts RightPanel) keeps the user's last section instead of snapping
-  // back to Familiar (cave-liut).
-  const [inspectorSection, setInspectorSection] =
-    useState<Exclude<InspectorSection, "memory">>("familiar");
-
-  const setRightPanel = onSetRightPanel;
-
-  // The inspector/debug/changes sidebar shares the chat thread's row on desktop
-  // — only when the pane itself is wide enough to host both.
-  const showRightSidebar = rightPanel !== null && !isMobile && !paneNarrow;
-
   // ── Code rail (PR 1) ────────────────────────────────────────────────────────
   // The active session's project_root + running status are the signals the code
   // rail needs. Read them from the reactive chat debug store — the single
-  // publisher ChatView already feeds and that the sibling SessionChangesPanel
+  // publisher ChatView already feeds and that the rail's Changes tab
   // consumes — rather than tracking the `#chat-<id>` URL hash and resolving it
   // against the sessions list.
   const snapshot = useChatDebugSnapshot();
@@ -494,12 +294,6 @@ export function ChatSurface({
     if (!rail.available || (!isMobile && !paneNarrow) || scope !== "conversation")
       setMobileRailOpen(false);
   }, [rail.available, isMobile, paneNarrow, scope]);
-  // Reverse of the toggle's forward guard: if the right-panel sheet opens while
-  // the code-rail sheet is up, close the rail sheet so two z-[200] aria-modal
-  // overlays never coexist on the same edge (mutual exclusivity, both ways).
-  useEffect(() => {
-    if (rightPanel !== null) setMobileRailOpen(false);
-  }, [rightPanel]);
 
   const openCodeRailTarget = useCallback((target: PendingCodeRailOpen) => {
     setScope("conversation");
@@ -510,10 +304,9 @@ export function ChatSurface({
     rail.setActiveTab(target.kind === "changes" ? "changes" : "files");
     setCodeRailFocus(target);
     if (isMobile || paneNarrow) {
-      onSetRightPanel?.(null);
       setMobileRailOpen(true);
     }
-  }, [isMobile, onSetRightPanel, paneNarrow, rail]);
+  }, [isMobile, paneNarrow, rail]);
 
   useEffect(() => {
     const onOpenProjectFile = (event: Event) => {
@@ -555,12 +348,11 @@ export function ChatSurface({
   }, [showCodeRail]);
 
   // Persist the chat / right-area split. panelIds tracks which panels are
-  // actually mounted so the with-sidebar and bare layouts persist separately.
+  // actually mounted so the with-rail and bare layouts persist separately.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: CHAT_GROUP_ID,
     panelIds: [
       "chat-main",
-      ...(showRightSidebar ? ["right-sidebar"] : []),
       ...(showCodeRail ? ["code-rail"] : []),
     ],
     storage: chatStorage,
@@ -611,24 +403,26 @@ export function ChatSurface({
     };
   }, [onSetActiveFamiliar, routerRef]);
 
-  // ChatView's MetaLine bug button opens the Debug tab from a different
-  // subtree — same window-event bridge as the cave:agents-* events above.
-  // The thread rail's advanced-operations launchers (Git/Inspector/Debug)
-  // reach the right panel through the same bridge.
+  // The thread rail's advanced-operations launchers reach this surface through
+  // window-event bridges (same shape as the cave:agents-* events above).
+  // The retired inspector sidepanel's destinations map onto the surviving
+  // surfaces: Inspect opens the Familiar chat tab; Git/Changes opens the code
+  // rail's Changes tab. (cave:debug-open is owned by ChatView's debug modal.)
   useEffect(() => {
-    if (!onSetRightPanel) return;
-    const onDebugOpen = () => onSetRightPanel("debug");
-    const onInspectorOpen = () => onSetRightPanel("inspector");
-    const onChangesOpen = () => onSetRightPanel("changes");
-    window.addEventListener("cave:debug-open", onDebugOpen);
+    const onInspectorOpen = () => setScope("familiar");
+    const onChangesOpen = () => {
+      setScope("conversation");
+      rail.reopen();
+      rail.setActiveTab("changes");
+      if (isMobile || paneNarrow) setMobileRailOpen(true);
+    };
     window.addEventListener("cave:inspector-open", onInspectorOpen);
     window.addEventListener("cave:changes-open", onChangesOpen);
     return () => {
-      window.removeEventListener("cave:debug-open", onDebugOpen);
       window.removeEventListener("cave:inspector-open", onInspectorOpen);
       window.removeEventListener("cave:changes-open", onChangesOpen);
     };
-  }, [onSetRightPanel]);
+  }, [isMobile, paneNarrow, rail]);
 
   useEffect(() => {
     if (!pendingChatAction) return;
@@ -718,6 +512,7 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
+              { id: "familiar", label: "Familiar" },
               { id: "settings", label: "Settings" },
             ]}
           />
@@ -748,10 +543,6 @@ export function ChatSurface({
                 aria-haspopup="dialog"
                 aria-expanded={mobileRailOpen}
                 onClick={() => {
-                  // Mutually exclusive with the right-panel sheet: two z-[200]
-                  // aria-modal overlays on the same edge would stack and confuse
-                  // AT. Opening the code rail dismisses the other sheet.
-                  if (!mobileRailOpen) onSetRightPanel(null);
                   setMobileRailOpen((v) => !v);
                 }}
               >
@@ -766,6 +557,15 @@ export function ChatSurface({
 
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+        ) : scope === "familiar" ? (
+          // The active familiar's capability panel (identity, role, skills,
+          // tools) — promoted from the retired inspector sidepanel to a
+          // first-class chat tab, since it describes who you're chatting with.
+          <div className="flex min-h-0 min-w-0 flex-1 justify-center">
+            <div className="h-full w-full max-w-3xl">
+              <InspectorPane familiar={activeFamiliar} tab="familiar" />
+            </div>
+          </div>
         ) : scope === "settings" ? (
           // Consolidated chat settings (cave-wide auto-archive policy, incl.
           // archive-on-reflection) as a first-class chat tab — the knobs govern
@@ -818,37 +618,6 @@ export function ChatSurface({
                 />
               </div>
             </Panel>
-            {showRightSidebar && (
-              <>
-                {/* Defaults to 300px — wide enough that the flattened strip
-                    (Familiar/Analytics/Automations + the Debug icon and close)
-                    fits without shredding, still drag-resizable via the handle
-                    below and clamped so the chat thread keeps its 45% minSize. */}
-                <Separator className="shell-separator hidden lg:flex">
-                  <SeparatorHandle orientation="col" />
-                </Separator>
-                <Panel
-                  id="right-sidebar"
-                  className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="300px"
-                  minSize="220px"
-                  maxSize="480px"
-                >
-                  <RightPanel
-                    panel={rightPanel}
-                    section={inspectorSection}
-                    activeFamiliar={activeFamiliar}
-                    inboxItems={inboxItems}
-                    onSetPanel={setRightPanel}
-                    onSetSection={setInspectorSection}
-                    onOpenInbox={onOpenInbox}
-                    onCreateReminder={onCreateReminder}
-                    onOpenInboxItem={onOpenInboxItem}
-                    onInboxItemChanged={onInboxItemChanged}
-                  />
-                </Panel>
-              </>
-            )}
             {showCodeRail && (
               <>
                 <Separator className="shell-separator hidden lg:flex">
@@ -861,7 +630,6 @@ export function ChatSurface({
                   minSize="240px"
                   maxSize="560px"
                 >
-                  {/* TODO: reconcile the duplicate Changes UI with RightPanel's SessionChangesPanel in a later PR of this arc */}
                   <WorkspaceRail
                     changeCount={changeCount ?? 0}
                     activeTab={rail.activeTab}
@@ -880,24 +648,6 @@ export function ChatSurface({
           </Group>
         )}
       </div>
-      {/* Collapsed right-panel rail: the reflection of the left nav's collapsed
-          "Chats" rail. When the Inspector/Debug/Changes sidebar is closed on a
-          wide conversation pane, a slim in-flow rail stays at the right edge —
-          content flows BESIDE it, never underneath — and clicking it reopens
-          the last-used panel. Label reads top→bottom with the glyph face to
-          the right/outside (vertical-rl), mirroring the left rail. */}
-      {scope === "conversation" && rightPanel === null && !isMobile && !paneNarrow && (
-        <button
-          type="button"
-          aria-label="Show session panels"
-          title="Show session panels (Inspector · Debug · Changes)"
-          className="chat-right-rail focus-ring"
-          onClick={() => setRightPanel(lastPanel)}
-        >
-          <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-          <span className="chat-right-rail__label">Inspector</span>
-        </button>
-      )}
       {/* Collapsed code rail: a full-height reopen rail on the right edge that
           mirrors the left nav's collapsed "Chats" rail (same width, icon over a
           vertical label — here "Code"). Shown when the rail is available for
@@ -915,43 +665,6 @@ export function ChatSurface({
           <Icon name="ph:sidebar-simple" width={15} aria-hidden />
           <span className="workspace-rail-reopen__label">Code</span>
         </button>
-      )}
-      {/* Narrow: the inline 230px right sidebar can't fit beside the chat thread
-          (phone viewport OR a narrow drag-to-split pane on a wide screen), so the
-          Inspector/Debug/Changes panels open in a right-edge sheet over a
-          dismissible scrim. The gate is the exact complement of showRightSidebar
-          so only one RightPanel mounts at a time — the InspectorPane won't
-          double-fetch or duplicate DOM ids. Scoped to the conversation tab to
-          mirror the desktop placement. */}
-      {scope === "conversation" && rightPanel !== null && (isMobile || paneNarrow) && (
-        <div
-          className="chat-right-sheet fixed inset-0 z-[200] flex justify-end"
-          role="presentation"
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setRightPanel(null);
-          }}
-        >
-          <button
-            type="button"
-            aria-label="Close session panels"
-            className="absolute inset-0 bg-[var(--backdrop-scrim)]"
-            onClick={() => setRightPanel(null)}
-          />
-          <div className="relative flex h-full w-[min(92vw,420px)] flex-col bg-[var(--bg-raised)] shadow-[-8px_0_32px_rgba(0,0,0,0.2)] [padding-bottom:var(--sai-bottom)] [padding-top:var(--sai-top)]">
-            <RightPanel
-              panel={rightPanel}
-              section={inspectorSection}
-              activeFamiliar={activeFamiliar}
-              inboxItems={inboxItems}
-              onSetPanel={setRightPanel}
-              onSetSection={setInspectorSection}
-              onOpenInbox={onOpenInbox}
-              onCreateReminder={onCreateReminder}
-              onOpenInboxItem={onOpenInboxItem}
-              onInboxItemChanged={onInboxItemChanged}
-            />
-          </div>
-        </div>
       )}
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in
           a full-height right-edge slide-over sheet over the full-screen chat

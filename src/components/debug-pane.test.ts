@@ -20,20 +20,8 @@ assert.doesNotMatch(
   "Debug payload blocks should not force unreadable break-all wrapping",
 );
 
-// ── Changes tab (CHAT-D8-01): working-tree review panel in the right panel ────
-
-const surface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
-
-assert.match(
-  surface,
-  /right-panel-changes-header[\s\S]*?Changes/,
-  "Chat right panel should expose a persistent Changes half beneath Inspector/Debug",
-);
-assert.match(
-  surface,
-  /<Panel[\s\S]*id="right-panel-changes"[\s\S]*<SessionChangesPanel \/>/,
-  "Changes half should render SessionChangesPanel persistently",
-);
+// ── Changes panel (CHAT-D8-01): working-tree review, now hosted by the code
+// rail (the inspector right panel that first carried it is retired) ──────────
 
 const changesPanel = await readFile(
   new URL("./session-changes-panel.tsx", import.meta.url),

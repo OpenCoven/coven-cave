@@ -62,7 +62,7 @@ import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
-import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
+import { ChatSurface } from "@/components/chat-surface";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
@@ -415,10 +415,6 @@ export function Workspace() {
       { duration: 120, easing: "ease-out" },
     );
   }, [mode]);
-  // Chat's right panel (Inspector sections / Debug / Changes) starts closed;
-  // rightPanel is its single owner — the legacy open/closed boolean channel
-  // is retired (cave-liut).
-  const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
   // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
@@ -1510,11 +1506,6 @@ export function Workspace() {
     setReminderModalOpen(true);
   }, []);
 
-  const openReminderForFamiliar = useCallback((familiarId: string) => {
-    setActiveId(familiarId);
-    openReminderModal();
-  }, [openReminderModal]);
-
   // Acknowledge a real inbox item: stamps readAt so the bell badge quiets, but
   // the notification stays listed until dismissed/done. No-ops server-side on
   // already-read items, so callers don't need to check. Skips synthetic ids
@@ -2409,12 +2400,9 @@ export function Workspace() {
         familiarsLoaded={familiarsLoaded}
         familiarsError={familiarsError}
         onRetryFamiliars={() => void loadFamiliars()}
-        inboxItems={inboxItemsWithEphemeral}
-        rightPanel={rightPanel}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
         pendingCodeRailOpen={pendingCodeRailOpen}
-        onSetRightPanel={setRightPanel}
         onSetActiveFamiliar={setActiveId}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
@@ -2422,10 +2410,6 @@ export function Workspace() {
         onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}
-        onOpenInbox={() => setMode("inbox")}
-        onCreateReminder={openReminderForFamiliar}
-        onOpenInboxItem={openInspectorInboxItem}
-        onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInAppBrowser}
