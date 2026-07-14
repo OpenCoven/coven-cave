@@ -105,5 +105,57 @@ assert.match(
   /\.chat-split__preview \{ transition: none; \}/,
   "the preview respects prefers-reduced-motion",
 );
+assert.match(
+  css,
+  /\.chat-split__pane-panel\[data-focused="true"\]/,
+  "the focused pane has a visible affordance",
+);
+assert.match(
+  css,
+  /\.chat-split__pane-panel:focus-visible/,
+  "programmatic pane focus shows the standard ring",
+);
+
+// ── Focus + persistence + keyboard (cave-e3dj) ───────────────────────────────
+
+// The host marks panes with the focus attribute and reports focus/pointer
+// entry so the router's logical focus follows real interaction.
+assert.match(host, /CHAT_SPLIT_PANE_ATTR = "data-chat-split-pane"/, "pane DOM marker exists");
+assert.match(host, /data-focused=\{focusedPaneId === tile\.id \? "true" : undefined\}/, "focused pane is marked");
+assert.match(host, /onFocusCapture=\{\(\) => onFocusPane\?\.\(tile\.id\)\}/, "focus entering a pane reports it");
+assert.match(host, /onPointerDownCapture=\{\(\) => onFocusPane\?\.\(tile\.id\)\}/, "pointer down on a pane focuses it");
+assert.match(host, /tabIndex=\{-1\}/, "panes accept programmatic focus");
+
+// Sizes: only user-driven resizes persist, restore only for a matching pane
+// set, and a divider double-click resets to an even split via remount.
+assert.match(host, /if \(!meta\.isUserInteraction \|\| !onSizesChange\) return;/, "mount/programmatic layouts don't persist");
+assert.match(host, /defaultLayout=\{defaultLayout\}/, "restored sizes feed the group");
+assert.match(host, /keys\.length !== ids\.length \|\| !ids\.every\(\(id\) => id in sizes\)/, "stale size maps fall back to even");
+assert.match(host, /onDoubleClick=\{\(\) => \{/, "divider double-click resets");
+assert.match(host, /setResetNonce\(\(nonce\) => nonce \+ 1\)/, "reset remounts the group");
+
+// The router hydrates the split once, persists changes, and prunes dead panes.
+assert.match(router, /parsePersistedChatSplit\(window\.localStorage\.getItem\(CHAT_SPLIT_STORAGE_KEY\)\)/, "layout hydrates from storage");
+assert.match(router, /serializeChatSplit\(split, splitSizes\)/, "layout + sizes persist");
+assert.match(router, /if \(compact \|\| splitHydratedRef\.current/, "only the full-width surface hydrates");
+assert.match(router, /pruneChatSplitPanes\(prev, \(id\) => sessions\.some/, "deleted sessions leave the persisted split");
+
+// Keyboard: ⌥⌘arrows move focus, ⌥⌘W closes the focused secondary pane, and
+// ⌥↵ on a thread-rail row opens it in a split.
+assert.match(router, /chatSplitFocusTarget\(split, focusedPane, delta\)/, "arrow keys move pane focus");
+assert.match(router, /e\.code === "KeyW"/, "close matches on e.code (⌥ composes e.key on macOS)");
+assert.match(router, /closest\?\.\('\[aria-modal="true"\]'\)/, "modals own the keyboard");
+assert.match(router, /chatSplitKeyboardZone\(split\)/, "keyboard split lands on the current axis");
+assert.match(router, /onOpenSessionInSplit=\{enableSplit \? handleOpenSessionInSplit : undefined\}/, "the thread rail gets the split opener only when splits are on");
+assert.match(router, /announce\(/, "split changes are announced to the live region");
+assert.match(router, /focusedPaneId=\{effectiveFocusedPane\}/, "the host renders the reconciled focus");
+
+// The thread rail rows: ⌥↵ opens in a split, plain ↵ still opens.
+assert.match(sidebar, /onOpenSessionInSplit\?: \(session: SessionRow\) => void;/, "sidebar accepts the split opener");
+assert.equal(
+  (sidebar.match(/if \(e\.altKey && onOpenInSplit\) \{/g) ?? []).length,
+  2,
+  "both row flavors handle ⌥↵",
+);
 
 console.log("chat-split-host.test.ts: ok");

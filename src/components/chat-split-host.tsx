@@ -30,6 +30,7 @@ import {
   type ChatDropZone,
   type ChatSessionDragDetail,
   type ChatSplitAxis,
+  type ChatSplitSizes,
 } from "@/lib/chat-split";
 
 export type ChatSplitTile = {
@@ -51,7 +52,23 @@ export type ChatSplitHostProps = {
   onClosePane: (sessionId: string) => void;
   /** Promote a dropped pane to be the primary chat. */
   onPromotePane?: (sessionId: string) => void;
+  /** The pane holding logical focus (visible affordance + keyboard target). */
+  focusedPaneId?: string | null;
+  /** A pane received pointer/keyboard focus. */
+  onFocusPane?: (paneId: string) => void;
+  /** Persisted pane sizes (RRP flex weights by pane id) to restore at mount.
+   *  Applied only when the map covers exactly the current pane set — a stale
+   *  or partial map falls back to an even layout. */
+  sizes?: ChatSplitSizes;
+  /** A user drag/keyboard resize settled ({} = divider double-click reset). */
+  onSizesChange?: (sizes: ChatSplitSizes) => void;
 };
+
+/** DOM marker carrying the pane id, so keyboard focus moves can land real
+ *  focus on the pane container (`[data-chat-split-pane="<id>"]`). */
+export const CHAT_SPLIT_PANE_ATTR = "data-chat-split-pane";
+
+const PANEL_ID_PREFIX = "chat-split-";
 
 export function ChatSplitHost({
   panes,
@@ -60,8 +77,27 @@ export function ChatSplitHost({
   onDropSession,
   onClosePane,
   onPromotePane,
+  focusedPaneId,
+  onFocusPane,
+  sizes,
+  onSizesChange,
 }: ChatSplitHostProps) {
   const hasSplit = panes.length > 1;
+
+  // Bumped by a divider double-click: remounts the group with no restored
+  // sizes, which is exactly "reset to an even split".
+  const [resetNonce, setResetNonce] = React.useState(0);
+
+  // Restore persisted sizes only when they describe exactly this pane set —
+  // RRP would otherwise honor the stale weights it recognizes and squeeze
+  // the rest, which reads as a corrupted layout.
+  const defaultLayout = React.useMemo(() => {
+    if (!sizes) return undefined;
+    const ids = panes.map((tile) => tile.id);
+    const keys = Object.keys(sizes);
+    if (keys.length !== ids.length || !ids.every((id) => id in sizes)) return undefined;
+    return Object.fromEntries(ids.map((id) => [`${PANEL_ID_PREFIX}${id}`, sizes[id]!]));
+  }, [sizes, panes]);
 
   // ---- Drag-to-split drop zone -------------------------------------------
   const [drag, setDrag] = React.useState<ChatSessionDragDetail | null>(null);
@@ -166,15 +202,36 @@ export function ChatSplitHost({
         <Group
           // Remount on pane-set changes (mirrors DetailSplitHost, cave-hivd):
           // RRP squeezes a panel added to a live group below its min — a fresh
-          // mount re-lays every pane out evenly.
-          key={`${axis}|${panes.map((tile) => tile.id).join("|")}`}
+          // mount re-lays every pane out evenly. The reset nonce rides the same
+          // key: divider double-click remounts into an even layout.
+          key={`${axis}|${panes.map((tile) => tile.id).join("|")}|${resetNonce}`}
           className="chat-split__group"
           orientation={axis === "row" ? "horizontal" : "vertical"}
+          defaultLayout={defaultLayout}
+          onLayoutChanged={(layout, meta) => {
+            // Only user-driven resizes persist — mount/constraint recomputes
+            // would clobber the stored weights with defaults.
+            if (!meta.isUserInteraction || !onSizesChange) return;
+            const next: ChatSplitSizes = {};
+            for (const [panelId, weight] of Object.entries(layout)) {
+              if (panelId.startsWith(PANEL_ID_PREFIX)) {
+                next[panelId.slice(PANEL_ID_PREFIX.length)] = weight;
+              }
+            }
+            onSizesChange(next);
+          }}
         >
           {panes.map((tile, i) => (
             <React.Fragment key={tile.id}>
               {i > 0 ? (
-                <Separator className="shell-separator chat-split__sep">
+                <Separator
+                  className="shell-separator chat-split__sep"
+                  onDoubleClick={() => {
+                    // Reset to an even split: forget stored weights + remount.
+                    onSizesChange?.({});
+                    setResetNonce((nonce) => nonce + 1);
+                  }}
+                >
                   <SeparatorHandle orientation={axis === "row" ? "col" : "row"} />
                 </Separator>
               ) : null}
@@ -184,6 +241,11 @@ export function ChatSplitHost({
                 // Pixel floors so a divider can't crush a conversation into
                 // letter soup; stacked panes need less than side-by-side ones.
                 minSize={axis === "row" ? "280px" : "160px"}
+                {...{ [CHAT_SPLIT_PANE_ATTR]: tile.id }}
+                tabIndex={-1}
+                data-focused={focusedPaneId === tile.id ? "true" : undefined}
+                onFocusCapture={() => onFocusPane?.(tile.id)}
+                onPointerDownCapture={() => onFocusPane?.(tile.id)}
               >
                 {renderTile(tile)}
               </Panel>

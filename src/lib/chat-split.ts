@@ -177,3 +177,129 @@ export function removeChatSplitPane(layout: ChatSplitLayout, sessionId: string):
   if (panes.length === layout.panes.length) return layout;
   return { axis: layout.axis, panes };
 }
+
+// ── Pane focus ───────────────────────────────────────────────────────────────
+
+/**
+ * The pane that should hold focus, given the id last focused. Falls back to
+ * the primary pane when the focused pane left the layout (closed, promoted,
+ * or its session was deleted) — the primary is always present.
+ */
+export function resolveChatSplitFocus(layout: ChatSplitLayout, focusedId: string | null): string {
+  if (focusedId && layout.panes.includes(focusedId)) return focusedId;
+  return CHAT_SPLIT_PRIMARY;
+}
+
+/**
+ * Move pane focus one step along the strip. `delta` is -1 (toward the
+ * start — left/top) or +1 (toward the end — right/bottom); focus wraps at
+ * the edges so repeated presses cycle every pane. Returns the id to focus,
+ * or null when there is nothing to move to (no split).
+ */
+export function chatSplitFocusTarget(
+  layout: ChatSplitLayout,
+  focusedId: string | null,
+  delta: -1 | 1,
+): string | null {
+  if (!hasChatSplit(layout)) return null;
+  const current = resolveChatSplitFocus(layout, focusedId);
+  const index = layout.panes.indexOf(current);
+  const next = (index + delta + layout.panes.length) % layout.panes.length;
+  return layout.panes[next] ?? null;
+}
+
+/**
+ * Where focus lands after closing `closedId`: the pane that takes its slot
+ * (the next one along the strip), or the last pane when the closed pane was
+ * endmost. Closing a pane that isn't in the layout keeps focus on primary.
+ */
+export function chatSplitFocusAfterClose(layout: ChatSplitLayout, closedId: string): string {
+  const index = layout.panes.indexOf(closedId);
+  if (index === -1 || closedId === CHAT_SPLIT_PRIMARY) {
+    return resolveChatSplitFocus(layout, closedId);
+  }
+  const remaining = layout.panes.filter((id) => id !== closedId);
+  return remaining[Math.min(index, remaining.length - 1)] ?? CHAT_SPLIT_PRIMARY;
+}
+
+/** The drop zone a keyboard-initiated split targets: the end of the strip on
+ *  the current axis, so ⌥↵ reads as "open beside/below what I have". */
+export function chatSplitKeyboardZone(layout: ChatSplitLayout): ChatDropZone {
+  return layout.axis === "column" ? "bottom" : "right";
+}
+
+// ── Persistence ──────────────────────────────────────────────────────────────
+
+/** localStorage key for the persisted split layout (main chat surface only). */
+export const CHAT_SPLIT_STORAGE_KEY = "cave:chat-split-layout:v1";
+
+/** Pane sizes as RRP flex-grow weights, keyed by pane id (not panel DOM id). */
+export type ChatSplitSizes = Record<string, number>;
+
+export type PersistedChatSplit = {
+  layout: ChatSplitLayout;
+  sizes: ChatSplitSizes;
+};
+
+export function serializeChatSplit(layout: ChatSplitLayout, sizes: ChatSplitSizes): string {
+  return JSON.stringify({ axis: layout.axis, panes: layout.panes, sizes });
+}
+
+/**
+ * Parse a persisted split. Returns null (start from empty) rather than
+ * guessing when the payload is malformed. Repairs what it safely can:
+ * dedupes pane ids, re-inserts a missing primary sentinel at the front, and
+ * truncates beyond MAX_CHAT_SPLIT_PANES. Sizes are kept only when every
+ * entry is a positive finite number for a known pane — a partial size map
+ * would make RRP's layout restore lie.
+ */
+export function parsePersistedChatSplit(raw: string | null): PersistedChatSplit | null {
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const candidate = parsed as { axis?: unknown; panes?: unknown; sizes?: unknown };
+  const axis: ChatSplitAxis = candidate.axis === "column" ? "column" : "row";
+  if (!Array.isArray(candidate.panes)) return null;
+  const panes: string[] = [];
+  for (const entry of candidate.panes) {
+    if (typeof entry !== "string" || !entry.trim()) continue;
+    if (panes.includes(entry)) continue;
+    panes.push(entry);
+  }
+  if (!panes.includes(CHAT_SPLIT_PRIMARY)) panes.unshift(CHAT_SPLIT_PRIMARY);
+  if (panes.length > MAX_CHAT_SPLIT_PANES) panes.length = MAX_CHAT_SPLIT_PANES;
+  if (!panes.includes(CHAT_SPLIT_PRIMARY)) return null; // primary truncated off — refuse
+  const layout: ChatSplitLayout = { axis, panes };
+
+  let sizes: ChatSplitSizes = {};
+  if (candidate.sizes && typeof candidate.sizes === "object" && !Array.isArray(candidate.sizes)) {
+    const entries = Object.entries(candidate.sizes as Record<string, unknown>);
+    const valid = entries.every(
+      ([id, value]) =>
+        panes.includes(id) && typeof value === "number" && Number.isFinite(value) && value > 0,
+    );
+    if (valid && entries.length === panes.length) {
+      sizes = Object.fromEntries(entries as Array<[string, number]>);
+    }
+  }
+  return { layout, sizes };
+}
+
+/**
+ * Drop panes whose session no longer exists (deleted while we were away).
+ * The primary sentinel always survives. Returns the same reference when
+ * nothing changed so state setters can skip a render.
+ */
+export function pruneChatSplitPanes(
+  layout: ChatSplitLayout,
+  sessionExists: (id: string) => boolean,
+): ChatSplitLayout {
+  const panes = layout.panes.filter((id) => id === CHAT_SPLIT_PRIMARY || sessionExists(id));
+  if (panes.length === layout.panes.length) return layout;
+  return { axis: layout.axis, panes };
+}

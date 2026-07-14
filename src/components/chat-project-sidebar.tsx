@@ -67,6 +67,10 @@ type Props = {
   onSelect: (selection: ProjectSelection) => void;
   onToggleExpanded: (key: string) => void;
   onOpenSession: (session: SessionRow) => void;
+  /** ⌥↵ on a row: open the conversation in a split pane beside the current
+   *  chat (keyboard twin of drag-to-split). Absent when splits are off
+   *  (compact rail, mobile) — the row falls back to a plain open. */
+  onOpenSessionInSplit?: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onOpenProjectsTab?: () => void;
 };
@@ -155,12 +159,14 @@ function ThreadRow({
   active,
   pinned,
   onOpen,
+  onOpenInSplit,
   onTogglePin,
 }: {
   session: SessionRow;
   active: boolean;
   pinned: boolean;
   onOpen: () => void;
+  onOpenInSplit?: () => void;
   onTogglePin: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -187,7 +193,14 @@ function ThreadRow({
         onFocus={() => hoverPrefetchConversation(session.id)}
         onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onOpen();
+          if (e.key !== "Enter") return;
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split).
+          if (e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
         }}
         {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
@@ -275,10 +288,12 @@ function FolderChatRow({
   session,
   active,
   onOpen,
+  onOpenInSplit,
 }: {
   session: SessionRow;
   active: boolean;
   onOpen: () => void;
+  onOpenInSplit?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id,
@@ -296,7 +311,14 @@ function FolderChatRow({
         onFocus={() => hoverPrefetchConversation(session.id)}
         onBlur={cancelHoverPrefetch}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onOpen();
+          if (e.key !== "Enter") return;
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split).
+          if (e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
         }}
         {...sessionDragProps(session.id, title)}
         aria-current={active ? "true" : undefined}
@@ -344,6 +366,7 @@ export function ChatProjectSidebar({
   onSelect,
   onToggleExpanded,
   onOpenSession,
+  onOpenSessionInSplit,
   onNewChat,
   onOpenProjectsTab,
 }: Props) {
@@ -577,6 +600,9 @@ export function ChatProjectSidebar({
                       active={activeSessionId === session.id}
                       pinned={isSessionPinned(pinnedIds, session.id)}
                       onOpen={() => onOpenSession(session)}
+                      onOpenInSplit={
+                        onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                      }
                       onTogglePin={() => togglePin(session.id)}
                     />
                   ))}
@@ -669,6 +695,9 @@ export function ChatProjectSidebar({
                             session={session}
                             active={activeSessionId === session.id}
                             onOpen={() => onOpenSession(session)}
+                            onOpenInSplit={
+                              onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                            }
                           />
                         ))}
                       </ul>

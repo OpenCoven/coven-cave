@@ -12993,6 +12993,19 @@ details[open] > .cave-edit-card__summary::before {
   min-width: 0;
   min-height: 0;
 }
+/* The focused pane (keyboard target): a quiet accent ring drawn as an inset
+   outline — outlines paint above the pane's (opaque, full-bleed) children,
+   where an inset box-shadow would be hidden. The stronger :focus-visible ring
+   is declared after so it wins while the container itself holds real focus
+   (panes get programmatic focus via tabIndex=-1). */
+.chat-split__pane-panel[data-focused="true"] {
+  outline: 1px solid color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  outline-offset: -1px;
+}
+.chat-split__pane-panel:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: calc(-1 * var(--ring-width));
+}
 .chat-split__tile {
   display: flex;
   flex: 1;

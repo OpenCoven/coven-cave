@@ -15,6 +15,8 @@
  *     src/components/home-composer.tsx handleKeyDown
  *   - "/" search focus: each surface's view (familiars-view, projects-view,
  *     marketplace-view, chat-list); "⌘F" sessions search: chat-list.tsx
+ *   - split chat panes (⌥↵ / ⌥⌘arrows / ⌥⌘W): chat-project-sidebar.tsx row
+ *     keydown + the chat-router.tsx split-keyboard effect
  *   - browser pane: src/components/browser-pane.tsx (⌘L / ⌘K / [)
  *   - ⌘S save: familiar-daily-notes.tsx;
  *     artifact refine ⌘↵: chat-artifact-viewer.tsx
@@ -52,6 +54,9 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },
       { keys: "⌘↑ / ⌘↓", description: "Cycle through familiars" },
       { keys: "⌘N", description: "New chat (on the Chat surface)" },
+      { keys: "⌥↵", description: "Thread rail: open the focused chat in a split pane" },
+      { keys: "⌥⌘← / ⌥⌘→", description: "Move focus between split chat panes (also ⌥⌘↑ / ⌥⌘↓)" },
+      { keys: "⌥⌘W", description: "Close the focused split chat pane" },
       { keys: "/", description: "Focus the search (Familiars, Projects, Capabilities, Sessions)" },
       { keys: "⌘F", description: "Focus the sessions search" },
     ],
