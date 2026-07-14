@@ -173,4 +173,76 @@ test.describe("onboarding wizard", () => {
     await expect(wizard(page)).toHaveCount(0);
     await expect(page.getByRole("dialog", { name: "Summoning circle" })).toBeVisible({ timeout: 15_000 });
   });
+
+  test("a failed CLI install (npm missing) shows the hint and stays retryable", async ({ page }) => {
+    // The install route's npm-missing shape: the wizard must surface the hint
+    // (NodeSetupNotice + per-tool failure note) and keep the install button
+    // enabled — a machine without Node can never be a dead end.
+    let installCalls = 0;
+    await page.route("**/api/onboarding/install", (r) => {
+      if (r.request().method() !== "POST") return r.fallback();
+      installCalls += 1;
+      return r.fulfill({
+        status: 422,
+        json: {
+          ok: false,
+          npmMissing: true,
+          error: "npm is not available on PATH",
+          hint: "Install Node.js LTS from https://nodejs.org, then try again.",
+        },
+      });
+    });
+    await gotoApp(page, FRESH_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+
+    const install = wizard(page).getByRole("button", { name: "Install the Coven CLI", exact: true });
+    await install.click();
+    await expect(
+      wizard(page).getByText("Install Node.js LTS from https://nodejs.org, then try again."),
+    ).toBeVisible({ timeout: 10_000 });
+    expect(installCalls).toBeGreaterThanOrEqual(1);
+
+    // Retryable: the primary action is enabled again, and clicking it hits
+    // the route a second time.
+    await expect(install).toBeEnabled();
+    await install.click();
+    await expect.poll(() => installCalls, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  });
+
+  test("a failed daemon start shows message + hint and recovers through the banner's retry", async ({ page }) => {
+    // Structural steps healthy + daemon down: opening the wizard fires its
+    // one automatic daemon start. Fail every start until the flag flips —
+    // deterministic no matter which surface (wizard or workspace) calls
+    // first — then prove the banner's retry clears it on success.
+    let daemonStartShouldFail = true;
+    let startCalls = 0;
+    await page.route("**/api/daemon/start", (r) => {
+      startCalls += 1;
+      return daemonStartShouldFail
+        ? r.fulfill({
+            status: 504,
+            json: { ok: false, error: "timeout", stderr: "daemon did not answer health checks" },
+          })
+        : r.fulfill({ json: { ok: true, exitCode: 0, restart: false, stdout: "", stderr: "" } });
+    });
+    await gotoApp(page, DAEMON_DOWN_VETERAN_STATUS);
+    await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cave:onboarding-open")));
+    await expect(wizard(page)).toBeVisible({ timeout: 15_000 });
+
+    // The failure banner carries the verbatim error, the derived hint, and a
+    // retry naming the failed action.
+    const banner = wizard(page).getByRole("alert").filter({ hasText: "timeout" });
+    await expect(banner).toBeVisible({ timeout: 15_000 });
+    await expect(banner.getByText(/didn't come up within its start window/)).toBeVisible();
+    const retry = banner.getByRole("button", { name: "Retry daemon start" });
+    await expect(retry).toBeVisible();
+    expect(startCalls).toBeGreaterThanOrEqual(1);
+
+    // Recovery: flip the route to success, retry from the banner, banner
+    // clears — the user never has to hunt for the original button.
+    daemonStartShouldFail = false;
+    await retry.click();
+    await expect(banner).toHaveCount(0, { timeout: 10_000 });
+  });
 });
