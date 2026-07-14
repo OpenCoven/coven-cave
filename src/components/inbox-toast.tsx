@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import type { InboxItem, InboxMedia, LinkRef } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
+import { normalizeInboxTitle } from "@/lib/inbox-title";
+import { groupToasts, MAX_VISIBLE_TOAST_GROUPS } from "@/lib/toast-groups";
 import { Icon, type IconName } from "@/lib/icon";
 
 export type Toast = {
@@ -50,12 +52,14 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
   // content stopped vanishing mid-read. Unpausing re-arms the full window,
   // the generous simple option (no per-toast remaining-time bookkeeping).
   const [pausedIds, setPausedIds] = useState<ReadonlySet<string>>(new Set());
-  const setPaused = (id: string, paused: boolean) =>
+  const setPaused = (ids: readonly string[], paused: boolean) =>
     setPausedIds((prev) => {
-      if (prev.has(id) === paused) return prev;
+      if (ids.every((id) => prev.has(id) === paused)) return prev;
       const next = new Set(prev);
-      if (paused) next.add(id);
-      else next.delete(id);
+      for (const id of ids) {
+        if (paused) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
 
@@ -70,23 +74,30 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
 
   if (toasts.length === 0) return null;
 
+  const groups = groupToasts(toasts);
+  const visible = groups.slice(0, MAX_VISIBLE_TOAST_GROUPS);
+  const overflow = groups.length - visible.length;
+
   return (
     <div className="pointer-events-none fixed top-4 right-4 z-50 flex w-80 flex-col gap-2">
-      {toasts.map((t) => {
+      {visible.map((g) => {
+        const t = g.lead;
+        const title = normalizeInboxTitle(t.title);
         // A reply request is time-critical for the user — announce it
         // assertively; everything else stays polite.
         const urgent = t.kind === "response-needed";
+        const dismissGroup = (fn: (id: string) => void) => g.ids.forEach(fn);
         return (
         <div
           key={t.id}
           role={urgent ? "alert" : "status"}
           aria-live={urgent ? "assertive" : "polite"}
           aria-atomic="true"
-          onMouseEnter={() => setPaused(t.id, true)}
-          onMouseLeave={() => setPaused(t.id, false)}
-          onFocus={() => setPaused(t.id, true)}
+          onMouseEnter={() => setPaused(g.ids, true)}
+          onMouseLeave={() => setPaused(g.ids, false)}
+          onFocus={() => setPaused(g.ids, true)}
           onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(t.id, false);
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(g.ids, false);
           }}
           className="glass-overlay pointer-events-auto rounded-xl border border-[var(--border-strong)] p-3 shadow-2xl"
           style={{
@@ -101,11 +112,21 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
             >
               <Icon name={t.iconName ?? "ph:alarm-fill"} />
             </span>
-            <span className="flex-1 pt-0.5 text-[13px] font-semibold leading-snug text-[var(--text-primary)]">{t.title}</span>
+            <span className="flex-1 break-words pt-0.5 text-[13px] font-semibold leading-snug text-[var(--text-primary)]">
+              {title}
+              {g.count > 1 ? (
+                <span
+                  className="ml-1.5 inline-block rounded-full bg-[color-mix(in_oklch,var(--toast-accent)_14%,transparent)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--toast-accent)]"
+                  aria-label={`${g.count} matching notifications`}
+                >
+                  ×{g.count}
+                </span>
+              ) : null}
+            </span>
             <button
-              onClick={() => onDismiss(t.id)}
+              onClick={() => dismissGroup(onDismiss)}
               className="focus-ring grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              aria-label={`Dismiss: ${t.title}`}
+              aria-label={`Dismiss: ${title}`}
             >
               <Icon name="ph:x-bold" aria-hidden />
             </button>
@@ -118,7 +139,7 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
             />
           ) : null}
           {t.body ? (
-            <p className="mb-2.5 line-clamp-3 pl-[34px] text-[11px] leading-relaxed text-[var(--text-secondary)]">{t.body}</p>
+            <p className="mb-2.5 line-clamp-3 break-words pl-[34px] text-[11px] leading-relaxed text-[var(--text-secondary)]">{t.body}</p>
           ) : null}
           <div className="flex items-center justify-end gap-1.5">
             <SnoozeMenu
@@ -137,6 +158,15 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
         </div>
         );
       })}
+      {overflow > 0 ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="glass-overlay pointer-events-auto self-end rounded-full border border-[var(--border-hairline)] px-3 py-1 text-[11px] font-medium text-[var(--text-secondary)] shadow-lg"
+        >
+          +{overflow} more in the bell
+        </div>
+      ) : null}
     </div>
   );
 }
