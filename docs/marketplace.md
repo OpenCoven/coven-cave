@@ -6,6 +6,7 @@ Coven Cave is the canonical user-facing marketplace surface for first-party Open
 - `marketplace/plugins/<name>/skills/<name>/SKILL.md`
 - `marketplace/plugins/<name>/.codex-plugin/plugin.json`
 - `marketplace/marketplace.json`
+- `marketplace/.claude-plugin/marketplace.json`
 - `marketplace/exports/codex/marketplace.json`
 - `marketplace/exports/mcp/mcp.json`
 - `marketplace/exports/roles/role-affinity.json`
@@ -103,6 +104,14 @@ Preview → verify/install → equip → resolve → detach → remove:
   `marketplace.installed` with `runtime`, `verifiedAt`, and `craftVersion`.
   Failures roll back under a keyed transaction lock, preserving diagnostics.
   The generic `/api/marketplace/install` track-only route refuses Crafts.
+  Installs require the `opencoven-first-party` Codex marketplace to be
+  registered once — current Codex CLIs read the manifest from
+  `.claude-plugin/marketplace.json` inside the registered root:
+
+  ```bash
+  codex plugin marketplace add /path/to/coven-cave/marketplace
+  ```
+
 - **Equip / detach.** `POST /api/roles/crafts` attaches or detaches an
   installed Craft on a Role manifest (`src/lib/server/role-crafts.ts`).
   Version drift surfaces as `craft_update_required`.

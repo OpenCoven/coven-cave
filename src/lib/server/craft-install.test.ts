@@ -239,6 +239,41 @@ try {
     });
   }
 
+  // Modern Codex CLIs report { installed, available } instead of { plugins }
+  // and identify entries by pluginId/marketplaceName. Verification must read
+  // the installed list (never `available`, which is just the catalog).
+  {
+    const harness = memoryStore();
+    let listCount = 0;
+    const modernList = (installed: boolean) => JSON.stringify({
+      installed: installed
+        ? [{
+            pluginId: TARGET,
+            name: craft.id,
+            marketplaceName: CODEX_MARKETPLACE_NAME,
+            version: craft.version,
+            installed: true,
+            enabled: true,
+          }]
+        : [],
+      available: [{ pluginId: TARGET, name: craft.id, marketplaceName: CODEX_MARKETPLACE_NAME, version: craft.version }],
+    });
+    const runner: CraftCommandRunner = async (_command, args) => {
+      const key = commandKey(args);
+      if (key === "plugin marketplace list --json") return { stdout: marketplaceList(), stderr: "" };
+      if (key === "plugin list --json") {
+        listCount += 1;
+        return { stdout: modernList(listCount > 1), stderr: "" };
+      }
+      if (key === `plugin add ${TARGET} --json`) return { stdout: JSON.stringify({ pluginId: TARGET }), stderr: "" };
+      assert.fail(`unexpected command: ${key}`);
+    };
+    const result = await service(runner, harness.store, codexHome).install(craft.id);
+    assert.equal(result.ok, true);
+    assert.equal(result.alreadyInstalled, false, "available-only listing must not read as installed");
+    assert.equal(harness.writes.length, 1);
+  }
+
   // An install already visible to Codex is adopted without running add.
   {
     const harness = memoryStore();

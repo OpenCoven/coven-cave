@@ -352,8 +352,11 @@ function marketplaceIsConfigured(value: unknown): boolean {
 function pluginItems(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== "object") return [];
-  const record = value as { plugins?: unknown; data?: unknown };
+  const record = value as { plugins?: unknown; data?: unknown; installed?: unknown };
   if (Array.isArray(record.plugins)) return record.plugins;
+  // Modern Codex CLIs report { installed: [...], available: [...] }; only the
+  // installed list counts — `available` is the browsable catalog, not state.
+  if (Array.isArray(record.installed)) return record.installed;
   if (record.data && typeof record.data === "object" && Array.isArray((record.data as { plugins?: unknown }).plugins)) {
     return (record.data as { plugins: unknown[] }).plugins;
   }
@@ -371,13 +374,14 @@ function pluginMatches(
     if (!entry || typeof entry !== "object") return false;
     const item = entry as {
       id?: unknown;
+      pluginId?: unknown;
       name?: unknown;
       target?: unknown;
       marketplace?: unknown;
       marketplaceName?: unknown;
       version?: unknown;
     };
-    const identities = [item.id, item.name, item.target];
+    const identities = [item.id, item.pluginId, item.name, item.target];
     const marketplace = item.marketplace ?? item.marketplaceName;
     if (typeof marketplace === "string" && marketplace !== CODEX_MARKETPLACE_NAME) return false;
     const identityMatchesTarget = identities.some((identity) => identity === target);
