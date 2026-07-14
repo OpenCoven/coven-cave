@@ -46,7 +46,11 @@ export async function POST(req: Request) {
   const parsed = await readJsonBody<DryRunBody>(req, MAX_BODY_BYTES);
   if (!parsed.ok) return parsed.response;
 
-  const mode = parsed.body.mode === "walkthrough" ? "walkthrough" : "trigger";
+  const mode =
+    parsed.body.mode === "trigger" || parsed.body.mode === "walkthrough" ? parsed.body.mode : null;
+  if (!mode) {
+    return NextResponse.json({ ok: false, error: "mode must be trigger or walkthrough" }, { status: 400 });
+  }
   const name = typeof parsed.body.name === "string" ? parsed.body.name.trim() : "";
   const description = typeof parsed.body.description === "string" ? parsed.body.description.trim() : "";
   const scenario = typeof parsed.body.scenario === "string" ? parsed.body.scenario.trim() : "";
