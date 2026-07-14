@@ -36,7 +36,10 @@ export const SIDECAR_DYNAMIC_PACKAGES = Object.freeze([
 ]);
 
 export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
-  fileCount: 5_200,
+  // Headroom over the ~5.2k baseline: .agents/skills is a runtime root, so
+  // each first-party skill shipped to familiars adds a file here (covenwiki
+  // skills landed 2026-07-14). Raise deliberately, never reflexively.
+  fileCount: 5_250,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
