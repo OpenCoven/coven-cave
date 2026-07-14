@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const plan = readFileSync(new URL("./crafts/plan/route.ts", import.meta.url), "utf8");
+const drafts = readFileSync(new URL("./crafts/drafts/route.ts", import.meta.url), "utf8");
 const install = readFileSync(new URL("./crafts/install/route.ts", import.meta.url), "utf8");
 const uninstall = readFileSync(new URL("./crafts/uninstall/route.ts", import.meta.url), "utf8");
 const genericInstall = readFileSync(new URL("./install/route.ts", import.meta.url), "utf8");
@@ -23,6 +24,16 @@ for (const [name, source, method] of [
   assert.match(source, new RegExp(`craftInstallService\\.${method}\\(id\\)`));
   assert.match(source, /CraftTransactionError/, `${name} returns structured transaction diagnostics`);
 }
+
+assert.match(drafts, /export async function GET/);
+assert.match(drafts, /export async function POST/);
+for (const handler of drafts.split("export async function").slice(1)) {
+  assert.match(handler, /rejectNonLocalRequest\(req\)/, "every drafts handler is local-origin guarded");
+}
+assert.match(drafts, /readJsonBody/, "draft creation uses the bounded JSON-body helper");
+assert.match(drafts, /familiar and roleIds required/, "draft creation validates familiar + roleIds");
+assert.match(drafts, /role\.familiar === familiar/, "draft roles are scoped to the requested familiar");
+assert.match(drafts, /buildCraftDraftFromRoles/, "drafts are built through the shared role-composition builder");
 
 assert.match(genericInstall, /kind\s*===\s*["']craft["']/, "generic track-only install refuses Crafts");
 assert.match(genericUninstall, /kind\s*===\s*["']craft["']/, "generic state-only uninstall refuses Crafts");

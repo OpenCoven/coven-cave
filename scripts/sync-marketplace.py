@@ -663,7 +663,10 @@ def marketplace_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLA
         "plugins": [
             {
                 "name": plugin["name"],
-                "source": {"source": "local", "path": f"../../plugins/{plugin['name']}"},
+                # Claude-marketplace string form, resolved inside the
+                # registered marketplace root; current Codex CLIs reject
+                # sources that escape the root.
+                "source": f"./plugins/{plugin['name']}",
                 "policy": {
                     "installation": "AVAILABLE",
                     "authentication": "ON_INSTALL",
@@ -687,6 +690,13 @@ def marketplace_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLA
     }
     return {
         marketplace_dir / "marketplace.json": dump_json(root_marketplace),
+        # Current Codex CLIs only accept a marketplace root whose manifest
+        # lives at .claude-plugin/marketplace.json, with plugin sources
+        # resolving inside that root — so the canonical Codex registration
+        # target is the marketplace/ directory itself:
+        #   codex plugin marketplace add <repo>/marketplace
+        marketplace_dir / ".claude-plugin" / "marketplace.json": dump_json(codex_marketplace),
+        # Legacy flat export kept for older consumers of the previous layout.
         marketplace_dir / "exports" / "codex" / "marketplace.json": dump_json(codex_marketplace),
         marketplace_dir / "exports" / "mcp" / "mcp.json": dump_json({"mcpServers": mcp_servers}),
         marketplace_dir / "exports" / "roles" / "role-affinity.json": dump_json(role_affinity),

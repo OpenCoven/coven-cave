@@ -295,13 +295,14 @@ nestedComponent.name = "nested-craft";
 const nested = validCraft({ ...validCraft().craft, components: { required: ["nested-craft"], optional: [] } });
 expectRejected(fixtureCatalog(nested, [nestedComponent]), /nested Craft component "nested-craft"/i);
 
-// Production reference Craft: present and fully generated, but intentionally
-// absent from browse/install exports until the final enablement slice.
+// Production reference Craft: fully generated and, as of the enablement
+// slice, publicly browsable and installable alongside the other six
+// audited research Crafts.
 const productionCatalog = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "catalog.json"), "utf8"));
 const productionSeeker = productionCatalog.plugins.find((plugin) => plugin.name === "seekers-lens");
 assert.ok(productionSeeker, "the production catalog includes Seeker's Lens");
 assert.equal(productionSeeker.kind, "craft");
-assert.equal(productionSeeker.visibility, "hidden");
+assert.equal(productionSeeker.visibility, "public");
 assert.deepEqual(productionSeeker.craft.components.required, ["fetch", "filesystem", "memory", "sequential-thinking"]);
 assert.deepEqual(productionSeeker.craft.components.optional, ["exa", "tavily", "firecrawl", "searxng", "research-ingestion"]);
 assert.deepEqual(
@@ -323,7 +324,11 @@ for (const skill of productionSeeker.craft.bundled.skills) {
   assert.ok(existsSync(path.join(productionRoot, "skills", skill.id, "SKILL.md")), `${skill.id} is bundled`);
 }
 const productionBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketplace", "marketplace.json"), "utf8"));
-assert.ok(!productionBrowse.plugins.some((plugin) => plugin.name === "seekers-lens"));
+assert.ok(productionBrowse.plugins.some((plugin) => plugin.name === "seekers-lens"), "public Crafts are browsable");
+const productionCodexBrowse = JSON.parse(readFileSync(path.join(ROOT, "marketplace", ".claude-plugin", "marketplace.json"), "utf8"));
+const codexSeeker = productionCodexBrowse.plugins.find((plugin) => plugin.name === "seekers-lens");
+assert.ok(codexSeeker, "public Crafts are installable through the Codex marketplace export");
+assert.equal(codexSeeker.source, "./plugins/seekers-lens", "Codex plugin sources stay inside the registered marketplace root");
 const productionCheck = spawnSync("python3", [SYNC, "--check"], { cwd: ROOT, encoding: "utf8" });
 assert.equal(productionCheck.status, 0, productionCheck.stderr);
 
