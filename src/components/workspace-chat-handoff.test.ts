@@ -255,3 +255,11 @@ assert.match(
   /const pending = consumePendingAgentsNewChat\(\);[\s\S]{0,200}startFamiliarChat\(\s*pending\.familiarId \?\? null,\s*pending\.projectRoot \?\? null,\s*pending\.initialPrompt \?\? null,\s*pending\.initialControls \?\? null,?\s*\)/,
   "Workspace boot should turn a pending cross-page request into a primed familiar chat",
 );
+// The bridge effect registers BOTH cave:agents-new-chat and
+// cave:continue-on-phone; its cleanup must remove both or re-runs/remounts
+// leak continue-on-phone handlers (duplicate pairing-modal opens).
+assert.match(
+  workspace,
+  /return \(\) => \{\s*window\.removeEventListener\("cave:agents-new-chat", onAgentsNewChat\);\s*window\.removeEventListener\("cave:continue-on-phone", onContinueOnPhone as EventListener\);\s*\};/,
+  "Workspace bridge cleanup should remove every listener the effect adds",
+);

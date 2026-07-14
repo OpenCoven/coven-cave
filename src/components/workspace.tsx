@@ -1708,7 +1708,10 @@ export function Workspace() {
       setMobileHandoffOpen(true);
     };
     window.addEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
-    return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+    return () => {
+      window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
+      window.removeEventListener("cave:continue-on-phone", onContinueOnPhone as EventListener);
+    };
   }, [startFamiliarChat]);
 
   // Consume a cross-page "new chat" handoff (cave-hbpb): standalone routes like
