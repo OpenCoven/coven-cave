@@ -1,13 +1,22 @@
-// CovenWiki v0 Phase 3 — regeneration hook core (Route B, stages S1–S4).
+// CovenWiki v0 Phase 3 — regeneration hook core (Route B).
 //
 // Pure logic only: nothing in this module touches the filesystem or spawns
 // processes. The CLI wrapper (scripts/covenwiki-regen.ts) owns I/O so every
-// stage here is unit-testable with plain data.
+// piece here is unit-testable with plain data.
 //
-//   S1 scan — buildManifest: content hashes for every wiki source file
-//   S2 diff — diffManifests: compare a scan against the last persisted state
-//   S3 plan — planRegeneration: turn a diff into concrete regeneration actions
-//   S4 run  — nextState/summarizePlan: state handoff + report for the executor
+// Plan-semantics layer (phase3 regen-hook step plan, S1–S4):
+//   S1 isStale                  — fresh|stale|unknown vs manifest.source.fingerprint
+//   S2 buildWikiStatus          — the `status <slug>` report the daemon/UI polls
+//   S3/S4 validateWikiManifest  — fail-closed validator run before the atomic swap
+//   computeSourceFingerprint    — 16-hex stat digest (path+size+mtime, sorted)
+//
+// Incremental layer (S6 groundwork; predates the step plan):
+//   scan — buildManifest: content hashes for every wiki source file
+//   diff — diffManifests: compare a scan against the last persisted state
+//   plan — planRegeneration: turn a diff into concrete regeneration actions
+//   run  — nextState/summarizePlan: state handoff + report for the executor
+
+import { createHash } from "node:crypto";
 
 export type SourceEntry = {
   /** Repo-relative path, POSIX separators. */
@@ -56,7 +65,7 @@ const STATE_VERSION = 1 as const;
 /** Wiki page sources; anything else under a source root only affects the index. */
 const PAGE_EXTENSIONS = [".md", ".mdx"];
 
-/** S1: assemble a manifest from hashed source entries (sorted, duplicate-safe). */
+/** scan: assemble a manifest from hashed source entries (sorted, duplicate-safe). */
 export function buildManifest(entries: SourceEntry[], generatedAt: string): Manifest {
   const map: Record<string, string> = {};
   for (const entry of entries) {
@@ -69,7 +78,7 @@ export function buildManifest(entries: SourceEntry[], generatedAt: string): Mani
   return { generatedAt, entries: sorted };
 }
 
-/** S2: diff a fresh scan against the previous manifest (null = first run). */
+/** diff: compare a fresh scan against the previous manifest (null = first run). */
 export function diffManifests(previous: Manifest | null, next: Manifest): ManifestDiff {
   const prev = previous?.entries ?? {};
   const added: string[] = [];
@@ -129,7 +138,7 @@ function matchesFullRebuild(path: string, patterns: string[]): boolean {
   return patterns.some((p) => (p.endsWith("/") ? path.startsWith(p) : path === p));
 }
 
-/** S3: turn a diff into an ordered, deduplicated list of regeneration actions. */
+/** plan: turn a diff into an ordered, deduplicated list of regeneration actions. */
 export function planRegeneration(diff: ManifestDiff, opts: PlanOptions): RegenPlan {
   if (!diff.dirty) return { dirty: false, actions: [] };
 
@@ -211,7 +220,7 @@ export function planRegeneration(diff: ManifestDiff, opts: PlanOptions): RegenPl
   return { dirty: true, actions };
 }
 
-/** S4: the state to persist after a successful regeneration run. */
+/** run: the state to persist after a successful regeneration run. */
 export function nextState(manifest: Manifest): RegenState {
   return { version: STATE_VERSION, manifest };
 }
@@ -249,4 +258,229 @@ export function summarizePlan(diff: ManifestDiff, plan: RegenPlan): string[] {
     lines.push(`${action.kind}${target} — ${action.reason}${via}`);
   }
   return lines;
+}
+
+// ─── Plan-semantics layer (phase3 regen-hook step plan S1–S4) ───────────────
+
+export type WikiFreshness = "fresh" | "stale" | "unknown";
+
+/** One stat record per source file; the inventory behind the fingerprint. */
+export type StatEntry = {
+  /** Repo-relative path, POSIX separators. */
+  path: string;
+  size: number;
+  /** Modification time in integer milliseconds. */
+  mtimeMs: number;
+};
+
+export type WikiNavNode = {
+  title: string;
+  /** null => folder/group header, not a link. */
+  slug: string | null;
+  children: WikiNavNode[];
+};
+
+export type WikiPageEntry = {
+  slug: string;
+  title: string;
+  path: string;
+  meta: string;
+  priority: "required" | "recommended" | "optional";
+  sourcePaths?: string[];
+  wordCount?: number;
+};
+
+/** The subset of the CovenWiki manifest.json contract the regen hook reads. */
+export type WikiManifest = {
+  schemaVersion: string;
+  slug: string;
+  title: string;
+  source: {
+    kind: string;
+    repoRoot?: string | null;
+    revision?: string | null;
+    fingerprint?: string | null;
+    fileCount?: number | null;
+  };
+  generation: {
+    generatedAt: string;
+    backend: string;
+    status: string;
+  };
+  navigation: WikiNavNode[];
+  pages: WikiPageEntry[];
+  counts: Record<string, number>;
+  index?: string;
+};
+
+/**
+ * The 16-hex stat digest that is the Phase 3 staleness key: sha256 over the
+ * sorted source inventory (path + size + mtime), truncated to 16 hex chars.
+ *
+ * Contract: manifest handoff doc (2026-07-03), `source.fingerprint`. The
+ * reference implementation lives in the covenwiki-generate CLI; byte-parity
+ * with it must be verified before the daemon wires `status` polling — any
+ * inventory or format drift shows up as a permanent false "stale".
+ */
+export function computeSourceFingerprint(entries: StatEntry[]): string {
+  const lines = entries
+    .map((e) => `${e.path}\u0000${e.size}\u0000${Math.floor(e.mtimeMs)}`)
+    .sort();
+  return createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 16);
+}
+
+export type FreshnessResult = {
+  freshness: WikiFreshness;
+  reason: string;
+};
+
+/**
+ * S1 — the shared staleness compare every other path uses. Pure and stat-only:
+ * compares the stored `manifest.source.fingerprint` with a live fingerprint
+ * computed by the caller. Non-local sources (github is Phase 5) are `unknown`
+ * and must never auto-regenerate.
+ */
+export function isStale(
+  manifest: Pick<WikiManifest, "source">,
+  liveFingerprint: string | null,
+): FreshnessResult {
+  const source = manifest.source;
+  if (source.kind !== "local") {
+    return { freshness: "unknown", reason: `source.kind is "${source.kind}" — only local sources support staleness checks (github is Phase 5)` };
+  }
+  if (!source.fingerprint) {
+    return { freshness: "unknown", reason: "manifest has no source.fingerprint" };
+  }
+  if (!liveFingerprint) {
+    return { freshness: "unknown", reason: "live fingerprint unavailable (source root missing or unreadable)" };
+  }
+  if (source.fingerprint === liveFingerprint) {
+    return { freshness: "fresh", reason: "live fingerprint matches manifest" };
+  }
+  return { freshness: "stale", reason: "live fingerprint differs from manifest" };
+}
+
+export type WikiStatus = {
+  slug: string;
+  freshness: WikiFreshness;
+  reason: string;
+  fingerprint: { manifest: string | null; live: string | null };
+  fileCount: { manifest: number | null; live: number | null };
+  generatedAt: string;
+  backend: string;
+  generationStatus: string;
+  pages: number;
+};
+
+/** S2 — the pollable status report behind `covenwiki-regen status <slug>`. */
+export function buildWikiStatus(
+  manifest: WikiManifest,
+  liveFingerprint: string | null,
+  liveFileCount: number | null,
+): WikiStatus {
+  const { freshness, reason } = isStale(manifest, liveFingerprint);
+  return {
+    slug: manifest.slug,
+    freshness,
+    reason,
+    fingerprint: { manifest: manifest.source.fingerprint ?? null, live: liveFingerprint },
+    fileCount: { manifest: manifest.source.fileCount ?? null, live: liveFileCount },
+    generatedAt: manifest.generation.generatedAt,
+    backend: manifest.generation.backend,
+    generationStatus: manifest.generation.status,
+    pages: manifest.pages.length,
+  };
+}
+
+export function formatWikiStatus(status: WikiStatus): string[] {
+  return [
+    `${status.slug}: ${status.freshness} — ${status.reason}`,
+    `fingerprint: manifest=${status.fingerprint.manifest ?? "∅"} live=${status.fingerprint.live ?? "∅"}`,
+    `generatedAt: ${status.generatedAt} (backend=${status.backend}, status=${status.generationStatus}, pages=${status.pages})`,
+  ];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateNav(nodes: unknown, at: string, errors: string[]): void {
+  if (!Array.isArray(nodes)) {
+    errors.push(`${at} must be an array`);
+    return;
+  }
+  nodes.forEach((node, i) => {
+    const here = `${at}[${i}]`;
+    if (!isRecord(node)) {
+      errors.push(`${here} must be an object`);
+      return;
+    }
+    if (typeof node.title !== "string" || node.title === "") errors.push(`${here}.title must be a non-empty string`);
+    if (node.slug !== null && typeof node.slug !== "string") errors.push(`${here}.slug must be a string or null`);
+    validateNav(node.children, `${here}.children`, errors);
+  });
+}
+
+const PAGE_PRIORITIES = new Set(["required", "recommended", "optional"]);
+
+/**
+ * S4 — the fail-closed structural validator run against a freshly regenerated
+ * wiki before it may be swapped over the live directory. Returns a list of
+ * errors; only an empty list allows the swap. Structure-only: file-existence
+ * checks (page/meta paths) are the CLI's job because they need I/O.
+ */
+export function validateWikiManifest(data: unknown): string[] {
+  const errors: string[] = [];
+  if (!isRecord(data)) return ["manifest must be a JSON object"];
+
+  if (typeof data.schemaVersion !== "string" || data.schemaVersion === "") errors.push("schemaVersion must be a non-empty string");
+  if (typeof data.slug !== "string" || data.slug === "") errors.push("slug must be a non-empty string");
+  if (typeof data.title !== "string" || data.title === "") errors.push("title must be a non-empty string");
+
+  if (!isRecord(data.source)) errors.push("source must be an object");
+  else if (typeof data.source.kind !== "string" || data.source.kind === "") errors.push("source.kind must be a non-empty string");
+
+  if (!isRecord(data.generation)) errors.push("generation must be an object");
+  else {
+    if (typeof data.generation.generatedAt !== "string" || data.generation.generatedAt === "") errors.push("generation.generatedAt must be a non-empty string");
+    if (typeof data.generation.backend !== "string") errors.push("generation.backend must be a string");
+    if (typeof data.generation.status !== "string") errors.push("generation.status must be a string");
+  }
+
+  validateNav(data.navigation, "navigation", errors);
+
+  if (!Array.isArray(data.pages)) errors.push("pages must be an array");
+  else {
+    data.pages.forEach((page, i) => {
+      const here = `pages[${i}]`;
+      if (!isRecord(page)) {
+        errors.push(`${here} must be an object`);
+        return;
+      }
+      if (typeof page.slug !== "string" || page.slug === "") errors.push(`${here}.slug must be a non-empty string`);
+      if (typeof page.title !== "string" || page.title === "") errors.push(`${here}.title must be a non-empty string`);
+      if (typeof page.path !== "string" || page.path === "") errors.push(`${here}.path must be a non-empty string`);
+      if (typeof page.meta !== "string" || page.meta === "") errors.push(`${here}.meta must be a non-empty string`);
+      if (typeof page.priority !== "string" || !PAGE_PRIORITIES.has(page.priority)) errors.push(`${here}.priority must be one of required|recommended|optional`);
+    });
+  }
+
+  if (!isRecord(data.counts)) errors.push("counts must be an object");
+
+  return errors;
+}
+
+/** Parse + validate a manifest.json payload; throws with every error listed. */
+export function parseWikiManifest(raw: string): WikiManifest {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("manifest.json is not valid JSON");
+  }
+  const errors = validateWikiManifest(data);
+  if (errors.length > 0) {
+    throw new Error(`manifest.json is invalid: ${errors.join("; ")}`);
+  }
+  return data as WikiManifest;
 }
