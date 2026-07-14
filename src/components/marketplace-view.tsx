@@ -513,7 +513,7 @@ export function MarketplaceViewSurface({
     // on a wide screen (same pattern as chat's chatlist/composer containers).
     <section className="marketplace-view @container/marketplace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       {/* Compact header — one slim topmost band (shared .surface-compact
-          chrome with Schedules and the GitHub surface): small title, size-sm
+          chrome with Rituals and the GitHub surface): small title, size-sm
           segment section tabs (live counts, subtitle as tooltip), scoped
           search on the right. The shared Tabs primitive supplies
           role=tablist/tab, roving tabindex, and the marketplace-tab / panel

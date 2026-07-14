@@ -29,6 +29,7 @@ import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { formatTimestamp, formatClock, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTimeSigned } from "@/lib/relative-time";
+import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
@@ -83,7 +84,13 @@ type Props = {
 };
 
 function linkLabel(link: LinkRef): string {
-  if (link.kind === "url") return link.ref;
+  if (link.kind === "url") {
+    // GitHub items open natively (cave-qcsv) — say where the button goes
+    // instead of printing the raw URL.
+    const gh = parseGitHubItemUrl(link.ref);
+    if (gh) return `Open in GitHub · ${gh.repo} #${gh.number}`;
+    return link.ref;
+  }
   if (link.kind === "card") return "Card";
   if (link.kind === "session") return "Session";
   return "Memory";

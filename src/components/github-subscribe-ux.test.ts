@@ -89,4 +89,13 @@ assert.match(
   "a failed subscriptions refresh must not derive an empty repos list (it would PATCH the watch list away)",
 );
 
+// ── Polish (cave-e4oz): honest labels ────────────────────────────────────────
+// The DetailPanel's Link button names its native destination for GitHub items
+// instead of printing a raw URL.
+assert.match(
+  automations,
+  /const gh = parseGitHubItemUrl\(link\.ref\);\s*if \(gh\) return `Open in GitHub · \$\{gh\.repo\} #\$\{gh\.number\}`;/,
+  "GitHub item links label as 'Open in GitHub · owner/repo #N'",
+);
+
 console.log("github-subscribe-ux.test.ts: ok");
