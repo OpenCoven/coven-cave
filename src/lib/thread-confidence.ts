@@ -17,7 +17,9 @@ export type ThreadMetric = {
   label: string;
   /** Average across reports, clamped to 0–100. */
   value: number;
-  /** Share of the weighted headline score this metric carries (0–1). */
+  /** Weighting coefficient (0–1), not a fixed share of the result: the metric
+   *  contributes value × weight points — so at most weight × 100 — to the
+   *  headline score. */
   weight: number;
 };
 
