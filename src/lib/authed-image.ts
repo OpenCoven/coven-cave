@@ -63,30 +63,80 @@ export function needsAuthedImageFetch(src: string | null | undefined): boolean {
 // consumers of the same shared blob and reintroduces the broken-image glyph).
 // ---------------------------------------------------------------------------
 
-type CacheEntry = { objectUrl: string | null; promise: Promise<string | null> };
+type CacheEntry = {
+  objectUrl: string | null;
+  promise: Promise<string | null>;
+  /** Mounted consumers of this entry; eviction never revokes while refs > 0. */
+  refs: number;
+};
 
-const MAX_CACHE_ENTRIES = 64;
+/** Exported for tests. */
+export const MAX_CACHE_ENTRIES = 64;
 const cache = new Map<string, CacheEntry>();
 
-function evictOldestIfNeeded(): void {
+/** Move `entry` to the most-recently-used position. */
+function touch(src: string, entry: CacheEntry): void {
+  cache.delete(src);
+  cache.set(src, entry);
+}
+
+function evictOldestIfNeeded(protect?: CacheEntry): void {
   if (cache.size <= MAX_CACHE_ENTRIES) return;
 
-  // Only evict entries that have an object URL. Evicting an in-flight entry
-  // would lose the reference needed to revoke its eventual object URL.
+  // Never evict: in-flight entries (no URL to revoke yet — losing the entry
+  // would leak the eventual object URL), in-use entries (revoking would break
+  // the next element to render the URL, e.g. the avatar lightbox — cave-fea6),
+  // or the entry a resolving fetch is about to hand to its consumer. The cache
+  // may transiently exceed the cap; it shrinks back as consumers unmount.
   for (const [key, entry] of cache) {
     if (cache.size <= MAX_CACHE_ENTRIES) break;
-    if (!entry.objectUrl) continue;
+    if (!entry.objectUrl || entry.refs > 0 || entry === protect) continue;
     cache.delete(key);
     URL.revokeObjectURL(entry.objectUrl);
   }
 }
 
-function loadAuthedObjectUrl(src: string): Promise<string | null> {
+/**
+ * Read the cached object URL for `src` (or `null`), marking the entry
+ * most-recently-used. Every render-time cache read MUST go through this so
+ * still-rendered images don't age to the front of the eviction queue
+ * (cave-fea6: reads that skip the recency refresh turn the LRU into a FIFO).
+ */
+export function readCachedAuthedImageUrl(src: string): string | null {
+  const entry = cache.get(src);
+  if (!entry) return null;
+  touch(src, entry);
+  return entry.objectUrl;
+}
+
+/**
+ * Mark `src` in-use by a mounted consumer so eviction never revokes an object
+ * URL something is still displaying. Returns an idempotent release function —
+ * releasing does NOT revoke (see the cache header), it only makes the entry
+ * evictable again once no consumers remain.
+ */
+export function retainAuthedImage(src: string): () => void {
+  const entry = cache.get(src);
+  if (!entry) return () => {};
+  entry.refs += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    entry.refs = Math.max(0, entry.refs - 1);
+  };
+}
+
+/**
+ * Fetch `src` through the (auth-bridge-patched) `fetch` and resolve to a shared
+ * `blob:` object URL, or `null` on failure. Concurrent and repeat calls for the
+ * same `src` share one fetch and one blob. Exported for tests and non-hook
+ * call sites; components should reach for the hooks below.
+ */
+export function loadAuthedObjectUrl(src: string): Promise<string | null> {
   const existing = cache.get(src);
   if (existing) {
-    // Refresh LRU recency on hit.
-    cache.delete(src);
-    cache.set(src, existing);
+    touch(src, existing);
     return existing.promise;
   }
 
@@ -101,7 +151,11 @@ function loadAuthedObjectUrl(src: string): Promise<string | null> {
       const entry = cache.get(src);
       if (entry) {
         entry.objectUrl = objectUrl;
-        evictOldestIfNeeded();
+        // Just resolved = just used: make it MRU and shield it from the
+        // eviction pass below, which could otherwise revoke the very URL we
+        // are about to return (cache over-cap during a burst of loads).
+        touch(src, entry);
+        evictOldestIfNeeded(entry);
       }
       return objectUrl;
     } catch {
@@ -112,7 +166,7 @@ function loadAuthedObjectUrl(src: string): Promise<string | null> {
     }
   })();
 
-  cache.set(src, { objectUrl: null, promise });
+  cache.set(src, { objectUrl: null, promise, refs: 0 });
   evictOldestIfNeeded();
   return promise;
 }
@@ -126,6 +180,20 @@ export type AuthedImageState = {
 };
 
 /**
+ * The state {@link useAuthedImageState} starts from for a given `src` — `idle`
+ * for empty/passthrough sources, and for authed sources `ready` synchronously
+ * when the blob is already cached (no fallback flash) or `loading` otherwise.
+ * Exported for tests.
+ */
+export function seedAuthedImageState(src: string | null | undefined): AuthedImageState {
+  if (src && needsAuthedImageFetch(src)) {
+    const cached = readCachedAuthedImageUrl(src);
+    return cached ? { url: cached, status: "ready" } : { url: null, status: "loading" };
+  }
+  return { url: null, status: "idle" };
+}
+
+/**
  * Resolve an image `src` to something a native renderer can actually display in
  * the packaged app, reporting the load status so callers with a fallback chain
  * (e.g. `FamiliarAvatar`) can advance to the next source on a genuine failure.
@@ -137,37 +205,52 @@ export type AuthedImageState = {
  * - same-origin `/api/...` → `status: "loading"` (url `null`) until the
  *   authenticated fetch resolves to a `blob:` URL (`"ready"`) or fails
  *   (`"error"`, url `null`).
+ *
+ * The returned state always describes the CURRENT `src` — never a stale
+ * status/url left over from a previous one.
  */
 export function useAuthedImageState(src: string | null | undefined): AuthedImageState {
   const passthrough = src && !needsAuthedImageFetch(src) ? src : null;
-  const [state, setState] = useState<AuthedImageState>(() => {
-    // Seed synchronously from cache so re-renders of an already-loaded avatar
-    // don't flash the fallback.
-    if (src && needsAuthedImageFetch(src)) {
-      const cached = cache.get(src)?.objectUrl ?? null;
-      return cached ? { url: cached, status: "ready" } : { url: null, status: "loading" };
-    }
-    return { url: null, status: "idle" };
-  });
+  const [state, setState] = useState<AuthedImageState>(() => seedAuthedImageState(src));
+
+  // Key the state to the src it describes (cave-x63e). Without this, the first
+  // render after a src change still returns the PREVIOUS src's state — e.g. a
+  // lingering `"error"` that a fallback-chain consumer (FamiliarAvatar) would
+  // misread as the NEW source having failed, double-advancing past a loadable
+  // source. Render-phase reset (React's derived-state-from-props pattern)
+  // guarantees no consumer ever observes state for a src it didn't ask about.
+  const [prevSrc, setPrevSrc] = useState(src);
+  if (prevSrc !== src) {
+    setPrevSrc(src);
+    setState(seedAuthedImageState(src));
+  }
 
   useEffect(() => {
     if (!src || !needsAuthedImageFetch(src)) {
-      setState({ url: null, status: "idle" });
+      setState((prev) => (prev.status === "idle" ? prev : { url: null, status: "idle" }));
       return;
     }
     let active = true;
-    const cached = cache.get(src)?.objectUrl;
+    const commit = (url: string | null, status: AuthedImageStatus) =>
+      setState((prev) => (prev.url === url && prev.status === status ? prev : { url, status }));
+
+    const cached = readCachedAuthedImageUrl(src);
     if (cached) {
-      setState({ url: cached, status: "ready" });
-      return;
+      commit(cached, "ready");
+    } else {
+      commit(null, "loading");
+      void loadAuthedObjectUrl(src).then((resolved) => {
+        if (!active) return;
+        commit(resolved, resolved ? "ready" : "error");
+      });
     }
-    setState({ url: null, status: "loading" });
-    void loadAuthedObjectUrl(src).then((resolved) => {
-      if (!active) return;
-      setState(resolved ? { url: resolved, status: "ready" } : { url: null, status: "error" });
-    });
+    // Hold the entry (cached or just-created in-flight) for this component's
+    // lifetime so eviction never revokes an object URL a mounted element is
+    // displaying (cave-fea6).
+    const release = retainAuthedImage(src);
     return () => {
       active = false;
+      release();
     };
   }, [src]);
 

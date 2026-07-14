@@ -91,8 +91,45 @@ assert.match(source, /URL\.createObjectURL\(blob\)/, "creates a blob object URL"
 
 // A failed fetch must surface as an "error" status so fallback chains advance,
 // and must not poison the cache (so a later mount can retry).
-assert.match(source, /status: "error"/, "reports an error status on failure");
+assert.match(
+  source,
+  /commit\(resolved, resolved \? "ready" : "error"\)/,
+  "reports an error status on failure",
+);
 assert.match(source, /cache\.delete\(src\)/, "drops the failed entry for retry");
+
+// The state a consumer observes must always describe the CURRENT src: the hook
+// resets synchronously on a src change (render-phase derived-state pattern), so
+// a fallback-chain consumer can never misread the previous src's "error" and
+// double-advance past a loadable source (cave-x63e).
+assert.match(source, /if \(prevSrc !== src\) \{/, "state is keyed to its src");
+assert.match(
+  source,
+  /setPrevSrc\(src\);\s*\n\s*setState\(seedAuthedImageState\(src\)\)/,
+  "src change reseeds state synchronously during render",
+);
+
+// Mounted consumers hold a ref on their entry so eviction never revokes an
+// object URL something is still displaying, and render-time cache reads refresh
+// LRU recency so live images don't age to the front of the eviction queue
+// (cave-fea6).
+assert.match(source, /const release = retainAuthedImage\(src\)/, "hook retains its entry while mounted");
+assert.match(source, /release\(\);/, "hook releases its entry on cleanup");
+assert.match(
+  source,
+  /entry\.refs > 0 \|\| entry === protect/,
+  "eviction skips in-use and just-resolved entries",
+);
+assert.match(
+  source,
+  /const cached = readCachedAuthedImageUrl\(src\)/,
+  "effect cache reads refresh recency",
+);
+assert.match(
+  source,
+  /const cached = readCachedAuthedImageUrl\(src\);\s*\n\s*return cached \? \{ url: cached, status: "ready" \}/,
+  "seed cache reads refresh recency",
+);
 
 // The shared cache is bounded and revokes object URLs on eviction (no leaks) and
 // must NOT revoke on unmount (that races other live consumers of the blob).
