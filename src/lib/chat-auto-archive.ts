@@ -49,8 +49,9 @@ export const DEFAULT_CHAT_AUTO_ARCHIVE_POLICY: ChatAutoArchivePolicy = {
 
 const MAX_DAYS = 365;
 
-/** Grace window applied when a chat is summoned (unarchived) so an idle-based
- *  sweep doesn't immediately re-archive it before the user touches it. */
+/** Grace window applied when a chat is summoned (unarchived) so a sweep
+ *  (idle-based or merged-PR) doesn't immediately re-archive it before the
+ *  user touches it. */
 export const SUMMON_GRACE_DAYS = 7;
 
 function clampDays(value: unknown, fallback: number): number {
@@ -108,10 +109,13 @@ export function sessionCreatedExternally(
   return !USER_FACING_ORIGINS.has(row.origin);
 }
 
-/** Statuses that mean the session may still be doing work — never sweep those. */
-const ACTIVE_STATUSES: ReadonlySet<string> = new Set([
+/** Statuses that mean the session may still be doing work — never sweep
+ *  those. Shared by every auto-archive sweep (policy and merged-PR) so the
+ *  two paths can't drift on what counts as "active". */
+export const ACTIVE_SESSION_STATUSES: ReadonlySet<string> = new Set([
   "running",
   "starting",
+  "working",
   "queued",
   "streaming",
   "waiting",
@@ -133,6 +137,20 @@ export type AutoArchiveContext = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** True while `id` sits inside a still-valid auto-archive extension window
+ *  (explicit "remind me later" extensions and the summon grace both live in
+ *  `sessionArchiveExtendedUntil`). Shared by every auto-archive sweep. */
+export function underExtension(
+  extendedUntil: Record<string, string>,
+  id: string,
+  now: Date,
+): boolean {
+  const raw = extendedUntil[id];
+  if (!raw) return false;
+  const until = Date.parse(raw);
+  return Number.isFinite(until) && until > now.getTime();
+}
 
 function daysIdle(row: AutoArchiveSessionInput, now: Date): number | null {
   const updated = Date.parse(row.updated_at);
@@ -157,12 +175,8 @@ export function autoArchiveDecisions(
   for (const row of rows) {
     if (row.archived_at) continue;
     if (context.keep[row.id]) continue;
-    if (ACTIVE_STATUSES.has((row.status ?? "").toLowerCase())) continue;
-    const extendedUntil = context.extendedUntil[row.id];
-    if (extendedUntil) {
-      const until = Date.parse(extendedUntil);
-      if (Number.isFinite(until) && until > context.now.getTime()) continue;
-    }
+    if (ACTIVE_SESSION_STATUSES.has((row.status ?? "").toLowerCase())) continue;
+    if (underExtension(context.extendedUntil, row.id, context.now)) continue;
     const idle = daysIdle(row, context.now);
     if (idle == null) continue;
 
