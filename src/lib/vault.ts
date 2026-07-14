@@ -10,6 +10,10 @@
  *   4. vault.yaml has a ref for this key → resolve via `op read`
  *   5. undefined
  *
+ * The vault.yaml mapping declares which backend a key uses: when it carries a
+ * ref (and is not declared `storage: "encrypted"`), the ref wins — a stale or
+ * orphaned entry left behind in the local encrypted store must never shadow it.
+ *
  * Resolved values are cached in process.env for the lifetime of the process
  * so subsequent calls are instant. The raw secret value is NEVER written to
  * any file — it lives only in process memory.
@@ -293,9 +297,12 @@ export function resolveSecret(key: string): string | undefined {
   const map = loadVaultMap();
   const entry = map[key];
 
-  const localEncrypted = entry?.storage === "encrypted" || hasLocalEncryptedSecret(key)
-    ? getLocalEncryptedSecret(key)
-    : null;
+  // The map's declared backend wins: a ref mapping is never shadowed by a
+  // stale/orphaned entry in the local encrypted store. Unmapped encrypted
+  // secrets (no entry at all) still resolve.
+  const preferEncrypted =
+    entry?.storage === "encrypted" || (!entry?.ref && hasLocalEncryptedSecret(key));
+  const localEncrypted = preferEncrypted ? getLocalEncryptedSecret(key) : null;
   if (localEncrypted?.trim()) {
     process.env[key] = localEncrypted.trim();
     return localEncrypted.trim();
@@ -340,7 +347,9 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
   const envLocal = readEnvLocalAll(); // read once for all entries
   return Object.entries(map).map(([key, entry]) => {
     const inEnv = !!(process.env[key]?.trim()) || key in envLocal;
-    const hasEncrypted = entry.storage === "encrypted" || hasLocalEncryptedSecret(key);
+    // A ref mapping reports its ref backend even if an orphaned encrypted
+    // entry lingers in the local store (cave-6iee).
+    const hasEncrypted = entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key));
 
     if (inEnv) {
       return {
@@ -383,7 +392,9 @@ export function getVaultStatuses(): VaultMappingStatus[] {
   return Object.entries(map).map(([key, entry]) => {
     const inEnv = !!(process.env[key]?.trim());
 
-    if (entry.storage === "encrypted" || hasLocalEncryptedSecret(key)) {
+    // Same backend-priority rule as resolveSecret: an orphaned encrypted
+    // entry must not make a ref mapping report (or resolve) as "encrypted".
+    if (entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key))) {
       try {
         const value = getLocalEncryptedSecret(key);
         if (value) {
