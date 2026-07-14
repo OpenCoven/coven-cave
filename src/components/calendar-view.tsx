@@ -14,7 +14,8 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { SnoozeMenu } from "@/components/snooze-menu";
-import { itemDate, packEventColumns } from "@/lib/calendar-layout";
+import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
+import { itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { useIsMobile } from "@/lib/use-viewport";
 
@@ -719,11 +720,14 @@ function TimeGrid({
   onOpenItem,
   onAddEntry,
   onReschedule,
+  maxLanes = WEEK_MAX_LANES,
 }: {
   columns: { label: string; date: Date; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
+  /** Lane cap before concurrent events roll up into a "+N" pill. */
+  maxLanes?: number;
 }) {
   // Read the per-familiar accent fn once (events render in a loop, so we can't
   // call the hook per item).
@@ -758,7 +762,15 @@ function TimeGrid({
 
   // Lane-pack each column once per columns change rather than on every render
   // (a drag re-renders the grid continuously).
-  const packedColumns = useMemo(() => columns.map((c) => packEventColumns(c.items)), [columns]);
+  const packedColumns = useMemo(
+    () => columns.map((c) => packEventColumnsWithOverflow(c.items, maxLanes)),
+    [columns, maxLanes],
+  );
+
+  // One popover serves every "+N" pill: clicking a pill anchors the popover to
+  // that pill and lists its rolled-up events.
+  const [overflowOpen, setOverflowOpen] = useState<{ colIdx: number; overflow: PlacedOverflow } | null>(null);
+  const overflowAnchorRef = useRef<HTMLElement | null>(null);
 
   const totalHeight = 24 * HOUR_HEIGHT;
   const nowTop = now ? ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT : 0;
@@ -861,7 +873,7 @@ function TimeGrid({
             )}
 
             {/* Items — lane-packed so overlaps sit side by side */}
-            {packedColumns[ci].map((ev) => {
+            {packedColumns[ci].events.map((ev) => {
               const widthPct = 100 / ev.lanes;
               const leftPct = ev.lane * widthPct;
               const height = Math.max(18, ((ev.end - ev.start) / 60) * HOUR_HEIGHT - 2);
@@ -927,11 +939,81 @@ function TimeGrid({
                 </button>
               );
             })}
+
+            {/* "+N" rollup pills — concurrent events beyond the lane cap */}
+            {packedColumns[ci].overflows.map((ov, oi) => {
+              const widthPct = 100 / ov.lanes;
+              const leftPct = ov.lane * widthPct;
+              const height = Math.max(18, ((ov.end - ov.start) / 60) * HOUR_HEIGHT - 2);
+              const open = overflowOpen?.colIdx === ci && overflowOpen.overflow === ov;
+              return (
+                <button
+                  key={`ov-${oi}`}
+                  type="button"
+                  data-calendar-event="true"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  aria-label={`${ov.items.length} more events from ${fmtTime(minutesToIso(col.date, ov.start))}`}
+                  title={`${ov.items.length} more events — click to list`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    overflowAnchorRef.current = e.currentTarget;
+                    setOverflowOpen(open ? null : { colIdx: ci, overflow: ov });
+                  }}
+                  className="focus-ring-inset absolute flex items-center justify-center rounded border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-1 text-[10px] font-semibold tabular-nums text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                  style={{
+                    top: (ov.start / 60) * HOUR_HEIGHT + 1,
+                    height,
+                    left: `calc(${leftPct}% + 1px)`,
+                    width: `calc(${widthPct}% - 2px)`,
+                  }}
+                >
+                  +{ov.items.length}
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>
+
+      {/* One shared popover lists whichever "+N" pill is open */}
+      <Popover
+        open={overflowOpen !== null}
+        onOpenChange={(next) => { if (!next) setOverflowOpen(null); }}
+        anchorRef={overflowAnchorRef}
+        placement="bottom-start"
+        minWidth={220}
+        ariaLabel="More events"
+      >
+        <PopoverBody role="menu" ariaLabel="More events">
+          {(overflowOpen?.overflow.items ?? []).map((item) => {
+            const iso = item.fireAt ?? item.firedAt;
+            return (
+              <PopoverItem
+                key={item.id}
+                onSelect={() => {
+                  setOverflowOpen(null);
+                  onOpenItem?.(item);
+                }}
+                title={item.title}
+              >
+                <span className="tabular-nums text-[var(--text-muted)]">{iso ? fmtTime(iso) : ""}</span>
+                {" "}
+                {item.title}
+              </PopoverItem>
+            );
+          })}
+        </PopoverBody>
+      </Popover>
     </div>
   );
+}
+
+/** ISO timestamp for a minutes-from-midnight offset on a given day. */
+function minutesToIso(day: Date, minutes: number): string {
+  const d = new Date(day);
+  d.setHours(0, minutes, 0, 0);
+  return d.toISOString();
 }
 
 // ─── Day view ─────────────────────────────────────────────────────────────────
@@ -1018,7 +1100,7 @@ function DayView({
       )}
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} maxLanes={DAY_MAX_LANES} />
       </div>
     </div>
   );

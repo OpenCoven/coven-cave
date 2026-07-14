@@ -33,11 +33,11 @@ assert.match(
 assert.match(view, /\.filter\(\(it\) => it\.status !== "dismissed"\)/, "Dismissed items must be filtered out of the calendar");
 
 // ───────── Overlap-aware time grid ─────────
-assert.match(view, /import \{ itemDate, packEventColumns \} from "@\/lib\/calendar-layout"/, "TimeGrid uses the extracted lane packer");
+assert.match(view, /import \{ itemDate, packEventColumnsWithOverflow, WEEK_MAX_LANES, DAY_MAX_LANES, type PlacedOverflow \} from "@\/lib\/calendar-layout"/, "TimeGrid uses the extracted lane packer");
 // Lane packing is memoised per columns change (a drag re-renders the grid
 // continuously) and rendered from the cached result, not recomputed inline.
-assert.match(view, /const packedColumns = useMemo\(\(\) => columns\.map\(\(c\) => packEventColumns\(c\.items\)\), \[columns\]\)/, "Time-grid lane packing is memoised on columns");
-assert.match(view, /packedColumns\[ci\]\.map/, "Time-grid events render from the packed lanes");
+assert.match(view, /const packedColumns = useMemo\(\n?\s*\(\) => columns\.map\(\(c\) => packEventColumnsWithOverflow\(c\.items, maxLanes\)\),\n?\s*\[columns, maxLanes\],?\n?\s*\)/, "Time-grid lane packing is memoised on columns");
+assert.match(view, /packedColumns\[ci\]\.events\.map/, "Time-grid events render from the packed lanes");
 assert.match(view, /data-calendar-event="true"/, "Events keep the roving-tabindex hook attribute");
 assert.doesNotMatch(view, /minHeight: 20/, "Old fixed 20px event height must be gone");
 
