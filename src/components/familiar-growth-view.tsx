@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { AuthedImage } from "@/components/ui/authed-image";
 import {
   buildFamiliarCardStats,
   type CovenMemoryEntry,
@@ -301,13 +302,16 @@ export function FamiliarGrowthView({
                       aria-pressed={selectedItem}
                       onClick={() => setSelectedFamiliarId(familiar.id)}
                     >
-                      {familiar.avatarUrl ? (
-                        <img className="retro-avatar growth-familiar__avatar" src={familiar.avatarUrl} alt="" />
-                      ) : (
-                        <span className="retro-avatar growth-familiar__avatar">
-                          {familiar.display_name.slice(0, 1).toUpperCase()}
-                        </span>
-                      )}
+                      <AuthedImage
+                        className="retro-avatar growth-familiar__avatar"
+                        src={familiar.avatarUrl}
+                        alt=""
+                        fallback={
+                          <span className="retro-avatar growth-familiar__avatar">
+                            {familiar.display_name.slice(0, 1).toUpperCase()}
+                          </span>
+                        }
+                      />
                       <span className="growth-familiar__copy">
                         <b>{familiar.display_name}</b>
                         <small>{familiar.role || familiar.harness || "familiar"}</small>

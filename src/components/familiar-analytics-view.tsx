@@ -9,6 +9,7 @@ import {
 } from "@/components/familiar-analytics-data";
 import type { FeedbackSliceStat, MessageFeedbackRollup } from "@/lib/message-feedback-rollup";
 import { Button } from "@/components/ui/button";
+import { AuthedImage } from "@/components/ui/authed-image";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -877,11 +878,12 @@ export function FamiliarAnalyticsContent({
 
       <header className="fa-header">
         <div className="fa-header__identity">
-          {model.familiar?.avatarUrl ? (
-            <img className="fa-avatar" src={model.familiar.avatarUrl} alt={familiarName} />
-          ) : (
-            <span className="fa-avatar" aria-hidden>{familiarName.slice(0, 1).toUpperCase()}</span>
-          )}
+          <AuthedImage
+            className="fa-avatar"
+            src={model.familiar?.avatarUrl}
+            alt={familiarName}
+            fallback={<span className="fa-avatar" aria-hidden>{familiarName.slice(0, 1).toUpperCase()}</span>}
+          />
           <div>
             <p className="retro-eyebrow">
               <Icon name="ph:chart-bar-bold" aria-hidden />

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+import { AuthedImage } from "@/components/ui/authed-image";
 import type { DashboardModel } from "@/lib/dashboard-model";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -791,7 +792,7 @@ function FamiliarInsightsTable({ rows, loaded }: { rows: FamiliarInsightRow[]; l
         <a key={r.id} className="cockpit-fam__row" role="row" href={`/dashboard/familiars/${encodeURIComponent(r.id)}/analytics`}>
           <span className="cockpit-fam__who" role="cell">
             <span className="cockpit-fam__avatar" style={{ background: r.color }}>
-              {r.avatarUrl ? <img src={r.avatarUrl} alt="" /> : (r.emoji || r.name.slice(0, 1).toUpperCase())}
+              <AuthedImage src={r.avatarUrl} alt="" fallback={r.emoji || r.name.slice(0, 1).toUpperCase()} />
               {r.active ? <span className="cockpit-fam__on" title="Active session" /> : null}
             </span>
             <span className="cockpit-fam__id">

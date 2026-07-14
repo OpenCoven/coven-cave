@@ -51,6 +51,7 @@ export const SUITES = {
     "src/lib/user-profile.test.ts",
     "src/lib/legacy-svg-avatar-hint.test.ts",
     "src/lib/familiar-avatar-src.test.ts",
+    "src/lib/authed-image.test.ts",
     "src/lib/app-update.test.ts",
     "src/lib/about-status.test.ts",
     "src/lib/about-diagnostics.test.ts",

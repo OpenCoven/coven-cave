@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
 import { AvatarLightbox } from "./ui/avatar-lightbox";
+import { useAuthedImageState } from "@/lib/authed-image";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Size = "sm" | "md" | "lg" | "xl";
@@ -42,12 +43,25 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
     setSrcIdx(0);
   }, [familiar.avatarImage, familiar.avatarImageFallback]);
 
-  const currentSrc = sources[srcIdx];
-  const hasImage = Boolean(currentSrc);
+  // The workspace avatar source is `/api/familiars/<id>/avatar`, which the
+  // packaged sidecar gates behind an auth token that a native <img> can't
+  // carry — it would 401 into the broken-image glyph. Resolve the current
+  // source through the authed fetch (→ a blob: URL); data-URL uploads and
+  // http(s) sources pass through untouched. A genuine fetch failure advances
+  // the fallback chain exactly like a native decode error would.
+  const rawSrc = sources[srcIdx];
+  const { url: resolvedSrc, status } = useAuthedImageState(rawSrc);
+  useEffect(() => {
+    if (status === "error") setSrcIdx((i) => i + 1);
+  }, [status, rawSrc]);
+
+  // Render the image once resolved (`ready`); while an authed fetch is still in
+  // flight, hold on the glyph placeholder rather than flashing a broken image.
+  const hasImage = Boolean(resolvedSrc);
 
   const imgEl = hasImage ? (
     <img
-      src={currentSrc}
+      src={resolvedSrc ?? undefined}
       alt={familiar.display_name}
       width={px}
       height={px}
@@ -64,9 +78,9 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
     />
   );
 
-  if (expandable && hasImage) {
+  if (expandable && hasImage && resolvedSrc) {
     return (
-      <AvatarLightbox src={currentSrc} label={familiar.display_name} footerActions={expandFooterActions}>
+      <AvatarLightbox src={resolvedSrc} label={familiar.display_name} footerActions={expandFooterActions}>
         {imgEl}
       </AvatarLightbox>
     );

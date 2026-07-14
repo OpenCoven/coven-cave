@@ -13,6 +13,7 @@ import {
 } from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { Icon, type IconName } from "@/lib/icon";
+import { AuthedImage } from "@/components/ui/authed-image";
 import type { Familiar } from "@/lib/types";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -70,12 +71,17 @@ function initials(familiar: Familiar): string {
 
 export function FamiliarMark({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" }) {
   const sizeClass = size === "md" ? "h-6 w-6 text-[10px]" : "h-5 w-5 text-[9px]";
-  return familiar.avatarUrl ? (
-    <img src={familiar.avatarUrl} alt="" className={`${sizeClass} rounded-[var(--radius-control)] object-cover`} />
-  ) : (
-    <span className={`grid ${sizeClass} place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)] font-semibold text-[var(--fg-primary)]`}>
-      {initials(familiar)}
-    </span>
+  return (
+    <AuthedImage
+      src={familiar.avatarUrl}
+      alt=""
+      className={`${sizeClass} rounded-[var(--radius-control)] object-cover`}
+      fallback={
+        <span className={`grid ${sizeClass} place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)] font-semibold text-[var(--fg-primary)]`}>
+          {initials(familiar)}
+        </span>
+      }
+    />
   );
 }
 

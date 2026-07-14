@@ -13,6 +13,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { AuthedImage } from "@/components/ui/authed-image";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry, MemoryFeed } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
@@ -1003,15 +1004,12 @@ function FamiliarAvatarPreviewOverlay({ familiar, onClose }: FamiliarAvatarPrevi
     >
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
-          {familiar.avatarImage ? (
-            <img
-              src={familiar.avatarImage}
-              alt={`${familiar.display_name} avatar`}
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <FamiliarAvatar familiar={familiar} size="xl" />
-          )}
+          <AuthedImage
+            src={familiar.avatarImage}
+            alt={`${familiar.display_name} avatar`}
+            className="h-full w-full object-cover"
+            fallback={<FamiliarAvatar familiar={familiar} size="xl" />}
+          />
         </div>
         <div className="min-w-0">
           <div className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
