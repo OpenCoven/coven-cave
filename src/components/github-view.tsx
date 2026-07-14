@@ -44,6 +44,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import type { GitHubItemTarget } from "@/lib/github-item-url";
 import { githubItemMatchesQuery } from "@/lib/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -93,6 +94,9 @@ function orgOf(repo: string): string {
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
+  /** Deep-link target from a GitHub-event inbox notification — opens that
+   *  PR/issue's detail natively, even when it isn't in the activity list. */
+  initialTarget?: GitHubItemTarget | null;
 };
 
 // ── Data hooks ─────────────────────────────────────────────────────────────────
@@ -2308,7 +2312,7 @@ const COLS: ColDef[] = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
+export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
@@ -2324,6 +2328,16 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  // Deep-linked PR/issue from a GitHub-event notification. Cleared when the
+  // user picks a row themselves — from then on selection owns the detail.
+  const [deepLink, setDeepLink] = useState<GitHubItemTarget | null>(initialTarget ?? null);
+  useEffect(() => {
+    setDeepLink(initialTarget ?? null);
+  }, [initialTarget]);
+  const selectRow = useCallback((id: string) => {
+    setDeepLink(null);
+    setSelectedItemId(id);
+  }, []);
   const timerRef = useRef<number | null>(null);
   // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
   const mountedRef = useRef(true);
@@ -2558,9 +2572,28 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     }
   }, [sorted, selectedItemId]);
 
+  // The deep-linked item may not be in the activity list (old PR, other repo):
+  // prefer the live row when present (real title/state, row highlight), else
+  // synthesize the minimal shape the detail pane needs to fetch
+  // /api/github/item?repo&number.
+  const deepLinkItem = useMemo<GitHubItem | null>(() => {
+    if (!deepLink) return null;
+    const listed = sorted.find((it) => it.repo === deepLink.repo && it.number === deepLink.number);
+    if (listed) return listed;
+    return {
+      kind: deepLink.kind,
+      id: `deeplink:${deepLink.repo}#${deepLink.number}`,
+      title: `${deepLink.repo} #${deepLink.number}`,
+      repo: deepLink.repo,
+      number: deepLink.number,
+      url: deepLink.url,
+      updatedAt: new Date().toISOString(),
+    };
+  }, [deepLink, sorted]);
+
   const selectedItem = useMemo(
-    () => sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
-    [sorted, selectedItemId],
+    () => deepLinkItem ?? sorted.find((item) => item.id === selectedItemId) ?? sorted[0] ?? null,
+    [deepLinkItem, sorted, selectedItemId],
   );
   const selectedLinkedCards = selectedItem ? linkedMap.get(selectedItem.id) ?? [] : [];
 
@@ -2585,7 +2618,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       const list = rows();
       if (list.length === 0) return;
       const row = list[Math.max(0, Math.min(list.length - 1, i))];
-      if (row.dataset.itemId) setSelectedItemId(row.dataset.itemId);
+      if (row.dataset.itemId) selectRow(row.dataset.itemId);
       row.focus();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -2606,7 +2639,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     };
     const onFocusIn = (e: FocusEvent) => {
       const row = rowOf(e.target);
-      if (row?.dataset.itemId) setSelectedItemId(row.dataset.itemId);
+      if (row?.dataset.itemId) selectRow(row.dataset.itemId);
     };
     tbody.addEventListener("keydown", onKey);
     tbody.addEventListener("focusin", onFocusIn);
@@ -2846,7 +2879,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             />
           </div>
 
-        ) : sorted.length === 0 ? (
+        ) : sorted.length === 0 && !deepLinkItem ? (
           <div className="flex h-full items-center justify-center px-8">
             {query.trim() ? (
               <EmptyState
@@ -2965,7 +2998,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       data-url={item.url}
                       tabIndex={selectedItem?.id === item.id ? 0 : -1}
                       className={`gh-row reveal-scope${selectedItem?.id === item.id ? " is-selected" : ""}`}
-                      onClick={() => setSelectedItemId(item.id)}
+                      onClick={() => selectRow(item.id)}
                       aria-selected={selectedItem?.id === item.id}
                     >
                       <td>

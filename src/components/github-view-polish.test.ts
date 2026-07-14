@@ -104,8 +104,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => setSelectedItemId\(item\.id\)\}/,
-  "clicking a GitHub row selects it for inspection",
+  /onClick=\{\(\) => selectRow\(item\.id\)\}/,
+  "clicking a GitHub row selects it for inspection (and clears any deep link)",
 );
 assert.match(
   source,
@@ -271,7 +271,7 @@ assert.match(source, /case "ArrowUp": e\.preventDefault\(\); focusRow/, "ArrowUp
 assert.match(source, /data-gh-row="true"[\s\S]{0,160}?data-item-id=\{item\.id\}/, "item rows carry the roving + id hooks");
 assert.match(source, /tabIndex=\{selectedItem\?\.id === item\.id \? 0 : -1\}/, "the selected row is the roving tab stop");
 assert.match(source, /role="grid" aria-label="GitHub activity/, "the table is a labelled grid");
-assert.match(source, /setSelectedItemId\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
+assert.match(source, /selectRow\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
 assert.match(source, /openExternalUrl\(url\)/, "Enter opens the focused row through the in-app Browser handoff");
 assert.match(source, /\}, \[sorted\.length\]\);/, "row-nav listeners rebind when the table mounts after the async fetch");
 

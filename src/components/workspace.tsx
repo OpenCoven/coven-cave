@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
+import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -452,6 +453,13 @@ export function Workspace() {
     whenText: string;
   }>({ fireAt: "", title: "", whenText: "" });
   const [editingReminder, setEditingReminder] = useState<InboxItem | null>(null);
+  // Deep-link target for the native GitHub surface (a GitHub-event inbox
+  // notification's PR/issue). Cleared on leaving the surface so a later manual
+  // visit doesn't re-open a stale item.
+  const [githubTarget, setGithubTarget] = useState<GitHubItemTarget | null>(null);
+  useEffect(() => {
+    if (mode !== "github" && githubTarget) setGithubTarget(null);
+  }, [mode, githubTarget]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
@@ -1603,6 +1611,18 @@ export function Workspace() {
     return () => unlisten?.();
   }, [openFamiliarSession]);
 
+  // GitHub PR/issue URLs (github-watcher notifications, reminder links) open
+  // the NATIVE GitHub surface with the item's detail — never a browser tab.
+  // Returns false for anything that isn't a github.com item URL so callers
+  // fall back to their existing behavior (cave-qcsv).
+  const openGitHubTarget = useCallback((url: string | null | undefined): boolean => {
+    const target = parseGitHubItemUrl(url);
+    if (!target) return false;
+    setGithubTarget(target);
+    setMode("github");
+    return true;
+  }, []);
+
   const openReminderLink = useCallback((link: LinkRef) => {
     if (link.kind === "url") {
       if (!link.ref) return;
@@ -1610,6 +1630,7 @@ export function Workspace() {
         nextRouter.push(link.ref);
         return;
       }
+      if (openGitHubTarget(link.ref)) return;
       openUrlInAppBrowser(link.ref);
     } else if (link.kind === "card") {
       setMode("board");
@@ -1621,7 +1642,7 @@ export function Workspace() {
       // Link button that did nothing (cave-gg5d). Grimoire is the memory reader.
       openGrimoireDoc("memory", link.ref);
     }
-  }, [nextRouter, openFamiliarSession, openUrlInAppBrowser]);
+  }, [nextRouter, openFamiliarSession, openUrlInAppBrowser, openGitHubTarget]);
 
   const openInspectorInboxItem = useCallback((item: InboxItem) => {
     markInboxItemRead(item.id);
@@ -1631,9 +1652,11 @@ export function Workspace() {
       openFamiliarSession(sessionId, item.familiarId);
       return;
     }
+    // A GitHub-event notification's target is its PR/issue — open it natively.
+    if (item.link?.kind === "url" && openGitHubTarget(item.link.ref)) return;
     if (item.familiarId) setActiveId(item.familiarId);
     setMode("inbox");
-  }, [openFamiliarSession, markInboxItemRead]);
+  }, [openFamiliarSession, markInboxItemRead, openGitHubTarget]);
 
   const startFamiliarChat = useCallback((
     familiarId?: string | null,
@@ -2483,6 +2506,10 @@ export function Workspace() {
             onOpenItem={(item) => {
               if (item.sessionId) {
                 openFamiliarSession(item.sessionId, item.familiarId);
+              } else if (item.link) {
+                // GitHub-event notifications open the native GitHub surface;
+                // other links use their normal open paths.
+                openReminderLink(item.link);
               }
             }}
             onComplete={completeInboxItem}
@@ -2505,6 +2532,7 @@ export function Workspace() {
       <GitHubView
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        initialTarget={githubTarget}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
