@@ -1,4 +1,5 @@
-import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, VoiceSessionGrant } from "./types";
+import type { VoiceProvider, VoiceClientAdapter, LiveSession, VoiceCallbacks, VoiceSessionGrant } from "./types.ts";
+import { VoiceConnectError } from "./types.ts";
 
 const CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets";
 const REALTIME_BASE = "https://api.openai.com/v1/realtime";
@@ -88,7 +89,14 @@ const clientAdapter: VoiceClientAdapter = {
         body: offer.sdp,
       });
       if (!res.ok) {
-        throw new Error(`sdp_exchange_failed_${res.status}`);
+        // The mint endpoint accepts unknown models, so a bad voiceModel only
+        // surfaces here — keep the provider's explanation. (cave-8c9c)
+        let hint: string | undefined;
+        try {
+          const body = JSON.parse(await res.text()) as { error?: { message?: string } };
+          if (typeof body.error?.message === "string") hint = body.error.message;
+        } catch { /* non-JSON body: code alone */ }
+        throw new VoiceConnectError(`sdp_exchange_failed_${res.status}`, hint);
       }
       const answer = await res.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
@@ -127,7 +135,8 @@ function handleEvent(raw: unknown, callbacks: VoiceCallbacks) {
   } else if (type === "conversation.item.input_audio_transcription.delta") {
     if (typeof ev.delta === "string") callbacks.onPartialTranscript("user", ev.delta);
   } else if (type === "error") {
-    callbacks.onError(new Error(ev.error?.message ?? "provider_error"));
+    const detail = typeof ev.error?.message === "string" ? ev.error.message : undefined;
+    callbacks.onError(new VoiceConnectError("provider_error", detail));
   }
 }
 

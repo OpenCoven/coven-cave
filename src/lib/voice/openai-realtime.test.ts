@@ -10,7 +10,43 @@ let nextResponse: Response = new Response("{}", { status: 200 });
   return nextResponse;
 };
 
+// Minimal WebRTC stubs so clientAdapter.connect runs under node.
+let lastDataChannel: { onmessage: ((ev: { data: unknown }) => void) | null; close: () => void } | null = null;
+(globalThis as any).RTCPeerConnection = class {
+  ontrack: unknown = null;
+  onconnectionstatechange: unknown = null;
+  addTrack() {}
+  createDataChannel() {
+    lastDataChannel = { onmessage: null, close() {} };
+    return lastDataChannel;
+  }
+  async createOffer() { return { type: "offer", sdp: "v=0\r\n" }; }
+  async setLocalDescription() {}
+  async setRemoteDescription() {}
+  close() {}
+};
+(globalThis as any).MediaStream = class {
+  addTrack() {}
+  getAudioTracks() { return []; }
+};
+
+const fakeMic = { getAudioTracks: () => [] } as any;
+const noopCallbacks = {
+  onUserTranscriptFinal() {},
+  onAssistantTranscriptFinal() {},
+  onPartialTranscript() {},
+  onError() {},
+  onDisconnect() {},
+};
+const sdpGrant = {
+  provider: "openai",
+  clientSecret: "ek_test",
+  expiresAt: new Date().toISOString(),
+  connection: { kind: "openai-realtime", url: "https://api.openai.com/v1/realtime/calls" },
+} as any;
+
 const { openaiRealtimeProvider } = await import("./openai-realtime.ts");
+const { VoiceConnectError } = await import("./types.ts");
 
 test("mintSession POSTs to /v1/realtime/client_secrets with bearer auth", async () => {
   captured = [];
@@ -83,4 +119,51 @@ test("mintSession surfaces provider error message verbatim on non-2xx", async ()
     }),
     /model not enabled for this account/,
   );
+});
+
+test("connect: failed SDP exchange throws VoiceConnectError with provider detail as hint", async () => {
+  captured = [];
+  nextResponse = new Response(
+    JSON.stringify({ error: { message: 'Model "mock-model" is not supported in realtime mode.', code: "invalid_model" } }),
+    { status: 400 },
+  );
+  await assert.rejects(
+    () => openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks),
+    (err: unknown) => {
+      assert.ok(err instanceof VoiceConnectError, "throws VoiceConnectError");
+      assert.equal(err.message, "sdp_exchange_failed_400");
+      assert.match(err.hint ?? "", /mock-model.*not supported in realtime mode/);
+      return true;
+    },
+  );
+});
+
+test("connect: failed SDP exchange with non-JSON body still throws coded error, no hint", async () => {
+  captured = [];
+  nextResponse = new Response("<html>bad gateway</html>", { status: 502 });
+  await assert.rejects(
+    () => openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, noopCallbacks),
+    (err: unknown) => {
+      assert.ok(err instanceof VoiceConnectError);
+      assert.equal(err.message, "sdp_exchange_failed_502");
+      assert.equal(err.hint, undefined);
+      return true;
+    },
+  );
+});
+
+test("data-channel error events surface provider message as hint under a stable code", async () => {
+  captured = [];
+  nextResponse = new Response("v=0\r\n", { status: 201 });
+  let seen: unknown = null;
+  await openaiRealtimeProvider.clientAdapter.connect(sdpGrant, fakeMic, {
+    ...noopCallbacks,
+    onError(err: unknown) { seen = err; },
+  });
+  lastDataChannel?.onmessage?.({
+    data: JSON.stringify({ type: "error", error: { message: "session expired" } }),
+  });
+  assert.ok(seen instanceof VoiceConnectError, "onError receives VoiceConnectError");
+  assert.equal((seen as any).message, "provider_error");
+  assert.equal((seen as any).hint, "session expired");
 });

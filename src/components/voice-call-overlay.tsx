@@ -7,6 +7,7 @@ import type { Familiar } from "@/lib/types";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import type { LiveSession, VoiceSessionGrant } from "@/lib/voice/types";
+import { voiceErrorHint } from "@/lib/voice/types";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 
 type Props = {
@@ -74,7 +75,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
             onUserTranscriptFinal: (text) => postTranscript(sessionId, callId, "user", text),
             onAssistantTranscriptFinal: (text) => postTranscript(sessionId, callId, "assistant", text),
             onPartialTranscript: () => { /* live caption surface, not persisted */ },
-            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message }),
+            onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message, hint: voiceErrorHint(err) }),
             onDisconnect: () => dispatch({ type: "DISCONNECTED" }),
           });
           if (cancelled) { await live.close(); return; }
@@ -85,6 +86,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           dispatch({
             type: "PROVIDER_ERROR",
             errorCode: err instanceof Error ? err.message : "connect_failed",
+            hint: voiceErrorHint(err),
           });
         }
       } else if (state.state === "ending") {
@@ -212,6 +214,11 @@ function labelFor(s: CallState): string {
 // Turn the machine-readable error code into something a person can act on. The
 // raw code (and any provider detail) still surfaces via the `hint` line below.
 function errorMessage(code: string | undefined): string {
+  // Connection-phase rejections (e.g. an invalid voiceModel only surfaces at
+  // the SDP exchange); the provider's own detail renders as the hint below.
+  if (code?.startsWith("sdp_exchange_failed_")) {
+    return "The voice provider rejected the call setup.";
+  }
   switch (code) {
     case "microphone_denied":
       return "Microphone access was denied. Allow it in your browser settings to start a call.";
