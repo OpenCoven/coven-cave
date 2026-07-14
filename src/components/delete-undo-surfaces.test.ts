@@ -26,13 +26,13 @@ for (const rel of [
   assert.match(src, /deletePending\.item\.key/, "vault hides the pending secret row during the undo window");
 }
 
-// Automations: reminders + automations both hide by pending id; reminder, codex,
-// and bulk deletes all route through the deferred helper.
+// Automations: inbox rows + automations both hide by pending id; the inbox
+// bulk delete routes through the deferred helper (no async confirm).
 {
   const src = read("./automations-view.tsx");
-  assert.match(src, /hiddenIds\.has\(it\.id\)/, "automations hides pending reminders/inbox rows");
+  assert.match(src, /hiddenIds\.has\(it\.id\)/, "automations hides pending inbox rows");
   assert.match(src, /hiddenIds\.has\(a\.id\)/, "automations hides pending codex automations");
-  assert.match(src, /const bulkDeleteReminders = \(\) =>/, "bulk reminder delete is deferred (no async confirm)");
+  assert.match(src, /const inboxBulkDelete = \(\) =>/, "bulk inbox delete is deferred (no async confirm)");
 }
 
 // Journal: a pending date makes the day read as empty without mutating `day`.

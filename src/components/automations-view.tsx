@@ -9,7 +9,14 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
-import { groupInboxFeed, inboxKindLabel } from "@/lib/inbox-feed";
+import {
+  buildInboxGroups,
+  groupInboxFeed,
+  INBOX_GROUP_BY_OPTIONS,
+  inboxKindLabel,
+  type InboxFeedGroup,
+  type InboxGroupBy,
+} from "@/lib/inbox-feed";
 import type {
   AutomationStatus,
   CodexAutomation,
@@ -110,22 +117,6 @@ function scheduleTime(hour: number, minute: number): string {
 
 const humanSchedule = (rec: Recurrence | undefined | null): string =>
   humanRecurrence(rec, scheduleTime);
-
-function isScheduleInboxItem(item: InboxItem): boolean {
-  return item.kind === "reminder" || item.kind === "daily-summary";
-}
-
-// A one-shot reminder still pending after its fire time never fired (e.g. the
-// daemon was offline) — worth surfacing instead of a quiet "3h ago".
-function isReminderOverdue(item: InboxItem): boolean {
-  return (
-    item.kind !== "daily-summary" &&
-    (item.recurrence?.type ?? "none") === "none" &&
-    item.status === "pending" &&
-    !!item.fireAt &&
-    new Date(item.fireAt).getTime() < Date.now()
-  );
-}
 
 function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
@@ -444,8 +435,6 @@ function DetailPanel({
 // row instead of buried in the detail panel. Avoids threading callbacks through
 // the list/section components.
 type ScheduleActions = {
-  runReminder: (id: string) => void;
-  togglePauseReminder: (item: InboxItem) => void;
   runAutomation: (auto: CodexAutomation) => void;
   togglePauseAutomation: (auto: CodexAutomation) => void;
 };
@@ -475,201 +464,6 @@ function RowActionButton({ icon, label, text, onClick, disabled }: { icon: IconN
 
 function RowActions({ children }: { children: ReactNode }) {
   return <span className="flex shrink-0 items-center gap-0.5 pl-1">{children}</span>;
-}
-
-function ReminderTaskRow({
-  item,
-  selected,
-  selectMode,
-  checked,
-  familiarLabel,
-  onSelect,
-  onToggle,
-}: {
-  item: InboxItem;
-  selected: boolean;
-  selectMode: boolean;
-  checked: boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onToggle: (id: string) => void;
-}) {
-  const workspace = familiarLabel(item.familiarId);
-  const isOverdue = isReminderOverdue(item);
-  const schedule = item.kind === "daily-summary"
-    ? "Daily summary"
-    : item.recurrence?.type !== "none"
-    ? humanSchedule(item.recurrence)
-    : isOverdue
-    ? "Overdue"
-    : item.fireAt
-    ? relTime(item.fireAt)
-    : "Paused";
-
-  // In select mode the row IS a checkbox (click/Enter/Space toggle); otherwise
-  // it opens the detail panel. The active-row highlight tracks `checked` while
-  // selecting, and the detail-panel `selected` highlight otherwise.
-  const active = selectMode ? checked : selected;
-  const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
-  const actions = useContext(ScheduleActionsContext);
-  const paused = item.status === "dismissed";
-  // Run-now / pause make sense for actual reminders, not daily summaries, and
-  // never while picking rows in select mode.
-  const showActions = !selectMode && item.kind !== "daily-summary" && !!actions;
-
-  return (
-    <li className="flex items-center">
-      <button
-        type="button"
-        role={selectMode ? "checkbox" : undefined}
-        aria-checked={selectMode ? checked : undefined}
-        onClick={activate}
-        className="focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{
-          background: active ? "rgba(255,255,255,0.05)" : "transparent",
-        }}
-        onMouseEnter={(e) => {
-          if (!active) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
-        }}
-        onMouseLeave={(e) => {
-          if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-        }}
-      >
-        {selectMode ? (
-          <span
-            aria-hidden
-            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
-            style={{
-              borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)",
-              background: checked ? "var(--accent-presence)" : "transparent",
-            }}
-          >
-            {checked && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
-          </span>
-        ) : (
-          <StatusIcon item={item} />
-        )}
-        <span className="flex-1 min-w-0 flex items-baseline gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
-            {item.title}
-          </span>
-          {workspace && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {workspace}
-            </span>
-          )}
-        </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: isOverdue ? "var(--color-warning)" : "var(--text-muted)" }}>
-          {schedule}
-        </span>
-      </button>
-      {showActions && actions && (
-        <RowActions>
-          {!paused && (
-            <RowActionButton icon="ph:play" label={`Run ${item.title} now`} text="Run" onClick={() => actions.runReminder(item.id)} />
-          )}
-          <RowActionButton
-            icon={paused ? "ph:play" : "ph:pause"}
-            label={`${paused ? "Resume" : "Pause"} ${item.title}`}
-            text={paused ? "Resume" : "Pause"}
-            onClick={() => actions.togglePauseReminder(item)}
-          />
-        </RowActions>
-      )}
-    </li>
-  );
-}
-
-function ReminderTaskSection({
-  title,
-  items,
-  selectedId,
-  selectMode,
-  isSelected,
-  familiarLabel,
-  onSelect,
-  onToggle,
-}: {
-  title: string;
-  items: InboxItem[];
-  selectedId: string | null;
-  selectMode: boolean;
-  isSelected: (id: string) => boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onToggle: (id: string) => void;
-}) {
-  if (items.length === 0) return null;
-  const overdueCount = items.filter(isReminderOverdue).length;
-  const headingId = `reminder-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  return (
-    <section aria-labelledby={headingId} className="mb-6">
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
-        </h3>
-        {overdueCount > 0 && (
-          <span
-            className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-            style={{ background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }}
-          >
-            {overdueCount} overdue
-          </span>
-        )}
-      </div>
-      <ul>
-        {items.map((item) => (
-          <ReminderTaskRow
-            key={item.id}
-            item={item}
-            selected={selectedId === item.id}
-            selectMode={selectMode}
-            checked={isSelected(item.id)}
-            familiarLabel={familiarLabel}
-            onSelect={onSelect}
-            onToggle={onToggle}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function ReminderTaskList({
-  current,
-  paused,
-  oneShots,
-  history,
-  selectedId,
-  selectMode,
-  isSelected,
-  familiarLabel,
-  onSelect,
-  onToggle,
-}: {
-  current: InboxItem[];
-  paused: InboxItem[];
-  oneShots: InboxItem[];
-  history: InboxItem[];
-  selectedId: string | null;
-  selectMode: boolean;
-  isSelected: (id: string) => boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onToggle: (id: string) => void;
-}) {
-  const shared = { selectedId, selectMode, isSelected, familiarLabel, onSelect, onToggle };
-  return (
-    <>
-      <ReminderTaskSection title="Repeating" items={current} {...shared} />
-      <ReminderTaskSection title="Paused" items={paused} {...shared} />
-      <ReminderTaskSection title="One-time" items={oneShots} {...shared} />
-      {history.length > 0 && (
-        <ReminderTaskSection title="History" items={history} {...shared} />
-      )}
-    </>
-  );
 }
 
 // ── Codex automation detail panel ────────────────────────────────────────────
@@ -1386,16 +1180,22 @@ function InboxKindBadge({ kind }: { kind: InboxItem["kind"] }) {
 function InboxFeedRow({
   item,
   selected,
+  selectMode,
+  checked,
   familiarLabel,
   onSelect,
+  onToggle,
   onDone,
   onSnooze,
   onDismiss,
 }: {
   item: InboxItem;
   selected: boolean;
+  selectMode: boolean;
+  checked: boolean;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onToggle: (id: string) => void;
   onDone?: (item: InboxItem) => void;
   onSnooze?: (item: InboxItem) => void;
   onDismiss?: (item: InboxItem) => void;
@@ -1409,16 +1209,35 @@ function InboxFeedRow({
   // Done/snooze/dismiss only make sense while the item is still live; snooze
   // additionally only for something that already fired (re-surface later).
   const resolved = item.status === "done" || item.status === "dismissed";
+  // In select mode the row IS a checkbox (click/Enter/Space toggle); otherwise
+  // it opens the detail panel — the shared list select-mode pattern.
+  const active = selectMode ? checked : selected;
+  const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
 
   return (
     <li className="flex items-center">
       <button
         type="button"
-        onClick={() => onSelect(item)}
-        aria-current={selected ? "true" : undefined}
-        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
+        role={selectMode ? "checkbox" : undefined}
+        aria-checked={selectMode ? checked : undefined}
+        onClick={activate}
+        aria-current={!selectMode && selected ? "true" : undefined}
+        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${active ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
       >
-        <StatusIcon item={item} />
+        {selectMode ? (
+          <span
+            aria-hidden
+            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
+            style={{
+              borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)",
+              background: checked ? "var(--accent-presence)" : "transparent",
+            }}
+          >
+            {checked && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
+          </span>
+        ) : (
+          <StatusIcon item={item} />
+        )}
         <span className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
             {item.title}
@@ -1434,7 +1253,7 @@ function InboxFeedRow({
           {when}
         </span>
       </button>
-      {!resolved && (onDone || onSnooze || onDismiss) && (
+      {!selectMode && !resolved && (onDone || onSnooze || onDismiss) && (
         <RowActions>
           {onDone && (
             <RowActionButton icon="ph:check-bold" label={`Mark ${item.title} done`} text="Done" onClick={() => onDone(item)} />
@@ -1452,20 +1271,26 @@ function InboxFeedRow({
 }
 
 function InboxFeedSection({
-  title,
-  accent,
-  items,
+  group,
   selectedId,
+  selectMode,
+  groupChecked,
+  onToggleGroup,
+  isSelected,
+  onToggle,
   familiarLabel,
   onSelect,
   onDone,
   onSnooze,
   onDismiss,
 }: {
-  title: string;
-  accent?: boolean;
-  items: InboxItem[];
+  group: InboxFeedGroup;
   selectedId: string | null;
+  selectMode: boolean;
+  groupChecked: boolean;
+  onToggleGroup: (group: InboxFeedGroup) => void;
+  isSelected: (id: string) => boolean;
+  onToggle: (id: string) => void;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
   onDone?: (item: InboxItem) => void;
@@ -1473,33 +1298,55 @@ function InboxFeedSection({
   onDismiss?: (item: InboxItem) => void;
 }) {
   const headingId = useId();
-  if (items.length === 0) return null;
+  if (group.items.length === 0) return null;
   return (
     <section className="mb-6" aria-labelledby={headingId}>
       <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
         style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
+        {/* Select a whole group at once — the header grows a checkbox in
+            select mode so a tier/kind/familiar bucket is one click to act on. */}
+        {selectMode ? (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={groupChecked}
+            aria-label={`Select every item in ${group.title}`}
+            title={`Select all ${group.items.length} in ${group.title}`}
+            onClick={() => onToggleGroup(group)}
+            className="focus-ring flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-[4px] border transition-colors"
+            style={{
+              borderColor: groupChecked ? "var(--accent-presence)" : "var(--border-strong)",
+              background: groupChecked ? "var(--accent-presence)" : "transparent",
+            }}
+          >
+            {groupChecked && <Icon name="ph:check-bold" width={11} className="text-[var(--accent-presence-foreground)]" aria-hidden />}
+          </button>
+        ) : null}
         <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
+          {group.title}
         </h3>
         <span
           className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
           style={
-            accent
+            group.accent
               ? { background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }
               : { background: "var(--bg-raised)", color: "var(--text-muted)" }
           }
         >
-          {items.length}
+          {group.items.length}
         </span>
       </div>
       <ul aria-labelledby={headingId}>
-        {items.map((item) => (
+        {group.items.map((item) => (
           <InboxFeedRow
             key={item.id}
             item={item}
             selected={selectedId === item.id}
+            selectMode={selectMode}
+            checked={isSelected(item.id)}
             familiarLabel={familiarLabel}
             onSelect={onSelect}
+            onToggle={onToggle}
             onDone={onDone}
             onSnooze={onSnooze}
             onDismiss={onDismiss}
@@ -1511,35 +1358,51 @@ function InboxFeedSection({
 }
 
 function InboxFeedList({
-  needsYou,
-  active,
-  resolved,
+  groups,
   selectedId,
+  selectMode,
+  isSelected,
+  groupSelected,
+  onToggleGroup,
+  onToggle,
   familiarLabel,
   onSelect,
   onDone,
   onSnooze,
   onDismiss,
 }: {
-  needsYou: InboxItem[];
-  active: InboxItem[];
-  resolved: InboxItem[];
+  groups: InboxFeedGroup[];
   selectedId: string | null;
+  selectMode: boolean;
+  isSelected: (id: string) => boolean;
+  groupSelected: (group: InboxFeedGroup) => boolean;
+  onToggleGroup: (group: InboxFeedGroup) => void;
+  onToggle: (id: string) => void;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
   onDone?: (item: InboxItem) => void;
   onSnooze?: (item: InboxItem) => void;
   onDismiss?: (item: InboxItem) => void;
 }) {
-  const rowActions = { onDone, onSnooze, onDismiss };
   return (
     <>
-      <InboxFeedSection title="Needs you" accent items={needsYou} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} {...rowActions} />
-      <InboxFeedSection title="Active" items={active} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} {...rowActions} />
-      <InboxFeedSection title="Resolved" items={resolved} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
+      {groups.map((group) => (
+        <InboxFeedSection
+          key={group.id}
+          group={group}
+          selectedId={selectedId}
+          selectMode={selectMode}
+          groupChecked={groupSelected(group)}
+          onToggleGroup={onToggleGroup}
+          isSelected={isSelected}
+          onToggle={onToggle}
+          familiarLabel={familiarLabel}
+          onSelect={onSelect}
+          onDone={onDone}
+          onSnooze={onSnooze}
+          onDismiss={onDismiss}
+        />
+      ))}
     </>
   );
 }
@@ -2318,90 +2181,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Normalized text filter applied to whichever tab is active (title/name).
   const q = query.trim().toLowerCase();
 
-  // ── Sections ──────────────────────────────────────────────────────────────
-  const reminderItems = useMemo(() =>
-    items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q))),
-    [items, hiddenIds, q]);
-
-  const current = useMemo(() =>
-    reminderItems.filter((it) =>
-      (it.status === "pending" || it.status === "fired") &&
-      it.recurrence && it.recurrence.type !== "none"
-    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [reminderItems]);
-
-  const paused = useMemo(() =>
-    reminderItems.filter((it) =>
-      it.status === "dismissed" && it.recurrence && it.recurrence.type !== "none"
-    ).sort((a, b) => (a.title).localeCompare(b.title)),
-    [reminderItems]);
-
-  const oneShots = useMemo(() =>
-    reminderItems.filter((it) =>
-      (!it.recurrence || it.recurrence.type === "none") &&
-      (it.status === "pending" || it.status === "snoozed")
-    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [reminderItems]);
-
-  const history = useMemo(() =>
-    reminderItems.filter((it) =>
-      it.status === "fired" || it.status === "done" ||
-      (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none"))
-    ).sort((a, b) => (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt))
-      .slice(0, 20),
-    [reminderItems]);
-
-  // Multi-select over exactly the reminders rendered across the four sections,
-  // so "Select all" and the count match what's on screen.
-  const reminderVisible = useMemo(
-    () => [...current, ...paused, ...oneShots, ...history],
-    [current, paused, oneShots, history],
-  );
-  const reminderSelect = useMultiSelect(reminderVisible, (it) => it.id);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const selectedRealIds = () =>
-    reminderSelect
-      .selectedFrom(reminderVisible)
-      .map((it) => it.id)
-      .filter((id) => !id.startsWith("eph:"));
-
-  const bulkPatchReminders = async (body: object) => {
-    const ids = selectedRealIds();
-    if (ids.length === 0) { reminderSelect.exit(); return; }
-    setBulkBusy(true);
-    try {
-      await Promise.all(ids.map((id) =>
-        fetch(`/api/inbox/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }).then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "bulk action failed");
-    } finally {
-      setBulkBusy(false);
-      reminderSelect.exit();
-    }
-  };
-
-  const bulkDeleteReminders = () => {
-    const ids = selectedRealIds();
-    if (ids.length === 0) { reminderSelect.exit(); return; }
-    reminderSelect.exit();
-    scheduleDelete(ids, `${ids.length} reminder${ids.length === 1 ? "" : "s"}`, async () => {
-      const idSet = new Set(ids);
-      setItems((prev) => prev.filter((i) => !idSet.has(i.id)));
-      try {
-        await Promise.all(ids.map((id) =>
-          fetch(`/api/inbox/${id}`, { method: "DELETE" })
-            .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "bulk delete failed");
-      } finally { await load(); }
-    });
-  };
-
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const familiarsById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -2437,9 +2216,80 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     [codexAutos, familiarFilter, hiddenIds, q],
   );
 
-  // Inbox tab: the FULL feed (every kind), grouped by attention tier.
-  const inboxFeed = useMemo(() => groupInboxFeed(items.filter((it) => !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q)))), [items, hiddenIds, q]);
-  const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
+  // Inbox tab: the FULL feed (every kind). `inboxVisible` is the search-filtered
+  // flat list — the selection universe, so "select all" always means "all
+  // matches" while a filter is active. Groups re-shape per the group-by control.
+  const inboxVisible = useMemo(
+    () => items.filter((it) => !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q))),
+    [items, hiddenIds, q],
+  );
+  const inboxFeed = useMemo(() => groupInboxFeed(inboxVisible), [inboxVisible]);
+  const [inboxGroupBy, setInboxGroupBy] = useState<InboxGroupBy>(() => {
+    if (typeof window === "undefined") return "attention";
+    const raw = window.localStorage.getItem("cave:inbox:group-by");
+    return raw === "kind" || raw === "familiar" ? raw : "attention";
+  });
+  const updateInboxGroupBy = useCallback((next: InboxGroupBy) => {
+    setInboxGroupBy(next);
+    try {
+      window.localStorage.setItem("cave:inbox:group-by", next);
+    } catch {
+      /* ignore storage errors */
+    }
+  }, []);
+  const inboxGroups = useMemo(
+    () => buildInboxGroups(inboxVisible, inboxGroupBy, familiarLabel),
+    [inboxVisible, inboxGroupBy, familiarLabel],
+  );
+
+  // Multi-select over exactly the visible (search-filtered) feed, so "Select
+  // all" and per-group selection act on what's on screen — a live search term
+  // makes the selection universe "every match".
+  const inboxSelect = useMultiSelect(inboxVisible, (it) => it.id);
+  const [inboxBulkBusy, setInboxBulkBusy] = useState(false);
+
+  /** One-write collective action over the current selection (POST /api/inbox/bulk). */
+  const inboxBulkAct = async (action: "read" | "done" | "dismiss", pastTense: string) => {
+    const ids = inboxSelect.selectedFrom(inboxVisible).map((it) => it.id);
+    if (ids.length === 0) { inboxSelect.exit(); return; }
+    setInboxBulkBusy(true);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(`${pastTense} ${ids.length} item${ids.length === 1 ? "" : "s"}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "bulk action failed");
+    } finally {
+      setInboxBulkBusy(false);
+      inboxSelect.exit();
+    }
+  };
+
+  /** Collective delete rides the shared undo toast, then ONE bulk request. */
+  const inboxBulkDelete = () => {
+    const ids = inboxSelect.selectedFrom(inboxVisible).map((it) => it.id);
+    if (ids.length === 0) { inboxSelect.exit(); return; }
+    inboxSelect.exit();
+    scheduleDelete(ids, `${ids.length} inbox item${ids.length === 1 ? "" : "s"}`, async () => {
+      const idSet = new Set(ids);
+      setItems((prev) => prev.filter((i) => !idSet.has(i.id)));
+      try {
+        const res = await fetch("/api/inbox/bulk", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", ids }),
+        });
+        if (!res.ok) throw new Error(`http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "bulk delete failed");
+      } finally { await load(); }
+    });
+  };
   const automationsEmpty = codexAutos.length === 0;
   const inboxEmpty = items.length === 0;
   const selectedReminderId = selectedItem?.id ?? null;
@@ -2466,6 +2316,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
     setQuery(""); // the filter is scoped to one tab at a time
+    inboxSelect.exit(); // selection is an inbox-tab mode, never carried across
     // Clear any open detail on switch — the new tab may not host that type.
     setSelectedItem(null);
     setSelectedCodex(null);
@@ -2474,8 +2325,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   return (
     <ScheduleActionsContext.Provider
       value={{
-        runReminder: runNow,
-        togglePauseReminder: togglePaused,
         runAutomation: runCodexNow,
         togglePauseAutomation: toggleCodex,
       }}
@@ -2529,8 +2378,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           <div className="surface-compact-actions">
             {/* Text filter, scoped per tab. Gated on the UNfiltered presence
                 of rows so filtering to zero never hides the box (you can still
-                clear). */}
-            {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode &&
+                clear) — and it stays up in inbox select mode, so "search →
+                select all matches → act" is one flow. */}
+            {activeTab !== "calendar" && initialLoadDone &&
               (activeTab === "inbox" ? items.length > 0 : codexAutos.length > 0) ? (
               <div className="surface-compact-search">
                 <SearchInput
@@ -2541,6 +2391,27 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   aria-label={activeTab === "inbox" ? "Filter inbox" : "Filter crons"}
                 />
               </div>
+            ) : null}
+            {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 ? (
+              <StandardSelect
+                label="Group inbox by"
+                title="Group the inbox feed by attention, kind, or familiar"
+                value={inboxGroupBy}
+                onChange={updateInboxGroupBy}
+                options={INBOX_GROUP_BY_OPTIONS}
+                renderValue={(selected) => <>Group: {selected?.label ?? "Attention"}</>}
+              />
+            ) : null}
+            {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 && !inboxSelect.selectMode ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                leadingIcon="ph:check-square"
+                onClick={() => inboxSelect.setSelectMode(true)}
+                title="Pick inbox items (or whole groups) for a collective action"
+              >
+                Select
+              </Button>
             ) : null}
             {activeTab === "inbox" && onNewReminder ? (
               <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={onNewReminder}>
@@ -2609,17 +2480,52 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 />
               )
             ) : (
-              <InboxFeedList
-                needsYou={inboxFeed.needsYou}
-                active={inboxFeed.active}
-                resolved={inboxFeed.resolved}
-                selectedId={selectedItem?.id ?? null}
-                familiarLabel={familiarLabel}
-                onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                onDone={(item) => void completeInboxItem(item)}
-                onSnooze={(item) => void snoozeInboxItem(item)}
-                onDismiss={(item) => void dismissInboxItem(item)}
-              />
+              <>
+                {inboxSelect.selectMode ? (
+                  <SelectionToolbar
+                    allSelected={inboxSelect.allSelected(inboxVisible)}
+                    count={inboxSelect.selectedCount}
+                    onToggleSelectAll={() => inboxSelect.toggleSelectAll(inboxVisible)}
+                    onCancel={() => inboxSelect.exit()}
+                    selectAllLabel={
+                      q
+                        ? `Select all ${inboxVisible.length} match${inboxVisible.length === 1 ? "" : "es"}`
+                        : "Select all"
+                    }
+                  >
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("read", "Marked read")} title="Stamp the selected items as read">
+                      Read
+                    </Button>
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("done", "Marked done")} title="Mark the selected items done">
+                      Done
+                    </Button>
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("dismiss", "Dismissed")} title="Dismiss the selected items">
+                      Dismiss
+                    </Button>
+                    <Button size="xs" variant="danger" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={inboxBulkDelete} title="Delete the selected items (undo window applies)">
+                      Delete
+                    </Button>
+                  </SelectionToolbar>
+                ) : null}
+                <InboxFeedList
+                  groups={inboxGroups}
+                  selectedId={selectedItem?.id ?? null}
+                  selectMode={inboxSelect.selectMode}
+                  isSelected={inboxSelect.isSelected}
+                  groupSelected={(group) => inboxSelect.allSelected(group.items)}
+                  onToggleGroup={(group) => inboxSelect.toggleSelectAll(group.items)}
+                  onToggle={inboxSelect.toggle}
+                  familiarLabel={familiarLabel}
+                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                  onDone={(item) => void completeInboxItem(item)}
+                  onSnooze={(item) => void snoozeInboxItem(item)}
+                  onDismiss={(item) => void dismissInboxItem(item)}
+                />
+              </>
             )
           ) : q && codexActive.length + codexPaused.length === 0 ? (
             <EmptyState

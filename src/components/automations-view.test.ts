@@ -148,11 +148,36 @@ assert.doesNotMatch(
   "detail panel actions should use radius tokens instead of hard-coded radii",
 );
 
-// The active Rituals surface is Inbox + Calendar + Crons; reminder bulk
-// selection belongs to the older unified Automations surface.
+// The active Rituals surface is Inbox + Calendar + Crons. Bulk selection now
+// belongs to the INBOX feed (group-by + select-by-group/search, cave-fcy8);
+// the older per-reminder bulk machinery is gone for good.
 assert.match(source, /type AutomationTab = "inbox" \| "calendar" \| "crons"/, "Rituals exposes Inbox, Calendar and Crons tabs");
-assert.doesNotMatch(source, /<SelectionToolbar/, "Rituals no longer renders reminder bulk-select chrome");
+assert.doesNotMatch(source, /bulkPatchReminders|bulkDeleteReminders|ReminderTaskList|reminderSelect/, "the orphaned reminder bulk-select machinery stays deleted");
 assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : initialTab === "crons" \? "crons" : "inbox"/, "Inbox is the default landing tab; calendar/crons deep links still win");
+
+// ── Inbox grouping + collective actions (cave-fcy8) ─────────────────────────
+// Group-by control re-shapes the feed; selection acts on the visible
+// (search-filtered) universe; whole groups toggle from their headers; bulk
+// actions ride ONE POST /api/inbox/bulk; delete keeps the undo window.
+assert.match(source, /buildInboxGroups\(inboxVisible, inboxGroupBy, familiarLabel\)/, "groups derive from the pure lib over the filtered feed");
+assert.match(source, /INBOX_GROUP_BY_OPTIONS/, "the group-by control offers the lib's dimensions");
+assert.match(source, /cave:inbox:group-by/, "the group-by choice persists per install");
+assert.match(source, /const inboxSelect = useMultiSelect\(inboxVisible, \(it\) => it\.id\)/, "selection universe = the visible matches");
+assert.match(source, /<SelectionToolbar/, "inbox select mode uses the shared bulk toolbar");
+assert.match(
+  source,
+  /`Select all \$\{inboxVisible\.length\} match\$\{inboxVisible\.length === 1 \? "" : "es"\}`/,
+  "an active search relabels select-all as 'all N matches'",
+);
+assert.match(source, /fetch\("\/api\/inbox\/bulk"/, "collective actions post once to the bulk endpoint");
+assert.match(source, /inboxBulkAct\("read", "Marked read"\)/, "bulk read is offered");
+assert.match(source, /inboxBulkAct\("done", "Marked done"\)/, "bulk done is offered");
+assert.match(source, /inboxBulkAct\("dismiss", "Dismissed"\)/, "bulk dismiss is offered");
+assert.match(source, /scheduleDelete\(ids, `\$\{ids\.length\} inbox item/, "bulk delete rides the undo toast");
+assert.match(source, /groupChecked=\{groupSelected\(group\)\}/, "each group header reflects its selection state");
+assert.match(source, /aria-label=\{`Select every item in \$\{group\.title\}`\}/, "the group checkbox names its group");
+assert.match(source, /role=\{selectMode \? "checkbox" : undefined\}/, "rows become checkboxes in select mode");
+assert.match(source, /inboxSelect\.exit\(\); \/\/ selection is an inbox-tab mode, never carried across/, "switching tabs drops the selection");
 
 // ── Polling pauses while hidden + async fetch guards ────────────────────────
 // The 15s list poll + 2.5s in-flight run poll otherwise keep firing in a
@@ -176,18 +201,16 @@ assert.match(source, /if \(!live\(\)\) return;/, "a superseded load() drops its 
 // ── Per-row quick actions (run-now + pause/resume), always visible ──
 assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
 assert.match(source, /<ScheduleActionsContext\.Provider/, "AutomationsView provides the row actions");
-assert.match(source, /runReminder: runNow/, "reminder run-now is wired");
-assert.match(source, /togglePauseReminder: togglePaused/, "reminder pause/resume is wired");
 assert.match(source, /runAutomation: runCodexNow/, "automation run-now is wired");
 assert.match(source, /togglePauseAutomation: toggleCodex/, "automation pause/resume is wired");
 // Actions are labeled, always-visible siblings of the row button (never a
 // hover-revealed overlay, and never nested inside the row's own button).
 assert.doesNotMatch(source, /group-hover\/srow/, "row actions are always visible — no hover reveal remains");
-assert.match(source, /text=\{paused \? "Resume" : "Pause"\}/, "the reminder row's pause action is a labeled button");
 assert.match(source, /text=\{isActive \? "Pause" : "Resume"\}/, "the cron row's pause action is a labeled button");
 assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row exposes run-now");
-assert.match(source, /actions\.togglePauseReminder\(item\)/, "the reminder row exposes pause/resume");
-assert.match(source, /item\.kind !== "daily-summary"/, "daily-summary rows get no run/pause actions");
+// Inbox feed rows expose done/snooze/dismiss instead (run/pause live in the
+// reminder detail panel) — and never while picking rows in select mode.
+assert.match(source, /\{!selectMode && !resolved && \(onDone \|\| onSnooze \|\| onDismiss\)/, "inbox row actions hide in select mode");
 assert.match(
   source,
   /entry\.name[\s\S]*?label=\{`Run \$\{entry\.name\} now`\}/,
