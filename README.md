@@ -9,12 +9,21 @@ client under `apps/ios/CovenCave`.
 
 ## Get Coven Cave
 
-Download the latest desktop build from:
+On macOS, install with [Homebrew](https://brew.sh) from the
+[OpenCoven tap](https://github.com/OpenCoven/homebrew-tap):
+
+```bash
+brew install --cask opencoven/tap/coven-cave
+```
+
+Or download the latest desktop build from:
 
 https://github.com/OpenCoven/coven-cave/releases/latest
 
 Release assets usually include macOS, Windows, and Linux builds plus update
-metadata and checksums.
+metadata and checksums. The Homebrew cask ships the same signed + notarized
+per-architecture DMG and stays current automatically via the release
+pipeline.
 
 ## What it does
 

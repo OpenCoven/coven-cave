@@ -102,6 +102,7 @@ INSTALL
 
 if [ "$arch_split" = "true" ]; then
   cat <<INSTALL_NEW
+- **macOS (Homebrew):** \`brew install --cask opencoven/tap/coven-cave\` (installs the latest release)
 - **macOS (Apple Silicon):** download [\`CovenCave-$VERSION-aarch64.dmg\`]($DL/CovenCave-$VERSION-aarch64.dmg), open it, drag CovenCave.app to Applications.
 - **macOS (Intel):** download [\`CovenCave-$VERSION-x86_64.dmg\`]($DL/CovenCave-$VERSION-x86_64.dmg), open it, drag CovenCave.app to Applications.
 INSTALL_NEW

@@ -11,6 +11,11 @@ name: Release
 #   - Windows (MSI) — unsigned (users see SmartScreen on first run; we'll
 #     wire WINDOWS_CERTIFICATE secrets when we buy a code-signing cert).
 #
+# Once artifacts + SHA256SUMS are attached, the `homebrew` job nudges
+# OpenCoven/homebrew-tap so `brew install --cask opencoven/tap/coven-cave`
+# serves the new release (optional HOMEBREW_TAP_TOKEN secret makes the
+# bump instant; the tap's 6-hourly schedule is the no-secrets fallback).
+#
 # Trigger: push a tag matching `v*` (e.g. `git tag -s v0.0.16 && git push
 # origin v0.0.16`).
 #
@@ -696,4 +701,50 @@ jobs:
             echo "release body updated (${PLATFORM_COUNT}/4 platforms)"
           else
             echo "release body already accurate (${PLATFORM_COUNT}/4 platforms)"
+          fi
+
+  # Nudge the Homebrew tap (OpenCoven/homebrew-tap) once artifacts and
+  # SHA256SUMS are attached, so `brew install --cask opencoven/tap/coven-cave`
+  # serves the new release within minutes. Best-effort by design: without the
+  # optional HOMEBREW_TAP_TOKEN secret the tap's own scheduled update-cask
+  # workflow (every 6 hours) still picks the release up, so this job never
+  # fails the release.
+  #
+  # One-time setup for instant bumps: create a fine-grained PAT with
+  # Contents: read & write on OpenCoven/homebrew-tap and add it to this
+  # repository as the HOMEBREW_TAP_TOKEN secret.
+  homebrew:
+    name: Notify Homebrew tap
+    needs: checksums
+    runs-on: ubuntu-24.04
+    # Belt for the in-script swallow below: even an unforeseen step failure
+    # must not fail the release run — the tap's 6-hourly schedule recovers.
+    continue-on-error: true
+    if: ${{ !cancelled() && needs.checksums.result == 'success' }}
+    steps:
+      - name: Dispatch update-cask to OpenCoven/homebrew-tap
+        shell: bash
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::'$TAG' is not a stable vX.Y.Z tag — the Homebrew cask only tracks stable releases; skipping tap dispatch."
+            exit 0
+          fi
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set — skipping the instant tap dispatch. OpenCoven/homebrew-tap's scheduled update-cask workflow will pick up $TAG within 6 hours. Add a fine-grained PAT (Contents: read & write on OpenCoven/homebrew-tap) as HOMEBREW_TAP_TOKEN to make cask bumps instant."
+            exit 0
+          fi
+          if curl -fsS -X POST \
+            -H "Authorization: Bearer $TAP_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/OpenCoven/homebrew-tap/dispatches \
+            -d "{\"event_type\":\"coven-cave-release\",\"client_payload\":{\"tag\":\"$TAG\"}}"; then
+            echo "dispatched coven-cave-release ($TAG) to OpenCoven/homebrew-tap"
+          else
+            echo "::notice::tap dispatch failed (network/API) — OpenCoven/homebrew-tap's scheduled update-cask workflow will pick up $TAG within 6 hours."
           fi
