@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
+  isNodeModulesPackagePath,
+  npmGlobalPrefixFromNpmPath,
   removeLauncherFile,
   resolveStaleOpenCovenLaunchers,
   type StaleLauncherDependencies,
@@ -122,10 +124,9 @@ test("refuses to remove a launcher owned by a different package and hints instea
   assert.match(resolution.hint!, /Move npm's global bin/);
 });
 
-test("refuses to remove a same-package copy that is not behind the fresh install", async () => {
+test("an equal-version verified copy first on PATH simply verifies — no removal", async () => {
   const equalVersion = probe({
     path: "/opt/other/bin/coven",
-    executableVerified: false,
     packagePath: "/opt/other/lib/node_modules/@opencoven/cli",
     executablePath: "/opt/other/lib/node_modules/@opencoven/cli/bin/coven.js",
   });
@@ -135,6 +136,24 @@ test("refuses to remove a same-package copy that is not behind the fresh install
   });
 
   const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", LATEST, deps);
+
+  assert.deepEqual(removed, []);
+  assert.equal(resolution.hint, null);
+  assert.ok(resolution.verification?.ok, "another equally-new verified install is not stale");
+});
+
+test("refuses removal when the shadow is not strictly behind the fresh copy (latest unknown)", async () => {
+  const equalVersion = probe({
+    path: "/opt/other/bin/coven",
+    packagePath: "/opt/other/lib/node_modules/@opencoven/cli",
+    executablePath: "/opt/other/lib/node_modules/@opencoven/cli/bin/coven.js",
+  });
+  const { deps, removed } = makeDeps({
+    discoverQueue: [equalVersion],
+    existing: new Set([GOOD_PATH, equalVersion.path!]),
+  });
+
+  const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", null, deps);
 
   assert.deepEqual(removed, []);
   assert.ok(resolution.hint, "a non-removable copy still yields manual guidance");
@@ -231,6 +250,93 @@ test("Windows removal covers the launcher's sibling shims", async () => {
 
   assert.deepEqual(removed, ["C:\\old\\coven", "C:\\old\\coven.cmd", "C:\\old\\coven.ps1"]);
   assert.ok(resolution.verification?.ok);
+});
+
+test("refuses to remove a same-package SOURCE CHECKOUT on PATH (name match is not provenance)", async () => {
+  // A developer working on @opencoven/cli with their git checkout's bin on
+  // PATH: the checkout root package.json carries the same name and an older
+  // version, but it is NOT an npm-managed install — deleting from it would
+  // destroy tracked working-tree files.
+  const checkout = probe({
+    path: "/home/user/src/cli/bin/coven",
+    executablePath: "/home/user/src/cli/bin/coven.js",
+    packagePath: "/home/user/src/cli",
+    version: "0.0.54",
+  });
+  const { deps, removed } = makeDeps({
+    discoverQueue: [checkout],
+    existing: new Set([GOOD_PATH, checkout.path!]),
+  });
+
+  const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", LATEST, deps);
+
+  assert.deepEqual(removed, []);
+  assert.match(resolution.hint!, /src\/cli\/bin\/coven belongs to @opencoven\/cli, so Cave will not remove it/);
+});
+
+test("refuses to remove a same-package copy whose bin entry does not verify", async () => {
+  const unverifiable = probe({
+    path: "/opt/weird/bin/coven",
+    executablePath: "/opt/weird/lib/node_modules/@opencoven/cli/bin/coven.js",
+    packagePath: "/opt/weird/lib/node_modules/@opencoven/cli",
+    executableVerified: false,
+    version: "0.0.54",
+  });
+  const { deps, removed } = makeDeps({
+    discoverQueue: [unverifiable],
+    existing: new Set([GOOD_PATH, unverifiable.path!]),
+  });
+
+  const resolution = await resolveStaleOpenCovenLaunchers("coven-cli", LATEST, deps);
+
+  assert.deepEqual(removed, []);
+  assert.ok(resolution.hint, "unproven provenance yields manual guidance, never deletion");
+});
+
+test("isNodeModulesPackagePath demands a node_modules/<package> tail", () => {
+  assert.ok(
+    isNodeModulesPackagePath(
+      "/home/u/.nvm/versions/node/v24.13.0/lib/node_modules/@opencoven/cli",
+      "@opencoven/cli",
+      "linux",
+    ),
+  );
+  assert.ok(
+    isNodeModulesPackagePath(
+      "C:\\npm\\node_modules\\@OpenCoven\\cli",
+      "@opencoven/cli",
+      "win32",
+    ),
+    "win32 comparison is case-insensitive",
+  );
+  assert.ok(!isNodeModulesPackagePath("/home/u/src/cli", "@opencoven/cli", "linux"));
+  assert.ok(
+    !isNodeModulesPackagePath("/home/u/node_modules/cli", "@opencoven/cli", "linux"),
+    "scope segment must match too",
+  );
+  assert.ok(
+    !isNodeModulesPackagePath("/home/u/not_node_modules/@opencoven/cli", "@opencoven/cli", "linux"),
+  );
+});
+
+test("npmGlobalPrefixFromNpmPath routes Windows npm.cmd through node npm-cli.js", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "coven-npm-prefix-"));
+  const npmCli = path.join(dir, "node_modules", "npm", "bin", "npm-cli.js");
+  const npmCmd = path.join(dir, "npm.cmd");
+  await mkdir(path.dirname(npmCli), { recursive: true });
+  await writeFile(npmCli, "process.stdout.write('C:\\\\Users\\\\dev\\\\npm-global\\n');\n");
+  await writeFile(npmCmd, "@ECHO off\r\nREM npm shim\r\n");
+
+  // The .cmd shim itself is never exec'd (Node >= 21.7 rejects it without a
+  // shell); the launch remap runs npm-cli.js with Cave's own Node, so this
+  // works — and is asserted — even from a POSIX test host.
+  const prefix = await npmGlobalPrefixFromNpmPath(
+    npmCmd,
+    { ...process.env },
+    "win32",
+  );
+  assert.equal(prefix, "C:\\Users\\dev\\npm-global");
+  await rm(dir, { recursive: true, force: true });
 });
 
 test("removeLauncherFile deletes files but refuses directories", async () => {
