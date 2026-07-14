@@ -17,7 +17,10 @@ function formatClock(hour: number, minute: number, hour12: boolean): string {
 }
 
 function formatInterval(everyMs: number): string {
-  const minutes = Math.round(everyMs / 60_000);
+  const seconds = Math.round(everyMs / 1000);
+  if (seconds < 60) return `every ${seconds}s`;
+  if (seconds % 60 !== 0) return `every ${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const minutes = seconds / 60;
   if (minutes < 60) return `every ${minutes} min`;
   const hours = minutes / 60;
   if (Number.isInteger(hours)) return hours === 1 ? "every hour" : `every ${hours} hours`;

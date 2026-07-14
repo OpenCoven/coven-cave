@@ -9,6 +9,8 @@ import { describeRecurrence, nextOccurrences } from "./schedule-plan.ts";
   assert.equal(describeRecurrence({ type: "interval", everyMs: 3_600_000 }), "every hour");
   assert.equal(describeRecurrence({ type: "interval", everyMs: 2 * 3_600_000 }), "every 2 hours");
   assert.equal(describeRecurrence({ type: "interval", everyMs: 90 * 60_000 }), "every 90 min");
+  assert.equal(describeRecurrence({ type: "interval", everyMs: 30_000 }), "every 30s", "sub-minute intervals keep seconds");
+  assert.equal(describeRecurrence({ type: "interval", everyMs: 90_000 }), "every 1m 30s", "non-minute-aligned intervals keep the remainder");
   assert.equal(describeRecurrence({ type: "daily", hour: 9, minute: 0 }), "every day at 9 AM");
   assert.equal(describeRecurrence({ type: "daily", hour: 9, minute: 0 }, { hour12: false }), "every day at 09:00");
   assert.equal(
