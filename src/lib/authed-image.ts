@@ -124,6 +124,9 @@ export function retainAuthedImage(src: string): () => void {
     if (released) return;
     released = true;
     entry.refs = Math.max(0, entry.refs - 1);
+    // If retained entries pushed the cache over the cap, shrink it back now —
+    // don't leave released blobs alive waiting for some future load's pass.
+    if (entry.refs === 0) evictOldestIfNeeded();
   };
 }
 

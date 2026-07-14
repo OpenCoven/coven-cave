@@ -177,6 +177,36 @@ test("a retained (mounted) entry is never evicted-and-revoked; releasing makes i
   assert.ok(revoked.includes(first), "released entry becomes evictable again");
 });
 
+test("releasing the last consumer shrinks an over-cap cache without waiting for a future load", async (t) => {
+  const { revoked, madeBy } = stubEnv(t);
+
+  // A big view mounts: every entry is retained, so the cache legitimately
+  // grows past the cap (eviction must not revoke in-use URLs).
+  const releases = [];
+  for (let i = 1; i <= MAX_CACHE_ENTRIES + 3; i++) {
+    await loadAuthedObjectUrl(`/api/avatar/big-view-${i}`);
+    releases.push(retainAuthedImage(`/api/avatar/big-view-${i}`));
+  }
+  assert.deepEqual(revoked, [], "nothing revoked while every entry is in use");
+
+  // The view unmounts the three oldest images. The cache must shrink back to
+  // the cap right then — not linger over-cap until some future load happens.
+  releases[0]();
+  releases[1]();
+  releases[2]();
+
+  assert.deepEqual(
+    revoked,
+    [madeBy.get("/api/avatar/big-view-1"), madeBy.get("/api/avatar/big-view-2"), madeBy.get("/api/avatar/big-view-3")],
+    "released entries are evicted-and-revoked immediately, oldest first",
+  );
+  assert.equal(
+    readCachedAuthedImageUrl("/api/avatar/big-view-4"),
+    madeBy.get("/api/avatar/big-view-4"),
+    "still-retained entries survive",
+  );
+});
+
 // --- cave-fea6: success-path eviction must not kill the URL it hands out -------
 
 test("an entry resolving while the cache is over-cap with in-flight loads is not its own eviction victim", async (t) => {
