@@ -11,7 +11,7 @@ type AvatarLightboxProps = {
   /** Full-resolution image src shown enlarged inside the lightbox. */
   src: string;
   /** Subject name — drives the trigger aria-label, breadcrumb, and alt text
-   *  (e.g. "Nova", a project name, or the operator's display name). */
+   *  (e.g. "Wren", a project name, or the operator's display name). */
   label: string;
   /** Breadcrumb tail and alt qualifier. Defaults to "Avatar". */
   category?: string;

@@ -153,3 +153,82 @@ export function familiarsTomlContainsId(toml: string, id: string): boolean {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^\\s*id\\s*=\\s*"${escaped}"\\s*$`, "m").test(toml);
 }
+
+export type FamiliarsTomlEntry = {
+  id: string;
+  displayName?: string;
+  role?: string;
+  description?: string;
+  emoji?: string;
+};
+
+/** Reverse of `tomlString` for the escapes it writes. */
+function unescapeTomlString(value: string): string {
+  return value.replace(/\\(u[0-9A-Fa-f]{4}|.)/g, (_, esc: string) => {
+    if (esc[0] === "u" && esc.length === 5) {
+      return String.fromCodePoint(Number.parseInt(esc.slice(1), 16));
+    }
+    switch (esc) {
+      case "\\":
+        return "\\";
+      case '"':
+        return '"';
+      case "b":
+        return "\b";
+      case "t":
+        return "\t";
+      case "n":
+        return "\n";
+      case "f":
+        return "\f";
+      case "r":
+        return "\r";
+      default:
+        return esc;
+    }
+  });
+}
+
+/**
+ * Minimal parser for the `[[familiar]]` blocks `buildFamiliarsToml` writes
+ * (basic-string values only — the exact shape this module produces). Used to
+ * surface familiars the user has declared locally even while the daemon's
+ * in-memory roster hasn't re-read the file (or, in hub mode, doesn't know
+ * this machine's file at all), so the visible list always covers every id the
+ * duplicate check can reject.
+ */
+export function parseFamiliarsToml(toml: string): FamiliarsTomlEntry[] {
+  const entries: FamiliarsTomlEntry[] = [];
+  let current: Record<string, string> | null = null;
+  const flush = () => {
+    const id = (current?.id ?? "").trim();
+    if (current && id) {
+      entries.push({
+        id,
+        displayName: current.display_name,
+        role: current.role,
+        description: current.description,
+        emoji: current.emoji,
+      });
+    }
+    current = null;
+  };
+  for (const rawLine of toml.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "[[familiar]]") {
+      flush();
+      current = {};
+      continue;
+    }
+    if (line.startsWith("[")) {
+      // Some other table — stop collecting so its keys don't bleed in.
+      flush();
+      continue;
+    }
+    if (!current) continue;
+    const match = line.match(/^([A-Za-z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/);
+    if (match) current[match[1]!] = unescapeTomlString(match[2] ?? "");
+  }
+  flush();
+  return entries;
+}
