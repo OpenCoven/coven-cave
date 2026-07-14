@@ -153,7 +153,7 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
                 </span>
                 <span className="chat-canvas-card__sub">
                   {artifact.kind === "react" ? "React" : "HTML"}
-                  {formatArtifactWhen(artifact.updatedAt) ? ` · ${formatArtifactWhen(artifact.updatedAt)}` : ""}
+                  {(() => { const when = formatArtifactWhen(artifact.updatedAt); return when ? ` · ${when}` : ""; })()}
                 </span>
                 <button
                   type="button"
