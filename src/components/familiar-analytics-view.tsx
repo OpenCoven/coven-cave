@@ -850,6 +850,7 @@ export function FamiliarAnalyticsContent({
         <a href="/dashboard/familiars/growth">Familiars</a>
         <span>/</span>
         <b>Analytics</b>
+        <a href={`/dashboard/familiars/${encodeURIComponent(model.familiarId)}/profile`}>Profile →</a>
         {updatedAt ? (
           <span className="fa-topbar__updated">
             Updated <RelativeTime iso={updatedAt} />

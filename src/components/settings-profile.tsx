@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { SettingsOverview } from "@/components/settings-overview";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import { Button } from "@/components/ui/button";
@@ -220,6 +221,14 @@ export function ProfileSection() {
     <section className="max-w-none space-y-6" aria-labelledby={`${baseId}-title`}>
       <h2 id={`${baseId}-title`} className="sr-only">Profile</h2>
       <SettingsOverview section="profile" />
+
+      <Link
+        href="/profile"
+        className="focus-ring inline-flex items-center gap-1 rounded-[var(--radius-sm)] text-[12px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        aria-label="Open your profile card"
+      >
+        View profile card →
+      </Link>
 
       {disabled ? (
         <p className="rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3 text-[12px] text-[var(--text-muted)]">

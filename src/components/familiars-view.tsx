@@ -583,6 +583,13 @@ function FamiliarRosterCard({
           )}
         </span>
         <Link
+          href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
+          aria-label={`Open profile for ${familiar.display_name}`}
+          className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        >
+          Profile →
+        </Link>
+        <Link
           href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
           aria-label={`Open analytics for ${familiar.display_name}`}
           className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"

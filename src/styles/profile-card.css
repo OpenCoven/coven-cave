@@ -1,0 +1,474 @@
+/**
+ * Profile card (cave-ujbr) — Kaito-style stat card for familiars + the human
+ * operator. Deliberately a fixed-dark share-card: the reference look is a
+ * near-black monospace terminal card with glowing numerals and a mint
+ * activity heatmap, independent of the app theme. Scoped under .pfc-*.
+ */
+
+.pfc-page {
+  --pfc-bg: #0a0a0c;
+  --pfc-card: #101013;
+  --pfc-tile: #141418;
+  --pfc-raised: #1b1b20;
+  --pfc-border: #26262c;
+  --pfc-border-soft: #1d1d22;
+  --pfc-text: #f2f2f5;
+  --pfc-dim: #8f9098;
+  --pfc-faint: #5d5e66;
+  --pfc-glow: 0 0 14px rgba(255, 255, 255, 0.38);
+  --pfc-mint-1: #1c3a30;
+  --pfc-mint-2: #2c5f4b;
+  --pfc-mint-3: #47a077;
+  --pfc-mint-4: #83e3b4;
+
+  min-height: 100%;
+  padding: clamp(12px, 3vw, 40px);
+  background: var(--pfc-bg);
+  color: var(--pfc-text);
+  font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.pfc-loading {
+  max-width: 720px;
+  margin: 48px auto;
+}
+
+.pfc-retry {
+  display: inline-flex;
+  padding: 6px 14px;
+  border: 1px solid var(--pfc-border, var(--border-hairline));
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pfc-topnav {
+  display: flex;
+  justify-content: space-between;
+  max-width: 1200px;
+  margin: 0 auto 10px;
+}
+
+.pfc-topnav-link {
+  color: var(--pfc-dim);
+  font-size: 12px;
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.pfc-topnav-link:hover {
+  color: var(--pfc-text);
+}
+
+.pfc-callout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 1200px;
+  margin: 0 auto 10px;
+  padding: 8px 12px;
+  border: 1px solid #4d3a1e;
+  border-radius: 10px;
+  background: #201a10;
+  color: #d8b06a;
+  font-size: 12px;
+}
+
+/* ── Card frame ─────────────────────────────────────────────────────── */
+
+.pfc-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  grid-template-areas:
+    "rail main"
+    "foot foot";
+  max-width: 1200px;
+  margin: 0 auto;
+  border: 1px solid var(--pfc-border);
+  border-radius: 18px;
+  background: var(--pfc-card);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+/* ── Identity rail ──────────────────────────────────────────────────── */
+
+.pfc-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border-right: 1px solid var(--pfc-border-soft);
+}
+
+.pfc-wordmark {
+  align-self: flex-start;
+  padding: 4px 12px 4px 2px;
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #d7d7dc;
+  text-shadow: var(--pfc-glow);
+  /* Reference card's checkerboard behind the category wordmark. */
+  background:
+    repeating-conic-gradient(rgba(255, 255, 255, 0.05) 0% 25%, transparent 0% 50%)
+    0 0 / 16px 16px;
+}
+
+.pfc-avatar {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  border: 1px solid var(--pfc-border);
+  border-radius: 4px;
+  background: var(--pfc-raised);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.pfc-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pfc-avatar-initial {
+  font-size: 44px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+}
+.pfc-collab-tile .pfc-avatar-initial {
+  font-size: 20px;
+}
+
+.pfc-nameplate {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  color: var(--pfc-text);
+  text-shadow: var(--pfc-glow);
+  /* Halftone strip behind the name, as in the reference. */
+  background:
+    radial-gradient(rgba(255, 255, 255, 0.14) 1px, transparent 1px)
+    0 0 / 6px 6px,
+    var(--pfc-raised);
+}
+
+.pfc-handle {
+  margin: 0;
+  color: var(--pfc-dim);
+  font-size: 12px;
+}
+
+.pfc-bio {
+  margin: 0;
+  color: var(--pfc-dim);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.pfc-rail-chip {
+  margin-top: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.pfc-rail-chip-label {
+  flex: 1;
+  align-self: center;
+  color: var(--pfc-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.pfc-rail-chip-value {
+  display: grid;
+  place-items: center;
+  min-width: 96px;
+  padding: 10px 16px;
+  border: 1px solid var(--pfc-border);
+  border-radius: 6px;
+  background: var(--pfc-raised);
+  font-size: 26px;
+  font-weight: 700;
+  text-shadow: var(--pfc-glow);
+}
+
+/* ── Main column ────────────────────────────────────────────────────── */
+
+.pfc-main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pfc-stat-band {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--pfc-border-soft);
+}
+.pfc-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+}
+.pfc-stat + .pfc-stat {
+  border-left: 1px solid var(--pfc-border-soft);
+}
+.pfc-stat-label {
+  color: var(--pfc-dim);
+  font-size: 12px;
+}
+.pfc-stat-value {
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 700;
+  text-shadow: var(--pfc-glow);
+}
+
+/* ── Heatmap ────────────────────────────────────────────────────────── */
+
+.pfc-heatmap-panel {
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--pfc-border-soft);
+}
+.pfc-heatmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.pfc-heatmap-head h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pfc-dim);
+}
+.pfc-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--pfc-faint);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.pfc-legend .pfc-cell {
+  width: 9px;
+  height: 9px;
+}
+
+.pfc-heatmap {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.pfc-heatmap-grid {
+  display: flex;
+  gap: 3px;
+  min-width: 640px;
+}
+.pfc-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+.pfc-cell {
+  display: block;
+  aspect-ratio: 1;
+  width: 100%;
+  min-width: 8px;
+  border-radius: 2px;
+  background: var(--pfc-tile);
+}
+.pfc-cell[data-level="0"] { background: #17171b; }
+.pfc-cell[data-level="1"] { background: var(--pfc-mint-1); }
+.pfc-cell[data-level="2"] { background: var(--pfc-mint-2); }
+.pfc-cell[data-level="3"] { background: var(--pfc-mint-3); }
+.pfc-cell[data-level="4"] { background: var(--pfc-mint-4); }
+.pfc-cell--pad { background: transparent; }
+
+.pfc-heatmap-months {
+  display: grid;
+  min-width: 640px;
+  margin-top: 6px;
+  color: var(--pfc-faint);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.pfc-heatmap-months span {
+  grid-row: 1;
+  white-space: nowrap;
+}
+
+/* ── Metric panels ──────────────────────────────────────────────────── */
+
+.pfc-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--pfc-border-soft);
+}
+.pfc-panel {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+  padding: 16px 18px;
+  min-width: 0;
+}
+.pfc-panel + .pfc-panel {
+  border-left: 1px solid var(--pfc-border-soft);
+}
+.pfc-panel-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.pfc-panel-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pfc-dim);
+}
+.pfc-panel-title strong {
+  color: var(--pfc-text);
+  font-weight: 700;
+}
+.pfc-panel-big {
+  font-size: clamp(26px, 2.8vw, 36px);
+  font-weight: 700;
+  text-shadow: var(--pfc-glow);
+}
+.pfc-panel-spark {
+  margin-top: auto;
+}
+.pfc-panel-right {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 14px;
+  border-left: 1px solid var(--pfc-border-soft);
+}
+.pfc-panel-label {
+  color: var(--pfc-dim);
+  font-size: 11px;
+}
+.pfc-panel-mid {
+  font-size: clamp(20px, 2.2vw, 28px);
+  font-weight: 700;
+  text-shadow: var(--pfc-glow);
+}
+.pfc-panel-sub {
+  color: var(--pfc-faint);
+  font-size: 10px;
+}
+.pfc-panel-rule {
+  width: 100%;
+  margin: 8px 0;
+  border: none;
+  border-top: 1px solid var(--pfc-border-soft);
+}
+
+/* ── Collaborators rail ─────────────────────────────────────────────── */
+
+.pfc-collab {
+  padding: 14px 18px 18px;
+}
+.pfc-collab h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pfc-dim);
+}
+.pfc-collab-empty {
+  margin: 0;
+  color: var(--pfc-faint);
+  font-size: 12px;
+}
+.pfc-collab-row {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+}
+.pfc-collab-tile {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--pfc-border);
+  border-radius: 4px;
+  background: var(--pfc-raised);
+  overflow: hidden;
+  flex: none;
+}
+.pfc-collab-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────── */
+
+.pfc-foot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-top: 1px solid var(--pfc-border);
+  background: #0c0c0e;
+  color: var(--pfc-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.pfc-foot-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pfc-text);
+  font-weight: 700;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+
+@media (max-width: 840px) {
+  .pfc-card {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "rail"
+      "main"
+      "foot";
+  }
+  .pfc-rail {
+    border-right: none;
+    border-bottom: 1px solid var(--pfc-border-soft);
+  }
+  .pfc-avatar {
+    max-width: 240px;
+  }
+  .pfc-stat-band {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .pfc-stat:nth-child(3) {
+    border-left: none;
+  }
+  .pfc-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--pfc-border-soft);
+  }
+  .pfc-panels {
+    grid-template-columns: 1fr;
+  }
+  .pfc-panel + .pfc-panel {
+    border-left: none;
+    border-top: 1px solid var(--pfc-border-soft);
+  }
+}
