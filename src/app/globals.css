@@ -6131,6 +6131,36 @@ a.mobile-handoff__link:hover {
 }
 
 /* ────────────────────────────────────────────────
+   Familiars roster cards (cave-g2r6)
+   De-boxed: a wash + inset soft hairline instead of a hard border, with a
+   quiet hover lift. The wrapper owns the visual card so the open button and
+   the footer analytics link live inside it as siblings.
+   ──────────────────────────────────────────────── */
+
+.familiars-view__card {
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+.familiars-view__card:hover {
+  background: color-mix(in oklch, var(--bg-raised) 62%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 85%, transparent),
+    0 6px 18px -12px var(--shadow-color, rgb(0 0 0));
+  transform: translateY(-1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .familiars-view__card,
+  .familiars-view__card:hover {
+    transform: none;
+  }
+}
+
+/* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
    ──────────────────────────────────────────────── */
