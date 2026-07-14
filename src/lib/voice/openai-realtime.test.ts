@@ -108,6 +108,22 @@ test("mintSession returns grant with provider, clientSecret, expiresAt, connecti
   assert.equal(grant.connection.model, "gpt-realtime");
 });
 
+test("mintSession grant points SDP exchange at GA /v1/realtime/calls without ?model=", async () => {
+  nextResponse = new Response(
+    JSON.stringify({ value: "ek_ga", expires_at: 1 }),
+    { status: 200 },
+  );
+  const grant = await openaiRealtimeProvider.mintSession("sk-x", {
+    familiarId: "m",
+    model: "gpt-realtime",
+    voice: "alloy",
+    instructions: "",
+  });
+  // Legacy `/v1/realtime?model=` returns beta_api_shape_disabled; the token is
+  // model-bound so the GA calls URL must carry no query string.
+  assert.equal(grant.connection.url, "https://api.openai.com/v1/realtime/calls");
+});
+
 test("mintSession surfaces provider error message verbatim on non-2xx", async () => {
   nextResponse = new Response(
     JSON.stringify({ error: { message: "model not enabled for this account" } }),

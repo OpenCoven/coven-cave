@@ -5041,7 +5041,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       onOpenTask={onOpenTask}
       sessionId={sessionId}
       onLinkedContextChange={setLinkedContext}
-      handoff={{ turns, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
+      // Handoff carries the ACTIVE branch only: `turns` holds every branch of
+      // an edited/retried conversation, so deriving a task from it would pull
+      // titles, subtasks, links, and deadlines from turns the user abandoned.
+      handoff={{ turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
       sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
     />
   );

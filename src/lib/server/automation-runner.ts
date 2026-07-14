@@ -3,6 +3,7 @@ import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { covenHome } from "@/lib/coven-paths";
+import { harnessSpawnEnv } from "../harness-spawn-env.ts";
 import type { CodexAutomation } from "@/lib/codex-automations-types";
 import {
   recordRun,
@@ -55,7 +56,13 @@ export async function startAutomationRun(auto: CodexAutomation): Promise<Automat
 
   try {
     const out = createWriteStream(logPath, { flags: "a" });
-    const child = spawn(inv.command, inv.args, { cwd: inv.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    // No familiar context: automations get shared vault keys only, and the
+    // explicit env replaces the previous implicit full-process.env inheritance.
+    const child = spawn(inv.command, inv.args, {
+      cwd: inv.cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: harnessSpawnEnv(),
+    });
     child.stdout.pipe(out);
     child.stderr.pipe(out);
     child.stdin.write(inv.stdinPrompt);
