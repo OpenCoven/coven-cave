@@ -152,8 +152,34 @@ function pinBlocks(pins: readonly StitchPin[]): string {
 /**
  * The headless sew prompt: pins in, one strictly-formatted stitch out. The
  * output contract is parsed by `parseSewOutput` — keep the two in lockstep.
+ * An optional shape (from a stitch pattern or a collection schema) steers the
+ * body's structure without touching the contract.
  */
-export function buildSewPrompt(thread: Pick<StitchThread, "title" | "pins">): string {
+export type SewShape = {
+  /** `## ` section headings the entry body should follow, in order. */
+  scaffold?: readonly string[];
+  /** Tags the distiller should prefer when they fit. */
+  tagHints?: readonly string[];
+};
+
+function shapeLines(shape?: SewShape): string[] {
+  const scaffold = (shape?.scaffold ?? []).map((s) => s.trim()).filter(Boolean);
+  const tagHints = (shape?.tagHints ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const lines: string[] = [];
+  if (scaffold.length > 0) {
+    lines.push(
+      'Structure the body with exactly these markdown "## " sections, in order:',
+      ...scaffold.map((heading) => `- ${heading}`),
+    );
+  }
+  if (tagHints.length > 0) {
+    lines.push(`Prefer these tags when they fit: ${tagHints.join(", ")}`);
+  }
+  if (lines.length > 0) lines.push("");
+  return lines;
+}
+
+export function buildSewPrompt(thread: Pick<StitchThread, "title" | "pins">, shape?: SewShape): string {
   return [
     "You are distilling captured source material into ONE durable knowledge-base entry (a \"stitch\").",
     "Write reference material: factual, self-contained, deduplicated across sources, no meta-commentary.",
@@ -161,6 +187,7 @@ export function buildSewPrompt(thread: Pick<StitchThread, "title" | "pins">): st
     "",
     `Working title / intent: ${thread.title.trim() || "(none given)"}`,
     "",
+    ...shapeLines(shape),
     "Respond in EXACTLY this format (no fences, no preamble):",
     "TITLE: <entry title, one line>",
     "TAGS: <2-6 comma-separated lowercase tags>",
@@ -173,11 +200,22 @@ export function buildSewPrompt(thread: Pick<StitchThread, "title" | "pins">): st
   ].join("\n");
 }
 
-/** A short digest prompt for the "sew in chat" escape hatch. */
-export function buildSewChatPrompt(thread: Pick<StitchThread, "title" | "pins">): string {
+/**
+ * The "sew in chat" prompt, upgraded to the agent-brief pattern
+ * (docs/authoring-assist.md §5, cave-x1za): the pin digest plus — when the
+ * caller has a persisted thread — the local API contract that lets the
+ * familiar finish the sew itself with provenance intact. Mirrors the
+ * `.agents/skills/stitch-sewer` skill; keep the two in lockstep.
+ */
+export function buildSewChatPrompt(
+  thread: Pick<StitchThread, "title" | "pins">,
+  brief?: { threadId?: string; shape?: SewShape },
+): string {
   const list = thread.pins
     .map((pin, index) => `${index + 1}. [${PIN_KIND_LABEL[pin.kind]}] ${pin.title} — ${pin.ref}\n   ${pin.excerpt}`)
     .join("\n");
+  const scaffold = (brief?.shape?.scaffold ?? []).map((s) => s.trim()).filter(Boolean);
+  const threadId = brief?.threadId?.trim();
   return [
     `Help me sew a Grimoire stitch (knowledge-base entry)${thread.title.trim() ? ` about: ${thread.title.trim()}` : ""}.`,
     "",
@@ -185,6 +223,18 @@ export function buildSewChatPrompt(thread: Pick<StitchThread, "title" | "pins">)
     list,
     "",
     "Draft one durable, self-contained reference entry (title, a few tags, markdown body) that distills them. Ask me before assuming anything the pins don't cover.",
+    ...(scaffold.length > 0
+      ? ["", `Structure the body with these "## " sections, in order: ${scaffold.join(" · ")}.`]
+      : []),
+    ...(threadId
+      ? [
+          "",
+          "Once I approve the draft, save it yourself through the local Cave API (loopback HTTP on this machine, no auth):",
+          `\`POST /api/stitches/sew\` with JSON \`{ "threadId": ${JSON.stringify(threadId)}, "mode": "manual", "draft": { "title": "…", "tags": ["…"], "body": "…" } }\``,
+          "→ `{ ok, entry }` — writes the entry into the Knowledge Vault with pin provenance and marks this thread sewn.",
+          'Add `"collection": "<id>"` to file it into an existing collection (`GET /api/knowledge/collections` lists them). Never invent thread or collection ids.',
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -216,9 +266,17 @@ export function parseSewOutput(text: string): SewOutput | null {
   return { title, tags, body };
 }
 
-/** Prefill body for the "sew manually" path: pins concatenated under headings. */
-export function buildManualStitchBody(thread: Pick<StitchThread, "pins">): string {
-  return thread.pins
+/** Prefill body for the "sew manually" path: pins concatenated under headings.
+ *  A pattern's scaffold prefixes empty sections to fill, so the hand-edit
+ *  starts from the intended shape instead of a blob (cave-kwx4). */
+export function buildManualStitchBody(
+  thread: Pick<StitchThread, "pins">,
+  scaffold?: readonly string[],
+): string {
+  const sections = (scaffold ?? []).map((s) => s.trim()).filter(Boolean);
+  const pinBody = thread.pins
     .map((pin) => `## ${pin.title}\n\n> ${PIN_KIND_LABEL[pin.kind]} — ${pin.ref}\n\n${pin.content.trim()}`)
     .join("\n\n");
+  if (sections.length === 0) return pinBody;
+  return [...sections.map((heading) => `## ${heading}\n\n_Fill in._`), "---", pinBody].join("\n\n");
 }

@@ -102,6 +102,20 @@ describe("sew prompt and output contract", () => {
     assert.match(prompt, /Source: https:\/\/docs\.example\/webhooks/);
     assert.match(prompt, /Pin 2 — Pasted text: Slack note/);
     assert.match(prompt, /5 retries max/);
+    assert.doesNotMatch(prompt, /Structure the body/, "no scaffold without a shape");
+  });
+
+  it("folds a shape's scaffold and tag hints into the prompt without touching the contract", () => {
+    const prompt = buildSewPrompt(thread, {
+      scaffold: ["Context", "Decision", " "],
+      tagHints: ["Decision", ""],
+    });
+    assert.match(prompt, /Structure the body with exactly these markdown "## " sections, in order:/);
+    assert.match(prompt, /- Context\n- Decision/);
+    assert.match(prompt, /Prefer these tags when they fit: decision/);
+    // Contract unchanged — parseSewOutput needs no changes (cave-kwx4).
+    assert.match(prompt, /TITLE: <entry title/);
+    assert.match(prompt, /Respond in EXACTLY this format/);
   });
 
   it("builds a chat digest that lists pins without full content", () => {
@@ -109,6 +123,21 @@ describe("sew prompt and output contract", () => {
     assert.match(prompt, /sew a Grimoire stitch/);
     assert.match(prompt, /1\. \[Web page\] Webhook docs — https:\/\/docs\.example\/webhooks/);
     assert.match(prompt, /Retries: 3x backoff\./);
+    assert.doesNotMatch(prompt, /POST \/api\/stitches\/sew/, "no API contract without a thread id");
+  });
+
+  it("upgrades the chat digest to a finishing brief when the thread id is known (cave-x1za)", () => {
+    const prompt = buildSewChatPrompt(thread, {
+      threadId: "t1abc",
+      shape: { scaffold: ["Context", "Decision"] },
+    });
+    assert.match(prompt, /"threadId": "t1abc"/);
+    assert.match(prompt, /POST \/api\/stitches\/sew/);
+    assert.match(prompt, /"mode": "manual", "draft"/);
+    assert.match(prompt, /marks this thread sewn/);
+    assert.match(prompt, /GET \/api\/knowledge\/collections/);
+    assert.match(prompt, /Never invent thread or collection ids/);
+    assert.match(prompt, /Context · Decision/);
   });
 
   it("parses well-formed sew output", () => {
@@ -151,5 +180,15 @@ describe("manual sew prefill", () => {
     assert.match(body, /^## Notes/);
     assert.match(body, /> Memory file — \/m\/notes\.md/);
     assert.match(body, /Line one\./);
+  });
+
+  it("prefixes a pattern's scaffold as fill-in sections above the pins (cave-kwx4)", () => {
+    const body = buildManualStitchBody(
+      { pins: [makePin({ kind: "paste", ref: "paste", title: "Note", content: "Raw." })] },
+      ["Steps", "Verification", ""],
+    );
+    assert.match(body, /^## Steps\n\n_Fill in\._/);
+    assert.match(body, /## Verification\n\n_Fill in\._/);
+    assert.match(body, /---\n\n## Note/, "pin concatenation survives below the scaffold");
   });
 });
