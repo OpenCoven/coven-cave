@@ -90,8 +90,8 @@ export function parseWalkthroughOutput(text: string): WalkthroughOutput | null {
   if (!match) return null;
   const notes = match[2]
     .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*-\s*/, "").trim())
-    .filter(Boolean)
+    .map((line) => line.match(/^\s*-\s*(.+\S)\s*$/)?.[1])
+    .filter((note): note is string => Boolean(note))
     .slice(0, 6);
   if (notes.length === 0) return null;
   return { followed: match[1].toLowerCase() as WalkthroughOutput["followed"], notes };
