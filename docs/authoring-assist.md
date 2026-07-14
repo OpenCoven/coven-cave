@@ -290,6 +290,10 @@ draft toward the human-reviewed catalog PR that publication requires
 equip; and the road from draft to catalog PR is paved but still
 human-reviewed.
 
+**Status:** landed — dispatch-time drafts snapshot + visibility-paused
+arrival polling in the create drawer, refine/publish briefs on draft detail,
+and recreate-and-replace draft deletion (guarded `DELETE`).
+
 ## 7 · One assist kit: extract the shared runner and contracts
 
 **Story:** As the codebase, I want the sew runner to become *the* assist

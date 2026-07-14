@@ -13445,6 +13445,30 @@ details[open] > .cave-edit-card__summary::before {
   color: var(--accent-presence);
   font-weight: 600;
 }
+.craft-create-drawer__awaiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.craft-create-drawer__awaiting-spin {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+.craft-create-drawer__awaiting-stop {
+  flex-shrink: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
 .craft-create-drawer__select {
   border: 1px solid var(--border-hairline);
   border-radius: 6px;

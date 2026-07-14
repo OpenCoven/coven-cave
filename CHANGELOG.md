@@ -8,6 +8,7 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Features
+- **Crafts: "Describe it" closes its loop** — the create drawer now waits for the familiar's build: it snapshots the drafts store when the brief dispatches, polls while you watch the chat, and opens the arrived draft for review (with a cancelable waiting state). Draft detail gains **Refine in chat** (recreate-and-replace through a brief that carries the draft id + ledger), **Prepare for catalog** (a brief that walks the human-reviewed vendored-sources → catalog.json → sync-check → PR path, never writing the catalog directly), and a two-step **Delete draft** backed by a new guarded `DELETE /api/marketplace/crafts/drafts` (cave-46wg).
 - **Grimoire: stitch patterns + sew destinations** — sewing can aim at a shape (Glossary entry, API contract, Decision record, How-to) whose section scaffold steers the distillation and prefills the manual sew (tags included), and file the entry into an existing vault collection — a collection's schema fields join the scaffold so pack-seeded collections keep their shape (cave-kwx4).
 - **Grimoire: "Sew in chat" round trip** — the chat sew is now a brief carrying the thread id and the local sew API contract (plus a companion `stitch-sewer` agent skill), so the familiar saves the agreed draft itself with pin provenance and thread completion; the intake picks a chat-sewn entry up on re-focus and swaps to it like an in-intake sew (cave-x1za).
 

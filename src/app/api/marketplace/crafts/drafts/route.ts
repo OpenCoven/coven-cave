@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildCraftDraftFromRoles, compareCraftDraftRoles } from "@/lib/craft-draft";
-import { readCraftDrafts, saveCraftDraft } from "@/lib/server/craft-drafts";
+import { deleteCraftDraft, isValidCraftDraftId, readCraftDrafts, saveCraftDraft } from "@/lib/server/craft-drafts";
 import { loadRoleEntries } from "@/lib/server/role-entries";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 
@@ -48,4 +48,18 @@ export async function POST(req: Request) {
   const draft = buildCraftDraftFromRoles({ familiar, roles });
   await saveCraftDraft(draft);
   return NextResponse.json({ ok: true, draft });
+}
+
+/** Drafts are local authoring state — deleting one is the refine loop's
+ *  recreate-and-replace step (cave-46wg). Installed/equipped Crafts are a
+ *  different lifecycle and never live in the drafts store. */
+export async function DELETE(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+  const id = new URL(req.url).searchParams.get("id")?.trim() ?? "";
+  if (!isValidCraftDraftId(id)) {
+    return NextResponse.json({ ok: false, error: "invalid draft id" }, { status: 400 });
+  }
+  const deleted = await deleteCraftDraft(id);
+  return NextResponse.json({ ok: true, deleted });
 }

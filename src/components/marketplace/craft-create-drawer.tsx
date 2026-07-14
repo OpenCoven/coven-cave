@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { buildCraftAgentPrompt } from "@/lib/craft-agent-prompt";
 import type { RoleEntry } from "@/app/api/roles/route";
 
@@ -46,7 +47,35 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   const [selectedRoleIds, setSelectedRoleIds] = useState<ReadonlySet<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [goal, setGoal] = useState("");
+  // Describe-mode arrival (cave-46wg): after the brief dispatches, the drawer
+  // stays open and polls the drafts store (visibility-paused via the shared
+  // hook, refreshing the moment the user returns from the chat); a NEW draft
+  // id (vs the snapshot at dispatch) is the familiar's build landing, handed
+  // to the same onCreated the manual path uses.
+  const [awaiting, setAwaiting] = useState(false);
+  const baselineDraftIds = useRef<ReadonlySet<string>>(new Set());
   useFocusTrap(open, ref, { onEscape: onClose });
+
+  useEffect(() => {
+    if (!open) setAwaiting(false);
+  }, [open]);
+
+  const checkForArrivedDraft = useCallback(async () => {
+    try {
+      const res = await fetch("/api/marketplace/crafts/drafts", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; drafts?: Array<{ id?: string }> };
+      if (!json.ok || !Array.isArray(json.drafts)) return;
+      const arrived = json.drafts.find((d) => d.id && !baselineDraftIds.current.has(d.id));
+      if (arrived?.id) {
+        setAwaiting(false);
+        setGoal("");
+        onCreated(arrived.id);
+      }
+    } catch {
+      // Keep polling — the drafts API is local and the next tick retries.
+    }
+  }, [onCreated]);
+  usePausablePoll(() => void checkForArrivedDraft(), 5000, { enabled: open && awaiting });
 
   useEffect(() => {
     if (!open) return;
@@ -150,18 +179,31 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
 
   /** Describe mode: hand the goal to a familiar as a complete agentic build
    *  prompt (role discovery → draft → plan verification), the same
-   *  chat-dispatch contract the skills "Use" action rides. */
-  const draftWithFamiliar = useCallback(() => {
+   *  chat-dispatch contract the skills "Use" action rides — then wait for the
+   *  draft to land instead of closing the story here (cave-46wg). */
+  const draftWithFamiliar = useCallback(async () => {
     const description = goal.trim();
     if (!description) return;
+    // Snapshot the drafts that already exist so arrival = a NEW id, even if
+    // the familiar rebuilds an old draft under the same name.
+    try {
+      const res = await fetch("/api/marketplace/crafts/drafts", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; drafts?: Array<{ id?: string }> };
+      baselineDraftIds.current = new Set(
+        json.ok && Array.isArray(json.drafts)
+          ? json.drafts.map((d) => d.id).filter((id): id is string => Boolean(id))
+          : [],
+      );
+    } catch {
+      baselineDraftIds.current = new Set();
+    }
     window.dispatchEvent(
       new CustomEvent("cave:agents-new-chat", {
         detail: { initialPrompt: buildCraftAgentPrompt({ description, familiar: familiar || undefined }) },
       }),
     );
-    setGoal("");
-    onClose();
-  }, [familiar, goal, onClose]);
+    setAwaiting(true);
+  }, [familiar, goal]);
 
   if (!open) return null;
 
@@ -237,6 +279,27 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
                 <li>The finished draft appears here in Crafts, ready to review and equip.</li>
               </ol>
             </section>
+            {awaiting ? (
+              <div role="status" className="craft-create-drawer__awaiting">
+                <Icon
+                  name="ph:circle-notch-bold"
+                  width={14}
+                  aria-hidden
+                  className="craft-create-drawer__awaiting-spin animate-spin motion-reduce:animate-none"
+                />
+                <span>
+                  Waiting for the familiar&apos;s draft — watch the chat or keep browsing. The draft opens here when it
+                  lands.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAwaiting(false)}
+                  className="focus-ring craft-create-drawer__awaiting-stop"
+                >
+                  Stop waiting
+                </button>
+              </div>
+            ) : null}
           </>
         ) : (
           <>
@@ -295,10 +358,10 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
               variant="primary"
               size="sm"
               leadingIcon="ph:sparkle"
-              disabled={!goal.trim()}
-              onClick={draftWithFamiliar}
+              disabled={!goal.trim() || awaiting}
+              onClick={() => void draftWithFamiliar()}
             >
-              Draft with familiar
+              {awaiting ? "Drafting…" : "Draft with familiar"}
             </Button>
           ) : (
             <Button
