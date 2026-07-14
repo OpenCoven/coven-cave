@@ -6,6 +6,7 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { ProjectsView } from "@/components/projects-view";
 import { ChatSettingsView } from "@/components/chat-settings-view";
+import { ChatCanvasView } from "@/components/chat-canvas-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
@@ -55,7 +56,9 @@ const chatStorage = {
 // "familiar" is the active familiar's capability panel, promoted from the
 // retired inspector sidepanel to a first-class chat tab.
 // "settings" is the consolidated chat-settings tab (auto-archive policy et al).
-type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings";
+// "canvas" is the gallery of sketches saved from chat artifacts — saves landed
+// in the canvas store with no surface after the standalone Canvas page retired.
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings" | "canvas";
 
 type Props = {
   familiars: Familiar[];
@@ -520,6 +523,7 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
+              { id: "canvas", label: "Canvas" },
               { id: "familiar", label: "Familiar" },
               { id: "settings", label: "Settings" },
             ]}
@@ -565,6 +569,12 @@ export function ChatSurface({
 
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+        ) : scope === "canvas" ? (
+          // Saved-sketch gallery: everything "Save to Canvas" persisted from
+          // inline chat artifacts, browsable/reopenable/deletable in place.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <ChatCanvasView familiarId={activeFamiliarId} />
+          </div>
         ) : scope === "familiar" ? (
           // The active familiar's identity + capability surface (hero, role,
           // skills, tools) — promoted from the retired inspector sidepanel to a

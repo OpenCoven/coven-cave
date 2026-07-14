@@ -3942,8 +3942,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (command === "/canvas") {
       if (!args.trim()) {
-        // The Canvas page retired — /canvas is inline-only now.
-        appendSystem("Describe what to sketch — e.g. /canvas a pricing page with three tiers.");
+        // The Canvas page retired — /canvas generates inline; saved sketches live in the Canvas tab.
+        appendSystem("Describe what to sketch — e.g. /canvas a pricing page with three tiers. Saved sketches live in the Canvas tab.");
         setInput("");
         return true;
       }
