@@ -1,18 +1,16 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { callDaemonTarget, daemonTargetForConfig } from "@/lib/coven-daemon";
+import { callDaemon, callDaemonTarget, daemonTargetForConfig } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import { covenHome } from "@/lib/coven-paths";
-import {
-  explicitFamiliarIdsFromToml,
-  filterFamiliarRosterForAuthority,
-} from "@/lib/familiar-roster-guard";
+import { filterInstallSeedFamiliars } from "@/lib/familiar-roster-guard";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
   normalizeFamiliarDraft,
+  parseFamiliarsToml,
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
 import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
@@ -36,22 +34,23 @@ export type DaemonFamiliar = {
 export async function GET() {
   const covenDir = covenHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
+  // Resolve the daemon target once from a single config snapshot, so the
+  // roster call and the mode-aware shaping below can't disagree about which
+  // authority (local daemon vs Server hub) answered.
   const config = await loadConfig();
   const target = daemonTargetForConfig(config);
-  const localAuthority = target.mode === "local";
-  const [res, removedIds, explicitIds] = await Promise.all([
+  const [res, removedIds, declaredEntries] = await Promise.all([
     callDaemonTarget<(DaemonFamiliar & { emoji?: string; icon?: string })[]>(target, {
       path: "/api/v1/familiars",
     }),
-    localAuthority
-      ? removedFamiliarIds().catch(() => new Set<string>())
-      : Promise.resolve(new Set<string>()),
-    localAuthority
-      ? readFile(familiarsToml, "utf8")
-          .then(explicitFamiliarIdsFromToml)
-          .catch(() => new Set<string>())
-      : Promise.resolve(new Set<string>()),
+    removedFamiliarIds().catch(() => new Set<string>()),
+    readFile(familiarsToml, "utf8")
+      .then(parseFamiliarsToml)
+      .catch(() => []),
   ]);
+  // Ids the user has explicitly declared in the local familiars.toml —
+  // exempt from the install-seed heuristics below.
+  const explicitIds = new Set(declaredEntries.map((entry) => entry.id.toLowerCase()));
   if (!res.ok) {
     // Auth failures (401/403) mean the hub/daemon rejected our access token
     // — typically a stale or missing token after a hub reconnect. Surface
@@ -88,21 +87,36 @@ export async function GET() {
   // in-memory roster until it re-reads familiars.toml — hide tombstoned ids so
   // Remove takes effect immediately in every client.
   //
-  // Both policies are local-file policies. A server hub owns a different
-  // COVEN_HOME, so filtering its roster with this machine's TOML/tombstones can
-  // erase valid remote familiars (especially reserved/default ids).
-  const visibleRoster = filterFamiliarRosterForAuthority(
-    localAuthority
-      ? {
-          authority: "local",
-          familiars: res.data ?? [],
-          explicitIds,
-          removedIds,
-        }
-      : { authority: "remote", familiars: res.data ?? [] },
-  );
+  // Roster shaping is mode-aware (the list must reflect the coven's REAL
+  // state, not just this machine's — cave-7cv4):
+  //  - hub mode: the roster comes from the remote hub, where every entry is a
+  //    real registered familiar. The install-seed guard judges entries against
+  //    the LOCAL familiars.toml, which says nothing about a remote coven — a
+  //    hub familiar genuinely named Sage or Salem must not be hidden here.
+  //  - local mode: filter the daemon's seeded first-install suggestions as
+  //    before (entries with live activity state are never hidden).
+  //  - either mode: familiars declared in the local familiars.toml but missing
+  //    from the daemon roster (daemon hasn't re-read the file yet, or the hub
+  //    doesn't know this machine's file) are merged in, so every id the POST
+  //    duplicate check can 409 on is VISIBLE in the list instead of looking
+  //    summonable again.
+  const daemonRoster =
+    target.mode === "hub"
+      ? (res.data ?? [])
+      : filterInstallSeedFamiliars(res.data ?? [], explicitIds);
+  const visibleRoster = daemonRoster.filter((f) => !removedIds.has(f.id));
+  const rosterIds = new Set(visibleRoster.map((f) => f.id.toLowerCase()));
+  const declaredOnly: (DaemonFamiliar & { emoji?: string; icon?: string })[] = declaredEntries
+    .filter((entry) => !rosterIds.has(entry.id.toLowerCase()) && !removedIds.has(entry.id))
+    .map((entry) => ({
+      id: entry.id,
+      display_name: entry.displayName ?? entry.id,
+      role: entry.role ?? "Familiar",
+      ...(entry.description ? { description: entry.description } : {}),
+      ...(entry.emoji ? { emoji: entry.emoji } : {}),
+    }));
   const familiars = await Promise.all(
-    visibleRoster.map(async (f) => {
+    [...visibleRoster, ...declaredOnly].map(async (f) => {
       const configEntry = config.familiars[f.id] ?? {};
       const binding = bindingFor(config, f.id);
       const avatar = await resolveFamiliarAvatar(f.id);
@@ -188,6 +202,28 @@ export async function POST(req: Request) {
   const adaptersDir = path.join(covenDir, "adapters");
 
   await mkdir(covenDir, { recursive: true });
+
+  // The local familiars.toml is only half the truth: in hub mode (or before
+  // the local daemon re-reads the file) the roster can hold ids this file has
+  // never seen — e.g. a familiar summoned from another machine on the same
+  // hub. Check the live roster best-effort so we don't shadow an existing
+  // familiar with a second declaration; a daemon failure must not block
+  // creation. Tombstoned ids are exempt — a lingering roster entry for a
+  // removed familiar must not veto re-creating it.
+  const [liveRoster, removed] = await Promise.all([
+    callDaemon<DaemonFamiliar[]>({ path: "/api/v1/familiars" }),
+    removedFamiliarIds().catch(() => new Set<string>()),
+  ]);
+  if (
+    liveRoster.ok &&
+    !removed.has(draft.id) &&
+    (liveRoster.data ?? []).some((f) => f.id.toLowerCase() === draft.id.toLowerCase())
+  ) {
+    return NextResponse.json(
+      { ok: false, error: `A familiar with id "${draft.id}" already exists in this coven.` },
+      { status: 409 },
+    );
+  }
 
   // Reject duplicates rather than appending a second [[familiar]] block with
   // the same id (the daemon would only ever see the first).

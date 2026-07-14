@@ -294,7 +294,7 @@ assert.match(
 assert.match(
   source,
   /type InstallTarget =[\s\S]*"coven-cli"[\s\S]*"coven-code"/,
-  "startup one-click installs include coven-code as an OpenCoven tool target",
+  "startup one-click installs keep coven-code as an install target (optional runtime)",
 );
 
 assert.match(
@@ -305,8 +305,8 @@ assert.match(
 
 assert.match(
   source,
-  /tools=\{status\?\.tools \?\? \[\]\}/,
-  "the startup CLI step receives OpenCoven tool status from onboarding status",
+  /tools=\{\(status\?\.tools \?\? \[\]\)\.filter\(\s*\(tool\) => tool\.id === "coven-cli",?\s*\)\}/,
+  "the startup CLI step receives only the Coven CLI status — Coven Code never gates the tools step",
 );
 
 assert.match(
@@ -339,16 +339,31 @@ assert.match(
   "the startup tools CTA installs or updates only the OpenCoven tools that need action",
 );
 
-assert.match(
+// Coven Code is an optional runtime adapter, not a setup requirement: the
+// wizard must not AND any client-side tool check into server `complete`
+// (cave-219's divergence class), and the runtime grid offers it one-click.
+assert.doesNotMatch(
   source,
-  /const covenCodeReady =[\s\S]{0,180}installed[\s\S]{0,80}!.*outdated/,
-  "startup should require the latest Coven Code version before treating it as ready",
+  /covenCodeSatisfied|covenCodeSkipped|COVEN_CODE_SKIP_KEY/,
+  "no client-side Coven Code requirement machinery remains in the wizard",
 );
 
 assert.match(
   source,
-  /OpenCoven tools/,
-  "the startup CLI step renders both OpenCoven tool statuses",
+  /const setupComplete = status\?\.complete \?\? false/,
+  "server complete is the wizard's single source of truth for setup",
+);
+
+assert.match(
+  source,
+  /"coven-code": \{\s*target: "coven-code"/,
+  "the runtime grid offers Coven Code as a one-click optional install",
+);
+
+assert.match(
+  source,
+  /Coven CLI/,
+  "the startup CLI step renders the Coven CLI status",
 );
 
 assert.match(

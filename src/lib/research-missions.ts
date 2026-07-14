@@ -1,3 +1,5 @@
+import { parseCodexRrule, RRULE_DAY_LABEL } from "./codex-automation-form.ts";
+
 export const RESEARCH_MISSION_MODES = [
   "brief",
   "sweep",
@@ -249,13 +251,16 @@ export type ResearchBoundsResult =
   | { ok: true; value: ResearchBounds }
   | { ok: false; reason: string };
 
-const BOUND_LIMITS = {
+/** Server-enforced upper limits for research bounds; the composer clamps to these. */
+export const RESEARCH_BOUND_LIMITS = {
   wallClockMinutes: 24 * 60,
   maxIterations: 100,
   sourceTarget: 500,
   checkpointEvery: 100,
   maxSpendUsd: 100_000,
 } as const;
+
+const BOUND_LIMITS = RESEARCH_BOUND_LIMITS;
 
 function positiveInteger(
   value: unknown,
@@ -321,4 +326,22 @@ export function allowedResearchActions(
     return ["continue", "archive"];
   }
   return [];
+}
+
+/**
+ * Human-readable schedule for an autoresearch Automation link. Understands the
+ * daily/weekly RRULEs the desk itself creates; anything else falls back to the
+ * rule text without the RRULE: prefix rather than pretending to parse it.
+ */
+export function describeResearchSchedule(rrule: string | null | undefined): string {
+  const raw = rrule?.trim();
+  if (!raw) return "Not scheduled";
+  const parsed = parseCodexRrule(raw);
+  if (parsed.mode === "daily") return `Daily at ${parsed.time}`;
+  if (parsed.mode === "weekly") {
+    if (!/BYDAY=/.test(raw)) return `Weekly at ${parsed.time}`;
+    const days = parsed.days.map((day) => RRULE_DAY_LABEL[day] ?? day).join(", ");
+    return `Weekly on ${days} at ${parsed.time}`;
+  }
+  return raw.replace(/^RRULE:/, "");
 }

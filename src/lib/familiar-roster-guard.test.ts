@@ -2,9 +2,9 @@
 import assert from "node:assert/strict";
 import {
   explicitFamiliarIdsFromToml,
-  filterFamiliarRosterForAuthority,
   filterInstallSeedFamiliars,
   filterInternalCovenNameSuggestions,
+  hasLiveFamiliarState,
   isInternalCovenFamiliarName,
 } from "./familiar-roster-guard.ts";
 
@@ -14,6 +14,7 @@ assert.deepEqual(
     "Wren",
     "Kitty",
     "Cody",
+    "Charm",
     "Sage",
     "Astra",
     "Echo",
@@ -75,30 +76,37 @@ id = "wren"
   "an intentionally user-authored reserved id is preserved outside the generated default trio",
 );
 
-const remoteRoster = [
-  { id: "nova", display_name: "Nova", role: "Orchestrator" },
-  { id: "salem", display_name: "Salem", role: "Reviewer" },
-  { id: "wren", display_name: "Wren", role: "Research" },
-];
+// ── cave-7cv4: live familiars are never hidden by the name heuristics ────────
+// A coven can genuinely contain familiars named Sage/Nova/Salem — especially
+// on a remote host or hub, where the LOCAL familiars.toml says nothing about
+// them. Seeded suggestions carry only id/name/role; anything with activity
+// state is real and must stay visible even with zero explicit ids.
+assert.equal(hasLiveFamiliarState({ id: "sage" }), false);
+assert.equal(hasLiveFamiliarState({ id: "sage", last_seen: "2026-07-14T00:00:00Z" }), true);
+assert.equal(hasLiveFamiliarState({ id: "sage", active_sessions: 2 }), true);
+assert.equal(hasLiveFamiliarState({ id: "sage", active_sessions: 0 }), false);
+assert.equal(hasLiveFamiliarState({ id: "sage", memory_freshness: "fresh" }), true);
 
 assert.deepEqual(
-  filterFamiliarRosterForAuthority({
-    authority: "remote",
-    familiars: remoteRoster,
-  }).map((f) => f.id),
-  ["nova", "salem", "wren"],
-  "hub-owned familiars must not be filtered against Cave-local TOML or reserved names",
+  filterInstallSeedFamiliars(
+    [
+      { id: "sage", display_name: "Sage", role: "Guide", last_seen: "2026-07-14T00:00:00Z" },
+      { id: "salem", display_name: "Salem", role: "Archivist", active_sessions: 2 },
+      { id: "nova", display_name: "Nova", role: "Research", memory_freshness: "fresh" },
+    ],
+    new Set(),
+  ).map((f) => f.id),
+  ["sage", "salem", "nova"],
+  "familiars with live activity state survive the reserved-name filter without local toml entries",
 );
 
 assert.deepEqual(
-  filterFamiliarRosterForAuthority({
-    authority: "local",
-    familiars: remoteRoster,
-    explicitIds: new Set(["wren"]),
-    removedIds: new Set(["wren"]),
-  }),
-  [],
-  "local roster filtering still applies seed policy and Cave-local tombstones",
+  filterInstallSeedFamiliars(
+    [{ id: "sage", display_name: "Sage", role: "Guide", active_sessions: 1 }],
+    new Set(),
+  ).map((f) => f.id),
+  ["sage"],
+  "a lone install-default-shaped familiar with live state is real, not a generated roster",
 );
 
 console.log("familiar-roster-guard.test.ts: ok");

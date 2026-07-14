@@ -35,8 +35,8 @@ assert.match(
 );
 assert.match(
   menuBar,
-  /aria-label=\{scheduleNeedsCount > 0 \? `View schedules — \$\{scheduleNeedsCount\} need attention` : "View schedules"\}\s*\n\s*title=\{scheduleNeedsCount > 0 \? `View schedules — \$\{scheduleNeedsCount\} need attention` : "View schedules"\}/,
-  "Schedules button exposes the exact count as a hover tooltip",
+  /aria-label=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}\s*\n\s*title=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}/,
+  "Rituals button exposes the exact count as a hover tooltip",
 );
 
 // ── Brand string: user-visible chrome says "CovenCave" (the product name) ───

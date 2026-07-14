@@ -141,19 +141,19 @@ export function FamiliarMenuBar({
           <span className="menu-bar__task-label">Tasks</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
-        {/* This button lands on the Schedules surface (workspace mode "inbox"
-            is the Schedules view — calendar + crons), so it is labelled
-            Schedules and badged with the schedule needs-you count. There is no
+        {/* This button lands on the Rituals surface (workspace mode "inbox"
+            is the Rituals view — calendar + crons), so it is labelled
+            Rituals and badged with the schedule needs-you count. There is no
             dedicated Inbox surface; inbox items live in the notification bell. */}
         <button
           type="button"
           className="menu-bar__task focus-ring"
           onClick={onViewSchedules}
-          aria-label={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
-          title={scheduleNeedsCount > 0 ? `View schedules — ${scheduleNeedsCount} need attention` : "View schedules"}
+          aria-label={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
+          title={scheduleNeedsCount > 0 ? `View rituals — ${scheduleNeedsCount} need attention` : "View rituals"}
         >
           <Icon name="ph:calendar-check" width={22} height={22} aria-hidden />
-          <span className="menu-bar__task-label">Schedules</span>
+          <span className="menu-bar__task-label">Rituals</span>
           {scheduleNeedsCount > 0 ? (
             <span className="menu-bar__badge">{fmtBadge(scheduleNeedsCount)}</span>
           ) : null}

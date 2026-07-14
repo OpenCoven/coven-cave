@@ -34,7 +34,8 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand } from "@/lib/coven-bin";
+import { harnessSpawnEnv } from "@/lib/harness-spawn-env";
 import { sweepStuckCreatedSessions } from "@/lib/server/stuck-created-sweep";
 import {
   buildCopilotStreamArgs,
@@ -539,7 +540,7 @@ function covenRunSupportsModel(): Promise<boolean> {
       try {
         const { command, fixedArgs } = covenLaunchCommand();
         const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: covenSpawnEnv(),
+          env: harnessSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
         child.stdout.on("data", (d) => (out += d.toString()));
@@ -585,7 +586,7 @@ function covenRunSupportsPermission(): Promise<boolean> {
       try {
         const { command, fixedArgs } = covenLaunchCommand();
         const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: covenSpawnEnv(),
+          env: harnessSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
         child.stdout.on("data", (d) => (out += d.toString()));
@@ -633,7 +634,7 @@ function covenRunSupportsAddDir(): Promise<boolean> {
       try {
         const { command, fixedArgs } = covenLaunchCommand();
         const child = spawn(command, [...fixedArgs, "run", "--help"], {
-          env: covenSpawnEnv(),
+          env: harnessSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
         child.stdout.on("data", (d) => (out += d.toString()));
@@ -1865,7 +1866,7 @@ export async function POST(req: Request) {
                 const sshArgs = spawnArgs;
                 return spawn("ssh", sshArgs, {
                   stdio: ["ignore", "pipe", "pipe"],
-                  env: covenSpawnEnv(),
+                  env: harnessSpawnEnv(body.familiarId),
                 });
               })()
             : (() => {
@@ -1883,7 +1884,10 @@ export async function POST(req: Request) {
                   // honor that instead.
                   cwd: familiarCwd ?? cwd,
                   stdio: ["ignore", "pipe", "pipe"],
-                  env: covenSpawnEnv(),
+                  // Scoped vault keys the familiar is not granted are
+                  // subtracted here — the harness only sees shared secrets
+                  // plus its own grants (cave-4nu6).
+                  env: harnessSpawnEnv(body.familiarId),
                 });
               })();
 

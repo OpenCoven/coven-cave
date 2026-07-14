@@ -341,7 +341,7 @@ export function NotificationBell({
                 }}
                 className="notification-bell__open-inbox focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
               >
-                Open Schedules →
+                Open Rituals →
               </button>
             </div>
           </div>

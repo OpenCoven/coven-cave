@@ -209,26 +209,59 @@ function mockFetchFor(score: "low" | "trusted") {
       "/api/familiars/cody/self-reports?limit=30",
       {
         ok: true,
-        total: 1,
-        reports: [
-          {
-            id: "thread-report-1",
-            familiarId: "cody",
-            sessionId: "session-1",
-            reportedAt: "2026-06-25T12:00:00.000Z",
-            overallConfidence: 80,
-            toolReliability: { score: 70, failedTools: [], unreliableTools: [] },
-            contextPressure: "adequate",
-            skillsUsed: [],
-            skillsNeedingClarity: [],
-            skillsNeedingAccess: [],
-            capabilitiesLacking: [],
-            capabilitiesVital: [],
-            memoryRecallScore: 65,
-            fileLocatabilityScore: 60,
-            persistentBlockers: [],
-          },
-        ],
+        total: score === "trusted" ? 1 : 0,
+        reports: score === "trusted"
+          ? [
+              {
+                id: "thread-report-1",
+                familiarId: "cody",
+                sessionId: "session-1",
+                reportedAt: "2026-06-25T12:00:00.000Z",
+                overallConfidence: 90,
+                toolReliability: { score: 85, failedTools: [], unreliableTools: [] },
+                contextPressure: "adequate",
+                skillsUsed: [],
+                skillsNeedingClarity: [],
+                skillsNeedingAccess: [],
+                capabilitiesLacking: [],
+                capabilitiesVital: [],
+                memoryRecallScore: 80,
+                fileLocatabilityScore: 80,
+                persistentBlockers: [],
+              },
+            ]
+          : [],
+      },
+    ],
+    [
+      "/api/familiars/cody/self-reports/snapshots",
+      {
+        ok: true,
+        total: score === "trusted" ? 2 : 0,
+        snapshots: score === "trusted"
+          ? [
+              {
+                id: "thread-report-0",
+                sessionId: "session-0",
+                reportedAt: "2026-06-20T12:00:00.000Z",
+                confidence: 60,
+                toolReliability: 60,
+                memoryRecall: 60,
+                fileLocatability: 60,
+                contextPressure: "adequate",
+              },
+              {
+                id: "thread-report-1",
+                sessionId: "session-1",
+                reportedAt: "2026-06-25T12:00:00.000Z",
+                confidence: 90,
+                toolReliability: 85,
+                memoryRecall: 80,
+                fileLocatability: 80,
+                contextPressure: "adequate",
+              },
+            ]
+          : [],
       },
     ],
     [
@@ -303,24 +336,54 @@ function mockFetchFor(score: "low" | "trusted") {
 }
 
 describe("FamiliarAnalyticsView", () => {
-  it("builds a renderable model with mocked fetch responses and shows the Low label", async () => {
+  it("builds a renderable model; with no thread reports confidence is unmeasured, not Low", async () => {
     mockFetchFor("low");
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
-    assert.equal(model.confidence.label, "Low");
+    assert.equal(model.confidence.hasData, false);
+    assert.equal(model.confidence.score, 0);
+    assert.equal(model.confidence.reportCount, 0);
     assert.equal(model.responseConfidenceRollup.eventCount, 2);
     assert.equal(model.responseConfidenceRollup.averageConfidence, 70);
     assert.equal(model.responseConfidenceRollup.lowConfidenceCount, 1);
     assert.match(source, /export function FamiliarAnalyticsContent/);
   });
 
-  it("shows the Trusted label for high-data mocks", async () => {
+  it("derives the Trusted label from real thread self-report metrics", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
+    // 90*.35 + 85*.25 + 80*.2 + 80*.2 = 84.75 → 85.
+    assert.equal(model.confidence.hasData, true);
+    assert.equal(model.confidence.score, 85);
     assert.equal(model.confidence.label, "Trusted");
+    assert.equal(model.confidence.reportCount, 1);
+  });
+
+  it("derives signal trends from metric snapshots under a fixed clock", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
+
+    assert.equal(model.signalTrends.granularity, "day");
+    assert.equal(model.signalTrends.snapshotCount, 2);
+    // Bucket scores: Jun 20 → 60, Jun 25 → 85 (weighted like the headline).
+    assert.equal(model.signalTrends.overall.latest, 85);
+    assert.equal(model.signalTrends.overall.previous, 60);
+    assert.equal(model.signalTrends.overall.direction, "improving");
+    assert.ok(model.signalTrends.metrics.every((metric) => metric.direction === "improving"));
+  });
+
+  it("keeps trends honestly insufficient with no snapshots", async () => {
+    mockFetchFor("low");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
+
+    assert.equal(model.signalTrends.snapshotCount, 0);
+    assert.equal(model.signalTrends.overall.direction, "insufficient");
+    assert.equal(model.signalTrends.overall.delta, null);
   });
 
   it("degrades gracefully when an endpoint fails instead of blanking the view", async () => {
@@ -535,24 +598,75 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
   });
 });
 
-describe("confidence breakdown + metric labeling", () => {
-  it("represents each confidence factor by its influence, with plain labels + units", () => {
+describe("confidence from thread analysis + metric labeling", () => {
+  it("drives the fa-confidence panel from real thread metrics, not synthetic factors", () => {
+    // The synthetic weighted-factor breakdown (familiar-confidence.ts) is gone
+    // from this page — the panel renders the self-reported metric averages.
+    assert.doesNotMatch(source, /CONFIDENCE_FACTOR_COPY/, "no synthetic factor copy remains");
+    assert.doesNotMatch(source, /familiar-confidence/, "the view no longer imports the heuristic lib");
+    assert.match(source, /ThreadAnalysisSection/, "the thread-analysis panel replaces the factor list");
+    assert.match(source, /id="fa-confidence"/, "the panel keeps the stable fa-confidence anchor");
+    assert.match(source, /title="Confidence from thread analysis"/, "the panel is named for its real source");
+    assert.match(source, /THREAD_METRIC_COPY/, "each metric carries plain-language meaning");
+    assert.match(source, /className="fa-factor-info"/, "an info affordance explains each metric");
+    assert.match(source, /adds up to \$\{Math\.round\(weight \* 100\)\} points of the headline score's 100/, "tooltips state each metric's max contribution, not a fixed share");
+    assert.match(source, /confidence\.metrics\.map/, "bars render from the derived metric list");
+    assert.match(source, /aria-label="Context pressure distribution"/, "the context-pressure mix rides along");
+    assert.match(source, /CONTEXT_PRESSURE_HINT/, "context pills carry a plain-language legend tooltip");
+  });
+
+  it("teaches enabling self-reporting when there are no thread reports yet", () => {
+    assert.match(source, /THREAD_CONFIDENCE_EMPTY_STATE/, "the empty panel uses the teach copy");
+    assert.match(source, /headline=\{THREAD_CONFIDENCE_EMPTY_STATE\}/, "the shared enable-CTA empty state is reused");
+    assert.match(source, /enabledHeadline="No thread reports yet\."/, "already-enabled familiars get truthful copy");
+    assert.match(source, /confidence\.hasData \?/, "the panel branches on real data presence");
+  });
+
+  it("renders the changes-over-time trend block with honest verdicts (tokens only)", () => {
+    // The verdict chip answers "is the familiar improving?" from the weighted score.
+    assert.match(source, /function ThreadTrendBlock/, "the trend block is its own component");
+    assert.match(source, /<ThreadTrendBlock trends=\{trends\}/, "the thread-analysis panel renders it");
+    assert.match(source, /trends=\{model\.signalTrends\}/, "trends ride the model, computed by the pure lib");
+    assert.match(source, /insufficient: "Not enough history yet"/, "insufficient history says so — no invented direction");
+    assert.match(source, /fa-trend-verdict--\$\{overall\.direction\}/, "verdict chip carries its direction class");
+    // Tokens only: improving = presence accent, regressing = warning.
+    assert.match(source, /if \(direction === "improving"\) return "var\(--accent-presence\)"/, "improving uses the presence accent token");
+    assert.match(source, /if \(direction === "regressing"\) return "var\(--color-warning\)"/, "regressing uses the warning token");
+    assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b(?![\w-])/, "no hard-coded hex colors in the view");
+    // Sparkline reuses the shared primitive (no new chart deps), with gaps kept.
+    assert.match(source, /<Sparkline points=\{points\} color=\{trendTokenFor\(overall\.direction\)\}/, "the trend sparkline reuses ui/sparkline");
+    assert.match(source, /value: bucket\.score/, "sparkline points come from bucket scores (nulls = honest gaps)");
+    assert.match(source, /Trends appear once reports land on two different/, "sparse data explains itself");
     const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-    // Human names + descriptions replace the raw snake_case factor keys.
-    assert.match(source, /CONFIDENCE_FACTOR_COPY/, "factors get plain-language names + descriptions");
-    assert.match(source, /name: "Identity contract"/, "contract_score reads as 'Identity contract'");
-    assert.match(source, /name: "Retro acceptance"/, "accept_rate reads as 'Retro acceptance'");
-    // Bar TRACK scales to weight → filled length reflects contribution (influence), not raw value.
-    assert.match(source, /factor\.weight \/ maxWeight/, "the factor bar track scales to the factor's weight");
-    assert.match(source, /function maxContribution/, "max contribution (weight×100) is derived per factor");
-    assert.match(source, /of \$\{max\} points/, "the bar aria-label states earned-of-max points");
-    assert.match(source, /fa-factor-earned/, "each row shows earned points of its max");
-    // Native tooltip carries the plain-language meaning.
-    assert.match(source, /className="fa-factor-info"/, "an info affordance explains each factor");
-    // Muted '/100' unit marks 0–100 scores; min-width keeps low-weight tracks visible.
+    assert.match(globals, /\.fa-trend-verdict--improving \{ color: var\(--accent-presence\); \}/, "verdict improving tint is tokenized");
+    assert.match(globals, /\.fa-trend-verdict--regressing \{ color: var\(--color-warning\); \}/, "verdict regressing tint is tokenized");
+    assert.match(globals, /\.fa-trend-chip--improving \{ color: var\(--accent-presence\); \}/, "chip improving tint is tokenized");
+    assert.match(globals, /\.fa-trend-chip--regressing \{ color: var\(--color-warning\); \}/, "chip regressing tint is tokenized");
+  });
+
+  it("annotates each metric bar with a delta chip against the previous period", () => {
+    assert.match(source, /function TrendDeltaChip/, "delta chips are a dedicated affordance");
+    assert.match(source, /if \(trend\.delta === null \|\| trend\.direction === "insufficient"\) return null;/, "no chip without two data buckets");
+    assert.match(source, /trend=\{trendByKey\.get\(metric\.key\)\}/, "each metric bar receives its own trend");
+    assert.match(source, /vs the previous period/, "chip aria/tooltip names the comparison window");
+    assert.match(source, /formatDelta/, "deltas render signed (+8 / -6)");
+  });
+
+  it("renders the hero ring from thread confidence with an unmeasured state", () => {
+    assert.match(source, /fa-ring--\$\{tier\}/, "ring tier class tracks the derived tier");
+    assert.match(source, /confidence\.hasData \? confidenceTier\(confidence\.label\) : "none"/, "no reports → neutral ring, never a fake Low");
+    assert.match(source, /Thread confidence not measured yet/, "the unmeasured ring says so to AT");
+    assert.match(source, /from \$\{reportPhrase\}/, "the measured ring cites its report count");
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    assert.match(globals, /\.fa-ring--none\s*\{[^}]*--fa-ring-color:\s*var\(--border-strong\)/, "the unmeasured tier stays neutral (tokens only)");
+  });
+
+  it("keeps shared metric-unit styling for 0–100 scores", () => {
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
     assert.match(source, /className="fa-metric-unit"/, "0–100 scores carry a muted unit suffix");
     assert.match(globals, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
-    assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the factor bar has a min-width floor for low-weight tracks");
+    assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
+    assert.match(globals, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
   });
 
   it("labels the response-confidence tiles + factor grid clearly", () => {

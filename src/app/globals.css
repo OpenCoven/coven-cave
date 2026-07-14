@@ -6173,6 +6173,94 @@ a.mobile-handoff__link:hover {
 }
 
 /* ────────────────────────────────────────────────
+   Chat · Familiar tab (identity hero + capability grid)
+   ──────────────────────────────────────────────── */
+
+/* The tab is a first-class surface, not a 320px sidepanel: the panel measures
+   its own inline size so the capability grid can go two-column when the chat
+   canvas is wide enough, independent of the viewport. */
+.familiar-tab {
+  container-type: inline-size;
+}
+
+.familiar-tab__hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 2px 16px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.familiar-tab__avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: var(--radius-card);
+  /* Soft inset hairline behind transparent avatar corners — same wash idiom
+     as the roster cards, no hard border. */
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+/* Identity moment: the display name is the one serif element on the tab
+   (--font-serif is the display / hero / identity face). */
+.familiar-tab__name {
+  font-family: var(--font-serif, ui-serif, serif);
+  font-size: clamp(22px, 3.2cqi, 30px);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.familiar-tab__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* One column by default; two balanced columns once the tab itself is wide
+   enough to earn it (~900px of usable canvas). */
+.familiar-tab__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 20px;
+}
+
+@container (min-width: 900px) {
+  .familiar-tab__grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* De-boxed capability lists (facelift language): one wash + soft inset
+   hairline per group, hairline dividers between rows — no per-row boxes, no
+   accent tints on metadata. Accent stays reserved for presence. */
+.familiar-tab__list {
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.familiar-tab__rows > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent);
+}
+
+/* Coarse pointers: the hero's quiet links/actions and the group toggles are
+   10-11px targets tuned for a cursor — grow their hit areas on touch without
+   changing the pointer-fine rhythm. */
+@media (pointer: coarse) {
+  .familiar-tab__links a,
+  .familiar-tab__links button {
+    padding-block: 6px;
+  }
+  .familiar-tab__list > button {
+    padding-block: 10px;
+  }
+  .familiar-tab__cta {
+    padding-block: 8px;
+  }
+}
+
+/* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
    ──────────────────────────────────────────────── */
@@ -10351,6 +10439,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-ring--developing { --fa-ring-color: var(--color-warning); }
 .fa-ring--reliable { --fa-ring-color: var(--accent-presence); }
 .fa-ring--trusted { --fa-ring-color: var(--color-success); }
+/* Unmeasured — no thread self-reports yet; the ring stays neutral, never red. */
+.fa-ring--none { --fa-ring-color: var(--border-strong); }
+.fa-ring--none .fa-ring__label strong { color: var(--text-muted); }
 .fa-ring svg {
   width: 100%;
   height: 100%;
@@ -10850,35 +10941,85 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: 14px;
   letter-spacing: 0;
 }
-.fa-factor-list,
 .fa-heal-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.fa-factor {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.9fr) minmax(160px, 1.6fr) 72px;
-  align-items: center;
+/* Confidence from thread analysis — metric average bars + context-pressure mix. */
+.fa-thread-analysis {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
-.fa-factor__meta b {
-  display: block;
-  font-size: 13px;
-  /* Names are curated (see CONFIDENCE_FACTOR_COPY) — no title-casing. */
-  text-transform: none;
+.fa-thread-analysis .fa-thread-score-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.fa-factor__meta span,
-.fa-factor small {
+/* Changes over time — verdict chip + bucket-scored sparkline. */
+.fa-trend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+}
+.fa-trend__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fa-trend-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.fa-trend-verdict b {
+  font-variant-numeric: tabular-nums;
+}
+.fa-trend-verdict--improving { color: var(--accent-presence); }
+.fa-trend-verdict--regressing { color: var(--color-warning); }
+.fa-trend-verdict--insufficient { color: var(--text-muted); font-weight: 400; }
+.fa-trend__meta {
   color: var(--text-muted);
   font-size: 11px;
 }
+.fa-trend__spark { margin: 0; }
+.fa-trend__spark figcaption {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.fa-trend__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+/* Per-metric delta against the previous trend bucket. */
+.fa-trend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+  color: var(--text-muted);
+}
+.fa-trend-chip--improving { color: var(--accent-presence); }
+.fa-trend-chip--regressing { color: var(--color-warning); }
 .fa-factor-bar {
   position: relative;
   overflow: hidden;
   height: 10px;
-  /* Confidence-breakdown bars set an inline width to scale the track to the
-     factor's weight; this floor keeps a low-weight (e.g. 10%) track visible. */
+  /* Keeps bars visible inside the narrowest metric cells. */
   min-width: 44px;
   border-radius: 999px;
   background: var(--bg-raised);
@@ -10911,16 +11052,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-muted);
   font-weight: 400;
   font-size: 0.85em;
-}
-/* Earned-points column of a confidence factor row. */
-.fa-factor-earned {
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.fa-factor-earned b {
-  font-size: 12px;
-  color: var(--text-secondary);
 }
 .fa-heal-card {
   display: flex;
@@ -11147,7 +11278,49 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   overflow-y: auto;
 }
 .fa-thread-review-list li {
+  position: relative;
   min-width: 0;
+}
+/* Dismiss ("acknowledge") — top-right of the item, hover/focus-revealed on
+   fine pointers, always visible on coarse (no hover to reveal it with). */
+.fa-thread-review-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.fa-thread-review-list li:hover .fa-thread-review-dismiss,
+.fa-thread-review-list li:focus-within .fa-thread-review-dismiss {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .fa-thread-review-dismiss { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fa-thread-review-dismiss { transition: none; }
+}
+/* Kind filter chips + the restore affordance. */
+.fa-thread-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fa-thread-review-chip {
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.fa-thread-review-chip b {
+  font-variant-numeric: tabular-nums;
+}
+.fa-thread-review-chip.is-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+  color: var(--accent-presence);
+}
+.fa-thread-review-chip--restore {
+  margin-left: auto;
+  color: var(--text-muted);
 }
 /* Each review item is a button — selecting it opens a discussion on the topic.
    The shared .ui-btn base sets white-space: nowrap (single-line buttons), which
@@ -11297,6 +11470,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
+}
+/* The header row stays pinned while the wrap scrolls. */
+.fa-thread-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-raised);
+  box-shadow: 0 1px 0 var(--border-hairline);
 }
 .fa-thread-table {
   width: 100%;
@@ -11562,10 +11743,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-section__head {
     align-items: flex-start;
     flex-direction: column;
-  }
-  .fa-factor {
-    grid-template-columns: 1fr;
-    align-items: stretch;
   }
   .fa-response-factor-grid,
   .fa-thread-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -15391,6 +15568,8 @@ details[open] > .cave-edit-card__summary::before {
 .research-mission-row__top { display: flex; align-items: flex-start; gap: 7px; }
 .research-mission-row__top strong { font-size: 11.5px; font-weight: 600; line-height: 1.35; }
 .research-mission-row__meta { display: flex; gap: 7px; padding-left: 13px; font-size: 9.5px; text-transform: capitalize; color: var(--text-muted); }
+.research-mission-row__meta time { margin-left: auto; text-transform: none; }
+.research-mission-detail__eyebrow time { text-transform: none; letter-spacing: 0.02em; }
 
 .research-status-dot {
   flex: 0 0 auto;

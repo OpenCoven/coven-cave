@@ -28,6 +28,11 @@ assert.match(
 );
 assert.match(
   chatView,
+  /handoff=\{\{ turns: activePath,/,
+  "the handoff context carries the active branch only — abandoned edit/retry branches must not leak into created tasks",
+);
+assert.match(
+  chatView,
   /if \(!result\.ok \|\| !result\.card\) throw new Error\(result\.error \?\? "Failed to create task"\);\s*onAssigned\(result\.card\);/,
   "the created card flows through the same onAssigned path as a linked one",
 );

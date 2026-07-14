@@ -99,7 +99,13 @@ export async function POST(req: NextRequest) {
 
   setLocalEncryptedSecret(PAT_KEY, pat);
   const map = loadVaultMap(true);
-  map[PAT_KEY] = { storage: "encrypted", description: "Asana Personal Access Token", required: false };
+  map[PAT_KEY] = {
+    storage: "encrypted",
+    description: "Asana Personal Access Token",
+    required: false,
+    // Re-saving the PAT must not reset per-familiar grants back to shared.
+    scope: map[PAT_KEY]?.scope,
+  };
   saveVaultMap(map);
 
   const updates: Record<string, string | null> = { [PAT_KEY]: null };

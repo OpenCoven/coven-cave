@@ -80,9 +80,10 @@ function linkLabel(link: LinkRef): string {
   return "Memory";
 }
 
-// The active Schedules surface is intentionally narrow: Calendar plus Crons.
-// The broader Automations/Flow experience lives on feature/automations-flow.
-type AutomationTab = "calendar" | "crons";
+// The active Rituals surface: Inbox (the full feed, mostly reminders) plus
+// Calendar and Crons. The broader Automations/Flow experience lives on
+// feature/automations-flow.
+type AutomationTab = "inbox" | "calendar" | "crons";
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -831,7 +832,7 @@ function CodexDetailPanel({
   // while the expanded canvas pairs them into two independent column stacks so
   // a short section never leaves a row-aligned hole beside a tall one.
   const identitySection = (
-    <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
+    <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Rituals.">
       <div>
         <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
         <input
@@ -1387,11 +1388,17 @@ function InboxFeedRow({
   selected,
   familiarLabel,
   onSelect,
+  onDone,
+  onSnooze,
+  onDismiss,
 }: {
   item: InboxItem;
   selected: boolean;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onDone?: (item: InboxItem) => void;
+  onSnooze?: (item: InboxItem) => void;
+  onDismiss?: (item: InboxItem) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
   const when = item.firedAt
@@ -1399,14 +1406,17 @@ function InboxFeedRow({
     : item.fireAt
     ? relTime(item.fireAt)
     : relTime(item.updatedAt);
+  // Done/snooze/dismiss only make sense while the item is still live; snooze
+  // additionally only for something that already fired (re-surface later).
+  const resolved = item.status === "done" || item.status === "dismissed";
 
   return (
-    <li>
+    <li className="flex items-center">
       <button
         type="button"
         onClick={() => onSelect(item)}
         aria-current={selected ? "true" : undefined}
-        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
+        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
       >
         <StatusIcon item={item} />
         <span className="flex-1 min-w-0 flex items-center gap-2">
@@ -1424,6 +1434,19 @@ function InboxFeedRow({
           {when}
         </span>
       </button>
+      {!resolved && (onDone || onSnooze || onDismiss) && (
+        <RowActions>
+          {onDone && (
+            <RowActionButton icon="ph:check-bold" label={`Mark ${item.title} done`} text="Done" onClick={() => onDone(item)} />
+          )}
+          {onSnooze && item.status === "fired" && (
+            <RowActionButton icon="ph:clock-countdown" label={`Snooze ${item.title} for 1 hour`} text="Snooze 1h" onClick={() => onSnooze(item)} />
+          )}
+          {onDismiss && (
+            <RowActionButton icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
+          )}
+        </RowActions>
+      )}
     </li>
   );
 }
@@ -1435,6 +1458,9 @@ function InboxFeedSection({
   selectedId,
   familiarLabel,
   onSelect,
+  onDone,
+  onSnooze,
+  onDismiss,
 }: {
   title: string;
   accent?: boolean;
@@ -1442,6 +1468,9 @@ function InboxFeedSection({
   selectedId: string | null;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onDone?: (item: InboxItem) => void;
+  onSnooze?: (item: InboxItem) => void;
+  onDismiss?: (item: InboxItem) => void;
 }) {
   const headingId = useId();
   if (items.length === 0) return null;
@@ -1471,6 +1500,9 @@ function InboxFeedSection({
             selected={selectedId === item.id}
             familiarLabel={familiarLabel}
             onSelect={onSelect}
+            onDone={onDone}
+            onSnooze={onSnooze}
+            onDismiss={onDismiss}
           />
         ))}
       </ul>
@@ -1485,6 +1517,9 @@ function InboxFeedList({
   selectedId,
   familiarLabel,
   onSelect,
+  onDone,
+  onSnooze,
+  onDismiss,
 }: {
   needsYou: InboxItem[];
   active: InboxItem[];
@@ -1492,13 +1527,17 @@ function InboxFeedList({
   selectedId: string | null;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onDone?: (item: InboxItem) => void;
+  onSnooze?: (item: InboxItem) => void;
+  onDismiss?: (item: InboxItem) => void;
 }) {
+  const rowActions = { onDone, onSnooze, onDismiss };
   return (
     <>
       <InboxFeedSection title="Needs you" accent items={needsYou} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
+        familiarLabel={familiarLabel} onSelect={onSelect} {...rowActions} />
       <InboxFeedSection title="Active" items={active} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
+        familiarLabel={familiarLabel} onSelect={onSelect} {...rowActions} />
       <InboxFeedSection title="Resolved" items={resolved} selectedId={selectedId}
         familiarLabel={familiarLabel} onSelect={onSelect} />
     </>
@@ -1870,7 +1909,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // otherwise it falls to <body> and keyboard users lose their place.
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
   const [activeTab, setActiveTab] = useState<AutomationTab>(
-    initialTab === "calendar" && calendarSlot ? "calendar" : calendarSlot ? "calendar" : "crons",
+    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : "inbox",
   );
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
@@ -2128,6 +2167,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
+
+  // ── Inbox feed row actions (Done / Snooze / Dismiss) ──────────────────────
+  const completeInboxItem = (item: InboxItem) => {
+    announce(`Marked '${item.title}' done.`);
+    return actItem(item.id, "done");
+  };
+  const snoozeInboxItem = (item: InboxItem) => {
+    announce(`Snoozed '${item.title}' for 1 hour.`);
+    return actItem(item.id, "snooze", { minutes: 60 });
+  };
+  const dismissInboxItem = (item: InboxItem) => {
+    announce(`Dismissed '${item.title}'.`);
+    return actItem(item.id, "dismiss");
+  };
 
   // ── Codex toggle ──────────────────────────────────────────────────────────
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
@@ -2435,21 +2488,22 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             gh-compact-header so operational surfaces share the same
             minimalist chrome. */}
         <div className="surface-compact-header">
-          <h1 className="surface-compact-title">Schedules</h1>
+          <h1 className="surface-compact-title">Rituals</h1>
           <Tabs
             className="surface-compact-tabs"
             variant="segment"
             size="sm"
-            ariaLabel="Schedules tabs"
+            ariaLabel="Rituals tabs"
             idPrefix="automations"
             value={activeTab}
             onChange={selectTab}
             items={[
+              { id: "inbox" as const, label: "Inbox", count: inboxFeed.needsYou.length },
               ...(calendarSlot ? [{ id: "calendar" as const, label: "Calendar" }] : []),
               { id: "crons", label: "Crons", count: codexAutos.length },
             ] satisfies TabItem<AutomationTab>[]}
           />
-          {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
+          {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
             <p className="surface-compact-summary">
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
@@ -2461,20 +2515,37 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               )}
             </p>
           )}
+          {activeTab === "inbox" && initialLoadDone && inboxFeed.needsYou.length + inboxFeed.active.length > 0 && (
+            <p className="surface-compact-summary">
+              {inboxFeed.needsYou.length > 0 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-warning)" }} />
+                  {inboxFeed.needsYou.length} need{inboxFeed.needsYou.length === 1 ? "s" : ""} you
+                </span>
+              )}
+              {inboxFeed.active.length > 0 && <span>{inboxFeed.needsYou.length > 0 ? "· " : ""}{inboxFeed.active.length} active</span>}
+            </p>
+          )}
           <div className="surface-compact-actions">
-            {/* Text filter for the crons tab. Gated on the UNfiltered presence
+            {/* Text filter, scoped per tab. Gated on the UNfiltered presence
                 of rows so filtering to zero never hides the box (you can still
                 clear). */}
-            {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && codexAutos.length > 0 ? (
+            {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode &&
+              (activeTab === "inbox" ? items.length > 0 : codexAutos.length > 0) ? (
               <div className="surface-compact-search">
                 <SearchInput
                   value={query}
                   onValueChange={setQuery}
                   onClear={() => setQuery("")}
-                  placeholder="Filter crons…"
-                  aria-label="Filter crons"
+                  placeholder={activeTab === "inbox" ? "Filter inbox…" : "Filter crons…"}
+                  aria-label={activeTab === "inbox" ? "Filter inbox" : "Filter crons"}
                 />
               </div>
+            ) : null}
+            {activeTab === "inbox" && onNewReminder ? (
+              <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={onNewReminder}>
+                New reminder
+              </Button>
             ) : null}
             {activeTab === "crons" ? (
               <Button ref={newBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
@@ -2519,6 +2590,37 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 />
               ))}
             </div>
+          ) : activeTab === "inbox" ? (
+            inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0 ? (
+              q ? (
+                <EmptyState
+                  className="mt-12"
+                  icon="ph:magnifying-glass"
+                  headline={`No matches for “${query.trim()}”`}
+                  subtitle="Try a different search term."
+                />
+              ) : (
+                <EmptyState
+                  className="mt-12"
+                  icon="ph:tray"
+                  headline="Inbox zero"
+                  subtitle="Reminders and notifications land here as they fire — enjoy the quiet."
+                  actions={onNewReminder ? <Button leadingIcon="ph:plus" onClick={onNewReminder}>New reminder</Button> : undefined}
+                />
+              )
+            ) : (
+              <InboxFeedList
+                needsYou={inboxFeed.needsYou}
+                active={inboxFeed.active}
+                resolved={inboxFeed.resolved}
+                selectedId={selectedItem?.id ?? null}
+                familiarLabel={familiarLabel}
+                onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                onDone={(item) => void completeInboxItem(item)}
+                onSnooze={(item) => void snoozeInboxItem(item)}
+                onDismiss={(item) => void dismissInboxItem(item)}
+              />
+            )
           ) : q && codexActive.length + codexPaused.length === 0 ? (
             <EmptyState
               className="mt-12"

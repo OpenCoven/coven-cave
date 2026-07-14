@@ -76,3 +76,7 @@ never fake production data.
 - **The Archive** (`indexer-archive`, role `indexer`) — real memory inventory
   grouped into collections, semantic tags/clusters, provenance details,
   redacted content preview, indexing-activity drawer.
+- **Watchtower** (`sentinel-watchtower`, role `sentinel`) — the Cave's real
+  escalations as a triageable alert board (acknowledge/snooze/resolve/dismiss
+  through the shared Inbox store), session watch over running/failed sessions,
+  perimeter reachability from live ssh-host probes, watch-log drawer.

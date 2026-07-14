@@ -52,9 +52,9 @@ const QUICK_CHAT_HEIGHT: f64 = 520.0;
 // always-on-top pill hugging the top of the screen that expands in place
 // into the quick chat surface. Geometry lives here (not in the page) so the
 // webview only ever asks for a state via events and the shell owns monitor
-// math. By default the collapsed pill follows the mouse along the top strip
-// and sizes itself into the menu bar; both behaviors (and the fixed sizes
-// below) are customizable via NotchConfig.
+// math. The collapsed pill stays parked dead-center on the top bar — where
+// a notch belongs — and sizes itself into the menu bar by default; that
+// behavior (and the fixed sizes below) is customizable via NotchConfig.
 #[cfg(desktop)]
 const NOTCH_WINDOW_LABEL: &str = "notch";
 #[cfg(desktop)]
@@ -65,24 +65,17 @@ const NOTCH_COLLAPSED_HEIGHT: f64 = 38.0;
 const NOTCH_EXPANDED_WIDTH: f64 = 420.0;
 #[cfg(desktop)]
 const NOTCH_EXPANDED_HEIGHT: f64 = 560.0;
-// How often the collapsed pill chases the cursor — smooth gliding without
-// measurable idle cost (each tick early-returns unless the pill is visible,
-// collapsed, and follow-mouse is on).
-#[cfg(desktop)]
-const NOTCH_FOLLOW_TICK: Duration = Duration::from_millis(80);
 
 /// User-tunable notch behavior, persisted as `notch-config.json` in the app
 /// config dir next to the `notch-mode` marker. Serde defaults keep partial
-/// or hand-edited files forgiving; `sanitized()` clamps sizes to usable
-/// ranges. The panel's toolbar toggles patch `follow_mouse`/`fit_menu_bar`
-/// through the `notch:config` event; sizes are hand-editable customizations.
+/// or hand-edited files forgiving (legacy keys from the retired follow-mouse
+/// era are ignored); `sanitized()` clamps sizes to usable ranges. The
+/// panel's toolbar toggle patches `fit_menu_bar` through the `notch:config`
+/// event; sizes are hand-editable customizations.
 #[cfg(desktop)]
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct NotchConfig {
-    /// Collapsed pill glides along the top strip after the mouse, across
-    /// monitors (default). Off = the classic fixed top-center pill.
-    follow_mouse: bool,
     /// Squeeze the collapsed pill into the menu-bar strip height so it sits
     /// inside the top bar instead of hanging below it (default).
     fit_menu_bar: bool,
@@ -96,7 +89,6 @@ struct NotchConfig {
 impl Default for NotchConfig {
     fn default() -> Self {
         Self {
-            follow_mouse: true,
             fit_menu_bar: true,
             collapsed_width: NOTCH_COLLAPSED_WIDTH,
             collapsed_height: NOTCH_COLLAPSED_HEIGHT,
@@ -119,22 +111,22 @@ impl NotchConfig {
     }
 }
 
-/// Live notch runtime state shared between the event listeners and the
-/// mouse-follower thread. `expanded` gates following (an expanded panel
-/// stays put); `config` mirrors notch-config.json.
+/// Live notch runtime state shared between the event listeners. `expanded`
+/// remembers which geometry a `notch:config` patch should re-apply;
+/// `config` mirrors notch-config.json.
 #[cfg(desktop)]
 struct NotchState {
     expanded: std::sync::atomic::AtomicBool,
     config: Mutex<NotchConfig>,
 }
 
-/// Partial notch-config update from the page's toolbar toggles — both fields
-/// optional so each toggle patches only itself.
+/// Partial notch-config update from the page's toolbar toggles — optional
+/// fields so each toggle patches only itself (unknown legacy keys such as
+/// `followMouse` are ignored).
 #[cfg(desktop)]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NotchConfigPatch {
-    follow_mouse: Option<bool>,
     fit_menu_bar: Option<bool>,
 }
 
@@ -305,10 +297,10 @@ fn notch_url_from_main(mut url: Url) -> Option<Url> {
     Some(url)
 }
 
-/// Top-center of the primary monitor for a notch window `width` wide — flush
-/// with the top edge so the pill reads as part of the menu-bar strip. The
-/// resting position when follow-mouse is off (and the initial one before the
-/// follower's first tick).
+/// Top-center of the monitor the notch opens on, for a window `width` wide —
+/// flush with the top edge so the pill reads as part of the menu-bar strip.
+/// Placed once at open on the display whose menu bar was clicked (cursor
+/// monitor), falling back to the primary; the pill then stays parked there.
 #[cfg(desktop)]
 fn notch_position(app: &tauri::AppHandle, width: f64) -> (f64, f64) {
     // Open on the monitor the mouse is on, centered on its top bar; fall back
@@ -356,10 +348,9 @@ fn notch_collapsed_size(config: &NotchConfig, strip_height: Option<f64>) -> (f64
 }
 
 /// Horizontal position (same units as the inputs) for a notch `width` wide
-/// whose center chases `center_x`, kept fully inside the monitor's span —
-/// the pill tracks the cursor until either edge stops it.
+/// centered on `center_x`, kept fully inside the monitor's span.
 #[cfg(desktop)]
-fn notch_follow_x(center_x: f64, monitor_x: f64, monitor_w: f64, width: f64) -> f64 {
+fn notch_centered_x(center_x: f64, monitor_x: f64, monitor_w: f64, width: f64) -> f64 {
     let max_x = monitor_x + (monitor_w - width).max(0.0);
     (center_x - width / 2.0).clamp(monitor_x, max_x)
 }
@@ -375,10 +366,9 @@ fn notch_config(app: &tauri::AppHandle) -> NotchConfig {
 
 /// Resize + reposition the notch window for its collapsed or expanded state.
 /// Driven by the `notch:expand` / `notch:collapse` events the page emits —
-/// the webview never gets window-geometry permissions of its own. The panel
-/// expands anchored over wherever the pill currently sits (follow-mouse may
-/// have carried it along the strip), clamped inside that monitor; a parked
-/// pill (follow off) re-centers on its monitor.
+/// the webview never gets window-geometry permissions of its own. Both
+/// states park dead-center on the top bar of the window's current monitor
+/// (falling back to the primary), where a notch belongs.
 #[cfg(desktop)]
 fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
     let Some(window) = app.get_webview_window(NOTCH_WINDOW_LABEL) else {
@@ -390,20 +380,12 @@ fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
             .expanded
             .store(expanded, std::sync::atomic::Ordering::Relaxed);
     }
-    // Pick the target monitor. When the notch is *not* pinned (follow_mouse),
-    // it opens on whatever screen the mouse is currently on. When pinned
-    // (follow_mouse == false), it stays on its current monitor. Fall back to
-    // the window's current monitor, then the primary, if the cursor monitor
-    // can't be resolved.
-    let cursor_monitor = if config.follow_mouse {
-        app.cursor_position()
-            .ok()
-            .and_then(|cursor| app.monitor_from_point(cursor.x, cursor.y).ok().flatten())
-    } else {
-        None
-    };
-    let monitor = cursor_monitor
-        .or_else(|| window.current_monitor().ok().flatten())
+    // The notch stays on its current monitor; fall back to the primary if
+    // that can't be resolved.
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
         .or_else(|| app.primary_monitor().ok().flatten());
     let Some(monitor) = monitor else {
         return;
@@ -416,12 +398,10 @@ fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
     let monitor_x = monitor.position().x as f64;
     let monitor_w = monitor.size().width as f64;
     let width_px = width * monitor.scale_factor();
-    // Always center on the exact horizontal middle of the target monitor's top
-    // bar. Expanding must NOT anchor over a drifted follow-mouse pill position
-    // — the panel (and the re-centered collapsed pill) belongs dead-center. The
-    // mouse-follower resumes carrying the collapsed pill afterward if enabled.
+    // Always center on the exact horizontal middle of the target monitor's
+    // top bar — the pill and the expanded panel both belong dead-center.
     let center_x = monitor_x + monitor_w / 2.0;
-    let x = notch_follow_x(center_x, monitor_x, monitor_w, width_px);
+    let x = notch_centered_x(center_x, monitor_x, monitor_w, width_px);
     let y = monitor.position().y as f64;
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
     let _ = window.set_position(tauri::PhysicalPosition::new(
@@ -433,76 +413,8 @@ fn set_notch_geometry(app: &tauri::AppHandle, expanded: bool) {
     }
 }
 
-/// One follow-the-mouse step, on the main thread (cursor/monitor APIs are
-/// main-thread-only on some platforms). Every guard lives here so a disabled
-/// toggle, an expanded panel, or a hidden window makes the tick free.
-#[cfg(desktop)]
-fn notch_follow_tick(app: &tauri::AppHandle) {
-    let Some(state) = app.try_state::<NotchState>() else {
-        return;
-    };
-    if state.expanded.load(std::sync::atomic::Ordering::Relaxed) {
-        return;
-    }
-    let config = state.config.lock().map(|config| *config).unwrap_or_default();
-    if !config.follow_mouse {
-        return;
-    }
-    let Some(window) = app.get_webview_window(NOTCH_WINDOW_LABEL) else {
-        return;
-    };
-    if !window.is_visible().unwrap_or(false) {
-        return;
-    }
-    let Ok(cursor) = app.cursor_position() else {
-        return;
-    };
-    let Ok(Some(monitor)) = app.monitor_from_point(cursor.x, cursor.y) else {
-        return;
-    };
-    let width = window
-        .outer_size()
-        .map(|size| size.width as f64)
-        .unwrap_or(config.collapsed_width * monitor.scale_factor());
-    let x = notch_follow_x(
-        cursor.x,
-        monitor.position().x as f64,
-        monitor.size().width as f64,
-        width,
-    );
-    let y = monitor.position().y as f64;
-    // Skip sub-pixel churn — repositioning every tick fights the WM.
-    if let Ok(position) = window.outer_position() {
-        if (position.x as f64 - x).abs() < 1.0 && (position.y as f64 - y).abs() < 1.0 {
-            return;
-        }
-    }
-    let _ = window.set_position(tauri::PhysicalPosition::new(
-        x.round() as i32,
-        y.round() as i32,
-    ));
-}
-
-/// The collapsed pill glides along the top strip after the mouse, hopping
-/// monitors with it. A plain sleeper thread posts each tick to the main
-/// thread; when the event loop is gone the post fails and the thread exits.
-#[cfg(desktop)]
-fn spawn_notch_mouse_follower(app: &tauri::AppHandle) {
-    let app = app.clone();
-    thread::spawn(move || loop {
-        thread::sleep(NOTCH_FOLLOW_TICK);
-        let handle = app.clone();
-        if app
-            .run_on_main_thread(move || notch_follow_tick(&handle))
-            .is_err()
-        {
-            return;
-        }
-    });
-}
-
 /// Apply a `notch:config` patch from the page: persist the customization and
-/// re-apply geometry immediately so a follow/fit change is visible without a
+/// re-apply geometry immediately so a fit change is visible without a
 /// collapse cycle.
 #[cfg(desktop)]
 fn apply_notch_config_patch(app: &tauri::AppHandle, payload: &str) {
@@ -516,9 +428,6 @@ fn apply_notch_config_patch(app: &tauri::AppHandle, payload: &str) {
         let Ok(mut config) = state.config.lock() else {
             return;
         };
-        if let Some(follow) = patch.follow_mouse {
-            config.follow_mouse = follow;
-        }
         if let Some(fit) = patch.fit_menu_bar {
             config.fit_menu_bar = fit;
         }
@@ -626,7 +535,6 @@ fn notch_url_with_config(mut url: Url, config: &NotchConfig, strip_height: Optio
     };
     let (_, fitted_height) = notch_collapsed_size(&fitted, strip_height);
     url.query_pairs_mut()
-        .append_pair("follow", if config.follow_mouse { "1" } else { "0" })
         .append_pair("fit", if config.fit_menu_bar { "1" } else { "0" })
         .append_pair("pillw", &format!("{:.0}", config.collapsed_width))
         .append_pair("pillh", &format!("{:.0}", config.collapsed_height))
@@ -661,7 +569,7 @@ fn show_notch_window(app: &tauri::AppHandle, notch_url: &Url) {
     };
 
     // A fresh window always starts collapsed — clear any stale expanded flag
-    // left behind by a docked-then-reopened notch so the follower runs.
+    // left behind by a docked-then-reopened notch so it reopens as the pill.
     if let Some(state) = app.try_state::<NotchState>() {
         state
             .expanded
@@ -2197,23 +2105,23 @@ mod tests {
     }
 
     #[test]
-    fn notch_follow_x_keeps_the_pill_inside_the_monitor() {
-        // Chasing the cursor centers the pill under it…
-        assert_eq!(notch_follow_x(500.0, 0.0, 1000.0, 200.0), 400.0);
+    fn notch_centered_x_keeps_the_pill_inside_the_monitor() {
+        // Centering lands the pill under the requested center…
+        assert_eq!(notch_centered_x(500.0, 0.0, 1000.0, 200.0), 400.0);
         // …until either edge stops it.
-        assert_eq!(notch_follow_x(10.0, 0.0, 1000.0, 200.0), 0.0);
-        assert_eq!(notch_follow_x(995.0, 0.0, 1000.0, 200.0), 800.0);
+        assert_eq!(notch_centered_x(10.0, 0.0, 1000.0, 200.0), 0.0);
+        assert_eq!(notch_centered_x(995.0, 0.0, 1000.0, 200.0), 800.0);
         // Secondary monitors offset the clamp window.
-        assert_eq!(notch_follow_x(-1900.0, -2000.0, 2000.0, 200.0), -2000.0);
+        assert_eq!(notch_centered_x(-1900.0, -2000.0, 2000.0, 200.0), -2000.0);
         // A pill wider than the monitor pins to the left edge, no panic.
-        assert_eq!(notch_follow_x(100.0, 0.0, 150.0, 200.0), 0.0);
+        assert_eq!(notch_centered_x(100.0, 0.0, 150.0, 200.0), 0.0);
     }
 
     #[test]
     fn notch_centers_exactly_on_the_monitor_middle() {
-        // When opened as a notch it must sit dead-center on the target
-        // monitor's top bar. Centering on `monitor_x + monitor_w/2` yields a
-        // window whose own center equals the monitor's center, on any monitor.
+        // The notch must sit dead-center on the target monitor's top bar.
+        // Centering on `monitor_x + monitor_w/2` yields a window whose own
+        // center equals the monitor's center, on any monitor.
         for (monitor_x, monitor_w, width) in [
             (0.0, 1000.0, 200.0),
             (0.0, 1512.0, 480.0),
@@ -2221,23 +2129,24 @@ mod tests {
             (1512.0, 3840.0, 900.0),
         ] {
             let center_x = monitor_x + monitor_w / 2.0;
-            let x = notch_follow_x(center_x, monitor_x, monitor_w, width);
+            let x = notch_centered_x(center_x, monitor_x, monitor_w, width);
             // The window's center lands exactly on the monitor's center.
             assert_eq!(x + width / 2.0, monitor_x + monitor_w / 2.0);
         }
     }
 
     #[test]
-    fn notch_config_defaults_follow_the_mouse_and_fit_the_menu_bar() {
+    fn notch_config_defaults_fit_the_menu_bar_and_forgive_legacy_keys() {
         let config = NotchConfig::default();
-        assert!(config.follow_mouse);
         assert!(config.fit_menu_bar);
 
-        // Partial JSON keeps the other defaults — hand-edits stay forgiving.
+        // Partial JSON keeps the other defaults, and keys from the retired
+        // follow-mouse era are ignored — hand-edits and old configs stay
+        // forgiving.
         let partial: NotchConfig =
-            serde_json::from_str(r#"{"followMouse":false}"#).expect("partial config");
-        assert!(!partial.follow_mouse);
-        assert!(partial.fit_menu_bar);
+            serde_json::from_str(r#"{"followMouse":true,"fitMenuBar":false}"#)
+                .expect("legacy config");
+        assert!(!partial.fit_menu_bar);
         assert_eq!(partial.collapsed_width, NOTCH_COLLAPSED_WIDTH);
 
         // Out-of-range custom sizes clamp instead of wedging the window.
@@ -2271,8 +2180,9 @@ mod tests {
         let url = Url::parse("http://127.0.0.1:43123/notch?token=secret").expect("notch URL");
         let seeded = notch_url_with_config(url, &NotchConfig::default(), Some(37.0));
         let query = seeded.query().expect("seeded query");
-        assert!(query.contains("follow=1"));
         assert!(query.contains("fit=1"));
+        // The retired follow-mouse era's param is gone for good.
+        assert!(!query.contains("follow="));
         assert!(query.contains("pillw=190"));
         assert!(query.contains("pillh=38"));
         assert!(query.contains("barh=37"));
@@ -3312,13 +3222,11 @@ pub fn run() {
             // Notch state machine — the notch webview only emits intents
             // (capability loopback-notch.json grants it core:event:allow-emit
             // and nothing else); the shell owns geometry and tray visibility.
-            // Customizations load from notch-config.json; the follower thread
-            // glides the collapsed pill after the mouse when enabled.
+            // Customizations load from notch-config.json.
             app.manage(NotchState {
                 expanded: std::sync::atomic::AtomicBool::new(false),
                 config: Mutex::new(load_notch_config(app.handle())),
             });
-            spawn_notch_mouse_follower(app.handle());
             let notch_expand_handle = app.handle().clone();
             app.listen("notch:expand", move |_| {
                 set_notch_geometry(&notch_expand_handle, true);
@@ -3344,9 +3252,9 @@ pub fn run() {
                     let _ = window.close();
                 }
             });
-            // Customizations: the page's toolbar toggles emit notch:config
-            // patches ({"followMouse":bool} / {"fitMenuBar":bool}); the shell
-            // persists them and re-applies geometry immediately.
+            // Customizations: the page's toolbar toggle emits notch:config
+            // patches ({"fitMenuBar":bool}); the shell persists them and
+            // re-applies geometry immediately.
             let notch_config_handle = app.handle().clone();
             app.listen("notch:config", move |event| {
                 apply_notch_config_patch(&notch_config_handle, event.payload());

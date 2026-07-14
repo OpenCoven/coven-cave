@@ -1,7 +1,8 @@
 // Merged-chat auto-archive: when the pull request a chat produced has been
 // merged, the chat's work is done — archive it automatically instead of
 // leaving it in the active list forever. Pure decision logic only; the IO
-// (cave-state writes, nudge resolution) lives in the sessions list route.
+// (cave-state writes, nudge resolution) lives in chat-auto-archive-sweep.ts
+// alongside the policy sweep's wiring.
 //
 // Safety properties:
 //  - Only fires on a real, lowercased "merged" PR state (server-side
@@ -10,8 +11,19 @@
 //  - One-shot per (session, PR): a session the sweep already archived for a
 //    given PR is recorded in cave state (`mergedPrAutoArchived`), so summoning
 //    (unarchiving) it sticks — the sweep won't re-archive it for the same PR.
+//  - Honors the shared auto-archive opt-outs: keep-marked chats
+//    (`sessionKeep`, "never auto-archive") and chats inside an extension
+//    window (`sessionArchiveExtendedUntil` — explicit extensions and the
+//    summon grace) are never swept.
+//  - Gated by the chat auto-archive policy: the Settings tab's master switch
+//    and `archiveOnPrMerge` toggle both must be on (see the sweep wiring).
 //  - Opt-out via COVEN_CAVE_NO_MERGED_AUTO_ARCHIVE=1.
 
+import {
+  ACTIVE_SESSION_STATUSES,
+  underExtension,
+  type AutoArchiveContext,
+} from "./chat-auto-archive.ts";
 import type { SessionPullRequestContext, SessionRow } from "@/lib/types";
 
 export const MERGED_AUTO_ARCHIVE_DISABLE_ENV = "COVEN_CAVE_NO_MERGED_AUTO_ARCHIVE";
@@ -21,21 +33,17 @@ export type MergedAutoArchiveRow = Pick<
   "id" | "status" | "archived_at" | "pullRequest"
 >;
 
+/** Shared per-session opt-out state, same shape the policy sweep consumes. */
+export type MergedAutoArchiveContext = Pick<
+  AutoArchiveContext,
+  "keep" | "extendedUntil" | "now"
+>;
+
 export type MergedAutoArchiveDecision = {
   sessionId: string;
   /** Stable identity of the merged PR — "owner/repo#N", or its URL. */
   prKey: string;
 };
-
-/** Statuses that mean the session may still be doing work — never sweep those. */
-const ACTIVE_STATUSES: ReadonlySet<string> = new Set([
-  "running",
-  "starting",
-  "working",
-  "queued",
-  "streaming",
-  "waiting",
-]);
 
 /** Stable key identifying a PR across polls; null when it can't be identified. */
 export function mergedPrKey(pr: SessionPullRequestContext): string | null {
@@ -46,16 +54,21 @@ export function mergedPrKey(pr: SessionPullRequestContext): string | null {
 /**
  * Which sessions should be archived right now because their PR merged.
  * `handled` is cave state's mergedPrAutoArchived map (session id → PR key of
- * the merge that already auto-archived it once).
+ * the merge that already auto-archived it once). `context` carries the
+ * per-session opt-outs shared with the policy sweep — keep marks and
+ * extension windows gate this sweep too.
  */
 export function mergedChatAutoArchiveDecisions(
   rows: MergedAutoArchiveRow[],
   handled: Record<string, string>,
+  context: MergedAutoArchiveContext,
 ): MergedAutoArchiveDecision[] {
   const decisions: MergedAutoArchiveDecision[] = [];
   for (const row of rows) {
     if (row.archived_at) continue;
-    if (ACTIVE_STATUSES.has((row.status ?? "").toLowerCase())) continue;
+    if (context.keep[row.id]) continue;
+    if (ACTIVE_SESSION_STATUSES.has((row.status ?? "").toLowerCase())) continue;
+    if (underExtension(context.extendedUntil, row.id, context.now)) continue;
     const pr = row.pullRequest;
     if (!pr || (pr.state ?? "").toLowerCase() !== "merged") continue;
     const prKey = mergedPrKey(pr);

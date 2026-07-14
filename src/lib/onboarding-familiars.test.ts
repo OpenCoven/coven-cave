@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildFamiliarsToml,
   normalizeFamiliarDraft,
+  parseFamiliarsToml,
 } from "./onboarding-familiars.ts";
 
 assert.equal(buildFamiliarsToml(null), "# User familiars for this Coven.\n");
@@ -191,5 +192,58 @@ assert.equal(
   const elapsed = Date.now() - start;
   assert.ok(elapsed < 500, `slugify ReDoS guard: took ${elapsed}ms on long dash string (expected <500ms)`);
 }
+
+// ── parseFamiliarsToml (cave-7cv4) ───────────────────────────────────────────
+// The familiars route merges locally-declared familiars into the roster while
+// the daemon hasn't re-read the file (or a hub doesn't know it), so the parser
+// must round-trip exactly what buildFamiliarsToml writes — escapes included.
+{
+  const written = buildFamiliarsToml({
+    id: "sage-remote",
+    displayName: 'Sage "The Wise"',
+    role: "Guide",
+    description: "Line one.\nLine two.",
+    glyph: "ph:cat-fill",
+    harness: "codex",
+    model: "gpt-5",
+  });
+  const twoBlocks = `${written}
+[[familiar]]
+id = "salem"
+display_name = "Salem"
+role = "Archivist"
+description = "Keeps the archives."
+
+[other-table]
+id = "not-a-familiar"
+`;
+  assert.deepEqual(parseFamiliarsToml(twoBlocks), [
+    {
+      id: "sage-remote",
+      displayName: 'Sage "The Wise"',
+      role: "Guide",
+      description: "Line one.\nLine two.",
+      emoji: "ph:cat-fill",
+    },
+    {
+      id: "salem",
+      displayName: "Salem",
+      role: "Archivist",
+      description: "Keeps the archives.",
+      emoji: undefined,
+    },
+  ]);
+}
+assert.deepEqual(parseFamiliarsToml(""), [], "empty file parses to no familiars");
+assert.deepEqual(
+  parseFamiliarsToml("# User familiars for this Coven.\n"),
+  [],
+  "the header-only file parses to no familiars",
+);
+assert.deepEqual(
+  parseFamiliarsToml('[[familiar]]\ndisplay_name = "No Id"\n'),
+  [],
+  "a block without an id is skipped",
+);
 
 console.log("onboarding-familiars ssh runtime: ok");

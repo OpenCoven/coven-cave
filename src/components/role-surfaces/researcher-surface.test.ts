@@ -24,6 +24,9 @@ test("composer makes Auto routing and finite bounds reviewable", () => {
   assert.match(composer, /inferResearchMissionMode/);
   assert.match(composer, /Auto/);
   assert.match(composer, /maxIterations/);
+  // Bound inputs clamp to the same limits the server enforces.
+  assert.match(composer, /RESEARCH_BOUND_LIMITS/);
+  assert.doesNotMatch(composer, /max=\{1440\}/);
 });
 
 test("mission list and evidence trajectory expose semantic state", () => {
@@ -31,6 +34,26 @@ test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(detail, /aria-label="Research progress"/);
   assert.match(detail, /Open session/);
   assert.match(ledger, /Open in Grimoire/);
+});
+
+test("timestamps are relative and schedules read as prose, not raw data", () => {
+  assert.match(list, /relativeTime\(mission\.updatedAt\)/);
+  assert.match(detail, /relativeTime\(mission\.updatedAt\)/);
+  assert.match(detail, /describeResearchSchedule\(mission\.automation\.rrule\)/);
+  assert.match(detail, /relativeTime\(mission\.automation\.lastRunAt\)/);
+  assert.match(ledger, /relativeTime\(artifact\.updatedAt\)/);
+  // Uppercase/capitalize chrome must not distort the relative-time text.
+  assert.match(css, /\.research-mission-row__meta time \{[^}]*text-transform: none/);
+  assert.match(css, /\.research-mission-detail__eyebrow time \{[^}]*text-transform: none/);
+});
+
+test("ledger errors stay visible regardless of the active output tab", () => {
+  // The error paragraph renders between the tab strip and the first tab panel,
+  // not inside a panel that may be hidden.
+  assert.match(
+    ledger,
+    /\{error \? <p className="research-mission-error" role="alert">\{error\}<\/p> : null\}\s*<section\s+id="research-output-panel-artifacts"/,
+  );
 });
 
 test("checkpoint lifecycle controls are explicit and server-backed", () => {

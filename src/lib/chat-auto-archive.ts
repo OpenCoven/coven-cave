@@ -12,6 +12,9 @@ import type { SessionOrigin, SessionRow } from "./types.ts";
  *    (self-report) lands for it — a reflection marks the thread as wrapped up.
  *    Off by default; toggled from the chat page's Settings tab. Periodic
  *    (mid-flight) reports never archive, only `manual`/`auto` reflections.
+ *  - `archiveOnPrMerge`: archive a chat when the pull request its work
+ *    produced merges (see merged-chat-auto-archive.ts). On by default —
+ *    a merged PR is the strongest "this thread is done" signal.
  *  - `externalAfterDays`: chats created outside the chat interface (cron,
  *    heartbeat, journal narratives, board/workflow-invoked runs, generated
  *    daemon sessions) archive after this many days without activity.
@@ -33,6 +36,8 @@ export type ChatAutoArchivePolicy = {
   archiveOnTaskCompletion: boolean;
   /** Archive the chat when a thread reflection (self-report) lands for it. */
   archiveOnReflection: boolean;
+  /** Archive the chat when the PR its work produced merges. */
+  archiveOnPrMerge: boolean;
   /** Days of inactivity before externally-created chats archive. 0 = off. */
   externalAfterDays: number;
   /** Days of inactivity before any chat archives. 0 = off. */
@@ -43,14 +48,16 @@ export const DEFAULT_CHAT_AUTO_ARCHIVE_POLICY: ChatAutoArchivePolicy = {
   enabled: true,
   archiveOnTaskCompletion: false,
   archiveOnReflection: false,
+  archiveOnPrMerge: true,
   externalAfterDays: 7,
   idleAfterDays: 30,
 };
 
 const MAX_DAYS = 365;
 
-/** Grace window applied when a chat is summoned (unarchived) so an idle-based
- *  sweep doesn't immediately re-archive it before the user touches it. */
+/** Grace window applied when a chat is summoned (unarchived) so a sweep
+ *  (idle-based or merged-PR) doesn't immediately re-archive it before the
+ *  user touches it. */
 export const SUMMON_GRACE_DAYS = 7;
 
 function clampDays(value: unknown, fallback: number): number {
@@ -76,6 +83,10 @@ export function normalizeChatAutoArchivePolicy(
       typeof raw.archiveOnReflection === "boolean"
         ? raw.archiveOnReflection
         : d.archiveOnReflection,
+    archiveOnPrMerge:
+      typeof raw.archiveOnPrMerge === "boolean"
+        ? raw.archiveOnPrMerge
+        : d.archiveOnPrMerge,
     externalAfterDays: clampDays(raw.externalAfterDays, d.externalAfterDays),
     idleAfterDays: clampDays(raw.idleAfterDays, d.idleAfterDays),
   };
@@ -108,10 +119,13 @@ export function sessionCreatedExternally(
   return !USER_FACING_ORIGINS.has(row.origin);
 }
 
-/** Statuses that mean the session may still be doing work — never sweep those. */
-const ACTIVE_STATUSES: ReadonlySet<string> = new Set([
+/** Statuses that mean the session may still be doing work — never sweep
+ *  those. Shared by every auto-archive sweep (policy and merged-PR) so the
+ *  two paths can't drift on what counts as "active". */
+export const ACTIVE_SESSION_STATUSES: ReadonlySet<string> = new Set([
   "running",
   "starting",
+  "working",
   "queued",
   "streaming",
   "waiting",
@@ -133,6 +147,20 @@ export type AutoArchiveContext = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** True while `id` sits inside a still-valid auto-archive extension window
+ *  (explicit "remind me later" extensions and the summon grace both live in
+ *  `sessionArchiveExtendedUntil`). Shared by every auto-archive sweep. */
+export function underExtension(
+  extendedUntil: Record<string, string>,
+  id: string,
+  now: Date,
+): boolean {
+  const raw = extendedUntil[id];
+  if (!raw) return false;
+  const until = Date.parse(raw);
+  return Number.isFinite(until) && until > now.getTime();
+}
 
 function daysIdle(row: AutoArchiveSessionInput, now: Date): number | null {
   const updated = Date.parse(row.updated_at);
@@ -157,12 +185,8 @@ export function autoArchiveDecisions(
   for (const row of rows) {
     if (row.archived_at) continue;
     if (context.keep[row.id]) continue;
-    if (ACTIVE_STATUSES.has((row.status ?? "").toLowerCase())) continue;
-    const extendedUntil = context.extendedUntil[row.id];
-    if (extendedUntil) {
-      const until = Date.parse(extendedUntil);
-      if (Number.isFinite(until) && until > context.now.getTime()) continue;
-    }
+    if (ACTIVE_SESSION_STATUSES.has((row.status ?? "").toLowerCase())) continue;
+    if (underExtension(context.extendedUntil, row.id, context.now)) continue;
     const idle = daysIdle(row, context.now);
     if (idle == null) continue;
 

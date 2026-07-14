@@ -2,6 +2,7 @@ export const INTERNAL_COVEN_FAMILIAR_IDS = new Set([
   "nova",
   "kitty",
   "cody",
+  "charm",
   "sage",
   "astra",
   "echo",
@@ -20,18 +21,9 @@ type FamiliarRosterEntry = {
   id: string;
   display_name?: string | null;
   role?: string | null;
-};
-
-type LocalFamiliarRosterFilter<T extends FamiliarRosterEntry> = {
-  authority: "local";
-  familiars: readonly T[];
-  explicitIds: ReadonlySet<string> | readonly string[];
-  removedIds: ReadonlySet<string>;
-};
-
-type RemoteFamiliarRosterFilter<T extends FamiliarRosterEntry> = {
-  authority: "remote";
-  familiars: readonly T[];
+  last_seen?: string | null;
+  active_sessions?: number | null;
+  memory_freshness?: string | null;
 };
 
 function normalizeId(value: string): string {
@@ -79,6 +71,21 @@ function isInstallDefaultFamiliar(familiar: FamiliarRosterEntry): boolean {
   );
 }
 
+/**
+ * Evidence that a roster entry is a real, living familiar rather than a
+ * daemon-seeded suggestion: seeded defaults carry only id/name/role, while a
+ * familiar that has actually run has activity fields. A coven can genuinely
+ * contain a familiar named Sage or Salem (on this machine or a remote host),
+ * so live entries are exempt from every name-based hide heuristic below.
+ */
+export function hasLiveFamiliarState(familiar: FamiliarRosterEntry): boolean {
+  return Boolean(
+    (familiar.last_seen ?? "").trim() ||
+      (familiar.memory_freshness ?? "").trim() ||
+      (typeof familiar.active_sessions === "number" && familiar.active_sessions > 0),
+  );
+}
+
 export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
   familiars: readonly T[],
   explicitIdsInput: ReadonlySet<string> | readonly string[],
@@ -89,6 +96,7 @@ export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
     : new Set(Array.from(explicitIdsInput, normalizeId));
 
   return familiars.filter((familiar) => {
+    if (hasLiveFamiliarState(familiar)) return true;
     const id = normalizeId(familiar.id);
     const explicit = explicitIds.has(id);
     if (isInstallDefaultFamiliar(familiar) && !explicit) return false;
@@ -96,18 +104,4 @@ export function filterInstallSeedFamiliars<T extends FamiliarRosterEntry>(
     if (isInternalCovenFamiliarName(familiar.display_name ?? "") && !explicit) return false;
     return true;
   });
-}
-
-/**
- * Apply Cave-local roster policy only when the queried daemon shares Cave's
- * local files. A server hub owns a different COVEN_HOME, so local TOML and
- * tombstones are not evidence about whether a hub-returned familiar is real.
- */
-export function filterFamiliarRosterForAuthority<T extends FamiliarRosterEntry>(
-  args: LocalFamiliarRosterFilter<T> | RemoteFamiliarRosterFilter<T>,
-): T[] {
-  if (args.authority === "remote") return [...args.familiars];
-  return filterInstallSeedFamiliars(args.familiars, args.explicitIds).filter(
-    (familiar) => !args.removedIds.has(familiar.id),
-  );
 }

@@ -88,10 +88,6 @@ assert.match(source, /onRosterChanged\?\.\(\)/);
   const deleteRoute = readFileSync(path.join(apiDir, "[id]", "route.ts"), "utf8");
   const removedRoute = readFileSync(path.join(apiDir, "removed", "route.ts"), "utf8");
   const rosterRoute = readFileSync(path.join(apiDir, "route.ts"), "utf8");
-  const rosterGuard = readFileSync(
-    path.join(process.cwd(), "src", "lib", "familiar-roster-guard.ts"),
-    "utf8",
-  );
 
   // Tombstone-before-mutate: the snapshot must land on disk before
   // familiars.toml or cave-config.json are touched — never destroy the only
@@ -108,15 +104,11 @@ assert.match(source, /onRosterChanged\?\.\(\)/);
   );
   assert.match(deleteRoute, /status: 404/, "nothing-to-remove is a 404, not a silent ok");
 
-  // A local roster GET hides tombstoned ids (the daemon may not have re-read
-  // familiars.toml yet), while create clears a reused id's tombstone so the
-  // new familiar isn't invisible.
+  // The roster GET hides tombstoned ids (the daemon may not have re-read
+  // familiars.toml yet) and create clears a reused id's tombstone so the new
+  // familiar isn't invisible.
   assert.match(rosterRoute, /removedFamiliarIds/);
-  assert.match(rosterRoute, /filterFamiliarRosterForAuthority/);
-  assert.match(
-    rosterGuard,
-    /\.filter\(\s*\(familiar\) => !args\.removedIds\.has\(familiar\.id\),?\s*\)/,
-  );
+  assert.match(rosterRoute, /\.filter\(\(f\) => !removedIds\.has\(f\.id\)\)/);
   assert.match(rosterRoute, /takeTombstone\(draft\.id\)/);
 
   // Restore refuses to clobber a re-created id (duplicate [[familiar]] blocks —

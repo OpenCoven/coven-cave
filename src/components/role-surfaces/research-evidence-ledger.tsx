@@ -11,6 +11,7 @@ import type {
   ResearchMissionActionInput,
   ResearchSourceRef,
 } from "@/lib/research-missions";
+import { relativeTime } from "@/lib/relative-time";
 
 type Props = {
   mission: ResearchMission;
@@ -85,6 +86,7 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
           { id: "sources", label: "Sources", count: mission.sources.length },
         ]}
       />
+      {error ? <p className="research-mission-error" role="alert">{error}</p> : null}
       <section
         id="research-output-panel-artifacts"
         role="tabpanel"
@@ -100,7 +102,10 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
               <li key={artifact.key} className="research-artifact-card">
                 <span className="research-artifact-card__kind">{artifact.kind}</span>
                 <strong>{artifact.title}</strong>
-                <span>{artifact.state} · iteration {artifact.iteration}</span>
+                <span>
+                  {artifact.state} · iteration {artifact.iteration} ·{" "}
+                  <time dateTime={artifact.updatedAt}>{relativeTime(artifact.updatedAt) || "just now"}</time>
+                </span>
                 {artifact.rejectionReason ? <p>{artifact.rejectionReason}</p> : null}
                 {artifact.knowledgeId ? (
                   <button
@@ -199,7 +204,6 @@ export function ResearchEvidenceLedger({ mission, onAction, onOpenUrl }: Props) 
             ))}
           </ul>
         )}
-        {error ? <p className="research-mission-error" role="alert">{error}</p> : null}
       </section>
     </aside>
   );

@@ -469,6 +469,14 @@ export function ChatSurface({
     window.setTimeout(() => routerRef.current?.newChat(projectRoot), 0);
   }
 
+  // Hero "New chat" bridge: land on the conversation tab with a fresh session
+  // for this familiar (same latch-then-route shape as the handlers above).
+  function startFamiliarHeroChat(familiarId: string) {
+    onSetActiveFamiliar(familiarId);
+    setScope("conversation");
+    window.setTimeout(() => routerRef.current?.newChat(undefined, undefined, familiarId), 0);
+  }
+
   useEffect(() => {
     // Board→Projects handoffs fire the event from a surface where this
     // listener isn't mounted yet — consume the retained latch on mount so the
@@ -558,12 +566,12 @@ export function ChatSurface({
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
         ) : scope === "familiar" ? (
-          // The active familiar's capability panel (identity, role, skills,
-          // tools) — promoted from the retired inspector sidepanel to a
+          // The active familiar's identity + capability surface (hero, role,
+          // skills, tools) — promoted from the retired inspector sidepanel to a
           // first-class chat tab, since it describes who you're chatting with.
           <div className="flex min-h-0 min-w-0 flex-1 justify-center">
-            <div className="h-full w-full max-w-3xl">
-              <InspectorPane familiar={activeFamiliar} tab="familiar" />
+            <div className="h-full w-full max-w-5xl">
+              <InspectorPane familiar={activeFamiliar} tab="familiar" daemonRunning={daemonRunning} onStartChat={startFamiliarHeroChat} />
             </div>
           </div>
         ) : scope === "settings" ? (
