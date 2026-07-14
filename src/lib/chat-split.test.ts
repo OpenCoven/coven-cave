@@ -9,6 +9,7 @@ import {
   chatSplitFocusAfterClose,
   chatSplitFocusTarget,
   chatSplitKeyboardZone,
+  chatSplitQuadRows,
   chatSplitSessionIds,
   dropSessionIntoChatSplit,
   emptyChatSplitLayout,
@@ -270,4 +271,19 @@ test("pruneChatSplitPanes drops deleted sessions and keeps the reference stable"
   assert.deepEqual(solo.panes, [CHAT_SPLIT_PRIMARY]);
   // Nothing to prune → same reference (lets setState skip a render).
   assert.equal(pruneChatSplitPanes(layout, () => true), layout);
+});
+
+test("chatSplitQuadRows deals a full split into 2×2 reading-order rows", () => {
+  // Exactly MAX panes → [[a,b],[c,d]] — strip order preserved, so keyboard
+  // focus cycling and drop/eviction semantics are unchanged by the grid.
+  assert.deepEqual(chatSplitQuadRows([CHAT_SPLIT_PRIMARY, "s1", "s2", "s3"]), [
+    [CHAT_SPLIT_PRIMARY, "s1"],
+    ["s2", "s3"],
+  ]);
+  assert.equal(MAX_CHAT_SPLIT_PANES, 4, "the quad shape assumes the four-pane cap");
+  // Any other count keeps the single-axis strip.
+  assert.equal(chatSplitQuadRows([CHAT_SPLIT_PRIMARY]), null);
+  assert.equal(chatSplitQuadRows([CHAT_SPLIT_PRIMARY, "s1"]), null);
+  assert.equal(chatSplitQuadRows([CHAT_SPLIT_PRIMARY, "s1", "s2"]), null);
+  assert.equal(chatSplitQuadRows([]), null);
 });

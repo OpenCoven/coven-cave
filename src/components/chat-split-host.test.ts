@@ -39,11 +39,33 @@ assert.match(
 );
 assert.match(
   host,
-  /minSize=\{axis === "row" \? "280px" : "160px"\}/,
-  "panes keep a pixel floor so a divider can't crush a conversation",
+  /renderPanePanel\(tile, axis === "row" \? "280px" : "160px"\)/,
+  "strip panes keep a pixel floor so a divider can't crush a conversation",
 );
 // RRP re-layout bug guard (cave-hivd idiom): remount the group per pane set.
 assert.match(host, /key=\{`\$\{axis\}\|\$\{panes\.map/, "the group remounts on pane-set changes");
+
+// ── Quad (2×2) grid — four panes render as nested groups, not a 4-up strip ──
+assert.match(host, /chatSplitQuadRows,/, "the quad shape comes from the pure lib helper");
+assert.match(host, /const quadRows = chatSplitQuadRows\(panes\);/, "the host derives the 2×2 rows from the pane strip");
+assert.match(
+  host,
+  /quadRows \? \([\s\S]{0,700}orientation="vertical"[\s\S]{0,900}orientation="horizontal"/,
+  "quad renders an outer vertical group with nested horizontal rows — every divider stays draggable",
+);
+assert.match(host, /key=\{`quad\|\$\{panes\.map\(\(tile\) => tile\.id\)\.join\("\|"\)\}\|\$\{resetNonce\}`\}/, "the quad group remounts per pane set and on divider reset");
+assert.match(host, /renderPanePanel\(tile, "280px"\)/, "quad panes keep the side-by-side pixel floor");
+assert.match(
+  host,
+  /if \(!sizes \|\| quadRows\) return undefined;/,
+  "quad mounts even — the flat per-pane size map can't describe three nested groups",
+);
+assert.match(
+  host,
+  /if \(!quadRows\) onSizesChange\?\.\(\{\}\);/,
+  "a quad divider reset only remounts — it never wipes the persisted strip weights",
+);
+assert.match(host, /chat-split__group--inner/, "nested row groups carry their own layout class");
 
 // Secondary panes get chrome: close + open-as-main; the primary keeps its own
 // header (no double chrome).

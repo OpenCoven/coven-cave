@@ -12989,6 +12989,15 @@ details[open] > .cave-edit-card__summary::before {
   min-height: 0;
   min-width: 0;
 }
+/* Quad (2×2) grid: each outer row hosts a nested horizontal group. */
+.chat-split__quad-row {
+  min-width: 0;
+  min-height: 0;
+}
+.chat-split__group--inner {
+  flex: 1 1 auto;
+  width: 100%;
+}
 .chat-split__pane-panel {
   min-width: 0;
   min-height: 0;
