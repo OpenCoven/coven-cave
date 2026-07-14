@@ -384,4 +384,35 @@ assert.match(
   "highlight-failure fallback clears diffLines so markers are not doubled",
 );
 
+// ── Archive (cave-nuzg): delete's reversible sibling in the same kebab ──────
+// Archive chat PATCHes the session; the chat leaves every rail (rails are
+// archive-free by default — chat-siderail-hide-archived.test.ts) but the
+// transcript survives, and the same item reads Unarchive on archived chats.
+assert.match(
+  source,
+  /icon="ph:archive"[\s\S]{0,400}\{archiving \? \(archived \? "Unarchiving…" : "Archiving…"\) : archived \? "Unarchive chat" : "Archive chat"\}/,
+  "the kebab offers Archive chat (Unarchive on archived sessions)",
+);
+assert.match(
+  source,
+  /onSelect=\{\(\) => \{\s*onSetArchived\(!archived\);\s*close\(\);/,
+  "selecting the item toggles the session's archived state",
+);
+// Archive needs no confirm step — it is reversible, unlike Delete above.
+assert.match(
+  source,
+  /fetch\(`\/api\/sessions\/\$\{encodeURIComponent\(sessionId\)\}`, \{\s*method: "PATCH",[\s\S]{0,120}body: JSON\.stringify\(\{ archived \}\)/,
+  "archiving PATCHes the sessions API with the archived flag",
+);
+assert.match(
+  source,
+  /onSessionsChanged\?\.\(\);\s*\/\/ Leaving mirrors delete only for archive; unarchive keeps you in place\.\s*if \(archived\) onBack\?\.\(\);/,
+  "archiving refreshes the rails and leaves the chat; unarchiving stays put",
+);
+assert.match(
+  source,
+  /archived=\{Boolean\(session\?\.archived_at\)\}/,
+  "the menu receives the live archived state of the open session",
+);
+
 console.log("chat-header-row.test.ts: ok");

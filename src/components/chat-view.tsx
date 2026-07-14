@@ -973,6 +973,9 @@ function SessionOverflowMenu({
   onReflect,
   deleting,
   onDelete,
+  archived,
+  archiving,
+  onSetArchived,
 }: {
   projects: CaveProject[];
   projectId: string | null;
@@ -992,6 +995,10 @@ function SessionOverflowMenu({
   onReflect?: () => void;
   deleting: boolean;
   onDelete: () => void;
+  /** Whether this session is archived — flips the menu item to Unarchive. */
+  archived: boolean;
+  archiving: boolean;
+  onSetArchived: (archived: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -1134,6 +1141,23 @@ function SessionOverflowMenu({
               Debug session
             </PopoverItem>
             <PopoverSeparator />
+            {sessionId ? (
+              // Reversible, so no confirm step (unlike Delete below): an
+              // archived chat leaves every rail but stays reachable from the
+              // chat list's "Show archived" toggle, where this same item
+              // reads Unarchive.
+              <PopoverItem
+                icon="ph:archive"
+                disabled={archiving}
+                title={archived ? "Restore this chat to the rail" : "Archive this chat — it leaves the rail but is never deleted"}
+                onSelect={() => {
+                  onSetArchived(!archived);
+                  close();
+                }}
+              >
+                {archiving ? (archived ? "Unarchiving…" : "Archiving…") : archived ? "Unarchive chat" : "Archive chat"}
+              </PopoverItem>
+            ) : null}
             <PopoverItem icon="ph:trash" danger onSelect={() => setConfirmingDelete(true)}>
               Delete chat…
             </PopoverItem>
@@ -2498,6 +2522,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Two-step delete via the header trash button: it opens a confirm popover and
   // only the explicit Delete commits (HeaderDeleteButton owns the armed state).
   const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   // Scope the picker to the projects THIS familiar has been granted access to —
   // the chat-send route enforces the same grant (assertProjectAccess → 403), so
   // an unscoped list would offer projects that fail on send.
@@ -4999,6 +5024,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
+  // Archive is delete's reversible sibling: the chat leaves every rail (rails
+  // are archive-free by default — chat-siderail-hide-archived) but the
+  // transcript survives, reachable via the chat list's "Show archived" toggle
+  // where the same menu item unarchives it back onto the rail.
+  const setChatArchived = async (archived: boolean) => {
+    if (!sessionId || archiving) return;
+    setArchiving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
+        return;
+      }
+      announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
+      onSessionsChanged?.();
+      // Leaving mirrors delete only for archive; unarchive keeps you in place.
+      if (archived) onBack?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   useImperativeHandle(
     ref,
     () => ({
@@ -5148,6 +5203,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onReflect={familiar.id ? () => void reflectOnThread() : undefined}
                 deleting={deleting}
                 onDelete={() => void deleteChat()}
+                archived={Boolean(session?.archived_at)}
+                archiving={archiving}
+                onSetArchived={(next) => void setChatArchived(next)}
               />
             )}
             {overflowAddProject.addProjectModal}
