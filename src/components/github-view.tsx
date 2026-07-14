@@ -2111,6 +2111,12 @@ function WatchRepoChip({ repo }: { repo: string }) {
     try {
       const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
       const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        // Refresh failed — deriving repos from a failed read could PATCH the
+        // user's whole watch list away (empty repos). Keep state, tell them.
+        announce(`Could not update the watch list for ${repo} — try again.`);
+        return;
+      }
       const repos: string[] = Array.isArray(data?.prefs?.repos) ? data.prefs.repos : [];
       const next = watched ? repos.filter((r) => r !== repo) : [...new Set([...repos, repo])];
       const body = watched ? { repos: next } : { repos: next, enabled: true };
@@ -2127,7 +2133,11 @@ function WatchRepoChip({ repo }: { repo: string }) {
             ? `Unwatched ${repo}.`
             : `Watching ${repo} — new PRs and CI results land in your Inbox.`,
         );
+      } else {
+        announce(`Could not update the watch list for ${repo} — try again.`);
       }
+    } catch {
+      announce(`Could not update the watch list for ${repo} — try again.`);
     } finally {
       setBusy(false);
     }

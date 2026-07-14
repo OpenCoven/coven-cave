@@ -83,5 +83,10 @@ assert.match(
   /if \(watched === null\) return null;/,
   "the chip hides until the live watch state is known",
 );
+assert.match(
+  githubView,
+  /if \(!res\.ok \|\| !data\?\.ok\) \{/,
+  "a failed subscriptions refresh must not derive an empty repos list (it would PATCH the watch list away)",
+);
 
 console.log("github-subscribe-ux.test.ts: ok");
