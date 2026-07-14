@@ -62,7 +62,11 @@ test("the tab and the memory rail are separately labelled landmarks", () => {
 });
 
 test("voice bridge: a configured speaking voice is shown and opens the Studio Brain tab", () => {
-  assert.match(src, /const VOICE_PROVIDER_LABELS: Record<string, string> = \{/, "provider ids get human labels");
+  assert.match(
+    src,
+    /getVoiceProvider\(familiar\.voiceProvider\)\?\.label \?\? familiar\.voiceProvider/,
+    "provider labels come from the canonical voice registry (no second mapping)",
+  );
   assert.match(
     src,
     /const voiceLine = familiar\.voiceProvider\s*\?/,
@@ -70,8 +74,13 @@ test("voice bridge: a configured speaking voice is shown and opens the Studio Br
   );
   assert.match(
     src,
-    /onClick=\{\(\) => openFamiliarStudioSettingsTab\("brain", familiar\.id\)\}[\s\S]{0,400}?\{voiceLine\}/,
+    /onClick=\{\(\) => openFamiliarStudioSettingsTab\("brain", familiar\.id\)\}[\s\S]{0,500}?\{voiceLine\}/,
     "the voice line bridges to the Studio Brain tab, voice's managed home",
+  );
+  assert.match(
+    src,
+    /aria-label=\{`Voice settings for \$\{resolved\?\.display_name \?\? familiar\.display_name\}/,
+    "the voice bridge announces the same resolved name the heading shows",
   );
 });
 
