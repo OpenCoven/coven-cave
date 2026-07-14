@@ -170,6 +170,7 @@ assert.match(
   "an active search relabels select-all as 'all N matches'",
 );
 assert.match(source, /fetch\("\/api\/inbox\/bulk"/, "collective actions post once to the bulk endpoint");
+assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "ephemeral client-only items never reach the bulk endpoint");
 assert.match(source, /inboxBulkAct\("read", "Marked read"\)/, "bulk read is offered");
 assert.match(source, /inboxBulkAct\("done", "Marked done"\)/, "bulk done is offered");
 assert.match(source, /inboxBulkAct\("dismiss", "Dismissed"\)/, "bulk dismiss is offered");

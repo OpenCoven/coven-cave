@@ -2247,10 +2247,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // makes the selection universe "every match".
   const inboxSelect = useMultiSelect(inboxVisible, (it) => it.id);
   const [inboxBulkBusy, setInboxBulkBusy] = useState(false);
+  // Ephemeral (client-synthesized "eph:*") items have no server row — the
+  // single-item PATCH/DELETE paths skip them, and bulk must too.
+  const selectedInboxIds = () =>
+    inboxSelect
+      .selectedFrom(inboxVisible)
+      .map((it) => it.id)
+      .filter((id) => !id.startsWith("eph:"));
 
   /** One-write collective action over the current selection (POST /api/inbox/bulk). */
   const inboxBulkAct = async (action: "read" | "done" | "dismiss", pastTense: string) => {
-    const ids = inboxSelect.selectedFrom(inboxVisible).map((it) => it.id);
+    const ids = selectedInboxIds();
     if (ids.length === 0) { inboxSelect.exit(); return; }
     setInboxBulkBusy(true);
     try {
@@ -2272,7 +2279,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   /** Collective delete rides the shared undo toast, then ONE bulk request. */
   const inboxBulkDelete = () => {
-    const ids = inboxSelect.selectedFrom(inboxVisible).map((it) => it.id);
+    const ids = selectedInboxIds();
     if (ids.length === 0) { inboxSelect.exit(); return; }
     inboxSelect.exit();
     scheduleDelete(ids, `${ids.length} inbox item${ids.length === 1 ? "" : "s"}`, async () => {
