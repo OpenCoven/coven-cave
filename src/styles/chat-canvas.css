@@ -1,0 +1,117 @@
+/* Chat → Canvas tab — the gallery of sketches saved from inline chat artifacts
+   ("Save to Canvas" in chat-artifact-viewer persists to /api/canvas). Cards
+   show a non-interactive sandboxed thumbnail; opening a card mounts the full
+   ChatArtifactViewer (chat-artifact.css) inside a Modal. */
+.chat-canvas-view {
+  padding: 16px;
+}
+.chat-canvas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  align-content: start;
+}
+.chat-canvas-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.chat-canvas-card__open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.chat-canvas-card__thumb {
+  position: relative;
+  display: block;
+  height: 170px;
+  background: #fff;
+  border-bottom: 1px solid var(--border-hairline);
+  overflow: hidden;
+}
+/* The card is the click target; the framed document must not swallow the
+   click or grab scroll — it's a picture here, not an app. */
+.chat-canvas-card__frame {
+  width: 200%;
+  height: 200%;
+  border: 0;
+  display: block;
+  transform: scale(0.5);
+  transform-origin: top left;
+  pointer-events: none;
+}
+.chat-canvas-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.chat-canvas-card__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-canvas-card__sub {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.chat-canvas-card__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  width: 24px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.chat-canvas-card__delete:hover {
+  color: var(--color-danger);
+  background: var(--bg-raised);
+}
+.chat-canvas-card__delete:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+/* Give the reopened viewer real height inside the modal; the inline viewer's
+   preview is otherwise a fixed 360px strip sized for a chat bubble. */
+.chat-canvas-modal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: min(64vh, 640px);
+}
+.chat-canvas-modal-body .chat-artifact {
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chat-canvas-modal-body .chat-artifact__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.chat-canvas-modal-body .chat-artifact__preview-wrap,
+.chat-canvas-modal-body .chat-artifact__code,
+.chat-canvas-modal-body .chat-artifact__code-edit {
+  flex: 1;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+}

@@ -6,6 +6,7 @@ import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
 import { ProjectsView } from "@/components/projects-view";
 import { ChatSettingsView } from "@/components/chat-settings-view";
+import { ChatCanvasView } from "@/components/chat-canvas-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import { InspectorPane, type Tab as InspectorSection } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
@@ -60,7 +61,9 @@ const chatStorage = {
 // Memory is deliberately absent: familiar memory lives in the Familiars
 // surface and the Grimoire editor, not as a chat scope (cave-liut).
 // "settings" is the consolidated chat-settings tab (auto-archive policy et al).
-type FamiliarsScope = "conversation" | "projects" | "coven" | "settings";
+// "canvas" is the gallery of sketches saved from chat artifacts — saves landed
+// in the canvas store with no surface after the standalone Canvas page retired.
+type FamiliarsScope = "conversation" | "projects" | "canvas" | "coven" | "settings";
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -718,6 +721,7 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
+              { id: "canvas", label: "Canvas" },
               { id: "settings", label: "Settings" },
             ]}
           />
@@ -766,6 +770,12 @@ export function ChatSurface({
 
         {scope === "projects" ? (
           <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+        ) : scope === "canvas" ? (
+          // Saved-sketch gallery: everything "Save to Canvas" persisted from
+          // inline chat artifacts, browsable/reopenable/deletable in place.
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <ChatCanvasView familiarId={activeFamiliarId} />
+          </div>
         ) : scope === "settings" ? (
           // Consolidated chat settings (cave-wide auto-archive policy, incl.
           // archive-on-reflection) as a first-class chat tab — the knobs govern
