@@ -6,12 +6,28 @@
 // scans (Coven shared / Claude Code / Codex / shared agents). Saving goes
 // through POST /api/skills/build (creation-only; duplicates are refused), so
 // the new skill shows up in the Skills tab immediately.
+//
+// Authoring assist (docs/authoring-assist.md §1–§3):
+//  - a template GALLERY (built-in kinds merged with pack/user templates via
+//    GET /api/skills/templates) whose bodies Tab-fill through the shared
+//    {{placeholder|default}} engine (cave-6ptj);
+//  - "Draft with AI" — POST /api/skills/draft runs one bounded read-only
+//    assist and fills the form for review; the live preview and the
+//    creation-only save stay the trust boundary (cave-yz8n);
+//  - in-place Enhance on the instructions field (the shared
+//    use-prompt-enhance state machine) and a "Build in chat" brief carrying
+//    the full build API contract (cave-yz8n);
+//  - a dry-run tester on the success panel — trigger check + narration-only
+//    walkthrough through POST /api/skills/dry-run (cave-cyfc).
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
+import type { FamiliarForSkill } from "@/components/skill-detail-drawer";
+import { handlePlaceholderTab, placeholderSpans } from "@/lib/prompt-placeholders";
+import { buildSkillAgentPrompt } from "@/lib/skill-agent-prompt";
 import {
   composeSkillMd,
   MAX_SKILL_DESCRIPTION_CHARS,
@@ -20,6 +36,8 @@ import {
   slugifySkillName,
   type SkillBuildRootId,
 } from "@/lib/skill-build-format";
+import { SKILL_TEMPLATES, type SkillTemplate } from "@/lib/skill-templates";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
 
 const ROOT_HELP: Record<SkillBuildRootId, string> = {
   coven: "Shared Coven root — every familiar in your Cave can load it.",
@@ -28,34 +46,32 @@ const ROOT_HELP: Record<SkillBuildRootId, string> = {
   agents: "The cross-agent ~/.agents root shared by Skills-CLI harnesses.",
 };
 
-const STARTER_TEMPLATE = `## When to use
-
-Use this skill when <the situation this skill is for>.
-
-## Steps
-
-1. <first step>
-2. <second step>
-3. <verify the result>
-
-## Verification
-
-- <how the familiar proves the work is done>
-`;
-
 const INPUT_CLASS =
   "focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2.5 py-1.5 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--border-strong)]";
 
-type SavedSkill = { slug: string; path: string };
+/** What the success panel needs to keep testing the skill after the save. */
+type SavedSkill = {
+  slug: string;
+  path: string;
+  name: string;
+  description: string;
+  instructions: string;
+};
+
+type DryRunVerdict =
+  | { mode: "trigger"; fires: boolean; reason: string }
+  | { mode: "walkthrough"; followed: "yes" | "partial" | "no"; notes: string[] };
 
 type Props = {
   /** Fired after a successful save so the hub can refresh the Skills list. */
   onSaved?: () => void;
   /** Jumps to the Skills tab (the success panel's "View in Skills"). */
   onViewSkills?: () => void;
+  /** Familiars roster — powers the model-backed Enhance (offline fallback otherwise). */
+  familiars?: FamiliarForSkill[];
 };
 
-export function SkillBuilder({ onSaved, onViewSkills }: Props) {
+export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tagsText, setTagsText] = useState("");
@@ -65,6 +81,98 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<SavedSkill | null>(null);
   const { announce } = useAnnouncer();
+  const instructionsRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // ── Template gallery (cave-6ptj) ──────────────────────────────────────────
+  // Built-ins render immediately; the merged list (pack/user overrides by id)
+  // replaces them when the templates route answers. Failure keeps built-ins.
+  const [templates, setTemplates] = useState<readonly SkillTemplate[]>(SKILL_TEMPLATES);
+  useEffect(() => {
+    const ctl = new AbortController();
+    fetch("/api/skills/templates", { cache: "no-store", signal: ctl.signal })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; templates?: SkillTemplate[] }) => {
+        if (!ctl.signal.aborted && json.ok && Array.isArray(json.templates) && json.templates.length > 0) {
+          setTemplates(json.templates);
+        }
+      })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, []);
+
+  const insertTemplate = useCallback(
+    (template: SkillTemplate) => {
+      setInstructions(template.instructions);
+      setTagsText((current) => (current.trim() ? current : template.tags.join(", ")));
+      announce(`Inserted the ${template.name} template.`, "polite");
+      // Select the first placeholder so typing replaces it; Tab walks onward.
+      requestAnimationFrame(() => {
+        const el = instructionsRef.current;
+        if (!el) return;
+        el.focus();
+        const first = placeholderSpans(template.instructions)[0];
+        if (first) el.setSelectionRange(first.start, first.end);
+      });
+    },
+    [announce],
+  );
+
+  // ── In-place Enhance on the instructions field (cave-yz8n, P1) ────────────
+  const enhancer = usePromptEnhance({
+    draft: instructions,
+    setDraft: setInstructions,
+    familiarId: familiars[0]?.id ?? null,
+    mode: "task",
+    disabled: saving,
+  });
+
+  // ── Draft with AI (cave-yz8n, P2) ─────────────────────────────────────────
+  const [draftGoal, setDraftGoal] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const draftWithAi = useCallback(async () => {
+    const goal = draftGoal.trim();
+    if (!goal || drafting) return;
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const res = await fetch("/api/skills/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ description: goal }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        draft?: { name: string; description: string; tags: string[]; instructions: string };
+        error?: string;
+      };
+      if (!json.ok || !json.draft) throw new Error(json.error ?? `draft http ${res.status}`);
+      setName(json.draft.name);
+      setDescription(json.draft.description);
+      setTagsText(json.draft.tags.join(", "));
+      setInstructions(json.draft.instructions);
+      announce("Draft ready — review the form and the preview, then save.", "polite");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "skill draft failed";
+      setDraftError(msg);
+      announce(msg, "assertive");
+    } finally {
+      setDrafting(false);
+    }
+  }, [announce, draftGoal, drafting]);
+
+  /** "Build in chat": the brief-pattern escape hatch — a familiar authors and
+   *  saves the skill through the same creation-only API (cave-yz8n, P3). */
+  const buildInChat = useCallback(() => {
+    const goal = draftGoal.trim() || description.trim() || name.trim();
+    if (!goal) return;
+    window.dispatchEvent(
+      new CustomEvent("cave:agents-new-chat", {
+        detail: { initialPrompt: buildSkillAgentPrompt({ description: goal, root }) },
+      }),
+    );
+    announce("Opened a chat to build this skill together.", "polite");
+  }, [announce, description, draftGoal, name, root]);
 
   const slug = useMemo(() => slugifySkillName(name), [name]);
   const tags = useMemo(
@@ -84,6 +192,8 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
     setDescription("");
     setTagsText("");
     setInstructions("");
+    setDraftGoal("");
+    setDraftError(null);
     setError(null);
     setSaved(null);
   }, []);
@@ -100,7 +210,7 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
       });
       const json = (await res.json()) as { ok?: boolean; slug?: string; path?: string; error?: string };
       if (!json.ok || !json.slug || !json.path) throw new Error(json.error ?? `build http ${res.status}`);
-      setSaved({ slug: json.slug, path: json.path });
+      setSaved({ slug: json.slug, path: json.path, name, description, instructions });
       announce(`Skill ${json.slug} saved`, "polite");
       onSaved?.();
     } catch (err) {
@@ -142,6 +252,7 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
               Build another skill
             </Button>
           </div>
+          <SkillDryRunTester skill={saved} />
         </section>
       </div>
     );
@@ -158,6 +269,53 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
           A skill is a reusable SKILL.md procedure your familiars load while they work. Describe when to use it and
           how it works — the file is written straight into a local skill root and appears in the Skills tab.
         </p>
+      </section>
+
+      <section
+        aria-label="Draft with AI"
+        className="mb-5 flex max-w-2xl flex-col gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3"
+      >
+        <label htmlFor="skill-draft-goal" className="text-[12px] font-medium text-[var(--text-primary)]">
+          Draft with AI <span className="font-normal text-[var(--text-muted)]">— describe the skill; a reviewable draft fills the form</span>
+        </label>
+        <textarea
+          id="skill-draft-goal"
+          value={draftGoal}
+          onChange={(e) => setDraftGoal(e.target.value)}
+          rows={2}
+          placeholder="e.g. Turning merged PRs into user-facing release notes, grouped by area, with links."
+          className={`${INPUT_CLASS} resize-y`}
+        />
+        {draftError ? (
+          <p role="alert" className="text-[11px] text-[var(--danger-text)]">
+            {draftError}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:sparkle"
+            loading={drafting}
+            disabled={!draftGoal.trim()}
+            onClick={() => void draftWithAi()}
+          >
+            Draft with AI
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:chat-circle-dots"
+            disabled={!draftGoal.trim() && !description.trim() && !name.trim()}
+            onClick={buildInChat}
+            title="Open a chat where a familiar authors and saves the skill through the build API"
+          >
+            Build in chat
+          </Button>
+          <span className="text-[11px] text-[var(--text-muted)]">
+            Nothing is written until you review and save.
+          </span>
+        </div>
       </section>
 
       {error ? (
@@ -232,24 +390,65 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
               <label htmlFor="skill-builder-instructions" className="text-[12px] font-medium text-[var(--text-primary)]">
                 Instructions
               </label>
-              <Button
-                variant="ghost"
-                size="xs"
-                leadingIcon="ph:magic-wand-fill"
-                disabled={instructions.trim().length > 0}
-                onClick={() => setInstructions(STARTER_TEMPLATE)}
-              >
-                Insert starter template
-              </Button>
+              <div className="flex items-center gap-1.5">
+                {enhancer.state.phase === "suggested" ? (
+                  <>
+                    <Button variant="secondary" size="xs" leadingIcon="ph:check" onClick={enhancer.apply}>
+                      Apply rewrite
+                    </Button>
+                    <Button variant="ghost" size="xs" onClick={enhancer.dismiss}>
+                      Dismiss
+                    </Button>
+                  </>
+                ) : enhancer.state.phase === "applied" ? (
+                  <Button variant="ghost" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={enhancer.revert}>
+                    Revert enhance
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    leadingIcon="ph:magic-wand-fill"
+                    loading={enhancer.state.phase === "loading"}
+                    disabled={!instructions.trim()}
+                    onClick={() => enhancer.enhance()}
+                    title="Rewrite the instructions in place — applied only if you haven't typed meanwhile"
+                  >
+                    Enhance
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div role="group" aria-label="Skill templates" className="flex flex-wrap items-center gap-1">
+              <span className="mr-1 text-[11px] text-[var(--text-muted)]">Start from</span>
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  title={template.description}
+                  disabled={instructions.trim().length > 0}
+                  onClick={() => insertTemplate(template)}
+                  className="focus-ring inline-flex h-[24px] items-center rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {template.name}
+                </button>
+              ))}
             </div>
             <textarea
               id="skill-builder-instructions"
+              ref={instructionsRef}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
+              onKeyDown={(e) => handlePlaceholderTab(e, instructionsRef.current, setInstructions)}
               rows={12}
               placeholder="Markdown the familiar follows — when to use the skill, the steps, and how to verify the result."
               className={`${INPUT_CLASS} resize-y font-mono text-[12px] leading-relaxed`}
             />
+            {enhancer.state.phase === "error" ? (
+              <p role="alert" className="text-[11px] text-[var(--danger-text)]">
+                {enhancer.state.message}
+              </p>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-hairline)] pt-4">
@@ -278,6 +477,139 @@ export function SkillBuilder({ onSaved, onViewSkills }: Props) {
           </pre>
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The dry-run tester (cave-cyfc): scenario in, verdicts out. Trigger check
+ * proves the description fires; the walkthrough narrates the steps and lists
+ * what a familiar couldn't follow. Advisory — never gates anything.
+ */
+export function SkillDryRunTester({
+  skill,
+}: {
+  skill: { name: string; description: string; instructions?: string };
+}) {
+  const { announce } = useAnnouncer();
+  const [scenario, setScenario] = useState("");
+  const [probing, setProbing] = useState<"trigger" | "walkthrough" | null>(null);
+  const [verdict, setVerdict] = useState<DryRunVerdict | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const probe = useCallback(
+    async (mode: "trigger" | "walkthrough") => {
+      const line = scenario.trim();
+      if (!line || probing) return;
+      setProbing(mode);
+      setError(null);
+      setVerdict(null);
+      try {
+        const res = await fetch("/api/skills/dry-run", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            mode,
+            name: skill.name,
+            description: skill.description,
+            scenario: line,
+            ...(mode === "walkthrough" ? { instructions: skill.instructions ?? "" } : {}),
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          fires?: boolean;
+          reason?: string;
+          followed?: "yes" | "partial" | "no";
+          notes?: string[];
+          error?: string;
+        };
+        if (!json.ok) throw new Error(json.error ?? `dry-run http ${res.status}`);
+        if (mode === "trigger") {
+          setVerdict({ mode, fires: Boolean(json.fires), reason: json.reason ?? "" });
+          announce(json.fires ? "The skill fires for this scenario." : "The skill does not fire.", "polite");
+        } else {
+          setVerdict({ mode, followed: json.followed ?? "no", notes: json.notes ?? [] });
+          announce("Walkthrough finished.", "polite");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "dry-run failed";
+        setError(msg);
+        announce(msg, "assertive");
+      } finally {
+        setProbing(null);
+      }
+    },
+    [announce, probing, scenario, skill.description, skill.instructions, skill.name],
+  );
+
+  return (
+    <div className="flex w-full flex-col gap-2 border-t border-[var(--border-hairline)] pt-3" data-testid="skill-dry-run">
+      <p className="text-[12px] font-medium text-[var(--text-primary)]">
+        Test this skill{" "}
+        <span className="font-normal text-[var(--text-muted)]">— would a familiar pick it up?</span>
+      </p>
+      <input
+        type="text"
+        value={scenario}
+        onChange={(e) => setScenario(e.target.value)}
+        placeholder="A scenario, e.g. “the user asks for release notes for last week's merges”"
+        aria-label="Dry-run scenario"
+        className={INPUT_CLASS}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          leadingIcon="ph:target"
+          loading={probing === "trigger"}
+          disabled={!scenario.trim() || probing !== null}
+          onClick={() => void probe("trigger")}
+          title="Given only the name + description, would an agent load this skill?"
+        >
+          Test trigger
+        </Button>
+        {skill.instructions ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            leadingIcon="ph:list-checks-bold"
+            loading={probing === "walkthrough"}
+            disabled={!scenario.trim() || probing !== null}
+            onClick={() => void probe("walkthrough")}
+            title="Narrate the steps against the scenario and report what couldn't be followed"
+          >
+            Walk through steps
+          </Button>
+        ) : null}
+      </div>
+      {error ? (
+        <p role="alert" className="text-[11px] text-[var(--danger-text)]">
+          {error}
+        </p>
+      ) : null}
+      {verdict?.mode === "trigger" ? (
+        <p className="text-[12px] text-[var(--text-secondary)]" aria-live="polite">
+          <strong className={verdict.fires ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}>
+            {verdict.fires ? "Fires" : "Does not fire"}
+          </strong>{" "}
+          — {verdict.reason}
+        </p>
+      ) : null}
+      {verdict?.mode === "walkthrough" ? (
+        <div className="text-[12px] text-[var(--text-secondary)]" aria-live="polite">
+          <p>
+            <strong className="text-[var(--text-primary)]">
+              {verdict.followed === "yes" ? "Followable" : verdict.followed === "partial" ? "Partially followable" : "Not followable"}
+            </strong>
+          </p>
+          <ul className="mt-1 list-disc pl-5">
+            {verdict.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

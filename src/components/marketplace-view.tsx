@@ -856,6 +856,7 @@ export function MarketplaceViewSurface({
           className="flex min-h-0 flex-1 flex-col"
         >
           <SkillBuilder
+            familiars={familiars}
             onSaved={() => void loadSkills("")}
             onViewSkills={() => selectSection("skills")}
           />

@@ -468,6 +468,8 @@ def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
         manifest["userConfig"] = plugin["userConfig"]
     if plugin.get("prompts"):
         manifest["prompts"] = [prompt["id"] for prompt in plugin["prompts"]]
+    if plugin.get("skillTemplates"):
+        manifest["skillTemplates"] = [template["id"] for template in plugin["skillTemplates"]]
     if plugin.get("kind") == "craft":
         manifest["kind"] = "craft"
         manifest["craft"] = plugin["craft"]
@@ -612,6 +614,8 @@ def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) 
                     files[package_dir / "skills" / skill["id"] / relative] = source_file.read_bytes()
             for prompt in plugin.get("prompts", []):
                 files[package_dir / "prompts" / f"{prompt['id']}.md"] = prompt_markdown(prompt)
+            for template in plugin.get("skillTemplates", []):
+                files[package_dir / "skill-templates" / f"{template['id']}.md"] = prompt_markdown(template)
             files[package_dir / ".codex-plugin" / "plugin.json"] = dump_json(codex_manifest(plugin))
             continue
         # Some marketplace skill packs carry hand-authored, long-form SKILL.md
@@ -623,6 +627,10 @@ def package_files(catalog: dict[str, Any], marketplace_dir: Path = MARKETPLACE) 
             files[package_dir / "skills" / plugin["name"] / "SKILL.md"] = skill_markdown(plugin)
         for prompt in plugin.get("prompts", []):
             files[package_dir / "prompts" / f"{prompt['id']}.md"] = prompt_markdown(prompt)
+        # Skill templates share the prompt-template file shape and land in
+        # skill-templates/ — merged by /api/skills/templates (cave-6ptj).
+        for template in plugin.get("skillTemplates", []):
+            files[package_dir / "skill-templates" / f"{template['id']}.md"] = prompt_markdown(template)
         files[package_dir / ".codex-plugin" / "plugin.json"] = dump_json(codex_manifest(plugin))
     return files
 

@@ -103,6 +103,10 @@ templates.
 **Done means:** the Build tab offers a gallery, every template body Tab-fills,
 and a pack can ship a skill template without touching component code.
 
+**Status:** landed — gallery from `GET /api/skills/templates` (built-ins +
+pack `skillTemplates` via the sync script + `~/.coven/skill-templates`),
+Tab-fill in the instructions field, first-placeholder selection on insert.
+
 ## 2 · Skill Builder gains agentic drafting
 
 **Story:** As a user who can *describe* a skill but not structure it, I want
@@ -143,6 +147,10 @@ trigger — a weak one means the skill never fires).
 field can be enhanced in place; "build it with me in chat" exists and lands a
 scannable skill on disk.
 
+**Status:** landed — `POST /api/skills/draft` on the shared runner,
+in-place Enhance (shared race-safe hook) on the instructions field,
+`buildSkillAgentPrompt` + the `skill-builder` companion skill.
+
 ## 3 · Skills prove they fire: the dry-run loop
 
 **Story:** As a skill author, I want to test that a familiar would actually
@@ -172,6 +180,10 @@ production chats.
 
 **Done means:** an author can prove "a familiar would pick this up" before
 shipping, from the same surface where they authored it.
+
+**Status:** landed — trigger check + narration-only walkthrough via
+`POST /api/skills/dry-run`, surfaced on the Build success panel and the
+Skills detail drawer, which also shows daemon eval-loop status when present.
 
 ## 4 · Stitch patterns: sew toward a shape
 
@@ -320,9 +332,11 @@ break, sized to land after the first duplicate appears, not before.
 **Done means:** one runner, N contracts, zero copies of the spawn dance, and
 the privilege stance is structural instead of conventional.
 
-**Status:** runner extracted (`src/lib/server/assist-runner.ts`) with sew as
-its first caller; closes when the skill draft and dry-run assists (paths 2–3)
-consume it too.
+**Status:** landed — the runner (`src/lib/server/assist-runner.ts`) now
+serves the sew, the skill draft, and both dry-run probes; contracts live as
+paired `build*Prompt` / `parse*Output` modules (`stitch.ts`,
+`skill-draft.ts`, `skill-dryrun.ts`), each with the fenced-response
+tolerance.
 
 ---
 

@@ -36,10 +36,39 @@ assert.match(builder, /SKILL_BUILD_ROOTS\.map/, "destination roots come from the
 assert.match(builder, /announce\(`Skill \$\{json\.slug\} saved`, "polite"\)/, "successful saves are announced to AT");
 assert.match(builder, /announce\(msg, "assertive"\)/, "failures are announced to AT");
 assert.match(builder, /role="alert"/, "failures render an alert banner");
-assert.match(builder, /Insert starter template/, "an empty instructions field offers a starter skeleton");
+assert.match(builder, /role="group" aria-label="Skill templates"/, "an empty instructions field offers a template gallery");
 assert.match(builder, /aria-label="SKILL\.md preview"/, "the preview pane is a labelled region");
 assert.match(builder, /disabled=\{!ready\}/, "Save stays disabled until the required fields are present");
 assert.match(builder, /Build another skill/, "the success panel offers a reset path");
+
+// ── Templating (cave-6ptj) ──────────────────────────────────────────────────
+// The gallery merges built-ins with pack/user templates and Tab-fills its
+// {{placeholder|default}} blanks through the shared placeholder engine.
+assert.match(builder, /fetch\("\/api\/skills\/templates"/, "the gallery loads the merged template list");
+assert.match(builder, /SKILL_TEMPLATES/, "built-ins render immediately as the offline fallback");
+assert.match(builder, /handlePlaceholderTab\(e, instructionsRef\.current, setInstructions\)/, "Tab walks the template's placeholders in the instructions field");
+assert.match(builder, /placeholderSpans\(template\.instructions\)\[0\]/, "inserting a template selects its first placeholder");
+assert.match(builder, /setTagsText\(\(current\) => \(current\.trim\(\) \? current : template\.tags\.join\(", "\)\)\)/, "template tags prefill only an empty tags field");
+
+// ── Agentic drafting (cave-yz8n) ────────────────────────────────────────────
+// Draft with AI fills the form for review; the creation-only save and the
+// live preview stay the trust boundary. Enhance rides the shared race-safe
+// hook; Build in chat dispatches the full-contract brief.
+assert.match(builder, /fetch\("\/api\/skills\/draft"/, "Draft with AI posts to the headless draft endpoint");
+assert.match(builder, /Nothing is written until you review and save\./, "the draft path states its trust boundary");
+assert.match(builder, /usePromptEnhance\(\{/, "instructions enhance rides the shared race-safe hook");
+assert.match(builder, /enhancer\.state\.phase === "suggested"/, "a raced enhance surfaces as an apply/dismiss suggestion");
+assert.match(builder, /buildSkillAgentPrompt\(\{ description: goal, root \}\)/, "Build in chat carries the full build-API brief");
+assert.match(builder, /new CustomEvent\("cave:agents-new-chat"/, "the brief dispatches the shared chat event");
+
+// ── Dry-run (cave-cyfc) ─────────────────────────────────────────────────────
+// The success panel proves the saved skill fires (and is followable) before
+// the author walks away.
+assert.match(builder, /<SkillDryRunTester skill=\{saved\}/, "the success panel hosts the dry-run tester");
+assert.match(builder, /fetch\("\/api\/skills\/dry-run"/, "probes post to the dry-run endpoint");
+assert.match(builder, /Test trigger/, "the trigger check is an explicit action");
+assert.match(builder, /Walk through steps/, "the walkthrough probe is an explicit action");
+assert.match(builder, /aria-live="polite"/, "verdicts are announced politely");
 
 // Preview and writer must be the same artifact: the client imports the
 // shared formatter (client-safe module), never a server-only copy.

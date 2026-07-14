@@ -8,6 +8,10 @@ breaking config changes; patch releases stay additive.
 ## [Unreleased]
 
 ### Features
+- **Marketplace Build: template gallery, agentic drafting, and a dry-run tester** — the Build tab starts from a gallery of skill kinds (procedure / tool wrapper / reference / review / orchestration) whose bodies Tab-fill through the shared `{{placeholder|default}}` engine, merged `user > pack > built-in` with pack-shipped and `~/.coven/skill-templates` templates via `GET /api/skills/templates` (packs declare a `skillTemplates` array in `catalog.json`); "Draft with AI" turns a description into a reviewable form fill through one bounded read-only assist (`POST /api/skills/draft`) with in-place Enhance on the instructions and a "Build in chat" brief carrying the full build-API contract (plus a companion `skill-builder` agent skill); and after saving, "Test this skill" proves the trigger fires — and optionally walks the steps in narration — through `POST /api/skills/dry-run`, with the same tester and daemon eval-loop status on the Skills detail drawer (cave-6ptj, cave-yz8n, cave-cyfc).
+
+
+### Features
 - **Grimoire: stitch patterns + sew destinations** — sewing can aim at a shape (Glossary entry, API contract, Decision record, How-to) whose section scaffold steers the distillation and prefills the manual sew (tags included), and file the entry into an existing vault collection — a collection's schema fields join the scaffold so pack-seeded collections keep their shape (cave-kwx4).
 - **Grimoire: "Sew in chat" round trip** — the chat sew is now a brief carrying the thread id and the local sew API contract (plus a companion `stitch-sewer` agent skill), so the familiar saves the agreed draft itself with pin provenance and thread completion; the intake picks a chat-sewn entry up on re-focus and swaps to it like an in-intake sew (cave-x1za).
 
