@@ -876,6 +876,10 @@ export function MarketplaceViewSurface({
           onClose={() => setSelected(null)}
           onAdd={() => void add(selectedPlugin.id)}
           onRemove={() => void remove(selectedPlugin.id)}
+          onDraftDeleted={() => {
+            setSelected(null);
+            void load();
+          }}
         />
       ) : null}
 

@@ -4522,6 +4522,19 @@ details[open] > .cave-tool-summary::before {
 /* ── Familiar inline card (avatar click → in-thread expand) ──────────────── */
 .cave-linear-turn-avatar { position: relative; }
 
+/* CHAT-D3-07's `content-visibility: auto` on .cave-linear-turn implies paint
+   containment, so the open card was clipped at its own turn's padding box and
+   the turn painted as an atomic unit UNDER the following turns — the card
+   looked "cut inside" the response. While a card is open, release containment
+   on the host turn and lift it above later siblings (below sticky chrome at
+   z-50/60). Only one card opens at a time, so virtualization still applies to
+   every other row. */
+.cave-linear-turn:has(.familiar-inline-card) {
+  content-visibility: visible;
+  position: relative;
+  z-index: 40;
+}
+
 /* The expanded card mounts INSIDE the circular avatar cell, whose
    `overflow: hidden` (needed to crop photo avatars) was clipping the whole
    card down to the 48px circle — only its backdrop and close × peeked
@@ -4533,7 +4546,7 @@ details[open] > .cave-tool-summary::before {
 
 .cave-linear-turn-avatar.is-selected {
   /* Lift the open card above the following turns. */
-  z-index: 30;
+  z-index: 40;
 }
 
 .cave-linear-turn-avatar-btn {
@@ -4560,7 +4573,7 @@ details[open] > .cave-tool-summary::before {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 30;
+  z-index: 40;
   width: min(320px, 78vw);
   padding: 12px;
   border: 1px solid var(--border-hairline, #2a2a2a);
