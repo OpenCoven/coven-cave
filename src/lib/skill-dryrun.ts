@@ -44,7 +44,7 @@ export type TriggerCheckOutput = {
 export function parseTriggerCheckOutput(text: string): TriggerCheckOutput | null {
   const trimmed = text.trim();
   const unfenced = trimmed.replace(/^```[a-z]*\r?\n([\s\S]*)\r?\n```$/, "$1").trim();
-  const match = unfenced.match(/^FIRES:\s*(yes|no)\s*\r?\nREASON:\s*(.+)$/im);
+  const match = unfenced.match(/^FIRES:\s*(yes|no)\s*\r?\nREASON:\s*(.+)\s*$/i);
   if (!match) return null;
   const reason = match[2].trim();
   if (!reason) return null;
