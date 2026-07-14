@@ -2706,6 +2706,7 @@ export function Workspace() {
             ? {
                 id: editingReminder.id,
                 title: editingReminder.title,
+                whenText: editingReminder.whenText ?? undefined,
                 fireAt: editingReminder.fireAt ?? new Date().toISOString(),
                 recurrence: editingReminder.recurrence,
                 link: editingReminder.link ?? null,
@@ -2720,6 +2721,7 @@ export function Workspace() {
               title: draft.title,
               fireAt: draft.fireAt,
               recurrence: draft.recurrence ?? { type: "none" },
+              whenText: draft.whenText ?? null,
               link: draft.link ?? null,
             }),
           });
@@ -2736,6 +2738,7 @@ export function Workspace() {
               fireAt: draft.fireAt,
               familiarId: draft.familiarId,
               recurrence: draft.recurrence ?? { type: "none" },
+              whenText: draft.whenText ?? null,
               link: draft.link ?? null,
               source: "user",
             }),

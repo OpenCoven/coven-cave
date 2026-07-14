@@ -19,7 +19,7 @@ startScheduler();
 // page rewrite kind/source/firedAt/machine-discriminator fields and persist
 // shapes the scheduler can't handle.
 const PATCHABLE_FIELDS = [
-  "title", "body", "status", "fireAt", "snoozeUntil", "recurrence", "familiarId", "link",
+  "title", "body", "status", "fireAt", "snoozeUntil", "recurrence", "whenText", "familiarId", "link",
 ] as const;
 
 export async function PATCH(
