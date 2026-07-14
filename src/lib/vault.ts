@@ -245,6 +245,7 @@ function dcliRead(ref: string): string | null {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 8000,
+      env: resolverEnv(),
     }).trim();
     return value || null;
   } catch {
