@@ -8148,6 +8148,14 @@ a.mobile-handoff__link:hover {
     min-width: 0;
   }
 
+  /* Coarse pointers consolidate the row actions into one ⋯ menu — a single
+     trigger doesn't earn its own grid row, so it sits inline top-right and
+     the row tightens by a full band. */
+  .chat-list-row:has(.chat-list-row-actions--compact) {
+    grid-template-columns: 24px 14px minmax(0, 1fr) auto;
+    grid-template-areas: "handle dot content actions";
+  }
+
   .chat-list-row-actions > button {
     display: grid;
     width: var(--touch-target);

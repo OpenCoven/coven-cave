@@ -554,6 +554,7 @@ export const SUITES = {
     "src/app/globals-background.test.ts",
     "src/components/board-chat-link.test.ts",
     "src/components/chat-list-panel.test.ts",
+    "src/components/chat-list-coarse-actions.test.ts",
     "src/components/chat-surface.test.ts",
     "src/components/chat-settings-view.test.ts",
     "src/components/chat-switching.test.ts",
