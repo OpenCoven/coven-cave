@@ -18,12 +18,12 @@ import { QuickChatTabPane, type TabReport } from "@/components/tray-quick-chat";
  * loaded by show_notch_window in src-tauri/src/lib.rs).
  *
  * The Rust shell parks a tiny always-on-top frameless window flush with the
- * top of the screen — the "notch". By default the collapsed pill follows the
- * mouse along the top strip (across monitors) and sizes itself into the
- * menu-bar strip; both behaviors are customizable from the panel's toolbar
- * toggles (persisted shell-side in notch-config.json). Clicking the pill
- * expands it in place into a full quick chat (the same QuickChatTabPane the
- * tray window uses, so every traditional operation — familiar/project
+ * top of the screen — the "notch". The collapsed pill stays parked dead-
+ * center on the top bar (where a notch belongs) and by default sizes itself
+ * into the menu-bar strip; the fit behavior is customizable from the panel's
+ * toolbar toggle (persisted shell-side in notch-config.json). Clicking the
+ * pill expands it in place into a full quick chat (the same QuickChatTabPane
+ * the tray window uses, so every traditional operation — familiar/project
  * pickers, thinking/speed/model, slash commands, queueing, open-in-app — is
  * here).
  *
@@ -31,7 +31,7 @@ import { QuickChatTabPane, type TabReport } from "@/components/tray-quick-chat";
  * `notch:collapse`, `notch:detach`, `notch:dock-to-tray`, plus `notch:config`
  * customization patches; see capabilities/loopback-notch.json) and animates
  * its own content. The shell seeds the initial presentation through URL
- * params (follow/fit/pillw/pillh/barh) since the page has no invoke
+ * params (fit/pillw/pillh/barh) since the page has no invoke
  * permissions. The notch collapses when a send starts (the pane stays
  * mounted, so the reply keeps streaming and the pill pulses), on Escape, or
  * on the pill/collapse button; the detach button folds it up and opens the
@@ -46,7 +46,6 @@ import { QuickChatTabPane, type TabReport } from "@/components/tray-quick-chat";
 const COLLAPSE_ANIMATION_MS = 180;
 
 type NotchPresentation = {
-  followMouse: boolean;
   fitMenuBar: boolean;
   pillWidth: number;
   pillHeight: number;
@@ -55,7 +54,6 @@ type NotchPresentation = {
 };
 
 const DEFAULT_PRESENTATION: NotchPresentation = {
-  followMouse: true,
   fitMenuBar: true,
   pillWidth: 190,
   pillHeight: 38,
@@ -71,7 +69,6 @@ function readPresentation(search: string): NotchPresentation {
     return Number.isFinite(value) && value > 0 ? value : fallback;
   };
   return {
-    followMouse: params.get("follow") !== "0",
     fitMenuBar: params.get("fit") !== "0",
     pillWidth: num("pillw", DEFAULT_PRESENTATION.pillWidth),
     pillHeight: num("pillh", DEFAULT_PRESENTATION.pillHeight),
@@ -153,16 +150,8 @@ export function NotchQuickChat() {
     void emitNotch("notch:dock-to-tray");
   }, []);
 
-  // Customizations: each toggle patches only itself; the shell persists the
+  // Customizations: the toggle patches only itself; the shell persists the
   // choice (notch-config.json) and re-applies window geometry immediately.
-  const toggleFollowMouse = useCallback(() => {
-    setPresentation((prev) => {
-      const followMouse = !prev.followMouse;
-      void emitNotch("notch:config", { followMouse });
-      return { ...prev, followMouse };
-    });
-  }, []);
-
   const toggleFitMenuBar = useCallback(() => {
     setPresentation((prev) => {
       const fitMenuBar = !prev.fitMenuBar;
@@ -212,18 +201,6 @@ export function NotchQuickChat() {
           <p className="min-w-0 flex-1 truncate text-xs text-[var(--fg-muted)]">
             Sends collapse the notch · Esc closes
           </p>
-          <IconButton
-            icon="ph:cursor-click"
-            size="xs"
-            active={presentation.followMouse}
-            aria-label="Notch follows the mouse"
-            title={
-              presentation.followMouse
-                ? "Following the mouse — click to park top-center"
-                : "Parked top-center — click to follow the mouse"
-            }
-            onClick={toggleFollowMouse}
-          />
           <IconButton
             icon="ph:rows"
             size="xs"
