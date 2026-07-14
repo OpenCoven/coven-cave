@@ -717,6 +717,9 @@ jobs:
     name: Notify Homebrew tap
     needs: checksums
     runs-on: ubuntu-24.04
+    # Belt for the in-script swallow below: even an unforeseen step failure
+    # must not fail the release run — the tap's 6-hourly schedule recovers.
+    continue-on-error: true
     if: ${{ !cancelled() && needs.checksums.result == 'success' }}
     steps:
       - name: Dispatch update-cask to OpenCoven/homebrew-tap
@@ -735,9 +738,13 @@ jobs:
             echo "::notice::HOMEBREW_TAP_TOKEN is not set — skipping the instant tap dispatch. OpenCoven/homebrew-tap's scheduled update-cask workflow will pick up $TAG within 6 hours. Add a fine-grained PAT (Contents: read & write on OpenCoven/homebrew-tap) as HOMEBREW_TAP_TOKEN to make cask bumps instant."
             exit 0
           fi
-          curl -fsS -X POST \
+          if curl -fsS -X POST \
             -H "Authorization: Bearer $TAP_TOKEN" \
             -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
             https://api.github.com/repos/OpenCoven/homebrew-tap/dispatches \
-            -d "{\"event_type\":\"coven-cave-release\",\"client_payload\":{\"tag\":\"$TAG\"}}"
-          echo "dispatched coven-cave-release ($TAG) to OpenCoven/homebrew-tap"
+            -d "{\"event_type\":\"coven-cave-release\",\"client_payload\":{\"tag\":\"$TAG\"}}"; then
+            echo "dispatched coven-cave-release ($TAG) to OpenCoven/homebrew-tap"
+          else
+            echo "::notice::tap dispatch failed (network/API) — OpenCoven/homebrew-tap's scheduled update-cask workflow will pick up $TAG within 6 hours."
+          fi
