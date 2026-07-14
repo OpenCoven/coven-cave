@@ -22,7 +22,8 @@ import {
   type RoleSurfaceContribution,
 } from "@/lib/role-surfaces";
 import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-state";
-import { INDEXER_SURFACE_ID, MESSENGER_SURFACE_ID, RESEARCHER_SURFACE_ID } from "./ids";
+import { watchtowerStatus } from "./sentinel-watch";
+import { INDEXER_SURFACE_ID, MESSENGER_SURFACE_ID, RESEARCHER_SURFACE_ID, SENTINEL_SURFACE_ID } from "./ids";
 
 function RoomFallback() {
   return (
@@ -42,6 +43,10 @@ const MessengerSurface = dynamic(
 );
 const IndexerSurface = dynamic(
   () => import("./indexer-surface").then((m) => m.IndexerSurface),
+  { ssr: false, loading: RoomFallback },
+);
+const SentinelSurface = dynamic(
+  () => import("./sentinel-surface").then((m) => m.SentinelSurface),
   { ssr: false, loading: RoomFallback },
 );
 
@@ -137,6 +142,68 @@ registerRoleSurface({
     };
   },
   render: (context) => <MessengerSurface context={context} />,
+});
+
+registerRoleSurface({
+  id: SENTINEL_SURFACE_ID,
+  role: "sentinel",
+  title: "Watchtower",
+  iconName: "ph:binoculars",
+  description: "Alerts, session watch, and perimeter reachability",
+  accentHue: 40,
+  priority: 15,
+  shouldDisplay: () => true,
+  getContributions(context) {
+    const state = readRoleSurfaceState<{ lastSummary?: { open: number; critical: number } | null }>(
+      context.activeFamiliar.id,
+      SENTINEL_SURFACE_ID,
+    );
+    const sweep = state?.lastSummary ?? null;
+    const status = sweep ? watchtowerStatus(sweep) : null;
+    return {
+      commands: [
+        {
+          id: "sentinel.toggle-drawer",
+          title: "Toggle watch log",
+          hint: "⌘⇧D",
+          run: (ctx) => toggleDrawer(ctx, SENTINEL_SURFACE_ID),
+        },
+      ],
+      toolbarActions: [
+        {
+          id: "sentinel.drawer",
+          title: "Watch log",
+          iconName: "ph:list",
+          run: (ctx) => toggleDrawer(ctx, SENTINEL_SURFACE_ID),
+        },
+      ],
+      keyboardShortcuts: [
+        {
+          id: "sentinel.drawer.kbd",
+          combo: "mod+shift+d",
+          description: "Toggle the watch log drawer",
+          run: (ctx) => toggleDrawer(ctx, SENTINEL_SURFACE_ID),
+        },
+      ],
+      notifications: daemonNotices(context),
+      statusIndicators: [
+        status == null
+          ? {
+              id: "sentinel.alerts",
+              label: "no sweep yet",
+              tone: "muted" as const,
+              detail: "Alert counts appear after the Watchtower's first escalation sweep",
+            }
+          : {
+              id: "sentinel.alerts",
+              label: status.label,
+              tone: status.tone,
+              detail: "Unresolved escalations across the Cave, from the shared Inbox store",
+            },
+      ],
+    };
+  },
+  render: (context) => <SentinelSurface context={context} />,
 });
 
 registerRoleSurface({
