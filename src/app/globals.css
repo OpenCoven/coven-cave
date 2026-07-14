@@ -76,6 +76,11 @@
   --code-surface: oklch(0.12 0.012 280 / 92%);
   --bg-panel: oklch(0.10 0.020 293);        /* deepest — app shell / sidebar floor */
   --bg-raised: var(--card);
+  /* Subtle inline fill (chips, keycaps, recent-search pills). Derived from
+     the raised surface so it tracks every theme — this token was referenced
+     by several components while undefined, which computed to transparent
+     (cave-fdt5). */
+  --bg-subtle: color-mix(in oklch, var(--bg-raised) 72%, transparent);
   --bg-elevated: oklch(0.20 0.028 293);     /* dropdowns / popovers */
   --bg-hover: oklch(0.24 0.030 293);        /* hover state */
   --border-hairline: var(--border);
@@ -12385,6 +12390,41 @@ details[open] > .cave-edit-card__summary::before {
 }
 .quick-chat-overlay__actions button:not(:disabled):hover {
   filter: brightness(1.06);
+}
+
+/* Composer meta chips (cave-fdt5): thinking/speed/model as quiet pills
+   instead of a plain-text run-on sentence. */
+.quick-chat-meta-chips {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+.quick-chat-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  padding: 1px 7px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.quick-chat-meta-chip:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A disabled Send at 50% opacity over the dark composer was near-invisible —
+   keep the control legible as "present but not ready" (cave-fdt5). */
+.quick-chat-overlay__actions .ui-btn--primary:disabled {
+  opacity: 1;
+  border-color: var(--border-hairline);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
 }
 
 /* Drag-and-drop attachments — the composer footer is the drop target; the

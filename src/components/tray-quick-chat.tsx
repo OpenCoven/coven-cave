@@ -300,9 +300,7 @@ export function QuickChatTabPane({
       window.location.href = `/#chat-${encodeURIComponent(sessionId)}`;
     }
   }, [selectedFamiliarId, sessionId]);
-  const hintText = selectedFamiliar
-    ? `Thinking: ${thinkingEffort} · Speed: ${responseSpeed} · Model: ${modelOverride ?? "Runtime managed"}`
-    : "@id switches familiars · ⌘N new chat";
+  const modelLabel = modelOverride ?? "auto";
 
   return (
     <section
@@ -370,9 +368,30 @@ export function QuickChatTabPane({
               disabled={!sessionId}
               onClick={() => void openFullSession()}
             />
-            <p className="min-w-0 truncate text-xs text-[var(--fg-muted)]">
-              {hintText}
-            </p>
+            {selectedFamiliar ? (
+              // Quiet meta chips instead of a "Thinking: high · Speed: fast ·
+              // Model: …" run-on sentence (cave-fdt5). The group carries the
+              // full reading for screen readers; chips get sighted tooltips.
+              <span
+                className="quick-chat-meta-chips"
+                role="group"
+                aria-label={`Thinking ${thinkingEffort}, speed ${responseSpeed}, model ${modelLabel}`}
+              >
+                <span aria-hidden className="quick-chat-meta-chip" title="Thinking effort">
+                  {thinkingEffort}
+                </span>
+                <span aria-hidden className="quick-chat-meta-chip" title="Response speed">
+                  {responseSpeed}
+                </span>
+                <span aria-hidden className="quick-chat-meta-chip" title="Model">
+                  {modelLabel}
+                </span>
+              </span>
+            ) : (
+              <p className="min-w-0 truncate text-xs text-[var(--fg-muted)]">
+                @id switches familiars · ⌘N new chat
+              </p>
+            )}
           </div>
         }
       />
