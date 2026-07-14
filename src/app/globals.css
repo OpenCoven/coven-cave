@@ -11249,7 +11249,49 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   overflow-y: auto;
 }
 .fa-thread-review-list li {
+  position: relative;
   min-width: 0;
+}
+/* Dismiss ("acknowledge") — top-right of the item, hover/focus-revealed on
+   fine pointers, always visible on coarse (no hover to reveal it with). */
+.fa-thread-review-dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.fa-thread-review-list li:hover .fa-thread-review-dismiss,
+.fa-thread-review-list li:focus-within .fa-thread-review-dismiss {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .fa-thread-review-dismiss { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fa-thread-review-dismiss { transition: none; }
+}
+/* Kind filter chips + the restore affordance. */
+.fa-thread-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fa-thread-review-chip {
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.fa-thread-review-chip b {
+  font-variant-numeric: tabular-nums;
+}
+.fa-thread-review-chip.is-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
+  color: var(--accent-presence);
+}
+.fa-thread-review-chip--restore {
+  margin-left: auto;
+  color: var(--text-muted);
 }
 /* Each review item is a button — selecting it opens a discussion on the topic.
    The shared .ui-btn base sets white-space: nowrap (single-line buttons), which
@@ -11399,6 +11441,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
+}
+/* The header row stays pinned while the wrap scrolls. */
+.fa-thread-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-raised);
+  box-shadow: 0 1px 0 var(--border-hairline);
 }
 .fa-thread-table {
   width: 100%;

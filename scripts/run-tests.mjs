@@ -440,6 +440,7 @@ export const SUITES = {
     "src/lib/server/stuck-created-sweep.test.ts",
     "src/components/thread-signal-card.test.ts",
     "src/components/thread-signals-section.test.ts",
+    "src/lib/thread-signal-dismissals.test.ts",
     "src/components/chat-view.test.ts",
     "src/components/familiars-view-stats.test.ts",
     "src/components/automations-detail-inputs.test.ts",
