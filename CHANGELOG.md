@@ -17,6 +17,9 @@ breaking config changes; patch releases stay additive.
 ### Changed
 - **Shared assist runner** — the stitch sew's bounded `codex exec` lane (read-only sandbox pinned inside the module, stdin prompt, `--output-last-message` parse) is extracted to `src/lib/server/assist-runner.ts` for every authoring assist to reuse (cave-c40b).
 
+### Fixed
+- **Tools: Update can now clear stale PATH launchers** — when `npm install -g` succeeds but an older copy of the same package still shadows the fresh install on PATH (orphaned nvm trees, old Homebrew-node prefixes), the Update/Repair flow no longer fails forever with "a stale executable is still first on PATH": it removes the stale same-package launcher under strict identity gates (the fresh npm-prefix copy must verify first; unrelated binaries and directories are never touched) and re-verifies — and when removal isn't safe or permitted, the error now carries the exact manual command instead of a dead end (cave-kii6).
+
 
 ## [0.1.0] - 2026-07-12
 
