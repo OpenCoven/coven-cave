@@ -657,20 +657,76 @@ function CapRow({ label, value, mono }: { label: string; value: string; mono?: b
   );
 }
 
+/** Neutral kind marker — the kind is metadata, not a status: one quiet style
+ *  for every kind (the old per-kind color map was accent soup on every row). */
 function KindBadge({ kind }: { kind: string }) {
-  const colorMap: Record<string, string> = {
-    agent: "bg-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] text-[var(--accent-presence)]",
-    harness: "bg-[color-mix(in_oklch,var(--accent-presence-soft)_20%,transparent)] text-[var(--accent-presence-soft)]",
-    hybrid: "bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)] text-[var(--color-success)]",
-    mcp: "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]",
-    builtin: "bg-[var(--bg-raised)] text-[var(--text-muted)]",
-  };
-  const k = (kind ?? "").toLowerCase();
-  const cls = colorMap[k] ?? "bg-[var(--bg-raised)] text-[var(--text-muted)]";
   return (
-    <span className={`rounded px-1 text-[10px] uppercase tracking-wider ${cls}`}>
+    <span className="rounded bg-[var(--bg-raised)] px-1 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
       {kind || "—"}
     </span>
+  );
+}
+
+/** Navigate the workspace to a management surface (Roles / Capabilities /
+ *  Marketplace hub) through the same `cave:navigate-mode` bridge every other
+ *  cross-surface link uses. */
+function navigateMode(mode: "roles" | "capabilities" | "marketplace"): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+}
+
+/** Teach-state CTA — every empty state gets a real affordance, not a
+ *  dead-end sentence naming a page. */
+function CapCta({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="focus-ring mt-1.5 inline-flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
+    >
+      {label}
+    </button>
+  );
+}
+
+/** One de-boxed skill row, shared by all three provenance groups: quiet name
+ *  + kind, one-line description, neutral tag chips — and the source path
+ *  demoted from body copy to a hover/focus tooltip. */
+function SkillItem({
+  name,
+  kind,
+  description,
+  tags,
+  sourcePath,
+}: {
+  name: string;
+  kind: string;
+  description?: string;
+  tags?: string[];
+  sourcePath?: string;
+}) {
+  return (
+    <li className="px-2 py-1.5" title={sourcePath}>
+      <div className="flex items-center gap-1.5">
+        <span className="font-medium text-[var(--text-primary)]">{name}</span>
+        <KindBadge kind={kind} />
+      </div>
+      {description ? (
+        <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">{description}</p>
+      ) : null}
+      {tags && tags.length > 0 ? (
+        <div className="mt-0.5 flex flex-wrap gap-1">
+          {tags.map((t) => (
+            <span
+              key={t}
+              className="rounded bg-[var(--bg-raised)] px-1 text-[10px] text-[var(--text-muted)]"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -679,21 +735,20 @@ function CollapsibleSection({
   badge,
   open,
   onToggle,
-  accentClass,
   children,
 }: {
   title: string;
   badge?: string;
   open: boolean;
   onToggle: () => void;
-  accentClass?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className={`rounded border border-[var(--border-hairline)] ${accentClass ?? ""}`}>
+    <div className="familiar-tab__list">
       <button
         onClick={onToggle}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]/40"
+        aria-expanded={open}
+        className="focus-ring flex w-full items-center gap-1.5 rounded-[inherit] px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]/40"
       >
         <Icon
           name={open ? "ph:caret-down" : "ph:caret-right"}
@@ -875,12 +930,16 @@ function FamiliarCapabilityPanel({
   }
 
   // The identity hero needs nothing from the capability fetches — paint it
-  // immediately and keep the skeleton for the capability grid alone.
+  // immediately and keep the shimmer for the capability grid alone, shaped
+  // like the grid it resolves into.
   if (loading) {
     return (
       <div className="familiar-tab flex flex-col gap-2 p-4 text-xs">
         <FamiliarIdentityHero familiar={familiar} daemonRunning={daemonRunning} />
-        <SkeletonRows count={6} className="p-3" />
+        <div className="familiar-tab__grid" aria-hidden>
+          <SkeletonRows count={5} className="p-3" />
+          <SkeletonRows count={5} className="p-3" />
+        </div>
       </div>
     );
   }
@@ -945,39 +1004,40 @@ function FamiliarCapabilityPanel({
       {/* ── Section 1: Roles ──────────────────────────────────────────────── */}
       <CapSection title="Roles" scope={`active: ${activeRoles.length}`}>
         {activeRoles.length === 0 ? (
-          <p className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-2 text-[var(--text-muted)]">
-            No roles active — activate one in the Roles page.
-          </p>
+          <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
+            <p>No roles active for this familiar.</p>
+            <CapCta label="Open Roles →" onClick={() => navigateMode("roles")} />
+          </div>
         ) : (
-          <ul className="space-y-1.5">
-            {activeRoles.map((role) => (
-              <li
-                key={`${role.familiar}:${role.id}`}
-                className="rounded border border-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" />
-                  <span className="font-medium text-[var(--text-primary)]">{role.name}</span>
-                  <span className="ml-auto rounded bg-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] px-1 text-[10px] text-[var(--accent-presence)]">
-                    {role.familiar}
-                  </span>
-                  {role.skills.length > 0 ? (
-                    <span className="rounded bg-[var(--bg-raised)] px-1 text-[10px] text-[var(--text-muted)]">
-                      {role.skills.length} skill{role.skills.length === 1 ? "" : "s"}
+          <div className="familiar-tab__list">
+            <ul className="familiar-tab__rows">
+              {activeRoles.map((role) => (
+                <li
+                  key={`${role.familiar}:${role.id}`}
+                  className="px-3 py-2"
+                  title={`Inherited from roles/${role.id}/ROLE.md`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--text-secondary)]" aria-hidden />
+                    <span className="font-medium text-[var(--text-primary)]">{role.name}</span>
+                    <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+                      {role.familiar}
                     </span>
+                    {role.skills.length > 0 ? (
+                      <span className="rounded bg-[var(--bg-raised)] px-1 text-[10px] text-[var(--text-muted)]">
+                        {role.skills.length} skill{role.skills.length === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                  </div>
+                  {role.description ? (
+                    <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">
+                      {role.description}
+                    </p>
                   ) : null}
-                </div>
-                {role.description ? (
-                  <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">
-                    {role.description}
-                  </p>
-                ) : null}
-                <p className="mt-0.5 font-mono text-[10px] text-[var(--text-muted)]">
-                  inherited from: roles/{role.id}/ROLE.md
-                </p>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </CapSection>
 
@@ -992,37 +1052,19 @@ function FamiliarCapabilityPanel({
               badge={`${roleGrantedSkillIds.size} via active roles`}
               open={skillsRoleOpen}
               onToggle={() => setSkillsRoleOpen((v) => !v)}
-              accentClass="border-l-2 border-l-[var(--accent-presence)]"
             >
-              <ul className="space-y-1 pt-1">
+              <ul className="familiar-tab__rows pt-1">
                 {Array.from(roleGrantedSkillIds).map((sid) => {
                   const skill = localSkills.find((s) => s.id === sid);
                   return (
-                    <li key={sid} className="rounded bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-[var(--text-primary)]">
-                          {skill?.name ?? sid}
-                        </span>
-                        <KindBadge kind={skill?.kind ?? "agent"} />
-                      </div>
-                      {skill?.description ? (
-                        <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">
-                          {skill.description}
-                        </p>
-                      ) : null}
-                      {skill?.tags && skill.tags.length > 0 ? (
-                        <div className="mt-0.5 flex flex-wrap gap-1">
-                          {skill.tags.map((t) => (
-                            <span
-                              key={t}
-                              className="rounded bg-[color-mix(in_oklch,var(--accent-presence)_20%,transparent)] px-1 text-[10px] text-[var(--accent-presence)]"
-                            >
-                              {t}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </li>
+                    <SkillItem
+                      key={sid}
+                      name={skill?.name ?? sid}
+                      kind={skill?.kind ?? "agent"}
+                      description={skill?.description}
+                      tags={skill?.tags}
+                      sourcePath="Granted by an active role"
+                    />
                   );
                 })}
               </ul>
@@ -1035,41 +1077,23 @@ function FamiliarCapabilityPanel({
             badge={String(familiarSkills.length)}
             open={skillsFamiliarOpen}
             onToggle={() => setSkillsFamiliarOpen((v) => !v)}
-            accentClass="border-l-2 border-l-[var(--color-success)]"
           >
             {familiarSkills.length === 0 ? (
-              <p className="pt-1 text-[10px] text-[var(--text-muted)]">
-                No skills in ~/.openclaw/workspace/{familiar.id}/skills/
-              </p>
+              <div className="px-1 pb-1 pt-1 text-[10px] text-[var(--text-muted)]">
+                <p>No skills installed for this familiar yet.</p>
+                <CapCta label="Browse Marketplace →" onClick={() => navigateMode("marketplace")} />
+              </div>
             ) : (
-              <ul className="space-y-1 pt-1">
+              <ul className="familiar-tab__rows pt-1">
                 {familiarSkills.map((s) => (
-                  <li key={s.path} className="rounded bg-[color-mix(in_oklch,var(--color-success)_10%,transparent)] px-2 py-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
-                      <KindBadge kind={s.kind ?? "agent"} />
-                    </div>
-                    {s.description ? (
-                      <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">
-                        {s.description}
-                      </p>
-                    ) : null}
-                    {s.tags && s.tags.length > 0 ? (
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {s.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="rounded bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)] px-1 text-[10px] text-[var(--color-success)]"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <p className="mt-0.5 font-mono text-[10px] text-[var(--text-muted)]">
-                      ~/.openclaw/workspace/{familiar.id}/skills/
-                    </p>
-                  </li>
+                  <SkillItem
+                    key={s.path}
+                    name={s.name}
+                    kind={s.kind ?? "agent"}
+                    description={s.description}
+                    tags={s.tags}
+                    sourcePath={s.path}
+                  />
                 ))}
               </ul>
             )}
@@ -1083,38 +1107,20 @@ function FamiliarCapabilityPanel({
             onToggle={() => setSkillsGlobalOpen((v) => !v)}
           >
             {globalSkills.length === 0 ? (
-              <p className="pt-1 text-[10px] text-[var(--text-muted)]">
-                No skills in ~/.openclaw/workspace/skills/
+              <p className="px-1 pb-1 pt-1 text-[10px] text-[var(--text-muted)]">
+                No global workspace skills.
               </p>
             ) : (
-              <ul className="space-y-1 pt-1">
+              <ul className="familiar-tab__rows pt-1">
                 {globalSkills.map((s) => (
-                  <li key={s.path} className="rounded bg-[var(--bg-raised)]/60 px-2 py-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
-                      <KindBadge kind={s.kind ?? "agent"} />
-                    </div>
-                    {s.description ? (
-                      <p className="mt-0.5 line-clamp-1 text-[10px] text-[var(--text-muted)]">
-                        {s.description}
-                      </p>
-                    ) : null}
-                    {s.tags && s.tags.length > 0 ? (
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {s.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="rounded bg-[var(--bg-raised)] px-1 text-[10px] text-[var(--text-secondary)]"
-                          >
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    <p className="mt-0.5 font-mono text-[10px] text-[var(--text-muted)]">
-                      ~/.openclaw/workspace/skills/
-                    </p>
-                  </li>
+                  <SkillItem
+                    key={s.path}
+                    name={s.name}
+                    kind={s.kind ?? "agent"}
+                    description={s.description}
+                    tags={s.tags}
+                    sourcePath={s.path}
+                  />
                 ))}
               </ul>
             )}
@@ -1128,35 +1134,33 @@ function FamiliarCapabilityPanel({
       {/* ── Section 3: Plugins ────────────────────────────────────────────── */}
       <CapSection title="Plugins" scope={`${nonMcpPlugins.length} from runtime`}>
         {nonMcpPlugins.length === 0 ? (
-          <p className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-2 text-[var(--text-muted)]">
-            No plugins in runtime capability scan. Run /refresh in the Capabilities page.
-          </p>
+          <div className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
+            <p>No plugins in the latest runtime capability scan.</p>
+            <CapCta label="Open Capabilities →" onClick={() => navigateMode("capabilities")} />
+          </div>
         ) : (
-          <ul className="space-y-1.5">
-            {nonMcpPlugins.map((p) => (
-              <li
-                key={p.id}
-                className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1.5"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
-                  <KindBadge kind={p.kind} />
-                  <span
-                    className={`rounded px-1 text-[10px] uppercase tracking-wider ${
-                      p.enabled
-                        ? "bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)] text-[var(--color-success)]"
-                        : "bg-[var(--bg-raised)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {p.enabled ? "enabled" : "disabled"}
-                  </span>
-                </div>
-                {p.command ? (
-                  <p className="mt-0.5 font-mono text-[10px] text-[var(--text-muted)]">{p.command}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="familiar-tab__list">
+            <ul className="familiar-tab__rows">
+              {nonMcpPlugins.map((p) => (
+                <li key={p.id} className={`px-3 py-2 ${p.enabled ? "" : "opacity-60"}`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                    <KindBadge kind={p.kind} />
+                    {/* Chip diet: enabled is the expected state — only the
+                        exception (disabled) earns a marker. */}
+                    {p.enabled ? null : (
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                        disabled
+                      </span>
+                    )}
+                  </div>
+                  {p.command ? (
+                    <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]">{p.command}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </CapSection>
 
@@ -1170,7 +1174,6 @@ function FamiliarCapabilityPanel({
         }
       >
         <ul className="space-y-1">
-          <CapRow label="runtime" value={harnessId} />
           <CapRow label="binary" value={harnessReport?.binary ?? "—"} />
           <CapRow label="path" value={harnessReport?.path ?? "—"} mono />
           <CapRow label="version" value={harnessReport?.version ?? "—"} />
@@ -1184,38 +1187,32 @@ function FamiliarCapabilityPanel({
       {/* ── Section 5: MCP Servers ───────────────────────────────────────── */}
       <CapSection title="MCP Servers" scope={`${mcpPlugins.length} discovered`}>
         {mcpPlugins.length === 0 ? (
-          <p className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-2 text-[var(--text-muted)]">
-            No MCP servers in capability scan.
+          <p className="rounded border border-dashed border-[var(--border-hairline)] px-3 py-2.5 text-[var(--text-muted)]">
+            No MCP servers in the capability scan.
           </p>
         ) : (
-          <ul className="space-y-1.5">
-            {mcpPlugins.map((p) => (
-              <li
-                key={p.id}
-                className="rounded border border-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_5%,transparent)] px-2 py-1.5"
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
-                  <KindBadge kind="mcp" />
-                  <span
-                    className={`rounded px-1 text-[10px] uppercase tracking-wider ${
-                      p.enabled
-                        ? "bg-[color-mix(in_oklch,var(--color-success)_20%,transparent)] text-[var(--color-success)]"
-                        : "bg-[var(--bg-raised)] text-[var(--text-muted)]"
-                    }`}
-                  >
-                    {p.enabled ? "enabled" : "disabled"}
-                  </span>
-                </div>
-                {p.command ? (
-                  <p className="mt-0.5 font-mono text-[10px] text-[var(--text-muted)]">{p.command}</p>
-                ) : null}
-                {p.args && p.args.length > 0 ? (
-                  <p className="mt-0.5 font-mono text-[10px] text-[var(--text-muted)]">{p.args.join(" ")}</p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="familiar-tab__list">
+            <ul className="familiar-tab__rows">
+              {mcpPlugins.map((p) => (
+                <li key={p.id} className={`px-3 py-2 ${p.enabled ? "" : "opacity-60"}`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                    <KindBadge kind="mcp" />
+                    {p.enabled ? null : (
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                        disabled
+                      </span>
+                    )}
+                  </div>
+                  {p.command ? (
+                    <p className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]" title={[p.command, ...(p.args ?? [])].join(" ")}>
+                      {[p.command, ...(p.args ?? [])].join(" ")}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </CapSection>
 
