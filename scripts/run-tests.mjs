@@ -82,6 +82,8 @@ export const SUITES = {
     "scripts/coven-hfr-export.test.mjs",
     "src/lib/covenwiki-regen.test.ts",
     "scripts/covenwiki-regen-cli.test.mjs",
+    "src/lib/covenwiki-generate.test.ts",
+    "scripts/covenwiki-generate-cli.test.mjs",
     "src/lib/screen-magnification.test.ts",
     "src/lib/no-builtin-familiar-roster.test.ts",
     "src/lib/familiar-roster-guard.test.ts",

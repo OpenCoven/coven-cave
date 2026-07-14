@@ -317,10 +317,13 @@ export type WikiManifest = {
  * The 16-hex stat digest that is the Phase 3 staleness key: sha256 over the
  * sorted source inventory (path + size + mtime), truncated to 16 hex chars.
  *
- * Contract: manifest handoff doc (2026-07-03), `source.fingerprint`. The
- * reference implementation lives in the covenwiki-generate CLI; byte-parity
- * with it must be verified before the daemon wires `status` polling — any
- * inventory or format drift shows up as a permanent false "stale".
+ * Contract: manifest handoff doc (2026-07-03), `source.fingerprint`, pinned
+ * in docs/covenwiki-manifest.schema.json. Both writers share one code path:
+ * the covenwiki-generate CLI and the covenwiki-regen CLI each compute this
+ * function over `statInventory` from scripts/covenwiki-fs.ts, so generator
+ * and staleness check cannot drift (a drift would show up as a permanent
+ * false "stale"). Parity is asserted end-to-end in
+ * scripts/covenwiki-generate-cli.test.mjs.
  */
 export function computeSourceFingerprint(entries: StatEntry[]): string {
   const lines = entries

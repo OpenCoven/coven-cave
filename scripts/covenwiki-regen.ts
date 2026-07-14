@@ -21,7 +21,6 @@
 // template: {repo}, {out}, {slug} are substituted before shell execution.
 import { createHash } from "node:crypto";
 import {
-  readdirSync,
   readFileSync,
   statSync,
   writeFileSync,
@@ -33,6 +32,7 @@ import {
 import { homedir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { statInventory, walk } from "./covenwiki-fs.ts";
 import {
   buildManifest,
   buildWikiStatus,
@@ -48,7 +48,6 @@ import {
   validateWikiManifest,
   type Manifest,
   type SourceEntry,
-  type StatEntry,
   type WikiManifest,
 } from "../src/lib/covenwiki-regen.ts";
 
@@ -72,7 +71,6 @@ type Options = {
   dryRun: boolean;
 };
 
-const SKIP_DIRS = new Set([".git", "node_modules", ".worktrees", ".next", "target"]);
 const DEFAULT_WIKIS_DIR = path.join(homedir(), ".coven", "wikis");
 const DEFAULT_GENERATOR = "covenwiki generate --repo {repo} --out {out}";
 
@@ -184,16 +182,6 @@ function requireValue(argv: string[], index: number, flag: string): string {
   return value;
 }
 
-function walk(root: string, out: string[]) {
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (entry.name.startsWith(".") && entry.isDirectory()) continue;
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const full = path.join(root, entry.name);
-    if (entry.isDirectory()) walk(full, out);
-    else if (entry.isFile()) out.push(full);
-  }
-}
-
 /** scan: hash the source roots into a content manifest. */
 function scan(opts: Options): Manifest {
   const files: string[] = [];
@@ -215,20 +203,6 @@ function loadPreviousManifest(stateFile: string): Manifest | null {
 }
 
 // ─── Wiki commands (plan S1–S4) ─────────────────────────────────────────────
-
-/** Stat-only inventory of a repo root, mirroring the fingerprint contract. */
-function statInventory(repoRoot: string): StatEntry[] {
-  const files: string[] = [];
-  walk(repoRoot, files);
-  return files.map((file) => {
-    const st = statSync(file);
-    return {
-      path: path.relative(repoRoot, file).split(path.sep).join("/"),
-      size: st.size,
-      mtimeMs: st.mtimeMs,
-    };
-  });
-}
 
 type LiveSource = { fingerprint: string | null; fileCount: number | null };
 
