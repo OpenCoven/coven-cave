@@ -200,9 +200,9 @@ assert.match(
 
 // The fixed dark surfaces must be near-opaque so they stay self-consistent
 // over a light --bg-base (a 60%-alpha wash goes muddy), and must not mix
-// with theme surfaces. The code-block read surface (.cave-code-wrap) draws its
-// ink from the shared --code-surface token so the Code page's file editor can
-// match it exactly; the system bubble keeps the literal.
+// with theme surfaces. Both the code-block read surface (.cave-code-wrap) and
+// the system bubble draw their ink from the shared --code-surface token so
+// the Code page's file editor can match them exactly.
 const codeSurfaceToken = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 assert.match(
   codeSurfaceToken,
@@ -220,8 +220,8 @@ assert.match(
 const systemBubble = ruleBlock(".cave-bubble-system");
 assert.match(
   systemBubble,
-  /background:\s*oklch\([^)]*\/\s*9\d%\)/,
-  ".cave-bubble-system surface must be a near-opaque fixed dark oklch",
+  /background:\s*var\(--code-surface\)/,
+  ".cave-bubble-system surface must draw from the shared --code-surface token",
 );
 assert.doesNotMatch(
   systemBubble,

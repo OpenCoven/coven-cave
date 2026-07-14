@@ -15,8 +15,26 @@
 :root {
   --code-chrome-ink: oklch(0.985 0 0);                /* dark-mode --text-primary */
   --code-chrome-ink-muted: oklch(0.66 0.018 293);     /* dark-mode --text-secondary */
-  --code-chrome-ink-faint: oklch(0.985 0 0 / 40%);    /* dark-mode --text-muted */
+  /* Mirrors dark-mode --text-muted, raised 40% → 72% (CHAT-D13-02): 9-11px
+     chrome labels must clear AA 4.5:1 on the code surface — 40% composited
+     to ~3.7:1. Pinned by theme-contrast-audit.test.ts (chrome section). */
+  --code-chrome-ink-faint: oklch(0.985 0 0 / 72%);    /* dark-mode --text-muted */
   --code-chrome-accent: #9a8ecd;                      /* dark-mode --accent-presence */
+  /* Fixed chrome surfaces. The body surface is the shared --code-surface
+     (globals.css); these are its raised header/footer and control steps.
+     Theme borders flip to dark ink in light mode and vanish on this chrome,
+     so borders INSIDE the chrome use the fixed hairline below — only the
+     outer wrap border (which delimits against the themed page) stays on
+     --border-hairline. */
+  --code-chrome-surface-raised: oklch(0.16 0.015 280 / 92%);
+  --code-chrome-surface-control: oklch(0.2 0.012 280 / 92%);
+  --code-chrome-surface-control-hover: oklch(0.25 0.015 280 / 92%);
+  --code-chrome-border: oklch(0.985 0 0 / 14%);
+  /* Fixed-chrome state inks (diff gutters, copy-confirmed). The themed
+     --color-success/--color-danger retune darker for light surfaces and
+     would fall below AA on the always-dark chrome. */
+  --code-chrome-success: oklch(0.65 0.15 170);
+  --code-chrome-danger: oklch(0.7 0.17 20);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -715,13 +733,15 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--text-muted);
+  /* Chrome ink, not --text-*: theme ink goes dark-on-dark in light mode
+     (CHAT-D13-01). */
+  color: var(--code-chrome-ink-faint);
   cursor: pointer;
   border-radius: var(--radius-sm);
 }
 .cave-code-collapse-btn:hover {
-  color: var(--text-secondary);
-  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--code-chrome-ink);
+  background: color-mix(in oklch, var(--code-chrome-ink) 8%, transparent);
 }
 .cave-code-collapse-btn:focus-visible {
   outline: 2px solid var(--accent-presence);
@@ -736,7 +756,7 @@
 
 .cave-code-lines {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--code-chrome-ink-faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -762,8 +782,8 @@
   align-items: center;
   gap: 0.5em;
   padding: 0.35em 0.75em;
-  background: oklch(0.16 0.015 280 / 92%);
-  border-bottom: 1px solid var(--border-hairline);
+  background: var(--code-chrome-surface-raised);
+  border-bottom: 1px solid var(--code-chrome-border);
   min-height: 28px;
   backdrop-filter: blur(4px);
 }
@@ -777,9 +797,10 @@
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  /* No opacity dimmer: alpha-stacking is how the old 40% ink evaded
+     automated contrast checks while reading ~3:1 (CHAT-D13-02). */
   color: color-mix(in oklch, var(--code-chrome-accent) 80%, var(--code-chrome-ink-faint));
   flex-shrink: 0;
-  opacity: 0.85;
 }
 
 .cave-code-filename {
@@ -791,7 +812,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.7;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -854,7 +874,9 @@
   flex-shrink: 0;
   width: 2.6em;
   padding-right: 0.8em;
-  color: color-mix(in oklch, var(--code-chrome-accent) 28%, oklch(0.5 0 0 / 50%));
+  /* AA at 10px on the code surface (was accent-28%/50%-alpha gray ≈ 2.2:1,
+     the "ordinals" finding in CHAT-D13-02). */
+  color: color-mix(in oklch, var(--code-chrome-accent) 30%, var(--code-chrome-ink-muted));
   font-size: 10px;
   text-align: right;
   user-select: none;
@@ -865,33 +887,35 @@
    DIFF GUTTER STRIPS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-diff-add {
-  background: oklch(0.6 0.15 170 / 10%);
-  border-left: 2px solid oklch(0.6 0.15 170 / 55%);
+  background: color-mix(in oklch, var(--code-chrome-success) 10%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-success) 55%, transparent);
   padding-left: calc(1em - 2px);
 }
 .cave-diff-del {
-  background: oklch(0.55 0.2 15 / 12%);
-  border-left: 2px solid oklch(0.55 0.2 15 / 55%);
+  background: color-mix(in oklch, var(--code-chrome-danger) 12%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-danger) 55%, transparent);
   padding-left: calc(1em - 2px);
 }
 /* CHAT-D8-03: @@ hunk headers read as muted metadata, not content. Shiki
-   tokens carry inline colors, so the ink override needs !important. */
+   tokens carry inline colors, so the ink override needs !important. Chrome
+   ink, not --text-muted: theme ink is dark-on-dark in light mode, and an
+   extra opacity dimmer would sink it back below AA (CHAT-D13-01/02). */
 .cave-diff-meta {
-  opacity: 0.65;
+  color: var(--code-chrome-ink-faint);
 }
 .cave-diff-meta span {
-  color: var(--text-muted) !important;
+  color: var(--code-chrome-ink-faint) !important;
 }
 /* Language-highlighted diffs re-attach the leading +/- as its own span so the
    code keeps its token colors; tint the marker to match its line's strip. */
 .cave-diff-marker {
-  color: var(--text-muted);
+  color: var(--code-chrome-ink-faint);
 }
 .cave-diff-add .cave-diff-marker {
-  color: oklch(0.6 0.15 170 / 90%);
+  color: var(--code-chrome-success);
 }
 .cave-diff-del .cave-diff-marker {
-  color: oklch(0.55 0.2 15 / 90%);
+  color: var(--code-chrome-danger);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -904,8 +928,10 @@
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   padding: 0.2em 0.6em;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: oklch(0.2 0.012 280 / 92%);
+  /* Fixed chrome border + surface: --border-strong flips to dark ink in
+     light mode and disappeared on this dark chip (CHAT-D13-01). */
+  border: 1px solid var(--code-chrome-border);
+  background: var(--code-chrome-surface-control);
   color: var(--code-chrome-ink-faint);
   cursor: pointer;
   opacity: 0;
@@ -925,12 +951,12 @@
 
 .cave-copy-btn--confirmed {
   opacity: 1 !important;
-  color: oklch(0.65 0.15 170);
+  color: var(--code-chrome-success);
 }
 
 .cave-copy-btn:hover {
   color: var(--code-chrome-ink);
-  background: oklch(0.25 0.015 280 / 92%);
+  background: var(--code-chrome-surface-control-hover);
 }
 .cave-copy-btn:focus-visible { opacity: 1; }
 
@@ -1027,8 +1053,8 @@
   display: flex;
   justify-content: center;
   padding: 0.25em 0.75em;
-  background: oklch(0.16 0.015 280 / 92%);
-  border-top: 1px solid var(--border-hairline);
+  background: var(--code-chrome-surface-raised);
+  border-top: 1px solid var(--code-chrome-border);
   backdrop-filter: blur(4px);
 }
 
@@ -4214,8 +4240,9 @@ details[open] > .cave-tool-summary::before {
 .cave-bubble-system {
   border-radius: 9px;
   border: 1px solid var(--border-hairline);
-  /* Fixed near-opaque dark terminal surface — see DARK-CHROME FIXED INKS. */
-  background: oklch(0.12 0.012 280 / 92%);
+  /* Fixed near-opaque dark terminal surface — see DARK-CHROME FIXED INKS.
+     Same value as code blocks, via the shared token. */
+  background: var(--code-surface);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
     inset 0 1px 0 oklch(0.985 0 0 / 4%);
@@ -4227,8 +4254,8 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 0.5em;
   padding: 0.3em 0.75em;
-  background: oklch(0.16 0.015 280 / 92%);
-  border-bottom: 1px solid var(--border-hairline);
+  background: var(--code-chrome-surface-raised);
+  border-bottom: 1px solid var(--code-chrome-border);
   min-height: 26px;
   backdrop-filter: blur(4px);
 }
@@ -4251,8 +4278,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-bubble-system-label--dim {
+  /* Faint chrome ink only — an opacity dimmer on top of it re-created the
+     sub-AA alpha stack from CHAT-D13-02. */
   color: var(--code-chrome-ink-faint);
-  opacity: 0.6;
 }
 
 .cave-bubble-system-body {
@@ -4677,9 +4705,9 @@ details[open] > .cave-tool-summary::before {
 .familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }
 .familiar-inline-card__memory-stale {
-  margin-left: 6px; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
   padding: 1px 4px; border-radius: var(--radius-control);
-  color: var(--warning, #fbbf24); border: 1px solid color-mix(in srgb, var(--warning, #fbbf24) 45%, transparent);
+  color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent);
 }
 
 /* ── Insight layer (cave-ck70) ─────────────────────────────────────────────
@@ -4692,16 +4720,16 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-primary, #ddd); background: var(--bg-base, #111);
 }
 .familiar-inline-card__insight[data-tone="good"] {
-  border-color: color-mix(in srgb, #4ade80 35%, transparent);
-  background: color-mix(in srgb, #4ade80 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
 }
 .familiar-inline-card__insight[data-tone="warn"] {
-  border-color: color-mix(in srgb, #fbbf24 35%, transparent);
-  background: color-mix(in srgb, #fbbf24 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
 }
 .familiar-inline-card__insight[data-tone="bad"] {
-  border-color: color-mix(in srgb, #f87171 35%, transparent);
-  background: color-mix(in srgb, #f87171 8%, transparent);
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
 }
 
 .familiar-inline-card__meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -4714,8 +4742,8 @@ details[open] > .cave-tool-summary::before {
   font-size: 11px; padding: 1px 6px; border-radius: var(--radius-pill, 999px);
   color: var(--text-secondary, #999); border: 1px solid var(--border-hairline, #2a2a2a);
 }
-.familiar-inline-card__signal[data-severity="warn"] { color: #fbbf24; border-color: color-mix(in srgb, #fbbf24 45%, transparent); }
-.familiar-inline-card__signal[data-severity="crit"] { color: #f87171; border-color: color-mix(in srgb, #f87171 45%, transparent); }
+.familiar-inline-card__signal[data-severity="warn"] { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 45%, transparent); }
+.familiar-inline-card__signal[data-severity="crit"] { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
 
 .familiar-inline-card__workload-head { font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
 .familiar-inline-card__workload-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
