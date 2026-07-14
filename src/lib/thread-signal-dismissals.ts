@@ -25,9 +25,11 @@ export function signalDismissalKey(familiarId: string): string {
   return `cave:thread-signals:dismissed:${familiarId}`;
 }
 
-/** Stable identity for a derived review item — kind + title, never detail. */
-export function signalIdentity(item: Pick<ThreadSignalReviewItem, "kind" | "title">): string {
-  return `${item.kind}:${item.title}`;
+/** Stable identity for a derived review item — kind + upstream sourceId
+ *  (blocker id / skill id / capability name), never the display title:
+ *  titles aren't enforced unique, and a collision would dismiss strangers. */
+export function signalIdentity(item: Pick<ThreadSignalReviewItem, "kind" | "sourceId">): string {
+  return `${item.kind}:${item.sourceId}`;
 }
 
 export function loadSignalDismissals(
@@ -40,9 +42,12 @@ export function loadSignalDismissals(
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-    const map: SignalDismissalMap = {};
+    // Null prototype: stored keys are attacker-ish input ("__proto__" et al.
+    // must stay plain data); invalid timestamps would NaN-poison pruning.
+    const map: SignalDismissalMap = Object.create(null) as SignalDismissalMap;
     for (const [identity, dismissedAt] of Object.entries(parsed)) {
-      if (typeof dismissedAt === "string") map[identity] = dismissedAt;
+      if (typeof dismissedAt !== "string" || !Number.isFinite(Date.parse(dismissedAt))) continue;
+      map[identity] = dismissedAt;
     }
     return map;
   } catch {
@@ -75,7 +80,7 @@ export function pruneSignalDismissals(map: SignalDismissalMap): SignalDismissalM
 /** Persist one dismissal; returns the updated map. */
 export function addSignalDismissal(
   familiarId: string,
-  item: Pick<ThreadSignalReviewItem, "kind" | "title">,
+  item: Pick<ThreadSignalReviewItem, "kind" | "sourceId">,
   storage: DismissStorage | null | undefined,
   now: number = Date.now(),
 ): SignalDismissalMap {
@@ -97,7 +102,7 @@ export function clearSignalDismissals(
 }
 
 /** Split a review queue into visible and dismissed halves. */
-export function partitionDismissedSignals<T extends Pick<ThreadSignalReviewItem, "kind" | "title">>(
+export function partitionDismissedSignals<T extends Pick<ThreadSignalReviewItem, "kind" | "sourceId">>(
   items: T[],
   dismissals: SignalDismissalMap,
 ): { visible: T[]; dismissed: T[] } {

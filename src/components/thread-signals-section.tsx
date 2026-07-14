@@ -174,6 +174,7 @@ function resolveRow(familiarId: string, row: ThreadSignalTableRow) {
   launchResolutionThread(familiarId, {
     kind: row.kind,
     severity: row.severity ?? "info",
+    sourceId: row.id,
     title: row.signal,
     detail: `${row.detail}${row.count ? ` (reported ${row.count}x)` : ""} — status: ${row.state}.`,
   });
