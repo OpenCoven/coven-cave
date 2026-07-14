@@ -24,6 +24,11 @@ import {
 } from "@/lib/opencoven-tools-status-display";
 import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
+  classifySetupFailure,
+  setupRetryLabel,
+  type SetupFailure,
+} from "@/lib/onboarding-setup-failure";
+import {
   openCovenToolActionTargets,
   openCovenToolsInstallCommand,
   openCovenToolsPrimaryActionLabel,
@@ -350,7 +355,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [platform, setPlatform] = useState<PlatformId>("unknown");
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
-  const [setupError, setSetupError] = useState<string | null>(null);
+  // Structured failure for the scaffold / daemon-start / connection actions:
+  // verbatim message + derived hint + the action to retry (never a bare
+  // string, so the banner can always offer the matching retry affordance).
+  const [setupError, setSetupError] = useState<SetupFailure | null>(null);
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
   // Consecutive /api/harnesses failures — the empty-list retry loop gives up
   // once this hits HARNESS_RETRY_BUDGET and StepRuntimes offers a Retry.
@@ -923,7 +931,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         throw new Error(json.error ?? "setup failed");
       await refresh();
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "setup failed");
+      setSetupError(classifySetupFailure("scaffold", err));
     } finally {
       setPicking(null);
     }
@@ -955,7 +963,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       }
       await refresh();
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "daemon start failed");
+      setSetupError(classifySetupFailure("daemon-start", err));
     } finally {
       setStartingDaemon(false);
     }
@@ -998,10 +1006,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (!res.ok || json.ok === false) throw new Error(json.error ?? "connection setup failed");
       await refresh();
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : "connection setup failed");
+      setSetupError(classifySetupFailure("connection-save", err));
     } finally {
       setSavingOnboardingConnection(false);
     }
+  };
+
+  // The banner's retry re-runs exactly the action that failed. Busy-state
+  // mirrors each action's own in-flight flag so a double-click can't stack
+  // requests, and every action clears setupError on entry — a successful
+  // retry removes the banner by construction.
+  const setupRetryBusy =
+    picking !== null || startingDaemon || savingOnboardingConnection;
+  const retrySetupAction = () => {
+    if (!setupError || setupRetryBusy) return;
+    if (setupError.action === "scaffold") void scaffoldOnly();
+    else if (setupError.action === "daemon-start") void startDaemon();
+    else void saveOnboardingConnection();
   };
 
 
@@ -1287,20 +1308,41 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // Every setup action (scaffold, daemon start, familiar create,
           // connection save) reports through this banner — it must be a live
           // alert or screen-reader users never hear why their click did
-          // nothing, and it must be dismissible so a stale error doesn't
-          // outlive the retry.
+          // nothing. It carries the verbatim failure, one derived hint, and
+          // the matching retry affordance (classifySetupFailure), and stays
+          // dismissible so a stale error doesn't outlive the retry.
           <section
             role="alert"
-            className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]"
+            className="mt-5 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]"
           >
-            <div>{setupError}</div>
-            <button
-              type="button"
-              onClick={() => setSetupError(null)}
-              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
-            >
-              Dismiss
-            </button>
+            <div className="min-w-0 flex-1">
+              <div className="whitespace-pre-wrap break-words font-medium">
+                {setupError.message}
+              </div>
+              {setupError.hint ? (
+                <p className="mt-1 leading-5 text-[var(--text-secondary)]">
+                  {setupError.hint}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={retrySetupAction}
+                disabled={setupRetryBusy}
+                aria-busy={setupRetryBusy}
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)] disabled:opacity-50"
+              >
+                {setupRetryLabel(setupError.action)}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSetupError(null)}
+                className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
+              >
+                Dismiss
+              </button>
+            </div>
           </section>
         ) : null}
 

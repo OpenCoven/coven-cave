@@ -238,4 +238,36 @@ assert.match(
   "the footer CTA only promises a summoning when the roster is actually empty",
 );
 
+// ── cave-r6ro: setup failures carry a hint and a retry, never a dead end ─────
+// scaffold / daemon-start / connection-save previously dumped a raw message
+// into the banner with only a Dismiss — no next step, no way to try again
+// without hunting for the original button.
+for (const action of ["scaffold", "daemon-start", "connection-save"]) {
+  assert.match(
+    source,
+    new RegExp(`classifySetupFailure\\("${action}", err\\)`),
+    `${action} failures are classified into message + derived hint`,
+  );
+}
+assert.match(
+  source,
+  /\{setupError\.hint \? \(/,
+  "the banner renders the derived hint when the failure class is known",
+);
+assert.match(
+  source,
+  /onClick=\{retrySetupAction\}/,
+  "the banner offers a retry that re-runs exactly the failed action",
+);
+assert.match(
+  source,
+  /\{setupRetryLabel\(setupError\.action\)\}/,
+  "the retry affordance names the action it will re-run",
+);
+assert.match(
+  source,
+  /if \(!setupError \|\| setupRetryBusy\) return;/,
+  "retry is a no-op while the action is already in flight (no stacked requests)",
+);
+
 console.log("onboarding-polish.test.ts: ok");
