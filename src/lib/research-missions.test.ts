@@ -6,7 +6,9 @@ import {
 } from "./research-mission-routing.ts";
 import {
   allowedResearchActions,
+  describeResearchSchedule,
   normalizeResearchBounds,
+  RESEARCH_BOUND_LIMITS,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
 
@@ -120,4 +122,41 @@ test("mission creation validates familiar, intent, mode, and bounded input", () 
     }).ok,
     false,
   );
+});
+
+test("composer clamp limits match what the server accepts", () => {
+  assert.equal(
+    normalizeResearchBounds({
+      wallClockMinutes: RESEARCH_BOUND_LIMITS.wallClockMinutes,
+      maxIterations: RESEARCH_BOUND_LIMITS.maxIterations,
+      sourceTarget: RESEARCH_BOUND_LIMITS.sourceTarget,
+      checkpointEvery: RESEARCH_BOUND_LIMITS.checkpointEvery,
+      stopWhenCostUnavailable: false,
+    }).ok,
+    true,
+  );
+  assert.equal(
+    normalizeResearchBounds({
+      wallClockMinutes: RESEARCH_BOUND_LIMITS.wallClockMinutes + 1,
+      maxIterations: 1,
+      sourceTarget: 1,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    }).ok,
+    false,
+  );
+});
+
+test("automation schedules are described in human terms, not raw RRULE", () => {
+  assert.equal(describeResearchSchedule("RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"), "Daily at 09:00");
+  assert.equal(
+    describeResearchSchedule("RRULE:FREQ=WEEKLY;BYHOUR=8;BYMINUTE=30;BYDAY=MO,WE,FR"),
+    "Weekly on Mon, Wed, Fri at 08:30",
+  );
+  assert.equal(describeResearchSchedule("RRULE:FREQ=WEEKLY;BYHOUR=7;BYMINUTE=15"), "Weekly at 07:15");
+  // Unknown shapes fall back to honest rule text instead of a wrong guess.
+  assert.equal(describeResearchSchedule("RRULE:FREQ=HOURLY;INTERVAL=2"), "FREQ=HOURLY;INTERVAL=2");
+  assert.equal(describeResearchSchedule(""), "Not scheduled");
+  assert.equal(describeResearchSchedule(null), "Not scheduled");
+  assert.equal(describeResearchSchedule(undefined), "Not scheduled");
 });

@@ -2,6 +2,7 @@
 
 import { Icon } from "@/lib/icon";
 import type { ResearchMission } from "@/lib/research-missions";
+import { relativeTime } from "@/lib/relative-time";
 
 type Props = {
   missions: ResearchMission[];
@@ -55,6 +56,7 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect }:
                     <span>{mission.mode}</span>
                     <span>{mission.status}</span>
                     {iteration ? <span>i{iteration.number}/{mission.bounds.maxIterations}</span> : null}
+                    <time dateTime={mission.updatedAt}>{relativeTime(mission.updatedAt) || "just now"}</time>
                   </span>
                 </button>
               </li>

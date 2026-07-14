@@ -224,11 +224,21 @@ export type ThreadSignalsAggregate = {
 export type ThreadSignalReviewItem = {
   kind: "blocker" | "skill-access" | "skill-clarity" | "capability" | "context-pressure" | "low-score";
   severity: "critical" | "warning" | "info";
+  /** Stable upstream identity within the kind (blocker id, skill id,
+   *  capability name, metric label) — titles are display-only and are not
+   *  enforced unique, so dismissal keys and React keys hang off this. */
+  sourceId: string;
   title: string;
   detail: string;
 };
 
-const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
+export const REVIEW_SEVERITY_ORDER: Record<ThreadSignalReviewItem["severity"], number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+export const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
   blocker: "persistent blocker",
   "skill-access": "skill access gap",
   "skill-clarity": "skill clarity gap",
@@ -398,6 +408,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "blocker",
       severity: blocker.crit || blocker.impact === "blocking" ? "critical" : "warning",
+      sourceId: blocker.id,
       title: blocker.title,
       detail: `${blocker.frequency}x - ${blocker.impact}${blocker.suggestedResolution ? ` - ${blocker.suggestedResolution}` : ""}`,
       rank: blocker.crit || blocker.impact === "blocking" ? 100 + blocker.rankScore : 70 + blocker.rankScore,
@@ -408,6 +419,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "skill-access",
       severity: "critical",
+      sourceId: skill.skillId,
       title: skill.skillId,
       detail: skill.reason,
       rank: 85,
@@ -418,6 +430,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "capability",
       severity: "critical",
+      sourceId: capability.name,
       title: capability.name,
       detail: capability.detail,
       rank: 80,
@@ -428,6 +441,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "context-pressure",
       severity: aggregate.contextCounts.critical > 0 ? "critical" : "warning",
+      sourceId: "context-pressure",
       title: "Context pressure",
       detail: `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`,
       rank: aggregate.contextCounts.critical > 0 ? 75 : 55,
@@ -438,23 +452,25 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "skill-clarity",
       severity: "warning",
+      sourceId: skill.skillId,
       title: skill.skillId,
       detail: skill.reason,
       rank: 45,
     });
   }
 
-  const lowScores: [ThreadSignalReviewItem["title"], number][] = [
-    ["Confidence", aggregate.averageConfidence],
-    ["Tool reliability", aggregate.averageToolReliability],
-    ["Memory recall", aggregate.averageMemoryRecall],
-    ["File locatability", aggregate.averageFileLocatability],
+  const lowScores: [string, ThreadSignalReviewItem["title"], number][] = [
+    ["confidence", "Confidence", aggregate.averageConfidence],
+    ["tool-reliability", "Tool reliability", aggregate.averageToolReliability],
+    ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
+    ["file-locatability", "File locatability", aggregate.averageFileLocatability],
   ];
-  for (const [title, score] of lowScores) {
+  for (const [sourceId, title, score] of lowScores) {
     if (score > 0 && score < 60) {
       items.push({
         kind: "low-score",
         severity: score < 40 ? "critical" : "warning",
+        sourceId,
         title,
         detail: `Average ${score}/100`,
         rank: score < 40 ? 72 : 42,
@@ -463,7 +479,15 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
   }
 
   return items
-    .sort((a, b) => b.rank - a.rank || a.title.localeCompare(b.title))
+    // Severity first — a stack of warnings must never outrank a critical
+    // (rankScore-boosted warning blockers previously could). Rank breaks ties
+    // within a severity tier; title keeps the order stable.
+    .sort(
+      (a, b) =>
+        REVIEW_SEVERITY_ORDER[a.severity] - REVIEW_SEVERITY_ORDER[b.severity] ||
+        b.rank - a.rank ||
+        a.title.localeCompare(b.title),
+    )
     .slice(0, 8)
     .map(({ rank: _rank, ...item }) => item);
 }
