@@ -98,17 +98,22 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     );
   }
 
-  if (state === "ready" && artifacts.length === 0) {
+  if (artifacts.length === 0) {
+    const loading = state === "loading";
     return (
       <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
         <EmptyState
-          icon="ph:paint-brush"
-          headline="No saved sketches yet"
+          icon={loading ? "ph:hourglass" : "ph:paint-brush"}
+          headline={loading ? "Loading saved sketches..." : "No saved sketches yet"}
           subtitle={
-            <>
-              Ask for one in a chat — e.g. <code>/canvas a pricing page with three tiers</code> — then
-              use “Save to Canvas” on the result.
-            </>
+            loading ? (
+              "Fetching saved sketches from the canvas store..."
+            ) : (
+              <>
+                Ask for one in a chat — e.g. <code>/canvas a pricing page with three tiers</code> — then use “Save to Canvas” on
+                the result.
+              </>
+            )
           }
         />
       </div>
