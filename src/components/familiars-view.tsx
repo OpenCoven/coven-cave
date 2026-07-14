@@ -514,11 +514,14 @@ function FamiliarRosterCard({
   const sessionsLabel =
     stats.sessionsLast7d > 0 ? ` · ${stats.sessionsLast7d} this week` : "";
   return (
-    <div className="flex h-full flex-col">
+    // De-boxed card (cave-g2r6): the wrapper carries the wash + soft hairline
+    // so the open button and the analytics link can sit inside one visual card
+    // as sibling interactive elements (no nested controls).
+    <div className="familiars-view__card group relative flex h-full flex-col">
       <button
         type="button"
         onClick={onSelect}
-        className="focus-ring familiars-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
+        className="focus-ring flex flex-1 flex-col items-stretch gap-2 rounded-[inherit] p-3 pb-2 text-left"
         aria-label={`Open ${familiar.display_name}`}
       >
         <div className="flex items-center gap-2">
@@ -551,11 +554,16 @@ function FamiliarRosterCard({
           ) : null}
         </div>
 
-        <p className="text-[11px] text-[var(--text-secondary)]">
+        <p className="mt-auto text-[11px] text-[var(--text-secondary)]">
           {lastSessionLabel}{sessionsLabel}
         </p>
+      </button>
 
-        <div className="mt-auto border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-secondary)]">
+      {/* Card footer — memory snapshot as a quiet one-liner + the analytics
+          link folded inside the card (it used to float orphaned below the
+          border). Hairline divider, no second box. */}
+      <div className="familiars-view__card-footer flex items-center justify-between gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-2 text-[11px]">
+        <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]" title={stats.latestMemory?.title}>
           {memoryStatus === "loading" ? (
             // Shimmer instead of a "Loading memory…" string — one loading
             // language across the roster, and no dead-looking text while the
@@ -564,31 +572,24 @@ function FamiliarRosterCard({
               <Skeleton variant="text-sm" width="55%" />
             </span>
           ) : memoryStatus === "error" ? (
-            <span className="text-[var(--text-muted)]">Memory unavailable</span>
+            "Memory unavailable"
           ) : stats.memoryCount === 0 ? (
-            <span className="text-[var(--text-muted)]">No memories yet</span>
+            "No memories yet"
           ) : (
             <>
-              <span className="block">
-                {stats.memoryCount} memor{stats.memoryCount === 1 ? "y" : "ies"}
-                {stats.latestMemory ? ` · last write ${age(stats.latestMemory.updatedAt)}` : ""}
-              </span>
-              {stats.latestMemory ? (
-                <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">
-                  {stats.latestMemory.title}
-                </span>
-              ) : null}
+              {stats.memoryCount} memor{stats.memoryCount === 1 ? "y" : "ies"}
+              {stats.latestMemory ? ` · last write ${age(stats.latestMemory.updatedAt)}` : ""}
             </>
           )}
-        </div>
-      </button>
-      <Link
-        href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
-        aria-label={`Open analytics for ${familiar.display_name}`}
-        className="mt-1 self-start text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-presence)]"
-      >
-        Analytics →
-      </Link>
+        </span>
+        <Link
+          href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+          aria-label={`Open analytics for ${familiar.display_name}`}
+          className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+        >
+          Analytics →
+        </Link>
+      </div>
     </div>
   );
 }
