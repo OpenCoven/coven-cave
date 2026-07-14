@@ -148,11 +148,11 @@ assert.doesNotMatch(
   "detail panel actions should use radius tokens instead of hard-coded radii",
 );
 
-// The active Schedules surface is narrowed to Calendar + Crons; reminder bulk
+// The active Rituals surface is Inbox + Calendar + Crons; reminder bulk
 // selection belongs to the older unified Automations surface.
-assert.match(source, /type AutomationTab = "calendar" \| "crons"/, "Schedules exposes only Calendar and Crons tabs");
-assert.doesNotMatch(source, /<SelectionToolbar/, "Schedules no longer renders reminder bulk-select chrome");
-assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : calendarSlot \? "calendar" : "crons"/, "non-calendar deep links land on Crons");
+assert.match(source, /type AutomationTab = "inbox" \| "calendar" \| "crons"/, "Rituals exposes Inbox, Calendar and Crons tabs");
+assert.doesNotMatch(source, /<SelectionToolbar/, "Rituals no longer renders reminder bulk-select chrome");
+assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : initialTab === "crons" \? "crons" : "inbox"/, "Inbox is the default landing tab; calendar/crons deep links still win");
 
 // ── Polling pauses while hidden + async fetch guards ────────────────────────
 // The 15s list poll + 2.5s in-flight run poll otherwise keep firing in a
