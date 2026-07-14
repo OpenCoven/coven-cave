@@ -6,7 +6,7 @@ import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave
 import { Icon } from "@/lib/icon";
 import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { useIsMobile } from "@/lib/use-viewport";
+import { useIsMobile, useIsCoarsePointer } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { sessionPrStatus } from "@/lib/session-pr-status";
@@ -301,6 +301,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const searchRef = useRef<HTMLInputElement>(null);
   const keys = useKeySymbols();
   const isMobile = useIsMobile();
+  // Touch devices can't hover-reveal the per-row controls, and rendering all
+  // five permanently (the old .touch-always-visible behaviour) ate most of
+  // each row — one ⋯ menu carries them instead.
+  const coarsePointer = useIsCoarsePointer();
   const allFamiliars = familiar ? [familiar] : familiars;
   const resolvedFamiliars = useResolvedFamiliars(allFamiliars, { includeArchived: true });
   const resolvedFamiliar = familiar ? resolvedFamiliars[0] : null;
@@ -568,8 +572,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   }
   // ── Row actions ──────────────────────────────────────────────────────────
 
-  const debugSession = (e: React.MouseEvent, session: SessionRow) => {
-    e.stopPropagation();
+  const debugSession = (e: React.MouseEvent | null, session: SessionRow) => {
+    e?.stopPropagation();
     setActiveId(session.id);
     onOpen(session.id, session.familiarId);
     window.requestAnimationFrame(() => {
@@ -603,8 +607,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
 
   // ── Pin (Cave-local) + archive (sessions PATCH) ──────────────────────────
 
-  const togglePin = (e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
+  const togglePin = (e: React.MouseEvent | null, sessionId: string) => {
+    e?.stopPropagation();
     toggleStoredPinnedSession(sessionId);
   };
 
@@ -640,8 +644,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     [onSessionsChanged],
   );
 
-  const setSessionArchived = async (e: React.MouseEvent, sessionId: string, archived: boolean) => {
-    e.stopPropagation();
+  const setSessionArchived = async (e: React.MouseEvent | null, sessionId: string, archived: boolean) => {
+    e?.stopPropagation();
     await patchSessionArchivePrefs(
       sessionId,
       { archived },
@@ -1374,6 +1378,54 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 <Icon name="ph:trash" width={10} aria-hidden />
                                 {deletingId === s.id ? "…" : "Delete"}
                               </button>
+                            </span>
+                          ) : coarsePointer ? (
+                            /* Touch: one ⋯ menu carries every row action —
+                               five permanent buttons per row ate the list. */
+                            <span
+                              className="chat-list-row-actions chat-list-row-actions--compact flex shrink-0 items-center self-center"
+                              onClick={(e) => e.stopPropagation()}
+                              onKeyDown={(e) => e.stopPropagation()}
+                            >
+                              <OverflowMenu
+                                ariaLabel={`Actions for chat ${rowName}`}
+                                disabled={archivingId !== null}
+                                className="h-9 w-9 shrink-0 rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)]"
+                                minWidth={224}
+                              >
+                                <PopoverItem
+                                  icon={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"}
+                                  onSelect={() => togglePin(null, s.id)}
+                                >
+                                  {pinned ? "Unpin chat" : "Pin chat"}
+                                </PopoverItem>
+                                <PopoverItem
+                                  icon={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"}
+                                  onSelect={() => void setSessionArchived(null, s.id, !s.archived_at)}
+                                >
+                                  {s.archived_at ? "Unarchive chat" : "Archive chat"}
+                                </PopoverItem>
+                                <PopoverSeparator />
+                                <PopoverItem
+                                  checked={Boolean(s.keep)}
+                                  onSelect={() => void setSessionKeep(s.id, !s.keep)}
+                                >
+                                  {s.keep ? "Remove keep mark" : "Keep chat"}
+                                </PopoverItem>
+                                <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 7)}>
+                                  Extend auto-archive +7 days
+                                </PopoverItem>
+                                <PopoverItem icon="ph:calendar-bold" onSelect={() => void extendSessionAutoArchive(s.id, 30)}>
+                                  Extend auto-archive +30 days
+                                </PopoverItem>
+                                <PopoverSeparator />
+                                <PopoverItem icon="ph:bug-bold" onSelect={() => debugSession(null, s)}>
+                                  Debug chat
+                                </PopoverItem>
+                                <PopoverItem icon="ph:trash" danger onSelect={() => setConfirmDeleteId(s.id)}>
+                                  Delete chat…
+                                </PopoverItem>
+                              </OverflowMenu>
                             </span>
                           ) : (
                             /* Row actions — pin (Cave-local), archive (PATCH), debug, delete.
