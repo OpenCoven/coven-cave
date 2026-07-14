@@ -6231,6 +6231,19 @@ a.mobile-handoff__link:hover {
   }
 }
 
+/* De-boxed capability lists (facelift language): one wash + soft inset
+   hairline per group, hairline dividers between rows — no per-row boxes, no
+   accent tints on metadata. Accent stays reserved for presence. */
+.familiar-tab__list {
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border-hairline) 55%, transparent);
+}
+
+.familiar-tab__rows > li + li {
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 60%, transparent);
+}
+
 /* ────────────────────────────────────────────────
    Settings · Familiars panel
    (Phase 5, shell-ia-redesign)
