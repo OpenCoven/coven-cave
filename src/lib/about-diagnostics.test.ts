@@ -148,7 +148,7 @@ const mixed = sanitizeAboutDiagnosticText(
 assert.equal(mixed.includes("[local path omitted]"), true, "mixed diagnostics redact local paths");
 assert.equal(mixed.match(/\[local path omitted\]/g)?.length, 2, "multiple local paths are independently redacted");
 assert.equal(mixed.includes(secret), false, "multiple sensitive values do not expose secrets");
-assert.equal(mixed.includes("https://example.com/docs/page"), true, "safe HTTPS URLs remain useful");
+assert.equal(mixed.match(/https?:\/\/[^\s"'<>]+/)?.[0], "https://example.com/docs/page", "safe HTTPS URLs remain useful");
 assert.equal(mixed.includes("?token="), false, "safe HTTPS URL query values are removed");
 assert.equal(mixed.endsWith(" done"), true, "ordinary prose around paths is preserved");
 
