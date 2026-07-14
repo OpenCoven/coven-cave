@@ -58,12 +58,13 @@ assert.doesNotMatch(
 );
 
 // The chat surface no longer hosts a memory scope — familiar memory lives in
-// the Familiars surface and the Grimoire editor, and the inspector's Memory
-// tab remains only on the companion RailInspector (cave-liut).
+// the Familiars surface and the Grimoire editor (cave-liut). The "familiar"
+// scope is the capability panel promoted out of the retired inspector
+// sidepanel, sitting immediately left of Settings.
 assert.match(
   chatSurface,
-  /type FamiliarsScope = "conversation" \| "projects" \| "coven"/,
-  "ChatSurface scope union should not include the dead memory scope",
+  /type FamiliarsScope = "conversation" \| "projects" \| "coven" \| "familiar" \| "settings"/,
+  "ChatSurface scope union should carry the promoted familiar tab (and no dead memory scope)",
 );
 assert.doesNotMatch(
   chatSurface,
@@ -212,22 +213,18 @@ assert.doesNotMatch(
   "ChatSurface right sidebar should not render a second chat panel on the Chats page",
 );
 
+// The inspector sidepanel is retired: its Familiar section is a first-class
+// chat scope tab (left of Settings), Analytics/Automations are gone from chat,
+// and the code rail is the only right sidepanel.
 assert.match(
   chatSurface,
-  /<InspectorPane\s+familiar=\{activeFamiliar\}\s+inboxItems=\{inboxItems\}\s+onOpenInbox=\{onOpenInbox\}/,
-  "ChatSurface should preserve the inbox-backed inspector entry point",
+  /\{ id: "projects", label: "Projects" \},\s*\{ id: "familiar", label: "Familiar" \},\s*\{ id: "settings", label: "Settings" \},/,
+  "the Familiar tab sits between Projects and Settings (immediately left of Settings)",
 );
-
 assert.match(
   chatSurface,
-  /<aside role="region" aria-label="Session panels" className="chat-right-aside relative flex h-full min-h-0 min-w-0 flex-1 flex-col">/,
-  "ChatSurface right side panel should be height-bounded so its body can scroll vertically (and read as a named region, not a nested complementary landmark — CHAT-D13-05)",
-);
-
-assert.match(
-  chatSurface,
-  /className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"\s*>\s*\{primaryPanel === "inspector" &&/,
-  "ChatSurface right side panel should put tab content in a min-height-zero scroll boundary (the div also carries the cave-t7uz tabpanel wiring)",
+  /scope === "familiar" \? \([\s\S]*?<InspectorPane familiar=\{activeFamiliar\} tab="familiar" \/>/,
+  "the familiar scope renders the capability panel for the active familiar",
 );
 
 assert.match(
@@ -236,38 +233,25 @@ assert.match(
   "ChatSurface conversation branch should use remaining height below the tab bar instead of h-full",
 );
 
-// cave-liut regression guards — the inspector-into-chat-tabs migration contract:
-// 1) rightPanel is the single channel; the legacy inspectorOpen boolean fallback
-//    is gone from both sides of the ChatSurface prop seam.
+// cave-liut → inspector retirement: the right panel channel is gone entirely.
+// No RightPanel component, no rightPanel prop seam, no legacy boolean fallback.
 assert.doesNotMatch(
   chatSurface,
-  /inspectorOpen|onSetInspectorOpen/,
-  "ChatSurface must not keep the legacy inspectorOpen fallback — rightPanel is the only right-panel channel",
+  /inspectorOpen|onSetInspectorOpen|onSetRightPanel|RightPanelKind|<RightPanel\b|INSPECTOR_SECTIONS/,
+  "ChatSurface must not keep any right-panel channel — the inspector sidepanel is retired",
+);
+// The old right-panel launch events now land on surviving surfaces: Inspect →
+// the Familiar chat tab; Git/Changes → the code rail's Changes tab.
+assert.match(
+  chatSurface,
+  /const onInspectorOpen = \(\) => setScope\("familiar"\)/,
+  "cave:inspector-open routes to the promoted Familiar tab",
 );
 assert.match(
   chatSurface,
-  /rightPanel: RightPanelKind \| null;/,
-  "ChatSurface should require the rightPanel prop (no optional legacy fallback)",
+  /const onChangesOpen = \(\) => \{[\s\S]*?rail\.reopen\(\);\s*rail\.setActiveTab\("changes"\)/,
+  "cave:changes-open routes to the code rail's Changes tab",
 );
-// 2) The inspector's active section is owned by ChatSurface, not RightPanel, so
-//    it survives panel close/reopen and the desktop-sidebar ↔ mobile-sheet
-//    remount (only one RightPanel mounts at a time).
-assert.match(
-  chatSurface,
-  /const \[inspectorSection, setInspectorSection\] =\s*\n?\s*useState<Exclude<InspectorSection, "memory">>\("familiar"\)/,
-  "ChatSurface owns the inspector section so it persists across panel close/reopen",
-);
-assert.doesNotMatch(
-  chatSurface,
-  /const \[section, setSection\] = useState/,
-  "RightPanel must not re-own section state — a breakpoint remount would reset it",
-);
-const rightPanelMounts = chatSurface.match(/<RightPanel\b/g) ?? [];
-const sectionWired = chatSurface.match(/section=\{inspectorSection\}/g) ?? [];
-const sectionSetterWired = chatSurface.match(/onSetSection=\{setInspectorSection\}/g) ?? [];
-assert.equal(rightPanelMounts.length, 2, "RightPanel mounts exactly twice (desktop sidebar + narrow sheet)");
-assert.equal(sectionWired.length, 2, "both RightPanel mounts receive the lifted inspector section");
-assert.equal(sectionSetterWired.length, 2, "both RightPanel mounts receive the section setter");
 
 assert.match(
   workspace,

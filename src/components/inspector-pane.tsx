@@ -3,10 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
-import type { InboxItem } from "@/lib/cave-inbox";
-import { FamiliarAnalyticsView } from "@/components/familiar-analytics-view";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
-import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
@@ -18,7 +15,7 @@ import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
-export type Tab = "memory" | "familiar" | "analytics" | "inbox";
+export type Tab = "memory" | "familiar";
 
 
 
@@ -47,19 +44,14 @@ type MemoryFile = {
 
 type Props = {
   familiar: Familiar | null;
-  inboxItems?: InboxItem[];
-  onOpenInbox?: () => void;
-  onCreateReminder?: (familiarId: string) => void;
-  onOpenInboxItem?: (item: InboxItem) => void;
-  onInboxItemChanged?: () => void | Promise<void>;
   /** When true, drop the outer border so the pane fits in the 296px rail. */
   compact?: boolean;
   /** When set, the Memory tab shows an "Open full memory →" footer button. */
   onOpenFullView?: () => void;
   /** Which section to render. The pane is a controlled section body — the
-   *  chat right panel promotes these sections to its own top-level tabs
-   *  (Familiar / Analytics / Automations), so there is no nested tab strip
-   *  here anymore. Defaults to memory for the compact rail variant. */
+   *  chat surface's Familiar tab and the companion RailInspector each drive
+   *  the one section they need, so there is no nested tab strip here.
+   *  Defaults to memory for the compact rail variant. */
   tab?: Tab;
 };
 
@@ -111,35 +103,14 @@ function age(iso: string): string {
 
 export function InspectorPane({
   familiar,
-  inboxItems = [],
-  onOpenInbox,
-  onCreateReminder,
-  onOpenInboxItem,
-  onInboxItemChanged,
   compact = false,
   onOpenFullView,
   tab = "memory",
 }: Props) {
-  const familiarInbox = useMemo(() => {
-    if (!familiar) return [];
-    return inboxItems
-      .filter((i) => i.familiarId === familiar.id)
-      .filter((i) => i.status === "pending" || i.status === "fired")
-      .sort((a, b) => {
-        // Fired first (loudest), then upcoming pending by fireAt asc.
-        if (a.status !== b.status) return a.status === "fired" ? -1 : 1;
-        if (a.status === "fired") {
-          return (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt);
-        }
-        return (a.fireAt ?? "").localeCompare(b.fireAt ?? "");
-      });
-  }, [inboxItems, familiar]);
-
   const shellClassName = compact
     ? "flex h-full min-h-0 flex-col bg-[var(--bg-base)]"
-    : // Non-compact renders inside the chat right sidebar (.chat-right-aside),
-      // which owns the panel chrome — border + glass — so the pane itself stays
-      // transparent instead of double-tinting/double-bordering the glass.
+    : // Non-compact renders inside the chat surface's Familiar tab, whose host
+      // owns the surrounding chrome — the pane itself stays transparent.
       "flex h-full min-h-0 flex-col";
 
   return (
@@ -151,242 +122,8 @@ export function InspectorPane({
       >
         {tab === "memory" ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
         {tab === "familiar" ? <FamiliarCapabilityPanel familiar={familiar} /> : null}
-        {tab === "analytics" && familiar ? <FamiliarAnalyticsView familiarId={familiar.id} /> : null}
-        {tab === "inbox" ? (
-          <InboxTab
-            familiar={familiar}
-            items={familiarInbox}
-            onOpenInbox={onOpenInbox}
-            onCreateReminder={onCreateReminder}
-            onOpenInboxItem={onOpenInboxItem}
-            onInboxItemChanged={onInboxItemChanged}
-          />
-        ) : null}
       </div>
     </aside>
-  );
-}
-
-/* ---------- Inbox tab ---------- */
-
-function InboxTab({
-  familiar,
-  items,
-  onOpenInbox,
-  onCreateReminder,
-  onOpenInboxItem,
-  onInboxItemChanged,
-}: {
-  familiar: Familiar | null;
-  items: InboxItem[];
-  onOpenInbox?: () => void;
-  onCreateReminder?: (familiarId: string) => void;
-  onOpenInboxItem?: (item: InboxItem) => void;
-  onInboxItemChanged?: () => void | Promise<void>;
-}) {
-  const [busyItemId, setBusyItemId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function runItemAction(
-    item: InboxItem,
-    action: "snooze" | "dismiss" | "done",
-    untilIso?: string,
-  ) {
-    if (item.id.startsWith("eph:")) {
-      onOpenInboxItem?.(item);
-      return;
-    }
-
-    setBusyItemId(item.id);
-    setError(null);
-    try {
-      const init: RequestInit =
-        action === "snooze"
-          ? {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify(untilIso ? { untilIso } : { minutes: 10 }),
-            }
-          : { method: "POST" };
-      const res = await fetch(`/api/inbox/${encodeURIComponent(item.id)}/${action}`, init);
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.ok === false) {
-        throw new Error(json?.error ?? `${action} failed`);
-      }
-      await onInboxItemChanged?.();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : `${action} failed`);
-    } finally {
-      setBusyItemId(null);
-    }
-  }
-
-  if (!familiar) {
-    return (
-      <InspectorEmpty
-        icon="ph:bell"
-        title="No familiar selected"
-        hint="Pick a familiar to see its pending reminders and follow-ups."
-      />
-    );
-  }
-
-  const header = (
-    <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
-      <div className="min-w-0">
-        <div className="truncate text-[11px] font-medium text-[var(--text-primary)]">
-          {familiar.display_name} Automations
-        </div>
-        <div className="text-[10px] text-[var(--text-muted)]">
-          {items.length} active item{items.length === 1 ? "" : "s"}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {onOpenInbox ? (
-          <button
-            type="button"
-            onClick={onOpenInbox}
-            className="rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            Schedules
-          </button>
-        ) : null}
-        {onCreateReminder ? (
-          <button
-            type="button"
-            onClick={() => onCreateReminder(familiar.id)}
-            className="rounded bg-[var(--accent-presence)] px-2 py-1 text-[10px] font-semibold text-[var(--text-primary)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,white)]"
-          >
-            New
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-
-  if (items.length === 0) {
-    return (
-      <div className="flex h-full min-h-0 flex-col text-xs">
-        {header}
-        <div className="min-h-0 flex-1">
-          <InspectorEmpty
-            icon="ph:calendar-blank"
-            title="Nothing scheduled"
-            hint={`No reminders or follow-ups for ${familiar.display_name} yet.`}
-            action={
-              onCreateReminder
-                ? { label: "Create one", onClick: () => onCreateReminder(familiar.id) }
-                : undefined
-            }
-          />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="text-xs">
-      {header}
-      {error ? (
-        <div
-          role="alert"
-          className="flex items-center gap-1.5 border-b border-[color-mix(in_oklch,var(--color-danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-3 py-1.5 text-[10px] text-[var(--color-danger)]"
-        >
-          <Icon name="ph:warning-circle" width={12} className="shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1">{error}</span>
-        </div>
-      ) : null}
-      <ul className="space-y-1.5 p-2">
-        {items.map((it) => {
-          const busy = busyItemId === it.id;
-          const canOpen = !!onOpenInboxItem;
-          const isFired = it.status === "fired";
-          const isEphemeral = it.id.startsWith("eph:");
-          const when = isFired
-            ? `fired ${age(it.firedAt ?? it.updatedAt)} ago`
-            : it.kind === "response-needed"
-              ? "waiting on you"
-              : `in ${age(it.fireAt ?? it.updatedAt)}`;
-          return (
-            <li
-              key={it.id}
-              className={[
-                "inspector-inbox-card group rounded-md border px-2.5 py-2 transition-colors",
-                isFired
-                  ? "border-[color-mix(in_oklch,var(--color-warning)_45%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_6%,var(--bg-raised))]"
-                  : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:bg-[var(--bg-raised)]/70",
-              ].join(" ")}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span
-                  className="min-w-0 flex-1 truncate text-[12px] text-[var(--text-primary)]"
-                  title={it.title}
-                >
-                  {it.title}
-                </span>
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider ${
-                    isFired
-                      ? "bg-[color-mix(in_oklch,var(--color-warning)_24%,transparent)] text-[var(--color-warning)]"
-                      : "bg-[color-mix(in_oklch,var(--accent-presence-soft)_22%,transparent)] text-[var(--accent-presence-soft)]"
-                  }`}
-                >
-                  {it.status}
-                </span>
-              </div>
-              {it.body ? (
-                <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[var(--text-muted)]">
-                  {it.body}
-                </p>
-              ) : null}
-              <div className="mt-1.5 flex items-center justify-between gap-2">
-                <span className="text-[10px] text-[var(--text-muted)]">{when}</span>
-                <div className="flex items-center gap-1">
-                  {canOpen ? (
-                    <button
-                      type="button"
-                      onClick={() => onOpenInboxItem?.(it)}
-                      className="rounded-md border border-transparent px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)]"
-                    >
-                      Open
-                    </button>
-                  ) : null}
-                  {isEphemeral ? (
-                    <span className="text-[10px] italic text-[var(--text-muted)]">
-                      respond in chat to clear
-                    </span>
-                  ) : (
-                    <>
-                      <SnoozeMenu
-                        size="xs"
-                        onSnooze={(untilIso) => runItemAction(it, "snooze", untilIso)}
-                      />
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void runItemAction(it, "dismiss")}
-                        className="rounded-md border border-transparent px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] disabled:opacity-50"
-                      >
-                        Dismiss
-                      </button>
-                      {isFired ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void runItemAction(it, "done")}
-                          className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] disabled:opacity-50"
-                        >
-                          Done
-                        </button>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
 

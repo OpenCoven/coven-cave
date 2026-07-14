@@ -2267,8 +2267,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     eligible: false,
   });
 
-  // Publish live chat state for the session debug pane (right panel / modal).
-  // Per-instance token: a second ChatView (right-panel Chat tab) unmounting
+  // Publish live chat state for the session debug pane (modal) and the code
+  // rail. Per-instance token: a second ChatView instance unmounting
   // must not clear state this instance published after it.
   const debugToken = useMemo(() => Symbol("chat-debug-publisher"), []);
   useEffect(() => {
@@ -2276,13 +2276,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [debugToken, sessionId, session, familiar, turns]);
   useEffect(() => () => clearChatDebugState(debugToken), [debugToken]);
 
+  // The right-panel debug pane is retired — the modal is the single debug
+  // surface at every breakpoint.
   const openDebug = useCallback(() => {
-    // lg+ has the right panel; below that, fall back to a modal.
-    if (window.matchMedia("(min-width: 1024px)").matches) {
-      window.dispatchEvent(new CustomEvent("cave:debug-open"));
-    } else {
-      setDebugModalOpen(true);
-    }
+    setDebugModalOpen(true);
+  }, []);
+
+  // Other surfaces (chat-list row actions, the thread rail's Debug launcher)
+  // still reach debug through the cave:debug-open window-event bridge.
+  useEffect(() => {
+    const onDebugOpen = () => setDebugModalOpen(true);
+    window.addEventListener("cave:debug-open", onDebugOpen);
+    return () => window.removeEventListener("cave:debug-open", onDebugOpen);
   }, []);
 
   const reflectOnThread = useCallback(async () => {

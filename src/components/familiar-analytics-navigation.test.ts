@@ -4,16 +4,20 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 describe("Familiar analytics navigation wiring", () => {
-  it("wires the inspector Analytics tab to FamiliarAnalyticsView", () => {
+  it("keeps analytics out of the retired inspector pane, on its standalone pages", () => {
     const source = readFileSync(new URL("./inspector-pane.tsx", import.meta.url), "utf8");
     const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+    const analyticsPage = readFileSync(
+      new URL("../app/dashboard/familiars/[id]/analytics/page.tsx", import.meta.url),
+      "utf8",
+    );
 
-    assert.match(source, /import \{ FamiliarAnalyticsView \} from "@\/components\/familiar-analytics-view"/);
-    assert.match(source, /type Tab = "memory" \| "familiar" \| "analytics" \| "inbox"/);
-    // The Analytics label lives in the chat right panel's promoted section
-    // tabs now; the pane just renders the section it's told to.
-    assert.match(chatSurface, /\{ id: "analytics", label: "Analytics" \}/);
-    assert.match(source, /tab === "analytics"[\s\S]*<FamiliarAnalyticsView familiarId=\{familiar\.id\} \/>/);
+    // The inspector sidepanel (and its Analytics section) is retired — the
+    // per-familiar analytics pages are the one home for FamiliarAnalyticsView.
+    assert.doesNotMatch(source, /FamiliarAnalyticsView/);
+    assert.doesNotMatch(chatSurface, /"analytics"|Analytics/);
+    assert.match(analyticsPage, /import \{ FamiliarAnalyticsView \} from "@\/components\/familiar-analytics-view"/);
+    assert.match(analyticsPage, /<FamiliarAnalyticsView familiarId=\{id\} \/>/);
   });
 
   it("links growth roster rows to per-familiar analytics", () => {
