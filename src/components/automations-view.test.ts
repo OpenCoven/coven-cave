@@ -161,6 +161,10 @@ assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : 
 // actions ride ONE POST /api/inbox/bulk; delete keeps the undo window.
 assert.match(source, /buildInboxGroups\(inboxVisible, inboxGroupBy, familiarLabel\)/, "groups derive from the pure lib over the filtered feed");
 assert.match(source, /INBOX_GROUP_BY_OPTIONS/, "the group-by control offers the lib's dimensions");
+// The group-by is three visible segmented tabs (marketplace kind-filter
+// precedent), never a dropdown — the active dimension reads at a glance.
+assert.match(source, /ariaLabel="Group inbox by"[\s\S]{0,220}INBOX_GROUP_BY_OPTIONS\.map\(\(option\) => \(\{ id: option\.value, label: option\.label \}\)\)/, "group-by renders as a named segmented Tabs control");
+assert.doesNotMatch(source, /<StandardSelect[\s\S]{0,120}label="Group inbox by"/, "the group-by dropdown is gone");
 assert.match(source, /cave:inbox:group-by/, "the group-by choice persists per install");
 assert.match(source, /const inboxSelect = useMultiSelect\(inboxVisible, \(it\) => it\.id\)/, "selection universe = the visible matches");
 assert.match(source, /<SelectionToolbar/, "inbox select mode uses the shared bulk toolbar");
