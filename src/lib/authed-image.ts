@@ -37,6 +37,11 @@ export function needsAuthedImageFetch(src: string | null | undefined): boolean {
   if (!src) return false;
   // Already-inline payloads carry their own bytes — never same-origin API.
   if (src.startsWith("data:") || src.startsWith("blob:")) return false;
+
+  // Relative /api URLs are always same-origin (and this prevents SSR from
+  // emitting a raw <img src="/api/..."> that will 401 before hydration).
+  if (src.startsWith("/api/")) return true;
+
   if (typeof window === "undefined") return false;
   try {
     const url = new URL(src, window.location.href);
