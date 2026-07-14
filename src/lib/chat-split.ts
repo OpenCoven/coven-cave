@@ -303,3 +303,21 @@ export function pruneChatSplitPanes(
   if (panes.length === layout.panes.length) return layout;
   return { axis: layout.axis, panes };
 }
+
+// ── Quad grid (2×2) ─────────────────────────────────────────────────────────
+
+/**
+ * A full split (exactly MAX_CHAT_SPLIT_PANES panes) renders as a 2×2 grid
+ * instead of a four-up single-axis strip — four side-by-side conversations
+ * crush into letter soup, while quadrants stay readable. Rows are dealt in
+ * reading order ([a,b] over [c,d]), matching the strip order so keyboard
+ * focus cycling and drop/eviction semantics are unchanged. Returns null for
+ * any other pane count (the strip keeps those).
+ */
+export function chatSplitQuadRows<T>(panes: readonly T[]): [[T, T], [T, T]] | null {
+  if (panes.length !== MAX_CHAT_SPLIT_PANES) return null;
+  return [
+    [panes[0]!, panes[1]!],
+    [panes[2]!, panes[3]!],
+  ];
+}

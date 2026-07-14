@@ -26,6 +26,7 @@ import {
   CHAT_SPLIT_PRIMARY,
   chatDropPreviewRect,
   chatDropZoneLabel,
+  chatSplitQuadRows,
   resolveChatDropZone,
   type ChatDropZone,
   type ChatSessionDragDetail,
@@ -83,6 +84,9 @@ export function ChatSplitHost({
   onSizesChange,
 }: ChatSplitHostProps) {
   const hasSplit = panes.length > 1;
+  // A full split renders as a 2×2 grid (nested groups) instead of a four-up
+  // strip; rows are dealt in reading order so focus/eviction order holds.
+  const quadRows = chatSplitQuadRows(panes);
 
   // Bumped by a divider double-click: remounts the group with no restored
   // sizes, which is exactly "reset to an even split".
@@ -90,14 +94,16 @@ export function ChatSplitHost({
 
   // Restore persisted sizes only when they describe exactly this pane set —
   // RRP would otherwise honor the stale weights it recognizes and squeeze
-  // the rest, which reads as a corrupted layout.
+  // the rest, which reads as a corrupted layout. The quad grid always mounts
+  // even: its weights live in three nested groups, which the flat per-pane
+  // map can't describe honestly.
   const defaultLayout = React.useMemo(() => {
-    if (!sizes) return undefined;
+    if (!sizes || quadRows) return undefined;
     const ids = panes.map((tile) => tile.id);
     const keys = Object.keys(sizes);
     if (keys.length !== ids.length || !ids.every((id) => id in sizes)) return undefined;
     return Object.fromEntries(ids.map((id) => [`${PANEL_ID_PREFIX}${id}`, sizes[id]!]));
-  }, [sizes, panes]);
+  }, [sizes, panes, quadRows]);
 
   // ---- Drag-to-split drop zone -------------------------------------------
   const [drag, setDrag] = React.useState<ChatSessionDragDetail | null>(null);
@@ -196,62 +202,99 @@ export function ChatSplitHost({
     );
   };
 
+  const renderPanePanel = (tile: ChatSplitTile, minSize: string) => (
+    <Panel
+      id={`chat-split-${tile.id}`}
+      className="chat-split__pane-panel flex min-h-0 min-w-0"
+      // Pixel floors so a divider can't crush a conversation into
+      // letter soup; stacked panes need less than side-by-side ones.
+      minSize={minSize}
+      {...{ [CHAT_SPLIT_PANE_ATTR]: tile.id }}
+      tabIndex={-1}
+      data-focused={focusedPaneId === tile.id ? "true" : undefined}
+      onFocusCapture={() => onFocusPane?.(tile.id)}
+      onPointerDownCapture={() => onFocusPane?.(tile.id)}
+    >
+      {renderTile(tile)}
+    </Panel>
+  );
+
+  const resetSeparator = (orientation: "row" | "col") => (
+    <Separator
+      className="shell-separator chat-split__sep"
+      onDoubleClick={() => {
+        // Reset to an even split: forget stored weights + remount.
+        onSizesChange?.({});
+        setResetNonce((nonce) => nonce + 1);
+      }}
+    >
+      <SeparatorHandle orientation={orientation} />
+    </Separator>
+  );
+
   return (
     <>
       {hasSplit ? (
-        <Group
-          // Remount on pane-set changes (mirrors DetailSplitHost, cave-hivd):
-          // RRP squeezes a panel added to a live group below its min — a fresh
-          // mount re-lays every pane out evenly. The reset nonce rides the same
-          // key: divider double-click remounts into an even layout.
-          key={`${axis}|${panes.map((tile) => tile.id).join("|")}|${resetNonce}`}
-          className="chat-split__group"
-          orientation={axis === "row" ? "horizontal" : "vertical"}
-          defaultLayout={defaultLayout}
-          onLayoutChanged={(layout, meta) => {
-            // Only user-driven resizes persist — mount/constraint recomputes
-            // would clobber the stored weights with defaults.
-            if (!meta.isUserInteraction || !onSizesChange) return;
-            const next: ChatSplitSizes = {};
-            for (const [panelId, weight] of Object.entries(layout)) {
-              if (panelId.startsWith(PANEL_ID_PREFIX)) {
-                next[panelId.slice(PANEL_ID_PREFIX.length)] = weight;
-              }
-            }
-            onSizesChange(next);
-          }}
-        >
-          {panes.map((tile, i) => (
-            <React.Fragment key={tile.id}>
-              {i > 0 ? (
-                <Separator
-                  className="shell-separator chat-split__sep"
-                  onDoubleClick={() => {
-                    // Reset to an even split: forget stored weights + remount.
-                    onSizesChange?.({});
-                    setResetNonce((nonce) => nonce + 1);
-                  }}
+        quadRows ? (
+          // Four panes: a 2×2 grid — nested groups keep every divider
+          // draggable (the outer row divider + each row's column divider)
+          // where a four-up strip would crush panes below readability.
+          <Group
+            key={`quad|${panes.map((tile) => tile.id).join("|")}|${resetNonce}`}
+            className="chat-split__group"
+            orientation="vertical"
+          >
+            {quadRows.map((row, rowIndex) => (
+              <React.Fragment key={row.map((tile) => tile.id).join("|")}>
+                {rowIndex > 0 ? resetSeparator("row") : null}
+                <Panel
+                  id={`chat-split-quad-row-${rowIndex}`}
+                  className="chat-split__quad-row flex min-h-0 min-w-0"
+                  minSize="160px"
                 >
-                  <SeparatorHandle orientation={axis === "row" ? "col" : "row"} />
-                </Separator>
-              ) : null}
-              <Panel
-                id={`chat-split-${tile.id}`}
-                className="chat-split__pane-panel flex min-h-0 min-w-0"
-                // Pixel floors so a divider can't crush a conversation into
-                // letter soup; stacked panes need less than side-by-side ones.
-                minSize={axis === "row" ? "280px" : "160px"}
-                {...{ [CHAT_SPLIT_PANE_ATTR]: tile.id }}
-                tabIndex={-1}
-                data-focused={focusedPaneId === tile.id ? "true" : undefined}
-                onFocusCapture={() => onFocusPane?.(tile.id)}
-                onPointerDownCapture={() => onFocusPane?.(tile.id)}
-              >
-                {renderTile(tile)}
-              </Panel>
-            </React.Fragment>
-          ))}
-        </Group>
+                  <Group className="chat-split__group chat-split__group--inner" orientation="horizontal">
+                    {row.map((tile, colIndex) => (
+                      <React.Fragment key={tile.id}>
+                        {colIndex > 0 ? resetSeparator("col") : null}
+                        {renderPanePanel(tile, "280px")}
+                      </React.Fragment>
+                    ))}
+                  </Group>
+                </Panel>
+              </React.Fragment>
+            ))}
+          </Group>
+        ) : (
+          <Group
+            // Remount on pane-set changes (mirrors DetailSplitHost, cave-hivd):
+            // RRP squeezes a panel added to a live group below its min — a fresh
+            // mount re-lays every pane out evenly. The reset nonce rides the same
+            // key: divider double-click remounts into an even layout.
+            key={`${axis}|${panes.map((tile) => tile.id).join("|")}|${resetNonce}`}
+            className="chat-split__group"
+            orientation={axis === "row" ? "horizontal" : "vertical"}
+            defaultLayout={defaultLayout}
+            onLayoutChanged={(layout, meta) => {
+              // Only user-driven resizes persist — mount/constraint recomputes
+              // would clobber the stored weights with defaults.
+              if (!meta.isUserInteraction || !onSizesChange) return;
+              const next: ChatSplitSizes = {};
+              for (const [panelId, weight] of Object.entries(layout)) {
+                if (panelId.startsWith(PANEL_ID_PREFIX)) {
+                  next[panelId.slice(PANEL_ID_PREFIX.length)] = weight;
+                }
+              }
+              onSizesChange(next);
+            }}
+          >
+            {panes.map((tile, i) => (
+              <React.Fragment key={tile.id}>
+                {i > 0 ? resetSeparator(axis === "row" ? "col" : "row") : null}
+                {renderPanePanel(tile, axis === "row" ? "280px" : "160px")}
+              </React.Fragment>
+            ))}
+          </Group>
+        )
       ) : (
         panes[0]?.content ?? null
       )}
