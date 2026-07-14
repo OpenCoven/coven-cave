@@ -89,12 +89,19 @@ type Props = {
   compact?: boolean;
   /** Jump from the in-chat project rail to the dedicated Projects tab. */
   onOpenProjectsTab?: () => void;
+  /** Allow split panes (drag/keyboard multi-pane) on this mount. Only the
+   *  full-width main chat surface opts in — the compact companion rail has no
+   *  room, and two mounts must not fight over the persisted layout. */
+  enableSplitPanes?: boolean;
 };
 
 export type ChatRouterHandle = {
   goToList: () => void;
   newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => void;
   openSession: (sessionId: string, findQuery?: string) => void;
+  /** Open a conversation in a split pane beside the current chat; falls back
+   *  to a plain open when splits are unavailable (mobile, companion rail). */
+  openSessionInSplit: (sessionId: string) => void;
   currentSessionId: () => string | null;
   clearTranscript: () => void;
   runSlash: (command: string) => void;
@@ -135,6 +142,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     syncUrlHash,
     compact = false,
     onOpenProjectsTab,
+    enableSplitPanes = false,
   },
   ref,
 ) {
@@ -172,10 +180,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const [selection, setSelection] = useState<ProjectSelection>("all");
   const [sidebarHydrated, setSidebarHydrated] = useState(false);
   const isMobile = useIsMobile();
-  // Splits (and their persistence) belong to the full-width desktop chat: the
-  // compact companion rail and mobile have no room, and the Codex surface is
-  // its own world.
-  const enableSplit = !compact && !isMobile && !caveChatoutCodex();
+  // Splits belong to the full-width desktop chat: the opted-in main surface
+  // only (enableSplitPanes), never mobile, never the Codex surface.
+  const enableSplit = enableSplitPanes && !isMobile && !caveChatoutCodex();
   const activeSession = view.kind === "chat" && view.sessionId
     ? sessions.find((s) => s.id === view.sessionId) ?? null
     : null;
@@ -300,25 +307,25 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
 
   // ── Split persistence (cave-e3dj) ──────────────────────────────────────────
   // The split survives reloads: layout + pane sizes hydrate from localStorage
-  // once, then every change writes back. Only the full-width chat surface
-  // participates — the compact companion rail never renders splits and must
-  // not fight the main surface over the same key.
+  // once, then every change writes back. Only the opted-in main chat surface
+  // participates — other mounts (companion rail) must not fight it over the
+  // same key.
   useEffect(() => {
-    if (compact || splitHydratedRef.current || typeof window === "undefined") return;
+    if (!enableSplitPanes || splitHydratedRef.current || typeof window === "undefined") return;
     splitHydratedRef.current = true;
     const restored = parsePersistedChatSplit(window.localStorage.getItem(CHAT_SPLIT_STORAGE_KEY));
     if (!restored || !hasChatSplit(restored.layout)) return;
     setSplit(restored.layout);
     setSplitSizes(restored.sizes);
-  }, [compact]);
+  }, [enableSplitPanes]);
   useEffect(() => {
-    if (compact || !splitHydratedRef.current || typeof window === "undefined") return;
+    if (!enableSplitPanes || !splitHydratedRef.current || typeof window === "undefined") return;
     try {
       window.localStorage.setItem(CHAT_SPLIT_STORAGE_KEY, serializeChatSplit(split, splitSizes));
     } catch {
       /* storage full/blocked — the split just won't survive this reload */
     }
-  }, [compact, split, splitSizes]);
+  }, [enableSplitPanes, split, splitSizes]);
   // Once the session list is authoritative, drop restored panes whose session
   // was deleted while we were away (render already hides them; this stops the
   // dead ids from persisting forever).
@@ -517,11 +524,23 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         const fq = findQuery?.trim();
         if (fq) setPendingFind({ query: fq, nonce: Date.now() });
       },
+      openSessionInSplit: (sessionId: string) => {
+        const session = sessions.find((entry) => entry.id === sessionId);
+        if (!session) return;
+        // Splitting needs an open chat to sit beside; from the list view (or
+        // when splits are unavailable) fall back to a plain open.
+        if (!enableSplit || view.kind !== "chat") {
+          const next = selectFamiliarForChat(session.familiarId ?? null);
+          setView({ kind: "chat", sessionId, familiarId: next?.id ?? session.familiarId ?? null });
+          return;
+        }
+        handleOpenSessionInSplit(session);
+      },
       currentSessionId: () => (view.kind === "chat" ? view.sessionId : null),
       clearTranscript: () => viewHandle.current?.clearTranscript(),
       runSlash: (command: string) => viewHandle.current?.runSlash(command),
     }),
-    [fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view],
+    [fallbackFamiliar, familiar, familiars, onSetActiveFamiliar, sessions, view, enableSplit, split],
   );
 
   if (familiars.length === 0 && !familiar) {

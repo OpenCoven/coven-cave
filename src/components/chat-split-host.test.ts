@@ -71,8 +71,8 @@ assert.match(
 );
 assert.match(
   router,
-  /const enableSplit = !compact && !isMobile && !caveChatoutCodex\(\);/,
-  "splits are desktop-only: compact rail, mobile and the Codex surface opt out",
+  /const enableSplit = enableSplitPanes && !isMobile && !caveChatoutCodex\(\);/,
+  "splits are an explicit opt-in: main surface only, never mobile or the Codex surface",
 );
 assert.match(router, /onPromotePane=\{handlePromotePane\}/, "promote opens the pane as the primary chat");
 
@@ -137,7 +137,7 @@ assert.match(host, /setResetNonce\(\(nonce\) => nonce \+ 1\)/, "reset remounts t
 // The router hydrates the split once, persists changes, and prunes dead panes.
 assert.match(router, /parsePersistedChatSplit\(window\.localStorage\.getItem\(CHAT_SPLIT_STORAGE_KEY\)\)/, "layout hydrates from storage");
 assert.match(router, /serializeChatSplit\(split, splitSizes\)/, "layout + sizes persist");
-assert.match(router, /if \(compact \|\| splitHydratedRef\.current/, "only the full-width surface hydrates");
+assert.match(router, /if \(!enableSplitPanes \|\| splitHydratedRef\.current/, "only the opted-in surface hydrates");
 assert.match(router, /pruneChatSplitPanes\(prev, \(id\) => sessions\.some/, "deleted sessions leave the persisted split");
 
 // Keyboard: ⌥⌘arrows move focus, ⌥⌘W closes the focused secondary pane, and
@@ -156,6 +156,38 @@ assert.equal(
   (sidebar.match(/if \(e\.altKey && onOpenInSplit\) \{/g) ?? []).length,
   2,
   "both row flavors handle ⌥↵",
+);
+
+// ── Live IA wiring (the shell nav is the real thread rail) ───────────────────
+// The Workspace mounts ChatSurface with hideThreadRail (the router's own
+// project sidebar is hidden), so splits must reach the chat through the shell:
+// WorkspaceSidebar rows are drag sources + ⌥↵/⌥-click split openers, routed
+// through the pending-chat-action pipeline into the router handle.
+
+const shellNav = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
+const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+const surface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+
+assert.match(shellNav, /emitChatSessionDragStart\(\{ sessionId: session\.id, title \}\)/, "shell nav rows announce drags");
+assert.match(shellNav, /setData\(CHAT_SESSION_DRAG_MIME, session\.id\)/, "shell nav drags carry the session MIME");
+assert.match(shellNav, /if \(e\.key === "Enter" && e\.altKey && onOpenInSplit\) \{/, "shell nav rows handle ⌥↵");
+assert.match(shellNav, /if \(e\.altKey && onOpenInSplit\) \{/, "shell nav rows handle ⌥-click");
+assert.equal(
+  (shellNav.match(/onOpenInSplit=\{\s*onOpenSessionInSplit\s*\?\s*\(\)\s*=>\s*onOpenSessionInSplit\(session\)\s*:\s*undefined\s*\}/g) ?? [])
+    .length >= 1,
+  true,
+  "thread rows receive the split opener",
+);
+
+assert.match(workspace, /kind: "open-split", sessionId: session\.id/, "the workspace files an open-split pending action");
+assert.match(surface, /pendingChatAction\.kind === "open-split"/, "the chat surface routes open-split");
+assert.match(surface, /openSessionInSplit\(pendingChatAction\.sessionId\)/, "open-split reaches the router handle");
+assert.match(surface, /enableSplitPanes\b/, "the main chat surface opts into split panes");
+assert.match(router, /openSessionInSplit: \(sessionId: string\) => \{/, "the router handle exposes openSessionInSplit");
+assert.match(
+  router,
+  /if \(!enableSplit \|\| view\.kind !== "chat"\) \{/,
+  "openSessionInSplit falls back to a plain open when it can't split",
 );
 
 console.log("chat-split-host.test.ts: ok");

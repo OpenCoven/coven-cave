@@ -27,6 +27,11 @@ import {
 } from "@/lib/chat-session-prefs";
 import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
+import {
+  CHAT_SESSION_DRAG_MIME,
+  emitChatSessionDragEnd,
+  emitChatSessionDragStart,
+} from "@/lib/chat-split";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -43,6 +48,9 @@ type Props = {
   /** Change the familiar scope from the header switcher (`null` = All). */
   onSelectFamiliar: (id: string | null) => void;
   onOpenSession: (session: SessionRow) => void;
+  /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
+   *  current chat (the chat surface falls back to a plain open on mobile). */
+  onOpenSessionInSplit?: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Badge count for the Scheduled shortcut (from code-sidebar). */
@@ -121,6 +129,8 @@ type ThreadRowProps = {
   /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
   glyph?: IconName | null;
   onOpen: () => void;
+  /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
+  onOpenInSplit?: () => void;
   onTogglePin: () => void;
   onRequestDelete: () => void;
   onCancelDelete: () => void;
@@ -137,6 +147,7 @@ function ThreadRow({
   project = null,
   glyph,
   onOpen,
+  onOpenInSplit,
   onTogglePin,
   onRequestDelete,
   onCancelDelete,
@@ -148,7 +159,35 @@ function ThreadRow({
       <button
         type="button"
         aria-current={active ? "page" : undefined}
-        onClick={onOpen}
+        onClick={(e) => {
+          // ⌥-click opens beside the current chat instead of replacing it.
+          if (e.altKey && onOpenInSplit) {
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split); stop
+          // the native button activation so onClick doesn't also fire.
+          if (e.key === "Enter" && e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+          }
+        }}
+        // Dragging the row onto the chat surface snaps it into a split pane
+        // (chat-split-host's drop zone; same protocol as the project rail).
+        draggable={Boolean(onOpenInSplit)}
+        onDragStart={(e) => {
+          if (!onOpenInSplit) return;
+          e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, session.id);
+          e.dataTransfer.setData("text/plain", title);
+          e.dataTransfer.effectAllowed = "copyMove";
+          emitChatSessionDragStart({ sessionId: session.id, title });
+        }}
+        onDragEnd={() => {
+          if (onOpenInSplit) emitChatSessionDragEnd();
+        }}
         className="cnav__thread-main focus-ring"
       >
         {glyph ? (
@@ -211,6 +250,7 @@ export function WorkspaceSidebar({
   responseNeeded,
   onSelectFamiliar,
   onOpenSession,
+  onOpenSessionInSplit,
   onNewChat,
   onDeleteSession,
   scheduledCount,
@@ -564,6 +604,9 @@ export function WorkspaceSidebar({
                             project={sessionProjectById.get(session.id) ?? null}
                             glyph={threadLeadingIcon(sessionRailTitle(session))}
                             onOpen={() => onOpenSession(session)}
+                            onOpenInSplit={
+                              onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                            }
                             onTogglePin={() => togglePin(session.id)}
                             onRequestDelete={() => setConfirmingSessionId(session.id)}
                             onCancelDelete={() => setConfirmingSessionId(null)}
@@ -670,6 +713,11 @@ export function WorkspaceSidebar({
                                   indent="folder"
                                   glyph={glyph}
                                   onOpen={() => onOpenSession(session)}
+                                  onOpenInSplit={
+                                    onOpenSessionInSplit
+                                      ? () => onOpenSessionInSplit(session)
+                                      : undefined
+                                  }
                                   onTogglePin={() => togglePin(session.id)}
                                   onRequestDelete={() => setConfirmingSessionId(session.id)}
                                   onCancelDelete={() => setConfirmingSessionId(null)}

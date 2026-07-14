@@ -456,6 +456,12 @@ export function ChatSurface({
       onPendingChatActionHandled();
       return;
     }
+    if (pendingChatAction.kind === "open-split") {
+      setScope("conversation");
+      window.setTimeout(() => routerRef.current?.openSessionInSplit(pendingChatAction.sessionId), 0);
+      onPendingChatActionHandled();
+      return;
+    }
     setScope("conversation");
     window.setTimeout(() => routerRef.current?.goToList(), 0);
     onPendingChatActionHandled();
@@ -633,6 +639,7 @@ export function ChatSurface({
                   onOpenUrl={onOpenUrl}
                   onOpenProjectsTab={() => setScope("projects")}
                   syncUrlHash
+                  enableSplitPanes
                 />
               </div>
             </Panel>

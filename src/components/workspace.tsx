@@ -2329,6 +2329,15 @@ export function Workspace() {
         openFamiliarSession(session.id, session.familiarId);
         shellRef.current?.dismissNavMobile();
       }}
+      onOpenSessionInSplit={(session) => {
+        // Open beside the current chat: same pending-action pipeline as a
+        // plain open, but the chat surface routes it into a split pane
+        // (falling back to a normal open when splits are unavailable). The
+        // active familiar is left alone — the pane carries its own.
+        setPendingChatAction({ kind: "open-split", sessionId: session.id, nonce: Date.now() });
+        setMode("chat");
+        shellRef.current?.dismissNavMobile();
+      }}
       onNewChat={(projectRoot) => {
         startFamiliarChat(activeId, projectRoot);
         shellRef.current?.dismissNavMobile();
