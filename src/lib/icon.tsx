@@ -216,12 +216,13 @@ export const ICON_NAMES = [
   "ph:eyedropper",
   "ph:dots-six-vertical",
   "ph:archive",
-  // Role Surface rooms (registry chrome + Researcher/Messenger/Indexer)
+  // Role Surface rooms (registry chrome + Researcher/Messenger/Indexer/Sentinel)
   "ph:door-open",
   "ph:list",
   "ph:detective",
   "ph:paper-plane-tilt",
   "ph:tree-structure",
+  "ph:binoculars",
   "ph:trend-up",
   "ph:trend-down",
   "ph:target",
