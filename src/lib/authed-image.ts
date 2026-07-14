@@ -104,6 +104,7 @@ function loadAuthedObjectUrl(src: string): Promise<string | null> {
         evictOldestIfNeeded();
       }
       return objectUrl;
+    } catch {
       // Drop the failed entry so a later mount can retry (e.g. daemon came
       // back online); callers render their initial/glyph fallback meanwhile.
       cache.delete(src);
