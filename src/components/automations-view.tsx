@@ -2462,13 +2462,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               </div>
             ) : null}
             {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 ? (
-              <StandardSelect
-                label="Group inbox by"
-                title="Group the inbox feed by attention, kind, or familiar"
+              // Group-by reads as three visible choices (marketplace kind-filter
+              // precedent), not a dropdown — one glance shows the active dimension.
+              <Tabs
+                variant="segment"
+                size="sm"
+                bordered={false}
+                ariaLabel="Group inbox by"
                 value={inboxGroupBy}
                 onChange={updateInboxGroupBy}
-                options={INBOX_GROUP_BY_OPTIONS}
-                renderValue={(selected) => <>Group: {selected?.label ?? "Attention"}</>}
+                items={INBOX_GROUP_BY_OPTIONS.map((option) => ({ id: option.value, label: option.label }))}
               />
             ) : null}
             {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 && !inboxSelect.selectMode ? (
