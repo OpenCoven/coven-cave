@@ -209,9 +209,9 @@ assert.match(source, /togglePauseAutomation: toggleCodex/, "automation pause/res
 assert.doesNotMatch(source, /group-hover\/srow/, "row actions are always visible — no hover reveal remains");
 assert.match(source, /text=\{isActive \? "Pause" : "Resume"\}/, "the cron row's pause action is a labeled button");
 assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row exposes run-now");
-// Inbox feed rows expose done/snooze/dismiss instead (run/pause live in the
-// reminder detail panel) — and never while picking rows in select mode.
-assert.match(source, /\{!selectMode && !resolved && \(onDone \|\| onSnooze \|\| onDismiss\)/, "inbox row actions hide in select mode");
+// Inbox feed rows expose done/snooze/dismiss/unwatch instead (run/pause live
+// in the reminder detail panel) — and never while picking rows in select mode.
+assert.match(source, /\{!selectMode && !resolved && \(onDone \|\| onSnooze \|\| onDismiss \|\| onUnwatch\)/, "inbox row actions hide in select mode");
 assert.match(
   source,
   /entry\.name[\s\S]*?label=\{`Run \$\{entry\.name\} now`\}/,

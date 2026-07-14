@@ -17,6 +17,8 @@ import {
   type InboxFeedGroup,
   type InboxGroupBy,
 } from "@/lib/inbox-feed";
+import { repoFromGithubSubTag } from "@/lib/github-sub-tags";
+import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import type {
   AutomationStatus,
   CodexAutomation,
@@ -1188,6 +1190,7 @@ function InboxFeedRow({
   onDone,
   onSnooze,
   onDismiss,
+  onUnwatch,
 }: {
   item: InboxItem;
   selected: boolean;
@@ -1199,6 +1202,8 @@ function InboxFeedRow({
   onDone?: (item: InboxItem) => void;
   onSnooze?: (item: InboxItem) => void;
   onDismiss?: (item: InboxItem) => void;
+  /** One-click "stop these" for GitHub-event notifications (cave-hlxn). */
+  onUnwatch?: (item: InboxItem, repo: string) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
   const when = item.firedAt
@@ -1213,6 +1218,7 @@ function InboxFeedRow({
   // it opens the detail panel — the shared list select-mode pattern.
   const active = selectMode ? checked : selected;
   const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
+  const watchedRepo = repoFromGithubSubTag(item.auto);
 
   return (
     <li className="flex items-center">
@@ -1253,13 +1259,21 @@ function InboxFeedRow({
           {when}
         </span>
       </button>
-      {!selectMode && !resolved && (onDone || onSnooze || onDismiss) && (
+      {!selectMode && !resolved && (onDone || onSnooze || onDismiss || onUnwatch) && (
         <RowActions>
           {onDone && (
             <RowActionButton icon="ph:check-bold" label={`Mark ${item.title} done`} text="Done" onClick={() => onDone(item)} />
           )}
           {onSnooze && item.status === "fired" && (
             <RowActionButton icon="ph:clock-countdown" label={`Snooze ${item.title} for 1 hour`} text="Snooze 1h" onClick={() => onSnooze(item)} />
+          )}
+          {onUnwatch && watchedRepo && (
+            <RowActionButton
+              icon="ph:bell-slash"
+              label={`Unwatch ${watchedRepo} — stop GitHub notifications from it`}
+              text="Unwatch"
+              onClick={() => onUnwatch(item, watchedRepo)}
+            />
           )}
           {onDismiss && (
             <RowActionButton icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
@@ -1283,6 +1297,7 @@ function InboxFeedSection({
   onDone,
   onSnooze,
   onDismiss,
+  onUnwatch,
 }: {
   group: InboxFeedGroup;
   selectedId: string | null;
@@ -1296,6 +1311,7 @@ function InboxFeedSection({
   onDone?: (item: InboxItem) => void;
   onSnooze?: (item: InboxItem) => void;
   onDismiss?: (item: InboxItem) => void;
+  onUnwatch?: (item: InboxItem, repo: string) => void;
 }) {
   const headingId = useId();
   if (group.items.length === 0) return null;
@@ -1350,6 +1366,7 @@ function InboxFeedSection({
             onDone={onDone}
             onSnooze={onSnooze}
             onDismiss={onDismiss}
+            onUnwatch={onUnwatch}
           />
         ))}
       </ul>
@@ -1370,6 +1387,7 @@ function InboxFeedList({
   onDone,
   onSnooze,
   onDismiss,
+  onUnwatch,
 }: {
   groups: InboxFeedGroup[];
   selectedId: string | null;
@@ -1383,6 +1401,7 @@ function InboxFeedList({
   onDone?: (item: InboxItem) => void;
   onSnooze?: (item: InboxItem) => void;
   onDismiss?: (item: InboxItem) => void;
+  onUnwatch?: (item: InboxItem, repo: string) => void;
 }) {
   return (
     <>
@@ -1401,6 +1420,7 @@ function InboxFeedList({
           onDone={onDone}
           onSnooze={onSnooze}
           onDismiss={onDismiss}
+          onUnwatch={onUnwatch}
         />
       ))}
     </>
@@ -1779,6 +1799,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // GitHub subscriptions manager, reachable from the Inbox tab (cave-hlxn).
+  const [subsOpen, setSubsOpen] = useState(false);
+  const [subsHasPat, setSubsHasPat] = useState(false);
   const [templateInitialValues, setTemplateInitialValues] = useState<AutomationCreateInitialValues | undefined>();
   const [templatesQuery, setTemplatesQuery] = useState("");
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
@@ -2044,6 +2067,45 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     announce(`Dismissed '${item.title}'.`);
     return actItem(item.id, "dismiss");
   };
+
+  const openSubscriptions = useCallback(async () => {
+    // The modal renders a connect hint without a PAT — resolve the live
+    // status on open instead of polling it alongside the feed.
+    try {
+      const res = await fetch("/api/github/pat", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      setSubsHasPat(Boolean(data?.hasPat));
+    } catch {
+      setSubsHasPat(false);
+    }
+    setSubsOpen(true);
+  }, []);
+
+  // One-click "stop these": drop the repo behind a GitHub-event notification
+  // from the watch list. Reversible from the Subscriptions manager.
+  const unwatchRepo = useCallback(async (item: InboxItem, repo: string) => {
+    setBusyId(item.id);
+    try {
+      const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!data?.ok) throw new Error(data?.error ?? "could not load subscriptions");
+      const repos: string[] = Array.isArray(data.prefs?.repos) ? data.prefs.repos : [];
+      if (repos.includes(repo)) {
+        const patch = await fetch("/api/github/subscriptions", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ repos: repos.filter((r) => r !== repo) }),
+        });
+        const patched = await patch.json().catch(() => null);
+        if (!patch.ok || !patched?.ok) throw new Error(patched?.error ?? `http ${patch.status}`);
+      }
+      announce(`Unwatched ${repo} — no new GitHub notifications from it.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "unwatch failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [announce]);
 
   // ── Codex toggle ──────────────────────────────────────────────────────────
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
@@ -2420,6 +2482,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 Select
               </Button>
             ) : null}
+            {activeTab === "inbox" && !inboxSelect.selectMode ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                leadingIcon="ph:github-logo"
+                onClick={() => void openSubscriptions()}
+                title="Choose which GitHub repos and events land in this Inbox"
+              >
+                Subscriptions
+              </Button>
+            ) : null}
             {activeTab === "inbox" && onNewReminder ? (
               <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={onNewReminder}>
                 New reminder
@@ -2531,6 +2604,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   onDone={(item) => void completeInboxItem(item)}
                   onSnooze={(item) => void snoozeInboxItem(item)}
                   onDismiss={(item) => void dismissInboxItem(item)}
+                  onUnwatch={(item, repo) => void unwatchRepo(item, repo)}
                 />
               </>
             )
@@ -2625,6 +2699,18 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           initialValues={templateInitialValues}
           onClose={() => { setCreateOpen(false); setTemplateInitialValues(undefined); }}
           onCreate={(i) => void createCodex(i)}
+        />
+      )}
+
+      {/* ── GitHub subscriptions manager (Inbox tab) ───────────────────────── */}
+      {subsOpen && (
+        <GithubSubscriptionsModal
+          hasPat={subsHasPat}
+          onConnectPat={() => {
+            setSubsOpen(false);
+            navigateToMode("github");
+          }}
+          onClose={() => setSubsOpen(false)}
         />
       )}
 
