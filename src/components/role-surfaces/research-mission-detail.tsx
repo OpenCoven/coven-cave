@@ -6,10 +6,12 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
 import {
   allowedResearchActions,
+  describeResearchSchedule,
   type ResearchMission,
   type ResearchMissionAction,
   type ResearchMissionActionInput,
 } from "@/lib/research-missions";
+import { relativeTime } from "@/lib/relative-time";
 import { ResearchEvidenceLedger } from "./research-evidence-ledger";
 
 type Props = {
@@ -146,6 +148,8 @@ export function ResearchMissionDetail({
         <div>
           <span className="research-mission-detail__eyebrow">
             {mission.mode} · {mission.status}
+            {" · "}
+            <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
           </span>
           <h2 id="research-mission-title">{mission.title}</h2>
           <p>{mission.intent}</p>
@@ -207,7 +211,11 @@ export function ResearchMissionDetail({
               <div className="research-automation__summary">
                 <div>
                   <span>Codex Automation</span>
-                  <strong>{mission.automation ? mission.automation.rrule : "Daily at 09:00 · paused on creation"}</strong>
+                  <strong>
+                    {mission.automation
+                      ? describeResearchSchedule(mission.automation.rrule)
+                      : "Daily at 09:00 · paused on creation"}
+                  </strong>
                 </div>
                 <span className={`research-automation__status research-automation__status--${mission.automation?.status.toLowerCase() ?? "draft"}`}>
                   {mission.automation?.status ?? "not scheduled"}
@@ -234,7 +242,17 @@ export function ResearchMissionDetail({
                     </Button>
                   </div>
                   {mission.automation.lastRunStatus ? (
-                    <p>Last run: {mission.automation.lastRunStatus}{mission.automation.lastRunAt ? ` · ${mission.automation.lastRunAt}` : ""}</p>
+                    <p>
+                      Last run: {mission.automation.lastRunStatus}
+                      {mission.automation.lastRunAt ? (
+                        <>
+                          {" · "}
+                          <time dateTime={mission.automation.lastRunAt}>
+                            {relativeTime(mission.automation.lastRunAt) || "just now"}
+                          </time>
+                        </>
+                      ) : null}
+                    </p>
                   ) : null}
                   {mission.automation.stopReason ? <p className="research-automation__stop">Stopped: {mission.automation.stopReason}</p> : null}
                 </>
