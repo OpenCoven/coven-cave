@@ -223,8 +223,10 @@ export function ChatSplitHost({
     <Separator
       className="shell-separator chat-split__sep"
       onDoubleClick={() => {
-        // Reset to an even split: forget stored weights + remount.
-        onSizesChange?.({});
+        // Reset to an even split: remount. Only the strip persists weights —
+        // clearing them from quad would wipe the saved ≤3-pane layout for a
+        // grid that never reads the map in the first place.
+        if (!quadRows) onSizesChange?.({});
         setResetNonce((nonce) => nonce + 1);
       }}
     >

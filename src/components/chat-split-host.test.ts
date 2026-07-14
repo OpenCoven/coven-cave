@@ -60,6 +60,11 @@ assert.match(
   /if \(!sizes \|\| quadRows\) return undefined;/,
   "quad mounts even — the flat per-pane size map can't describe three nested groups",
 );
+assert.match(
+  host,
+  /if \(!quadRows\) onSizesChange\?\.\(\{\}\);/,
+  "a quad divider reset only remounts — it never wipes the persisted strip weights",
+);
 assert.match(host, /chat-split__group--inner/, "nested row groups carry their own layout class");
 
 // Secondary panes get chrome: close + open-as-main; the primary keeps its own
