@@ -108,7 +108,8 @@ assert.doesNotMatch(bell, /addEventListener\("mousedown", onDown\)/, "the mouse-
 // ── Toast urgency + pausable auto-hide + single dismiss (cave-bj68) ─────────
 assert.match(toast, /const urgent = t\.kind === "response-needed"/, "reply requests announce assertively, everything else politely");
 assert.match(toast, /role=\{urgent \? "alert" : "status"\}/, "the live-region role follows urgency");
-assert.match(toast, /\.filter\(\(t\) => !pausedIds\.has\(t\.id\)\)/, "hover/focus pauses the 8s auto-hide (WCAG 2.2.1)");
+assert.match(toast, /\.filter\(\(g\) => !g\.ids\.some\(\(id\) => pausedIds\.has\(id\)\)\)/, "hover/focus pauses the group's auto-hide (WCAG 2.2.1)");
+assert.match(toast, /setTimeout\(\(\) => g\.ids\.forEach\(\(id\) => expire\(id\)\), AUTO_DISMISS_MS\)/, "one timer per group — members expire together, not one re-arm at a time");
 assert.match(toast, /onMouseEnter=\{\(\) => setPaused\(g\.ids, true\)\}/, "hover pauses (the whole group — every member id)");
 assert.match(toast, /e\.currentTarget\.contains\(e\.relatedTarget as Node \| null\)/, "focus-within keeps the pause until focus leaves the toast");
 assert.match(toast, /aria-label=\{`Dismiss: \$\{title\}`\}/, "the dismiss control names its toast (normalized title)");

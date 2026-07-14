@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { InboxItem, InboxMedia, LinkRef } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { normalizeInboxTitle } from "@/lib/inbox-title";
@@ -63,18 +63,23 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
       return next;
     });
 
+  // Auto-hide runs one timer per rendered group, not per raw toast — a
+  // collapsed ×N card lives exactly one window and its members expire
+  // together, instead of member timers re-arming the card one removal at a
+  // time. Pausing any member (they always pause as a set) holds the group.
+  const groups = useMemo(() => groupToasts(toasts), [toasts]);
+
   useEffect(() => {
-    if (toasts.length === 0) return;
+    if (groups.length === 0) return;
     const expire = onExpire ?? onDismiss;
-    const timers = toasts
-      .filter((t) => !pausedIds.has(t.id))
-      .map((t) => setTimeout(() => expire(t.id), AUTO_DISMISS_MS));
+    const timers = groups
+      .filter((g) => !g.ids.some((id) => pausedIds.has(id)))
+      .map((g) => setTimeout(() => g.ids.forEach((id) => expire(id)), AUTO_DISMISS_MS));
     return () => timers.forEach(clearTimeout);
-  }, [toasts, pausedIds, onDismiss, onExpire]);
+  }, [groups, pausedIds, onDismiss, onExpire]);
 
   if (toasts.length === 0) return null;
 
-  const groups = groupToasts(toasts);
   const visible = groups.slice(0, MAX_VISIBLE_TOAST_GROUPS);
   const overflow = groups.length - visible.length;
 
@@ -115,11 +120,11 @@ export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen 
             <span className="flex-1 break-words pt-0.5 text-[13px] font-semibold leading-snug text-[var(--text-primary)]">
               {title}
               {g.count > 1 ? (
-                <span
-                  className="ml-1.5 inline-block rounded-full bg-[color-mix(in_oklch,var(--toast-accent)_14%,transparent)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--toast-accent)]"
-                  aria-label={`${g.count} matching notifications`}
-                >
-                  ×{g.count}
+                <span className="ml-1.5 inline-block rounded-full bg-[color-mix(in_oklch,var(--toast-accent)_14%,transparent)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--toast-accent)]">
+                  {/* aria-label on a generic span is unreliably announced —
+                      expose the name as visually-hidden text instead. */}
+                  <span aria-hidden>×{g.count}</span>
+                  <span className="sr-only">{`${g.count} matching notifications`}</span>
                 </span>
               ) : null}
             </span>

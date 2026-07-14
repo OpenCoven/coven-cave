@@ -22,6 +22,11 @@ assert.match(
 );
 assert.match(
   src,
+  /<span className="sr-only">\{`\$\{g\.count\} matching notifications`\}<\/span>/,
+  "the badge name is visually-hidden text, not an aria-label on a generic span",
+);
+assert.match(
+  src,
   /\+\{overflow\} more in the bell/,
   "hidden groups roll up into a quiet overflow line pointing at the bell",
 );
