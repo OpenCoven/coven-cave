@@ -15442,6 +15442,8 @@ details[open] > .cave-edit-card__summary::before {
 .research-mission-row__top { display: flex; align-items: flex-start; gap: 7px; }
 .research-mission-row__top strong { font-size: 11.5px; font-weight: 600; line-height: 1.35; }
 .research-mission-row__meta { display: flex; gap: 7px; padding-left: 13px; font-size: 9.5px; text-transform: capitalize; color: var(--text-muted); }
+.research-mission-row__meta time { margin-left: auto; text-transform: none; }
+.research-mission-detail__eyebrow time { text-transform: none; letter-spacing: 0.02em; }
 
 .research-status-dot {
   flex: 0 0 auto;
