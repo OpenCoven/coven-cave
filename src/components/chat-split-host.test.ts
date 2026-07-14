@@ -101,7 +101,7 @@ assert.match(
 // ── Layout owner (chat-router) ───────────────────────────────────────────────
 
 assert.match(router, /<ChatSplitHost/, "the chat view area renders through the split host");
-assert.match(router, /dropSessionIntoChatSplit\(prev, sessionId, zone\)/, "drops feed the pure layout");
+assert.match(router, /const next = dropSessionIntoChatSplit\(split, sessionId, zone\);/, "drops feed the pure layout");
 assert.match(
   router,
   /if \(sessionId === primarySessionId\) return;/,
