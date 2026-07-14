@@ -1075,6 +1075,13 @@ function StageName({
                 type="button"
                 aria-pressed={active}
                 onClick={() => {
+                  if (active) {
+                    // Templates are optional — clicking the selected one
+                    // again deselects it and clears what it filled in.
+                    setRole("");
+                    setDescription("");
+                    return;
+                  }
                   // Templates overwrite role + description (that's what
                   // picking a template means); the name stays personal.
                   setRole(preset.role);
@@ -1089,7 +1096,7 @@ function StageName({
           })}
         </div>
         <p className="mt-1 text-[11px] text-[var(--text-muted)]">
-          Fills the role and description below — edit anything after.
+          Fills the role and description below — edit anything after, or click again to deselect.
         </p>
       </div>
       <div>

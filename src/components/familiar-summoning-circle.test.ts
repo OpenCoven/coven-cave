@@ -264,6 +264,13 @@ assert.match(
   /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]*?setRole\(preset\.role\);\s*setDescription\(preset\.description\);/,
   "clicking a preset fills role and description",
 );
+// The template is optional (#3109): clicking the active preset again
+// deselects it, clearing the role + description it filled in.
+assert.match(
+  source,
+  /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]*?if \(active\) \{[\s\S]*?setRole\(""\);\s*setDescription\(""\);\s*return;/,
+  "clicking the active preset again deselects it and clears role + description",
+);
 assert.doesNotMatch(
   source,
   /IDENTITY_PRESETS\.map\(\(preset\) => \{[\s\S]{0,1200}setName\(/,
