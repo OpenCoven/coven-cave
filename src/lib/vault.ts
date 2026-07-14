@@ -27,7 +27,7 @@ import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encryp
 
 export type VaultEntry = {
   ref?: string;
-  storage?: "1password" | "encrypted";
+  storage?: "1password" | "encrypted" | "dashlane";
   description?: string;
   required?: boolean;
 };
@@ -39,7 +39,7 @@ export type VaultStatus = "resolved" | "configured" | "encrypted" | "env-only" |
 export type VaultMappingStatus = {
   key: string;
   ref: string | null;
-  storage: "1password" | "encrypted" | null;
+  storage: "1password" | "encrypted" | "dashlane" | null;
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -191,6 +191,61 @@ function opRead(ref: string): string | null {
   }
 }
 
+// ── dashlane (dcli) resolver ────────────────────────────────────────────────
+// Dashlane's CLI mirrors 1Password's model: a scheme-prefixed reference read
+// through a local, authenticated CLI. `dcli read dl://<id-or-title>/<field>`.
+// Which backend a mapping uses is carried entirely by the ref scheme, so the
+// resolver/status paths dispatch on the prefix — no extra persisted metadata.
+const DL_REF_PREFIX = "dl://";
+
+export function validateDashlaneRef(ref: unknown): string | null {
+  if (typeof ref !== "string") return "ref must be a string";
+  if (!ref.startsWith(DL_REF_PREFIX)) return "ref must start with dl://";
+  if (ref.length > OP_REF_MAX_LENGTH) return "ref is too long";
+  if (OP_REF_FORBIDDEN_CHARS.test(ref)) return "ref contains invalid characters";
+
+  const path = ref.slice(DL_REF_PREFIX.length).split("?")[0];
+  const segments = path.split("/");
+  if (segments.length < 2 || segments.some((segment) => !segment.trim())) {
+    return "ref must include a secret id/title and a field, e.g. dl://GitHub PAT/username";
+  }
+
+  return null;
+}
+
+/** Call `dcli read` to fetch a Dashlane secret reference. Returns null on failure. */
+function dcliRead(ref: string): string | null {
+  if (validateDashlaneRef(ref)) return null;
+
+  try {
+    const value = execFileSync("dcli", ["read", ref], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 8000,
+    }).trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+/** The storage backend a reference resolves through, implied by its scheme. */
+export function refStorage(ref: string): "1password" | "dashlane" {
+  return ref.startsWith(DL_REF_PREFIX) ? "dashlane" : "1password";
+}
+
+/** Validate a secret reference, dispatching by scheme (op:// vs dl://). */
+export function validateRef(ref: unknown): string | null {
+  return typeof ref === "string" && ref.startsWith(DL_REF_PREFIX)
+    ? validateDashlaneRef(ref)
+    : validateOpRef(ref);
+}
+
+/** Resolve a secret reference via the appropriate CLI, dispatching by scheme. */
+function readRef(ref: string): string | null {
+  return ref.startsWith(DL_REF_PREFIX) ? dcliRead(ref) : opRead(ref);
+}
+
 /**
  * Resolve an env var by key.
  * Checks process.env first, then local encrypted vault, then vault.yaml → `op read`.
@@ -222,10 +277,10 @@ export function resolveSecret(key: string): string | undefined {
     return localEncrypted.trim();
   }
 
-  // Try 1Password vault reference
+  // Try a vault reference (1Password op:// or Dashlane dl://)
   if (!entry?.ref) return undefined;
 
-  const value = opRead(entry.ref);
+  const value = readRef(entry.ref);
   if (value) {
     process.env[key] = value; // cache for process lifetime
     return value;
@@ -266,7 +321,7 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
     if (inEnv) {
       return {
         key, ref: entry.ref ?? null, description: entry.description ?? null,
-        storage: entry.storage ?? (entry.ref ? "1password" : null),
+        storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : null),
         required: entry.required ?? false,
         status: "env-only" as VaultStatus, hasValue: true,
       };
@@ -284,7 +339,7 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
     if (entry.ref) {
       return {
         key, ref: entry.ref, description: entry.description ?? null,
-        storage: "1password",
+        storage: refStorage(entry.ref),
         required: entry.required ?? false,
         status: "configured" as VaultStatus, hasValue: false,
       };
@@ -345,7 +400,7 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     if (inEnv) {
       return {
         key, ref: entry.ref ?? null, description: entry.description ?? null,
-        storage: entry.storage ?? (entry.ref ? "1password" : null),
+        storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : null),
         required: entry.required ?? false,
         status: "env-only" as VaultStatus, hasValue: true,
       };
@@ -361,27 +416,29 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     }
 
     try {
-      const value = opRead(entry.ref);
+      const value = readRef(entry.ref);
       if (value) {
         process.env[key] = value; // cache
         return {
           key, ref: entry.ref, description: entry.description ?? null,
-          storage: "1password",
+          storage: refStorage(entry.ref),
           required: entry.required ?? false,
           status: "resolved" as VaultStatus, hasValue: true,
         };
       }
       return {
         key, ref: entry.ref, description: entry.description ?? null,
-        storage: "1password",
+        storage: refStorage(entry.ref),
         required: entry.required ?? false,
         status: "unresolved" as VaultStatus, hasValue: false,
-        error: "op read returned empty — check ref or 1Password auth",
+        error: refStorage(entry.ref) === "dashlane"
+          ? "dcli read returned empty — check ref or Dashlane auth (dcli sync)"
+          : "op read returned empty — check ref or 1Password auth",
       };
     } catch (e) {
       return {
         key, ref: entry.ref, description: entry.description ?? null,
-        storage: "1password",
+        storage: refStorage(entry.ref),
         required: entry.required ?? false,
         status: "error" as VaultStatus, hasValue: false,
         error: e instanceof Error ? e.message : "unknown error",

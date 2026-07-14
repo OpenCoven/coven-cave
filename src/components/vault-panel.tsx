@@ -17,7 +17,7 @@ type VaultStatus = "resolved" | "encrypted" | "env-only" | "unresolved" | "error
 type Mapping = {
   key: string;
   ref: string | null;
-  storage: "1password" | "encrypted" | null;
+  storage: "1password" | "encrypted" | "dashlane" | null;
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -36,8 +36,11 @@ const STATUS_META: Record<VaultStatus, { label: string; color: string; icon: str
   "no-ref":   { label: "no ref",      color: "var(--text-muted)", icon: "ph:minus" },
 };
 
-function StatusBadge({ status }: { status: VaultStatus }) {
+function StatusBadge({ status, storage }: { status: VaultStatus; storage?: Mapping["storage"] }) {
   const meta = STATUS_META[status];
+  // "resolved" means a live ref read succeeded; label it by the backing
+  // provider (1Password op:// vs Dashlane dl://) rather than a fixed string.
+  const label = status === "resolved" && storage === "dashlane" ? "Dashlane" : meta.label;
   return (
     <span
       className="vault-status-badge"
@@ -45,7 +48,7 @@ function StatusBadge({ status }: { status: VaultStatus }) {
       title={status}
     >
       <Icon name={meta.icon as Parameters<typeof Icon>[0]["name"]} width={10} />
-      {meta.label}
+      {label}
     </span>
   );
 }
@@ -63,8 +66,12 @@ function AddMappingForm({
 }) {
   const [key, setKey]         = useState(initial?.key ?? "");
   const [ref, setRef]         = useState(initial?.ref ?? "op://");
-  const [storage, setStorage] = useState<"1password" | "encrypted">(
-    initial?.storage === "encrypted" || initial?.status === "encrypted" ? "encrypted" : "1password",
+  const [storage, setStorage] = useState<"1password" | "encrypted" | "dashlane">(
+    initial?.storage === "encrypted" || initial?.status === "encrypted"
+      ? "encrypted"
+      : initial?.storage === "dashlane" || initial?.ref?.startsWith("dl://")
+        ? "dashlane"
+        : "1password",
   );
   const [secret, setSecret]   = useState("");
   const [desc, setDesc]       = useState(initial?.description ?? "");
@@ -120,9 +127,22 @@ function AddMappingForm({
             <button
               type="button"
               className={`vault-btn${storage === "1password" ? " vault-btn--primary" : ""}`}
-              onClick={() => setStorage("1password")}
+              onClick={() => {
+                setStorage("1password");
+                if (!ref || ref === "dl://") setRef("op://");
+              }}
             >
               1Password
+            </button>
+            <button
+              type="button"
+              className={`vault-btn${storage === "dashlane" ? " vault-btn--primary" : ""}`}
+              onClick={() => {
+                setStorage("dashlane");
+                if (!ref || ref === "op://") setRef("dl://");
+              }}
+            >
+              Dashlane
             </button>
           </div>
         </div>
@@ -141,12 +161,14 @@ function AddMappingForm({
         </label>
       ) : (
         <label className="vault-add-label">
-          1Password reference
+          {storage === "dashlane" ? "Dashlane reference" : "1Password reference"}
           <input
             className="vault-add-input vault-ref-input"
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            placeholder="op://Personal/GitHub PAT/credential"
+            placeholder={storage === "dashlane"
+              ? "dl://GitHub PAT/username"
+              : "op://Personal/GitHub PAT/credential"}
             required
           />
         </label>
@@ -256,7 +278,7 @@ export function VaultPanel() {
           <Icon name="ph:vault" width={14} />
           Secret Vault
         </div>
-        <span className="vault-header-sub">env vars → encrypted local secrets or 1Password references</span>
+        <span className="vault-header-sub">env vars → encrypted local secrets, 1Password, or Dashlane references</span>
         <button
           type="button"
           className="vault-btn vault-btn--primary"
@@ -339,7 +361,7 @@ export function VaultPanel() {
             <div key={m.key} className={`vault-row${m.status === "error" || m.status === "unresolved" ? " vault-row--warn" : ""}`}>
               <div className="vault-row-main">
                 <code className="vault-row-key">{m.key}</code>
-                <StatusBadge status={m.status} />
+                <StatusBadge status={m.status} storage={m.storage} />
                 {m.required && <span className="vault-required-pill">required</span>}
               </div>
               {m.ref && (
