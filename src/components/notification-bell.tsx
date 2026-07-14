@@ -8,6 +8,7 @@ import type { InboxItem, ItemKind } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { MUTABLE_KINDS, type InboxPrefs, type MutableKind, type SoundMode } from "@/lib/inbox-prefs-shape";
 import { isInboxItemUnread, unreadInboxCount } from "@/lib/inbox-feed";
+import { normalizeInboxTitle } from "@/lib/inbox-title";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -513,7 +514,7 @@ export function NotificationBell({
                             <span className="sr-only">Unread:</span>
                           </>
                         ) : null}
-                        <div className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={it.title}>{it.title}</div>
+                        <div className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={normalizeInboxTitle(it.title)}>{normalizeInboxTitle(it.title)}</div>
                       </div>
                       {it.body ? (
                         <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--text-muted)]">
