@@ -228,6 +228,27 @@ export function chatSplitKeyboardZone(layout: ChatSplitLayout): ChatDropZone {
   return layout.axis === "column" ? "bottom" : "right";
 }
 
+/**
+ * Move a pane one step along the strip (keyboard parity for the header
+ * drag): swaps it with its neighbor toward `delta`. Any pane — the primary
+ * included — can move; strip order is presentation, not hierarchy. Clamped
+ * at the edges (no wrap: "move left" at the far left is a no-op), and
+ * returns the SAME reference for every no-op so state setters skip renders.
+ */
+export function moveChatSplitPane(
+  layout: ChatSplitLayout,
+  paneId: string,
+  delta: -1 | 1,
+): ChatSplitLayout {
+  const index = layout.panes.indexOf(paneId);
+  if (index === -1) return layout;
+  const target = index + delta;
+  if (target < 0 || target >= layout.panes.length) return layout;
+  const panes = [...layout.panes];
+  [panes[index], panes[target]] = [panes[target]!, panes[index]!];
+  return { axis: layout.axis, panes };
+}
+
 // ── Persistence ──────────────────────────────────────────────────────────────
 
 /** localStorage key for the persisted split layout (main chat surface only). */

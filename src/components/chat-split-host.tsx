@@ -27,6 +27,8 @@ import {
   chatDropPreviewRect,
   chatDropZoneLabel,
   chatSplitQuadRows,
+  emitChatSessionDragEnd,
+  emitChatSessionDragStart,
   resolveChatDropZone,
   type ChatDropZone,
   type ChatSessionDragDetail,
@@ -159,9 +161,34 @@ export function ChatSplitHost({
     }
     return (
       <section className="chat-split__tile" aria-label={`${tile.title} (split pane)`}>
-        <header className="chat-split__pane-head">
+        {/* The header is the pane's drag handle: dragging it re-enters the
+            same session-drag protocol the thread rail uses, so the snap
+            overlay lights up and dropping MOVES the pane (the layout's
+            dedupe re-inserts an open session at the drop edge). Buttons
+            inside stay clickable — a drag only starts past the threshold. */}
+        <header
+          className="chat-split__pane-head"
+          draggable={enableDrop}
+          title={enableDrop ? "Drag to reposition this pane" : undefined}
+          onDragStart={(e) => {
+            e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, tile.id);
+            e.dataTransfer.effectAllowed = "move";
+            emitChatSessionDragStart({ sessionId: tile.id, title: tile.title });
+          }}
+          onDragEnd={() => emitChatSessionDragEnd()}
+        >
           <span className="chat-split__pane-title" title={tile.title}>
-            <Icon name="ph:chats-circle" width={13} height={13} aria-hidden />
+            {enableDrop ? (
+              <Icon
+                name="ph:dots-six-vertical"
+                className="chat-split__pane-grip"
+                width={13}
+                height={13}
+                aria-hidden
+              />
+            ) : (
+              <Icon name="ph:chats-circle" width={13} height={13} aria-hidden />
+            )}
             <span className="chat-split__pane-title-text">{tile.title}</span>
           </span>
           <span className="chat-split__pane-actions">

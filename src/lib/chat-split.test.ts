@@ -14,6 +14,7 @@ import {
   dropSessionIntoChatSplit,
   emptyChatSplitLayout,
   hasChatSplit,
+  moveChatSplitPane,
   parsePersistedChatSplit,
   pruneChatSplitPanes,
   removeChatSplitPane,
@@ -286,4 +287,20 @@ test("chatSplitQuadRows deals a full split into 2×2 reading-order rows", () => 
   assert.equal(chatSplitQuadRows([CHAT_SPLIT_PRIMARY, "s1"]), null);
   assert.equal(chatSplitQuadRows([CHAT_SPLIT_PRIMARY, "s1", "s2"]), null);
   assert.equal(chatSplitQuadRows([]), null);
+});
+
+test("moveChatSplitPane swaps a pane with its neighbor, clamped at the edges", () => {
+  const layout = { axis: "row" as const, panes: [CHAT_SPLIT_PRIMARY, "s1", "s2"] };
+  // Forward: s1 swaps past s2.
+  assert.deepEqual(moveChatSplitPane(layout, "s1", 1).panes, [CHAT_SPLIT_PRIMARY, "s2", "s1"]);
+  // Back: s1 swaps ahead of the primary — strip order is presentation, not
+  // hierarchy, so the primary moves like any pane.
+  assert.deepEqual(moveChatSplitPane(layout, "s1", -1).panes, ["s1", CHAT_SPLIT_PRIMARY, "s2"]);
+  assert.deepEqual(moveChatSplitPane(layout, CHAT_SPLIT_PRIMARY, 1).panes, ["s1", CHAT_SPLIT_PRIMARY, "s2"]);
+  // Clamped no-ops return the SAME reference (state setters skip a render).
+  assert.equal(moveChatSplitPane(layout, CHAT_SPLIT_PRIMARY, -1), layout);
+  assert.equal(moveChatSplitPane(layout, "s2", 1), layout);
+  assert.equal(moveChatSplitPane(layout, "ghost", 1), layout, "unknown pane is a no-op");
+  // The axis rides along untouched.
+  assert.equal(moveChatSplitPane(layout, "s1", 1).axis, "row");
 });

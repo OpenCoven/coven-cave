@@ -77,6 +77,25 @@ assert.match(
   "the primary pane renders without extra chrome",
 );
 
+// ── Reposition by header drag ────────────────────────────────────────────────
+// The header is the pane's drag handle: it re-enters the same session-drag
+// protocol the thread rail uses, so the snap overlay lights up and the drop
+// MOVES the pane (dropSessionIntoChatSplit dedupes an open session).
+assert.match(host, /draggable=\{enableDrop\}/, "the header is draggable exactly when the drop overlay can catch it");
+assert.match(
+  host,
+  /onDragStart=\{\(e\) => \{[\s\S]{0,220}setData\(CHAT_SESSION_DRAG_MIME, tile\.id\);[\s\S]{0,220}emitChatSessionDragStart\(\{ sessionId: tile\.id, title: tile\.title \}\)/,
+  "header drags speak the shared session-drag protocol",
+);
+assert.match(host, /onDragEnd=\{\(\) => emitChatSessionDragEnd\(\)\}/, "drag end always clears the overlay");
+assert.match(host, /Drag to reposition this pane/, "the handle says what it does");
+assert.match(host, /chat-split__pane-grip/, "a grip glyph carries the drag affordance");
+assert.match(
+  css,
+  /\.chat-split__pane-head\[draggable="true"\] \{\s*cursor: grab;/,
+  "draggable headers show the grab cursor",
+);
+
 // ── Layout owner (chat-router) ───────────────────────────────────────────────
 
 assert.match(router, /<ChatSplitHost/, "the chat view area renders through the split host");
@@ -162,9 +181,16 @@ assert.match(router, /serializeChatSplit\(split, splitSizes\)/, "layout + sizes 
 assert.match(router, /if \(!enableSplitPanes \|\| splitHydratedRef\.current/, "only the opted-in surface hydrates");
 assert.match(router, /pruneChatSplitPanes\(prev, \(id\) => sessions\.some/, "deleted sessions leave the persisted split");
 
-// Keyboard: ⌥⌘arrows move focus, ⌥⌘W closes the focused secondary pane, and
-// ⌥↵ on a thread-rail row opens it in a split.
+// Keyboard: ⌥⌘arrows move focus, ⌥⌘⇧arrows move the focused PANE (parity with
+// the header drag), ⌥⌘W closes the focused secondary pane, and ⌥↵ on a
+// thread-rail row opens it in a split.
 assert.match(router, /chatSplitFocusTarget\(split, focusedPane, delta\)/, "arrow keys move pane focus");
+assert.match(router, /delta !== null && e\.shiftKey/, "shifted arrows take the move-pane branch");
+assert.match(router, /moveChatSplitPane\(split, moving, delta\)/, "pane moves go through the pure swap");
+assert.match(router, /if \(next === split\) return; \/\/ edge/, "clamped edge moves stay silent (same-reference no-op)");
+assert.match(router, /pane moved \$\{delta === -1 \? "back" : "forward"\}/, "keyboard moves are announced");
+assert.match(router, /pane moved \$\{chatDropZoneLabel\(zone\)\}/, "a header-drag reposition announces as a move, not an open");
+assert.match(router, /const repositioning = split\.panes\.includes\(sessionId\);/, "drops distinguish repositioning from opening");
 assert.match(router, /e\.code === "KeyW"/, "close matches on e.code (⌥ composes e.key on macOS)");
 assert.match(router, /closest\?\.\('\[aria-modal="true"\]'\)/, "modals own the keyboard");
 assert.match(router, /chatSplitKeyboardZone\(split\)/, "keyboard split lands on the current axis");

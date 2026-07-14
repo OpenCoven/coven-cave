@@ -19,12 +19,14 @@ import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
   CHAT_SPLIT_PRIMARY,
   CHAT_SPLIT_STORAGE_KEY,
+  chatDropZoneLabel,
   chatSplitFocusAfterClose,
   chatSplitFocusTarget,
   chatSplitKeyboardZone,
   dropSessionIntoChatSplit,
   emptyChatSplitLayout,
   hasChatSplit,
+  moveChatSplitPane,
   parsePersistedChatSplit,
   pruneChatSplitPanes,
   removeChatSplitPane,
@@ -362,9 +364,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   function handleDropSession(sessionId: string, zone: ChatDropZone) {
     if (sessionId === primarySessionId) return; // already the open chat
     if (!sessions.some((entry) => entry.id === sessionId)) return;
+    // A session already open in a pane is MOVED to the drop edge (the pure
+    // layout dedupes) — header drags land here, so announce them honestly.
+    const repositioning = split.panes.includes(sessionId);
     setSplit((prev) => dropSessionIntoChatSplit(prev, sessionId, zone));
     setFocusedPane(sessionId);
-    announce(`${paneTitle(sessionId)} opened in a split pane`);
+    announce(`${paneTitle(sessionId)} ${repositioning ? `pane moved ${chatDropZoneLabel(zone)}` : "opened in a split pane"}`);
   }
 
   // Open a thread-rail conversation in a split pane from the keyboard (⌥↵ on
@@ -410,6 +415,19 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           : e.key === "ArrowRight" || e.key === "ArrowDown"
             ? (1 as const)
             : null;
+      if (delta !== null && e.shiftKey) {
+        // ⌥⌘⇧←/→ (or ↑/↓): move the focused pane one step along the strip —
+        // keyboard parity for dragging a pane by its header.
+        const moving = resolveChatSplitFocus(split, focusedPane);
+        const next = moveChatSplitPane(split, moving, delta);
+        if (next === split) return; // edge — clamped, nothing to announce
+        e.preventDefault();
+        setSplit(next);
+        setFocusedPane(moving);
+        focusPaneElement(moving);
+        announce(`${paneTitle(moving)} pane moved ${delta === -1 ? "back" : "forward"}`);
+        return;
+      }
       if (delta !== null) {
         const target = chatSplitFocusTarget(split, focusedPane, delta);
         if (!target) return;
