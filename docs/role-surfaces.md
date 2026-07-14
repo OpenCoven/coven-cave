@@ -84,3 +84,7 @@ never fake production data.
   live word counts, source material from the familiar's real memory and recent
   journal days, real publishing into the Knowledge Vault (republish-in-place,
   Grimoire deep links), published-works drawer.
+- **Chart Room** (`navigator-chart-room`, role `navigator`) — the real board
+  as a plotted course: lane queues, task intake that charts real cards,
+  scheduled legs with overdue flags from card dates, real lane moves, and a
+  voyage-log drawer of completed and blocked cards.

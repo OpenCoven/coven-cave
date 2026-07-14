@@ -224,6 +224,7 @@ export const ICON_NAMES = [
   "ph:tree-structure",
   "ph:binoculars",
   "ph:feather",
+  "ph:compass",
   "ph:trend-up",
   "ph:trend-down",
   "ph:target",

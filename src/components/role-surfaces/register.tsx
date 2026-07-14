@@ -24,9 +24,11 @@ import {
 import { readRoleSurfaceState, writeRoleSurfaceState } from "@/lib/role-surface-state";
 import { watchtowerStatus } from "./sentinel-watch";
 import { deskSummary, scribeStatus } from "./scribe-craft";
+import { chartRoomStatus } from "./navigator-charts";
 import {
   INDEXER_SURFACE_ID,
   MESSENGER_SURFACE_ID,
+  NAVIGATOR_SURFACE_ID,
   RESEARCHER_SURFACE_ID,
   SCRIBE_SURFACE_ID,
   SENTINEL_SURFACE_ID,
@@ -58,6 +60,10 @@ const SentinelSurface = dynamic(
 );
 const ScribeSurface = dynamic(
   () => import("./scribe-surface").then((m) => m.ScribeSurface),
+  { ssr: false, loading: RoomFallback },
+);
+const NavigatorSurface = dynamic(
+  () => import("./navigator-surface").then((m) => m.NavigatorSurface),
   { ssr: false, loading: RoomFallback },
 );
 
@@ -270,6 +276,68 @@ registerRoleSurface({
     };
   },
   render: (context) => <ScribeSurface context={context} />,
+});
+
+registerRoleSurface({
+  id: NAVIGATOR_SURFACE_ID,
+  role: "navigator",
+  title: "Chart Room",
+  iconName: "ph:compass",
+  description: "Course lanes, scheduled legs, and real board moves",
+  accentHue: 105,
+  priority: 22,
+  shouldDisplay: () => true,
+  getContributions(context) {
+    const state = readRoleSurfaceState<{ lastCounts?: { running: number; blocked: number } | null }>(
+      context.activeFamiliar.id,
+      NAVIGATOR_SURFACE_ID,
+    );
+    const counts = state?.lastCounts ?? null;
+    const status = counts ? chartRoomStatus(counts) : null;
+    return {
+      commands: [
+        {
+          id: "navigator.toggle-drawer",
+          title: "Toggle voyage log",
+          hint: "⌘⇧D",
+          run: (ctx) => toggleDrawer(ctx, NAVIGATOR_SURFACE_ID),
+        },
+      ],
+      toolbarActions: [
+        {
+          id: "navigator.drawer",
+          title: "Voyage log",
+          iconName: "ph:list",
+          run: (ctx) => toggleDrawer(ctx, NAVIGATOR_SURFACE_ID),
+        },
+      ],
+      keyboardShortcuts: [
+        {
+          id: "navigator.drawer.kbd",
+          combo: "mod+shift+d",
+          description: "Toggle the voyage log drawer",
+          run: (ctx) => toggleDrawer(ctx, NAVIGATOR_SURFACE_ID),
+        },
+      ],
+      notifications: daemonNotices(context),
+      statusIndicators: [
+        status == null
+          ? {
+              id: "navigator.course",
+              label: "course unplotted",
+              tone: "muted" as const,
+              detail: "Lane counts appear after the Chart Room's first board read",
+            }
+          : {
+              id: "navigator.course",
+              label: status.label,
+              tone: status.tone,
+              detail: "Cards charted for this familiar (or unassigned) on the real board",
+            },
+      ],
+    };
+  },
+  render: (context) => <NavigatorSurface context={context} />,
 });
 
 registerRoleSurface({
