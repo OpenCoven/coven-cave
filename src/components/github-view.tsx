@@ -2074,6 +2074,85 @@ function GhWorkspace({ detail, children }: { detail: ReactNode; children: ReactN
 
 // ── Selected item detail ─────────────────────────────────────────────────────
 
+/**
+ * Watch/unwatch the selected item's repo right from the detail panel — the
+ * subscribe path for "the repo you're viewing" (cave-hlxn). Backed by
+ * /api/github/subscriptions; the first watch also flips the watcher's master
+ * switch on (watching a repo means you want its notifications). Hidden until
+ * the current watch state is known so it never lies.
+ */
+function WatchRepoChip({ repo }: { repo: string }) {
+  const { announce } = useAnnouncer();
+  const [watched, setWatched] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWatched(null);
+    (async () => {
+      try {
+        const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (!cancelled && data?.ok) {
+          setWatched(Array.isArray(data.prefs?.repos) && data.prefs.repos.includes(repo));
+        }
+      } catch {
+        /* leave null — the chip stays hidden rather than guessing */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo]);
+
+  const toggle = async () => {
+    if (watched === null || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      const repos: string[] = Array.isArray(data?.prefs?.repos) ? data.prefs.repos : [];
+      const next = watched ? repos.filter((r) => r !== repo) : [...new Set([...repos, repo])];
+      const body = watched ? { repos: next } : { repos: next, enabled: true };
+      const patch = await fetch("/api/github/subscriptions", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const patched = await patch.json().catch(() => null);
+      if (patch.ok && patched?.ok) {
+        setWatched(!watched);
+        announce(
+          watched
+            ? `Unwatched ${repo}.`
+            : `Watching ${repo} — new PRs and CI results land in your Inbox.`,
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (watched === null) return null;
+  return (
+    <Button
+      size="sm"
+      variant="secondary"
+      leadingIcon={watched ? "ph:bell-ringing" : "ph:bell"}
+      aria-pressed={watched}
+      disabled={busy}
+      onClick={() => void toggle()}
+      title={
+        watched
+          ? `Stop watching ${repo}`
+          : `Watch ${repo} — new PRs and CI results land in your Inbox`
+      }
+    >
+      {watched ? "Watching" : "Watch repo"}
+    </Button>
+  );
+}
+
 function GitHubItemGlassPanel({
   item,
   linkedCards,
@@ -2173,6 +2252,9 @@ function GitHubItemGlassPanel({
               {" · "}
               <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
             </span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            <WatchRepoChip repo={item.repo} />
           </div>
           {(item.kind === "pr" || item.kind === "review_request") && (
             <GhReviewActions
