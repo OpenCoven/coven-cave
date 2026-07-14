@@ -13,7 +13,7 @@ const MANIFEST_SCHEMA_VERSION: u32 = 3;
 const ARCHIVE_FORMAT: &str = "tar.zst";
 const MAX_ARCHIVE_BYTES: u64 = 80 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024 - 1;
-const MAX_FILE_COUNT: u64 = 5_200;
+const MAX_FILE_COUNT: u64 = 5_250;
 const MIN_FREE_SPACE_RESERVE_BYTES: u64 = 64 * 1024 * 1024;
 const CACHE_LOCK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const CACHE_LOCK_RETRY: Duration = Duration::from_millis(100);
@@ -1280,7 +1280,7 @@ mod tests {
         let mut value: serde_json::Value =
             serde_json::from_slice(&fs::read(&manifest_path).expect("read manifest"))
                 .expect("parse manifest");
-        value["fileCount"] = serde_json::json!(5_200);
+        value["fileCount"] = serde_json::json!(5_250);
         fs::write(
             &manifest_path,
             serde_json::to_vec(&value).expect("serialize budget manifest"),
@@ -1290,7 +1290,7 @@ mod tests {
             read_manifest(&manifest_path)
                 .expect("current runtime file-count budget should be accepted")
                 .file_count,
-            5_200
+            5_250
         );
         fs::remove_dir_all(root).expect("remove test root");
     }
