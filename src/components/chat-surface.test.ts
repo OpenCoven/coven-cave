@@ -215,11 +215,12 @@ assert.doesNotMatch(
 
 // The inspector sidepanel is retired: its Familiar section is a first-class
 // chat scope tab (left of Settings), Analytics/Automations are gone from chat,
-// and the code rail is the only right sidepanel.
+// and the code rail is the only right sidepanel. Canvas (saved sketches) sits
+// between Projects and Familiar.
 assert.match(
   chatSurface,
-  /\{ id: "projects", label: "Projects" \},\s*\{ id: "familiar", label: "Familiar" \},\s*\{ id: "settings", label: "Settings" \},/,
-  "the Familiar tab sits between Projects and Settings (immediately left of Settings)",
+  /\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \},\s*\{ id: "settings", label: "Settings" \},/,
+  "the Familiar tab sits immediately left of Settings (after Canvas)",
 );
 assert.match(
   chatSurface,

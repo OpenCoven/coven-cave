@@ -16,13 +16,13 @@ const css = readFileSync(new URL("../styles/chat-canvas.css", import.meta.url), 
 // ── Tab wiring in the chat surface ──────────────────────────────────────────
 assert.match(
   surface,
-  /"conversation" \| "projects" \| "canvas" \| "coven" \| "settings"/,
+  /"conversation" \| "projects" \| "coven" \| "familiar" \| "settings" \| "canvas"/,
   "FamiliarsScope includes the canvas scope",
 );
 assert.match(
   surface,
-  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "settings", label: "Settings" \}/,
-  "Canvas is a first-class scope tab between Projects and Settings",
+  /\{ id: "projects", label: "Projects" \},\s*\{ id: "canvas", label: "Canvas" \},\s*\{ id: "familiar", label: "Familiar" \}/,
+  "Canvas is a first-class scope tab between Projects and Familiar",
 );
 assert.match(
   surface,

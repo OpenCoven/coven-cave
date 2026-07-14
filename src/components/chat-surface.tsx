@@ -58,7 +58,7 @@ const chatStorage = {
 // "settings" is the consolidated chat-settings tab (auto-archive policy et al).
 // "canvas" is the gallery of sketches saved from chat artifacts — saves landed
 // in the canvas store with no surface after the standalone Canvas page retired.
-type FamiliarsScope = "conversation" | "projects" | "canvas" | "coven" | "familiar" | "settings";
+type FamiliarsScope = "conversation" | "projects" | "coven" | "familiar" | "settings" | "canvas";
 
 type Props = {
   familiars: Familiar[];
