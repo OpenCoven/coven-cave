@@ -28,6 +28,9 @@ type ChangesSummary = {
   branch: string | null;
   /** Linked-worktree name (checkout dir basename) — null in the primary checkout. */
   worktree: string | null;
+  /** Immediate refetch — for callers that just mutated git state (e.g. the
+   *  composer's branch switch) and shouldn't wait out the 5s poll. */
+  reload: () => void;
 };
 
 type ChangesResponse = {
@@ -92,5 +95,9 @@ export function useChangesSummary(
 
   usePausablePoll(() => void load(), POLL_MS, { enabled: active && Boolean(projectRoot) });
 
-  return { count, loaded, notARepo, branch, worktree };
+  const reload = useCallback(() => {
+    void load();
+  }, [load]);
+
+  return { count, loaded, notARepo, branch, worktree, reload };
 }

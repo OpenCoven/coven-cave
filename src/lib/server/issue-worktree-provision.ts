@@ -21,6 +21,8 @@ import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import {
+  branchWorktreeDir,
+  isSafeBranchName,
   issueWorktreeBranch,
   issueWorktreeDir,
   type IssueWorktreeRef,
@@ -145,6 +147,41 @@ export async function provisionIssueWorktree(
   const relDir = issueWorktreeDir(ref);
   const branch = issueWorktreeBranch(ref);
   const absPath = resolveWorktreePath(repoRoot, relDir);
+  if (!absPath) return { ok: false, status: 400, error: "invalid worktree path" };
+
+  if (await worktreeExists(repoRoot, absPath)) {
+    return { ok: true, worktree: absPath, branch, created: false, baseRef: null };
+  }
+
+  const baseRef = await pickBaseRef(repoRoot, baseRefRequest ?? null);
+  try {
+    const args = (await branchExists(repoRoot, branch))
+      ? ["worktree", "add", absPath, branch]
+      : ["worktree", "add", "-b", branch, absPath, baseRef];
+    await git(repoRoot, args);
+    return { ok: true, worktree: absPath, branch, created: true, baseRef };
+  } catch (err) {
+    return { ok: false, status: 500, error: err instanceof Error ? err.message : "git worktree add failed" };
+  }
+}
+
+/**
+ * Idempotently provision a worktree for a user-named branch (the chat
+ * composer's "New worktree…" flow) under `.worktrees/<flattened-branch>`.
+ * Reuses the existing worktree when present; otherwise creates the branch off
+ * the best base ref (origin/main preferred) — or checks out the existing local
+ * branch — and adds the worktree. A branch already checked out in another
+ * worktree fails with git's own "already checked out" error, surfaced verbatim.
+ */
+export async function provisionBranchWorktree(
+  repoRoot: string,
+  branch: string,
+  baseRefRequest?: string | null,
+): Promise<ProvisionResult> {
+  if (!isSafeBranchName(branch)) {
+    return { ok: false, status: 400, error: "invalid branch name" };
+  }
+  const absPath = resolveWorktreePath(repoRoot, branchWorktreeDir(branch));
   if (!absPath) return { ok: false, status: 400, error: "invalid worktree path" };
 
   if (await worktreeExists(repoRoot, absPath)) {

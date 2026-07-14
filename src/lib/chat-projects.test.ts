@@ -55,6 +55,29 @@ assert.deepEqual(
   "specific familiar scope should still show only that familiar's chats",
 );
 
+// Cave-archived chats (archived_at stamped, status still e.g. "completed")
+// are excluded by default so no rail/picker caller can surface them; the chat
+// list's "Show archived" toggle opts back in explicitly.
+{
+  const archivedRow = { ...session("stashed", "/work/alpha", "2026-06-06T00:00:00.000Z", "cody"), archived_at: "2026-06-06T01:00:00.000Z" };
+  const withArchived = [...sessions, archivedRow];
+  assert.deepEqual(
+    filterVisibleChatSessions(withArchived, null).map((s) => s.id),
+    ["scratch", "new-alpha", "beta", "old-alpha"],
+    "archived_at rows are hidden by default",
+  );
+  assert.deepEqual(
+    filterVisibleChatSessions(withArchived, null, { includeArchived: true }).map((s) => s.id),
+    ["stashed", "scratch", "new-alpha", "beta", "old-alpha"],
+    "includeArchived keeps archived_at rows for the explicit toggle",
+  );
+  assert.deepEqual(
+    filterVisibleChatSessions(withArchived, "cody", { includeArchived: true }).map((s) => s.id),
+    ["stashed", "new-alpha"],
+    "includeArchived still applies the familiar scope",
+  );
+}
+
 // Externally-generated sessions stay out of the chat lists: daemon-only runs
 // flagged `generated` (journal narratives, flows, automations, CLI) and
 // generator origins (canvas refines, cron/heartbeat automations). They remain

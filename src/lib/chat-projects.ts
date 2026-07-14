@@ -150,9 +150,17 @@ export function isGeneratedChatSession(session: SessionRow): boolean {
 export function filterVisibleChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
+  opts?: {
+    /** Keep Cave-archived rows (`archived_at` set) — the chat list's explicit
+     *  "Show archived" toggle. Rails and pickers never opt in, so an archived
+     *  chat can't resurface in the siderail through any caller's data path. */
+    includeArchived?: boolean;
+  },
 ): SessionRow[] {
+  const includeArchived = opts?.includeArchived ?? false;
   return sessions
     .filter((session) => !DEAD_CHAT_STATUSES.has(session.status))
+    .filter((session) => includeArchived || !session.archived_at)
     .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));

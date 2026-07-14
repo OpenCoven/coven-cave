@@ -10,10 +10,29 @@
 // is network-bound (`gh pr view`), so it's fetched once per (root, branch)
 // through the separate `?pr=1` query instead of riding the poll. Chats whose
 // root isn't a repo (or have no project root at all) render nothing.
+//
+// The branch segment is also a menu: it lists the repo's local branches
+// (?branches=1), switches the checkout with POST action=switch-branch, and can
+// provision a `.worktrees/<branch>` checkout (action=create-worktree) that
+// opens as a fresh chat rooted in the new worktree — the same
+// `cave:agents-new-chat` hand-off the GitHub safe-merge flow uses.
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Icon } from "@/lib/icon";
 import { useChangesSummary } from "@/lib/use-changes-summary";
+import { isSafeBranchName } from "@/lib/issue-worktree";
+import {
+  Popover,
+  PopoverBody,
+  PopoverItem,
+  PopoverLabel,
+  PopoverSeparator,
+} from "@/components/ui/popover";
 import "@/styles/composer-git-chip.css";
 
 type BranchPr = {
@@ -25,6 +44,13 @@ type BranchPr = {
 };
 
 type PrResponse = { ok?: boolean; pr?: BranchPr | null };
+
+type BranchRow = {
+  name: string;
+  current: boolean;
+  /** Checkout dir basename when some worktree has the branch checked out. */
+  worktree: string | null;
+};
 
 /** The branch's PR, fetched once per (projectRoot, branch) — null when the
  *  branch has no PR (or gh is unavailable), undefined while unresolved. */
@@ -77,8 +103,116 @@ export function ComposerGitChip({
   onOpenUrl?: (url: string) => void;
 }) {
   const root = projectRoot?.trim() ? projectRoot : undefined;
-  const { loaded, notARepo, branch, count, worktree } = useChangesSummary(root, Boolean(root));
+  const { loaded, notARepo, branch, count, worktree, reload } = useChangesSummary(root, Boolean(root));
   const pr = useBranchPr(root, branch);
+
+  // ── Branch menu state ──────────────────────────────────────────────────────
+  const branchButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [rows, setRows] = useState<BranchRow[] | null>(null);
+  const [menuBusy, setMenuBusy] = useState(false);
+  const [menuError, setMenuError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newBranch, setNewBranch] = useState("");
+
+  // One branch-list fetch per menu open — the list is only as fresh as the
+  // moment the menu opened, which is exactly when it's read.
+  useEffect(() => {
+    if (!menuOpen || !root) return;
+    let cancelled = false;
+    setRows(null);
+    setMenuError(null);
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/changes?projectRoot=${encodeURIComponent(root)}&branches=1`,
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as { ok?: boolean; error?: string; branches?: BranchRow[] };
+        if (cancelled) return;
+        if (!res.ok || !json.ok || !Array.isArray(json.branches)) {
+          throw new Error(json.error ?? `branches HTTP ${res.status}`);
+        }
+        setRows(json.branches);
+      } catch (err) {
+        if (!cancelled) {
+          setRows([]);
+          setMenuError(err instanceof Error ? err.message : "couldn't list branches");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [menuOpen, root]);
+
+  const closeMenu = () => {
+    setMenuOpen(false);
+    setCreating(false);
+    setNewBranch("");
+    setMenuError(null);
+  };
+
+  const switchBranch = async (name: string) => {
+    if (!root || menuBusy) return;
+    setMenuBusy(true);
+    setMenuError(null);
+    try {
+      const res = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectRoot: root, action: "switch-branch", branch: name }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string; branch?: string };
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `switch HTTP ${res.status}`);
+      closeMenu();
+      reload();
+    } catch (err) {
+      setMenuError(err instanceof Error ? err.message : "branch switch failed");
+    } finally {
+      setMenuBusy(false);
+    }
+  };
+
+  const createWorktree = async () => {
+    if (!root || menuBusy) return;
+    const name = newBranch.trim();
+    if (!isSafeBranchName(name)) {
+      setMenuError("Branch names use letters, digits and . _ / - (no leading dash).");
+      return;
+    }
+    setMenuBusy(true);
+    setMenuError(null);
+    try {
+      const res = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectRoot: root, action: "create-worktree", branch: name }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        worktree?: string;
+        branch?: string;
+        created?: boolean;
+      };
+      if (!res.ok || !json.ok || !json.worktree) {
+        throw new Error(json.error ?? `worktree HTTP ${res.status}`);
+      }
+      closeMenu();
+      // Hand off to a fresh chat rooted in the worktree — the same event the
+      // GitHub safe-merge flow uses, so routing/familiar defaults match.
+      window.dispatchEvent(
+        new CustomEvent("cave:agents-new-chat", {
+          detail: { projectRoot: json.worktree },
+        }),
+      );
+    } catch (err) {
+      setMenuError(err instanceof Error ? err.message : "worktree creation failed");
+    } finally {
+      setMenuBusy(false);
+    }
+  };
 
   // Git-less chats (no project, or a non-repo root) show nothing — the chip
   // only appears once the repo status has actually loaded.
@@ -116,9 +250,23 @@ export function ComposerGitChip({
     >
       <span className="cave-composer-git-chip__branch">
         <Icon name="ph:git-branch" width={12} aria-hidden />
-        <span className="cave-composer-git-chip__label" aria-label={`Branch: ${branch}`}>
-          {branch}
-        </span>
+        <button
+          type="button"
+          ref={branchButtonRef}
+          className="cave-composer-git-chip__branch-button focus-ring"
+          aria-label={`Branch: ${branch} — switch branch or create a worktree`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          title={`Branch: ${branch} · Switch branch / new worktree`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMenuOpen((open) => !open);
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <span className="cave-composer-git-chip__label">{branch}</span>
+          <Icon name="ph:caret-down" width={9} aria-hidden />
+        </button>
         {count > 0 ? (
           <span className="cave-composer-git-chip__dirty" aria-label={dirtyLabel}>
             +{count}
@@ -148,6 +296,91 @@ export function ComposerGitChip({
           <span>#{pr.number}</span>
         </button>
       ) : null}
+      <Popover
+        open={menuOpen}
+        onOpenChange={(next) => {
+          if (!next) closeMenu();
+          else setMenuOpen(true);
+        }}
+        anchorRef={branchButtonRef}
+        placement="top-start"
+        minWidth={240}
+        ariaLabel="Switch branch"
+      >
+        <PopoverBody role="menu" ariaLabel="Branches">
+          <PopoverLabel>Switch branch</PopoverLabel>
+          {rows === null ? (
+            <div className="cave-composer-git-chip__menu-note">Loading branches…</div>
+          ) : (
+            <>
+              {rows.map((row) => (
+                <PopoverItem
+                  key={row.name}
+                  icon="ph:git-branch"
+                  checked={row.current}
+                  disabled={menuBusy || row.current || row.worktree !== null}
+                  title={
+                    row.worktree && !row.current
+                      ? `Checked out in worktree ${row.worktree}`
+                      : row.current
+                        ? "Current branch"
+                        : `Switch to ${row.name}`
+                  }
+                  onSelect={() => void switchBranch(row.name)}
+                >
+                  {row.name}
+                  {row.worktree && !row.current ? ` · ${row.worktree}` : ""}
+                </PopoverItem>
+              ))}
+              {rows.length === 0 && !menuError ? (
+                <div className="cave-composer-git-chip__menu-note">No local branches</div>
+              ) : null}
+            </>
+          )}
+          <PopoverSeparator />
+          {creating ? (
+            <form
+              className="cave-composer-git-chip__worktree-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createWorktree();
+              }}
+            >
+              <input
+                type="text"
+                className="cave-composer-git-chip__worktree-input focus-ring"
+                placeholder="feat/my-branch"
+                aria-label="New worktree branch name"
+                value={newBranch}
+                onChange={(event) => setNewBranch(event.target.value)}
+                disabled={menuBusy}
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="cave-composer-git-chip__worktree-create focus-ring"
+                disabled={menuBusy || !newBranch.trim()}
+              >
+                {menuBusy ? "Creating…" : "Create"}
+              </button>
+            </form>
+          ) : (
+            <PopoverItem
+              icon="ph:tree-structure"
+              disabled={menuBusy}
+              title="Create a .worktrees/<branch> checkout and open a chat rooted in it"
+              onSelect={() => setCreating(true)}
+            >
+              New worktree…
+            </PopoverItem>
+          )}
+          {menuError ? (
+            <div className="cave-composer-git-chip__menu-error" role="alert">
+              {menuError}
+            </div>
+          ) : null}
+        </PopoverBody>
+      </Popover>
     </div>
   );
 }
