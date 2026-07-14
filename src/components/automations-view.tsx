@@ -2407,7 +2407,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 size="sm"
                 bordered={false}
                 ariaLabel="Group inbox by"
-                idPrefix="inbox-group-by"
                 value={inboxGroupBy}
                 onChange={updateInboxGroupBy}
                 items={INBOX_GROUP_BY_OPTIONS.map((option) => ({ id: option.value, label: option.label }))}
