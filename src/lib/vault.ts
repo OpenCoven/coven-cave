@@ -201,21 +201,54 @@ function resolverEnv(): NodeJS.ProcessEnv {
   return { ...process.env, PATH: merged.join(delimiter) };
 }
 
+/** Base timeout for a `<cli> read` call, and the longer allowance for the
+ *  single retry after a timeout. The first read after app launch can blow past
+ *  the base timeout while the CLI's session daemon spins up (cave-ovps: a cold
+ *  `op read` took >8s and reported a healthy ref as "unresolved"; the killed
+ *  attempt warms the daemon, so the retry completes fast). Genuine failures
+ *  (bad ref, not signed in) exit non-zero quickly and are NOT retried.
+ *  Overridable for tests. */
+function refReadTimeoutMs(): number {
+  const raw = Number(process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 8000;
+}
+
+function refReadRetryTimeoutMs(): number {
+  const raw = Number(process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+}
+
+function isTimeoutError(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as NodeJS.ErrnoException).code === "ETIMEDOUT";
+}
+
+/** Run `<cli> read <ref>`, retrying once with a longer timeout if the first
+ *  attempt was killed by the base timeout. Returns null on failure. */
+function cliRead(cli: "op" | "dcli", ref: string): string | null {
+  const run = (timeout: number) =>
+    execFileSync(cli, ["read", ref], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout,
+      env: resolverEnv(),
+    }).trim();
+
+  try {
+    return run(refReadTimeoutMs()) || null;
+  } catch (e) {
+    if (!isTimeoutError(e)) return null;
+    try {
+      return run(refReadRetryTimeoutMs()) || null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 /** Call `op read` to fetch a secret reference. Returns null on failure. */
 function opRead(ref: string): string | null {
   if (validateOpRef(ref)) return null;
-
-  try {
-    const value = execFileSync("op", ["read", ref], {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 8000,
-      env: resolverEnv(),
-    }).trim();
-    return value || null;
-  } catch {
-    return null;
-  }
+  return cliRead("op", ref);
 }
 
 // ── dashlane (dcli) resolver ────────────────────────────────────────────────
@@ -243,18 +276,7 @@ export function validateDashlaneRef(ref: unknown): string | null {
 /** Call `dcli read` to fetch a Dashlane secret reference. Returns null on failure. */
 function dcliRead(ref: string): string | null {
   if (validateDashlaneRef(ref)) return null;
-
-  try {
-    const value = execFileSync("dcli", ["read", ref], {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 8000,
-      env: resolverEnv(),
-    }).trim();
-    return value || null;
-  } catch {
-    return null;
-  }
+  return cliRead("dcli", ref);
 }
 
 /** The storage backend a reference resolves through, implied by its scheme. */
