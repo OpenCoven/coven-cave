@@ -141,8 +141,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
-  "Schedules should own the old Calendar shortcut as the active schedule surface",
+  /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
+  "Rituals should own the old Calendar shortcut as the active schedule surface",
 );
 
 assert.doesNotMatch(

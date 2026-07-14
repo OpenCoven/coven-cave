@@ -46,7 +46,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline in chat.", argPlaceholder: "describe a UI…", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
-  { name: "/schedules", hint: "Schedules", description: "Open Schedules.", section: "view" },
+  { name: "/rituals", hint: "Rituals", description: "Open Rituals — calendar and scheduled jobs.", section: "view" },
   { name: "/remind", hint: "new reminder", description: "Create a reminder. Try “/remind in 30m check the build”.", argPlaceholder: "when + text", section: "view" },
 
   { name: "/projects", hint: "Projects", description: "Open the project browser and file preview view.", section: "view" },

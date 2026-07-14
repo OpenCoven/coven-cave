@@ -450,7 +450,7 @@ export const SUITES = {
     "src/components/automations-view.test.ts",
     "src/components/cwd-picker-field.test.ts",
     "src/components/inbox-feed-a11y.test.ts",
-    "src/components/schedules-tabs.test.ts",
+    "src/components/rituals-tabs.test.ts",
     "src/lib/automations/automation-entry.test.ts",
     "src/lib/automations/list-input.test.ts",
     "src/lib/automations/run-status.test.ts",
