@@ -201,8 +201,12 @@ export function normalizeLinkUrl(rawUrl: string): string {
   }
   url.hash = "";
   url.hostname = url.hostname.toLowerCase();
+  // Normalize the pathname itself (not the serialized string) so trailing
+  // slashes disappear even when a query string follows: /blog/?p=1 and
+  // /blog?p=1 must produce the same key. Collapse doubled separators too.
+  const collapsed = url.pathname.replace(/\/{2,}/g, "/");
+  url.pathname = collapsed !== "/" ? collapsed.replace(/\/+$/, "") : "/";
   let out = url.toString();
-  if (url.pathname !== "/" && out.endsWith("/")) out = out.slice(0, -1);
   if (url.pathname === "/" && !url.search && out.endsWith("/")) out = out.slice(0, -1);
   return out;
 }

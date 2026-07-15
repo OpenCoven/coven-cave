@@ -63,6 +63,16 @@ test("normalizeLinkUrl produces one key per page", () => {
     normalizeLinkUrl("https://example.com/a#section"),
     normalizeLinkUrl("https://example.com/a"),
   );
+  // Trailing slash must vanish even with a query string after it, and
+  // doubled separators must collapse (review finding on 972bf1cd).
+  assert.equal(
+    normalizeLinkUrl("https://example.com/blog/?p=1"),
+    normalizeLinkUrl("https://example.com/blog?p=1"),
+  );
+  assert.equal(
+    normalizeLinkUrl("https://example.com/path//"),
+    normalizeLinkUrl("https://example.com/path"),
+  );
   assert.notEqual(
     normalizeLinkUrl("https://example.com/a?q=1"),
     normalizeLinkUrl("https://example.com/a"),

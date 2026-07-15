@@ -17,7 +17,14 @@ const MAX_BODY_BYTES = 64 * 1024;
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
-  return NextResponse.json({ ok: true, links: await listSavedLinks() });
+  try {
+    return NextResponse.json({ ok: true, links: await listSavedLinks() });
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "failed to read the saved-links store" },
+      { status: 500 },
+    );
+  }
 }
 
 type SaveBody = {
@@ -56,7 +63,15 @@ export async function POST(req: Request) {
     );
   }
   const source = parsed.body.source === "desk" ? "desk" : "chat";
-  const result = await saveResearchLinks(urls, source);
+  let result;
+  try {
+    result = await saveResearchLinks(urls, source);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "failed to write the saved-links store" },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({
     ok: true,
     added: result.added,
@@ -74,7 +89,15 @@ export async function DELETE(req: Request) {
   if (!id) {
     return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
   }
-  const removed = await removeSavedLink(id);
+  let removed: boolean;
+  try {
+    removed = await removeSavedLink(id);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "failed to write the saved-links store" },
+      { status: 500 },
+    );
+  }
   if (!removed) {
     return NextResponse.json({ ok: false, error: "link not found" }, { status: 404 });
   }
