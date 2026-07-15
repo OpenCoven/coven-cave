@@ -238,6 +238,7 @@ export const SUITES = {
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",
     "src/components/marketplace/crafts-marketplace.test.ts",
+    "src/components/marketplace/craft-create-drawer.test.ts",
     "src/lib/craft-agent-prompt.test.ts",
     "src/components/marketplace/skill-builder.test.ts",
     "src/lib/skill-templates.test.ts",
