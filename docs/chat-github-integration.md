@@ -1,6 +1,7 @@
 # Chat ↔ GitHub Integration — Design
 
-**Status:** Approved (brainstorm, 2026-07-14) · **Goal:** `chat-github-power-integration`
+**Status:** Shipped (all waves merged 2026-07-15; VERIFY re-audit below)
+· **Goal:** `chat-github-power-integration`
 · **Epic:** `cave-fpqx` · **PLAN bead:** `cave-fpqx.2`
 · **Evidence base:** [capability map](specs/2026-07-14-chat-github-capability-map.md) (DISCOVER, PR #3160)
 
@@ -203,15 +204,15 @@ incrementally; no app-code dependency on adoption.
 
 ## §9 Implementation beads (one-PR units, dep-chained under cave-fpqx)
 
-| Bead | Wave | Scope | Depends on |
+| Bead | Wave | Scope | Shipped |
 | --- | --- | --- | --- |
-| W1a | 1 | `github-blocks.ts` (markers + unfurl + tiers) · IssueCard/PRCard read-only · segment dispatch wiring · tests | — |
-| W1b | 1 | Checks rollup strip · ReviewThreadCard · CommitCard/RunCard · 30s pending poll · detail popovers | W1a |
-| W2a | 2 | Routes: `issue`, `commit`, `runs` (+contracts/tests) · T1 actions live on cards | W1a |
-| W2b | 2 | Routes: `review`, `merge`, `rerun`, `dispatch` · confirm-card lifecycle · agent proposal cards · e2e spec | W1b, W2a |
-| W3 | 3 | `stage-model.ts` extraction (queue refactored onto it) · `chat-stage-header` · wiring + tests | W1b |
-| W4 | 4 | `<coven:skill>` marker + SkillStageCard · `/skill` deterministic card · filter-ordering pin | W1a |
-| W5 | 5 | Rail failing-checks badge from stage-model | W3 |
+| W1a | 1 | `github-blocks.ts` (markers + unfurl + tiers) · IssueCard/PRCard read-only · segment dispatch wiring · tests | PR #3166 |
+| W1b | 1 | Checks rollup strip · ReviewThreadCard · 30s pending poll · in-place expansion | PR #3167 |
+| W2a | 2 | Routes: `issue`, `commit`, `runs` (+contracts/tests) · T1 actions live on cards | PR #3170 |
+| W2b | 2 | Routes: `review`, `merge`, `rerun`, `dispatch` · confirm-card lifecycle · agent proposal cards · e2e spec | PR #3183 |
+| W3 | 3 | `stage-model.ts` extraction (queue refactored onto it) · `chat-stage-header` · wiring + tests | PR #3173 + #3174 |
+| W4 | 4 | `<coven:skill>` marker + SkillStageCard · `/skill` deterministic card · filter-ordering pin | PR #3175 |
+| W5 | 5 | Rail failing-checks badge from the stage broadcast | PR #3178 |
 
 Each bead carries: this doc's section anchors, `external-ref` to its PR once
 open, and verification evidence at close (MAP phase `cave-fpqx.3` is the
@@ -221,12 +222,33 @@ the capability map after the waves land).
 ## Acceptance criteria (from the goal, restated testably)
 
 1. Pasting an issue/PR URL in chat renders a live card; comment/close from it
-   without leaving the conversation (W1a/W2a).
+   without leaving the conversation (W1a/W2a). ✅ (e2e: URL → hydrated card)
 2. Merge/review/re-run/dispatch reachable from cards behind tier-2 confirm;
-   agent-emitted actions always appear as proposal cards (W2b).
+   agent-emitted actions always appear as proposal cards (W2b). ✅ (e2e:
+   confirm strip fires the exact payload; proposals never auto-fire)
 3. A repo-linked session shows the stage header; its lanes match the familiar
-   work queue for the same bead/PR (W3).
+   work queue for the same bead/PR (W3). ✅ (one shared stage-model)
 4. `/skill` and agent-emitted `<coven:skill>` markers render stage cards
-   (W4).
+   (W4). ✅
 5. Every wave lands as a green-checks PR with wired tests; capability map
-   updated at VERIFY (`cave-fpqx.5`).
+   updated at VERIFY (`cave-fpqx.5`). ✅
+
+## VERIFY re-audit (2026-07-15, cave-fpqx.5)
+
+All five acceptance criteria hold on `main`; the DISCOVER capability map's
+seven-gap summary is fully closed (see the postscript in
+[the capability map](specs/2026-07-14-chat-github-capability-map.md)).
+Residual gaps, filed as follow-up beads rather than blocking the epic:
+
+- **Commit/Run card hydration** — `/api/github/commit` and `/runs` exist
+  (W2a) but the cards still render attrs-only; hydrate them the way PR/issue
+  cards do.
+- **Review-thread reply** — thread cards resolve/unresolve but can't reply in
+  place (needs the review-comment reply endpoint); agent `reply` proposals
+  fall back to conversation comments.
+- **Marker adoption directive** — nothing teaches agents to emit
+  `<coven:github>` / `<coven:skill>` markers yet; a prompt directive à la
+  `buildNextPathsDirective` would drive organic usage.
+- **Failing-tint consistency** — the stage header's ✕ and the card checks
+  strip use `--color-warning`; the W5 rail dot uses `--color-danger`; pick
+  one failing tint.
