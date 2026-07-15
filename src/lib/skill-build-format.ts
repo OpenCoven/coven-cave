@@ -80,3 +80,26 @@ export function composeSkillMd(draft: SkillBuildDraft): string {
   const body = draft.instructions.replace(/\r\n/g, "\n").trim();
   return `${lines.join("\n")}\n${body}\n`;
 }
+
+export type SkillDraftFields = {
+  name: string;
+  description: string;
+  tags: string[];
+  instructions: string;
+};
+
+/**
+ * The Format button: apply exactly the canonicalization `composeSkillMd`
+ * performs at save/preview time (quote swap, whitespace collapse, tag
+ * normalization, body CRLF/trim), so the form fields become the same text
+ * the written file will contain. Never changes the composed artifact:
+ * composeSkillMd(formatSkillDraft(f)) === composeSkillMd(f). Idempotent.
+ */
+export function formatSkillDraft(fields: SkillDraftFields): SkillDraftFields {
+  return {
+    name: frontmatterValue(fields.name),
+    description: frontmatterValue(fields.description),
+    tags: normalizedSkillTags(fields.tags),
+    instructions: fields.instructions.replace(/\r\n/g, "\n").trim(),
+  };
+}
