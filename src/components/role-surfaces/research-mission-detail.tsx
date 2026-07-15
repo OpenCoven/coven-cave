@@ -7,6 +7,7 @@ import { Icon } from "@/lib/icon";
 import {
   allowedResearchActions,
   describeResearchSchedule,
+  researchPhaseStatuses,
   type ResearchMission,
   type ResearchMissionAction,
   type ResearchMissionActionInput,
@@ -35,6 +36,8 @@ const PHASES = [
   ["publish", "Publish"],
 ] as const;
 
+const PHASE_IDS = PHASES.map(([id]) => id);
+
 const ACTION_LABELS: Partial<Record<ResearchMissionAction, string>> = {
   continue: "Continue",
   retry: "Retry",
@@ -44,18 +47,6 @@ const ACTION_LABELS: Partial<Record<ResearchMissionAction, string>> = {
   cancel: "Cancel run",
   archive: "Archive",
 };
-
-function phaseStatus(
-  mission: ResearchMission,
-  phase: string,
-): "pending" | "running" | "succeeded" | "failed" | "skipped" {
-  const iteration = mission.iterations.at(-1);
-  const step = iteration?.steps?.find((item) => item.id === phase);
-  if (step) return step.status;
-  if (mission.status === "completed") return "succeeded";
-  if (mission.status === "failed" && phase === "scope") return "failed";
-  return "pending";
-}
 
 export function ResearchMissionDetail({
   mission,
@@ -199,9 +190,13 @@ export function ResearchMissionDetail({
             </span>
           </div>
           <ol className="research-phase-list" aria-label="Research progress">
-            {PHASES.map(([id, label]) => {
-              const status = phaseStatus(mission, id);
+            {researchPhaseStatuses(mission, PHASE_IDS).map((status, index) => {
+              const [id, label] = PHASES[index];
               const step = iteration?.steps?.find((item) => item.id === id);
+              // A stale step detail ("Searching sources…") contradicts a
+              // reconciled status; show the detail only when the status is
+              // still the step's own report.
+              const reconciled = status !== (step?.status ?? "pending");
               return (
                 <li key={id} className={`research-phase research-phase--${status}`}>
                   <span className="research-phase__node" aria-hidden>
@@ -209,7 +204,7 @@ export function ResearchMissionDetail({
                   </span>
                   <div>
                     <strong>{label}</strong>
-                    <span>{step?.detail || status}</span>
+                    <span>{reconciled ? status : step?.detail || status}</span>
                   </div>
                 </li>
               );

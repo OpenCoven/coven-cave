@@ -337,6 +337,71 @@ export function allowedResearchActions(
   return [];
 }
 
+export type ResearchPhaseStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
+
+type ResearchPhaseOutcome = "success" | "failure" | "cancelled" | null;
+
+function settledPhaseOutcome(
+  mission: Pick<ResearchMission, "status">,
+  iteration: Pick<ResearchIteration, "status"> | undefined,
+): ResearchPhaseOutcome {
+  // A finished iteration knows its own outcome; prefer it so an archived
+  // completed mission still reads as a success trajectory.
+  if (iteration?.status === "completed" || iteration?.status === "checkpoint") return "success";
+  if (iteration?.status === "failed") return "failure";
+  if (iteration?.status === "cancelled") return "cancelled";
+  // Otherwise settle by terminal mission status (covers stale iteration
+  // snapshots, e.g. a mission archived while its iteration still said running).
+  if (mission.status === "completed") return "success";
+  if (mission.status === "failed") return "failure";
+  if (mission.status === "cancelled" || mission.status === "archived") return "cancelled";
+  return null;
+}
+
+/**
+ * Reconciled phase statuses for the latest iteration, in phase order.
+ *
+ * Step snapshots only sync while a flow run is live, so terminal missions keep
+ * whatever was last written (often "scope running, rest pending"). A settled
+ * run must never render a running or pending phase:
+ * - success (completed / checkpoint) — the run finished every chained phase,
+ *   so stale running/pending phases read succeeded; explicit failed/skipped
+ *   step reports are preserved.
+ * - failure — the first stale running/pending phase is where the run died and
+ *   reads failed (unless a step already reported failed); stale phases before
+ *   the failure point read succeeded (the sequential chain reached it) and
+ *   later unfinished phases read skipped.
+ * - cancelled/archived mid-run — unfinished phases read skipped.
+ * Live missions pass raw step statuses through unchanged.
+ */
+export function researchPhaseStatuses(
+  mission: Pick<ResearchMission, "status" | "iterations">,
+  phaseIds: readonly string[],
+): ResearchPhaseStatus[] {
+  const iteration = mission.iterations.at(-1);
+  const raw = phaseIds.map((phase): ResearchPhaseStatus =>
+    iteration?.steps?.find((step) => step.id === phase)?.status ?? "pending");
+  const outcome = settledPhaseOutcome(mission, iteration);
+  if (outcome === null) return raw;
+  if (outcome === "success") {
+    return raw.map((status) => status === "running" || status === "pending" ? "succeeded" : status);
+  }
+  if (outcome === "cancelled") {
+    return raw.map((status) => status === "running" || status === "pending" ? "skipped" : status);
+  }
+  const explicitFailure = raw.indexOf("failed");
+  const firstUnfinished = raw.findIndex((status) => status === "running" || status === "pending");
+  const failureAt = explicitFailure !== -1
+    ? explicitFailure
+    : firstUnfinished;
+  return raw.map((status, index) => {
+    if (status !== "running" && status !== "pending") return status;
+    if (index < failureAt) return "succeeded";
+    if (index === failureAt) return "failed";
+    return "skipped";
+  });
+}
+
 /**
  * Human-readable schedule for an autoresearch Automation link. Understands the
  * daily/weekly RRULEs the desk itself creates; anything else falls back to the

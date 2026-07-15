@@ -36,6 +36,19 @@ test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(ledger, /Open in Grimoire/);
 });
 
+test("evidence trajectory statuses come from the shared terminal-truthful reconciler", () => {
+  // The old local heuristic trusted stale step snapshots over terminal mission
+  // status (completed missions rendered "Scope running / rest pending") and
+  // pinned every failure on scope. The reconciled statuses are computed by
+  // researchPhaseStatuses (behaviorally tested in research-missions.test.ts).
+  assert.match(detail, /researchPhaseStatuses\(mission, PHASE_IDS\)/);
+  assert.doesNotMatch(detail, /function phaseStatus\(/);
+  assert.doesNotMatch(detail, /mission\.status === "failed" && phase === "scope"/);
+  // Stale step details must not contradict a reconciled status.
+  assert.match(detail, /const reconciled = status !== \(step\?\.status \?\? "pending"\)/);
+  assert.match(detail, /\{reconciled \? status : step\?\.detail \|\| status\}/);
+});
+
 test("timestamps are relative and schedules read as prose, not raw data", () => {
   assert.match(list, /relativeTime\(mission\.updatedAt\)/);
   assert.match(detail, /relativeTime\(mission\.updatedAt\)/);
