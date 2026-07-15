@@ -48,7 +48,7 @@ assert.match(
 
 assert.match(
   source,
-  /args: \["install", "-g", target\.packageName\]/,
+  /args: \[\.\.\.launch\.fixedArgs, "install", "-g", target\.packageName\]/,
   "npm argv is fully fixed — only the allowlisted package name varies",
 );
 
@@ -171,8 +171,13 @@ for (const platform of ["darwin", "win32"]) {
 
 assert.match(
   source,
-  /shell: process\.platform === "win32"/,
-  "Windows spawns npm through a shell because it resolves to npm.cmd",
+  /npmLaunchCommandForPath\(npm\)/,
+  "Windows npm.cmd installs are remapped to node npm-cli.js",
+);
+assert.match(
+  source,
+  /args: \[\.\.\.launch\.fixedArgs, "install", "-g", target\.packageName\][\s\S]*?shell: false/,
+  "npm installs preserve fixed argv and never pass npm.cmd through cmd.exe",
 );
 
 assert.match(

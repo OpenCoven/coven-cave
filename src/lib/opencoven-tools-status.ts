@@ -301,7 +301,7 @@ async function execLatestVersion(
  * keeps the registry probe argv-only: neither a shell string nor request data
  * is ever involved.
  */
-export function npmViewLaunchCommandForPath(
+export function npmLaunchCommandForPath(
   npmPath: string,
   platform: NodeJS.Platform = process.platform,
   fileExists: (file: string) => boolean = existsSync,
@@ -318,6 +318,11 @@ export function npmViewLaunchCommandForPath(
   );
   return fileExists(npmCli) ? { command: process.execPath, fixedArgs: [npmCli] } : null;
 }
+
+// Backward-compatible name retained for the latest-version callers that
+// introduced this helper. Install and registry operations share the same safe
+// Windows npm launch path.
+export const npmViewLaunchCommandForPath = npmLaunchCommandForPath;
 
 async function npmPathFromEnvironment(
   env: NodeJS.ProcessEnv,
@@ -405,7 +410,7 @@ export async function checkNpmLatestVersion(
     }
   }
   const launch = npmPath
-    ? npmViewLaunchCommandForPath(npmPath, platform, dependencies.fileExists)
+    ? npmLaunchCommandForPath(npmPath, platform, dependencies.fileExists)
     : null;
   if (!launch) {
     return { status: "failed", checkedAt, error: "npm_unavailable" };
