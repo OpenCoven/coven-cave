@@ -17,6 +17,10 @@ import {
   type CraftDraftBriefInput,
 } from "@/lib/craft-agent-prompt";
 import { CraftDetail, type CraftActionError } from "@/components/marketplace/craft-detail";
+import {
+  CraftDraftPreview,
+  craftSpecGroups,
+} from "@/components/marketplace/craft-draft-preview";
 import { KnowledgePackDetail } from "@/components/marketplace/knowledge-pack-detail";
 
 type PackPrompt = PromptOption;
@@ -241,13 +245,7 @@ function DraftCraftDetail({
           </button>
         </div>
 
-        <div className="craft-draft-ledger" aria-label="Draft extraction ledger">
-          <DraftLedgerGroup title="Required components" items={craft?.components.required ?? []} />
-          <DraftLedgerGroup title="Capabilities" items={craft?.requiredCapabilities ?? []} />
-          <DraftLedgerGroup title="Skills" items={skills.map((item) => item.id)} />
-          <DraftLedgerGroup title="Prompts" items={prompts.map((item) => item.id)} />
-          <DraftLedgerGroup title="Workflows" items={workflows.map((item) => item.id)} />
-        </div>
+        <CraftDraftPreview groups={craftSpecGroups(craft)} ariaLabel="Draft extraction ledger" />
 
         <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[12px] text-[var(--text-muted)]">
           Drafts are local and reversible. Review the extracted bundle before publishing or installing it as a versioned Craft.
@@ -301,22 +299,6 @@ function DraftCraftDetail({
   );
 }
 
-function DraftLedgerGroup({ title, items }: { title: string; items: string[] }) {
-  return (
-    <section>
-      <h3>{title}</h3>
-      {items.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {items.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      ) : (
-        <p>No entries</p>
-      )}
-    </section>
-  );
-}
 
 function StandardMarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
