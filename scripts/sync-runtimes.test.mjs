@@ -1,6 +1,6 @@
 // Tests for scripts/sync-runtimes.mjs — fixture-driven, no network.
 import assert from "node:assert/strict";
-import { compareSemver, pickAcceptedRuntimes, renderModule, validateAdapter } from "./sync-runtimes.mjs";
+import { CAVE_EXCLUDED_RUNTIME_IDS, compareSemver, pickAcceptedRuntimes, renderModule, validateAdapter } from "./sync-runtimes.mjs";
 
 const adapter = (id, extra = {}) => ({
   id,
@@ -59,6 +59,23 @@ assert.equal(compareSemver("2.0.0+build.5", "2.0.0"), 0, "release build metadata
     picked.map((p) => `${p.id}@${p.version}`),
     ["a@1.0.0"],
     "yanked versions are skipped for latest; fully-yanked runtimes are omitted",
+  );
+}
+
+// ── Cave-side policy exclusions ──────────────────────────────────────────────
+{
+  assert.ok(CAVE_EXCLUDED_RUNTIME_IDS.has("coven-code"), "coven-code is policy-excluded");
+  const picked = pickAcceptedRuntimes({
+    format: "1",
+    runtimes: {
+      "coven-code": [entry("coven-code", "1.0.0")],
+      keeper: [entry("keeper", "1.0.0")],
+    },
+  });
+  assert.deepEqual(
+    picked.map((p) => p.id),
+    ["keeper"],
+    "policy-excluded runtimes never reach the generated module, even when accepted upstream",
   );
 }
 

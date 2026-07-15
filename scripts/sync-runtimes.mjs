@@ -28,6 +28,12 @@ const REGISTRY_REPO = "OpenCoven/coven-runtimes";
 const INDEX_PATH = "crates/coven-runtime-registry/canonical/index.json";
 const SUPPORTED_INDEX_FORMAT = "1";
 
+// Cave-side policy exclusions. These ids stay accepted upstream but are not
+// runtimes Cave should offer: Coven Code is the app/tool Cave installs and
+// updates itself (onboarding + OpenCoven tools), not a familiar harness
+// choice — harness-adapters.test.ts pins the same stance for summoning.
+export const CAVE_EXCLUDED_RUNTIME_IDS = new Set(["coven-code"]);
+
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = path.join(scriptDir, "..", "src", "lib", "runtime-registry.gen.ts");
 
@@ -116,6 +122,7 @@ export function pickAcceptedRuntimes(index) {
   const picked = [];
   const problems = [];
   for (const id of Object.keys(index.runtimes).sort()) {
+    if (CAVE_EXCLUDED_RUNTIME_IDS.has(id)) continue; // Cave-side policy, see above
     const entries = index.runtimes[id];
     if (!Array.isArray(entries)) {
       problems.push(`${id}: entries is not an array`);

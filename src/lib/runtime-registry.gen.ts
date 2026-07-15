@@ -105,63 +105,6 @@ export const REGISTRY_RUNTIMES: RegistryRuntime[] = [
     }
   },
   {
-    "id": "coven-code",
-    "label": "Coven Code",
-    "binary": "coven-code",
-    "installHint": "npm install -g @opencoven/coven-code (or download a release archive from https://github.com/OpenCoven/coven-code/releases), then ensure `coven-code` is on PATH.",
-    "version": "1.0.1",
-    "homepage": "https://github.com/OpenCoven/coven-code",
-    "description": "Coven Code adapter. One-shot via `--print <prompt>`, JSONL streaming via `--print --input-format stream-json --output-format stream-json` (long-lived: one turn per stdin user frame, exits on stdin EOF; the positional prompt is ignored in this mode, matching Claude Code). Session pre-assignment/resume via `--session-id`/`--resume`. Think maps to `--thinking <TOKENS>`, speed to `--effort <LEVEL>`. Interactive launches must not append a prompt: a positional prompt switches coven-code into print mode.",
-    "modelFlag": "--model",
-    "capabilities": {
-      "stream": true,
-      "preassignedSessionId": true,
-      "think": true,
-      "speed": true
-    },
-    "adapterManifest": {
-      "adapters": [
-        {
-          "id": "coven-code",
-          "label": "Coven Code",
-          "executable": "coven-code",
-          "interactive_prompt_prefix_args": [],
-          "non_interactive_prompt_prefix_args": [
-            "--print"
-          ],
-          "install_hint": "npm install -g @opencoven/coven-code (or download a release archive from https://github.com/OpenCoven/coven-code/releases), then ensure `coven-code` is on PATH.",
-          "system_prompt_flag": "--append-system-prompt",
-          "model_flag": "--model",
-          "capabilities": {
-            "stream": true,
-            "preassigned_session_id": true,
-            "think": true,
-            "speed": true
-          },
-          "sandbox": {
-            "flag": "--permission-mode",
-            "full": "bypass-permissions",
-            "read_only": "plan"
-          },
-          "stream_args": {
-            "prefix_args": [
-              "--print",
-              "--input-format",
-              "stream-json",
-              "--output-format",
-              "stream-json"
-            ],
-            "session_id_flag": "--session-id",
-            "resume_flag": "--resume"
-          },
-          "version": "1.0.1",
-          "homepage": "https://github.com/OpenCoven/coven-code",
-          "description": "Coven Code adapter. One-shot via `--print <prompt>`, JSONL streaming via `--print --input-format stream-json --output-format stream-json` (long-lived: one turn per stdin user frame, exits on stdin EOF; the positional prompt is ignored in this mode, matching Claude Code). Session pre-assignment/resume via `--session-id`/`--resume`. Think maps to `--thinking <TOKENS>`, speed to `--effort <LEVEL>`. Interactive launches must not append a prompt: a positional prompt switches coven-code into print mode."
-        }
-      ]
-    }
-  },
-  {
     "id": "hermes",
     "label": "Hermes Agent",
     "binary": "hermes-coven",

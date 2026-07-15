@@ -88,6 +88,10 @@ const curatedIds = ["codex", "claude", "copilot", "hermes", "openclaw"];
   assert.ok(registryIds.length > 0, "registry-synced runtimes extend the curated seed");
   assert.deepEqual(registryIds, [...registryIds].sort(), "registry additions are alphabetical");
   assert.ok(!registryIds.some((id) => curatedIds.includes(id)), "curated ids never duplicate");
+  assert.ok(
+    !ids.includes("coven-code"),
+    "coven-code is policy-excluded from runtime surfaces (app/tool install, not a harness)",
+  );
   for (const adapter of COMPATIBILITY_ADAPTERS.slice(curatedIds.length)) {
     assert.equal(adapter.source, "registry", `${adapter.id} carries the registry source tag`);
     assert.equal(adapter.chatSupported, true, `registry-accepted ${adapter.id} is chat-trusted`);
