@@ -107,11 +107,15 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     child.on("close", (code) => {
       clearTimeout(timeout);
       assistantText = [...deltaByMessage.values()].join("\n").trim();
-      const failed = code !== 0 && !assistantText;
-      const finishedAt = new Date().toISOString();
-      const text = failed
+      // Any non-zero (or missing) exit code is an error — even with partial
+      // output, the run didn't finish cleanly and the diagnostics must not
+      // be dropped. Captured text is preserved ahead of the exit note.
+      const failed = code !== 0;
+      const exitNote = failed
         ? `copilot exited with code ${code ?? "?"}${stderrTail.trim() ? `:\n${stderrTail.trim()}` : ""}`
-        : assistantText;
+        : "";
+      const finishedAt = new Date().toISOString();
+      const text = [assistantText, exitNote].filter(Boolean).join("\n\n");
       void (async () => {
         try {
           const userTurnId = randomUUID();

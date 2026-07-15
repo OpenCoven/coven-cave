@@ -3,14 +3,17 @@
 // CLI with a real argv (prompt as ONE argument after -p) and persist the
 // finished transcript as a Cave conversation under its session id — where the
 // flow transcript endpoint and the research-mission reconcile look first.
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, chmodSync, writeFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, chmodSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const REAL_HOME = process.env.HOME;
 const TMP = mkdtempSync(join(tmpdir(), "flow-copilot-session-"));
 process.env.HOME = TMP;
+
+after(() => { process.env.HOME = REAL_HOME; });
 
 // A fake copilot binary (node shebang) that records its full argv (to
 // cwd/argv.json) and emits two JSONL frames like the real CLI's stream mode.
@@ -85,4 +88,28 @@ test("a failed spawn persists an error turn instead of dropping the run", async 
   const assistant = conv.turns.find((t) => t.role === "assistant");
   assert.ok(assistant.isError, "failure is an error turn");
   assert.match(assistant.text, /copilot exited|ENOENT/);
+});
+
+test("a non-zero exit with partial output keeps the text AND the exit diagnostics", async () => {
+  const PARTIAL = join(TMP, "fake-copilot-partial");
+  writeFileSync(PARTIAL, `#!/usr/bin/env node
+console.log(JSON.stringify({ type: "assistant.message", data: { messageId: "m1", content: "partial findings before the crash" } }));
+console.error("boom: model backend dropped");
+process.exit(3);
+`);
+  chmodSync(PARTIAL, 0o755);
+  const { sessionId, done } = startCopilotFlowRun({
+    spec: { ...SPEC, executable: PARTIAL },
+    prompt: "hello",
+    projectRoot: TMP,
+    familiarId: null,
+  });
+  await done;
+  const convPath = join(TMP, ".coven", "cave", "conversations", `${sessionId}.json`);
+  const conv = JSON.parse(readFileSync(convPath, "utf8"));
+  const assistant = conv.turns.find((t) => t.role === "assistant");
+  assert.ok(assistant.isError, "non-zero exit is an error even with partial output");
+  assert.match(assistant.text, /partial findings before the crash/);
+  assert.match(assistant.text, /copilot exited with code 3/);
+  assert.match(assistant.text, /boom: model backend dropped/);
 });
