@@ -964,6 +964,7 @@ export const SUITES = {
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
     "scripts/ios-reconnect-pill.test.mjs",
+    "scripts/ios-port-discovery.test.mjs",
     "scripts/ios-legacy-token-migration.test.mjs",
     "scripts/ios-offline-compose.test.mjs",
     "scripts/ios-operator-profile.test.mjs",
