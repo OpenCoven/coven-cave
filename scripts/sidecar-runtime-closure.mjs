@@ -39,7 +39,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // Headroom over the ~5.2k baseline: .agents/skills is a runtime root, so
   // each first-party skill shipped to familiars adds a file here (covenwiki
   // skills landed 2026-07-14). Raise deliberately, never reflexively.
-  fileCount: 5_250,
+  // 2026-07-15: +4 GitHub write routes (review/merge/rerun/dispatch,
+  // cave-fpqx.9) traced the runtime to 5,258 — raised to 5,300.
+  fileCount: 5_300,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
