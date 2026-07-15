@@ -87,7 +87,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
       // here would inherit the privileged app origin; a top-level data: URL gets
       // an opaque origin, matching the iframe preview's isolation boundary.
       const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(srcDoc)}`;
-      window.open(dataUrl, "_blank", "noopener");
+      window.open(dataUrl, "_blank", "noopener,noreferrer");
     } catch {
       /* popup blocked — the inline preview still works */
     }
