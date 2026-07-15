@@ -96,6 +96,8 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
 import { extractNextPaths } from "@/lib/next-paths";
+import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { GitHubCard } from "@/components/github-card";
 import {
   NO_PROJECT_ID,
   chatProjectById,
@@ -5938,6 +5940,41 @@ function splitTextForArtifacts(
   return out;
 }
 
+// GitHub cards (design §1-2, cave-fpqx.6): further split the artifact-split
+// text spans on `<coven:github …>` markers and bare-line github.com URLs,
+// mounting an inline GitHubCard at each reference's position. Settled turns
+// only — streaming strips markers (stripGitHubMarkers) and mounts cards on
+// settle, the same contract canvas artifacts follow.
+function splitSegmentsForGitHub(
+  segments: MessageBubbleSegment[],
+  onOpenUrl?: (url: string) => void,
+): MessageBubbleSegment[] {
+  const out: MessageBubbleSegment[] = [];
+  segments.forEach((seg, si) => {
+    if (seg.kind !== "text") {
+      out.push(seg);
+      return;
+    }
+    const pieces = sliceGitHubBlocks(seg.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") {
+      out.push(seg);
+      return;
+    }
+    pieces.forEach((p, pi) => {
+      if (p.kind === "text") {
+        if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else {
+        out.push({
+          kind: "block",
+          key: `gh-${si}-${pi}-${descriptorUrl(p.descriptor)}`,
+          node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} />,
+        });
+      }
+    });
+  });
+  return out;
+}
+
 // ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
 // The grouped-turn shapes built by ChatView's `groupedTurns` memo.
 type TranscriptVoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
@@ -6238,6 +6275,19 @@ function TurnRowImpl({
                 branchNav={branchNav}
               />
               {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+              {/* Bare-line GitHub URLs in a user message unfurl into cards
+                  beneath the bubble (attachment idiom) — the headline "paste a
+                  PR link" gesture (design §1). User turns only, never system. */}
+              {(() => {
+                const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
+                return ghRefs.length ? (
+                  <div className="mt-2 space-y-2">
+                    {ghRefs.map((d) => (
+                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} />
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </div>
           </div>
         </div>
@@ -6250,7 +6300,12 @@ function TurnRowImpl({
   // `attachment` events; this keeps the in-flight turn clean before reload.
   const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
   const inlineReasoning = reasoningSplit.reasoning;
-  const { visible, suggestions: nextPaths } = extractNextPaths(reasoningSplit.visible);
+  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
+  // tags so they never flash as raw text (cards mount on settle); settled
+  // turns keep them for splitSegmentsForGitHub below to replace with cards.
+  const ghSafeVisible = turn.pending ? stripGitHubMarkers(reasoningSplit.visible) : reasoningSplit.visible;
+  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(ghSafeVisible);
+  const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -6297,9 +6352,12 @@ function TurnRowImpl({
     // you can watch them run as live feedback.
     renderSegments = bubbleSegments;
   } else {
-    // Settled: prose only (+ artifact viewers). Tools are NOT woven into the
-    // text — they render in the designated ToolGroup section below.
-    const split = splitTextForArtifacts(visible, artifactCtx);
+    // Settled: prose only (+ artifact viewers + GitHub cards). Tools are NOT
+    // woven into the text — they render in the designated ToolGroup section
+    // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
+    // mount at the markers' positions; the `visible` fallback/content path is
+    // marker-free either way.
+    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl);
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
