@@ -22,7 +22,7 @@ export async function GET(req: Request) {
       authenticated: false,
       authMode: "none",
       online: false,
-      error: "Set omnigent.baseUrl in Cave config (Fleet settings).",
+      error: "Set omnigent.baseUrl in Cave config (Settings → Omnigent fleet).",
     });
   }
 

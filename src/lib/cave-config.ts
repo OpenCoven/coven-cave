@@ -269,7 +269,7 @@ export type CaveConfig = {
     knowledgePacks?: KnowledgePackSeedEntry[];
   };
   multiHost: CaveMultiHostConfig;
-  /** Omnigent server used by the Fleet surface (hosts / sessions / run). */
+  /** Omnigent server used for fleet runs (hosts / sessions / host chip). */
   omnigent: CaveOmnigentConfig;
   /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
   remoteHosts: CaveRemoteHost[];

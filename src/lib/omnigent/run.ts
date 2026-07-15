@@ -1,5 +1,5 @@
 /**
- * Shared Omnigent session create used by Fleet, chat host-chip, and board.
+ * Shared Omnigent session create used by the chat host-chip, board, and home.
  * Resolves familiar defaults → global defaults → live catalog/first online host.
  * When familiarId is set: Ward preflight (fail closed) + SOUL/IDENTITY prompt injection.
  */
@@ -85,7 +85,7 @@ export async function createOmnigentRun(
 ): Promise<OmnigentRunResult> {
   const baseUrl = config.omnigent.baseUrl;
   if (!baseUrl) {
-    throw new Error("omnigent.baseUrl is not configured — open Fleet and set the server URL");
+    throw new Error("omnigent.baseUrl is not configured — set the server URL in Settings → Omnigent fleet");
   }
 
   const prompt = request.prompt.trim();

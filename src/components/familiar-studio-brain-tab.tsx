@@ -519,7 +519,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           <section className="familiar-studio-brain__card">
             <h3 className="familiar-studio-brain__card-title">Omnigent fleet</h3>
             <p className="familiar-studio-brain__hint">
-              Defaults when this familiar runs on Omnigent hosts (Fleet, chat host chip, board).
+              Defaults when this familiar runs on Omnigent hosts (chat host chip, board).
               Empty fields fall back to Settings → Omnigent, then the live catalog.
               Bound runs also inject SOUL/IDENTITY and fail Ward preflight on contract violations.
             </p>
