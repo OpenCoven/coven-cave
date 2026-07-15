@@ -180,8 +180,14 @@ function cloneJob(job: SpeechModelDownloadJob): SpeechModelDownloadJob {
 }
 
 function putJob(job: SpeechModelDownloadJob): SpeechModelDownloadJob {
+  const MAX_JOBS = 200;
   job.updatedAt = new Date().toISOString();
   jobs.set(job.id, job);
+  while (jobs.size > MAX_JOBS) {
+    const oldest = jobs.keys().next().value as string | undefined;
+    if (!oldest) break;
+    jobs.delete(oldest);
+  }
   return job;
 }
 
