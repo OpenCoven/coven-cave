@@ -69,16 +69,20 @@ export async function GET(req: Request) {
   }
 
   if (!res.ok) {
-    // 400 = the endpoint doesn't know this voice (realtime-only marin/cedar).
-    if (res.status === 400) {
+    let providerMessage = "";
+    let param = "";
+    try {
+      const json = (await res.json()) as { error?: { message?: string; param?: string } };
+      providerMessage = json.error?.message ?? "";
+      param = json.error?.param ?? "";
+    } catch { /* keep empty */ }
+    // Only a voice-parameter rejection means "this voice isn't on the TTS
+    // endpoint" (realtime-only marin/cedar) — cache that verdict. Every other
+    // failure (bad key, quota, transient) stays retryable and uncached.
+    if (res.status === 400 && (param === "voice" || /voice/i.test(providerMessage))) {
       cache.set(voice.id, { kind: "unsupported" });
       return unsupportedResponse();
     }
-    let providerMessage = "";
-    try {
-      const json = (await res.json()) as { error?: { message?: string } };
-      providerMessage = json.error?.message ?? "";
-    } catch { /* keep empty */ }
     return NextResponse.json({
       ok: false,
       error: "preview_failed",

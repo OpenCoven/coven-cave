@@ -278,15 +278,17 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     ? openAiVoiceDetail(defaultOpenAiVoice)
     : undefined;
 
+  // Loading is cancellable: any non-idle click routes through stopVoicePreview,
+  // so the button stays enabled and reads as Stop while a sample is in flight.
+  const previewActive = previewStatus !== "idle";
   const previewButton = (
     <IconButton
-      icon={previewStatus === "playing" ? "ph:stop-fill" : "ph:speaker-high-fill"}
+      icon={previewActive ? "ph:stop-fill" : "ph:speaker-high-fill"}
       className="familiar-studio-brain__voice-preview"
       onClick={() => void playVoicePreview()}
-      disabled={previewStatus === "loading"}
-      active={previewStatus === "playing"}
-      aria-label={previewStatus === "playing" ? "Stop voice preview" : "Preview voice"}
-      title={previewStatus === "playing" ? "Stop preview" : "Hear a sample of this voice"}
+      active={previewActive}
+      aria-label={previewActive ? "Stop voice preview" : "Preview voice"}
+      title={previewActive ? "Stop preview" : "Hear a sample of this voice"}
     />
   );
 

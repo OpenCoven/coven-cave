@@ -162,8 +162,18 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label=\{previewStatus === "playing" \? "Stop voice preview" : "Preview voice"\}/,
+  /aria-label=\{previewActive \? "Stop voice preview" : "Preview voice"\}/,
   "the preview button announces its play/stop state",
+);
+assert.match(
+  source,
+  /const previewActive = previewStatus !== "idle"/,
+  "loading is cancellable — the button reads Stop for any non-idle state instead of disabling",
+);
+assert.doesNotMatch(
+  source,
+  /disabled=\{previewStatus/,
+  "the preview button must not disable during loading (users can cancel in-flight previews)",
 );
 assert.match(
   source,

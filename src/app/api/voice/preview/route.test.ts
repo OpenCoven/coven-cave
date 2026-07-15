@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,6 +26,9 @@ globalThis.fetch = async (url, init) => {
 };
 
 const { GET, __clearPreviewCacheForTests } = await import("./route.ts");
+
+// Restore the shared global for any tests that later run in this process.
+after(() => { globalThis.fetch = realFetch; });
 
 beforeEach(() => {
   delete process.env.OPENAI_API_KEY;
@@ -81,10 +84,10 @@ test("per-voice cache: the second preview never re-bills the provider", async ()
   assert.equal(fetchCalls.length, 1, "cached voice served without a provider call");
 });
 
-test("422 preview_unsupported when TTS rejects a realtime-only voice, and the verdict is cached", async () => {
+test("422 preview_unsupported when TTS rejects the voice param, and the verdict is cached", async () => {
   process.env.OPENAI_API_KEY = "sk-x";
   nextFetchResponse = new Response(
-    JSON.stringify({ error: { message: "voice not supported" } }),
+    JSON.stringify({ error: { message: "voice not supported", param: "voice" } }),
     { status: 400 },
   );
   const res = await GET(req("marin"));
@@ -96,6 +99,24 @@ test("422 preview_unsupported when TTS rejects a realtime-only voice, and the ve
   const again = await GET(req("marin"));
   assert.equal(again.status, 422);
   assert.equal(fetchCalls.length, 1, "unsupported verdict cached — no repeat call");
+});
+
+test("a 400 unrelated to the voice param is NOT cached as unsupported", async () => {
+  process.env.OPENAI_API_KEY = "sk-x";
+  nextFetchResponse = new Response(
+    JSON.stringify({ error: { message: "invalid input", param: "input" } }),
+    { status: 400 },
+  );
+  const res = await GET(req("sage"));
+  const json = await res.json();
+  assert.equal(res.status, 502);
+  assert.equal(json.error, "preview_failed");
+
+  // A retry reaches the provider again and can succeed.
+  nextFetchResponse = new Response(new Uint8Array([5]), { status: 200 });
+  const retry = await GET(req("sage"));
+  assert.equal(retry.status, 200);
+  assert.equal(fetchCalls.length, 2);
 });
 
 test("502 preview_failed surfaces the provider message on non-400 failures", async () => {
