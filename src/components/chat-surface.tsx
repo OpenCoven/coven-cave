@@ -12,6 +12,7 @@ import { ChatFamiliarView } from "@/components/chat-familiar-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
 import { WorkspaceRail } from "@/components/workspace-rail";
 import { useCodeRail } from "@/lib/use-code-rail";
+import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -170,6 +171,9 @@ export function ChatSurface({
   // manual collapse (see below) so the rail snaps back to the session.
   const [browseRootOverride, setBrowseRootOverride] = useState<string | null>(null);
   const effectiveRailRoot = browseRootOverride ?? railProjectRoot;
+  // Failing-checks cue for the COLLAPSED reopen strip (cave-fpqx.12) — same
+  // stage-header broadcast the mounted rail's badge listens to.
+  const reopenChecksFailing = useStageChecksBadge(effectiveRailRoot);
 
   // changeCount = number of pending working-tree files for the rail's effective
   // project root. Mirrors session-changes-panel's /api/changes fetch (files
@@ -682,13 +686,14 @@ export function ChatSurface({
       {rail.available && !rail.open && !isMobile && !paneNarrow && (
         <button
           type="button"
-          aria-label="Show code rail"
-          title="Show code rail"
+          aria-label={reopenChecksFailing ? "Show code rail — PR checks failing" : "Show code rail"}
+          title={reopenChecksFailing ? "PR checks failing" : "Show code rail"}
           className="workspace-rail-reopen focus-ring"
           onClick={rail.reopen}
         >
           <Icon name="ph:sidebar-simple" width={15} aria-hidden />
           <span className="workspace-rail-reopen__label">Code</span>
+          {reopenChecksFailing ? <span className="workspace-rail__badge workspace-rail__badge--alert" aria-hidden /> : null}
         </button>
       )}
       {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in

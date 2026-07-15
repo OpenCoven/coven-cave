@@ -197,3 +197,9 @@ export function resolveStageForBranch(args: {
 
   return { branch, pr, mergedRef, bead, lane, steps };
 }
+
+/** Window event the chat stage header dispatches whenever its snapshot's
+ *  failing-checks signal changes; the code rail's badge listens (design §6 —
+ *  one stage source, no duplicate PR-bridge fetches). detail:
+ *  { projectRoot: string; failing: boolean }. */
+export const STAGE_CHECKS_EVENT = "cave:stage-checks";

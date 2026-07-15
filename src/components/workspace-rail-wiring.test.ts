@@ -154,7 +154,7 @@ assert.match(
 // Collapsed state renders a reopen strip.
 assert.match(
   source,
-  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label="Show code rail"[\s\S]*?rail\.reopen/,
+  /rail\.available\s*&&\s*!rail\.open[\s\S]*?aria-label=\{reopenChecksFailing \? "Show code rail — PR checks failing" : "Show code rail"\}[\s\S]*?rail\.reopen/,
   "a 'Show code rail' reopen strip is rendered when the rail is available but collapsed",
 );
 
