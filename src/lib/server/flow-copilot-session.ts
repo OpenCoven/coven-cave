@@ -43,6 +43,16 @@ export type CopilotFlowStart = {
   done: Promise<void>;
 };
 
+// Live Cave-direct runs, keyed by session id. These sessions never exist on
+// the daemon, so this in-process registry is the only "still running" signal
+// the research-mission reconcile can consult (cave-ibb7). A server restart
+// clears it — correctly: non-detached children die with the server.
+const ACTIVE_RUNS = new Set<string>();
+
+export function isCopilotFlowRunActive(sessionId: string): boolean {
+  return ACTIVE_RUNS.has(sessionId);
+}
+
 /**
  * Launch one non-interactive copilot run for a compiled flow prompt.
  * Returns as soon as the process starts; the transcript (user prompt +
@@ -72,6 +82,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     env: harnessSpawnEnv(launch.familiarId),
     stdio: ["ignore", "pipe", "pipe"],
   });
+  ACTIVE_RUNS.add(sessionId);
 
   const startedAt = new Date().toISOString();
   let assistantText = "";
@@ -109,6 +120,7 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     });
     child.on("close", (code) => {
       clearTimeout(timeout);
+      ACTIVE_RUNS.delete(sessionId);
       assistantText = [...deltaByMessage.values()].join("\n").trim();
       // Any non-zero (or missing) exit code is an error — even with partial
       // output, the run didn't finish cleanly and the diagnostics must not
