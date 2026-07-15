@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteProject, patchProject } from "@/lib/cave-projects";
+import { isAllowedNewProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const trimmed = body.root.trim();
     if (trimmed.length === 0) {
       return NextResponse.json({ ok: false, error: "root cannot be empty" }, { status: 400 });
+    }
+    if (!isAllowedNewProjectRoot(trimmed)) {
+      return NextResponse.json({ ok: false, error: "root must be inside an allowed workspace" }, { status: 403 });
     }
     patch.root = trimmed;
   }

@@ -46,26 +46,29 @@ function savedCaveProjectRoots(): string[] {
 // research mission workspaces are created at runtime, and a snapshot taken at
 // import time silently rejected them ("invalid project root") until the next
 // server restart.
+function builtInProjectRoots(): string[] {
+  return [
+    process.env.WORKSPACE_ROOT,
+    process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
+    covenWorkspaceRoot(),
+    // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
+    process.env.OPENCLAW_WORKSPACE_ROOT,
+    path.join(homedir(), ".openclaw", "workspace"),
+    process.cwd(),
+    // Research mission workspaces host bounded research sessions and live
+    // under cave state rather than a registered project root.
+    researchMissionsRoot(),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map(realpathOrResolve);
+}
+
+function uniqueRoots(roots: string[]): string[] {
+  return Array.from(new Set(roots));
+}
+
 function allowedProjectRoots(): string[] {
-  return Array.from(
-    new Set(
-      [
-        process.env.WORKSPACE_ROOT,
-        process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
-        covenWorkspaceRoot(),
-        // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
-        process.env.OPENCLAW_WORKSPACE_ROOT,
-        path.join(homedir(), ".openclaw", "workspace"),
-        process.cwd(),
-        // Research mission workspaces host bounded research sessions and live
-        // under cave state rather than a registered project root.
-        researchMissionsRoot(),
-        ...savedCaveProjectRoots(),
-      ]
-        .filter((value): value is string => Boolean(value))
-        .map(realpathOrResolve),
-    ),
-  );
+  return uniqueRoots([...builtInProjectRoots(), ...savedCaveProjectRoots().map(realpathOrResolve)]);
 }
 
 function isWithinRoot(candidate: string, root: string): boolean {
@@ -101,4 +104,9 @@ export function resolveAllowedProjectSubpath(value: string): { root: string; rel
 export function resolveAllowedProjectPath(value: string): string | null {
   const subpath = resolveAllowedProjectSubpath(value);
   return subpath ? path.join(subpath.root, subpath.relativePath) : null;
+}
+
+export function isAllowedNewProjectRoot(value: string): boolean {
+  const candidate = realpathOrResolve(normalizeLegacyCovenWorkspacePath(value));
+  return uniqueRoots(builtInProjectRoots()).some((root) => isWithinRoot(candidate, root));
 }

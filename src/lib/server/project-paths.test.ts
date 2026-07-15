@@ -47,7 +47,7 @@ try {
     }),
   );
 
-  const { resolveAllowedProjectPath } = await import("./project-paths.ts");
+  const { isAllowedNewProjectRoot, resolveAllowedProjectPath } = await import("./project-paths.ts");
   const legacy = path.join(process.env.COVEN_HOME, "workspace", "familiars", "sage");
 
   assert.equal(
@@ -60,6 +60,11 @@ try {
     resolveAllowedProjectPath(path.join(savedProjectRoot, "docs")),
     await realpath(path.join(savedProjectRoot, "docs")),
     "saved Cave project roots are allowed for file tree browsing",
+  );
+  assert.equal(
+    isAllowedNewProjectRoot(savedProjectRoot),
+    false,
+    "saved Cave projects must not expand the trusted base for new project registration",
   );
 
   // Research mission workspaces live under cave state, not a registered
@@ -101,6 +106,11 @@ try {
     resolveAllowedProjectPath(lateProjectRoot),
     await realpath(lateProjectRoot),
     "projects saved after startup are allowed without a server restart",
+  );
+  assert.equal(
+    isAllowedNewProjectRoot(lateProjectRoot),
+    false,
+    "late saved projects do not authorize more arbitrary project roots",
   );
 } finally {
   restoreEnv();

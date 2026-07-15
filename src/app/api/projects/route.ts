@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
 import { filterProjectsForFamiliar } from "@/lib/project-permissions";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import { isAllowedNewProjectRoot } from "@/lib/server/project-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,9 @@ export async function POST(req: Request) {
   const root = String(body.root ?? "").trim();
   if (!name || !root) {
     return NextResponse.json({ ok: false, error: "name and root are required" }, { status: 400 });
+  }
+  if (!isAllowedNewProjectRoot(root)) {
+    return NextResponse.json({ ok: false, error: "root must be inside an allowed workspace" }, { status: 403 });
   }
 
   const project = await createProject({
