@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server.js";
-import { buildLocalBrainMessages, DEFAULT_LOCAL_MODEL, localLlmBaseUrl } from "../../../../../lib/voice/local-loop.ts";
+import { buildLocalBrainMessages, DEFAULT_LOCAL_MODEL, localLlmBaseUrl, MAX_BRAIN_CONTENT_CHARS } from "../../../../../lib/voice/local-loop.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,10 @@ export const dynamic = "force-dynamic";
 type BrainTurn = { role?: string; content?: string };
 
 const MAX_MESSAGES = 64;
-const MAX_CONTENT_CHARS = 8_000;
+// One shared per-message cap with buildLocalBrainMessages (the in-app client
+// truncates to it before posting), so the client can never assemble a payload
+// this proxy rejects; direct callers exceeding it still get a hard 400.
+const MAX_CONTENT_CHARS = MAX_BRAIN_CONTENT_CHARS;
 
 export async function POST(req: Request) {
   let body: { model?: string; messages?: BrainTurn[] };

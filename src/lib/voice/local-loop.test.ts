@@ -7,6 +7,7 @@ import {
   DEFAULT_LOCAL_MODEL,
   localLlmBaseUrl,
   localVoiceProvider,
+  MAX_BRAIN_CONTENT_CHARS,
   probeLocalLlm,
 } from "./local-loop.ts";
 
@@ -33,6 +34,25 @@ test("buildLocalBrainMessages leads with the persona and caps the turn tail", ()
   assert.equal(messages.length, 25); // system + capped tail
   assert.equal(messages.at(-1).content, "turn 29"); // newest turns win
   assert.equal(messages[1].content, "turn 6"); // oldest six dropped
+});
+
+test("buildLocalBrainMessages clamps oversized turns and drops empty ones (review #3159)", () => {
+  // The conversation seed is raw chat history: code-heavy replies exceed the
+  // proxy's per-message cap and stored turns can be empty. One bad turn must
+  // not 400 the whole brain call — clamp and drop here, the single assembly
+  // point, so the client can never build a payload the proxy rejects.
+  const messages = buildLocalBrainMessages("You are Milo.", [
+    { role: "user", content: "x".repeat(MAX_BRAIN_CONTENT_CHARS + 5_000) },
+    { role: "assistant", content: "   " },
+    { role: "assistant", content: "" },
+    { role: "user", content: "still here?" },
+  ]);
+  assert.equal(messages.length, 3); // system + clamped turn + real turn (empties dropped)
+  assert.equal(messages[1].content.length, MAX_BRAIN_CONTENT_CHARS);
+  assert.ok(messages[1].content.endsWith("…"), "truncation is marked, not silent");
+  assert.equal(messages.at(-1).content, "still here?");
+  // The clamp and the proxy limit are the same constant — they cannot drift.
+  assert.equal(MAX_BRAIN_CONTENT_CHARS, 8_000);
 });
 
 // ── Reachability probe ───────────────────────────────────────────────────────
