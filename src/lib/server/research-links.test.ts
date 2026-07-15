@@ -76,7 +76,7 @@ test("one save is bounded to MAX_LINKS_PER_SAVE", async () => {
   assert.equal(result.added.length, MAX_LINKS_PER_SAVE);
 });
 
-// ── corruption safety (review finding on 972cd) ──────────────────────────────
+// ── corruption safety (review finding on 972bf1cd) ───────────────────────────
 
 test("a corrupt store file is preserved aside, never silently wiped by a save", async () => {
   const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
