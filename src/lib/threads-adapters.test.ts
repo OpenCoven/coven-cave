@@ -16,8 +16,6 @@ import {
 } from "./threads-adapters.ts";
 import type { ThreadsEnvelope } from "./threads-read.ts";
 
-const FIXTURES_ROOT = path.join(process.cwd(), "fixtures", "phase-4");
-
 const WEAVE_HOLDS = "11111111-1111-4111-8111-111111111111";
 const WEAVE_FRAYED = "22222222-2222-4222-8222-222222222222";
 const WEAVE_SNAPPED = "33333333-3333-4333-8333-333333333333";
