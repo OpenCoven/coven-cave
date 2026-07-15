@@ -452,15 +452,23 @@ test("in-budget readings stay neutral with no badges", () => {
     reading(meterMission({ startedAt: "2026-07-15T00:00:00Z", finishedAt: "2026-07-15T00:20:00Z" }), "time").tone,
     "neutral",
   );
+  // …but a sub-minute overshoot is still over, even when the rounded display
+  // reads at-bound (millisecond comparison, not rounded minutes).
+  const justOver = reading(
+    meterMission({ startedAt: "2026-07-15T00:00:00Z", finishedAt: "2026-07-15T00:20:20Z" }),
+    "time",
+  );
+  assert.equal(justOver.value, "20/20 min");
+  assert.equal(justOver.tone, "over");
 });
 
 test("spend reads over only past the cap and stays honest without one", () => {
   const over = reading(meterMission({ costs: [8, 4.5], bounds: { maxSpendUsd: 10 } }), "spend");
-  assert.equal(over.value, "$12.50/$10");
+  assert.equal(over.value, "$12.50/$10.00");
   assert.equal(over.tone, "over");
   assert.equal(over.badge, "over");
   const under = reading(meterMission({ costs: [5], bounds: { maxSpendUsd: 10 } }), "spend");
-  assert.equal(under.value, "$5.00/$10");
+  assert.equal(under.value, "$5.00/$10.00");
   assert.equal(under.tone, "neutral");
   const uncapped = reading(meterMission({ costs: [5] }), "spend");
   assert.equal(uncapped.value, "$5.00 reported");
