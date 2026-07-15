@@ -236,6 +236,27 @@ function errorMessage(code: string | undefined): string {
       return "Something went wrong setting up the call. Please try again.";
     case "connect_failed":
       return "The call couldn't connect. Please try again.";
+    // STT / speech recognition
+    case "stt_unavailable":
+      return "Speech recognition isn't available in this window.";
+    // Vault / key issues
+    case "vault_key_unresolved":
+      return "A required API key isn't set up in your Vault.";
+    case "voice_not_configured":
+      return "This familiar has no voice provider configured.";
+    // ElevenLabs-specific
+    case "elevenlabs_key_invalid":
+    case "elevenlabs_key_missing":
+      return "The ElevenLabs API key is missing or invalid.";
+    case "elevenlabs_probe_failed":
+    case "elevenlabs_unreachable":
+      return "Couldn't reach ElevenLabs. Check your connection and try again.";
+    case "elevenlabs_tts_failed":
+      return "ElevenLabs speech synthesis failed.";
+    // Brain / familiar runtime issues
+    case "familiar_brain_failed":
+    case "provider_mint_failed":
+      return "The familiar's voice brain couldn't start.";
     default:
       return "The call ran into a problem. Please try again.";
   }
