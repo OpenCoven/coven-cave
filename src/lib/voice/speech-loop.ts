@@ -18,7 +18,7 @@
 // talking before the harness turn finishes) while recognition stays hushed
 // until the whole queue drains.
 
-import type { LiveSession, VoiceCallbacks } from "./types.ts";
+import type { LiveSession, VoiceCallbacks, VoiceEarsEngine } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 
 /** One user turn in → the full final reply text out. Implementations may call
@@ -218,6 +218,10 @@ export type SpeechLoopOptions = {
   mouth?: SpeechMouth;
   /** Custom ears (e.g. the native macOS engine). Defaults to WebSpeech. */
   ears?: SpeechEarsFactory;
+  /** Engine label for the supplied `ears`, surfaced on the LiveSession so
+   *  the call UI can say how it hears (cave-vpe1). Ignored when `ears` is
+   *  absent — the WebSpeech fallback labels itself. */
+  earsEngine?: VoiceEarsEngine;
   callbacks: VoiceCallbacks;
   brain: SpeechBrain;
   /** Machine code reported when the brain throws a non-VoiceConnectError. */
@@ -355,6 +359,9 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     // non-browser environments, where no element will ever play it.)
     inboundAudio:
       typeof MediaStream === "undefined" ? ({} as MediaStream) : new MediaStream(),
+    // How this call hears (cave-vpe1): the supplied ears' label, or the
+    // WebSpeech fallback labeling itself.
+    earsEngine: opts.ears ? opts.earsEngine : "web-speech",
     setMuted(next: boolean) {
       muted = next;
       for (const track of mic.getAudioTracks()) track.enabled = !next;

@@ -52,7 +52,20 @@ export interface LiveSession {
   inboundAudio: MediaStream;
   setMuted(muted: boolean): void;
   close(): Promise<void>;
+  /** Which recognition engine this call's ears run on, for loop-based
+   *  providers (cave-vpe1). Cloud realtime sessions (their model IS the
+   *  ears) leave it unset. */
+  earsEngine?: VoiceEarsEngine;
 }
+
+/** Recognition engine behind a speech-loop call's ears:
+ *  - "native-on-device": macOS SFSpeechRecognizer, dictation model on this
+ *    Mac, audio never leaves the device.
+ *  - "native-dictation": macOS SFSpeechRecognizer via Apple's dictation
+ *    service (no local model for the language).
+ *  - "web-speech": the browser's SpeechRecognition (Chromium's is a cloud
+ *    service). */
+export type VoiceEarsEngine = "native-on-device" | "native-dictation" | "web-speech";
 
 /**
  * Connection-phase error: `message` stays a stable machine code (e.g.

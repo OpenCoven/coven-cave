@@ -99,7 +99,7 @@ function fakeMouth() {
   };
 }
 
-function loopFixture({ brain } = {}) {
+function loopFixture({ brain, earsEngine } = {}) {
   const ears = fakeEars();
   const mic = fakeMic();
   const mouth = fakeMouth();
@@ -107,6 +107,7 @@ function loopFixture({ brain } = {}) {
   const session = connectSpeechLoop({
     mic: mic.stream,
     ears: ears.factory,
+    earsEngine,
     mouth: mouth.mouth,
     callbacks: {
       onUserTranscriptFinal: (t) => events.userFinals.push(t),
@@ -181,6 +182,17 @@ test("close tears down ears, mouth, and mic tracks", async () => {
   assert.ok(ears.log.includes("close"));
   assert.deepEqual(mouth.spoken, ["<cancel>"]);
   assert.deepEqual(mic.stopped, ["mic"]);
+});
+
+test("the session reports how it hears from the supplied ears' label (cave-vpe1)", () => {
+  // Injected ears (the native engine) surface the resolver's engine label…
+  const native = loopFixture({ earsEngine: "native-on-device" });
+  assert.equal(native.session.earsEngine, "native-on-device");
+  const dictation = loopFixture({ earsEngine: "native-dictation" });
+  assert.equal(dictation.session.earsEngine, "native-dictation");
+  // …and injected ears without a label stay unlabeled rather than lying.
+  const unlabeled = loopFixture();
+  assert.equal(unlabeled.session.earsEngine, undefined);
 });
 
 test("without injected ears and without a window engine the loop refuses with stt_unavailable", () => {

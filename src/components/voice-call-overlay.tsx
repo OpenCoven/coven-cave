@@ -6,7 +6,7 @@ import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
-import type { LiveSession, VoiceSessionGrant } from "@/lib/voice/types";
+import type { LiveSession, VoiceSessionGrant, VoiceEarsEngine } from "@/lib/voice/types";
 import { voiceErrorHint } from "@/lib/voice/types";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
 
@@ -89,7 +89,7 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           if (cancelled) { await live.close(); return; }
           liveRef.current = live;
           if (audioElRef.current) audioElRef.current.srcObject = live.inboundAudio;
-          dispatch({ type: "CONNECTED", startedAt: Date.now() });
+          dispatch({ type: "CONNECTED", startedAt: Date.now(), earsEngine: live.earsEngine });
         } catch (err) {
           dispatch({
             type: "PROVIDER_ERROR",
@@ -164,6 +164,11 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
         </header>
         <div className="voice-call-overlay__body">
+          {state.state === "live" && state.earsEngine && (
+            <span className="voice-call-overlay__ears" title="How this call hears you">
+              {earsEngineLabel(state.earsEngine)}
+            </span>
+          )}
           {state.state === "error" && (
             <div className="voice-call-overlay__error" role="alert">
               <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
@@ -204,6 +209,16 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
 
   if (typeof document === "undefined") return null;
   return createPortal(overlay, document.body);
+}
+
+// The engine badge is honest, not decorative: "On-device" is the no-cloud
+// promise kept; the other modes tell the user their audio rides a service.
+function earsEngineLabel(engine: VoiceEarsEngine): string {
+  switch (engine) {
+    case "native-on-device": return "Hearing on-device";
+    case "native-dictation": return "Hearing via Apple dictation";
+    case "web-speech": return "Hearing via browser speech";
+  }
 }
 
 function labelFor(s: CallState): string {
