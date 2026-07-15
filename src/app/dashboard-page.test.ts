@@ -230,7 +230,8 @@ assert.match(cockpit, /i\.status === "pending"/, "agenda derivation keeps the pe
   const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
   const model = readFileSync(new URL("../lib/dashboard-model.ts", import.meta.url), "utf8");
   assert.match(model, /openCount: breakdown\.openItems\.length/, "the model carries the uncapped open total");
-  assert.match(inbox, /const liveTotal = Math\.max\(0, openCount - \(initialItems\.length - items\.length\)\)/, "the widget derives a live total that tracks optimistic removals");
+  assert.match(inbox, /const optimisticRemovals = Math\.max\(0, initialItems\.length - items\.length\)/, "the removal delta clamps at 0 so a failed-action revert can't overshoot");
+  assert.match(inbox, /const liveTotal = Math\.max\(0, openCount - optimisticRemovals\)/, "the widget derives a live total that tracks optimistic removals");
   assert.match(inbox, /const caughtUp = liveTotal === 0/, "all-clear reads the uncapped total, not the visible page");
   assert.match(inbox, /const hidden = Math\.max\(0, liveTotal - items\.length\)/, "overflow counts the items beyond the visible cap");
   assert.match(inbox, /\+\{hidden\} more — open Rituals/, "overflow drills through instead of silently truncating");

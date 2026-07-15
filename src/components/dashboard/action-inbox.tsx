@@ -54,8 +54,11 @@ export function ActionInbox({ initialItems, openCount, onOpenCount }: {
   const { announce } = useAnnouncer();
   // Live open total: the uncapped count minus rows removed optimistically but
   // not yet reflected in the incoming model snapshot. Self-corrects when the
-  // fresh model lands (openCount drops, acted ids leave `initialItems`).
-  const liveTotal = Math.max(0, openCount - (initialItems.length - items.length));
+  // fresh model lands (openCount drops, acted ids leave `initialItems`). The
+  // removal delta clamps at 0: a failed action reverting to a pre-poll `items`
+  // array must never push the total past the authoritative snapshot count.
+  const optimisticRemovals = Math.max(0, initialItems.length - items.length);
+  const liveTotal = Math.max(0, openCount - optimisticRemovals);
   const onOpenCountRef = useRef(onOpenCount);
   onOpenCountRef.current = onOpenCount;
   useEffect(() => {
