@@ -23,6 +23,17 @@ out = formatSkillDraft({
 });
 assert.deepEqual(out.tags, ["a", "b.c-d 2"]);
 
+// Cap: more than 12 valid tags → exactly the first 12 survive.
+const many = Array.from({ length: 15 }, (_, i) => `tag${i}`);
+out = formatSkillDraft({
+  name: "n",
+  description: "d",
+  tags: many,
+  instructions: "x",
+});
+assert.equal(out.tags.length, 12);
+assert.deepEqual(out.tags, many.slice(0, 12));
+
 // Instructions: CRLF → LF and outer trim only — interior structure untouched.
 out = formatSkillDraft({
   name: "n",
