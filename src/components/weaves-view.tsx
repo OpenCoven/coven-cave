@@ -4,11 +4,12 @@
 // - blocked envelope -> full-surface blocked state, never an empty-healthy list
 // - stale/fixture banners render above the surfaces; nothing hides them
 // - the trace drawer shows predicate evidence + source cursor for any pill
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { StrandInspector } from "@/components/strand-inspector";
 import { ThreadPane } from "@/components/thread-pane";
 import { WeaveRail } from "@/components/weave-rail";
-import type { ThreadView, WeaveDetail, WeaveSummary } from "@/lib/threads-read";
+import type { ProposalView, ThreadView, WeaveDetail, WeaveSummary } from "@/lib/threads-read";
 import {
   blockedMessage,
   railModel,
@@ -111,6 +112,7 @@ export function WeavesView() {
   const [paneState, setPaneState] = useState<SurfaceState<WeaveDetail> | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [trace, setTrace] = useState<StatusTrace | null>(null);
+  const [proposalsState, setProposalsState] = useState<SurfaceState<ProposalView[]>>({ kind: "loading" });
 
   const loadRail = useCallback(async () => {
     setRailState(await fetchSurface<WeaveSummary[]>("/api/weaves"));
@@ -118,7 +120,20 @@ export function WeavesView() {
 
   useEffect(() => {
     void loadRail();
+    void fetchSurface<ProposalView[]>("/api/proposals").then(setProposalsState);
   }, [loadRail]);
+
+  // Lineage annotation set: proposal ids that still resolve to staged files.
+  // A blocked proposals read yields an empty set — unresolved-by-default is
+  // the honest treatment when nothing can be verified (R7 leans fail-closed).
+  const knownProposalIds = useMemo(() => {
+    if (proposalsState.kind !== "ready") return new Set<string>();
+    return new Set(
+      proposalsState.data
+        .map((p) => p.payload?.id)
+        .filter((id): id is string => typeof id === "string"),
+    );
+  }, [proposalsState]);
 
   useEffect(() => {
     if (!selectedWeaveId) {
@@ -185,13 +200,23 @@ export function WeavesView() {
           ) : paneState.kind === "blocked" ? (
             <BlockedSurface state={paneState} />
           ) : (
-            <ThreadPane
-              weave={paneState.data}
-              meta={paneState.meta}
-              selectedThreadId={selectedThreadId}
-              onSelectThread={setSelectedThreadId}
-              onTraceThread={onTraceThread}
-            />
+            <div className="flex flex-col gap-4">
+              <ThreadPane
+                weave={paneState.data}
+                meta={paneState.meta}
+                selectedThreadId={selectedThreadId}
+                onSelectThread={(id) => setSelectedThreadId(id === selectedThreadId ? null : id)}
+                onTraceThread={onTraceThread}
+              />
+              {selectedThreadId
+                ? (() => {
+                    const thread = paneState.data.threads.find((t) => t.id === selectedThreadId);
+                    return thread ? (
+                      <StrandInspector thread={thread} knownProposalIds={knownProposalIds} />
+                    ) : null;
+                  })()
+                : null}
+            </div>
           )}
         </div>
       </div>
