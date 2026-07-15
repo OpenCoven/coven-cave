@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/cave-config";
 import { OmnigentClient, OmnigentError } from "@/lib/omnigent/client";
-import { createOmnigentRun } from "@/lib/omnigent/run";
+import { createOmnigentRun, WardPreflightError } from "@/lib/omnigent/run";
 import { rejectNonLocalRequest, readJsonBody } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -106,6 +106,18 @@ export async function POST(req: Request) {
       resolved: result.resolved,
     });
   } catch (err) {
+    if (err instanceof WardPreflightError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: err.message,
+          code: err.code,
+          familiarId: err.familiarId,
+          violations: err.report.violations,
+        },
+        { status: 422 },
+      );
+    }
     if (err instanceof OmnigentError) {
       return NextResponse.json(
         { ok: false, error: err.message, detail: err.body },

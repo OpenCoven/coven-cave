@@ -1,6 +1,7 @@
 /**
  * Shared Omnigent session create used by Fleet, chat host-chip, and board.
  * Resolves familiar defaults → global defaults → live catalog/first online host.
+ * When familiarId is set: Ward preflight (fail closed) + SOUL/IDENTITY prompt injection.
  */
 
 import { bindingFor, type CaveConfig, type FamiliarOmnigentBinding } from "@/lib/cave-config";
@@ -11,6 +12,13 @@ import {
   pickDefaultHostId,
 } from "./client.ts";
 import type { OmnigentSession } from "./types.ts";
+import {
+  composeOmnigentPrompt,
+  runWardPreflight,
+  WardPreflightError,
+} from "./ward-preflight.ts";
+
+export { WardPreflightError };
 
 export type OmnigentRunRequest = {
   prompt: string;
@@ -27,6 +35,11 @@ export type OmnigentRunRequest = {
   jobId?: string;
   boardCardId?: string;
   sourceSha256?: string;
+  /**
+   * Skip Ward + identity injection (escape hatch for tests / emergency fleet).
+   * Default false: familiar-bound runs always preflight.
+   */
+  skipWardPreflight?: boolean;
 };
 
 export type OmnigentRunResult = {
@@ -39,6 +52,7 @@ export type OmnigentRunResult = {
     workspace?: string;
     hostType: "external" | "managed";
     familiarId?: string;
+    identityFiles?: Array<"SOUL.md" | "IDENTITY.md" | "USER.md">;
   };
 };
 
@@ -76,6 +90,17 @@ export async function createOmnigentRun(
 
   const prompt = request.prompt.trim();
   if (!prompt) throw new Error("prompt is required");
+
+  const familiar = request.familiarId?.trim() || undefined;
+
+  // Identity layer: Ward fail-closed + SOUL/IDENTITY prefix when a familiar is bound.
+  let sessionPrompt = prompt;
+  let identityFiles: Array<"SOUL.md" | "IDENTITY.md" | "USER.md"> | undefined;
+  if (familiar && !request.skipWardPreflight) {
+    const identity = await runWardPreflight(familiar);
+    sessionPrompt = composeOmnigentPrompt(prompt, identity.promptPrefix);
+    identityFiles = identity.included;
+  }
 
   const hostType = request.hostType === "managed" ? "managed" : "external";
   const fam = familiarOmnigent(config, request.familiarId);
@@ -122,13 +147,13 @@ export async function createOmnigentRun(
       undefined;
   }
 
-  const familiar = request.familiarId?.trim() || undefined;
   const source = request.source?.trim() || "cave-fleet";
   const labels: Record<string, string> = {
     "coven.source": source,
     ...(request.labels ?? {}),
   };
   if (familiar) labels["coven.familiar"] = familiar;
+  if (identityFiles?.length) labels["coven.identity"] = identityFiles.join(",");
   if (request.jobId) labels["coven.job_id"] = request.jobId;
   if (request.boardCardId) labels["coven.board_card"] = request.boardCardId;
   if (request.sourceSha256) labels["coven.source_sha256"] = request.sourceSha256;
@@ -143,7 +168,7 @@ export async function createOmnigentRun(
       hostId,
       workspace,
       hostType,
-      prompt,
+      prompt: sessionPrompt,
       familiar,
       title,
       sourceSha256: request.sourceSha256,
@@ -153,9 +178,17 @@ export async function createOmnigentRun(
       session,
       webUrl: client.webSessionUrl(session.id),
       baseUrl: client.baseUrl,
-      resolved: { agentId, hostId, workspace, hostType, familiarId: familiar },
+      resolved: {
+        agentId,
+        hostId,
+        workspace,
+        hostType,
+        familiarId: familiar,
+        ...(identityFiles?.length ? { identityFiles } : {}),
+      },
     };
   } catch (err) {
+    if (err instanceof WardPreflightError) throw err;
     if (err instanceof OmnigentError) {
       throw new Error(
         `${err.message}${err.body ? `: ${err.body.slice(0, 300)}` : ""}`,

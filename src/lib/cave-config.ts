@@ -525,6 +525,11 @@ function mergeFamiliarConfigs(
         (typeof value === "string" && value.trim() === "")
       ) {
         delete next[key as keyof FamiliarBinding];
+      } else if (key === "omnigent" && value && typeof value === "object" && !Array.isArray(value)) {
+        // Replace (not deep-merge) so cleared fields in Studio drop prior values.
+        const merged = normalizeFamiliarOmnigent(value as FamiliarOmnigentBinding);
+        if (merged) next.omnigent = merged;
+        else delete next.omnigent;
       } else {
         (next as Record<string, unknown>)[key] = value;
       }
