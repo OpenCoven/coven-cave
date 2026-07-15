@@ -6277,9 +6277,9 @@ function TurnRowImpl({
               {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
               {/* Bare-line GitHub URLs in a user message unfurl into cards
                   beneath the bubble (attachment idiom) — the headline "paste a
-                  PR link" gesture (design §1). */}
+                  PR link" gesture (design §1). User turns only, never system. */}
               {(() => {
-                const ghRefs = unfurlUserMessage(turn.text);
+                const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
                 return ghRefs.length ? (
                   <div className="mt-2 space-y-2">
                     {ghRefs.map((d) => (

@@ -102,6 +102,25 @@ test("slice: commit and run markers parse their ref attrs", () => {
   });
 });
 
+test("slice: review-thread thread attr must be numeric; non-numeric drops to the PR link", () => {
+  const good = sliceGitHubBlocks('<coven:github kind="review-thread" repo="a/b" number="9" thread="5551" />');
+  assert.deepEqual((good[0] as { descriptor: unknown }).descriptor, {
+    kind: "review-thread",
+    repo: "a/b",
+    number: 9,
+    threadId: "5551",
+    title: undefined,
+  });
+  const bad = sliceGitHubBlocks('<coven:github kind="review-thread" repo="a/b" number="9" thread="abc" />');
+  assert.deepEqual((bad[0] as { descriptor: unknown }).descriptor, {
+    kind: "review-thread",
+    repo: "a/b",
+    number: 9,
+    threadId: undefined,
+    title: undefined,
+  });
+});
+
 test("slice: malformed markers are dropped, never rendered raw", () => {
   for (const bad of [
     '<coven:github kind="pr" repo="not-a-repo" number="1" />', // repo fails barrier
@@ -137,7 +156,11 @@ test("slice: a URL alone on its line unfurls; inline mentions stay text", () => 
     .filter((p) => p.kind === "text")
     .map((p) => (p as { text: string }).text)
     .join("\n");
-  assert.ok(text.includes("https://github.com/a/b/pull/1"), "inline URL kept as text");
+  // Exact-line check (not substring): the inline mention keeps its whole line.
+  assert.ok(
+    text.split("\n").some((l) => l === "See https://github.com/a/b/pull/1 inline."),
+    "inline URL kept as text",
+  );
 });
 
 test("slice: plain text passes through as a single unchanged piece", () => {
@@ -152,7 +175,11 @@ test("slice: bare-line URLs inside code fences are NOT unfurled", () => {
   assert.equal(cards.length, 1);
   assert.equal((cards[0] as { descriptor: { number?: number } }).descriptor.number, 3);
   const joined = pieces.map((p) => (p.kind === "text" ? (p as { text: string }).text : "")).join("\n");
-  assert.ok(joined.includes("https://github.com/a/b/pull/2"), "fenced URL stays in the fence");
+  // Exact-line check (not substring): the fenced URL line survives verbatim.
+  assert.ok(
+    joined.split("\n").some((l) => l === "https://github.com/a/b/pull/2"),
+    "fenced URL stays in the fence",
+  );
 });
 
 // ── stripGitHubMarkers (streaming path) ──────────────────────────────────────

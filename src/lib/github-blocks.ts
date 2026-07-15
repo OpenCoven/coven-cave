@@ -106,7 +106,10 @@ function descriptorFromAttrs(attrs: Record<string, string>): GitHubBlockDescript
       return number ? { kind: kind as GitHubBlockKind, repo, number, title } : null;
     case "review-thread": {
       if (!number) return null;
-      const threadId = attrs.thread?.trim() || undefined;
+      const threadRaw = attrs.thread?.trim();
+      // thread must be numeric like parseGitHubUrl's #discussion_r capture —
+      // anything else would mint an invalid URL, so drop the attr, keep the PR.
+      const threadId = threadRaw && /^\d+$/.test(threadRaw) ? threadRaw : undefined;
       return { kind: "review-thread", repo, number, threadId, title };
     }
     case "commit": {
@@ -268,7 +271,7 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
  *  text is never marker-stripped; typed markers are the author's own text).
  *  Rendered beneath the user bubble, like attachments. */
 export function unfurlUserMessage(text: string): GitHubBlockDescriptor[] {
-  if (!text || !text.includes("https://github.com/")) return [];
+  if (!text) return [];
   const out: GitHubBlockDescriptor[] = [];
   const seen = new Set<string>();
   for (const line of text.split("\n")) {

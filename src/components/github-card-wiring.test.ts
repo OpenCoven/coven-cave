@@ -27,7 +27,11 @@ assert.match(
   /turn\.pending \? stripGitHubMarkers\(reasoningSplit\.visible\)/,
   "streaming path strips markers so raw tags never flash",
 );
-assert.match(chatView, /unfurlUserMessage\(turn\.text\)/, "user turns unfurl bare-line GitHub URLs beneath the bubble");
+assert.match(
+  chatView,
+  /turn\.role === "user" \? unfurlUserMessage\(turn\.text\) : \[\]/,
+  "bare-line unfurl is gated to user turns — never system messages",
+);
 
 // github-card: hydration + degradation contracts.
 assert.match(card, /\/api\/github\/item\?repo=/, "card hydrates from /api/github/item");
