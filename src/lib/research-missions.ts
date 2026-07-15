@@ -440,7 +440,7 @@ export function researchBoundReadings(
     ? {
       id: "spend",
       label: "Spend",
-      value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd}`}`,
+      value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd.toFixed(2)}`}`,
       tone: spendOver ? "over" : "neutral",
       ...(spendOver ? { badge: "over" as const } : {}),
       detail: bounds.maxSpendUsd === undefined
