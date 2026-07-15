@@ -12,7 +12,7 @@
  * already covers bare branch context.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useChangesSummary } from "@/lib/use-changes-summary";
@@ -29,12 +29,27 @@ type BridgeState = {
   loaded: boolean;
 };
 
+const EMPTY_BRIDGE: BridgeState = { open: [], merged: [], beads: [], loaded: false };
+
 function useStageSnapshot(projectRoot: string | null | undefined, branch: string | null): StageSnapshot | null {
-  const [state, setState] = useState<BridgeState>({ open: [], merged: [], beads: [], loaded: false });
+  const [state, setState] = useState<BridgeState>(EMPTY_BRIDGE);
   const [tick, setTick] = useState(0);
+  // Identity guard: when the (projectRoot, branch) pair changes, drop the
+  // previous pair's data BEFORE fetching so a stale stage can't render for
+  // the wrong project/session while the new fetch is in flight.
+  const keyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!projectRoot || !branch) return;
+    if (!projectRoot || !branch) {
+      keyRef.current = null;
+      setState(EMPTY_BRIDGE);
+      return;
+    }
+    const key = `${projectRoot}\u0000${branch}`;
+    if (keyRef.current !== key) {
+      keyRef.current = key;
+      setState(EMPTY_BRIDGE);
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -54,7 +69,9 @@ function useStageSnapshot(projectRoot: string | null | undefined, branch: string
           loaded: true,
         });
       } catch {
-        if (!cancelled) setState((prev) => ({ ...prev, loaded: true }));
+        // Clear rather than preserve: a failed fetch hides the header (it's
+        // optional chrome) instead of showing another project's stage.
+        if (!cancelled) setState({ ...EMPTY_BRIDGE, loaded: true });
       }
     })();
     return () => {

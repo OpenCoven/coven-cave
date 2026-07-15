@@ -24,4 +24,8 @@ assert.match(header, /usePausablePoll\(.*\{\s*\n?\s*enabled: Boolean\(projectRoo
 // Mounted between the top bar and the transcript.
 assert.match(chatView, /<RunActivityStrip[^>]*\/>\s*\n\s*<ChatStageHeader projectRoot=\{activeProjectRoot\} onOpenUrl=\{onOpenUrl\} \/>/, "header mounts after the activity strip, before the transcript");
 
+// Review follow-up (#3173): no cross-project stale bleed.
+assert.match(header, /keyRef\.current !== key/, "bridge state resets when (projectRoot, branch) changes");
+assert.match(header, /\{ \.\.\.EMPTY_BRIDGE, loaded: true \}/, "fetch failures clear stage data instead of preserving another project's");
+
 console.log("chat stage header wiring: ok");

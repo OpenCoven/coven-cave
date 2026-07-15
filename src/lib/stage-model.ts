@@ -5,6 +5,7 @@
 // (beads-pr-management); bead truth from `bd ready --json` rows. This module
 // only joins and labels — it never re-derives check/review state.
 import type { PullRequestSummary } from "./beads-pr-management.ts";
+import { beadIdsInText } from "./beads-pr-management.ts";
 import type { MergedPrRef, ReadyBead, WorkQueueLaneKey } from "./beads-work-queue.ts";
 
 /** PR-bridge lane → queue/stage lane. Extracted from beads-work-queue (which
@@ -50,12 +51,10 @@ export type StageSnapshot = {
   steps: StageStep[];
 };
 
-const BEAD_ID_RE = /\bcave-[a-z0-9]+(?:\.\d+)?\b/gi;
-
-/** Bead ids a branch name carries (e.g. feat/foo-cave-ab12). */
+/** Bead ids a branch name carries (e.g. feat/foo-cave-ab12). Shares the ONE
+ *  bead-id pattern with PR parsing (beads-pr-management.beadIdsInText). */
 export function beadIdsInBranch(branch: string): string[] {
-  const m = branch.match(BEAD_ID_RE);
-  return m ? m.map((s) => s.toLowerCase()) : [];
+  return beadIdsInText(branch);
 }
 
 /**
