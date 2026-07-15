@@ -110,10 +110,10 @@ test("the action bar reads decision-first with a consequence-labeled Continue", 
   const actionsIndex = detail.indexOf("research-mission-actions");
   assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
   // Continue says which iteration it starts (researchContinueLabel is
-  // behaviorally tested in the lib suite) and demotes itself when the runner
-  // would refuse a beyond-plan iteration.
+  // behaviorally tested in the lib suite) and demotes itself when any runner
+  // stop gate — iteration, wall-clock, cost policy, spend — already refuses.
   assert.match(detail, /researchContinueLabel\(mission\)/);
-  assert.match(detail, /continueInfo\.beyondPlan \? "ghost" : "primary"/);
+  assert.match(detail, /continueInfo\.gated \? "ghost" : "primary"/);
   assert.match(detail, /"aria-label": continueInfo\.description, title: continueInfo\.description/);
   assert.match(detail, /continueInfo\.label/);
 });
