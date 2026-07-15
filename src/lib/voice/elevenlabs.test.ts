@@ -112,3 +112,40 @@ test("the provider persists its own transcripts (real chat turns)", () => {
   assert.equal(elevenLabsProvider.id, "elevenlabs");
   assert.equal(typeof elevenLabsProvider.clientAdapter.connect, "function");
 });
+
+test("parseElevenLabsVoices keeps valid library entries and drops malformed ids", async () => {
+  const { parseElevenLabsVoices } = await import("./elevenlabs-shared.ts");
+  assert.deepEqual(
+    parseElevenLabsVoices({
+      voices: [
+        { voice_id: "AbCdEf123456", name: "  Aunt Morgan ", category: "cloned" },
+        { voice_id: "../evil", name: "Bad" },
+        { voice_id: "GhIjKl789012", name: "" },
+        { voice_id: 42, name: "Numeric" },
+      ],
+    }),
+    [
+      { id: "AbCdEf123456", name: "Aunt Morgan", category: "cloned" },
+      { id: "GhIjKl789012", name: "GhIjKl789012" },
+    ],
+  );
+  assert.deepEqual(parseElevenLabsVoices(null), []);
+  assert.deepEqual(parseElevenLabsVoices({ voices: "nope" }), []);
+});
+
+test("parseElevenLabsModels keeps only TTS-capable models", async () => {
+  const { parseElevenLabsModels } = await import("./elevenlabs-shared.ts");
+  assert.deepEqual(
+    parseElevenLabsModels([
+      { model_id: "eleven_turbo_v2_5", name: "Turbo v2.5", can_do_text_to_speech: true },
+      { model_id: "eleven_flash_v2_5", name: "Flash v2.5" },
+      { model_id: "scribe_v1", name: "Scribe", can_do_text_to_speech: false },
+      { model_id: "Bad/Model", name: "Nope" },
+    ]),
+    [
+      { id: "eleven_turbo_v2_5", name: "Turbo v2.5" },
+      { id: "eleven_flash_v2_5", name: "Flash v2.5" },
+    ],
+  );
+  assert.deepEqual(parseElevenLabsModels({ not: "an array" }), []);
+});

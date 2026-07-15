@@ -868,6 +868,7 @@ export const SUITES = {
     "src/app/api/voice/preview/route.test.ts",
     "src/app/api/voice/local/chat/route.test.ts",
     "src/app/api/voice/elevenlabs/tts/route.test.ts",
+    "src/app/api/voice/elevenlabs/catalog/route.test.ts",
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
     "src/lib/pty-ws-bridge.test.ts",

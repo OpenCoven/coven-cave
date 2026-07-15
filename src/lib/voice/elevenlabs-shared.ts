@@ -25,3 +25,55 @@ export function isValidElevenLabsVoiceId(id: unknown): id is string {
 export function isValidElevenLabsModelId(id: unknown): id is string {
   return typeof id === "string" && /^[a-z0-9_]{1,64}$/.test(id);
 }
+
+// ── Account catalog (saved voices + available models) ────────────────────────
+
+export type ElevenLabsVoiceOption = { id: string; name: string; category?: string };
+export type ElevenLabsModelOption = { id: string; name: string };
+
+/** Map the /v1/voices payload (the voices saved in the user's library) into
+ *  dropdown options. Defensive: entries with malformed ids are dropped, and a
+ *  missing name falls back to the id so every option stays selectable. */
+export function parseElevenLabsVoices(payload: unknown): ElevenLabsVoiceOption[] {
+  const voices = (payload as { voices?: unknown })?.voices;
+  if (!Array.isArray(voices)) return [];
+  const out: ElevenLabsVoiceOption[] = [];
+  for (const raw of voices) {
+    const entry = raw as { voice_id?: unknown; name?: unknown; category?: unknown };
+    if (!isValidElevenLabsVoiceId(entry.voice_id)) continue;
+    const name =
+      typeof entry.name === "string" && entry.name.trim()
+        ? entry.name.trim()
+        : entry.voice_id;
+    out.push({
+      id: entry.voice_id,
+      name,
+      ...(typeof entry.category === "string" && entry.category
+        ? { category: entry.category }
+        : {}),
+    });
+  }
+  return out;
+}
+
+/** Map the /v1/models payload into dropdown options, keeping only models that
+ *  can synthesize speech (the whole point of picking one here). */
+export function parseElevenLabsModels(payload: unknown): ElevenLabsModelOption[] {
+  if (!Array.isArray(payload)) return [];
+  const out: ElevenLabsModelOption[] = [];
+  for (const raw of payload) {
+    const entry = raw as {
+      model_id?: unknown;
+      name?: unknown;
+      can_do_text_to_speech?: unknown;
+    };
+    if (!isValidElevenLabsModelId(entry.model_id)) continue;
+    if (entry.can_do_text_to_speech === false) continue;
+    const name =
+      typeof entry.name === "string" && entry.name.trim()
+        ? entry.name.trim()
+        : entry.model_id;
+    out.push({ id: entry.model_id, name });
+  }
+  return out;
+}

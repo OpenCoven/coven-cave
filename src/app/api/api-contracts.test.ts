@@ -200,6 +200,7 @@ const contracts: RouteContract[] = [
   { route: "/theme", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/voice/elevenlabs/catalog", methods: ["GET"], kind: "json" },
   { route: "/voice/elevenlabs/tts", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/voice/local/chat", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/preview", methods: ["GET"], kind: "stream" },

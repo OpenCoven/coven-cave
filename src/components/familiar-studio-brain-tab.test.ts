@@ -187,3 +187,30 @@ assert.match(
 );
 
 console.log("familiar-studio-brain-tab.test.ts: ok");
+
+// ── ElevenLabs pickers are account-backed dropdowns with a raw-id fallback ───
+assert.match(
+  source,
+  /fetch\("\/api\/voice\/elevenlabs\/catalog"\)/,
+  "Brain tab loads the user's ElevenLabs voice library through the vault-keyed catalog proxy",
+);
+assert.match(
+  source,
+  /options=\{elevenVoiceOptions\}/,
+  "the ElevenLabs Voice picker renders the saved-voice dropdown options",
+);
+assert.match(
+  source,
+  /options=\{elevenModelOptions\}/,
+  "the ElevenLabs Voice-model picker renders the account-model dropdown options",
+);
+assert.match(
+  source,
+  /Saved voice id/,
+  "a saved voice id missing from the library stays selectable instead of being cleared",
+);
+assert.match(
+  source,
+  /elevenCatalog\.status === "error" && elevenCatalog\.note/,
+  "catalog failures surface an actionable hint while the raw-id inputs remain usable",
+);

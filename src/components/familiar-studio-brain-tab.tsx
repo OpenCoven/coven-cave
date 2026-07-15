@@ -20,6 +20,8 @@ import {
 import {
   DEFAULT_ELEVENLABS_MODEL_ID,
   DEFAULT_ELEVENLABS_VOICE_ID,
+  type ElevenLabsModelOption,
+  type ElevenLabsVoiceOption,
 } from "@/lib/voice/elevenlabs-shared";
 
 type Props = { familiar: ResolvedFamiliar };
@@ -60,6 +62,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [capsOpen, setCapsOpen] = useState(false);
   const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "playing">("idle");
   const [previewNote, setPreviewNote] = useState<string | null>(null);
+  // The user's ElevenLabs account catalog (saved voices + TTS models), fetched
+  // once when the provider is selected so both pickers can be real dropdowns.
+  const [elevenCatalog, setElevenCatalog] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    voices: ElevenLabsVoiceOption[];
+    models: ElevenLabsModelOption[];
+    note?: string;
+  }>({ status: "idle", voices: [], models: [] });
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
   // Generation counter: bumping it invalidates any preview fetch still in
@@ -202,6 +212,80 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     stopVoicePreview();
     setPreviewNote(null);
   }, [familiar.id, stopVoicePreview]);
+
+  // Load the ElevenLabs account catalog the first time the provider is picked.
+  // On failure the pickers degrade to the raw-id text inputs with a hint.
+  useEffect(() => {
+    if (draftVoiceProvider !== "elevenlabs" || elevenCatalog.status !== "idle") return;
+    let cancelled = false;
+    setElevenCatalog((c) => ({ ...c, status: "loading" }));
+    (async () => {
+      try {
+        const res = await fetch("/api/voice/elevenlabs/catalog");
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (!res.ok || !json?.ok) {
+          setElevenCatalog({
+            status: "error",
+            voices: [],
+            models: [],
+            note: json?.hint ?? "Couldn't load your ElevenLabs voice library — enter a voice id manually.",
+          });
+          return;
+        }
+        setElevenCatalog({
+          status: "ready",
+          voices: Array.isArray(json.voices) ? json.voices : [],
+          models: Array.isArray(json.models) ? json.models : [],
+        });
+      } catch {
+        if (!cancelled) {
+          setElevenCatalog({
+            status: "error",
+            voices: [],
+            models: [],
+            note: "Couldn't reach the ElevenLabs catalog — enter a voice id manually.",
+          });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [draftVoiceProvider, elevenCatalog.status]);
+
+  // Dropdown options for the ElevenLabs pickers. A saved id that's no longer
+  // in the account library stays selectable so rendering never clears it.
+  const elevenVoiceOptions = useMemo(() => {
+    const known = new Set(elevenCatalog.voices.map((v) => v.id));
+    const defaultLabel = known.has(DEFAULT_ELEVENLABS_VOICE_ID)
+      ? `Default (${elevenCatalog.voices.find((v) => v.id === DEFAULT_ELEVENLABS_VOICE_ID)?.name ?? "Rachel"})`
+      : "Default (Rachel)";
+    const options = [{ value: "", label: defaultLabel, detail: DEFAULT_ELEVENLABS_VOICE_ID }];
+    if (draftVoiceName && !known.has(draftVoiceName)) {
+      options.push({ value: draftVoiceName, label: "Saved voice id", detail: draftVoiceName });
+    }
+    for (const voice of elevenCatalog.voices) {
+      options.push({
+        value: voice.id,
+        label: voice.name,
+        detail: voice.category ? `${voice.category} · ${voice.id}` : voice.id,
+      });
+    }
+    return options;
+  }, [elevenCatalog.voices, draftVoiceName]);
+
+  const elevenModelOptions = useMemo(() => {
+    const known = new Set(elevenCatalog.models.map((m) => m.id));
+    const options = [{ value: "", label: `Default (${DEFAULT_ELEVENLABS_MODEL_ID})`, detail: undefined as string | undefined }];
+    if (draftVoiceModel && !known.has(draftVoiceModel)) {
+      options.push({ value: draftVoiceModel, label: "Saved model id", detail: draftVoiceModel });
+    }
+    for (const model of elevenCatalog.models) {
+      options.push({ value: model.id, label: model.name, detail: model.id });
+    }
+    return options;
+  }, [elevenCatalog.models, draftVoiceModel]);
+
+  const elevenCatalogReady = elevenCatalog.status === "ready";
 
   async function playVoicePreview() {
     if (previewStatus !== "idle") {
@@ -452,9 +536,32 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               </p>
             )}
 
+            {draftVoiceProvider === "elevenlabs" && elevenCatalog.status === "error" && elevenCatalog.note && (
+              <p className="familiar-studio-brain__hint" role="status">{elevenCatalog.note}</p>
+            )}
+
             {(draftVoiceProvider === "openai" || draftVoiceProvider === "local" || draftVoiceProvider === "familiar" || draftVoiceProvider === "elevenlabs") && (
               <>
                 {draftVoiceProvider !== "familiar" && (
+                  draftVoiceProvider === "elevenlabs" && elevenCatalogReady && elevenModelOptions.length > 1 ? (
+                <label className="familiar-studio-brain__row">
+                  <span className="familiar-studio-brain__label">Voice model</span>
+                  <div className="familiar-studio-brain__control">
+                    <StandardSelect
+                      label="Voice model"
+                      value={draftVoiceModel}
+                      onChange={(next) => {
+                        stopVoicePreview();
+                        setPreviewNote(null);
+                        setDraftVoiceModel(next);
+                        void save({ voiceModel: next || null });
+                      }}
+                      className="familiar-studio-brain__input"
+                      options={elevenModelOptions}
+                    />
+                  </div>
+                </label>
+                  ) : (
                 <label className="familiar-studio-brain__row">
                   <span className="familiar-studio-brain__label">
                     {draftVoiceProvider === "local" ? "Local model" : "Voice model"}
@@ -476,6 +583,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     />
                   </div>
                 </label>
+                  )
                 )}
 
                 {draftVoiceProvider === "openai" ? (
@@ -515,10 +623,32 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       </p>
                     ) : null}
                   </label>
+                ) : draftVoiceProvider === "elevenlabs" && elevenCatalogReady && elevenVoiceOptions.length > 1 ? (
+                  // The voices saved in the user's ElevenLabs library, loaded
+                  // through the vault-keyed catalog proxy.
+                  <label className="familiar-studio-brain__row">
+                    <span className="familiar-studio-brain__label">Voice</span>
+                    <div className="familiar-studio-brain__control">
+                      <StandardSelect
+                        label="Voice"
+                        value={draftVoiceName}
+                        onChange={(next) => {
+                          stopVoicePreview();
+                          setPreviewNote(null);
+                          setDraftVoiceName(next);
+                          void save({ voiceName: next || null });
+                        }}
+                        className="familiar-studio-brain__input"
+                        options={elevenVoiceOptions}
+                      />
+                      {previewButton}
+                    </div>
+                  </label>
                 ) : (
                   // Local and familiar-brain speech ride the system synthesizer
                   // (voice = a system voice name, empty = platform default);
-                  // ElevenLabs takes a voice id from the user's voice library.
+                  // ElevenLabs falls back to a raw voice id when the account
+                  // catalog isn't available.
                   <label className="familiar-studio-brain__row">
                     <span className="familiar-studio-brain__label">Voice</span>
                     <div className="familiar-studio-brain__control">
