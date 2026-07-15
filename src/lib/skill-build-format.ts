@@ -51,6 +51,12 @@ function frontmatterValue(value: string): string {
   return value.replace(/\s+/g, " ").replace(/"/g, "'").trim();
 }
 
+// Body handling shared by the composer and the Format helper — one source of
+// truth so the Format button can never drift from the written body.
+function normalizedBody(instructions: string): string {
+  return instructions.replace(/\r\n/g, "\n").trim();
+}
+
 export function normalizedSkillTags(tags: readonly string[] | undefined): string[] {
   if (!tags) return [];
   const out: string[] = [];
@@ -77,7 +83,7 @@ export function composeSkillMd(draft: SkillBuildDraft): string {
     for (const tag of tags) lines.push(`  - ${tag}`);
   }
   lines.push("---", "");
-  const body = draft.instructions.replace(/\r\n/g, "\n").trim();
+  const body = normalizedBody(draft.instructions);
   return `${lines.join("\n")}\n${body}\n`;
 }
 
@@ -100,6 +106,6 @@ export function formatSkillDraft(fields: SkillDraftFields): SkillDraftFields {
     name: frontmatterValue(fields.name),
     description: frontmatterValue(fields.description),
     tags: normalizedSkillTags(fields.tags),
-    instructions: fields.instructions.replace(/\r\n/g, "\n").trim(),
+    instructions: normalizedBody(fields.instructions),
   };
 }

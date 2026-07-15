@@ -1077,7 +1077,6 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/skill-build.test.ts",
   "src/lib/skill-templates.test.ts",
   "src/lib/skill-draft.test.ts",
-  "src/lib/skill-build-format.test.ts",
   "src/lib/skill-dryrun.test.ts",
   "src/lib/server/skills-directory.test.ts",
   "src/lib/server/prompt-scan.test.ts",
