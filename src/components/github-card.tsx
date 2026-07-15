@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { countChecks, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
+import { countChecks, isFailConclusion, type CheckCounts, type CheckSummary } from "@/lib/github-checks";
 import { descriptorUrl, type GitHubBlockDescriptor } from "@/lib/github-blocks";
 
 type Person = { login: string; avatarUrl: string | null; url: string | null };
@@ -108,7 +108,9 @@ type ReviewThreadDetail = {
   isResolved: boolean;
   isOutdated: boolean;
   path: string | null;
-  comments: { author: { login: string } | null; body: string; createdAt: string | null }[];
+  /** Comment id is the numeric databaseId — the same id `#discussion_r<id>`
+   *  URLs carry, which is what descriptor.threadId matches against. */
+  comments: { id: string; author: { login: string } | null; body: string; createdAt: string | null }[];
 };
 
 type ThreadState =
@@ -233,8 +235,7 @@ function ChecksStrip({ data }: { data: ChecksData }) {
 function checkRunGlyph(run: CheckRunDetail): { icon: IconName; color: string } {
   if (run.status !== "completed") return { icon: "ph:circle-notch-bold", color: "var(--text-secondary)" };
   if (run.conclusion === "success") return { icon: "ph:check-circle", color: "var(--color-success)" };
-  if (run.conclusion && ["failure", "timed_out", "action_required", "startup_failure"].includes(run.conclusion))
-    return { icon: "ph:x-circle-fill", color: "var(--color-warning)" };
+  if (isFailConclusion(run.conclusion)) return { icon: "ph:x-circle-fill", color: "var(--color-warning)" };
   return { icon: "ph:minus-circle", color: "var(--text-secondary)" };
 }
 
@@ -288,8 +289,11 @@ function ReviewThreadBody({
     return <div className="text-[11px] text-[var(--text-secondary)]">threads unavailable</div>;
   if (!state.authed)
     return <div className="text-[11px] text-[var(--text-secondary)]">connect GitHub to see review threads</div>;
+  // descriptor.threadId is the numeric discussion id from #discussion_r<id> —
+  // it identifies a COMMENT (databaseId), not the thread's GraphQL node id, so
+  // match the thread containing that comment.
   const thread = descriptor.threadId
-    ? state.threads.find((t) => t.id.endsWith(descriptor.threadId!)) ?? null
+    ? state.threads.find((t) => t.comments.some((c) => c.id === descriptor.threadId)) ?? null
     : null;
   const shown = thread ? [thread] : state.threads.filter((t) => !t.isResolved).slice(0, 3);
   if (!shown.length)

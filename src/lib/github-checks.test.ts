@@ -125,3 +125,14 @@ console.log("github-checks.test.ts OK");
 }
 
 console.log("github-checks: ok");
+
+// isFailConclusion is the shared single source for fail semantics.
+{
+  const { isFailConclusion } = await import("./github-checks.ts");
+  for (const c of ["failure", "timed_out", "action_required", "startup_failure"]) {
+    assert.equal(isFailConclusion(c), true, c);
+  }
+  for (const c of ["success", "neutral", "skipped", "cancelled", "stale", null, undefined, ""]) {
+    assert.equal(isFailConclusion(c), false, String(c));
+  }
+}

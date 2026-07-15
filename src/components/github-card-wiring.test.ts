@@ -56,5 +56,11 @@ assert.match(card, /countChecks\(data\.runs\)/, "strip buckets come from the sha
 assert.match(card, /aria-expanded=\{expanded\}/, "check details expand in place with an accessible toggle");
 assert.match(card, /\/api\/github\/comments\?repo=.*isPull=1/, "review-thread cards hydrate from /api/github/comments");
 assert.match(card, /connect GitHub to see review threads/, "unauthenticated review threads degrade legibly");
+assert.match(
+  card,
+  /t\.comments\.some\(\(c\) => c\.id === descriptor\.threadId\)/,
+  "thread matching uses comment databaseIds (what #discussion_r ids name), not GraphQL node ids",
+);
+assert.match(card, /isFailConclusion\(run\.conclusion\)/, "run glyphs share the fail-conclusion source of truth");
 
 console.log("github chat-card wiring: ok");
