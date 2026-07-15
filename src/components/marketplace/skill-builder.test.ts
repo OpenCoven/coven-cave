@@ -88,7 +88,7 @@ assert.doesNotMatch(format, /node:fs|node:os|node:path|@\/lib\/server/, "the sha
 // WYSIWYG alignment only; the composed artifact is proven unchanged by the
 // formatSkillDraft invariant test.
 assert.match(builder, /formatSkillDraft\(\{ name, description, tags, instructions \}\)/, "Format derives from the shared canonicalizer");
-assert.match(builder, /disabled=\{formatIsNoop \|\| saving\}/, "Format disables when already canonical");
+assert.match(builder, /disabled=\{formatIsNoop \|\| saving \|\| cavemanning\}/, "Format disables when already canonical");
 assert.match(builder, /announce\("Formatted to match the saved file\.", "polite"\)/, "Format announces politely");
 assert.match(builder, /type="button"[\s\S]{0,500}>\s*Format\s*<\/Button>/, "Format button has explicit type=button to prevent form submit");
 
@@ -104,5 +104,7 @@ assert.match(builder, /cavemanRevertable/, "revert is gated on fields still matc
 
 const cavemanBlock = builder.slice(builder.indexOf("const cavemanize"), builder.indexOf("const revertCaveman"));
 assert.doesNotMatch(cavemanBlock, /setTagsText/, "cavemanize never calls setTagsText");
+assert.match(builder, /fields changed while rewriting/, "a stale caveman completion is discarded, never applied over newer text");
+assert.match(builder, /proseFieldsRef\.current/, "completion reads the latest fields through a ref (enhance race rule)");
 
 console.log("skill-builder.test.ts OK");

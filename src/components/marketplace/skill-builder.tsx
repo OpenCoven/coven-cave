@@ -219,15 +219,21 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
     name === cavemanApplied.after.name &&
     description === cavemanApplied.after.description &&
     instructions === cavemanApplied.after.instructions;
+  // Completion-time staleness check reads the LATEST fields without
+  // re-subscribing the fetch callback (the enhance race rule: an assist
+  // completion must never overwrite newer text).
+  const proseFieldsRef = useRef({ name, description, instructions });
+  proseFieldsRef.current = { name, description, instructions };
   const cavemanize = useCallback(async () => {
     if (!instructions.trim() || cavemanning || saving) return;
     setCavemanning(true);
     setCavemanError(null);
     try {
+      const before = { name, description, instructions };
       const res = await fetch("/api/skills/caveman", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, description, instructions }),
+        body: JSON.stringify(before),
       });
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
@@ -235,7 +241,15 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
         error?: string;
       } | null;
       if (!json?.ok || !json.draft) throw new Error(json?.error ?? `caveman http ${res.status}`);
-      setCavemanApplied({ before: { name, description, instructions }, after: json.draft });
+      const current = proseFieldsRef.current;
+      if (
+        current.name !== before.name ||
+        current.description !== before.description ||
+        current.instructions !== before.instructions
+      ) {
+        throw new Error("fields changed while rewriting — rewrite discarded, try again");
+      }
+      setCavemanApplied({ before, after: json.draft });
       setName(json.draft.name);
       setDescription(json.draft.description);
       setInstructions(json.draft.instructions);
@@ -562,7 +576,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
                 variant="secondary"
                 size="sm"
                 leadingIcon="ph:paint-brush"
-                disabled={formatIsNoop || saving}
+                disabled={formatIsNoop || saving || cavemanning}
                 onClick={applyFormat}
                 title="Normalize fields to exactly what will be written — quotes, whitespace, tags."
               >
