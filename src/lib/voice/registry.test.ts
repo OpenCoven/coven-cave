@@ -35,12 +35,22 @@ test("getVoiceProvider returns the local loop provider", () => {
   assert.equal(typeof local.clientAdapter.connect, "function");
 });
 
+test("getVoiceProvider returns the familiar-brain provider", () => {
+  const familiar = getVoiceProvider("familiar");
+  assert.ok(familiar);
+  assert.equal(familiar.id, "familiar");
+  assert.equal(typeof familiar.mintSession, "function");
+  assert.equal(typeof familiar.clientAdapter.connect, "function");
+  // True-voice turns ARE chat turns — the overlay must not double-persist.
+  assert.equal(familiar.persistsTranscripts, true);
+});
+
 test("getVoiceProvider returns null for unknown id", () => {
   assert.equal(getVoiceProvider("bogus"), null);
   assert.equal(getVoiceProvider(""), null);
 });
 
-test("listVoiceProviders returns stable order: openai, gemini, local", () => {
+test("listVoiceProviders returns stable order: openai, gemini, local, familiar", () => {
   const list = listVoiceProviders();
-  assert.deepEqual(list.map(p => p.id), ["openai", "gemini", "local"]);
+  assert.deepEqual(list.map(p => p.id), ["openai", "gemini", "local", "familiar"]);
 });

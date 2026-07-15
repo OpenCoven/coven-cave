@@ -1,7 +1,8 @@
 // Local voice provider — no cloud, no API key.
 //
-// The realtime cloud providers ARE the conversational brain; a local call has
-// to assemble its own loop out of three local parts:
+// The realtime cloud providers ARE the conversational brain; a local call
+// assembles its own loop out of three local parts (the shared scaffold lives
+// in speech-loop.ts):
 //   ears  — SpeechRecognition where the WebView has it (Chrome web builds).
 //           WKWebView has none: native SFSpeechRecognizer (cave-0ogg) and the
 //           sidecar Whisper engine (cave-vony) are the tracked follow-ups.
@@ -22,6 +23,7 @@ import type {
   VoiceSessionRequest,
 } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
+import { connectSpeechLoop } from "./speech-loop.ts";
 
 export const DEFAULT_LOCAL_LLM_BASE = "http://127.0.0.1:11434";
 export const DEFAULT_LOCAL_MODEL = "llama3.2";
@@ -111,43 +113,11 @@ async function mintSession(
   };
 }
 
-type SpeechRecognitionLike = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-};
-
-type SpeechRecognitionEventLike = {
-  resultIndex: number;
-  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
-};
-
-function resolveSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as Record<string, unknown>;
-  return (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) as
-    | (new () => SpeechRecognitionLike)
-    | null;
-}
-
 async function connect(
   grant: VoiceSessionGrant,
   mic: MediaStream,
   callbacks: VoiceCallbacks,
 ): Promise<LiveSession> {
-  const Recognition = resolveSpeechRecognition();
-  if (!Recognition) {
-    throw new VoiceConnectError(
-      "stt_unavailable",
-      "This window has no speech recognition engine. Native on-device recognition and the sidecar Whisper engine are on the roadmap — until then, local voice needs a Chromium browser, or pick a cloud voice provider in Familiar Studio → Brain.",
-    );
-  }
-
   const connection = grant.connection as {
     model?: string;
     voice?: string;
@@ -158,59 +128,13 @@ async function connect(
   const instructions = connection.instructions ?? "";
   const turns: LocalBrainTurn[] = [...(connection.conversationSeed ?? [])];
 
-  let closed = false;
-  let muted = false;
-  let speaking = false;
-  let brainBusy = false;
-  const pendingUser: string[] = [];
-
-  const recognition = new Recognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = typeof navigator !== "undefined" ? navigator.language || "en-US" : "en-US";
-
-  const listen = () => {
-    if (closed || muted || speaking) return;
-    try { recognition.start(); } catch { /* already started */ }
-  };
-  const hush = () => {
-    try { recognition.stop(); } catch { /* already stopped */ }
-  };
-
-  const speak = (text: string) =>
-    new Promise<void>((resolvePromise) => {
-      if (closed || typeof window === "undefined" || !window.speechSynthesis) {
-        resolvePromise();
-        return;
-      }
-      // Half-duplex: never transcribe our own synthesizer.
-      speaking = true;
-      hush();
-      const utterance = new SpeechSynthesisUtterance(text);
-      if (connection.voice) {
-        const match = window.speechSynthesis
-          .getVoices()
-          .find((v) => v.name === connection.voice);
-        if (match) utterance.voice = match;
-      }
-      const done = () => {
-        speaking = false;
-        listen();
-        resolvePromise();
-      };
-      utterance.onend = done;
-      utterance.onerror = done;
-      window.speechSynthesis.speak(utterance);
-    });
-
-  const askBrain = async (userText: string): Promise<void> => {
-    if (closed) return;
-    if (brainBusy) {
-      pendingUser.push(userText);
-      return;
-    }
-    brainBusy = true;
-    try {
+  return connectSpeechLoop({
+    mic,
+    voiceName: connection.voice,
+    callbacks,
+    brainErrorCode: "local_brain_failed",
+    brainErrorHint: "The local model call failed — is the loopback server still running?",
+    brain: async (userText, speak) => {
       turns.push({ role: "user", content: userText });
       const res = await fetch("/api/voice/local/chat", {
         method: "POST",
@@ -223,77 +147,15 @@ async function connect(
       const json = (await res.json().catch(() => null)) as
         | { ok?: boolean; text?: string; error?: string; hint?: string }
         | null;
-      if (closed) return;
       if (!res.ok || !json?.ok || !json.text) {
-        callbacks.onError(
-          new VoiceConnectError(json?.error ?? "local_brain_failed", json?.hint),
-        );
-        return;
+        throw new VoiceConnectError(json?.error ?? "local_brain_failed", json?.hint);
       }
       turns.push({ role: "assistant", content: json.text });
       callbacks.onPartialTranscript("assistant", json.text);
-      callbacks.onAssistantTranscriptFinal(json.text);
-      await speak(json.text);
-    } catch {
-      if (!closed) {
-        callbacks.onError(
-          new VoiceConnectError(
-            "local_brain_failed",
-            "The local model call failed — is the loopback server still running?",
-          ),
-        );
-      }
-    } finally {
-      brainBusy = false;
-      const next = pendingUser.shift();
-      if (next && !closed) void askBrain(next);
-    }
-  };
-
-  recognition.onresult = (event) => {
-    if (closed) return;
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i];
-      const transcript = result[0]?.transcript ?? "";
-      if (!transcript.trim()) continue;
-      if (result.isFinal) {
-        const text = transcript.trim();
-        callbacks.onUserTranscriptFinal(text);
-        void askBrain(text);
-      } else {
-        callbacks.onPartialTranscript("user", transcript);
-      }
-    }
-  };
-  recognition.onerror = (event) => {
-    if (closed) return;
-    // "no-speech" and "aborted" are routine pauses, not call failures.
-    if (event.error === "no-speech" || event.error === "aborted") return;
-    callbacks.onError(new VoiceConnectError(`stt_${event.error ?? "failed"}`));
-  };
-  // Recognition engines stop themselves after silence — keep listening.
-  recognition.onend = () => { listen(); };
-
-  listen();
-
-  return {
-    // The mouth is the system synthesizer, not a network audio track — the
-    // overlay's <audio> element gets a valid, silent stream.
-    inboundAudio: new MediaStream(),
-    setMuted(next: boolean) {
-      muted = next;
-      for (const track of mic.getAudioTracks()) track.enabled = !next;
-      if (next) hush();
-      else listen();
+      speak(json.text);
+      return json.text;
     },
-    async close() {
-      closed = true;
-      recognition.onend = null;
-      hush();
-      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
-      for (const track of mic.getAudioTracks()) track.stop();
-    },
-  };
+  });
 }
 
 export const localVoiceProvider: VoiceProvider = {

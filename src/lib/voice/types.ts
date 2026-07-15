@@ -1,4 +1,4 @@
-export type VoiceProviderId = "openai" | "gemini" | "local";
+export type VoiceProviderId = "openai" | "gemini" | "local" | "familiar";
 
 export type VoiceSessionRequest = {
   familiarId: string;
@@ -6,6 +6,9 @@ export type VoiceSessionRequest = {
   voice: string;
   instructions: string;
   conversationSeed?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** The chat session a call attaches to. Required by the familiar-brain
+   *  provider, whose turns ARE chat turns on this session. */
+  sessionId?: string;
 };
 
 export type VoiceSessionGrant = {
@@ -22,6 +25,10 @@ export interface VoiceProvider {
   id: VoiceProviderId;
   label: string;
   mintSession(apiKey: string, req: VoiceSessionRequest): Promise<VoiceSessionGrant>;
+  /** True when the provider's turns already persist as conversation history
+   *  (the familiar-brain provider runs real chat turns), so the overlay must
+   *  not append voice-origin transcript duplicates. */
+  persistsTranscripts?: boolean;
   clientAdapter: VoiceClientAdapter;
 }
 

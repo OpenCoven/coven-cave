@@ -71,9 +71,17 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
           return;
         }
         try {
+          // The familiar-brain provider runs real chat turns — /api/chat/send
+          // already persisted both sides, so appending voice-origin transcript
+          // turns would double every exchange.
+          const persistTranscript = !provider.persistsTranscripts;
           const live = await provider.clientAdapter.connect(grant, mic, {
-            onUserTranscriptFinal: (text) => postTranscript(sessionId, callId, "user", text),
-            onAssistantTranscriptFinal: (text) => postTranscript(sessionId, callId, "assistant", text),
+            onUserTranscriptFinal: (text) => {
+              if (persistTranscript) postTranscript(sessionId, callId, "user", text);
+            },
+            onAssistantTranscriptFinal: (text) => {
+              if (persistTranscript) postTranscript(sessionId, callId, "assistant", text);
+            },
             onPartialTranscript: () => { /* live caption surface, not persisted */ },
             onError: (err) => dispatch({ type: "PROVIDER_ERROR", errorCode: err.message, hint: voiceErrorHint(err) }),
             onDisconnect: () => dispatch({ type: "DISCONNECTED" }),

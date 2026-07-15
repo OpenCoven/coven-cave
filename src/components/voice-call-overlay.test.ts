@@ -98,6 +98,26 @@ assert.doesNotMatch(
   "the raw error code is no longer rendered as the headline",
 );
 
+// ── True-voice providers own persistence — no transcript double-append ───────
+// The familiar-brain provider's turns run through /api/chat/send, which
+// persists both sides as real conversation history; posting voice transcripts
+// on top would duplicate every exchange.
+assert.match(
+  component,
+  /const persistTranscript = !provider\.persistsTranscripts;/,
+  "the overlay derives transcript posting from the provider's persistence capability",
+);
+assert.match(
+  component,
+  /onUserTranscriptFinal:\s*\(text\)\s*=>\s*\{\s*if \(persistTranscript\) postTranscript\(sessionId, callId, "user", text\);/,
+  "user transcript finals persist only when the provider does not",
+);
+assert.match(
+  component,
+  /onAssistantTranscriptFinal:\s*\(text\)\s*=>\s*\{\s*if \(persistTranscript\) postTranscript\(sessionId, callId, "assistant", text\);/,
+  "assistant transcript finals persist only when the provider does not",
+);
+
 // ── Provider error detail is threaded to the error UI, not swallowed ─────────
 // Was: clientAdapter.connect threw bare `sdp_exchange_failed_<status>` and the
 // PROVIDER_ERROR dispatches dropped everything but the code, so a stale

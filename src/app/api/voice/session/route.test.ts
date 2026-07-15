@@ -145,3 +145,23 @@ test("200 happy path returns grant and ULID-shaped callId", async () => {
   assert.equal(sentBody.session.model, "gpt-realtime");
   assert.equal(sentBody.session.audio.output.voice, "alloy");
 });
+
+test("200 familiar-brain provider mints keyless and binds the session id", async () => {
+  writeFamiliar({
+    display_name: "M",
+    role: "x",
+    voiceProvider: "familiar",
+    voiceName: "Samantha",
+  });
+  writeSession([]);
+  // No vault key in env — a keyless provider must never hit the vault gate.
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.grant.provider, "familiar");
+  assert.equal(json.grant.connection.kind, "familiar-brain");
+  assert.equal(json.grant.connection.familiarId, FAMILIAR_ID);
+  assert.equal(json.grant.connection.sessionId, SESSION_ID);
+  assert.equal(json.grant.connection.voice, "Samantha");
+});

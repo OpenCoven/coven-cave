@@ -16,12 +16,19 @@ const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
   gemini: "GOOGLE_API_KEY",
 };
 
+// Providers whose brain lives on this machine (or behind our own chat bridge)
+// and therefore mint without any vault secret.
+const KEYLESS_PROVIDERS = new Set(["local", "familiar"]);
+
 const DEFAULTS: Record<string, { model: string; voice: string }> = {
   openai: { model: "gpt-realtime", voice: "alloy" },
   gemini: { model: "gemini-2.0-flash-exp", voice: "Puck" },
   // Model = the loopback LLM (Ollama/LM Studio) model name; voice = a system
   // synthesizer voice name, empty for the platform default.
   local: { model: "llama3.2", voice: "" },
+  // The familiar's own harness is the brain — there is no voice model to pick,
+  // and the voice is a system synthesizer voice name.
+  familiar: { model: "", voice: "" },
 };
 
 type FamiliarRecord = {
@@ -85,10 +92,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "unknown_provider" }, { status: 400 });
   }
 
-  // The local provider has no secret — its brain is a loopback server on this
-  // machine, reached through our own proxy. Everything else needs a vault key.
+  // Keyless providers have no secret — their brain is a loopback server or the
+  // familiar's own harness, reached through our own routes. Everything else
+  // needs a vault key.
   let apiKey = "";
-  if (provider.id !== "local") {
+  if (!KEYLESS_PROVIDERS.has(provider.id)) {
     const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
     if (!vaultKey) {
       return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
@@ -122,6 +130,7 @@ export async function POST(req: Request) {
       voice,
       instructions,
       conversationSeed,
+      sessionId,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
