@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 
@@ -40,6 +40,65 @@ assert.match(
   /FORBIDDEN_SPAWN_ENV_KEYS = \["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"\]/,
   "coven child processes strip both legacy and marketplace GitHub token env vars",
 );
+
+// ── cave-o01k: sidecar-internal env never reaches children ────────────────────
+// Packaged-app children inherited __NEXT_PRIVATE_STANDALONE_CONFIG (breaks any
+// `next build`/dev server a session runs — the JSON config has no
+// generateBuildId function and bakes CI paths) and COVEN_CAVE_* auth/bundle
+// state (401-gates an inherited dev server; the tokens are secrets).
+assert.match(
+  source,
+  /SIDECAR_INTERNAL_ENV_PREFIXES = \["COVEN_CAVE_", "__NEXT_PRIVATE_"\]/,
+  "the sidecar-internal namespaces are scrubbed by prefix, so new COVEN_CAVE_* vars stay contained",
+);
+assert.match(
+  source,
+  /return scrubSidecarInternalEnv\(env\);\s*\}/,
+  "covenSpawnEnv routes through the shared scrub, so agents/CLI probes/installers are all covered",
+);
+{
+  const env = scrubSidecarInternalEnv({
+    PATH: "/usr/bin",
+    HOME: "/Users/witch",
+    COVEN_CAVE_BUNDLE: "1",
+    COVEN_CAVE_AUTH_TOKEN: "sidecar-secret",
+    COVEN_CAVE_ACCESS_TOKEN: "mobile-secret",
+    COVEN_CAVE_PTY_DETACH_GRACE_MS: "1000",
+    __NEXT_PRIVATE_STANDALONE_CONFIG: "{\"distDir\":\"/Users/runner/work\"}",
+    __NEXT_PRIVATE_ORIGIN: "http://127.0.0.1:3000",
+    GITHUB_PAT: "ghp_x",
+    MY_APP_TOKEN: "kept",
+  });
+  assert.deepEqual(
+    env,
+    { PATH: "/usr/bin", HOME: "/Users/witch", MY_APP_TOKEN: "kept" },
+    "scrubSidecarInternalEnv drops every COVEN_CAVE_*/__NEXT_PRIVATE_* var and forbidden token keys, keeping user env intact",
+  );
+}
+// Every other spawn site that spreads process.env wraps it in the scrub —
+// gh/bd/npx/tailscale/vault children run user-visible (or arbitrary,
+// via npx postinstall) code and must not see sidecar secrets either.
+for (const rel of [
+  "../app/api/beads/prs/route.ts",
+  "../app/api/beads/route.ts",
+  "../app/api/skills/directory/install/route.ts",
+  "../app/api/skills/directory/use/route.ts",
+  "./branch-pr-context.ts",
+  "./mobile-handoff.ts",
+  "./vault.ts",
+]) {
+  const spawnSite = await readFile(new URL(rel, import.meta.url), "utf8");
+  assert.match(
+    spawnSite,
+    /scrubSidecarInternalEnv\(\{ \.\.\.process\.env/,
+    `${rel} scrubs sidecar-internal env before spawning`,
+  );
+  assert.doesNotMatch(
+    spawnSite,
+    /env: \{ \.\.\.process\.env/,
+    `${rel} has no unscrubbed process.env spread left`,
+  );
+}
 
 assert.match(
   source,

@@ -11,6 +11,7 @@
 // so an unauthenticated machine doesn't hammer gh.
 
 import { execFile } from "node:child_process";
+import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import type { SessionPullRequestContext } from "@/lib/types";
 
 const PR_URL_RE = /https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/;
@@ -47,7 +48,7 @@ const defaultRunner: BranchPrRunner = (root, branch) =>
     execFile(
       "gh",
       ["pr", "view", branch, "--json", "number,url,state,isDraft"],
-      { cwd: root, timeout: 10_000, env: { ...process.env, GH_PROMPT_DISABLED: "1" } },
+      { cwd: root, timeout: 10_000, env: scrubSidecarInternalEnv({ ...process.env, GH_PROMPT_DISABLED: "1" }) },
       (err, stdout) => (err ? reject(err) : resolve(stdout)),
     );
   });

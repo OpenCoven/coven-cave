@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
+import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
@@ -135,7 +136,7 @@ export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
     cachedTailscalePath = joined || process.env.PATH || "";
   }
 
-  return { ...process.env, PATH: cachedTailscalePath };
+  return scrubSidecarInternalEnv({ ...process.env, PATH: cachedTailscalePath });
 }
 
 type TailscaleSelfStatus = {
