@@ -102,7 +102,11 @@ function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
   const host = req.headers.host;
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!tailnetTrusted && !tokenAuthenticated && !isLoopbackHost(host)) return false;
+  if (!isLoopbackHost(host)) {
+    if (!host) return false;
+    if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
+    return tailnetTrusted && !req.headers.origin;
+  }
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 function isAuthorized(req, query) {
