@@ -40,6 +40,10 @@ assert.ok(parsed);
 assert.equal(parsed.name, "Release Notes");
 assert.equal(parsed.instructions.startsWith("## Steps"), true);
 
+// The pinned `TAGS: none` line parses to a literal ["none"] — consumers MUST
+// drop the tags field (the caveman route never returns it; tags are not rewritten).
+assert.deepEqual(parsed.tags, ["none"]);
+
 // Input budget exists and is sane (form instructions cap is 64 KiB).
 assert.ok(SKILL_CAVEMAN_INSTRUCTIONS_MAX >= 16_000 && SKILL_CAVEMAN_INSTRUCTIONS_MAX <= 65_536);
 
