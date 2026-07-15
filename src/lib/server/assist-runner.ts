@@ -36,7 +36,19 @@ export function buildAssistInvocation(prompt: string, lastMessagePath: string): 
   const command = process.env.COVEN_CODEX_BIN?.trim() || "codex";
   return {
     command,
-    args: ["exec", "--sandbox", "read-only", "--output-last-message", lastMessagePath, "-"],
+    // --skip-git-repo-check: assists deliberately run in a neutral temp dir
+    // (never the repo), which newer codex refuses as "not inside a trusted
+    // directory" without the flag. Safe here because the sandbox is pinned
+    // read-only — the trust check guards writable runs, and this can't write.
+    args: [
+      "exec",
+      "--sandbox",
+      "read-only",
+      "--skip-git-repo-check",
+      "--output-last-message",
+      lastMessagePath,
+      "-",
+    ],
     stdinPrompt: prompt,
   };
 }
@@ -63,6 +75,7 @@ export async function runBoundedAssist(opts: {
   const lastMessagePath = path.join(dir, "last-message.txt");
   try {
     const inv = buildAssistInvocation(opts.prompt, lastMessagePath);
+    let stderrTail = "";
     const spawned = await new Promise<{ code: number | null; error?: string }>((resolve) => {
       let settled = false;
       const settle = (value: { code: number | null; error?: string }) => {
@@ -77,8 +90,13 @@ export async function runBoundedAssist(opts: {
       // attacker-influenceable content; scoped secrets never reach them).
       const child = spawn(inv.command, inv.args, {
         cwd: dir,
-        stdio: ["pipe", "ignore", "ignore"],
+        stdio: ["pipe", "ignore", "pipe"],
         env: harnessSpawnEnv(),
+      });
+      // Keep a bounded stderr tail so a non-zero exit carries its reason
+      // (e.g. codex trust/auth refusals) instead of an opaque exit code.
+      child.stderr?.on("data", (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString("utf8")).slice(-2000);
       });
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
@@ -104,7 +122,13 @@ export async function runBoundedAssist(opts: {
       child.stdin.end();
     });
     if (spawned.error) return { ok: false, error: spawned.error };
-    if (spawned.code !== 0) return { ok: false, error: `codex exec exited with ${spawned.code}` };
+    if (spawned.code !== 0) {
+      const reason = stderrTail.trim().split(/\r?\n/).filter(Boolean).slice(-3).join(" · ").slice(-300);
+      return {
+        ok: false,
+        error: `codex exec exited with ${spawned.code}${reason ? ` — ${reason}` : ""}`,
+      };
+    }
     let lastMessage: string;
     try {
       lastMessage = await readFile(lastMessagePath, "utf8");

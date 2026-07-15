@@ -34,7 +34,15 @@ try {
   assert.equal(inv.command, "codex");
   // --sandbox read-only pins the run's privileges: the prompt embeds
   // attacker-influenceable remote content, and a distillation needs no tools.
-  assert.deepEqual(inv.args, ["exec", "--sandbox", "read-only", "--output-last-message", "/tmp/last.txt", "-"]);
+  assert.deepEqual(inv.args, [
+    "exec",
+    "--sandbox",
+    "read-only",
+    "--skip-git-repo-check",
+    "--output-last-message",
+    "/tmp/last.txt",
+    "-",
+  ]);
   assert.match(inv.stdinPrompt, /TITLE: <entry title/);
   assert.match(inv.stdinPrompt, /Use 5 retries\./);
 

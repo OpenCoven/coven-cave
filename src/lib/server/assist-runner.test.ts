@@ -12,7 +12,17 @@ try {
   // --sandbox read-only is pinned INSIDE the module — deliberately not a
   // parameter — so no caller can quietly widen an assist's privileges: assist
   // prompts embed user-pasted and remote-fetched content (cave-c40b).
-  assert.deepEqual(inv.args, ["exec", "--sandbox", "read-only", "--output-last-message", "/tmp/last.txt", "-"]);
+  // --skip-git-repo-check: assists run in a neutral temp dir, which newer
+  // codex refuses as untrusted without the flag; safe under read-only.
+  assert.deepEqual(inv.args, [
+    "exec",
+    "--sandbox",
+    "read-only",
+    "--skip-git-repo-check",
+    "--output-last-message",
+    "/tmp/last.txt",
+    "-",
+  ]);
   assert.equal(inv.stdinPrompt, "PROMPT BODY");
 
   process.env.COVEN_CODEX_BIN = "/opt/custom/codex";

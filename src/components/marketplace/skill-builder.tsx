@@ -141,12 +141,12 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ description: goal }),
       });
-      const json = (await res.json()) as {
+      const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
         draft?: { name: string; description: string; tags: string[]; instructions: string };
         error?: string;
-      };
-      if (!json.ok || !json.draft) throw new Error(json.error ?? `draft http ${res.status}`);
+      } | null;
+      if (!json?.ok || !json.draft) throw new Error(json?.error ?? `draft http ${res.status}`);
       setName(json.draft.name);
       setDescription(json.draft.description);
       setTagsText(json.draft.tags.join(", "));
