@@ -305,8 +305,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /tools=\{\(updateTools\.length > 0[\s\S]{0,120}status\?\.tools \?\? \[\][\s\S]{0,80}\.filter\(\(tool\) => tool\.id === "coven-cli"\)\}/,
-  "the startup CLI step receives only the Coven CLI status — Coven Code never gates the tools step",
+  /tools=\{\(status\?\.tools \?\? \[\]\)[\s\S]{0,100}\.filter\(\(tool\) => tool\.id === "coven-cli"\)[\s\S]{0,100}onboardingToolWithUpdate\(tool, updateTools\)/,
+  "the startup CLI step keeps local readiness authoritative and merges update-only fields",
+);
+
+assert.match(
+  source,
+  /target === "coven-cli" && json\.ok[\s\S]{0,80}loadUpdates\(true\)/,
+  "only a successful CLI install forces a post-install registry refresh",
 );
 
 assert.match(

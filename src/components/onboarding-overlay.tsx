@@ -901,7 +901,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                   }
                 : { ok: false, detail: json.error ?? "install failed" },
             }));
-            if (target === "coven-cli") {
+            if (target === "coven-cli" && json.ok) {
               await loadUpdates(true);
             }
             await refresh();
@@ -1490,10 +1490,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             platformCopy={platformCopy}
                             installJobs={installJobs}
                             installResults={installResults}
-                            tools={(updateTools.length > 0
-                              ? updateTools
-                              : status?.tools ?? []
-                            ).filter((tool) => tool.id === "coven-cli")}
+                            tools={(status?.tools ?? [])
+                              .filter((tool) => tool.id === "coven-cli")
+                              .map((tool) => onboardingToolWithUpdate(tool, updateTools))}
                             updateChecking={updateChecking}
                             updateStale={updateStale}
                             updateError={updateError}
@@ -1904,6 +1903,24 @@ function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
   if (!tool.installed) return "Not installed";
   if (!tool.current) return "Installed, version unknown";
   return tool.outdated && tool.latest ? `${tool.current} -> ${tool.latest}` : tool.current;
+}
+
+/** Readiness remains authoritative for local install/current facts. Cached
+ * update discovery contributes only registry-owned fields, so a stale update
+ * snapshot cannot make a missing local CLI appear installed. */
+function onboardingToolWithUpdate(
+  readiness: OpenCovenToolStatus,
+  updates: OpenCovenToolStatus[],
+): OpenCovenToolStatus {
+  const update = updates.find((tool) => tool.id === readiness.id);
+  if (!update) return readiness;
+  return {
+    ...readiness,
+    latest: update.latest,
+    latestCheck: update.latestCheck,
+    outdated: update.outdated,
+    checkedAt: update.checkedAt,
+  };
 }
 
 function openCovenToolStatusText(tool: OpenCovenToolStatus, stale = false): string {
