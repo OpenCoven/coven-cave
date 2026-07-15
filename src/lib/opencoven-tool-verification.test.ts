@@ -86,4 +86,32 @@ const latestUnavailable = evaluateOpenCovenToolVerification(covenCode, verifiedP
 assert.equal(latestUnavailable.ok, false, "latest-tag verification must complete before the UI can report success");
 assert.match(latestUnavailable.error ?? "", /could not read npm's latest version/);
 
+const covenCli = {
+  id: "coven-cli",
+  binary: "coven",
+  packageName: "@opencoven/cli",
+  minimumVersion: "0.1.1",
+} as const;
+const cliProbe = {
+  path: "/tmp/prefix/bin/coven",
+  executablePath: "/tmp/prefix/lib/node_modules/@opencoven/cli/bin/coven.js",
+  executableVerified: true,
+  version: "0.0.54",
+  packageName: "@opencoven/cli",
+  packagePath: "/tmp/prefix/lib/node_modules/@opencoven/cli",
+} satisfies OpenCovenToolProbe;
+const beforeCliUpdate = evaluateOpenCovenToolVerification(covenCli, cliProbe, "0.1.1");
+assert.equal(beforeCliUpdate.ok, false, "the screenshot's 0.0.54 CLI requires an update");
+const afterCliUpdate = evaluateOpenCovenToolVerification(
+  covenCli,
+  { ...cliProbe, version: "0.1.1" },
+  "0.1.1",
+);
+assert.equal(afterCliUpdate.ok, true, "the updated compatible CLI verifies against npm latest");
+assert.equal(
+  isVerifiedOpenCovenInstallSuccess(0, afterCliUpdate),
+  true,
+  "a zero npm exit plus the refreshed 0.1.1 probe completes the update",
+);
+
 console.log("opencoven-tool-verification.test.ts: ok");

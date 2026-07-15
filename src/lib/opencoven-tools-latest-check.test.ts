@@ -129,6 +129,19 @@ test("missing npm, registry errors, and malformed versions remain explicit failu
   assert.equal(registryError.status, "failed");
   assert.equal(registryError.error, "registry_error");
 
+  const runtimeError = await checkNpmLatestVersion(OPEN_COVEN_TOOLS[0], {
+    now: () => checkedAt,
+    resolveNpmPath: async () => "/broken/node/bin/npm",
+    execFile: async () => {
+      throw Object.assign(
+        new Error("node: error while loading shared libraries: libatomic.so.1"),
+        { code: 127 },
+      );
+    },
+  });
+  assert.equal(runtimeError.status, "failed");
+  assert.equal(runtimeError.error, "runtime_error");
+
   const malformed = await checkNpmLatestVersion(OPEN_COVEN_TOOLS[0], {
     now: () => checkedAt,
     resolveNpmPath: async () => process.execPath,

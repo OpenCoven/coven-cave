@@ -207,6 +207,12 @@ assert.match(
 
 assert.match(
   source,
+  /appendOutput\(job, daemonUpdateTraceLine\(daemon\)\)/,
+  "daemon lifecycle trace punctuation is normalized by the tested helper",
+);
+
+assert.match(
+  source,
   /daemon: job\.daemon/,
   "polled jobs expose lifecycle state so the UI can show daemon progress and health",
 );

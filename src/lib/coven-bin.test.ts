@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { covenAdapterDirsEnvValue, covenLaunchCommandForBinary, pickWindowsLauncher, runnableNodeToolchainDirs, scrubSidecarInternalEnv, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 
@@ -104,6 +104,84 @@ assert.match(
   source,
   /export function refreshCovenSpawnEnv\(\)[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(\)/,
   "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
+);
+
+// A newer version-manager directory can remain after its runtime becomes
+// unusable. It must not shadow the healthy Node/npm pair that the user's
+// ordinary shell would otherwise resolve.
+{
+  const broken = path.join("/virtual", "nvm", "v25.9.0", "bin");
+  const healthy = path.join("/virtual", "nvm", "v24.15.0", "bin");
+  const brokenNpm = path.join("/virtual", "nvm", "v24.14.0", "bin");
+  const missingNpm = path.join("/virtual", "nvm", "v23.0.0", "bin");
+  const existing = new Set([
+    path.join(broken, "node"),
+    path.join(broken, "npm"),
+    path.join(healthy, "node"),
+    path.join(healthy, "npm"),
+    path.join(brokenNpm, "node"),
+    path.join(brokenNpm, "npm"),
+    path.join(missingNpm, "node"),
+  ]);
+  const probed: string[] = [];
+  const runnable = runnableNodeToolchainDirs(
+    [broken, healthy, brokenNpm, missingNpm],
+    {
+      platform: "linux",
+      exists: (file) => existing.has(file),
+      probe: (command) => {
+        probed.push(command);
+        if (command === path.join(broken, "node")) {
+          throw new Error("error while loading shared libraries: libatomic.so.1");
+        }
+        if (command === path.join(brokenNpm, "npm")) {
+          throw new Error("npm launcher failed");
+        }
+      },
+    },
+  );
+  assert.deepEqual(runnable, [healthy], "only a runnable Node directory with npm survives");
+  assert.deepEqual(
+    probed,
+    [
+      path.join(broken, "node"),
+      path.join(healthy, "node"),
+      path.join(healthy, "npm"),
+      path.join(brokenNpm, "node"),
+      path.join(brokenNpm, "npm"),
+    ],
+    "both launchers are probed and missing npm is rejected before attempting Node",
+  );
+}
+
+{
+  const windowsDir = path.join("/virtual", "fnm", "v24.15.0", "bin");
+  const existing = new Set([
+    path.join(windowsDir, "node.exe"),
+    path.join(windowsDir, "npm.cmd"),
+  ]);
+  const calls: Array<{ command: string; shell?: boolean }> = [];
+  const runnable = runnableNodeToolchainDirs([windowsDir], {
+    platform: "win32",
+    exists: (file) => existing.has(file),
+    probe: (command, _args, options) => calls.push({ command, shell: options.shell }),
+  });
+  assert.deepEqual(runnable, [windowsDir], "a healthy Windows Node/npm toolchain survives");
+  assert.deepEqual(calls, [
+    { command: path.join(windowsDir, "node.exe"), shell: undefined },
+    { command: path.join(windowsDir, "npm.cmd"), shell: true },
+  ], "Windows npm.cmd is health-checked through its supported shell launch path");
+}
+
+assert.match(
+  source,
+  /function nodeNvmBinDirs\(\)[\s\S]*return runnableNodeToolchainDirs\(directories\)/,
+  "NVM candidates are health-checked before Cave prepends them",
+);
+assert.match(
+  source,
+  /function fnmBinDirs\(\)[\s\S]*return runnableNodeToolchainDirs\(directories\)/,
+  "FNM candidates are health-checked before Cave prepends them",
 );
 assert.match(
   source,

@@ -219,6 +219,69 @@ test.describe("onboarding wizard", () => {
     await expect.poll(() => installCalls, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
   });
 
+  test("a completed failed CLI install keeps its redacted tail visible and copyable", async ({ page }) => {
+    const terminalTail =
+      "node: error while loading shared libraries: libatomic.so.1: cannot open shared object file";
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            (window as Window & { __copiedDiagnostics?: string }).__copiedDiagnostics = text;
+          },
+        },
+      });
+    });
+    await page.route("**/api/onboarding/install**", (r) => {
+      const request = r.request();
+      if (request.method() === "POST") {
+        return r.fulfill({
+          status: 202,
+          json: { started: true, target: "coven-cli", npmBusy: true },
+        });
+      }
+      const target = new URL(request.url()).searchParams.get("target");
+      if (target === "coven-cli") {
+        return r.fulfill({
+          json: {
+            status: "done",
+            elapsedMs: 671,
+            tail: terminalTail,
+            ok: false,
+            code: 127,
+            binaryPath: "/redacted/coven",
+            error: "installer exited with code 127",
+            npmBusy: false,
+            npmBusyTarget: null,
+          },
+        });
+      }
+      return r.fulfill({
+        json: { status: "idle", npmBusy: false, npmBusyTarget: null },
+      });
+    });
+    await gotoApp(page, FRESH_STATUS);
+    await expect(wizard(page)).toBeVisible({ timeout: 30_000 });
+
+    await wizard(page)
+      .getByRole("button", { name: "Install the Coven CLI", exact: true })
+      .click();
+    await expect(wizard(page).getByText("installer exited with code 127")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(wizard(page).getByText(terminalTail)).toBeVisible();
+
+    await wizard(page).getByRole("button", { name: /Copy diagnostics/ }).click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as Window & { __copiedDiagnostics?: string }).__copiedDiagnostics ?? "",
+        ),
+      )
+      .toContain(terminalTail);
+  });
+
   test("a failed daemon start shows message + hint and recovers through the banner's retry", async ({ page }) => {
     // Structural steps healthy + daemon down: opening the wizard fires its
     // one automatic daemon start. Fail every start until the flag flips —

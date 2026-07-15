@@ -30,6 +30,7 @@ import { startLocalDaemon } from "@/lib/daemon-start";
 import { redactSecretText } from "@/lib/secret-redaction";
 import {
   markDaemonCliInstalling,
+  daemonUpdateTraceLine,
   prepareDaemonForCliUpdate,
   recoverDaemonAfterCliUpdate,
   type DaemonCommandResult,
@@ -460,7 +461,7 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
     wait: sleep,
     onState: (daemon) => {
       job.daemon = daemon;
-      appendOutput(job, `Daemon update status: ${daemon.detail ?? daemon.phase}.\n`);
+      appendOutput(job, daemonUpdateTraceLine(daemon));
     },
   };
 }

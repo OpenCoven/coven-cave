@@ -70,15 +70,79 @@ export function scrubSidecarInternalEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessE
 
 const HOME = os.homedir();
 
+type NodeRuntimeProbe = (
+  command: string,
+  args: string[],
+  options: {
+    timeout: number;
+    stdio: "ignore";
+    windowsHide: boolean;
+    env?: NodeJS.ProcessEnv;
+    shell?: boolean;
+  },
+) => unknown;
+
+/**
+ * Keep only version-manager directories whose Node runtime can actually
+ * start and which carry an npm launcher. A half-removed or incompatible
+ * newer NVM/FNM install must not poison every Cave child process merely
+ * because its directory still exists.
+ */
+export function runnableNodeToolchainDirs(
+  directories: readonly string[],
+  dependencies: {
+    platform?: NodeJS.Platform;
+    exists?: (file: string) => boolean;
+    probe?: NodeRuntimeProbe;
+  } = {},
+): string[] {
+  const platform = dependencies.platform ?? process.platform;
+  const exists = dependencies.exists ?? existsSync;
+  const probe = dependencies.probe ?? execFileSync;
+  const nodeName = platform === "win32" ? "node.exe" : "node";
+  const npmNames = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
+
+  return directories.filter((directory) => {
+    const node = path.join(directory, nodeName);
+    const npmName = npmNames.find((name) => exists(path.join(directory, name)));
+    if (!exists(node) || !npmName) {
+      return false;
+    }
+    const npm = path.join(directory, npmName);
+    const env = {
+      ...process.env,
+      PATH: [directory, process.env.PATH].filter(Boolean).join(path.delimiter),
+    };
+    try {
+      probe(node, ["--version"], {
+        timeout: 1500,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      probe(npm, ["--version"], {
+        timeout: 1500,
+        stdio: "ignore",
+        windowsHide: true,
+        env,
+        shell: platform === "win32" && /\.(cmd|bat)$/i.test(npm),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function nodeNvmBinDirs(): string[] {
   const nvmRoot = path.join(HOME, ".nvm", "versions", "node");
   if (!existsSync(nvmRoot)) return [];
   try {
-    return readdirSync(nvmRoot)
+    const directories = readdirSync(nvmRoot)
       .map((v) => path.join(nvmRoot, v, "bin"))
       .filter((d) => existsSync(d))
       .sort()
       .reverse(); // newest version first by lexicographic sort
+    return runnableNodeToolchainDirs(directories);
   } catch {
     return [];
   }
@@ -88,11 +152,12 @@ function fnmBinDirs(): string[] {
   const fnmRoot = path.join(HOME, ".fnm", "node-versions");
   if (!existsSync(fnmRoot)) return [];
   try {
-    return readdirSync(fnmRoot)
+    const directories = readdirSync(fnmRoot)
       .map((v) => path.join(fnmRoot, v, "installation", "bin"))
       .filter((d) => existsSync(d))
       .sort()
       .reverse();
+    return runnableNodeToolchainDirs(directories);
   } catch {
     return [];
   }

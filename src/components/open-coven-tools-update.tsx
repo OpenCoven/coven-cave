@@ -85,6 +85,7 @@ type InstallJobView = {
 type InstallResult = {
   ok: boolean;
   detail: string;
+  tail?: string;
 };
 
 type NpmLaneState = {
@@ -165,7 +166,13 @@ function installResultFromCompletion(
   job: InstallJobView,
   rechecked: ToolStatus | undefined,
 ): InstallResult {
-  if (!job.ok) return { ok: false, detail: job.error ?? "update failed" };
+  if (!job.ok) {
+    return {
+      ok: false,
+      detail: job.error ?? "update failed",
+      tail: job.tail,
+    };
+  }
   const verification = job.verification;
   if (!verification || !verification.ok) {
     return { ok: false, detail: verification?.error ?? "post-install verification failed" };
@@ -641,9 +648,9 @@ export function OpenCovenToolsUpdate() {
                   Daemon: {daemonLifecycleText(daemon)}
                 </p>
               ) : null}
-              {busy && job?.tail ? (
+              {(busy && job?.tail) || (!busy && !result?.ok && result?.tail) ? (
                 <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
-                  {job.tail}
+                  {busy ? job?.tail : result?.tail}
                 </pre>
               ) : null}
             </div>

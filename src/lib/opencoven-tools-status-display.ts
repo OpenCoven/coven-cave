@@ -7,7 +7,12 @@ export type LatestCheckDisplay =
   | {
       status: "failed";
       checkedAt: string;
-      error: "npm_unavailable" | "timeout" | "registry_error" | "malformed_version";
+      error:
+        | "npm_unavailable"
+        | "runtime_error"
+        | "timeout"
+        | "registry_error"
+        | "malformed_version";
     };
 
 export type OpenCovenToolDisplayStatus = {
@@ -34,6 +39,8 @@ function latestCheckFailureReason(tool: OpenCovenToolDisplayStatus): string {
   switch (tool.latestCheck?.status === "failed" ? tool.latestCheck.error : undefined) {
     case "npm_unavailable":
       return "npm unavailable";
+    case "runtime_error":
+      return "local Node/npm runtime failed";
     case "timeout":
       return "timed out";
     case "malformed_version":

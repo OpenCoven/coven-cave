@@ -1,11 +1,28 @@
 import assert from "node:assert/strict";
 import {
+  daemonUpdateTraceLine,
   markDaemonCliInstalling,
   prepareDaemonForCliUpdate,
   recoverDaemonAfterCliUpdate,
   type DaemonHealth,
   type DaemonUpdateDependencies,
 } from "./daemon-update-lifecycle.ts";
+
+assert.equal(
+  daemonUpdateTraceLine({
+    wasRunning: false,
+    phase: "not-running",
+    health: "stopped",
+    detail: "The local daemon was already stopped.",
+  }),
+  "Daemon update status: The local daemon was already stopped.\n",
+  "already-punctuated lifecycle details do not gain a second period",
+);
+assert.equal(
+  daemonUpdateTraceLine({ wasRunning: true, phase: "installing", health: "stopped" }),
+  "Daemon update status: installing.\n",
+  "phase fallbacks gain one terminal period",
+);
 
 function depsFor({
   health,
