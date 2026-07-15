@@ -47,6 +47,7 @@
 .dash-inbox__row[role="checkbox"] { cursor: pointer; }
 
 /* bulk triage: select toggle + bar + row checkbox */
+.dash-inbox__bar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .dash-inbox__select-toggle { margin-left: auto; }
 .dash-inbox__bulkbar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -68,6 +69,16 @@
   gap: 6px;
   flex: 0 0 auto;
 }
+
+/* Open items beyond the visible cap drill through to the Rituals surface. */
+.dash-inbox__more {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 8px; padding: 7px 10px; border-radius: 8px;
+  font-size: 0.8rem; font-weight: 600; color: var(--text-muted);
+  text-decoration: none; border: 1px dashed var(--border-hairline);
+}
+.dash-inbox__more:hover { color: var(--text-primary); border-color: var(--accent-presence); }
+.dash-inbox__more svg { width: 13px; height: 13px; flex: 0 0 auto; }
 
 .dash-act {
   display: inline-flex;

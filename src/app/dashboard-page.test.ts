@@ -200,6 +200,37 @@ assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each g
   assert.match(inbox, /actedIdsRef\.current\.add\(item\.id\)/, "single actions register the acted id");
   assert.match(inbox, /ids\.forEach\(\(id\) => actedIdsRef\.current\.add\(id\)\)/, "bulk actions register acted ids");
 }
+
+// ── Needs-attention is live, single-headed, and honest when cleared (cave-ckxk) ──
+// The server-rendered model used to be the only model — the poll refreshed
+// every panel EXCEPT needs-attention/Needs-you/today-summary. The cockpit now
+// rebuilds the model from the live inbox each poll, so the cave-bzch adoption
+// above actually has fresh props to adopt.
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  const root = readFileSync(cockpitUrl, "utf8");
+  assert.match(root, /getJson<\{ items: InboxItem\[\] \}>\("\/api\/inbox"\)/, "the poll fetches the full live inbox");
+  assert.match(root, /setLiveModel\(buildDashboardModel\(r\.items, new Date\(\)\)\)/, "each poll rebuilds the dashboard model client-side");
+  assert.match(root, /const model = liveModel \?\? initialModel;/, "the server model is only the first frame");
+  assert.match(root, /if \(!r\?\.items \|\| !aliveRef\.current\) return;/, "a failed inbox fetch keeps the last good model instead of wiping to caught-up");
+  // Truthful counts: the vital + panel badge read the uncapped open total, and
+  // track optimistic actions through the count the widget reports up.
+  assert.match(root, /value: liveOpen \?\? model\.openCount/, "the Needs-you vital reads the uncapped live open count");
+  assert.match(root, /count=\{liveOpen \?\? model\.openCount\}/, "the panel badge reads the uncapped live open count");
+  assert.match(root, /onOpenCount=\{setLiveOpen\}/, "the widget reports its live count up to the root");
+  assert.doesNotMatch(root, /model\.needsAttention\.length/, "nothing reads the capped list length as if it were the open total");
+  // Single header: the cockpit Panel owns the title/count; the widget carries
+  // only its own controls, so the panel no longer double-headers.
+  assert.doesNotMatch(inbox, /dr-section__head/, "the widget dropped its internal duplicate header");
+  assert.doesNotMatch(inbox, /Needs you\s*<\/h2>/, "no second heading inside the panel");
+  // The caught-up moment: clearing the last row confirms instead of leaving a
+  // hollow panel with a stale count.
+  assert.match(inbox, /items\.length === 0 && liveTotal === 0 \?/, "an emptied list renders the caught-up state");
+  assert.match(inbox, /all caught up/, "the caught-up copy confirms the clear");
+  // Open items beyond the visible cap drill through to the owning surface.
+  assert.match(inbox, /\+\{hidden\} more — open Rituals/, "overflow beyond the cap drills into Rituals");
+  assert.match(inbox, /href="\/\?mode=inbox"/, "the drill-through targets the Rituals surface");
+}
 // The workspace SSE 'updated' branch bails on content-equal echoes, so an
 // optimistic complete/dismiss/snooze doesn't trigger one redundant re-render
 // of every inboxItemsWithEphemeral consumer.

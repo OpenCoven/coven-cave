@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import type { DashboardModel } from "@/lib/dashboard-model";
+import { buildDashboardModel, type DashboardModel } from "@/lib/dashboard-model";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -90,10 +90,19 @@ const TRENDS_KEY = "cave:cockpit:trends:v2";
 
 // ─── Root ───────────────────────────────────────────────────────────────────────
 
-export function DashboardCockpit({ model }: { model: DashboardModel }) {
+export function DashboardCockpit({ model: initialModel }: { model: DashboardModel }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   useMinuteTick();    // keep the "Updated Nm ago" pill honest between polls
   const [data, setData] = useState<CockpitData>(EMPTY);
+  // The server-rendered model is only the first frame — each poll rebuilds it
+  // from the live inbox, so needs-attention, the Needs-you vital, caught-up
+  // state, and today's summary all track reality instead of freezing at load.
+  const [liveModel, setLiveModel] = useState<DashboardModel | null>(null);
+  const model = liveModel ?? initialModel;
+  // Live open total reported up by the ActionInbox — keeps the panel badge and
+  // the Needs-you vital honest through optimistic done/dismiss/snooze, between
+  // polls. Reset when a fresh model lands (the model is then authoritative).
+  const [liveOpen, setLiveOpen] = useState<number | null>(null);
   // Each source populates independently so a panel renders the moment its data
   // lands — the slow ones (sessions) never block the fast ones (board, familiars).
   const [ready, setReady] = useState<ReadonlySet<keyof CockpitData>>(new Set());
@@ -122,7 +131,15 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     };
     void getJson<{ cards: Card[] }>("/api/board").then((r) => put("cards", r?.cards ?? []));
     void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
-    void getJson<{ items: InboxItem[] }>("/api/inbox?status=pending").then((r) => put("upcoming", r?.items ?? []));
+    void getJson<{ items: InboxItem[] }>("/api/inbox").then((r) => {
+      put("upcoming", (r?.items ?? []).filter((i) => i.status === "pending"));
+      // Transient failure — keep the last good model rather than wiping to
+      // "caught up" on a fetch hiccup.
+      if (!r?.items || !aliveRef.current) return;
+      // Rebuild the whole dashboard model from the live inbox (pure, client-safe).
+      setLiveModel(buildDashboardModel(r.items, new Date()));
+      setLiveOpen(null);
+    });
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
     void getJson<{ entries: CovenMemoryEntry[] }>("/api/coven-memory").then((r) => put("memory", r?.entries ?? []));
     void getJson<{ areas: SpaceUsageArea[] }>("/api/space-usage").then((r) => put("space", r?.areas ?? []));
@@ -266,7 +283,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
     { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:list-checks-bold", value: contractPct, suffix: "%", label: "Contract health", sub: contractFetchPartial ? contractCoverageSub : contractSub(vitals), accent: "amber", metric: "contract", good: "up", href: "/dashboard/familiars/growth" },
-    { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", sub: model.caughtUp ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down" },
+    { icon: "ph:warning-circle", value: liveOpen ?? model.openCount, label: "Needs you", sub: (liveOpen ?? model.openCount) === 0 ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down", href: "/?mode=inbox" },
   ];
 
   // ── 7-day vitals trends: load history; snapshot today once the feeding data
@@ -284,7 +301,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       sessions: vitals.sessions7d,
       accept: acceptPct ?? 0,
       contract: contractPct ?? 0,
-      needs: model.needsAttention.length,
+      needs: model.openCount,
     };
     setTrends((prev) => {
       const store: TrendStore = { ...prev, [dayKey(now)]: snap };
@@ -294,7 +311,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       return store;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.needsAttention.length]);
+  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.openCount]);
 
   // ── Draggable secondary layout ──
   const sensors = useSensors(
@@ -377,8 +394,8 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           <ConfidencePanel rows={heatmapRows} />
         </Panel>);
       case "needs": return model.caughtUp ? null : (
-        <Panel title="Needs attention" icon="ph:warning-circle" count={model.needsAttention.length}>
-          <ActionInbox initialItems={model.needsAttention} />
+        <Panel title="Needs attention" icon="ph:warning-circle" count={liveOpen ?? model.openCount} href="/?mode=inbox">
+          <ActionInbox initialItems={model.needsAttention} openCount={model.openCount} onOpenCount={setLiveOpen} />
         </Panel>);
       case "board": return (
         <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`} href="/?mode=board">

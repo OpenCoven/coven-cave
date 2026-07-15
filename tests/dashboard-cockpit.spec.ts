@@ -3,8 +3,10 @@ import { expect, test, type Page } from "@playwright/test";
 // Dashboard cockpit (cave-89b / cave-2it) — pins the interaction contracts of
 // the /dashboard analytics surface: the sortable + filterable Familiar
 // Insights table, the Space usage panel (sortable rows, cleanup links, honest
-// truncation), and the Signals strip (dedupe-by-URL, stalest-first, capped
-// with a drill-through overflow row).
+// truncation), the Signals strip (dedupe-by-URL, stalest-first, capped with a
+// drill-through overflow row), and the Needs-attention panel (live from the
+// mocked inbox — the model rebuilds client-side each poll (cave-ckxk), so
+// page.route fully determines what needs you).
 //
 // Daemon-less (COVEN_CAVE_E2E=1): every data source the cockpit polls is
 // mocked via page.route, so the spec fully determines what renders. The
@@ -62,7 +64,21 @@ const SPACE_AREAS = [
   { id: "journal", label: "Journal", relPath: "~/.coven/journal", exists: false, bytes: 0, files: 0, lastModifiedMs: null, truncated: false },
 ];
 
-async function gotoDashboard(page: Page) {
+// Open inbox items for the Needs-attention panel: pending responses dated
+// "now" so breakdownForDay counts them as open today.
+const openItem = (id: string, title: string) => ({
+  id,
+  kind: "response-needed",
+  title,
+  status: "pending",
+  createdAt: new Date(NOW).toISOString(),
+  updatedAt: new Date(NOW).toISOString(),
+  firedAt: new Date(NOW).toISOString(),
+  recurrence: null,
+  source: "agent",
+});
+
+async function gotoDashboard(page: Page, inboxItems: Array<Record<string, unknown>> = []) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
@@ -73,7 +89,9 @@ async function gotoDashboard(page: Page) {
   await page.route("**/api/github/assigned", (route) => route.fulfill({ json: { items: GH_ASSIGNED } }));
   await page.route("**/api/space-usage", (route) => route.fulfill({ json: { ok: true, areas: SPACE_AREAS } }));
   await page.route("**/api/board", (route) => route.fulfill({ json: { cards: [] } }));
-  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: [] } }));
+  // Serves the GET list and any POST /api/inbox/<id>/<action> the triage
+  // buttons fire (they only check res.ok).
+  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: inboxItems } }));
   await page.route("**/api/coven-memory", (route) => route.fulfill({ json: { entries: [] } }));
   await page.route("**/api/retro-runs**", (route) => route.fulfill({ json: { snapshot: null } }));
   await page.goto("/dashboard");
@@ -154,4 +172,44 @@ test("signals dedupe same-URL PRs, lead with the stalest, and cap with an overfl
   const more = page.locator("a.cockpit-signal--more");
   await expect(more).toContainText("+2 more");
   await expect(more).toHaveAttribute("href", "/?mode=github");
+});
+
+test("needs-attention triages live and confirms when cleared", async ({ page }) => {
+  await gotoDashboard(page, [openItem("r1", "Reply to Sage"), openItem("r2", "Review the plan")]);
+  const panel = page.locator('.cockpit-panel[aria-label="Needs attention"]');
+  await expect(panel).toBeVisible();
+
+  // One header: the Panel chrome owns title + count — the widget no longer
+  // renders its own "Needs you" section head inside it.
+  await expect(panel.locator(".cockpit-panel__count")).toHaveText("2");
+  await expect(panel.locator(".dr-section__head")).toHaveCount(0);
+
+  // Acting removes the row optimistically and the badge tracks it.
+  await panel.locator(".dash-inbox__row", { hasText: "Reply to Sage" }).getByRole("button", { name: "Done" }).click();
+  await expect(panel.locator(".dash-inbox__row")).toHaveCount(1);
+  await expect(panel.locator(".cockpit-panel__count")).toHaveText("1");
+
+  // Clearing the last row confirms instead of leaving a hollow panel.
+  await panel.locator(".dash-inbox__row").getByRole("button", { name: "Done" }).click();
+  await expect(panel.locator(".dr-empty")).toContainText("all caught up");
+  await expect(panel.locator(".cockpit-panel__count")).toHaveText("0");
+});
+
+test("needs-attention shows the true open total and drills overflow into Rituals", async ({ page }) => {
+  const items = Array.from({ length: 10 }, (_, i) => openItem(`r${i + 1}`, `Open item ${i + 1}`));
+  await gotoDashboard(page, items);
+  const panel = page.locator('.cockpit-panel[aria-label="Needs attention"]');
+  await expect(panel).toBeVisible();
+
+  // The badge and the Needs-you vital read the uncapped total; the visible
+  // list is capped and the overflow drills into the owning surface.
+  await expect(panel.locator(".cockpit-panel__count")).toHaveText("10");
+  await expect(panel.locator(".dash-inbox__row")).toHaveCount(8);
+  const more = panel.locator("a.dash-inbox__more");
+  await expect(more).toContainText("+2 more");
+  await expect(more).toHaveAttribute("href", "/?mode=inbox");
+
+  const kpi = page.locator(".cockpit-kpi", { hasText: "Needs you" });
+  await expect(kpi.locator(".cockpit-kpi__value")).toHaveText("10");
+  await expect(kpi).toHaveAttribute("href", "/?mode=inbox");
 });

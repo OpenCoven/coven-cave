@@ -39,6 +39,8 @@ export type DashboardModel = {
   caughtUp: boolean;
   /** Open, actionable items — same set the old "Needs attention" list showed, capped. */
   needsAttention: InboxItem[];
+  /** True number of open items — `needsAttention` is capped for display, this isn't. */
+  openCount: number;
   /** Today's generated summary narrative, or null before one exists. */
   todaySummary: TodaySummary | null;
   featuredReport: RecentReport | null;
@@ -75,6 +77,7 @@ export function buildDashboardModel(items: InboxItem[], now: Date): DashboardMod
     date: now,
     caughtUp: breakdown.openItems.length === 0,
     needsAttention: breakdown.openItems.slice(0, NEEDS_ATTENTION_CAP),
+    openCount: breakdown.openItems.length,
     todaySummary,
     featuredReport,
     recentReports: reports.filter((r) => r.slug !== featuredReport?.slug),
