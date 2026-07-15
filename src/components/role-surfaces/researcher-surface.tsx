@@ -10,6 +10,7 @@
 
 import { Button } from "@/components/ui/button";
 import type { RoleSurfaceContext } from "@/lib/role-surfaces";
+import { ResearchLinkShelf } from "./research-link-shelf";
 import { ResearchMissionComposer } from "./research-mission-composer";
 import { ResearchMissionDetail } from "./research-mission-detail";
 import { ResearchMissionList } from "./research-mission-list";
@@ -31,6 +32,8 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
           onStart={research.start}
         />
       </section>
+
+      <ResearchLinkShelf onOpenUrl={context.openUrl} />
 
       <div className="research-desk__workspace">
         <ResearchMissionList

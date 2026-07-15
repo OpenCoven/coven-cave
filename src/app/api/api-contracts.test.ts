@@ -165,6 +165,7 @@ const contracts: RouteContract[] = [
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/research/links", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]/schedule", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/research/missions/[id]", methods: ["GET"], kind: "json", pathGuard: true },

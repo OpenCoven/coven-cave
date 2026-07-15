@@ -30,6 +30,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/skills", hint: "browse skills", description: "Show every available skill to pick from.", section: "chat" },
   { name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt", description: "Drop a starter prompt into the composer for editing.", argPlaceholder: "name", section: "chat" },
   { name: "/prompts", hint: "browse prompts", description: "Show every prompt template to pick from.", section: "chat" },
+  { name: "/save", aliases: ["/link"], hint: "save links", description: "Save one or more links to the Research desk, auto-organized by kind.", argPlaceholder: "url…", section: "chat" },
 
   // Familiar
   { name: "/familiar", aliases: ["/agent"], hint: "switch", description: "Open the familiar picker. Pass a name to switch directly.", argPlaceholder: "name", section: "familiar" },

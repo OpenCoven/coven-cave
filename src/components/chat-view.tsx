@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
 import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
+import { extractLinks } from "@/lib/link-extractor";
+import { LINK_CATEGORY_META, type LinkCategory } from "@/lib/link-organizer";
 import { RichText } from "@/components/rich-text";
 import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
@@ -3965,6 +3967,48 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return true;
       }
       insertPrompt(prompt);
+      return true;
+    }
+    if (command === "/save") {
+      // Save links to the Research desk (cave-avrt): extract every http(s)
+      // URL from the arguments, persist auto-organized, report the buckets.
+      const urls = extractLinks(args);
+      if (urls.length === 0) {
+        appendSystem(
+          "Paste one or more links — e.g. /save https://example.com/post. They're saved to the Research desk's Links shelf, auto-organized by kind.",
+        );
+        setInput("");
+        return true;
+      }
+      setInput("");
+      void fetch("/api/research/links", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ urls, source: "chat" }),
+      })
+        .then(async (res) => {
+          const data = (await res.json().catch(() => null)) as {
+            ok?: boolean;
+            added?: { category: string }[];
+            duplicates?: string[];
+            error?: string;
+          } | null;
+          if (!res.ok || !data?.ok) {
+            appendSystem(`Couldn't save: ${data?.error ?? `HTTP ${res.status}`}`);
+            return;
+          }
+          const added = data.added ?? [];
+          const buckets = [...new Set(added.map((l) => LINK_CATEGORY_META[l.category as LinkCategory]?.label ?? l.category))];
+          const dupes = data.duplicates?.length ?? 0;
+          if (added.length === 0) {
+            appendSystem(dupes > 0 ? "Already saved — the Research desk has those links." : "Nothing new to save.");
+            return;
+          }
+          appendSystem(
+            `Saved ${added.length} link${added.length === 1 ? "" : "s"} to the Research desk (${buckets.join(", ")})${dupes > 0 ? ` — ${dupes} already saved` : ""}.`,
+          );
+        })
+        .catch(() => appendSystem("Couldn't save — is the desktop reachable?"));
       return true;
     }
     if (command === "/doctor" || command === "/daemon") {
