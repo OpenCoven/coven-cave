@@ -181,6 +181,7 @@ const contracts: RouteContract[] = [
   { route: "/skills/directory", methods: ["GET"], kind: "json" },
   { route: "/skills/build", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/draft", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/skills/caveman", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/dry-run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/templates", methods: ["GET"], kind: "json" },
   { route: "/skills/directory/[slug]", methods: ["GET"], kind: "json" },

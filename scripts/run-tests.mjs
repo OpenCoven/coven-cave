@@ -807,6 +807,7 @@ export const SUITES = {
     "src/app/api/skills/directory/install/route.test.ts",
     "src/app/api/skills/build/route.test.ts",
     "src/app/api/skills/draft/route.test.ts",
+    "src/app/api/skills/caveman/route.test.ts",
     "src/app/api/skills/dry-run/route.test.ts",
     "src/app/api/skills/directory/use/route.test.ts",
     "src/lib/server/skills-directory.test.ts",
