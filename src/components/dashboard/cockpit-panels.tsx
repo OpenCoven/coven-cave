@@ -31,7 +31,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   HEALTH_META, STATUS_META, STATUS_ORDER, TIER_TONE, TREND_DAYS,
-  confidenceColor, prettyFactor, shortRepo, whenLabel,
+  confidenceColor, githubEmptyState, prettyFactor, shortRepo, whenLabel,
 } from "@/lib/dashboard-cockpit-format";
 
 // ─── Coven insight banner ────────────────────────────────────────────────────────
@@ -371,9 +371,21 @@ export function AgentsPanel({ familiars, sessions, loaded }: { familiars: Famili
 const GH_ICON: Record<GitHubItem["kind"], IconName> = {
   pr: "ph:git-pull-request", review_request: "ph:git-pull-request", issue: "ph:circle", notification: "ph:bell",
 };
-export function GithubPanel({ items, loaded }: { items: GitHubItem[]; loaded: boolean }) {
+export function GithubPanel({ items, loaded, connected }: {
+  items: GitHubItem[]; loaded: boolean; connected: boolean | null;
+}) {
   if (!loaded) return <PanelSkeleton rows={3} />;
-  if (items.length === 0) return <EmptyState icon="ph:github-logo">No GitHub activity, or no token configured.</EmptyState>;
+  if (items.length === 0) {
+    const empty = githubEmptyState(connected);
+    return (
+      <EmptyState icon="ph:github-logo">
+        {empty.copy}
+        {empty.showConnect ? (
+          <a className="cockpit-connect focus-ring" href="/?mode=github">Connect GitHub</a>
+        ) : null}
+      </EmptyState>
+    );
+  }
   return (
     <ul className="cockpit-gh">
       {items.slice(0, 6).map((g) => (

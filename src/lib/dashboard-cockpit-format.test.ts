@@ -8,6 +8,7 @@ import {
   contractSub,
   coverageSub,
   dayKey,
+  githubEmptyState,
   panelTitle,
   prettyFactor,
   reconcileLayout,
@@ -66,6 +67,16 @@ test("whenLabel is calendar-relative for upcoming reminders", () => {
   assert.match(whenLabel(at(tomorrow, 9), now), /^Tmrw /);
   const nextWeek = new Date(now); nextWeek.setDate(now.getDate() + 6);
   assert.match(whenLabel(at(nextWeek, 9), now), /^Jul 20 /);
+});
+
+test("githubEmptyState: connect affordance only when the token probe proves disconnected", () => {
+  assert.deepEqual(githubEmptyState(false), { copy: "GitHub isn't connected.", showConnect: true });
+  assert.deepEqual(githubEmptyState(true), { copy: "No GitHub activity right now.", showConnect: false });
+  // Probe failed → neither claim is honest; no affordance for a fix that may not apply.
+  assert.deepEqual(githubEmptyState(null), {
+    copy: "No GitHub activity, or no token configured.",
+    showConnect: false,
+  });
 });
 
 test("small formatters: shortRepo, prettyFactor, confidenceColor clamps", () => {
