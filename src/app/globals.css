@@ -6845,7 +6845,7 @@ a.mobile-handoff__link:hover {
 .familiar-studio-brain__row { display: flex; flex-direction: column; gap: 6px; }
 .familiar-studio-brain__label { font-size: var(--text-2xs); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .familiar-studio-brain__hint { margin: 6px 0 0; font-size: var(--text-2xs); line-height: 1.5; color: var(--text-muted); }
-.familiar-studio-brain__switch { align-self: flex-start; cursor: pointer; }
+
 .familiar-studio-brain__control { display: flex; min-width: 0; gap: 6px; align-items: flex-start; }
 
 /* Asana section (Familiar Studio → Brain): inline connect + per-agent controls. */

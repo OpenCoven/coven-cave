@@ -554,6 +554,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                   type="button"
                   role="switch"
                   aria-checked={draftAutoSelfReport}
+                  aria-label="Auto self-report"
                   onClick={() => {
                     const next = !draftAutoSelfReport;
                     setDraftAutoSelfReport(next);
@@ -561,13 +562,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     // default is false), keeping the file free of no-op entries.
                     void save({ autoSelfReport: next ? true : null });
                   }}
-                  className={`familiar-studio-brain__switch rounded-[var(--radius-pill)] border px-3 py-1.5 text-[12px] transition-colors ${
-                    draftAutoSelfReport
-                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                      : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
-                  }`}
+                  className={`settings-switch focus-ring${draftAutoSelfReport ? " is-on" : ""}`}
                 >
-                  {draftAutoSelfReport ? "On" : "Off"}
+                  <span className="settings-switch__knob" aria-hidden />
                 </button>
               </div>
             </div>

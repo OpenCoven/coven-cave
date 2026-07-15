@@ -126,6 +126,21 @@ assert.match(source, /role="switch"[\s\S]{0,80}aria-checked=\{draftAutoSelfRepor
 assert.match(source, /autoSelfReport: next \? true : null/, "off deletes the config key instead of writing false");
 assert.match(source, /if \("autoSelfReport" in patch\) setDraftAutoSelfReport/, "failed saves revert the toggle draft");
 
+// 2026-07-15: the On/Off pill became the shared settings-switch track/knob
+// toggle (same control as Settings → General), for both the Reflection card
+// and the Asana section's enable row.
+assert.match(
+  source,
+  /settings-switch focus-ring\$\{draftAutoSelfReport \? " is-on" : ""\}/,
+  "auto self-report renders the shared settings-switch toggle",
+);
+assert.match(source, /settings-switch__knob/, "the toggle carries the track knob");
+assert.doesNotMatch(
+  source,
+  /draftAutoSelfReport \? "On" : "Off"/,
+  "the pill-button On/Off text form is gone",
+);
+
 // ── Voice picker: traits + preview (2026-07-15) ──────────────────────────────
 // The OpenAI voice menu is sourced from the shared realtime-voice catalog so
 // every option carries a perceived gender/accent/vibe detail line, and both

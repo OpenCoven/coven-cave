@@ -204,13 +204,9 @@ export function FamiliarAsanaSection({ familiar }: { familiar: ResolvedFamiliar 
                 aria-checked={enabled}
                 aria-label="Work with Asana tasks"
                 onClick={toggleEnabled}
-                className={`familiar-studio-brain__switch rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
-                  enabled
-                    ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                    : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
-                }`}
+                className={`settings-switch focus-ring${enabled ? " is-on" : ""}`}
               >
-                {enabled ? "On" : "Off"}
+                <span className="settings-switch__knob" aria-hidden />
               </button>
             </div>
           </div>
