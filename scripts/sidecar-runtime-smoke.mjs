@@ -317,7 +317,7 @@ async function main() {
           accentSeed: { L: 0.63, a: 0.12, b: -0.08 },
         },
       },
-      general: { newsHeadlines: false },
+      general: { newsHeadlines: false, stopPhrase: "halt" },
       phone: { mobileMode: false },
     };
     const savePreferences = await fetch(`${baseUrl}/api/preferences`, {

@@ -386,6 +386,7 @@ export const SUITES = {
     "src/lib/prompt-enhancer.test.ts",
     "src/lib/prompt-placeholders.test.ts",
     "src/lib/prompt-prefs.test.ts",
+    "src/lib/stop-phrase.test.ts",
     "src/lib/use-prompt-enhance.test.ts",
     "src/lib/reply-recommendation.test.ts",
     "src/lib/comux-projects.test.ts",
