@@ -61,8 +61,13 @@ assert.match(
 
 assert.match(
   route,
-  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"[\s\S]*?"coven-code": \{[\s\S]*?packageName: "@opencoven\/coven-code@latest"/,
-  "Coven recovery only accepts the fixed allowlisted CLI and scoped Code packages",
+  /"coven-cli": \{[\s\S]*?packageName: "@opencoven\/cli@latest"/,
+  "Coven install only accepts the fixed allowlisted @opencoven/cli package",
+);
+assert.doesNotMatch(
+  route,
+  /"coven-code":\s*\{/,
+  "coven-code is no longer a separate install target after unification",
 );
 
 assert.match(

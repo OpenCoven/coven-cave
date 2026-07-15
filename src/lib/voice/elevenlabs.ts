@@ -20,6 +20,7 @@ import type {
 } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 import { connectSpeechLoop, type SpeechMouth } from "./speech-loop.ts";
+import { resolvePreferredEars } from "./native-stt.ts";
 import {
   createFamiliarSpeechBrain,
   FAMILIAR_BRAIN_ERROR_HINT,
@@ -190,8 +191,15 @@ async function connect(
     throw new VoiceConnectError("elevenlabs_invalid_grant");
   }
 
+  // ElevenLabs TTS is already a cloud leg, so the ears may fall back to
+  // Apple dictation on model-less Macs — labeled honestly via earsEngine
+  // (cave-vpe1).
+  const preferredEars = await resolvePreferredEars();
+
   return connectSpeechLoop({
     mic,
+    ears: preferredEars?.factory,
+    earsEngine: preferredEars?.engine,
     mouth: createElevenLabsMouth({
       voiceId: connection.voiceId || DEFAULT_ELEVENLABS_VOICE_ID,
       modelId: connection.modelId || DEFAULT_ELEVENLABS_MODEL_ID,

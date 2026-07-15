@@ -9,6 +9,7 @@ import {
   describeResearchSchedule,
   normalizeResearchBounds,
   RESEARCH_BOUND_LIMITS,
+  RESEARCH_INTENT_MIN_LENGTH,
   researchBoundReadings,
   researchContinueLabel,
   researchIntentAddsContext,
@@ -126,6 +127,42 @@ test("mission creation validates familiar, intent, mode, and bounded input", () 
       bounds,
     }).ok,
     false,
+  );
+});
+
+test("intent below the minimum never launches a real session", () => {
+  const valid = {
+    familiarId: "sage",
+    mode: "brief",
+    modeSource: "auto",
+    deliverable: "brief",
+    bounds: {
+      wallClockMinutes: 20,
+      maxIterations: 1,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+    },
+  };
+  // Accidental one-word launches are rejected even when everything else is valid.
+  const short = validateCreateResearchMissionInput({ ...valid, intent: "x" });
+  assert.equal(short.ok, false);
+  assert.match((short as { error: string }).error, /at least|between 8/i);
+  assert.equal(
+    validateCreateResearchMissionInput({ ...valid, intent: "abcdefg" }).ok,
+    false,
+    "7 chars is below the minimum",
+  );
+  // Whitespace padding cannot satisfy the minimum.
+  assert.equal(
+    validateCreateResearchMissionInput({ ...valid, intent: "  ab   " }).ok,
+    false,
+  );
+  // The boundary passes.
+  assert.equal(RESEARCH_INTENT_MIN_LENGTH, 8);
+  assert.equal(
+    validateCreateResearchMissionInput({ ...valid, intent: "a".repeat(RESEARCH_INTENT_MIN_LENGTH) }).ok,
+    true,
   );
 });
 

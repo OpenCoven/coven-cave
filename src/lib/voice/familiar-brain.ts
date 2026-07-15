@@ -29,6 +29,7 @@ import {
 } from "./speech-loop.ts";
 import { streamFamiliarText } from "../familiar-stream.ts";
 import { extractNextPaths } from "../next-paths.ts";
+import { resolvePreferredEars } from "./native-stt.ts";
 
 export const FAMILIAR_BRAIN_ERROR_HINT =
   "The familiar's runtime didn't answer — check that its harness is installed and signed in, or try the turn again.";
@@ -113,9 +114,16 @@ async function connect(
     throw new VoiceConnectError("familiar_brain_invalid_grant");
   }
 
+  // Brain turns already ride the network to the harness, so the ears may
+  // fall back to Apple dictation on model-less Macs — labeled honestly via
+  // earsEngine (cave-vpe1).
+  const preferredEars = await resolvePreferredEars();
+
   return connectSpeechLoop({
     mic,
     voiceName: connection.voice,
+    ears: preferredEars?.factory,
+    earsEngine: preferredEars?.engine,
     callbacks,
     brainErrorCode: "familiar_brain_failed",
     brainErrorHint: FAMILIAR_BRAIN_ERROR_HINT,

@@ -2488,6 +2488,8 @@ mod browser;
 mod pty;
 #[cfg(all(desktop, target_os = "windows"))]
 mod sidecar_archive;
+#[cfg(desktop)]
+mod speech;
 #[cfg(all(desktop, target_os = "windows"))]
 mod windows_process_job;
 
@@ -2949,6 +2951,10 @@ pub fn run() {
             shell_open_path,
             shell_pick_directory,
             set_traffic_lights_visible,
+            speech::speech_stt_available,
+            speech::speech_stt_start,
+            speech::speech_stt_finish,
+            speech::speech_stt_stop,
             #[cfg(target_os = "windows")]
             sidecar_startup_status,
             #[cfg(target_os = "windows")]

@@ -62,15 +62,6 @@ const INSTALL_TARGETS = {
     binary: "coven",
     timeoutMs: 240_000,
   },
-  "coven-code": {
-    kind: "npm",
-    label: "Coven Code",
-    // Scoped package only — bare "coven-code" is a different, deprecated
-    // npm package (see opencoven-tools-status.ts).
-    packageName: "@opencoven/coven-code@latest",
-    binary: "coven-code",
-    timeoutMs: 240_000,
-  },
   codex: {
     kind: "npm",
     label: "Codex",
@@ -117,8 +108,8 @@ type CommandPathResult = { path: string | null; error?: string };
 
 function isOpenCovenToolInstallTarget(
   target: InstallTarget,
-): target is "coven-cli" | "coven-code" {
-  return target === "coven-cli" || target === "coven-code";
+): target is "coven-cli" {
+  return target === "coven-cli";
 }
 
 function nodeInstallHint(): string {

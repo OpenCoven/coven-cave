@@ -3,9 +3,10 @@
 // The realtime cloud providers ARE the conversational brain; a local call
 // assembles its own loop out of three local parts (the shared scaffold lives
 // in speech-loop.ts):
-//   ears  — SpeechRecognition where the WebView has it (Chrome web builds).
-//           WKWebView has none: native SFSpeechRecognizer (cave-0ogg) and the
-//           sidecar Whisper engine (cave-vony) are the tracked follow-ups.
+//   ears  — SpeechRecognition where the WebView has it (Chrome web builds);
+//           the desktop app's WKWebView has none, so the Tauri shell hears
+//           through native SFSpeechRecognizer (native-stt.ts). The sidecar
+//           Whisper engine (cave-vony) is the tracked follow-up.
 //   brain — an OpenAI-compatible loopback server (Ollama / LM Studio) proxied
 //           through /api/voice/local/chat so CORS and base-url config stay
 //           server-owned. `voiceModel` names the local model.
@@ -24,6 +25,7 @@ import type {
 } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 import { connectSpeechLoop } from "./speech-loop.ts";
+import { resolvePreferredEars } from "./native-stt.ts";
 
 export const DEFAULT_LOCAL_LLM_BASE = "http://127.0.0.1:11434";
 export const DEFAULT_LOCAL_MODEL = "llama3.2";
@@ -128,9 +130,17 @@ async function connect(
   const instructions = connection.instructions ?? "";
   const turns: LocalBrainTurn[] = [...(connection.conversationSeed ?? [])];
 
+  // The Local provider's contract is "no cloud": native ears must run the
+  // on-device dictation model or refuse (cave-vpe1, hybrid policy) — this
+  // rejects with stt_on_device_unsupported instead of ever reaching Apple's
+  // dictation service.
+  const preferredEars = await resolvePreferredEars({ requireOnDevice: true });
+
   return connectSpeechLoop({
     mic,
     voiceName: connection.voice,
+    ears: preferredEars?.factory,
+    earsEngine: preferredEars?.engine,
     callbacks,
     brainErrorCode: "local_brain_failed",
     brainErrorHint: "The local model call failed — is the loopback server still running?",

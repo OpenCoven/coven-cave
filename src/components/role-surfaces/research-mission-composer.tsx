@@ -9,6 +9,7 @@ import {
 } from "@/lib/research-mission-routing";
 import {
   RESEARCH_BOUND_LIMITS,
+  RESEARCH_INTENT_MIN_LENGTH,
   RESEARCH_MISSION_MODES,
   type CreateResearchMissionInput,
   type ResearchBounds,
@@ -51,6 +52,8 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
   const inferred = useMemo(() => inferResearchMissionMode(intent), [intent]);
   const effectiveMode = mode === "auto" ? inferred.mode : mode;
   const plan = useMemo(() => defaultResearchPlan(effectiveMode), [effectiveMode]);
+  const trimmedIntent = intent.trim();
+  const intentTooShort = trimmedIntent.length > 0 && trimmedIntent.length < RESEARCH_INTENT_MIN_LENGTH;
 
   useEffect(() => {
     setBounds({ ...plan.bounds });
@@ -70,7 +73,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
   const start = async (event: React.FormEvent) => {
     event.preventDefault();
     const trimmed = intent.trim();
-    if (!trimmed || submitting) return;
+    if (trimmed.length < RESEARCH_INTENT_MIN_LENGTH || submitting) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -107,9 +110,18 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
           onChange={(event) => setIntent(event.target.value)}
           placeholder="Compare approaches, map a field, draft a paper, or run bounded experiments…"
           rows={3}
-          aria-invalid={Boolean(error)}
-          aria-describedby={error ? "research-mission-error" : "research-plan-review"}
+          aria-invalid={Boolean(error) || intentTooShort}
+          aria-describedby={error
+            ? "research-mission-error"
+            : intentTooShort
+              ? "research-intent-minimum"
+              : "research-plan-review"}
         />
+        {intentTooShort ? (
+          <p id="research-intent-minimum" className="research-intent-minimum">
+            Add at least {RESEARCH_INTENT_MIN_LENGTH} characters so the familiar has a real question to investigate.
+          </p>
+        ) : null}
       </div>
 
       <div className="research-mission-composer__controls">
@@ -131,7 +143,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
           size="sm"
           leadingIcon="ph:play"
           loading={submitting}
-          disabled={!intent.trim()}
+          disabled={trimmedIntent.length < RESEARCH_INTENT_MIN_LENGTH}
         >
           Start research
         </Button>

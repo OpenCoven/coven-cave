@@ -16,7 +16,6 @@ assert.match(
 
 for (const pkg of [
   "@opencoven\\/cli@latest",
-  "@opencoven\\/coven-code@latest",
   "@openai\\/codex",
   "@anthropic-ai\\/claude-code",
   "@github\\/copilot@latest",
@@ -212,10 +211,10 @@ assert.match(
   "polled jobs expose lifecycle state so the UI can show daemon progress and health",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /"coven-code":\s*\{[\s\S]*packageName: "@opencoven\/coven-code@latest"[\s\S]*binary: "coven-code"/,
-  "coven-code updates use the SCOPED @opencoven package and verify the coven-code binary",
+  /"coven-code":\s*\{/,
+  "coven-code is no longer a separate install target — @opencoven/cli self-manages the engine",
 );
 assert.doesNotMatch(
   source,

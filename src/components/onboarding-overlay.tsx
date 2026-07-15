@@ -68,7 +68,7 @@ type OnboardingStatus = {
 };
 
 type OpenCovenToolStatus = {
-  id: "coven-cli" | "coven-code";
+  id: "coven-cli";
   label: string;
   packageName: string;
   binary: string;
@@ -98,7 +98,6 @@ type HarnessReport = {
 
 type InstallTarget =
   | "coven-cli"
-  | "coven-code"
   | "codex"
   | "claude"
   | "copilot"
@@ -142,7 +141,6 @@ type InstallJobView = {
  *  one client-side busy lock. */
 const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
   "coven-cli": "npm",
-  "coven-code": "npm",
   codex: "npm",
   claude: "npm",
   copilot: "npm",
@@ -201,12 +199,6 @@ const HARNESS_ONE_CLICK: Partial<
     command: "npm i -g openclaw@latest",
     afterInstall:
       `then summon a familiar from an agent in ${OPENCLAW_AGENT_ROOT} once you're inside Cave (Familiars → Summon familiar)`,
-  },
-  "coven-code": {
-    target: "coven-code",
-    command: "npm i -g @opencoven/coven-code@latest",
-    afterInstall:
-      "then run `coven-code` in a terminal once to connect a provider",
   },
   hermes: {
     target: "hermes",
@@ -1860,7 +1852,7 @@ function StepCovenCli({
   nodeHint: string | null;
   npmBusy: boolean;
   npmBusyLabel: string;
-  onInstall: (target: "coven-cli" | "coven-code") => void;
+  onInstall: (target: "coven-cli") => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
   const job = installJobs["coven-cli"];

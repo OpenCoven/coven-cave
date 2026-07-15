@@ -30,6 +30,18 @@ test("composer makes Auto routing and finite bounds reviewable", () => {
   assert.doesNotMatch(composer, /max=\{1440\}/);
 });
 
+test("composer enforces the shared minimum intent requirement", () => {
+  // Submit stays disabled and the guard bails until the trimmed intent meets
+  // the same RESEARCH_INTENT_MIN_LENGTH the server validator enforces.
+  assert.match(composer, /disabled=\{trimmedIntent\.length < RESEARCH_INTENT_MIN_LENGTH\}/);
+  assert.match(composer, /trimmed\.length < RESEARCH_INTENT_MIN_LENGTH \|\| submitting/);
+  // Too-short input explains itself accessibly instead of failing silently.
+  assert.match(composer, /id="research-intent-minimum"/);
+  assert.match(composer, /aria-invalid=\{Boolean\(error\) \|\| intentTooShort\}/);
+  assert.match(composer, /"research-intent-minimum"\s*:\s*"research-plan-review"/);
+  assert.match(css, /\.research-intent-minimum/);
+});
+
 test("plan chips are honest about interactivity", () => {
   // The three bound chips are buttons that open Review bounds and focus the
   // matching input…
@@ -172,7 +184,7 @@ test("polling is abortable, foreground-aware, and container responsive", () => {
 });
 
 test("forms expose errors and narrow outputs become keyboard tabs", () => {
-  assert.match(composer, /aria-invalid=\{Boolean\(error\)\}/);
+  assert.match(composer, /aria-invalid=\{Boolean\(error\) \|\| intentTooShort\}/);
   assert.match(composer, /role="alert"/);
   assert.match(ledger, /<Tabs<"artifacts" \| "sources">/);
   assert.match(ledger, /role="tabpanel"/);

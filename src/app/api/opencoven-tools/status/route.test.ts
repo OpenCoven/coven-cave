@@ -36,10 +36,10 @@ assert.match(
   "the Coven CLI status checks the npm-published @opencoven/cli package and coven binary",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /id: "coven-code"[\s\S]*packageName: "@opencoven\/coven-code"[\s\S]*binary: "coven-code"/,
-  "the coven-code status checks the SCOPED @opencoven/coven-code package and coven-code binary",
+  /id: "coven-code"/,
+  "coven-code is no longer a separate install/status target",
 );
 
 assert.match(
@@ -98,8 +98,8 @@ assert.match(
 
 assert.match(
   source,
-  /minimumVersion: "0\.0\.54"/,
-  "coven CLI compatibility floor includes the Windows Codex connection fixes",
+  /minimumVersion: "0\.1\.1"/,
+  "coven CLI compatibility floor unified to v0.1.1 (CLI self-manages the engine)",
 );
 
 assert.match(

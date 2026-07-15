@@ -1,4 +1,4 @@
-export type OpenCovenToolInstallTarget = "coven-cli" | "coven-code";
+export type OpenCovenToolInstallTarget = "coven-cli";
 
 export type OpenCovenToolInstallStatus = {
   id: OpenCovenToolInstallTarget;
@@ -10,14 +10,10 @@ export type OpenCovenToolInstallStatus = {
 
 const OPEN_COVEN_TOOL_ORDER: OpenCovenToolInstallTarget[] = [
   "coven-cli",
-  "coven-code",
 ];
 
 const OPEN_COVEN_TOOL_PACKAGES: Record<OpenCovenToolInstallTarget, string> = {
   "coven-cli": "@opencoven/cli@latest",
-  // Scoped package only — bare "coven-code" is a different, deprecated
-  // npm package (see opencoven-tools-status.ts).
-  "coven-code": "@opencoven/coven-code@latest",
 };
 
 // The Coven CLI is the only REQUIRED OpenCoven tool: the wizard's tools step

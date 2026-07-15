@@ -83,6 +83,10 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
   const [mode, setMode] = useState<CreateMode>(initialCreateMode);
   const [step, setStep] = useState<ExtractStep>("select");
   const [roles, setRoles] = useState<RoleEntry[]>([]);
+  // Full familiar roster for describe mode: any familiar can take an agentic
+  // build brief, including ones with no roles yet (extract mode stays
+  // roles-derived — there is nothing to extract from a roleless familiar).
+  const [rosterIds, setRosterIds] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [familiar, setFamiliar] = useState("");
@@ -201,6 +205,22 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
     return () => ctl.abort();
   }, [open, rolesNonce]);
 
+  useEffect(() => {
+    if (!open) return;
+    const ctl = new AbortController();
+    fetch("/api/familiars", { cache: "no-store", signal: ctl.signal })
+      .then(async (res) => {
+        const json = (await res.json()) as { ok?: boolean; familiars?: Array<{ id?: string }> };
+        if (!json.ok || !Array.isArray(json.familiars)) return;
+        setRosterIds(json.familiars.map((f) => f.id).filter((id): id is string => Boolean(id)));
+      })
+      .catch(() => {
+        // Roster is an enrichment; describe mode falls back to roles-derived
+        // familiars, which is never worse than the extract list.
+      });
+    return () => ctl.abort();
+  }, [open]);
+
   // Teaching dead ends (docs/craft-ux.md F7): roles live in the familiar
   // studio's Brain tab — send the user there instead of stranding them.
   const openRoleStudio = useCallback(() => {
@@ -212,6 +232,15 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
   const familiarOptions = useMemo(
     () => [...new Set(roles.map((role) => role.familiar))].sort().map((id) => ({ value: id, label: id })),
     [roles],
+  );
+  // Describe mode lists every familiar (union survives a failed roster
+  // fetch); a roles-less familiar like a fresh summon is a valid builder.
+  const describeFamiliarOptions = useMemo(
+    () =>
+      [...new Set([...rosterIds, ...roles.map((role) => role.familiar)])]
+        .sort()
+        .map((id) => ({ value: id, label: id })),
+    [rosterIds, roles],
   );
   const visibleRoles = useMemo(
     () => roles.filter((role) => role.familiar === familiar),
@@ -437,7 +466,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
                 label="Preferred familiar"
                 value={familiar}
                 onChange={chooseFamiliar}
-                options={[{ value: "", label: "Let the familiar decide" }, ...familiarOptions]}
+                options={[{ value: "", label: "Let the familiar decide" }, ...describeFamiliarOptions]}
                 className="focus-ring craft-create-drawer__select"
               />
             </label>

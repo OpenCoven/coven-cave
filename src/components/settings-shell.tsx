@@ -500,7 +500,7 @@ function parseExecutorUrls(text: string): string[] {
   );
 }
 
-/** Omnigent fleet connection — Settings companion to the Fleet surface. */
+/** Omnigent fleet connection — the config surface for the host chip and remote runs. */
 function OmnigentSettingsGroup() {
   const { announce } = useAnnouncer();
   const [baseUrl, setBaseUrl] = useState("");
@@ -606,7 +606,7 @@ function OmnigentSettingsGroup() {
       </SettingControlRow>
       <SettingControlRow
         label="Default workspace"
-        hint="Absolute path on the Omnigent host used when Chat/Fleet start a run without an override."
+        hint="Absolute path on the Omnigent host used when Chat/Board start a run without an override."
       >
         <input
           value={workspace}
@@ -619,7 +619,7 @@ function OmnigentSettingsGroup() {
       </SettingControlRow>
       <SettingControlRow
         label="Show fleet in Host chip"
-        hint="When on, Chat and Home Host pickers list Omnigent hosts (omnigent:…) so a send can start a fleet session."
+        hint="When on — and an Omnigent auth token is present — Chat and Home Host pickers list Omnigent hosts (omnigent:…) so a send can start a fleet session. Without a token, no Fleet buttons appear anywhere."
       >
         <label className="flex items-center gap-2 text-[12px]">
           <input

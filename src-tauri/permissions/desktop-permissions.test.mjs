@@ -18,11 +18,16 @@ const loopbackWindowDragCapability = JSON.parse(
 const loopbackUpdaterCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-updater.json", import.meta.url), "utf8"),
 );
+const loopbackSpeechCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-speech.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
+const speechPermissions = readFileSync(new URL("./speech.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
 const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
+const nativeSttTs = readFileSync(new URL("../../src/lib/voice/native-stt.ts", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
 const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
@@ -48,6 +53,10 @@ const requiredPermissionIds = [
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
+  "allow-speech-stt-available",
+  "allow-speech-stt-start",
+  "allow-speech-stt-finish",
+  "allow-speech-stt-stop",
 ];
 
 const requiredCommands = [
@@ -552,4 +561,80 @@ test("pty_start keeps process authority native-side", () => {
   assert.match(ptyRust, /let command = default_shell\(\);/);
   assert.match(ptyRust, /let args = default_shell_args\(\);/);
   assert.doesNotMatch(ptyRust, /options\.command|options\.args|options\.env/);
+});
+
+test("native speech recognition is scoped to the trusted main webview", () => {
+  const speechPermissionIds = [
+    ["allow-speech-stt-available", "speech_stt_available"],
+    ["allow-speech-stt-start", "speech_stt_start"],
+    ["allow-speech-stt-finish", "speech_stt_finish"],
+    ["allow-speech-stt-stop", "speech_stt_stop"],
+  ];
+
+  for (const [permission, command] of speechPermissionIds) {
+    assert.match(
+      speechPermissions,
+      new RegExp(String.raw`identifier\s*=\s*"${permission}"[\s\S]{0,240}commands\.allow\s*=\s*\[[^\]]*"${command}"`),
+      `${permission} must map to ${command}`,
+    );
+    assert.match(
+      libRust,
+      new RegExp(String.raw`speech::${command}`),
+      `${command} must be registered in the desktop invoke handler`,
+    );
+    assert.match(
+      nativeSttTs,
+      new RegExp(String.raw`"${command}"`),
+      `the JS ears must drive ${command} (or drop the unused permission)`,
+    );
+  }
+
+  // Dev + packaged sidecar loopback origins get speech through their own
+  // capability, main webview only — never native browser children.
+  assert.deepEqual(loopbackSpeechCapability.webviews, ["main"]);
+  assert.equal(loopbackSpeechCapability.windows, undefined);
+  for (const [permission] of speechPermissionIds) {
+    assert.ok(
+      loopbackSpeechCapability.permissions.includes(permission),
+      `loopback-speech should grant ${permission}`,
+    );
+  }
+  assert.ok(capabilityAllowsOrigin(loopbackSpeechCapability, "http://127.0.0.1:3000/"));
+  assert.ok(capabilityAllowsOrigin(loopbackSpeechCapability, "http://localhost:64203/"));
+  assert.equal(
+    capabilityAllowsOrigin(loopbackSpeechCapability, "http://example.com:64203/"),
+    false,
+    "remote non-loopback origins must not run the microphone",
+  );
+  assertCapabilityDoesNotGrant(loopbackSpeechCapability, [
+    "default",
+    "allow-pty-start",
+    "allow-browser-navigate",
+    "allow-shell-open",
+  ]);
+  assertCapabilityDoesNotGrant(browserChildReportingCapability, [
+    "allow-speech-stt-available",
+    "allow-speech-stt-start",
+    "allow-speech-stt-finish",
+    "allow-speech-stt-stop",
+  ]);
+
+  // The event channel name is duplicated across the language boundary — a
+  // rename on either side must break this pin, not voice calls at runtime.
+  const rustEventName = readFileSync(new URL("../src/speech.rs", import.meta.url), "utf8")
+    .match(/STT_EVENT: &str = "([^"]+)"/)?.[1];
+  assert.equal(rustEventName, "speech-stt:event");
+  assert.match(
+    nativeSttTs,
+    /STT_EVENT = "speech-stt:event"/,
+    "the JS ears must listen on the exact channel speech.rs emits",
+  );
+
+  // The mic pipeline stays native-side: the renderer names a session and a
+  // locale, never an audio device, file, or model path.
+  assert.doesNotMatch(
+    readFileSync(new URL("../src/speech.rs", import.meta.url), "utf8"),
+    /options\.device|device_id|model_path/,
+    "renderer must not choose capture devices or model files",
+  );
 });

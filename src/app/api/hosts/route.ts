@@ -40,6 +40,9 @@ async function omnigentHostOptions(
   if (!config.omnigent.baseUrl || !config.omnigent.exposeHostsInComposer) return [];
   try {
     const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
+    // Fleet gate: no auth token (tokenless local mode) → no omnigent options
+    // in the chip. Mirrors isFleetTokenPresent in @/lib/omnigent/fleet-gate.
+    if (!client.authenticated || client.authMode === "none") return [];
     const hosts = await client.listHosts();
     return hosts.map((h) => {
       const online = (h.status ?? "").toLowerCase() === "online";

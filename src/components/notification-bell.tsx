@@ -275,10 +275,10 @@ export function NotificationBell({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={`notification-bell__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-md border transition-colors ${
+        className={`notification-bell__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] transition-colors ${
           displayBadgeCount > 0
-            ? "border-[color-mix(in_oklch,var(--color-warning)_45%,var(--border-strong))] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_22%,transparent)]"
-            : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            ? "text-[var(--color-warning)] hover:bg-[var(--bg-hover)]"
+            : "text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
         }`}
         title={`${displayBadgeCount} unread`}
         aria-label={`Notifications, ${displayBadgeCount} unread`}
