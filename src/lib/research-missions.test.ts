@@ -10,6 +10,7 @@ import {
   normalizeResearchBounds,
   RESEARCH_BOUND_LIMITS,
   researchBoundReadings,
+  researchContinueLabel,
   researchIntentAddsContext,
   researchPhaseStatuses,
   researchSourceStatusCounts,
@@ -548,4 +549,27 @@ test("source status counts drive the triage filters", () => {
     ]),
     { candidate: 2, used: 1, conflicting: 0, rejected: 1 },
   );
+});
+
+// --- researchContinueLabel: Continue must say what it will actually do ---
+
+test("Continue is labeled with its real consequence", () => {
+  const withinPlan = researchContinueLabel({
+    iterations: [{ number: 1, status: "checkpoint" }],
+    bounds: { maxIterations: 3, wallClockMinutes: 20, sourceTarget: 6, checkpointEvery: 1, stopWhenCostUnavailable: false },
+  });
+  assert.equal(withinPlan.label, "Continue (i2/3)");
+  assert.equal(withinPlan.beyondPlan, false);
+  assert.match(withinPlan.description, /starts iteration 2 of 3/);
+
+  // Screenshot repro: a completed 1/1 brief offered a primary Continue that
+  // the runner would refuse (stopBeforeNextIteration: iteration limit).
+  const beyond = researchContinueLabel({
+    iterations: [{ number: 1, status: "completed" }],
+    bounds: { maxIterations: 1, wallClockMinutes: 20, sourceTarget: 6, checkpointEvery: 1, stopWhenCostUnavailable: false },
+  });
+  assert.equal(beyond.label, "Continue (i2/1)");
+  assert.equal(beyond.beyondPlan, true);
+  assert.match(beyond.description, /past the planned 1/);
+  assert.match(beyond.description, /iteration limit/);
 });

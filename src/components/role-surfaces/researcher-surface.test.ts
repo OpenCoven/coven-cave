@@ -84,6 +84,21 @@ test("checkpoint lifecycle controls are explicit and server-backed", () => {
   assert.match(surface, /research\.act/);
 });
 
+test("the action bar reads decision-first with a consequence-labeled Continue", () => {
+  // Why the run stopped renders before what to do about it: the stop and
+  // decision banners sit above the action row in source order.
+  const bannerIndex = detail.indexOf("research-mission-stop");
+  const actionsIndex = detail.indexOf("research-mission-actions");
+  assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
+  // Continue says which iteration it starts (researchContinueLabel is
+  // behaviorally tested in the lib suite) and demotes itself when the runner
+  // would refuse a beyond-plan iteration.
+  assert.match(detail, /researchContinueLabel\(mission\)/);
+  assert.match(detail, /continueInfo\.beyondPlan \? "ghost" : "primary"/);
+  assert.match(detail, /"aria-label": continueInfo\.description, title: continueInfo\.description/);
+  assert.match(detail, /continueInfo\.label/);
+});
+
 test("retry adapts to project-root failures with a visible config", () => {
   // Failure class detection drives the retry payload…
   assert.match(detail, /rootFailure = mission\.status === "failed" && \/project root\/i\.test\(mission\.lastError \?\? ""\)/);

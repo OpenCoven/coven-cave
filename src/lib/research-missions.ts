@@ -432,6 +432,38 @@ export function researchSourceStatusCounts(
   return counts;
 }
 
+export type ResearchContinueLabel = {
+  /** Compact button text in the desk's iN/M vocabulary. */
+  label: string;
+  /** Full-sentence consequence for the button's aria-label and title. */
+  description: string;
+  /** Next iteration would exceed the plan — the runner refuses it. */
+  beyondPlan: boolean;
+};
+
+/**
+ * What pressing Continue will actually do.
+ *
+ * The runner gates every new iteration on stopBeforeNextIteration, so a
+ * Continue past bounds.maxIterations does not start anything — it re-settles
+ * the mission at the iteration limit. The button must say so instead of
+ * offering a primary action that dead-ends (e.g. a completed 1/1 brief).
+ */
+export function researchContinueLabel(
+  mission: Pick<ResearchMission, "iterations" | "bounds">,
+): ResearchContinueLabel {
+  const next = mission.iterations.length + 1;
+  const max = mission.bounds.maxIterations;
+  const beyondPlan = next > max;
+  return {
+    label: `Continue (i${next}/${max})`,
+    description: beyondPlan
+      ? `Continue would ask for iteration ${next}, past the planned ${max} — the runner stops at the iteration limit instead of starting it.`
+      : `Continue starts iteration ${next} of ${max} planned.`,
+    beyondPlan,
+  };
+}
+
 export type ResearchBoundReading = {
   id: "time" | "sources" | "checkpoint" | "spend";
   label: string;

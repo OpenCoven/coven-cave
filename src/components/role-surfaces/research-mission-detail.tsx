@@ -8,6 +8,7 @@ import {
   allowedResearchActions,
   describeResearchSchedule,
   researchBoundReadings,
+  researchContinueLabel,
   researchIntentAddsContext,
   researchPhaseStatuses,
   type ResearchMission,
@@ -99,6 +100,7 @@ export function ResearchMissionDetail({
     : plannedRetry.projectRoot === null
       ? (mission.projectRoot ? "Retry in workspace" : "Retry")
       : plannedRetry.projectRoot === mission.projectRoot ? "Retry" : "Retry with new root";
+  const continueInfo = researchContinueLabel(mission);
   const runAction = async (input: ResearchMissionActionInput) => {
     setBusy(true);
     setActionError(null);
@@ -287,6 +289,19 @@ export function ResearchMissionDetail({
             </section>
           ) : null}
 
+          {/* Why the run stopped reads before what to do about it. */}
+          {mission.lastError ? (
+            <div className="research-mission-stop" role="status">
+              <Icon name="ph:warning" width={14} height={14} aria-hidden />
+              <span>{mission.lastError}</span>
+            </div>
+          ) : iteration?.decisionReason ? (
+            <div className="research-mission-decision" role="status">
+              <span>{iteration.decision ?? "checkpoint"}</span>
+              <p>{iteration.decisionReason}</p>
+            </div>
+          ) : null}
+
           {actions.length > 0 ? (
             <div className="research-mission-actions" aria-label="Research mission actions">
               {showRetryConfig ? (
@@ -312,11 +327,20 @@ export function ResearchMissionDetail({
                 <Button
                   key={action}
                   size="xs"
-                  variant={action === "continue" || action === "retry" ? "primary" : action === "cancel" ? "danger-ghost" : "ghost"}
+                  variant={
+                    action === "continue"
+                      ? (continueInfo.beyondPlan ? "ghost" : "primary")
+                      : action === "retry" ? "primary" : action === "cancel" ? "danger-ghost" : "ghost"
+                  }
                   disabled={busy}
+                  {...(action === "continue"
+                    ? { "aria-label": continueInfo.description, title: continueInfo.description }
+                    : {})}
                   onClick={() => void runAction(action === "retry" ? plannedRetry : { action })}
                 >
-                  {action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
+                  {action === "continue"
+                    ? continueInfo.label
+                    : action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
                 </Button>
               ))}
               {actions.includes("refine") ? (
@@ -341,18 +365,6 @@ export function ResearchMissionDetail({
             </div>
           ) : null}
           {actionError ? <p className="research-mission-error" role="alert">{actionError}</p> : null}
-
-          {mission.lastError ? (
-            <div className="research-mission-stop" role="status">
-              <Icon name="ph:warning" width={14} height={14} aria-hidden />
-              <span>{mission.lastError}</span>
-            </div>
-          ) : iteration?.decisionReason ? (
-            <div className="research-mission-decision" role="status">
-              <span>{iteration.decision ?? "checkpoint"}</span>
-              <p>{iteration.decisionReason}</p>
-            </div>
-          ) : null}
         </div>
 
         <ResearchEvidenceLedger mission={mission} onAction={onAction} onOpenUrl={onOpenUrl} />
