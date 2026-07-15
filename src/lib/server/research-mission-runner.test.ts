@@ -7,6 +7,7 @@ import { allowedResearchActions, type ResearchMission } from "../research-missio
 import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
+  sessionAlreadyGone,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
 
@@ -902,4 +903,17 @@ test("malformed sources checkpoint the mission instead of publishing", async () 
   const result = await runner.reconcile(stored);
   assert.equal(result.status, "checkpoint");
   assert.match(result.lastError ?? "", /sources\.json is malformed/);
+});
+
+test("cancel treats an already-gone session as stopped (cave-malz)", () => {
+  // 4xx: the daemon no longer knows the session (dead, pruned, or a
+  // Cave-direct session that never existed daemon-side); 0: no daemon at all.
+  assert.equal(sessionAlreadyGone({ ok: false, status: 404 }), true);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 410 }), true);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 0 }), true);
+  // A live daemon actively erroring may still be running the session.
+  assert.equal(sessionAlreadyGone({ ok: false, status: 500 }), false);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 502 }), false);
+  // A successful kill was a genuinely running session, not a gone one.
+  assert.equal(sessionAlreadyGone({ ok: true, status: 200 }), false);
 });
