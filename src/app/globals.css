@@ -15780,6 +15780,25 @@ details[open] > .cave-edit-card__summary::before {
   background: color-mix(in oklch, var(--bg-raised) 65%, transparent);
 }
 
+/* Only the bound chips are interactive; they must look it. */
+button.research-plan-chip { cursor: pointer; color: var(--text-secondary); }
+button.research-plan-chip:hover {
+  color: var(--research-accent);
+  border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
+}
+button.research-plan-chip:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+/* The inference explanation is prose, not a control — keep it plain. */
+.research-plan-chip--note {
+  border-color: transparent;
+  background: transparent;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+
 .research-plan-chip--mode {
   color: var(--research-accent);
   border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
