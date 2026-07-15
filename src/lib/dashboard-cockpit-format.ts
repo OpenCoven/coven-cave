@@ -21,7 +21,7 @@ export const DEFAULT_LAYOUT: Layout = {
 export const PANEL_TITLES: Record<string, string> = {
   usage: "Activity over time",
   signals: "Signals",
-  needs: "Needs attention",
+  needs: "Needs you",
   board: "Board",
   today: "Today summary",
   confidence: "Performance matrix",

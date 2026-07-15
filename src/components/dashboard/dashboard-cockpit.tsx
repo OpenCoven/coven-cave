@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import type { DashboardModel } from "@/lib/dashboard-model";
+import { buildDashboardModel, type DashboardModel } from "@/lib/dashboard-model";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
@@ -53,13 +53,13 @@ type CockpitData = {
   cards: Card[];
   familiars: Familiar[];
   github: GitHubItem[];
-  upcoming: InboxItem[];
+  inbox: InboxItem[];
   sessions: SessionRow[];
   memory: CovenMemoryEntry[];
   space: SpaceUsageArea[];
 };
 
-const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [], memory: [], space: [] };
+const EMPTY: CockpitData = { cards: [], familiars: [], github: [], inbox: [], sessions: [], memory: [], space: [] };
 
 const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
 
@@ -90,7 +90,7 @@ const TRENDS_KEY = "cave:cockpit:trends:v2";
 
 // ─── Root ───────────────────────────────────────────────────────────────────────
 
-export function DashboardCockpit({ model }: { model: DashboardModel }) {
+export function DashboardCockpit({ model: initialModel }: { model: DashboardModel }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   useMinuteTick();    // keep the "Updated Nm ago" pill honest between polls
   const [data, setData] = useState<CockpitData>(EMPTY);
@@ -122,7 +122,11 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     };
     void getJson<{ cards: Card[] }>("/api/board").then((r) => put("cards", r?.cards ?? []));
     void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
-    void getJson<{ items: InboxItem[] }>("/api/inbox?status=pending").then((r) => put("upcoming", r?.items ?? []));
+    // The needs-attention/caught-up read derives from this list — keep the
+    // last known good copy on a failed poll rather than flashing "all clear".
+    void getJson<{ items: InboxItem[] }>("/api/inbox").then((r) => {
+      if (r?.items) put("inbox", r.items);
+    });
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
     void getJson<{ entries: CovenMemoryEntry[] }>("/api/coven-memory").then((r) => put("memory", r?.entries ?? []));
     void getJson<{ areas: SpaceUsageArea[] }>("/api/space-usage").then((r) => put("space", r?.areas ?? []));
@@ -144,6 +148,17 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   useEffect(() => { load(); }, [load]);
   usePausablePoll(load, 30_000);
 
+  // The server-rendered model is only the first-paint seed — each poll
+  // rebuilds it from the fresh inbox so needs-attention/caught-up, today's
+  // report, and recent reports stay live. (The old frozen snapshot husked the
+  // needs panel: cleared items lingered ~forever, newly fired ones never
+  // appeared, and the count badge lied.)
+  const inboxReady = ready.has("inbox");
+  const model = useMemo(
+    () => (inboxReady ? buildDashboardModel(data.inbox, new Date()) : initialModel),
+    [inboxReady, data.inbox, initialModel],
+  );
+
   const now = model.date;
   const nowMs = now.getTime();
 
@@ -162,8 +177,8 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     (g) => g.kind === "review_request" || (g.kind === "pr" && g.state !== "closed"),
   );
 
-  const upcoming = data.upcoming
-    .filter((i) => i.kind === "reminder" && i.fireAt && new Date(i.fireAt).getTime() > nowMs)
+  const upcoming = data.inbox
+    .filter((i) => i.kind === "reminder" && i.status === "pending" && i.fireAt && new Date(i.fireAt).getTime() > nowMs)
     .sort((a, b) => new Date(a.fireAt!).getTime() - new Date(b.fireAt!).getTime())
     .slice(0, 5);
 
@@ -357,7 +372,6 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   };
 
   const isVisible = (id: string) => {
-    if (id === "needs") return !model.caughtUp;
     if (id === "signals") return signals.length > 0;
     if (id === "confidence") return heatmapRows.length > 0;
     return true;
@@ -376,10 +390,10 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         <Panel title="Performance matrix" icon="ph:squares-four" href="/dashboard/familiars/growth">
           <ConfidencePanel rows={heatmapRows} />
         </Panel>);
-      case "needs": return model.caughtUp ? null : (
-        <Panel title="Needs attention" icon="ph:warning-circle" count={model.needsAttention.length}>
-          <ActionInbox initialItems={model.needsAttention} />
-        </Panel>);
+      // Bare like "today": ActionInbox owns its section chrome (title, live
+      // count, select toggle) — a wrapping Panel double-headered the widget
+      // and its frozen count husked after the last item was cleared.
+      case "needs": return <ActionInbox initialItems={model.needsAttention} />;
       case "board": return (
         <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`} href="/?mode=board">
           <BoardSnapshot byStatus={byStatus} total={data.cards.length} active={activeCards} loaded={ready.has("cards")} familiars={data.familiars} />
@@ -413,7 +427,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         </Panel>);
       case "agenda": return (
         <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined} href="/?mode=calendar">
-          <AgendaPanel items={upcoming} now={now} loaded={ready.has("upcoming")} />
+          <AgendaPanel items={upcoming} now={now} loaded={ready.has("inbox")} />
         </Panel>);
       default: return null;
     }

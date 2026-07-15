@@ -62,7 +62,7 @@ const SPACE_AREAS = [
   { id: "journal", label: "Journal", relPath: "~/.coven/journal", exists: false, bytes: 0, files: 0, lastModifiedMs: null, truncated: false },
 ];
 
-async function gotoDashboard(page: Page) {
+async function gotoDashboard(page: Page, inboxItems: unknown[] = []) {
   await page.addInitScript(() => {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
@@ -73,7 +73,7 @@ async function gotoDashboard(page: Page) {
   await page.route("**/api/github/assigned", (route) => route.fulfill({ json: { items: GH_ASSIGNED } }));
   await page.route("**/api/space-usage", (route) => route.fulfill({ json: { ok: true, areas: SPACE_AREAS } }));
   await page.route("**/api/board", (route) => route.fulfill({ json: { cards: [] } }));
-  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: [] } }));
+  await page.route("**/api/inbox**", (route) => route.fulfill({ json: { items: inboxItems } }));
   await page.route("**/api/coven-memory", (route) => route.fulfill({ json: { entries: [] } }));
   await page.route("**/api/retro-runs**", (route) => route.fulfill({ json: { snapshot: null } }));
   await page.goto("/dashboard");
@@ -154,4 +154,29 @@ test("signals dedupe same-URL PRs, lead with the stalest, and cap with an overfl
   const more = page.locator("a.cockpit-signal--more");
   await expect(more).toContainText("+2 more");
   await expect(more).toHaveAttribute("href", "/?mode=github");
+});
+
+// ── Needs you — live from the poll, honest when caught up (cave-456r) ────────
+// The model used to be a first-paint server snapshot: fired items appearing
+// after load never rendered, and clearing the last item husked the panel.
+// These pin the client-built model path end-to-end.
+
+test("caught up: the Needs you section stays, reading all clear", async ({ page }) => {
+  await gotoDashboard(page); // inbox mocked empty
+  const needs = page.locator('section[aria-label="Needs you"]');
+  await expect(needs).toBeVisible();
+  await expect(needs).toContainText("All clear — nothing needs you right now.");
+  await expect(needs.locator(".dr-count")).toHaveCount(0);
+});
+
+test("a fired reminder from the poll renders in Needs you with a live count", async ({ page }) => {
+  const nowIso = new Date(NOW).toISOString();
+  await gotoDashboard(page, [{
+    id: "r-fired", kind: "reminder", status: "fired", title: "Water the familiars",
+    createdAt: nowIso, updatedAt: nowIso, firedAt: nowIso, recurrence: "none", source: "user",
+  }]);
+  const needs = page.locator('section[aria-label="Needs you"]');
+  await expect(needs.locator(".dr-row__title")).toContainText("Water the familiars");
+  await expect(needs.locator(".dr-count")).toHaveText("1");
+  await expect(needs).not.toContainText("All clear");
 });

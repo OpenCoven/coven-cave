@@ -200,6 +200,26 @@ assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each g
   assert.match(inbox, /actedIdsRef\.current\.add\(item\.id\)/, "single actions register the acted id");
   assert.match(inbox, /ids\.forEach\(\(id\) => actedIdsRef\.current\.add\(id\)\)/, "bulk actions register acted ids");
 }
+// ── The model is live, not a first-paint fossil (cave-456r) ──────────────────
+// cave-bzch's adoption only matters if fresh props ever arrive: the server
+// model is just the seed — each poll pulls the full inbox and rebuilds the
+// model client-side, so cleared items leave, newly fired ones appear, and
+// caught-up flips truthfully.
+assert.match(cockpit, /getJson<\{ items: InboxItem\[\] \}>\("\/api\/inbox"\)/, "cockpit polls the full inbox (fired items included), not just status=pending");
+assert.match(cockpit, /if \(r\?\.items\) put\("inbox", r\.items\)/, "a failed inbox poll keeps the last known good list instead of flashing 'all clear'");
+assert.match(cockpit, /buildDashboardModel\(data\.inbox, new Date\(\)\)/, "each poll rebuilds the dashboard model from the live inbox");
+assert.match(cockpit, /i\.status === "pending"/, "agenda derivation keeps the pending filter the old query param provided");
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  // Caught up is a designed state: the section stays (stable grid slot, calm
+  // all-clear read) instead of vanishing — and the bare-widget mount means no
+  // outer Panel is left husking a stale count over an empty body.
+  assert.match(cockpit, /case "needs": return <ActionInbox initialItems=\{model\.needsAttention\} \/>;/, "needs widget mounts ActionInbox bare — no double chrome, no husk Panel");
+  assert.doesNotMatch(inbox, /if \(items\.length === 0\) return null/, "an empty list no longer unmounts the section");
+  assert.match(inbox, /All clear — nothing needs you right now\./, "caught-up renders an honest all-clear state");
+  assert.match(inbox, /caughtUp \? "ph:check-circle-bold" : "ph:warning-circle"/, "the section icon relaxes when caught up");
+  assert.match(inbox, /\{caughtUp \? null : <span className="dr-count">\{items\.length\}<\/span>\}/, "the live count hides at zero instead of reading 0");
+}
 // The workspace SSE 'updated' branch bails on content-equal echoes, so an
 // optimistic complete/dismiss/snooze doesn't trigger one redundant re-render
 // of every inboxItemsWithEphemeral consumer.

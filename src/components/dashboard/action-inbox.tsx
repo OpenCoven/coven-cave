@@ -8,6 +8,7 @@ import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { nextItemsAfterAction } from "@/lib/dashboard-model";
 import { SnoozeMenu, minutesUntilTomorrowMorning, type SnoozeOption } from "@/components/snooze-menu";
+import { EmptyState } from "@/components/daily-report-ui";
 import { useAnnouncer } from "@/components/ui/live-region";
 
 type Action = "done" | "dismiss" | "snooze";
@@ -111,16 +112,19 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
     }
   }
 
-  if (items.length === 0) return null;
+  // Caught up is a designed state, not a disappearance: keep the section (and
+  // the grid slot stable) with a calm all-clear read. Clearing the last item
+  // lands here immediately — the moment deserves better than a layout jump.
+  const caughtUp = items.length === 0;
 
   return (
     <section className="dr-section" aria-label="Needs you">
       <div className="dr-section__head">
         <h2 className="dr-section__title">
-          <Icon name="ph:warning-circle" aria-hidden />
+          <Icon name={caughtUp ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
           Needs you
         </h2>
-        <span className="dr-count">{items.length}</span>
+        {caughtUp ? null : <span className="dr-count">{items.length}</span>}
         {items.length > 1 ? (
           <button
             type="button"
@@ -166,6 +170,9 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
         </div>
       ) : null}
       <div className="dr-list">
+        {caughtUp ? (
+          <EmptyState icon="ph:check-circle-bold">All clear — nothing needs you right now.</EmptyState>
+        ) : null}
         {items.map((item) => {
           const whenIso = item.firedAt ?? item.updatedAt;
           const when = relativeTime(whenIso);
