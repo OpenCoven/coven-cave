@@ -94,7 +94,8 @@ export function WeaveRail({
       </header>
       {visible.length === 0 ? (
         <p className="px-2 py-4 text-xs text-[var(--text-muted)]">
-          No weaves observed for this filter. An enforced pattern of threads would appear here.
+          No weaves under this filter — verified empty, not blocked. A familiar&apos;s enforced
+          pattern of threads appears here once it is woven.
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
