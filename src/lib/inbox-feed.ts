@@ -76,6 +76,80 @@ export function unreadInboxCount(items: readonly InboxItem[]): number {
   return count;
 }
 
+// ── Repeating-schedule series + past-due (notification helpers) ──────────────
+
+/**
+ * Stable identity for "occurrences of the same repeating schedule". The
+ * scheduler refires a recurring item by spawning a fresh sibling per
+ * occurrence (new id, same shape — see inbox-scheduler's tick), so the
+ * notifications of one schedule share everything BUT their id. The key is
+ * kind + normalized title + recurrence spec + familiar; non-recurring items
+ * have no series and return null. Siblings are spread-copies of one object,
+ * so JSON.stringify over the recurrence is order-stable within a series.
+ */
+export function inboxSeriesKey(item: InboxItem): string | null {
+  const rec = item.recurrence;
+  if (!rec || rec.type === "none") return null;
+  const title = (item.title ?? "").trim().toLowerCase();
+  return `${item.kind}|${title}|${JSON.stringify(rec)}|${item.familiarId ?? ""}`;
+}
+
+export type InboxSeriesGroup = {
+  /** Series key, or null when the row is a non-recurring singleton. */
+  key: string | null;
+  /** The most recent member — the face of the row. */
+  latest: InboxItem;
+  /** Every member, input order preserved (newest first in a recent-first feed). */
+  items: InboxItem[];
+};
+
+/**
+ * Collapse a feed so every notification from one repeating schedule forms a
+ * single group — a daily stand-up that fired five times is one row, not five.
+ * Order-preserving: a series occupies the position of its first member in the
+ * input; non-recurring items pass through as singleton groups. `latest` is
+ * the member with the newest activity regardless of input order.
+ */
+export function collapseInboxSeries(items: readonly InboxItem[]): InboxSeriesGroup[] {
+  const groups: InboxSeriesGroup[] = [];
+  const byKey = new Map<string, InboxSeriesGroup>();
+  for (const item of items) {
+    const key = inboxSeriesKey(item);
+    if (!key) {
+      groups.push({ key: null, latest: item, items: [item] });
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.items.push(item);
+      if (inboxActivityTime(item) > inboxActivityTime(existing.latest)) {
+        existing.latest = item;
+      }
+    } else {
+      const group: InboxSeriesGroup = { key, latest: item, items: [item] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Past due = a schedule whose moment has passed and is still waiting on the
+ * user: a fired reminder that hasn't been resolved, or a pending reminder
+ * whose fireAt slipped by (missed while Cave was quit). Snoozing moves fireAt
+ * forward, so a snoozed reminder isn't past due until it comes back around.
+ * Announcement kinds (agent, daily-summary, response-needed) have no due
+ * moment and are never past due.
+ */
+export function isInboxItemPastDue(item: InboxItem, nowMs: number = Date.now()): boolean {
+  if (item.kind !== "reminder") return false;
+  if (item.status !== "fired" && item.status !== "pending") return false;
+  const dueIso = item.fireAt ?? item.firedAt;
+  const due = dueIso ? Date.parse(dueIso) : NaN;
+  return Number.isFinite(due) && due <= nowMs;
+}
+
 /** Human label for an inbox item kind (used by the feed's kind badge). */
 export function inboxKindLabel(kind: ItemKind): string {
   switch (kind) {
