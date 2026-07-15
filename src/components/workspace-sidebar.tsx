@@ -9,6 +9,7 @@ import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
+import { sessionPrStatus, type SessionPrStatus } from "@/lib/session-pr-status";
 import type { SessionRow } from "@/lib/types";
 import { useProjects } from "@/lib/use-projects";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
@@ -53,6 +54,9 @@ type Props = {
   onOpenSessionInSplit?: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
+  /** Opens the thread's pull request in the in-app browser (PR badge click);
+   *  without it the badge falls back to a new tab. Same chain as chat-list. */
+  onOpenUrl?: (url: string) => void;
   /** Badge count for the Scheduled shortcut (from code-sidebar). */
   scheduledCount?: number;
   /** Opens Settings — powers the shared footer so Chat keeps the same
@@ -115,6 +119,36 @@ function threadLeadingIcon(title: string): IconName | null {
   return null;
 }
 
+// PR-status badge in a thread row's leading slot — the workspace-sidebar twin
+// of the chat list's badge (#2983): GitHub state colors, click opens the PR
+// (in-app browser when wired) without opening the chat. Rendered as a sibling
+// of the row's main <button> (never nested inside it — invalid HTML), with CSS
+// aligning it over the status-dot gutter.
+function ThreadPrBadge({
+  prStatus,
+  onOpenUrl,
+}: {
+  prStatus: SessionPrStatus;
+  onOpenUrl?: (url: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="cnav__pr-badge focus-ring"
+      data-pr-state={prStatus.key}
+      title={`Open ${prStatus.label}`}
+      aria-label={`Open pull request (${prStatus.label})`}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onOpenUrl) onOpenUrl(prStatus.url);
+        else window.open(prStatus.url, "_blank", "noopener,noreferrer");
+      }}
+    >
+      <Icon name={prStatus.icon} width={12} aria-hidden />
+    </button>
+  );
+}
+
 type ThreadRowProps = {
   session: SessionRow;
   active: boolean;
@@ -128,6 +162,8 @@ type ThreadRowProps = {
   project?: { root: string; name: string; color: string | null } | null;
   /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
   glyph?: IconName | null;
+  /** In-app URL opener for the PR badge (new-tab fallback without it). */
+  onOpenUrl?: (url: string) => void;
   onOpen: () => void;
   /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
   onOpenInSplit?: () => void;
@@ -146,6 +182,7 @@ function ThreadRow({
   indent,
   project = null,
   glyph,
+  onOpenUrl,
   onOpen,
   onOpenInSplit,
   onTogglePin,
@@ -154,8 +191,13 @@ function ThreadRow({
   onConfirmDelete,
 }: ThreadRowProps) {
   const title = sessionRailTitle(session);
+  // Real PR context beats the title-heuristic glyph — when the thread's work
+  // reached an actual pull request, the leading slot shows the clickable
+  // state-colored badge instead of the dot or heuristic icon.
+  const prStatus = sessionPrStatus(session.pullRequest);
   return (
     <div className={`cnav__thread${indent === "flat" ? " cnav__thread--flat" : ""}${active ? " is-active" : ""}`}>
+      {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
       <button
         type="button"
         aria-current={active ? "page" : undefined}
@@ -190,7 +232,7 @@ function ThreadRow({
         }}
         className="cnav__thread-main focus-ring"
       >
-        {glyph ? (
+        {prStatus ? null : glyph ? (
           <Icon name={glyph} width={13} className="cnav__lead" aria-hidden />
         ) : (
           <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
@@ -253,6 +295,7 @@ export function WorkspaceSidebar({
   onOpenSessionInSplit,
   onNewChat,
   onDeleteSession,
+  onOpenUrl,
   scheduledCount,
   onOpenSettings,
 }: Props) {
@@ -546,16 +589,20 @@ export function WorkspaceSidebar({
                 {pinnedSessions.map((session) => {
                   const title = sessionRailTitle(session);
                   const active = activeSessionId === session.id;
+                  const prStatus = sessionPrStatus(session.pullRequest);
                   return (
                     <li key={`pin-${session.id}`}>
                       <div className={`cnav__thread cnav__thread--flat${active ? " is-active" : ""}`}>
+                        {prStatus ? <ThreadPrBadge prStatus={prStatus} onOpenUrl={onOpenUrl} /> : null}
                         <button
                           type="button"
                           aria-current={active ? "page" : undefined}
                           onClick={() => onOpenSession(session)}
                           className="cnav__thread-main focus-ring"
                         >
-                          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+                          {prStatus ? null : (
+                            <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+                          )}
                           <span className="cnav__thread-title" title={title}>{title}</span>
                         </button>
                         <button
@@ -603,6 +650,7 @@ export function WorkspaceSidebar({
                             indent="flat"
                             project={sessionProjectById.get(session.id) ?? null}
                             glyph={threadLeadingIcon(sessionRailTitle(session))}
+                            onOpenUrl={onOpenUrl}
                             onOpen={() => onOpenSession(session)}
                             onOpenInSplit={
                               onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
@@ -712,6 +760,7 @@ export function WorkspaceSidebar({
                                   deleting={deletingSessionId === session.id}
                                   indent="folder"
                                   glyph={glyph}
+                                  onOpenUrl={onOpenUrl}
                                   onOpen={() => onOpenSession(session)}
                                   onOpenInSplit={
                                     onOpenSessionInSplit

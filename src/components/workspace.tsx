@@ -2388,6 +2388,7 @@ export function Workspace() {
         invalidateConversation(session.id);
         await loadSessions();
       }}
+      onOpenUrl={openUrlInAppBrowser}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();

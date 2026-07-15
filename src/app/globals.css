@@ -1242,6 +1242,46 @@ tr[role="checkbox"]:focus-visible {
 .cnav__lead.is-accent {
   color: var(--accent-presence);
 }
+/* PR-status badge on thread rows — the workspace-sidebar twin of
+   .chat-list-pr-badge (#2983). Sits as a sibling BEFORE the row's main button
+   (a button can't nest inside a button), aligned over the status-dot gutter;
+   the following button trades its indent for the badge's. GitHub state colors:
+   open green, merged the presence accent, closed red, draft muted. */
+.cnav__pr-badge {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  /* Center the icon over where the 6px dot sits (indent + 3px). */
+  margin-left: calc(var(--cnav-indent) - 5px);
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-success);
+}
+.cnav__thread--flat .cnav__pr-badge {
+  margin-left: 8px;
+}
+.cnav__pr-badge + .cnav__thread-main,
+.cnav__thread--flat .cnav__pr-badge + .cnav__thread-main {
+  /* The badge owns the gutter; keep only the row's internal 8px gap. */
+  padding-left: 8px;
+}
+.cnav__pr-badge:hover {
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+.cnav__pr-badge[data-pr-state="merged"] {
+  color: var(--accent-presence);
+}
+.cnav__pr-badge[data-pr-state="closed"] {
+  color: var(--color-danger);
+}
+.cnav__pr-badge[data-pr-state="draft"] {
+  color: var(--text-muted);
+}
 .cnav__thread-title {
   flex: 1;
   min-width: 0;
