@@ -78,6 +78,7 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     readAutomationCheckpoint: async () => ({ transcript: "", token: "", at: NOW.toISOString() }),
     fingerprintMission: async () => "checkpoint-before",
     missionWorkspacePath: (id) => `/tmp/research-missions/${id}`,
+    resolveProjectRoot: async (root) => root,
     now: () => NOW,
     randomId: () => "mission-1",
     ...overrides,
@@ -165,6 +166,37 @@ test("launch failure remains persisted and retryable", async () => {
   assert.equal(result.lastError, "daemon offline");
   assert.ok(allowedResearchActions(result).includes("retry"));
   assert.equal(saved.at(-1)?.status, "failed");
+});
+
+test("the default project root is the pre-resolved mission workspace", async () => {
+  const roots: Array<string | null> = [];
+  const runner = makeResearchMissionRunner(deps({
+    resolveProjectRoot: async (root) => `/resolved${root}`,
+    startFlow: async (_flow, options) => {
+      roots.push(options.projectRoot);
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+  const result = await runner.createAndStart(INPUT);
+  assert.deepEqual(roots, ["/resolved/tmp/research-missions/mission-1"]);
+  assert.equal(result.status, "running");
+});
+
+test("an unallowed configured project root fails fast with an actionable error", async () => {
+  let starts = 0;
+  const runner = makeResearchMissionRunner(deps({
+    resolveProjectRoot: async () => null,
+    startFlow: async () => {
+      starts += 1;
+      return { ok: true, run: RUN, sessionId: "session-1", executor: "session" };
+    },
+  }));
+  const result = await runner.createAndStart({ ...INPUT, projectRoot: "/missing/repo" });
+  assert.equal(starts, 0, "no session may launch against an invalid project root");
+  assert.equal(result.status, "failed");
+  assert.match(result.lastError ?? "", /"\/missing\/repo" is not an allowed project path/);
+  assert.match(result.lastError ?? "", /mission workspace/);
+  assert.ok(allowedResearchActions(result).includes("retry"));
 });
 
 test("travel launch remains honestly queued", async () => {
@@ -706,6 +738,60 @@ test("retry relaunches the failed iteration even when the mission limit is one",
   assert.equal(starts, 1);
   assert.equal(result.iterations.length, 1);
   assert.equal(result.iterations[0].status, "running");
+});
+
+test("retry clears a rejected project root and reruns in the mission workspace", async () => {
+  let stored = checkpointMission({
+    mode: "brief",
+    status: "failed",
+    projectRoot: "/missing/repo",
+    iterations: [{ number: 1, status: "failed", finishedAt: NOW.toISOString() }],
+  });
+  const roots: Array<string | null> = [];
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    resolveProjectRoot: async (root) => root === "/missing/repo" ? null : root,
+    startFlow: async (_flow, options) => {
+      roots.push(options.projectRoot);
+      return { ok: true, executor: "session", sessionId: "retry-session", run: RUN };
+    },
+  }));
+  const result = await runner.act(stored.id, { action: "retry", projectRoot: null });
+  assert.deepEqual(roots, ["/tmp/research-missions/mission-actions"]);
+  assert.equal(result.projectRoot, undefined, "the invalid root must not survive the retry");
+  assert.equal(result.status, "running");
+});
+
+test("retry validates a project root override before persisting it", async () => {
+  let stored = checkpointMission({
+    mode: "brief",
+    status: "failed",
+    iterations: [{ number: 1, status: "failed", finishedAt: NOW.toISOString() }],
+  });
+  const roots: Array<string | null> = [];
+  const runner = makeResearchMissionRunner(deps({
+    loadMission: async () => structuredClone(stored),
+    saveMission: async (mission) => { stored = structuredClone(mission); },
+    resolveProjectRoot: async (root) => (
+      root === "/repos/app" || root === "/real/repos/app" ? "/real/repos/app" : null
+    ),
+    startFlow: async (_flow, options) => {
+      roots.push(options.projectRoot);
+      return { ok: true, executor: "session", sessionId: "retry-session", run: RUN };
+    },
+  }));
+  await assert.rejects(
+    () => runner.act(stored.id, { action: "retry", projectRoot: "/not/allowed" }),
+    /"\/not\/allowed" is not an allowed project path/,
+  );
+  assert.deepEqual(roots, [], "an invalid override must not launch anything");
+  assert.equal(stored.status, "failed");
+
+  const result = await runner.act(stored.id, { action: "retry", projectRoot: "/repos/app" });
+  assert.deepEqual(roots, ["/real/repos/app"]);
+  assert.equal(result.projectRoot, "/real/repos/app");
+  assert.equal(result.status, "running");
 });
 
 test("completed automation runs validate evidence and publish Knowledge", async () => {

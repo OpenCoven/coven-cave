@@ -15683,6 +15683,11 @@ details[open] > .cave-edit-card__summary::before {
 .research-automation__controls { display: flex; flex-wrap: wrap; gap: 6px; }
 .research-automation__stop { color: oklch(0.84 0.1 75) !important; }
 .research-mission-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin-top: 10px; }
+.research-retry-config { flex-basis: 100%; display: grid; gap: 5px; font-size: 10px; color: var(--text-muted); }
+.research-retry-config label { width: fit-content; }
+.research-retry-config input { display: block; width: 100%; padding: 7px 8px; font-size: 16px; font-family: var(--font-mono); color: var(--text-primary); border: 1px solid var(--input); border-radius: var(--radius-sm); background: var(--bg-base); }
+.research-retry-config input:focus-visible { outline: var(--ring-width) solid var(--ring-focus); outline-offset: 1px; }
+.research-retry-config p { color: var(--text-muted); }
 .research-refine-control { flex-basis: 100%; padding-top: 2px; font-size: 10px; color: var(--text-muted); }
 .research-refine-control summary { width: fit-content; cursor: pointer; }
 .research-refine-control textarea { display: block; width: 100%; min-height: 58px; margin: 7px 0 6px; resize: vertical; padding: 7px 8px; font-size: 16px; color: var(--text-primary); border: 1px solid var(--input); border-radius: var(--radius-sm); background: var(--bg-base); }

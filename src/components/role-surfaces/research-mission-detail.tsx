@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Icon } from "@/lib/icon";
@@ -69,6 +69,14 @@ export function ResearchMissionDetail({
   const [busy, setBusy] = useState(false);
   const [direction, setDirection] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  // null = untouched; the retry payload then adapts to the failure instead.
+  const [retryRoot, setRetryRoot] = useState<string | null>(null);
+  const missionId = mission?.id ?? null;
+
+  useEffect(() => {
+    setRetryRoot(null);
+    setActionError(null);
+  }, [missionId]);
 
   if (!mission) {
     return (
@@ -83,6 +91,21 @@ export function ResearchMissionDetail({
   const iteration = mission.iterations.at(-1);
   const sessionId = iteration?.sessionId;
   const actions = allowedResearchActions(mission);
+  // Root-blocked failures get a self-healing Retry: untouched config clears the
+  // rejected root so the retried iteration runs in the mission workspace.
+  const rootFailure = mission.status === "failed" && /project root/i.test(mission.lastError ?? "");
+  const showRetryConfig = actions.includes("retry") && (rootFailure || Boolean(mission.projectRoot));
+  const retryRootValue = retryRoot ?? mission.projectRoot ?? "";
+  const plannedRetry: { action: "retry"; projectRoot?: string | null } = (() => {
+    if (retryRoot !== null) return { action: "retry", projectRoot: retryRoot.trim() || null };
+    if (rootFailure && mission.projectRoot) return { action: "retry", projectRoot: null };
+    return { action: "retry" };
+  })();
+  const retryLabel = plannedRetry.projectRoot === undefined
+    ? "Retry"
+    : plannedRetry.projectRoot === null
+      ? (mission.projectRoot ? "Retry in workspace" : "Retry")
+      : plannedRetry.projectRoot === mission.projectRoot ? "Retry" : "Retry with new root";
   const elapsedMinutes = mission.startedAt
     ? Math.max(0, Math.round((Date.parse(mission.finishedAt ?? mission.updatedAt) - Date.parse(mission.startedAt)) / 60_000))
     : 0;
@@ -103,6 +126,7 @@ export function ResearchMissionDetail({
         return;
       }
       if (input.action === "refine") setDirection("");
+      if (input.action === "retry") setRetryRoot(null);
       announce(`Research ${input.action} applied.`);
     } finally {
       setBusy(false);
@@ -271,15 +295,34 @@ export function ResearchMissionDetail({
 
           {actions.length > 0 ? (
             <div className="research-mission-actions" aria-label="Research mission actions">
+              {showRetryConfig ? (
+                <div className="research-retry-config">
+                  <label htmlFor="research-retry-root">Retry project root</label>
+                  <input
+                    id="research-retry-root"
+                    type="text"
+                    value={retryRootValue}
+                    placeholder="Leave empty to run in the mission workspace"
+                    spellCheck={false}
+                    onChange={(event) => setRetryRoot(event.target.value)}
+                  />
+                  {rootFailure ? (
+                    <p>
+                      The last run could not start in its project root. Retry runs in the
+                      mission workspace unless a valid root is set above.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {actions.filter((action) => action !== "refine").map((action) => (
                 <Button
                   key={action}
                   size="xs"
                   variant={action === "continue" || action === "retry" ? "primary" : action === "cancel" ? "danger-ghost" : "ghost"}
                   disabled={busy}
-                  onClick={() => void runAction({ action })}
+                  onClick={() => void runAction(action === "retry" ? plannedRetry : { action })}
                 >
-                  {ACTION_LABELS[action] ?? action}
+                  {action === "retry" ? retryLabel : ACTION_LABELS[action] ?? action}
                 </Button>
               ))}
               {actions.includes("refine") ? (

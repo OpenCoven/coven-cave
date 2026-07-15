@@ -168,7 +168,16 @@ export type CreateResearchMissionInput = {
 };
 
 export type ResearchMissionActionInput =
-  | { action: ResearchMissionAction; direction?: string }
+  | {
+    action: ResearchMissionAction;
+    direction?: string;
+    /**
+     * Retry-only project root override: a path re-targets the retried
+     * iteration (validated server-side against allowed project roots), null
+     * clears a configured root so the retry runs in the mission workspace.
+     */
+    projectRoot?: string | null;
+  }
   | { action: "attach-source"; source: ResearchSourceDraft }
   | { action: "update-source"; sourceId: string; patch: ResearchSourcePatch }
   | { action: "reject-artifact"; artifactKey: string; reason: string };

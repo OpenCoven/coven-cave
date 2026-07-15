@@ -64,6 +64,21 @@ test("checkpoint lifecycle controls are explicit and server-backed", () => {
   assert.match(surface, /research\.act/);
 });
 
+test("retry adapts to project-root failures with a visible config", () => {
+  // Failure class detection drives the retry payload…
+  assert.match(detail, /rootFailure = mission\.status === "failed" && \/project root\/i\.test\(mission\.lastError \?\? ""\)/);
+  assert.match(detail, /\{ action: "retry", projectRoot: null \}/);
+  assert.match(detail, /projectRoot: retryRoot\.trim\(\) \|\| null/);
+  // …the button label says what the retry will actually do…
+  assert.match(detail, /Retry in workspace/);
+  assert.match(detail, /Retry with new root/);
+  assert.match(detail, /runAction\(action === "retry" \? plannedRetry : \{ action \}\)/);
+  // …and the root is editable with an honest workspace fallback.
+  assert.match(detail, /id="research-retry-root"/);
+  assert.match(detail, /Leave empty to run in the mission workspace/);
+  assert.match(css, /\.research-retry-config input/);
+});
+
 test("autoresearch schedules use standard paused Automation controls", () => {
   assert.match(detail, /Create schedule/);
   assert.match(detail, /Run now/);
