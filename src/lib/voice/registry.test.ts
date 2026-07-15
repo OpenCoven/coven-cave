@@ -27,12 +27,20 @@ test("gemini stub mintSession rejects with not_implemented", async () => {
   );
 });
 
+test("getVoiceProvider returns the local loop provider", () => {
+  const local = getVoiceProvider("local");
+  assert.ok(local);
+  assert.equal(local.id, "local");
+  assert.equal(typeof local.mintSession, "function");
+  assert.equal(typeof local.clientAdapter.connect, "function");
+});
+
 test("getVoiceProvider returns null for unknown id", () => {
   assert.equal(getVoiceProvider("bogus"), null);
   assert.equal(getVoiceProvider(""), null);
 });
 
-test("listVoiceProviders returns stable order: openai, gemini", () => {
+test("listVoiceProviders returns stable order: openai, gemini, local", () => {
   const list = listVoiceProviders();
-  assert.deepEqual(list.map(p => p.id), ["openai", "gemini"]);
+  assert.deepEqual(list.map(p => p.id), ["openai", "gemini", "local"]);
 });

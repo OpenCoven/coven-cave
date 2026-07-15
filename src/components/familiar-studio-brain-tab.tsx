@@ -278,53 +278,74 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                   options={[
                     { value: "", label: "None" },
                     { value: "openai", label: "OpenAI Realtime" },
+                    { value: "local", label: "Local (on-device)" },
                     { value: "gemini", label: "Gemini Live (v1.1)", disabled: true },
                   ]}
                 />
               </div>
             </label>
 
-            {draftVoiceProvider === "openai" && (
+            {(draftVoiceProvider === "openai" || draftVoiceProvider === "local") && (
               <>
                 <label className="familiar-studio-brain__row">
-                  <span className="familiar-studio-brain__label">Voice model</span>
+                  <span className="familiar-studio-brain__label">
+                    {draftVoiceProvider === "local" ? "Local model" : "Voice model"}
+                  </span>
                   <div className="familiar-studio-brain__control">
                     <input
                       type="text"
                       value={draftVoiceModel}
                       onChange={(e) => setDraftVoiceModel(e.target.value)}
                       onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || null })}
-                      placeholder="gpt-realtime"
+                      placeholder={draftVoiceProvider === "local" ? "llama3.2" : "gpt-realtime"}
                       className="familiar-studio-brain__input"
                     />
                   </div>
                 </label>
 
-                <label className="familiar-studio-brain__row">
-                  <span className="familiar-studio-brain__label">Voice</span>
-                  <div className="familiar-studio-brain__control">
-                    <StandardSelect
-                      label="Voice"
-                      value={draftVoiceName}
-                      onChange={(next) => {
-                        setDraftVoiceName(next);
-                        void save({ voiceName: next || null });
-                      }}
-                      className="familiar-studio-brain__input"
-                      options={[
-                        { value: "", label: "Default (alloy)" },
-                        { value: "alloy", label: "alloy" },
-                        { value: "ash", label: "ash" },
-                        { value: "ballad", label: "ballad" },
-                        { value: "coral", label: "coral" },
-                        { value: "echo", label: "echo" },
-                        { value: "sage", label: "sage" },
-                        { value: "shimmer", label: "shimmer" },
-                        { value: "verse", label: "verse" },
-                      ]}
-                    />
-                  </div>
-                </label>
+                {draftVoiceProvider === "openai" ? (
+                  <label className="familiar-studio-brain__row">
+                    <span className="familiar-studio-brain__label">Voice</span>
+                    <div className="familiar-studio-brain__control">
+                      <StandardSelect
+                        label="Voice"
+                        value={draftVoiceName}
+                        onChange={(next) => {
+                          setDraftVoiceName(next);
+                          void save({ voiceName: next || null });
+                        }}
+                        className="familiar-studio-brain__input"
+                        options={[
+                          { value: "", label: "Default (alloy)" },
+                          { value: "alloy", label: "alloy" },
+                          { value: "ash", label: "ash" },
+                          { value: "ballad", label: "ballad" },
+                          { value: "coral", label: "coral" },
+                          { value: "echo", label: "echo" },
+                          { value: "sage", label: "sage" },
+                          { value: "shimmer", label: "shimmer" },
+                          { value: "verse", label: "verse" },
+                        ]}
+                      />
+                    </div>
+                  </label>
+                ) : (
+                  // Local speech rides the system synthesizer — the voice is a
+                  // system voice name (leave empty for the platform default).
+                  <label className="familiar-studio-brain__row">
+                    <span className="familiar-studio-brain__label">Voice</span>
+                    <div className="familiar-studio-brain__control">
+                      <input
+                        type="text"
+                        value={draftVoiceName}
+                        onChange={(e) => setDraftVoiceName(e.target.value)}
+                        onBlur={() => void save({ voiceName: draftVoiceName.trim() || null })}
+                        placeholder="System default (e.g. Samantha)"
+                        className="familiar-studio-brain__input"
+                      />
+                    </div>
+                  </label>
+                )}
               </>
             )}
           </section>
