@@ -26,6 +26,7 @@ Default mode is a dry run.
 Removes CovenCave application artifacts:
   - installed app bundles / desktop entries
   - Tauri app support, cache, WebKit, preferences, saved state
+  - extracted Windows sidecar runtime cache
   - CovenCave sidecar logs
   - mobile Tailscale runner state
   - known launch-agent entries and plists
@@ -238,6 +239,10 @@ remove_windows_artifacts() {
 
   if [[ -n "$local_appdata" ]]; then
     remove_path "${local_appdata}/Programs/${APP_NAME}"
+    # The extracted Windows sidecar is a reproducible cache, not user data.
+    # Name it explicitly so uninstall diagnostics prove it was considered;
+    # the containing Tauri app-data directory is removed immediately after.
+    remove_path "${local_appdata}/${APP_ID}/sidecar-runtime"
     remove_path "${local_appdata}/${APP_ID}"
   else
     log "skip: LOCALAPPDATA is not set"

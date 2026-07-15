@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
-import { covenHome, covenWorkspaceRoot } from "@/lib/coven-paths";
+import { covenHome, caveHome, covenWorkspaceRoot } from "@/lib/coven-paths";
+import { researchMissionsRoot } from "@/lib/server/research-mission-store";
 
 function realpathOrResolve(value: string): string {
   const resolved = path.resolve(value);
@@ -23,7 +24,7 @@ function normalizeLegacyCovenWorkspacePath(value: string): string {
 }
 
 function caveProjectsFilePath(): string {
-  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(homedir(), ".coven", "cave-projects.json");
+  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(caveHome(), "projects.json");
 }
 
 function savedCaveProjectRoots(): string[] {
@@ -41,22 +42,31 @@ function savedCaveProjectRoots(): string[] {
   }
 }
 
-const ALLOWED_ROOTS = Array.from(
-  new Set(
-    [
-      process.env.WORKSPACE_ROOT,
-      process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
-      covenWorkspaceRoot(),
-      // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
-      process.env.OPENCLAW_WORKSPACE_ROOT,
-      path.join(homedir(), ".openclaw", "workspace"),
-      process.cwd(),
-      ...savedCaveProjectRoots(),
-    ]
-      .filter((value): value is string => Boolean(value))
-      .map(realpathOrResolve),
-  ),
-);
+// Computed per call, never cached at module load: saved Cave projects and
+// research mission workspaces are created at runtime, and a snapshot taken at
+// import time silently rejected them ("invalid project root") until the next
+// server restart.
+function allowedProjectRoots(): string[] {
+  return Array.from(
+    new Set(
+      [
+        process.env.WORKSPACE_ROOT,
+        process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
+        covenWorkspaceRoot(),
+        // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
+        process.env.OPENCLAW_WORKSPACE_ROOT,
+        path.join(homedir(), ".openclaw", "workspace"),
+        process.cwd(),
+        // Research mission workspaces host bounded research sessions and live
+        // under cave state rather than a registered project root.
+        researchMissionsRoot(),
+        ...savedCaveProjectRoots(),
+      ]
+        .filter((value): value is string => Boolean(value))
+        .map(realpathOrResolve),
+    ),
+  );
+}
 
 function isWithinRoot(candidate: string, root: string): boolean {
   return candidate === root || candidate.startsWith(root + path.sep);
@@ -76,7 +86,7 @@ function relativeWithinRoot(candidate: string, root: string): string | null {
 
 export function resolveAllowedProjectSubpath(value: string): { root: string; relativePath: string } | null {
   const candidate = realpathOrResolve(normalizeLegacyCovenWorkspacePath(value));
-  for (const root of ALLOWED_ROOTS) {
+  for (const root of allowedProjectRoots()) {
     if (isWithinRoot(candidate, root)) {
       const relativePath = relativeWithinRoot(candidate, root);
       if (relativePath !== null) {

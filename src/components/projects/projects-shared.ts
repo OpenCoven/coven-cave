@@ -53,3 +53,23 @@ export const PROJECT_COLOR_SWATCHES: { name: string; value: string }[] = [
   { name: "Violet", value: "oklch(0.74 0.12 300)" },
   { name: "Rose", value: "oklch(0.74 0.12 340)" },
 ];
+
+/** True when the desktop shell's native bridge is reachable (Tauri webview). */
+export function hasDesktopBridge(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** Open the project folder in the OS file manager (Finder/Explorer/xdg-open).
+ *  Desktop shell only — resolves false in a plain browser so callers can hide
+ *  or fall back. Uses the app's `shell_open_path` command (absolute,
+ *  must-exist paths enforced on the Rust side). */
+export async function revealProjectFolder(root: string): Promise<boolean> {
+  if (!hasDesktopBridge()) return false;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("shell_open_path", { path: root });
+    return true;
+  } catch {
+    return false;
+  }
+}

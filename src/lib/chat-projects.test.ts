@@ -4,6 +4,7 @@ import {
   chatProjectName,
   deriveChatProjectGroups,
   filterVisibleChatSessions,
+  isGeneratedChatSession,
 } from "./chat-projects.ts";
 import type { SessionRow } from "./types.ts";
 
@@ -54,6 +55,50 @@ assert.deepEqual(
   "specific familiar scope should still show only that familiar's chats",
 );
 
+// Cave-archived chats (archived_at stamped, status still e.g. "completed")
+// are excluded by default so no rail/picker caller can surface them; the chat
+// list's "Show archived" toggle opts back in explicitly.
+{
+  const archivedRow = { ...session("stashed", "/work/alpha", "2026-06-06T00:00:00.000Z", "cody"), archived_at: "2026-06-06T01:00:00.000Z" };
+  const withArchived = [...sessions, archivedRow];
+  assert.deepEqual(
+    filterVisibleChatSessions(withArchived, null).map((s) => s.id),
+    ["scratch", "new-alpha", "beta", "old-alpha"],
+    "archived_at rows are hidden by default",
+  );
+  assert.deepEqual(
+    filterVisibleChatSessions(withArchived, null, { includeArchived: true }).map((s) => s.id),
+    ["stashed", "scratch", "new-alpha", "beta", "old-alpha"],
+    "includeArchived keeps archived_at rows for the explicit toggle",
+  );
+  assert.deepEqual(
+    filterVisibleChatSessions(withArchived, "cody", { includeArchived: true }).map((s) => s.id),
+    ["stashed", "new-alpha"],
+    "includeArchived still applies the familiar scope",
+  );
+}
+
+// Externally-generated sessions stay out of the chat lists: daemon-only runs
+// flagged `generated` (journal narratives, flows, automations, CLI) and
+// generator origins (canvas refines, cron/heartbeat automations). They remain
+// reachable from their origination surfaces; the chat rail is for chats.
+{
+  const noisy = [
+    ...sessions,
+    { ...session("journal-run", "", "2026-06-06T00:00:00.000Z", "nova"), generated: true },
+    { ...session("canvas-refine", "", "2026-06-07T00:00:00.000Z", "nova"), origin: "canvas" },
+    { ...session("cron-sweep", "", "2026-06-08T00:00:00.000Z", "nova"), origin: "cron" },
+    { ...session("heartbeat-tick", "", "2026-06-09T00:00:00.000Z", "nova"), origin: "heartbeat" },
+    { ...session("task-chat", "/work/alpha", "2026-06-10T00:00:00.000Z", "nova"), origin: "board" },
+    { ...session("telegram-ping", "", "2026-06-11T00:00:00.000Z", "nova"), origin: "mention" },
+  ];
+  assert.deepEqual(
+    filterVisibleChatSessions(noisy, null).map((s) => s.id),
+    ["telegram-ping", "task-chat", "scratch", "new-alpha", "beta", "old-alpha"],
+    "generated runs and canvas/cron/heartbeat origins are hidden; board tasks and mentions stay",
+  );
+}
+
 const groups = deriveChatProjectGroups(filterVisibleChatSessions(sessions, null), projects);
 
 assert.deepEqual(
@@ -67,8 +112,26 @@ assert.deepEqual(
     { root: "/work/beta", defaultFamiliarId: "nova", sessionIds: ["beta"] },
     { root: null, defaultFamiliarId: "charm", sessionIds: ["scratch"] },
   ],
-  "project groups should be alphabetical by project label, with No project last, and expose the latest familiar for launch",
+  "project groups should order by latest chat activity, with No project last, and expose the latest familiar for launch",
 );
+
+// The project holding the most recent chat floats to the top — recency beats
+// the alphabet.
+{
+  const recencyGroups = deriveChatProjectGroups(
+    [
+      session("alpha-old", "/work/alpha", "2026-06-01T00:00:00.000Z", "cody"),
+      session("zeta-new", "/work/zeta", "2026-06-09T00:00:00.000Z", "nova"),
+      session("beta-mid", "/work/beta", "2026-06-05T00:00:00.000Z", "sage"),
+    ],
+    projects,
+  );
+  assert.deepEqual(
+    recencyGroups.map((group) => group.projectRoot),
+    ["/work/zeta", "/work/beta", "/work/alpha"],
+    "the latest chat's project tops the rail even when it sorts last alphabetically",
+  );
+}
 
 assert.equal(chatProjectName("/work/alpha", projects), "Alpha");
 assert.equal(chatProjectName("/Users/x/repos/coven-cave", projects), "coven-cave");
@@ -93,8 +156,8 @@ const worktreeGroups = deriveChatProjectGroups(
 );
 assert.deepEqual(
   worktreeGroups.map((group) => group.projectName),
-  ["feature-a/coven-cave", "feature-b/coven-cave"],
-  "duplicate worktree repo names should include the parent directory and sort alphabetically",
+  ["feature-b/coven-cave", "feature-a/coven-cave"],
+  "duplicate worktree repo names should include the parent directory and order by recency",
 );
 
 // Analytics-spawned discussion threads remain normal chat threads.
@@ -103,6 +166,20 @@ assert.deepEqual(
   const visible = filterVisibleChatSessions([...sessions, analyticsThread], null);
   assert.ok(visible.some((s) => s.id === "analytics-1"), "analytics discussion sessions stay in the chat list");
   assert.ok(visible.some((s) => s.id === "beta"), "ordinary chat sessions still show");
+}
+
+// Groups carry the registered project's explicit color for avatar rendering.
+{
+  const colored = deriveChatProjectGroups(
+    [session("tinted", "/work/alpha", "2026-06-06T00:00:00.000Z", "cody")],
+    [{ id: "alpha", name: "Alpha", root: "/work/alpha", color: "oklch(0.74 0.12 250)", createdAt: "", updatedAt: "" }],
+  );
+  assert.equal(colored[0]?.projectColor, "oklch(0.74 0.12 250)", "group exposes the project color");
+  const uncolored = deriveChatProjectGroups(
+    [session("plain", "/somewhere/else", "2026-06-06T00:00:00.000Z", "cody")],
+    [],
+  );
+  assert.equal(uncolored[0]?.projectColor, null, "unregistered roots have no explicit color");
 }
 
 console.log("chat-projects.test.ts: ok");
@@ -271,5 +348,30 @@ console.log("chat-projects.test.ts: ok");
     }),
     { projectId: "p2", project: roster[1] },
     "a brand-new task chat opens scoped to the task's project, not the first project",
+  );
+}
+
+// ── Journal-narrative noise stays out of the chat lists (cave-buih) ─────────
+{
+  const base = { id: "j", project_root: "", status: "completed", updated_at: "2026-07-08T00:00:00Z", familiarId: "nova" };
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "anything", origin: "journal" }),
+    true,
+    "origin:journal rows are generated runs",
+  );
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "Write a short narrative of my day (Jul 8) in the cave, as my familiar reporting back to me." }),
+    true,
+    "legacy untagged narratives hide by their exact machine-prompt title prefix",
+  );
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "Write a short, first-person reflective journal entry about my…" }),
+    true,
+    "legacy reflection runs hide — including the ~60-char truncated titles the store actually keeps",
+  );
+  assert.equal(
+    isGeneratedChatSession({ ...base, title: "Write a short story for my blog" }),
+    false,
+    "human chats that merely start with Write… stay visible",
   );
 }

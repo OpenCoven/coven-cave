@@ -1,0 +1,86 @@
+/* Standalone-route left side-panel (analytics-page-shell.tsx). A persistent icon
+   rail shown at EVERY screen size, so the familiar-analytics route carries the
+   app's left sidepanel even though it renders outside the SPA workspace. */
+
+.aps {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg-base);
+}
+
+.aps-rail {
+  flex: 0 0 auto;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 0 12px;
+  border-right: 1px solid var(--border-hairline);
+  background: var(--bg-elevated);
+  /* Sticks to the viewport so the rail is always in reach as analytics scrolls. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  height: 100dvh;
+  /* Clear the native/Tauri title bar so the brand mark isn't under the traffic
+     lights on desktop; harmless (0) on web. */
+  padding-top: max(10px, env(safe-area-inset-top));
+}
+
+.aps-brand {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--accent-presence);
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.aps-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+}
+
+.aps-rail-link {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.aps-rail-link:hover,
+.aps-rail-link:focus-visible {
+  background: color-mix(in oklch, var(--bg-hover) 72%, transparent);
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--border-strong) 60%, transparent);
+}
+
+.aps-rail-foot {
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.aps-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+}

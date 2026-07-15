@@ -13,13 +13,20 @@ const FILES = [
   "../styles/sidebar-minimal.css",
 ];
 
-// The two intentional references that define the defaults.
-const ALIAS_DEF = /--font-(sans|mono):\s*var\(--font-geist-(sans|mono)\)/;
+// The intentional references that define the canonical Coven defaults
+// (DESIGN.md §4): EB Garamond + Inter + JetBrains Mono. Each --font-* alias
+// in :root maps to exactly one --font-<family> from src/app/fonts.ts.
+const ALIAS_DEF = /--font-(serif|sans|mono):\s*var\(--font-(eb-garamond|inter|jetbrains-mono)\)/;
 
 for (const rel of FILES) {
   const src = readFileSync(new URL(rel, import.meta.url), "utf8");
   src.split("\n").forEach((line, i) => {
     if (ALIAS_DEF.test(line)) return;
+    // Body/UI reads must go through --font-sans (not directly through the
+    // canonical Inter/Geist family variables). Same for mono. Serif is a
+    // NEW slot — the home headline reads --font-eb-garamond directly with a
+    // fallback since that's the identity moment; this test allows it by only
+    // fencing --font-geist-* and --font-inter (not --font-eb-garamond).
     assert.doesNotMatch(
       line,
       /var\(--font-geist-(sans|mono)\)/,
@@ -29,8 +36,13 @@ for (const rel of FILES) {
 }
 
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-assert.match(globals, /--font-sans:\s*var\(--font-geist-sans\)/, ":root --font-sans default must remain");
+assert.match(globals, /--font-sans:\s*var\(--font-inter\)/, ":root --font-sans default must be Inter (Coven canon)");
 assert.match(globals, /--font-mono:\s*var\(--font-jetbrains-mono\)/, ":root --font-mono default is JetBrains Mono");
+assert.match(
+  globals,
+  /--font-serif:\s*var\(--font-eb-garamond\)/,
+  ":root --font-serif default must be EB Garamond (Coven canon display face)",
+);
 
 // The reading line-spacing control drives the shared .cave-md prose surface via
 // --cave-reading-leading, with a 1.7 fallback so the default is unchanged.

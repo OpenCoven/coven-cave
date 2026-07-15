@@ -5,7 +5,7 @@
  * /h, /cls, /q, etc. and get the same behavior as the canonical command.
  */
 
-import { SHORTCUT_GROUPS, neutralizeKeys } from "./keyboard-shortcuts";
+import { SHORTCUT_GROUPS, neutralizeKeys } from "./keyboard-shortcuts.ts";
 
 export type SlashCommand = {
   name: string;
@@ -42,11 +42,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/sessions", hint: "all sessions", description: "Open all sessions across familiars and runtimes.", section: "view" },
   { name: "/attach", hint: "open session", description: "Open a specific daemon session by id.", argPlaceholder: "session-id", section: "view" },
   { name: "/tui", hint: "open in Coven Code", description: "Open the current session in the external Coven Code TUI.", section: "view" },
-  { name: "/journal", hint: "Journal", description: "Open the Journal — your daily journal and generated sketches.", section: "view" },
-  { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline (or open the Journal's Canvas tab with no prompt).", argPlaceholder: "describe a UI…", section: "view" },
+  { name: "/journal", hint: "Journal", description: "Open your familiars' journal (Settings → Familiars → Journal).", section: "view" },
+  { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline in chat.", argPlaceholder: "describe a UI…", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
-  { name: "/schedules", hint: "Schedules", description: "Open Schedules.", section: "view" },
+  { name: "/rituals", hint: "Rituals", description: "Open Rituals — calendar and scheduled jobs.", section: "view" },
   { name: "/remind", hint: "new reminder", description: "Create a reminder. Try “/remind in 30m check the build”.", argPlaceholder: "when + text", section: "view" },
 
   { name: "/projects", hint: "Projects", description: "Open the project browser and file preview view.", section: "view" },

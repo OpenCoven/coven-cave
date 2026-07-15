@@ -103,13 +103,20 @@
   50% { box-shadow: 0 0 12px color-mix(in oklch, var(--accent-presence) 85%, transparent); }
 }
 
+/* Cave home headline — Classic Coven identity moment.
+   Uses the canonical display face (EB Garamond) per OpenCoven DESIGN.md §4.
+   The serif is intentional: the home surface is where Val + her familiars
+   *arrive* every session, and the type should feel like a coven's field
+   manual, not a Vercel dashboard. */
 .home-composer-headline {
-  font-family: var(--font-fredoka, "Fredoka", system-ui, sans-serif);
+  font-family: var(--font-eb-garamond, "EB Garamond", "Iowan Old Style", Georgia, "Times New Roman", serif);
   font-weight: 500;
-  font-size: clamp(26px, 3.8vw, 44px);
-  line-height: 1.1;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.15;
   color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
-  letter-spacing: -0.02em;
+  /* EB Garamond's proportions already read tight — near-zero tracking
+     lets the letterforms breathe without the corporate feel of -0.02em. */
+  letter-spacing: -0.005em;
   margin: 0 0 6px;
 }
 
@@ -218,6 +225,40 @@
   border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border-strong));
 }
 
+/* ── Footer band ────────────────────────────────────────────────────────────
+ * The darker strip attached to the card's underside (reference layout):
+ * context pickers (project · agent) on the left, run settings on the right.
+ * Last child of the card, so the panel's overflow clips it to the rounded
+ * bottom corners — it reads as part of the card, one tone deeper. */
+.hc-footer-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+}
+
+.hc-footer-band-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Phone width: the band's pickers wrap instead of crushing each other. */
+@container (max-width: 620px) {
+  .hc-footer-band {
+    flex-wrap: wrap;
+  }
+  .hc-footer-band-left {
+    flex-wrap: wrap;
+  }
+}
+
 /* ── Textarea ──────────────────────────────────────────────────────────────
  *   Sizing and chrome come from the shared .cave-composer-input class plus the
  *   same utility classes the chat composer uses; .hc-textarea stays as a
@@ -323,125 +364,31 @@
 }
 .hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
 
-/* ── Familiar selector ───────────────────────────────────────────────────── */
-.hc-familiar-selector {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+/* The picker's caret is INLINE, so no phantom right padding — the chip hugs
+ * its name + caret and only ever truncates on long names. Pill radius, 30px
+ * height, and 11px type match the runtime/model chip beside it so the footer
+ * band reads as one control family. */
+.home-composer-card .cave-project-picker__trigger.hc-project-selector {
+  height: 30px;
   min-height: 30px;
-  box-sizing: border-box;
+  max-width: 200px;
+  padding: 0 11px 0 8px;
+  font-size: 11px;
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  padding: 3px 7px 3px 6px;
-  flex: 0 1 auto;
-  min-width: 0;
 }
 
-.hc-home-select-trigger {
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  color: var(--text-primary);
-  cursor: pointer;
-  text-align: left;
-}
-
-.hc-home-select-trigger:hover:not(:disabled),
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:hover:not(:disabled) {
   background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
   border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
-}
-
-.hc-home-select-trigger:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.hc-familiar-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-/* Avatar image variant of the selector glyph: passing a className to
-   FamiliarAvatar overrides its default img styling, so restore the rounded,
-   cover-fit avatar look at the selector's icon size. */
-.hc-familiar-avatar {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  object-fit: cover;
-}
-
-.hc-home-select-value {
-  min-width: 0;
-  max-width: 132px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-primary);
-  padding-right: 14px;
-}
-
-.hc-home-select-popover {
-  min-width: 220px;
-}
-
-.hc-home-select-group + .hc-home-select-group {
-  border-top: 1px solid var(--border-hairline);
-  margin-top: 4px;
-  padding-top: 4px;
-}
-
-.hc-home-select-popover .ui-popover-item > span {
-  min-width: 0;
-}
-
-.hc-home-select-option {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  text-align: left;
-}
-
-.hc-home-select-option__label,
-.hc-home-select-option__detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hc-home-select-option__detail {
-  font-size: 10.5px;
-  color: var(--text-secondary);
-}
-
-.home-composer-card .cave-project-picker__trigger.hc-project-selector {
-  min-height: 30px;
-  max-width: 178px;
-  padding: 3px 22px 3px 6px;
-  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
 }
 
 .home-composer-card .cave-project-picker__trigger.hc-project-selector .cave-project-picker__trigger-label {
   max-width: 132px;
 }
 
-.hc-select-caret {
-  position: absolute;
-  right: 5px;
-  pointer-events: none;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-/* Destination pills — a segmented toggle in the composer footer. */
+/* Destination pills — a segmented toggle for Chat vs Task. */
 .hc-dest-pills {
   display: inline-flex;
   gap: 2px;
@@ -451,6 +398,13 @@
   border-radius: var(--radius-control);
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
+}
+
+/* Inline placement (reference layout): the pills sit inside the card's
+ * control row next to the + attach button — compact, no outer margin. */
+.hc-dest-pills--inline {
+  position: relative;
+  padding: 2px;
 }
 
 .hc-dest-pill {
@@ -490,7 +444,7 @@
 .hc-dest-pill.active {
   background: var(--accent-presence);
   border-color: var(--accent-presence);
-  color: var(--accent-foreground);
+  color: var(--accent-presence-foreground);
   font-weight: 600;
   box-shadow: 0 2px 8px color-mix(in oklch, var(--accent-presence) 38%, transparent);
 }
@@ -498,57 +452,21 @@
 /* Label and icon sit on the solid accent fill, so both take the on-accent
  * foreground colour at full strength for legibility. */
 .hc-dest-pill.active svg {
-  color: var(--accent-foreground);
+  color: var(--accent-presence-foreground);
   opacity: 1;
 }
 
 /* ── Phone-width composer (container query on the card wrap) ─────────────────
  * The shared cave-composer footer rules (cave-chat.css) already adapt the icon
- * buttons on small screens; the home-only controls (destination pills and the
- * agent picker) also need thumb-sized touch targets. */
+ * buttons on small screens; the home-only destination pills also need
+ * thumb-sized touch targets. */
 @container (max-width: 620px) {
-  .hc-familiar-selector {
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: var(--touch-target);
-    padding: 0 30px 0 10px;
-  }
-
-  .hc-home-select-value {
-    max-width: none;
-    min-width: 0;
-    min-height: var(--touch-target);
-    font-size: 13px;
-    display: inline-flex;
-    align-items: center;
-  }
-
-  .hc-select-caret {
-    right: 10px;
-  }
-
   .hc-dest-pill {
     min-height: var(--touch-target);
     justify-content: center;
     border-color: var(--border-hairline);
     background: color-mix(in oklch, var(--bg-base) 72%, transparent);
   }
-}
-
-/* ── Access chip — familiar selector in warning/amber ───────────────────── */
-.hc-access-chip.hc-familiar-selector,
-.hc-access-chip.hc-home-select-trigger {
-  background: color-mix(in oklch, var(--color-warning) 10%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--color-warning) 28%, transparent);
-}
-.hc-access-chip.hc-familiar-selector:hover:not(:disabled),
-.hc-access-chip.hc-home-select-trigger:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--color-warning) 16%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
-}
-.hc-access-chip .hc-familiar-glyph,
-.hc-access-chip .hc-home-select-value {
-  color: var(--color-warning);
 }
 
 /* Spinner — shown inside the send button while a submit is in flight. */
@@ -756,7 +674,6 @@
 .home-feed__row,
 .home-feed__refresh,
 .home-feed__retry,
-.hc-home-select-trigger,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
   outline: none;
 }
@@ -765,13 +682,7 @@
 .home-feed__row:focus-visible,
 .home-feed__refresh:focus-visible,
 .home-feed__retry:focus-visible,
-.hc-home-select-trigger:focus-visible,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: var(--ring-offset);
-}
-/* Ring the whole selector pill when a custom trigger is focused. */
-.hc-familiar-selector:focus-within {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
 }
@@ -788,10 +699,28 @@
   overflow: hidden;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-2xl, 14px);
-  background: var(--bg-base);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow:
     0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
     0 4px 18px -6px rgb(0 0 0 / 0.35);
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .hc-slash-menu {
+    background: var(--bg-base);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 /* Skills picker: option list + detail preview side by side. */
 .hc-slash-body { display: flex; align-items: stretch; min-height: 0; }
@@ -853,73 +782,9 @@
   color: var(--text-muted);
 }
 
-/* ── Suggested prompts ───────────────────────────────────────────────────── */
-.home-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 860px;
-}
-
-.home-suggestion-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 5px 12px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.3;
-  cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease,
-    border-color 120ms ease, transform 120ms var(--ease-standard);
-}
-
-.home-suggestion-pill svg {
-  color: var(--text-muted);
-  flex-shrink: 0;
-  transition: color 120ms ease;
-}
-
-/* Task-continuation pills point back at real board work — their icon carries
-   the presence tint so resumable work reads differently from fresh starters. */
-.home-suggestion-pill--task svg {
-  color: var(--accent-presence);
-}
-
-.home-suggestion-pill:hover {
-  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
-  border-color: color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
-  color: var(--text-primary);
-}
-
-.home-suggestion-pill:hover svg {
-  color: var(--accent-presence);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .home-suggestion-pill:hover {
-    transform: translateY(-1px);
-  }
-}
-
-.home-suggestion-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 42ch;
-}
-
-@media (max-width: 520px) {
-  .home-suggestion-label {
-    max-width: 26ch;
-  }
-}
+/* ── Suggested prompts / needs-you — both strips folded into the digest
+   carousel's chats track as tinted cards (see .home-digest__card--needs and
+   .home-digest__card--suggestion below). */
 
 /* ── Two-column footer (Continue · News) ─────────────────────────────────── */
 .home-columns {
@@ -1077,14 +942,12 @@
  *   entirely under prefers-reduced-motion. */
 @media (prefers-reduced-motion: no-preference) {
   .home-composer-hero,
-  .home-suggestions,
   .home-columns {
     animation: home-rise 460ms var(--ease-decelerate) backwards;
   }
   .home-composer-card-wrap {
     animation: home-rise 460ms var(--ease-decelerate) 60ms backwards;
   }
-  .home-suggestions { animation-delay: 140ms; }
   .home-columns { animation-delay: 220ms; }
 }
 
@@ -1092,5 +955,202 @@
   from {
     opacity: 0;
     transform: translateY(10px);
+  }
+}
+
+/* ── Daily summary — an ambient, auto-scrolling digest of today's activity +
+   freshest headlines. A continuous marquee that pauses on hover/focus so a
+   card can be read or clicked, with soft fade edges. Under reduced-motion it
+   degrades to a plain manual horizontal scroll (the duplicate row is hidden). */
+.home-digest {
+  width: 100%;
+  max-width: min(1200px, 100%);
+  margin-inline: auto;
+  margin-top: 18px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+}
+.home-digest__track {
+  display: flex;
+  width: max-content;
+  /* Slower drift (was 64s) so cards are comfortably readable as they pass. */
+  animation: home-digest-marquee 100s linear infinite;
+  will-change: transform;
+}
+/* The media headlines drift on their own row beneath the chats, in the opposite
+   direction, so the two streams read as clearly separate. */
+.home-digest__media {
+  position: relative;
+  margin-top: 10px;
+}
+.home-digest__track--media {
+  animation-direction: reverse;
+}
+.home-digest:hover .home-digest__track,
+.home-digest:focus-within .home-digest__track {
+  animation-play-state: paused;
+}
+@keyframes home-digest-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.home-digest__row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin: 0;
+  padding: 0 5px;
+  list-style: none;
+}
+.home-digest__cell {
+  display: flex;
+}
+.home-digest__card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  width: 248px;
+  padding: 9px 13px;
+  border-radius: 13px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.82;
+  transition: border-color 0.14s, background 0.14s, transform 0.14s, opacity 0.14s;
+}
+.home-digest__card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  transform: translateY(-2px);
+  opacity: 1;
+}
+.home-digest__card:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+.home-digest__card--summary {
+  cursor: default;
+  opacity: 1;
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+/* Needs-you cards — the attention tier leads the chats track in the warning
+   tint (design-language recipe: 6→12% fill, 30% border, solid warning icon). */
+.home-digest__card--needs {
+  opacity: 1;
+  background: color-mix(in oklch, var(--color-warning) 6%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--color-warning) 30%, var(--border-hairline));
+}
+.home-digest__card--needs .home-digest__icon {
+  color: var(--color-warning);
+}
+.home-digest__card--needs:hover {
+  background: color-mix(in oklch, var(--color-warning) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--color-warning) 45%, var(--border-hairline));
+}
+/* Live cards — the agentic-presence tier (cave-9j6a): a familiar is working
+   this session RIGHT NOW. Presence tint + a breathing status dot; the pulse
+   collapses to a static dot under prefers-reduced-motion (token durations
+   zero out globally). */
+.home-digest__card--live {
+  opacity: 1;
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 32%, var(--border-hairline));
+}
+.home-digest__card--live:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 48%, var(--border-hairline));
+}
+.home-digest__live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent-presence);
+  flex-shrink: 0;
+  animation: home-digest-live-pulse 2s var(--ease-standard, ease-out) infinite;
+}
+@keyframes home-digest-live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent-presence) 0%, transparent); }
+}
+/* Suggestion cards — quick actions trail the chats track in the presence
+   tint so "start this next" reads apart from resumable sessions. */
+.home-digest__card--suggestion {
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 24%, var(--border-hairline));
+}
+.home-digest__card--suggestion:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+}
+.home-digest__icon {
+  color: var(--accent-presence);
+  flex-shrink: 0;
+}
+/* Media-row thumbnail: the article image leads the card; the newspaper icon is
+   the fallback when the feed had no usable image (or it fails to load). */
+/* Media cards are image-forward: a larger thumbnail hugs the card's left edge so
+   the row reads as a media strip rather than another lane of chat chips. */
+.home-digest__card--media {
+  gap: 11px;
+  padding-left: 7px;
+}
+.home-digest__thumb {
+  width: 46px;
+  height: 46px;
+  margin: -4px 0;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-base);
+}
+/* Keep the fallback newspaper icon visually centered in the same footprint the
+   thumbnail would occupy, so imaged and icon-only media cards align. */
+.home-digest__card--media .home-digest__icon {
+  width: 46px;
+  height: 46px;
+  margin: -4px 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
+}
+.home-digest__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.home-digest__title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-digest__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Touch / coarse-pointer devices have no hover to pause the marquee, so give
+   them a plain manual horizontal scroll instead of an unpausable auto-scroll
+   (mirrors the reduced-motion path). */
+@media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse) {
+  .home-digest {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .home-digest__track {
+    animation: none;
+  }
+  .home-digest__row[aria-hidden="true"] {
+    display: none;
   }
 }

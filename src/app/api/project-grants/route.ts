@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   grantProjectToFamiliar,
+  listAccessGroups,
   listProjectGrants,
   listRecentPermissionAudit,
   loadHumanPermissionConfig,
@@ -41,16 +42,31 @@ function grantInput(payload: Record<string, unknown>) {
   return { familiarId: targetFamiliarId, projectId };
 }
 
+function accessInput(payload: Record<string, unknown>): "read" | "write" | null {
+  if (payload.access === undefined) return "write";
+  if (payload.access === "read" || payload.access === "write") return payload.access;
+  return null;
+}
+
 export async function GET() {
-  const [grants, config, audit] = await Promise.all([
+  const [grants, config, audit, accessGroups] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
     listRecentPermissionAudit(),
+    listAccessGroups(),
   ]);
   // `supremeFamiliarId` has access to every project regardless of grants — the
   // Permissions UI marks it as all-access and locks its toggles on. `audit` is a
   // bounded recent window of access decisions for the console's audit log.
-  return NextResponse.json({ ok: true, grants, supremeFamiliarId: config.supremeFamiliarId, audit });
+  // `accessGroups` ride along so one fetch can render effective (direct + group)
+  // access.
+  return NextResponse.json({
+    ok: true,
+    grants,
+    accessGroups,
+    supremeFamiliarId: config.supremeFamiliarId,
+    audit,
+  });
 }
 
 export async function POST(req: Request) {
@@ -65,7 +81,14 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  await grantProjectToFamiliar({ ...input, source: "human" });
+  const access = accessInput(payload);
+  if (!access) {
+    return NextResponse.json(
+      { ok: false, error: "access must be \"read\" or \"write\"" },
+      { status: 400 },
+    );
+  }
+  await grantProjectToFamiliar({ ...input, source: "human", access });
   return NextResponse.json({ ok: true });
 }
 

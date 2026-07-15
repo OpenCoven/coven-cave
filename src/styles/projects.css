@@ -11,6 +11,10 @@
    rules only match against an ANCESTOR container, so `.projects-hub { … }`
    inside `@container projects` would silently never apply if the hub were the
    container. */
+.projects-view {
+  container: projects-view / inline-size;
+}
+
 .projects-shell {
   display: flex;
   flex: 1;
@@ -152,6 +156,26 @@
 
 /* Back to the list — only exists under the narrow single-pane collapse. */
 .projects-detail-back { display: none; }
+
+/* The toolbar responds to the Projects pane itself, not the window: split
+   tiles can be phone-narrow on a desktop viewport. Give summary/sort and the
+   action pair separate rows before either group can compress or overlap. */
+@container projects-view (max-width: 640px) {
+  .projects-toolbar__row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .projects-toolbar__controls {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .projects-toolbar__actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
 
 /* ── Session chips (shared with the old table; canonical home is now here) ── */
 .projects-session-count { display: inline-flex; align-items: center; gap: 5px; flex: none; white-space: nowrap; color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 500; }

@@ -159,6 +159,13 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
     if (url.origin === expectedOrigin) return true;
 
     const expected = new URL(expectedOrigin);
+    // Scheme-agnostic host match: `tailscale serve` terminates TLS upstream,
+    // so a browser page served over https://<host>.ts.net opens its terminal
+    // socket with Origin https://… while the expectation string here is built
+    // as http://<Host>. The host (incl. port) equality is the actual
+    // cross-site defence — a hostile page cannot declare this host as its
+    // Origin — so the scheme difference must not 403 the upgrade.
+    if (url.host === expected.host) return true;
     return (
       url.protocol === expected.protocol &&
       url.port === expected.port &&
@@ -170,22 +177,28 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
   }
 }
 
-function isAllowedUpgradeSource(req: IncomingMessage): boolean {
+function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false): boolean {
   const host = req.headers.host;
   // The peer must always be loopback: `tailscale serve` terminates TLS and
   // forwards to 127.0.0.1, so a legitimate tailnet client still arrives over
   // loopback. A non-loopback peer is a direct LAN/WAN connection — never trust.
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-  // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
-  // `pnpm mobile:tailscale:app`): `tailscale serve` forwards the request's
-  // `<host>.ts.net` Host — NOT 127.0.0.1 — so the loopback host gate would
-  // otherwise 403 the iOS terminal over the tailnet. Trusting the host here is
-  // safe because tailnet membership is the ingress boundary in this mode, and
-  // the sameOrigin gate below still blocks cross-site browser upgrades (a native
-  // WebSocket sends no Origin). This mirrors the REST trust gate in proxy.ts.
-  // By default (no flag) WebSocket upgrades remain loopback-host only.
+  // Two ways a non-loopback Host is legitimate — both arrive via `tailscale
+  // serve`, which forwards the request's `<host>.ts.net` Host, NOT 127.0.0.1:
+  //   1. Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
+  //      `pnpm mobile:tailscale:app`): tailnet membership is the ingress
+  //      boundary, so the host gate is relaxed globally.
+  //   2. A token-authenticated upgrade (paired iOS app / handoff browser
+  //      holding a signed access token): the credential proves the caller,
+  //      exactly like proxy.ts's isAllowedApiHost(mobileAccessAuthenticated)
+  //      relaxation on REST. Without this, a paired phone's terminal 403s at
+  //      the host gate while every REST call works (the "terminal tab never
+  //      connects" bug) — the Bearer header was never even consulted.
+  // The sameOrigin gate below still blocks cross-site browser upgrades (a
+  // native WebSocket sends no Origin). By default (no flag, no credential)
+  // WebSocket upgrades remain loopback-host only.
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!tailnetTrusted && !isLoopbackHost(host)) return false;
+  if (!tailnetTrusted && !tokenAuthenticated && !isLoopbackHost(host)) return false;
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 
@@ -363,6 +376,18 @@ function onWsMessage(threadId: string, data: RawData): void {
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
     }
+  } else if (tag === 0x05) {
+    // Explicit tab-close (client sent a kill frame): reap the shell NOW rather
+    // than detaching with a grace window. Without this, a WS-transport tab close
+    // just drops the socket, which the close handler treats as a transient
+    // detach — leaking the shell (and its foreground job) for DETACH_GRACE_MS.
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
+    }
   }
 }
 
@@ -468,19 +493,28 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  if (!isAllowedUpgradeSource(req)) {
+  // Verify credentials before the host gate: a valid signed access token
+  // (paired iOS terminal / handoff browser over `tailscale serve`, which
+  // forwards the `<host>.ts.net` Host) legitimately arrives with a
+  // non-loopback Host and must pass the source gate on the strength of its
+  // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
+
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
 
   // Enforce token auth whenever the server has a remote/mobile credential.
-  // Local desktop/dev mode still has neither token configured, so the loopback
-  // host+origin gate above remains the protection for credential-less local
-  // app connections. Native mobile mode configures only COVEN_CAVE_AUTH_TOKEN;
-  // require that sidecar token here too so Tailscale-forwarded PTY upgrades
-  // cannot become credential-less shells.
-  if (isPtyAuthRequired() && !isAuthorized(req, query)) {
+  // With no token set — the local desktop app and dev server — the loopback
+  // host+origin gate above is the protection, and credential-less connections
+  // are the local app itself. #714 dropped this and 401'd every local terminal
+  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
+  // server-pty-ws.test.ts warns about). Native mobile mode configures only
+  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
+  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;

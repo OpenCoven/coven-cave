@@ -19,8 +19,15 @@ assert.match(
 assert.doesNotMatch(src, /split-host__grid/, "multi-pane split no longer uses the fixed grid layout");
 assert.match(
   src,
-  /tiles\.map\(\(tile, i\) =>[\s\S]*<Separator[\s\S]*<Panel[\s\S]*minSize="12%"[\s\S]*renderGridTile\(tile\)/,
-  "3+ panes render each tile in a resizable Panel with a draggable Separator between them",
+  /tiles\.map\(\(tile, i\) =>[\s\S]*<Separator[\s\S]*<Panel[\s\S]*minSize="300px"[\s\S]*renderGridTile\(tile\)/,
+  "3+ panes render each tile in a resizable Panel with a draggable Separator between them (px floor per cave-hivd)",
+);
+// Adding a tile to a live group must remount it — RRP squeezes ADDED panels
+// below their pixel min otherwise (fresh mounts lay out evenly).
+assert.match(
+  src,
+  /key=\{tiles\.map\(\(tile\) => tile\.id\)\.join\("\|"\)\}/,
+  "the multi-tile Group is keyed by the tile set",
 );
 
 console.log("detail-split-host ok");

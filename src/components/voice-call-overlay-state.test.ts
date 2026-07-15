@@ -90,6 +90,33 @@ test("live → error on PROVIDER_ERROR", () => {
   assert.equal(next.errorCode, "connect_failed");
 });
 
+test("PROVIDER_ERROR carries provider hint into error state", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, { type: "SESSION_GRANTED", callId: "c1" });
+  const next = reduce(s, {
+    type: "PROVIDER_ERROR",
+    errorCode: "sdp_exchange_failed_400",
+    hint: 'Model "mock-model" is not supported in realtime mode.',
+  });
+  assert.equal(next.state, "error");
+  assert.equal(next.errorCode, "sdp_exchange_failed_400");
+  assert.equal(next.hint, 'Model "mock-model" is not supported in realtime mode.');
+});
+
+test("PROVIDER_ERROR without hint clears any stale hint", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, {
+    type: "SESSION_FAILED",
+    errorCode: "vault_key_unresolved",
+    hint: "stale detail from an earlier failure",
+  });
+  const next = reduce(s, { type: "PROVIDER_ERROR", errorCode: "connect_failed" });
+  assert.equal(next.state, "error");
+  assert.equal(next.hint, undefined);
+});
+
 test("error → requesting-mic on RETRY (clears errorCode)", () => {
   const errored = reduce(reduce(initialState, { type: "START" }), { type: "MIC_DENIED" });
   const next = reduce(errored, { type: "RETRY" });

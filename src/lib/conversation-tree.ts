@@ -12,6 +12,9 @@ export type TreeTurn = {
   id: string;
   parentId?: string | null;
   createdAt?: string;
+  /** Optional role. Only "system" affects path resolution: chain-less system
+   *  echoes are woven into the active path (see resolveActivePath). */
+  role?: string;
 };
 
 function byCreatedAt<T extends TreeTurn>(turns: T[]): T[] {
@@ -27,6 +30,11 @@ function byCreatedAt<T extends TreeTurn>(turns: T[]): T[] {
  * The chain from `activeLeafId` up to the root, returned root-first. Falls back
  * to a createdAt linearization when the leaf is missing, and guards against
  * cycles (a corrupt parent ring) by stopping when it revisits a node.
+ *
+ * Chain-less system turns (role "system", no parentId — e.g. /help output or
+ * coven-exec echoes appended client-side) are not ancestors of any leaf, so a
+ * pure ancestor walk would hide them whenever a leaf is set (notably while a
+ * reply streams, cave-7ft). They are woven back into the path by createdAt.
  */
 export function resolveActivePath<T extends TreeTurn>(turns: T[], activeLeafId: string): T[] {
   const byId = new Map(turns.map((x) => [x.id, x]));
@@ -41,7 +49,26 @@ export function resolveActivePath<T extends TreeTurn>(turns: T[], activeLeafId: 
     const parentId: string | null | undefined = current.parentId;
     current = parentId ? byId.get(parentId) : undefined;
   }
-  return chain.reverse();
+  chain.reverse();
+  const orphanSystems = turns.filter(
+    (x) => x.role === "system" && x.parentId == null && !seen.has(x.id),
+  );
+  if (orphanSystems.length === 0) return chain;
+  // Insert each echo before the first chain turn created strictly after it.
+  // No full re-sort: user/assistant pairs share a createdAt stamp, so sorting
+  // the chain itself would tie-break on random ids and could swap them.
+  const at = (x: T) => (x.createdAt ? Date.parse(x.createdAt) : 0);
+  for (const sys of byCreatedAt(orphanSystems)) {
+    let idx = chain.length;
+    for (let i = 0; i < chain.length; i++) {
+      if (at(chain[i]) > at(sys)) {
+        idx = i;
+        break;
+      }
+    }
+    chain.splice(idx, 0, sys);
+  }
+  return chain;
 }
 
 /**

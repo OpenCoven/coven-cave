@@ -87,4 +87,29 @@ assert.equal(THEME_META.solstice.name, "Solstice");
 assert.equal(COVEN_THEME_KEY, "coven-theme");
 assert.equal(COVEN_MODE_KEY, "coven-mode");
 
+// Swatch trio completeness + derivation (moved from theme-color-editor.test.ts
+// when the redundant "Customize colors" editor was removed).
+for (const id of THEME_IDS) {
+  const meta = THEME_META[id];
+  assert.ok(meta.bgDark.length > 0, `${id} bgDark empty`);
+  assert.ok(meta.bgLight.length > 0, `${id} bgLight empty`);
+  for (const mode of ["dark", "light"]) {
+    const s = getSwatches(id, mode);
+    assert.ok(s.bg.length > 0, `${id} ${mode} bg empty`);
+    assert.ok(s.accent.length > 0, `${id} ${mode} accent empty`);
+    assert.ok(s.border.length > 0, `${id} ${mode} border empty`);
+  }
+}
+
+// Preset seed stability: slate stays monochrome; border derives from accent.
+assert.ok(getSwatches("slate", "dark").bg.includes("0.000"), "slate dark bg should be monochrome");
+for (const id of ["coven", "tide", "ember"]) {
+  const s = getSwatches(id, "dark");
+  const accentHex = s.accent.replace(/^#/, "").slice(0, 6).toLowerCase();
+  assert.ok(
+    s.border.toLowerCase().includes(accentHex),
+    `${id} border="${s.border}" should contain accent hex "${accentHex}"`,
+  );
+}
+
 console.log("theme-palettes.test.ts OK");

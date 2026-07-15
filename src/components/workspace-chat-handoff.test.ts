@@ -175,6 +175,41 @@ assert.match(
   /if \(!pendingCodeRailOpen\) return[\s\S]*openCodeRailTarget\(pendingCodeRailOpen\)[\s\S]*onPendingCodeRailOpenHandled\(\)/,
   "ChatSurface should consume pending file/diff opens after mounting",
 );
+
+// cave-z44: Projects hub "Browse files" drills into a project ROOT (no file).
+// The shared type carries an optional root; Workspace bridges the event from
+// non-chat modes; ChatSurface consumes it directly when already mounted and
+// arms the browse override.
+assert.match(
+  pendingCodeRailOpenLib,
+  /kind: "files";[\s\S]*root\?: string;/,
+  "the shared type carries an optional browse root on the files open",
+);
+assert.match(
+  workspace,
+  /window\.addEventListener\("cave:browse-project-files", onBrowseProjectFiles as EventListener\)/,
+  "Workspace bridges the Projects-hub browse-files event into chat mode",
+);
+assert.match(
+  workspace,
+  /onBrowseProjectFiles = \(e: Event\) => \{[\s\S]*if \(modeRef\.current === "chat"\) return;[\s\S]*if \(!detail\?\.root\) return;[\s\S]*setPendingCodeRailOpen\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)[\s\S]*setMode\("chat"\)/,
+  "Workspace preserves the browse root and switches to chat",
+);
+assert.match(
+  chatSurface,
+  /onBrowseProjectFiles[\s\S]*if \(!detail\?\.root\) return;[\s\S]*openCodeRailTarget\(\{ kind: "files", root: detail\.root, nonce: Date\.now\(\) \}\)/,
+  "ChatSurface directly consumes the browse-files event when already mounted",
+);
+assert.match(
+  chatSurface,
+  /window\.addEventListener\("cave:browse-project-files", onBrowseProjectFiles as EventListener\)/,
+  "ChatSurface listens for the browse-files event",
+);
+assert.match(
+  chatSurface,
+  /setBrowseRootOverride\(target\.kind === "files" \? \(target\.root \?\? null\) : null\)/,
+  "openCodeRailTarget arms the browse override from a files target's root and clears it otherwise",
+);
 assert.match(
   chatSurface,
   /<WorkspaceRail[\s\S]*focus=\{codeRailFocus\}/,
@@ -194,4 +229,37 @@ assert.match(
   railFilesPanel,
   /focusPath\?: string \| null[\s\S]*focusNonce\?: number[\s\S]*useEffect\(\(\) => \{[\s\S]*setSelectedPath\([\s\S]*focusPath/,
   "RailFilesPanel should update its selected file from an external focus target",
+);
+
+// Cross-page handoff (cave-hbpb): standalone routes (familiar analytics) have no
+// cave:agents-new-chat listener — they persist the request and navigate to /,
+// where Workspace must consume it at boot into a primed chat.
+const agentsNewChatLib = await readFile(new URL("../lib/agents-new-chat.ts", import.meta.url), "utf8");
+assert.match(
+  agentsNewChatLib,
+  /window\.location\.pathname === "\/"[\s\S]*dispatchEvent\(new CustomEvent\(AGENTS_NEW_CHAT_EVENT/,
+  "same-page callers keep dispatching the live event",
+);
+assert.match(
+  agentsNewChatLib,
+  /sessionStorage\.setItem\(PENDING_AGENTS_NEW_CHAT_KEY[\s\S]*window\.location\.assign\("\/"\)/,
+  "off-page callers persist the request and navigate to the workspace",
+);
+assert.match(
+  workspace,
+  /import \{ consumePendingAgentsNewChat \} from "@\/lib\/agents-new-chat"/,
+  "Workspace should import the cross-page chat handoff consumer",
+);
+assert.match(
+  workspace,
+  /const pending = consumePendingAgentsNewChat\(\);[\s\S]{0,200}startFamiliarChat\(\s*pending\.familiarId \?\? null,\s*pending\.projectRoot \?\? null,\s*pending\.initialPrompt \?\? null,\s*pending\.initialControls \?\? null,?\s*\)/,
+  "Workspace boot should turn a pending cross-page request into a primed familiar chat",
+);
+// The bridge effect registers BOTH cave:agents-new-chat and
+// cave:continue-on-phone; its cleanup must remove both or re-runs/remounts
+// leak continue-on-phone handlers (duplicate pairing-modal opens).
+assert.match(
+  workspace,
+  /return \(\) => \{\s*window\.removeEventListener\("cave:agents-new-chat", onAgentsNewChat\);\s*window\.removeEventListener\("cave:continue-on-phone", onContinueOnPhone as EventListener\);\s*\};/,
+  "Workspace bridge cleanup should remove every listener the effect adds",
 );

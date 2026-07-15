@@ -303,7 +303,10 @@ const SPACE_ACTIONS: Record<string, { href: string; label: string }> = {
   memory: { href: "/?mode=agents", label: "Manage memory" },
   knowledge: { href: "/?mode=agents", label: "Open vault" },
   journal: { href: "/?mode=journal", label: "Open journal" },
-  flows: { href: "/?mode=flow", label: "Open flows" },
+  // FlowView is retired; flow data is managed from the Schedules surface.
+  // ?mode=flow now remaps to inbox in setMode anyway (cave-hyor) — link the
+  // real destination directly.
+  flows: { href: "/?mode=inbox", label: "Open schedules" },
   prompts: { href: "/?mode=marketplace", label: "Manage prompts" },
   skills: { href: "/?mode=marketplace", label: "Manage skills" },
 };

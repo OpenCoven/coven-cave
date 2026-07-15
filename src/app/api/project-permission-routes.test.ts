@@ -16,7 +16,6 @@ const projectTreeClient = await readFile(
   new URL("../../components/project-tree.tsx", import.meta.url),
   "utf8",
 );
-const comuxView = await readFile(new URL("../../components/comux-view.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("../../components/chat-view.tsx", import.meta.url), "utf8");
 const codeQuickOpen = await readFile(
   new URL("../../components/code-quick-open.tsx", import.meta.url),
@@ -130,16 +129,6 @@ assert.match(
   projectTreeClient,
   /JSON\.stringify\(\{ from, toDir, familiarId \}\)/,
   "ProjectTree move requests should include familiarId",
-);
-assert.match(
-  comuxView,
-  /const selectedProjectFamiliarId = useMemo\([\s\S]*selectedProjectSessions\[0\]\?\.familiarId/,
-  "Comux project view should derive a familiar for project-scoped API calls",
-);
-assert.match(
-  comuxView,
-  /familiarId: selectedProjectFamiliarId/,
-  "Comux file preview, save, tree, and search calls should pass familiarId",
 );
 assert.match(
   chatView,

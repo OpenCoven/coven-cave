@@ -6,33 +6,32 @@ import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(resolve(here, "./inspector-pane.tsx"), "utf8");
+const chatSurface = readFileSync(resolve(here, "./chat-surface.tsx"), "utf8");
 
-test("outer tab nav uses the shared underline Tabs, labelled + filled", () => {
-  assert.match(src, /<Tabs[\s\S]{0,240}ariaLabel="Inspector sections"/, "outer nav uses shared Tabs");
-  assert.match(src, /variant="underline"/, "outer nav is underline");
-  assert.match(src, /\bfill\b/, "outer tabs stretch to fill the row");
-});
-
-test("inbox badge is softened from danger to warning tone", () => {
-  assert.doesNotMatch(
-    src,
-    /bg-\[var\(--color-danger\)\] px-1 text-\[9px\] font-bold text-white/,
-    "old red danger pill removed",
-  );
+test("the pane is memory-only — the familiar section moved to its own surface", () => {
+  // The inspector sidepanel is retired and the chat Familiar tab is a
+  // purpose-built surface (chat-familiar-view.tsx) — the pane renders the
+  // memory rail alone. Analytics/Automations are gone with the panel.
+  assert.doesNotMatch(src, /ariaLabel="Inspector sections"/, "no nested section strip in the pane");
+  assert.doesNotMatch(src, /export type Tab\b/, "the controlled section prop is retired with the familiar section");
+  assert.doesNotMatch(src, /FamiliarIdentityHero|FamiliarCapabilityPanel/, "no familiar-tab rendering remains in the pane");
+  assert.doesNotMatch(src, /FamiliarAnalyticsView|InboxTab|SnoozeMenu/, "no analytics or automations rendering remains");
   assert.match(
-    src,
-    /bg-\[color-mix\(in_oklch,var\(--color-warning\)_28%,transparent\)\]/,
-    "warning-tinted soft badge present",
+    chatSurface,
+    /<ChatFamiliarView familiar=\{activeFamiliar\} daemonRunning=\{daemonRunning\} onStartChat=\{startFamiliarHeroChat\} \/>/,
+    "the chat surface's Familiar tab mounts the purpose-built view (presence threaded)",
   );
+  assert.doesNotMatch(chatSurface, /INSPECTOR_SECTIONS/, "the promoted right-panel section strip is gone");
 });
 
-test("InspectorEmpty helper is defined and used for the three no-familiar/error states", () => {
+test("InspectorEmpty helper is defined and used for the memory error state", () => {
   assert.match(src, /function InspectorEmpty\(/, "helper declared");
   const usages = src.match(/<InspectorEmpty\b/g) ?? [];
-  assert.ok(usages.length >= 3, `expected >=3 usages, got ${usages.length}`);
-  assert.match(src, /icon="ph:bell"\s+title="No familiar selected"/, "inbox empty state");
-  assert.match(src, /icon="ph:sparkle"\s+title="No familiar selected"/, "familiar empty state");
+  assert.ok(usages.length >= 1, `expected >=1 usage, got ${usages.length}`);
   assert.match(src, /icon="ph:warning"\s+title="Memory unavailable"/, "memory error state");
+  // The familiar empty state lives with the familiar surface now.
+  const familiarView = readFileSync(resolve(here, "./chat-familiar-view.tsx"), "utf8");
+  assert.match(familiarView, /No familiar selected/, "familiar empty state moved with the tab");
 });
 
 test("memory inner mode toggle uses the shared Vercel-style Tabs (2px underline)", () => {
@@ -54,19 +53,6 @@ test("Memory tab renders an 'Open full memory' footer when onOpenFullView is pro
   assert.match(src, /onOpenFullView\?: \(\) => void/, "MemoryTab/InspectorPane accept onOpenFullView");
   assert.match(src, /onOpenFullView \? \(/, "footer button is conditional on the callback");
   assert.match(src, /rail-memory__open-full[\s\S]*?Open full memory/, "renders the Open full memory button");
-});
-
-test("inbox card gets fired-state visual emphasis + hover affordance", () => {
-  // Fired cards: warning-tinted border + bg
-  assert.match(
-    src,
-    /border-\[color-mix\(in_oklch,var\(--color-warning\)_45%,var\(--border-hairline\)\)\]/,
-    "fired card uses warning-tinted border",
-  );
-  // Default cards: hover state on bg-raised
-  assert.match(src, /hover:bg-\[var\(--bg-raised\)\]\/70/, "default cards have hover state");
-  // Cards have a stable class hook for tests/screenshot diffs
-  assert.match(src, /inspector-inbox-card/, "stable class hook present");
 });
 
 test("inspector empty helper imports IconName for type-safe icon prop", () => {

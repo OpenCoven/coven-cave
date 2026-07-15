@@ -16,11 +16,11 @@ import {
  */
 export function ReadingAlignController() {
   useEffect(() => {
-    applyReadingAlign(readReadingAlign());
+    applyReadingAlign(readReadingAlign(), { persist: false });
 
     const onStorage = (event: StorageEvent) => {
       if (event.key !== READING_ALIGN_KEY) return;
-      applyReadingAlign(readReadingAlign());
+      applyReadingAlign(readReadingAlign(), { persist: false });
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

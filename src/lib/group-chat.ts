@@ -4,7 +4,7 @@
  * A *coven* is a saved set of familiars you talk to together. Sending a prompt
  * fans it out to every participant in parallel (one `/api/chat/send` stream per
  * familiar — the same client-side broadcast model the iOS app uses, since the
- * daemon/coven CLI has no server-side "group session" concept). Each familiar
+ * daemon/Coven CLI has no server-side "group session" concept). Each familiar
  * keeps its own resumable session; the group just remembers which session id
  * belongs to which familiar so every thread persists across reloads.
  *
@@ -15,6 +15,11 @@
 
 const GROUPS_KEY = "cave:group-chat:groups:v1";
 const TRANSCRIPTS_KEY_PREFIX = "cave:group-chat:transcript:";
+/** Max turns kept in a persisted transcript. The roundtable prompt already
+ *  windows history far tighter than this, so capping the stored tail loses
+ *  nothing the model sees — it only bounds localStorage growth (and the cost
+ *  of re-serializing the transcript on save). */
+export const TRANSCRIPT_CAP = 200;
 
 /** A saved group of familiars chatted with together. */
 export type CovenGroup = {
@@ -501,10 +506,25 @@ export function loadTranscript(groupId: string): GroupTurn[] {
     const raw = localStorage.getItem(TRANSCRIPTS_KEY_PREFIX + groupId);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as GroupTurn[]) : [];
+    // Cap on load too so a legacy oversized transcript shrinks the first time
+    // it is opened instead of being re-serialized whole on every save.
+    return Array.isArray(parsed) ? capTranscript(parsed as GroupTurn[], TRANSCRIPT_CAP) : [];
   } catch {
     return [];
   }
+}
+
+/**
+ * Keep at most the trailing `max` turns, then drop any leading assistant
+ * replies whose user turn fell off the front — an orphaned reply has no
+ * thread to render under, so persisting it would only strand invisible data.
+ * Pure and exported for tests.
+ */
+export function capTranscript(turns: GroupTurn[], max: number): GroupTurn[] {
+  const tail = turns.length > max ? turns.slice(turns.length - max) : turns;
+  const firstUser = tail.findIndex((t) => t.role === "user");
+  if (firstUser <= 0) return firstUser === 0 ? tail : [];
+  return tail.slice(firstUser);
 }
 
 export function saveTranscript(groupId: string, turns: GroupTurn[]): void {
@@ -515,7 +535,10 @@ export function saveTranscript(groupId: string, turns: GroupTurn[]): void {
     const settled = turns.filter(
       (t) => t.role === "user" || (t as GroupReply).status === "done" || (t as GroupReply).status === "error",
     );
-    localStorage.setItem(TRANSCRIPTS_KEY_PREFIX + groupId, JSON.stringify(settled));
+    localStorage.setItem(
+      TRANSCRIPTS_KEY_PREFIX + groupId,
+      JSON.stringify(capTranscript(settled, TRANSCRIPT_CAP)),
+    );
   } catch {
     /* ignore */
   }

@@ -11,7 +11,12 @@ import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import type { SessionRow } from "@/lib/types";
 import { deriveProjectStatus } from "@/lib/project-status";
 
-import { chatDotClass, lastActiveMs } from "./projects-shared";
+import {
+  chatDotClass,
+  hasDesktopBridge,
+  lastActiveMs,
+  revealProjectFolder,
+} from "./projects-shared";
 
 // The hub's master list: one compact row per project. Selecting a row swaps the
 // detail pane; everything heavier (rename, path, sessions, delete) lives there.
@@ -122,7 +127,9 @@ function ProjectListRow({
           {status ? (
             <span
               className={`projects-status-dot ${chatDotClass(status)}${status === "running" ? " animate-pulse" : ""}`}
-              aria-hidden
+              role="img"
+              aria-label={`Latest chat ${status}`}
+              title={`Latest chat in this project: ${status}`}
             />
           ) : null}
         </span>
@@ -146,6 +153,17 @@ function ProjectListRow({
         >
           Copy path
         </PopoverItem>
+        {hasDesktopBridge() ? (
+          <PopoverItem
+            icon="ph:folder-open-bold"
+            onSelect={() => {
+              setMenu(null);
+              void revealProjectFolder(project.root);
+            }}
+          >
+            Reveal in Finder
+          </PopoverItem>
+        ) : null}
       </ContextMenu>
     </li>
   );

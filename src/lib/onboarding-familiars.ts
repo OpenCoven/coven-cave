@@ -56,7 +56,26 @@ export function slugifyFamiliarId(value: string): string {
 }
 
 function tomlString(value: string): string {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/[\\"\b\t\n\f\r\u0000-\u001f\u007f]/g, (character) => {
+    switch (character) {
+      case "\\":
+        return "\\\\";
+      case '"':
+        return '\\"';
+      case "\b":
+        return "\\b";
+      case "\t":
+        return "\\t";
+      case "\n":
+        return "\\n";
+      case "\f":
+        return "\\f";
+      case "\r":
+        return "\\r";
+      default:
+        return `\\u${character.codePointAt(0)!.toString(16).padStart(4, "0")}`;
+    }
+  })}"`;
 }
 
 export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): OnboardingFamiliarDraft {
@@ -65,6 +84,9 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
 
   const id = slugifyFamiliarId(cleanText(input.id) || displayName);
   if (!id) throw new Error("Familiar id is required.");
+
+  const description = cleanText(input.description);
+  if (!description) throw new Error("Familiar description is required.");
 
   const openclawAgentId = slugifyFamiliarId(cleanText(input.openclawAgentId));
   const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
@@ -96,7 +118,7 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
     id,
     displayName,
     role: cleanText(input.role) || "Familiar",
-    description: cleanText(input.description),
+    description,
     glyph: cleanText(input.glyph) || "ph:sparkle-fill",
     harness,
     model,
@@ -117,9 +139,9 @@ export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): strin
     `display_name = ${tomlString(draft.displayName)}`,
     `emoji = ${tomlString(draft.glyph)}`,
     `role = ${tomlString(draft.role)}`,
+    `description = ${tomlString(draft.description)}`,
   ];
 
-  if (draft.description) lines.push(`description = ${tomlString(draft.description)}`);
   lines.push(`harness = ${tomlString(draft.harness)}`);
   lines.push(`model = ${tomlString(draft.model)}`);
   if (draft.openclawAgentId) lines.push(`openclaw_agent = ${tomlString(draft.openclawAgentId)}`);
@@ -130,4 +152,83 @@ export function buildFamiliarsToml(draft: OnboardingFamiliarDraft | null): strin
 export function familiarsTomlContainsId(toml: string, id: string): boolean {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^\\s*id\\s*=\\s*"${escaped}"\\s*$`, "m").test(toml);
+}
+
+export type FamiliarsTomlEntry = {
+  id: string;
+  displayName?: string;
+  role?: string;
+  description?: string;
+  emoji?: string;
+};
+
+/** Reverse of `tomlString` for the escapes it writes. */
+function unescapeTomlString(value: string): string {
+  return value.replace(/\\(u[0-9A-Fa-f]{4}|.)/g, (_, esc: string) => {
+    if (esc[0] === "u" && esc.length === 5) {
+      return String.fromCodePoint(Number.parseInt(esc.slice(1), 16));
+    }
+    switch (esc) {
+      case "\\":
+        return "\\";
+      case '"':
+        return '"';
+      case "b":
+        return "\b";
+      case "t":
+        return "\t";
+      case "n":
+        return "\n";
+      case "f":
+        return "\f";
+      case "r":
+        return "\r";
+      default:
+        return esc;
+    }
+  });
+}
+
+/**
+ * Minimal parser for the `[[familiar]]` blocks `buildFamiliarsToml` writes
+ * (basic-string values only — the exact shape this module produces). Used to
+ * surface familiars the user has declared locally even while the daemon's
+ * in-memory roster hasn't re-read the file (or, in hub mode, doesn't know
+ * this machine's file at all), so the visible list always covers every id the
+ * duplicate check can reject.
+ */
+export function parseFamiliarsToml(toml: string): FamiliarsTomlEntry[] {
+  const entries: FamiliarsTomlEntry[] = [];
+  let current: Record<string, string> | null = null;
+  const flush = () => {
+    const id = (current?.id ?? "").trim();
+    if (current && id) {
+      entries.push({
+        id,
+        displayName: current.display_name,
+        role: current.role,
+        description: current.description,
+        emoji: current.emoji,
+      });
+    }
+    current = null;
+  };
+  for (const rawLine of toml.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "[[familiar]]") {
+      flush();
+      current = {};
+      continue;
+    }
+    if (line.startsWith("[")) {
+      // Some other table — stop collecting so its keys don't bleed in.
+      flush();
+      continue;
+    }
+    if (!current) continue;
+    const match = line.match(/^([A-Za-z0-9_]+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/);
+    if (match) current[match[1]!] = unescapeTomlString(match[2] ?? "");
+  }
+  flush();
+  return entries;
 }

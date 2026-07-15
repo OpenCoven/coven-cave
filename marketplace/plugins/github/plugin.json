@@ -45,7 +45,7 @@
       ],
       "type": "stdio",
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"
       }
     }
   },
@@ -56,7 +56,7 @@
       "description": "Personal access token used by the GitHub MCP server.",
       "required": true,
       "sensitive": true,
-      "env": "GITHUB_PERSONAL_ACCESS_TOKEN"
+      "env": "GITHUB_PAT"
     }
   }
 }

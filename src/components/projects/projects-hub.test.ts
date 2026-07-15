@@ -66,9 +66,17 @@ assert.match(detail, /aria-pressed=\{!project\.color\}/, "the auto swatch report
 // Chrome budget (§8): ≤2 always-visible header actions + one overflow menu.
 assert.match(detail, /import \{ OverflowMenu \} from "@\/components\/ui\/overflow-menu"/, "secondary actions live in the shared OverflowMenu");
 assert.match(detail, /OverflowMenu ariaLabel=\{`More actions for \$\{project\.name\}`\}/, "the overflow trigger is named per project");
-for (const item of ["Rename", "Change folder…", "Copy path", "Delete project…"]) {
-  assert.match(detail, new RegExp(item.replace("…", "…")), `overflow offers ${item}`);
+for (const item of ["Rename", "Change folder…", "Copy path", "Browse files", "Delete project…"]) {
+  assert.match(detail, new RegExp(item), `overflow offers ${item}`);
 }
+// cave-z44: "Browse files" drills into the project's tree via the code rail by
+// dispatching a cross-surface event workspace.tsx bridges to chat mode. It
+// carries only the root, and stays in the overflow (keeps the ≤2-visible budget).
+assert.match(
+  detail,
+  /new CustomEvent\("cave:browse-project-files", \{ detail: \{ root: project\.root \} \}\)/,
+  "Browse files dispatches the browse event with the project root",
+);
 // Delete is a two-step confirm with an accessible container.
 assert.match(detail, /role="alertdialog"[\s\S]{0,80}?aria-label=\{`Delete \$\{project\.name\}\?`\}/, "delete confirm is an alertdialog");
 // Switching projects resets edit drafts/confirms (no leakage across selections).
@@ -109,7 +117,16 @@ assert.match(detail, /<GitSection projectRoot=\{project\.root\} sessionBranch=\{
 // Tasks: one board fetch in the SHELL (not per selection — the detail remounts
 // on every switch), refetched on window refocus, filtered client-side.
 assert.equal((shell.match(/fetch\("\/api\/board"/g) ?? []).length, 1, "the shell fetches the board exactly once per mount");
-assert.doesNotMatch(sections, /fetch\("\/api\/board"/, "the Tasks section never fetches — cards arrive from the shell");
+assert.equal(
+  (sections.match(/fetch\("\/api\/board"/g) ?? []).length,
+  1,
+  "the Tasks section touches /api/board exactly once",
+);
+assert.match(
+  sections,
+  /fetch\("\/api\/board", \{\s*\n\s*method: "POST"/,
+  "…and that one call is the quick-add create (a mutation) — card READS still arrive from the shell",
+);
 assert.match(shell, /useRefreshOnFocus\(loadBoardCards\)/, "board cards refetch on window refocus (throttled)");
 assert.match(
   sections,
@@ -171,4 +188,40 @@ for (const dead of ["../../lib/projects/projects-ui-state.ts", "../../lib/projec
   assert.equal(existsSync(new URL(dead, import.meta.url)), false, `${dead} stays deleted`);
 }
 
+// ── Hub updates (cave-ihox): quick-add · honest git · sort · titles ─────────
+// Tasks quick-add: optimistic local append + a board-reload nudge for the rest
+// of the app; the created card comes back from the server (cwd derived from
+// projectId server-side, never client-supplied).
+assert.match(sections, /JSON\.stringify\(\{ title, projectId: project\.id \}\)/, "quick-add sends title + projectId only");
+assert.match(sections, /setCreatedCards\(\(prev\) => \[json\.card as Card, \.\.\.prev\]\)/, "the created card appends optimistically");
+assert.match(sections, /window\.dispatchEvent\(new Event\("cave:board:reload"\)\)/, "creation nudges the app-wide board reload");
+assert.match(sections, /aria-label=\{`Add a task to \$\{project\.name\}`\}/, "the quick-add input is named for AT");
+
+// Git: a dirty tree is status, not activity — the chip must not pulse; the
+// branch is click-to-copy.
+assert.doesNotMatch(sections, /projects-session-chip--running"\s*\n?\s*title=\{`\$\{changes\.count\}/, "the changed-files chip does not wear the running pulse");
+assert.match(sections, /uncommitted changes in the working tree/, "the chip says what the count actually is");
+assert.match(sections, /aria-label=\{`Copy branch name \$\{branch\}`\}/, "the branch is a copy button");
+
+// List sort: alphabetical or most-recent-first, persisted per machine.
+assert.match(shell, /"cave:projects:sort"/, "the sort choice persists to localStorage");
+assert.match(shell, /aria-label="Sort projects"/, "the sort toggle is a labelled group");
+assert.match(shell, /lastActiveByRootKey\.get\(normalizeProjectRoot\(b\.root\)\) \?\? 0/, "recent sort orders by last session activity");
+
+// Meta-row comprehension: the status word and session count explain themselves.
+assert.match(detail, /title="Project state, derived from its latest sessions"/, "the status word carries its derivation");
+assert.match(detail, /\} in this project`\}/, "the session count chip is titled");
+
+// Grants explain themselves where the chips are.
+assert.match(sections, /dashed means no access yet/, "the grants section says what a chip click does");
+
+// ── Hub round 2 (cave-dn9w): deep-links · reveal · demoted color row ─────────
+assert.match(sections, /window\.location\.hash = `card-\$\{card\.id\}`/, "task rows deep-link to their board card");
+assert.match(sections, /onOpenBoard\?\.\(\);\s*\n\s*window\.location\.hash/, "…after switching to the board surface");
+assert.match(shared, /export async function revealProjectFolder/, "the reveal helper lives in projects-shared");
+assert.match(shared, /invoke\("shell_open_path", \{ path: root \}\)/, "…and uses the app's absolute-path-validated command");
+assert.match(detail, /hasDesktopBridge\(\) \?[\s\S]{0,400}Reveal in Finder/, "the detail overflow reveals the folder, desktop only");
+assert.match(list, /hasDesktopBridge\(\) \?[\s\S]{0,500}Reveal in Finder/, "the list row context menu reveals too, desktop only");
+// The color swatches moved INTO the overflow — no always-visible header row.
+assert.match(detail, /PopoverSeparator \/>[\s\S]{0,1400}aria-label=\{`Tile color for \$\{project\.name\}`\}/, "the tile-color swatches live inside the overflow menu");
 console.log("projects-hub.test.ts: ok");

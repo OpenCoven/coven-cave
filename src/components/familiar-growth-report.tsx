@@ -41,6 +41,42 @@ function rateTone(rate: number | null): "good" | "warn" | "bad" | "none" {
   return "good";
 }
 
+type SignalAction = { href: string; label: string };
+
+/**
+ * Next step for a growth signal — turns the read-only flag into a door. Each
+ * kind maps to the surface where the fix actually happens: activity gaps
+ * resume the latest thread (or start one), memory signals open the Familiars
+ * memory surface, retro signals drill into the confidence impact on the
+ * analytics page. Healthy needs no action.
+ */
+function signalAction(
+  signal: GrowthSignal,
+  familiarId: string,
+  latestSession: SessionRow | null,
+): SignalAction | null {
+  switch (signal.kind) {
+    case "session-gap":
+      return latestSession
+        ? { href: `/#chat-${encodeURIComponent(latestSession.id)}`, label: "Resume latest session" }
+        : { href: "/?mode=chat", label: "Start a chat" };
+    case "no-memory":
+    case "stale-memory":
+      return { href: "/?mode=agents", label: "Open memory" };
+    case "low-accept-rate":
+    case "low-retro-volume":
+      return {
+        // Lands on the thread-analysis confidence panel — the page's headline
+        // confidence now derives from thread self-reports, so this reads as
+        // "see where confidence actually stands", not a factor drill-down.
+        href: `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics#fa-confidence`,
+        label: "See thread confidence",
+      };
+    default:
+      return null;
+  }
+}
+
 function OutcomePill({ outcome }: { outcome: RetroOutcome }) {
   return (
     <span className={`retro-pill retro-pill--${outcome.toLowerCase()}`}>
@@ -110,6 +146,14 @@ export function FamiliarGrowthReport({
     () => buildSessionPulse(sessions, familiar.id, nowMs),
     [familiar.id, nowMs, sessions],
   );
+  // Newest session for this familiar — the "resume" target for activity signals.
+  const latestSession = useMemo(
+    () =>
+      sessions
+        .filter((session) => session.familiarId === familiar.id)
+        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))[0] ?? null,
+    [familiar.id, sessions],
+  );
   const weekDelta = pulseDelta(pulse);
   const totalSessions14d = pulseTotal(pulse);
   const acceptedRuns = TRACKS.reduce((sum, track) => sum + report.trackStats[track].accepted, 0);
@@ -166,7 +210,13 @@ export function FamiliarGrowthReport({
       <section className="growth-section" aria-labelledby="growth-activity">
         <div className="growth-section__head">
           <h4 id="growth-activity">Activity trends</h4>
-          <span>{totalSessions14d} session{totalSessions14d === 1 ? "" : "s"} in 14d</span>
+          <a
+            className="growth-section__link focus-ring"
+            href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics#fa-sessions`}
+          >
+            {totalSessions14d} session{totalSessions14d === 1 ? "" : "s"} in 14d
+            <Icon name="ph:caret-right" width={11} aria-hidden />
+          </a>
         </div>
         <PulseBars
           pulse={pulse}
@@ -215,15 +265,24 @@ export function FamiliarGrowthReport({
           <span>Derived signals</span>
         </div>
         <div className="growth-signals">
-          {report.signals.map((signal) => (
-            <div key={`${signal.kind}-${signal.track ?? "all"}`} className={`growth-signal growth-signal--${signal.severity}`}>
-              <Icon name={signalIcon(signal)} aria-hidden />
-              <span>
-                <b>{signal.label}</b>
-                <small>{signal.detail}</small>
-              </span>
-            </div>
-          ))}
+          {report.signals.map((signal) => {
+            const action = signalAction(signal, familiar.id, latestSession);
+            return (
+              <div key={`${signal.kind}-${signal.track ?? "all"}`} className={`growth-signal growth-signal--${signal.severity}`}>
+                <Icon name={signalIcon(signal)} aria-hidden />
+                <span>
+                  <b>{signal.label}</b>
+                  <small>{signal.detail}</small>
+                  {action ? (
+                    <a className="growth-signal__action focus-ring" href={action.href}>
+                      {action.label}
+                      <Icon name="ph:caret-right" width={11} aria-hidden />
+                    </a>
+                  ) : null}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </section>
     </article>

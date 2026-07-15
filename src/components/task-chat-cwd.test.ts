@@ -34,8 +34,8 @@ assert.doesNotMatch(
 );
 assert.match(
   chatView,
-  /<PopoverLabel>Project<\/PopoverLabel>[\s\S]*?onProjectChange\(NO_PROJECT_ID\);[\s\S]*?No project[\s\S]*?projects\.map\(\(entry\) => \(/,
-  "The overflow menu offers an explicit No-project row so a workspace session can stay (or become) project-less",
+  /function SessionOverflowMenu[\s\S]*?<ProjectPickerPopover[\s\S]*?allowNoProject/,
+  "The overflow menu's picker offers an explicit No-project choice so a workspace session can stay (or become) project-less",
 );
 assert.match(
   chatView,
@@ -59,8 +59,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /function SessionOverflowMenu[\s\S]*projects\.map\(\(entry\) => \([\s\S]*onSelect=\{\(\) => \{\s*onProjectChange\(entry\.id\)/,
-  "Active chats expose project switching through the session overflow menu",
+  /function SessionOverflowMenu[\s\S]*<ProjectPickerPopover[\s\S]*value=\{projectId\}[\s\S]*onChange=\{onProjectChange\}/,
+  "Active chats expose project switching through the shared picker popover in the session overflow menu",
 );
 assert.match(
   chatView,

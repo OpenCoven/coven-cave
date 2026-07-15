@@ -31,9 +31,9 @@
         },
         {
           "id": "create-familiar",
-          "title": "Create your first familiar",
-          "body": "Add a named familiar from the Cave sidebar dock, then select it.",
-          "caveAction": { "kind": "cave-route", "label": "Open Cave home", "target": "/" }
+          "title": "Summon your first familiar",
+          "body": "Open the Familiars surface and use the summoning circle — pick a vessel (this machine, SSH, or an OpenClaw agent), name it, give it form, and summon.",
+          "caveAction": { "kind": "cave-route", "label": "Open Familiars", "target": "/?mode=agents" }
         },
         {
           "id": "say-hello",

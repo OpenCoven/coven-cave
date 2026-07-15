@@ -108,4 +108,55 @@ assert.deepEqual(empty, [], "no activity and no rss → no cards (strip stays hi
 const rssOnly = buildDigestCards({ items: [], sessions: [], rssItems, nowMs: NOW });
 assert.equal(rssOnly[0].kind, "rss", "rss-only digest has no leading summary card");
 
+// ── Live tier: running sessions lead as presence cards (cave-9j6a) ────────────
+{
+  const withLive = buildDigestCards({
+    items,
+    sessions: [
+      ...sessions,
+      { id: "L1", title: "Refactor auth", status: "running", updated_at: hoursAgo(0.05), created_at: hoursAgo(30), familiarId: "f1" },
+      { id: "L2", title: "Long research sweep", status: "running", updated_at: hoursAgo(0.5), created_at: hoursAgo(40), familiarId: null },
+    ],
+    rssItems,
+    familiarNameById,
+    nowMs: NOW,
+  });
+  const kinds2 = withLive.map((c) => c.kind);
+  const live = withLive.filter((c) => c.kind === "live");
+  assert.equal(live.length, 2, "every running session gets a live card");
+  assert.ok(kinds2.indexOf("live") < kinds2.indexOf("summary"), "live tier precedes the summary");
+  assert.equal(live[0].sessionId, "L1", "freshest activity first");
+  assert.ok(live[0].subtitle.includes("Sage"), "live subtitle resolves the familiar");
+  assert.ok(live[0].subtitle.includes("working"), "live subtitle says what's happening");
+  // A running session started before today still surfaces (not day-gated) and
+  // never doubles as a plain session card.
+  assert.ok(
+    !withLive.some((c) => c.kind === "session" && c.sessionId === "L1"),
+    "live sessions are not duplicated into the resumable-session tier",
+  );
+
+  // needs-you still leads overall when present.
+  const withNeeds = buildDigestCards({
+    items,
+    sessions: [{ id: "L1", title: "x", status: "running", updated_at: hoursAgo(1), created_at: hoursAgo(1) }],
+    rssItems: [],
+    needsYou: [{ id: "n1", kind: "response-needed", title: "Reply?", updatedAt: hoursAgo(1), createdAt: hoursAgo(1) }],
+    nowMs: NOW,
+  });
+  const kinds3 = withNeeds.map((c) => c.kind);
+  assert.ok(kinds3.indexOf("needs") < kinds3.indexOf("live"), "attention items outrank ambient presence");
+
+  // maxLive caps the tier.
+  const cappedLive = buildDigestCards({
+    items: [],
+    sessions: Array.from({ length: 6 }, (_, i) => ({
+      id: `L${i}`, title: `run ${i}`, status: "running", updated_at: hoursAgo(i + 1), created_at: hoursAgo(i + 2),
+    })),
+    rssItems: [],
+    nowMs: NOW,
+    maxLive: 2,
+  });
+  assert.equal(cappedLive.filter((c) => c.kind === "live").length, 2, "maxLive caps live cards");
+}
+
 console.log("home-digest.test.ts passed");

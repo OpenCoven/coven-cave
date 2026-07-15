@@ -1,7 +1,7 @@
 import { chmod, copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome, covenHome } from "./coven-paths.ts";
 import type {
   WorkflowDryRunPlan,
   WorkflowHttpCall,
@@ -28,7 +28,7 @@ type FoundWorkflow = WorkflowSummary & { storage: WorkflowStorageScope };
  *
  * Manifest directory resolution (first hit wins):
  *   1. `COVEN_WORKFLOWS_DIR` env var (absolute path)
- *   2. bundle mode (`COVEN_CAVE_BUNDLE=1`): `<covenHome>/cave/workflows` (writable)
+ *   2. bundle mode (`COVEN_CAVE_BUNDLE=1`): `<caveHome>/workflows` (writable)
  *   3. `<cwd>/workflows`
  *
  * In packaged desktop builds the process runs with its cwd inside the
@@ -42,7 +42,7 @@ type FoundWorkflow = WorkflowSummary & { storage: WorkflowStorageScope };
 export function workflowsDir(): string {
   const override = process.env.COVEN_WORKFLOWS_DIR?.trim();
   if (override) return override;
-  if (isBundle()) return path.join(covenHome(), "cave", "workflows");
+  if (isBundle()) return path.join(caveHome(), "workflows");
   return path.join(process.cwd(), "workflows");
 }
 

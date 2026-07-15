@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -50,6 +50,22 @@ export type FileMemoryEntry = {
   familiarId?: string;
 };
 
+/**
+ * Memory data supplied by a parent that already fetches /api/coven-memory +
+ * /api/memory (FamiliarsView polls them for its roster stats). Passing this
+ * makes the view a mirror of the parent's single 30s poll instead of running
+ * a duplicate fetch+poll of the same two endpoints. Standalone mounts
+ * (companion rail, studio tab) omit it and keep self-fetching.
+ */
+export type MemoryFeed = {
+  covenEntries: CovenMemoryEntry[];
+  fileEntries: FileMemoryEntry[];
+  error: string | null;
+  loaded: boolean;
+  lastLoadedAt: string | null;
+  reload: () => Promise<void>;
+};
+
 type Props = {
   familiars: Familiar[];
   activeFamiliar: Familiar | null;
@@ -60,6 +76,8 @@ type Props = {
   lockToFamiliar?: boolean;
   /** Compact header for narrow surfaces like the companion rail. */
   compact?: boolean;
+  /** Parent-owned memory data; suppresses this view's own fetch + poll. */
+  feed?: MemoryFeed;
 };
 
 type CovenMemoryResponse =
@@ -124,7 +142,7 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
   ].some((value) => value.toLowerCase().includes(query));
 }
 
-export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
+export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact, feed }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
@@ -169,6 +187,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }, []);
 
   const load = useCallback(async () => {
+    // Parent-fed mode: the parent owns the fetch; its fresh data flows back
+    // in through the mirror effect below.
+    if (feed) {
+      await feed.reload();
+      return;
+    }
     try {
       const [covenRes, fileRes] = await Promise.all([
         fetch("/api/coven-memory", { cache: "no-store" }),
@@ -192,7 +216,21 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       setLoaded(true);
       setLastLoadedAt(new Date().toISOString());
     }
-  }, []);
+  }, [feed]);
+
+  // Mirror parent-fed data into the local state the rest of the view (and the
+  // optimistic-delete overlay) already works against. The pending-delete filter
+  // keeps a parent poll landing inside the 4s undo window from resurrecting the
+  // optimistically-removed row — same guard the self-fetching path applies.
+  useEffect(() => {
+    if (!feed) return;
+    const pendingDelete = pendingDeletePathRef.current;
+    setCovenEntries(feed.covenEntries.filter((e) => e.path !== pendingDelete));
+    setFileEntries(feed.fileEntries.filter((e) => e.fullPath !== pendingDelete));
+    setError(feed.error);
+    if (feed.loaded) setLoaded(true);
+    setLastLoadedAt(feed.lastLoadedAt);
+  }, [feed]);
 
   const handleDelete = useCallback(
     (path: string, key: string, source: "coven" | "file") => {
@@ -209,9 +247,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         // Delete committed server-side; stop filtering (unless a newer delete
         // has already claimed the slot).
         if (pendingDeletePathRef.current === path) pendingDeletePathRef.current = null;
+        // Parent-fed mode: refresh the parent's cache so its mirror (and the
+        // roster stats it derives) reflect the deletion promptly.
+        if (feed) void feed.reload();
       });
     },
-    [scheduleDelete],
+    [scheduleDelete, feed],
   );
 
   const handleUndoDelete = useCallback(() => {
@@ -222,10 +263,12 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   }, [undoDelete, load]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-  // Pauses in a hidden tab; refreshes on return.
-  usePausablePoll(() => void load(), 30_000);
+    if (!feed) void load();
+  }, [load, feed]);
+  // Pauses in a hidden tab; refreshes on return. Disabled entirely in
+  // parent-fed mode — the parent's single poll covers both components
+  // (cave-5dnw: this used to double-fetch /api/coven-memory + /api/memory).
+  usePausablePoll(() => void load(), 30_000, { enabled: !feed });
 
   useEffect(() => {
     if (activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);
@@ -245,7 +288,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   );
 
   const familiarScopedFiles = useMemo(
-    () => fileEntries.filter((entry) => entry.familiarId == null || entry.familiarId === effectiveFamiliarFilter),
+    // Only the selected familiar's own files — shared/global pools and other
+    // familiars' files are excluded from this per-familiar view.
+    () => fileEntries.filter((entry) => entry.familiarId === effectiveFamiliarFilter),
     [fileEntries, effectiveFamiliarFilter],
   );
 
@@ -407,9 +452,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               <span className="inline-flex items-baseline gap-1 px-1"><span className="text-[var(--text-muted)]">Familiar memories</span> <span className="font-semibold text-[var(--text-primary)]">{visibleCoven.length}</span></span>
               <span aria-hidden className="text-[var(--border-strong)]">·</span>
               <span className="mr-0.5 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Sources</span>
-              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} />
-              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} />
-              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} />
+              <SourceFilterChip label="Coven origin" count={fileSourceCounts.covenOrigin} active={sourceFilter === "coven-origin"} onClick={() => setSourceFilter((s) => (s === "coven-origin" ? "all" : "coven-origin"))} help="Files written by this Cave's own familiars and conversations" />
+              <SourceFilterChip label="External runtimes" count={fileSourceCounts.externalHarnesses} active={sourceFilter === "external-harness"} onClick={() => setSourceFilter((s) => (s === "external-harness" ? "all" : "external-harness"))} help="Memory kept by other agent tools on this machine (e.g. Claude Code, Codex)" />
+              <SourceFilterChip label="Runtime memory" count={fileSourceCounts.runtimeMemory} active={sourceFilter === "runtime"} onClick={() => setSourceFilter((s) => (s === "runtime" ? "all" : "runtime"))} help="Working files a runtime writes for itself while it runs" />
               {sourceFilter !== "all" ? (
                 <button
                   type="button"
@@ -565,20 +610,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                   )
                 ) : groupMode === "none" ? (
                   <ul className="divide-y divide-[var(--border-hairline)]">
-                    {pagedRows.map((row, i) => {
-                      const prev = pagedRows[i - 1];
-                      const startsShared = row.ownership === "shared" && (!prev || prev.ownership === "owned");
-                      return (
-                        <Fragment key={row.rowId}>
-                          {startsShared ? (
-                            <li className="memory-shared-divider sticky top-0 z-[1] border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/95 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] backdrop-blur">
-                              Coven-wide memory · shared across all familiars
-                            </li>
-                          ) : null}
-                          {renderRow(row)}
-                        </Fragment>
-                      );
-                    })}
+                    {pagedRows.map(renderRow)}
                   </ul>
                 ) : (
                   <div>
@@ -721,52 +753,6 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Rail variant — most-recent memory writes, no graph.
-// The full view uses the same list/reader surface; the rail tab is a quick
-// "what changed" feed.
-// ────────────────────────────────────────────────────────────────────────────
-
-export function RailMemoryList({
-  familiar,
-  familiars = [],
-  onOpenFullView,
-}: {
-  familiar: Familiar | null;
-  familiars?: Familiar[];
-  onOpenFullView?: () => void;
-}) {
-  if (!familiar) {
-    return (
-      <div className="rail-empty">
-        <p>Pick a familiar.</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rail-memory">
-      <div className="rail-memory__scroll">
-        <FamiliarsMemoryView
-          familiars={familiars}
-          activeFamiliar={familiar}
-          limit={20}
-          compact
-          lockToFamiliar
-        />
-      </div>
-      {onOpenFullView ? (
-        <button
-          type="button"
-          className="focus-ring rail-memory__open-full"
-          onClick={onOpenFullView}
-        >
-          Open full memory →
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // Standalone file-list — reusable by the Familiars detail panel without the
 // coven-memory half or the familiar picker.
 // ────────────────────────────────────────────────────────────────────────────
@@ -889,17 +875,22 @@ function SourceFilterChip({
   count,
   active,
   onClick,
+  help,
 }: {
   label: string;
   count: number;
   active: boolean;
   onClick: () => void;
+  /** One line saying what this source actually is — the three source names
+   *  read as synonyms without it. */
+  help?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={help}
       className={`focus-ring inline-flex h-6 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors ${
         active
           ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/12 text-[var(--text-primary)]"

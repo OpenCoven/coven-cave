@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "loopback-browser",
-  "description": "allows loopback browser webviews to use restricted browser IPC only",
-  "windows": [
+  "description": "allows only the trusted main loopback webview to control native browser and terminal surfaces",
+  "webviews": [
     "main"
   ],
   "remote": {
@@ -24,9 +24,8 @@
     "allow-browser-hide",
     "allow-browser-hide-all-except",
     "allow-browser-close",
+    "allow-browser-deactivate-all",
     "allow-browser-close-all",
-    "allow-browser-reload",
-    "allow-browser-report-title",
-    "allow-browser-report-scroll"
+    "allow-browser-reload"
   ]
 }

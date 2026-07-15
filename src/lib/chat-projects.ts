@@ -11,6 +11,8 @@ export type ChatProjectGroup = {
   projectId: string | null;
   projectRoot: string | null;
   projectName: string | null;
+  /** Explicit user-set project color, when the root maps to a registered project. */
+  projectColor: string | null;
   sessions: SessionRow[];
   defaultFamiliarId: string | null;
   updatedAt: string | null;
@@ -120,12 +122,46 @@ function projectNameWithParent(projectRoot: string): string {
   return parts[0] ?? projectRoot;
 }
 
+// Sessions that exist because a generator ran — canvas refines, cron and
+// heartbeat automations — not because someone opened a chat. They stay
+// reachable from their origination surfaces (Canvas, Schedules, Work Queue);
+// listing them here is just noise between real conversations.
+const CHAT_HIDDEN_ORIGINS: ReadonlySet<string> = new Set(["cron", "heartbeat", "canvas", "journal", "enhance"]);
+
+/** Legacy fallback for journal runs created before origin:"journal" existed:
+ *  their titles are the exact machine prompts (daily-narrative.ts and
+ *  journal-generate.ts), so prefix matches are safe — no human titles a chat
+ *  this way. */
+const LEGACY_JOURNAL_PROMPT_PREFIXES = [
+  "Write a short narrative of my day (",
+  // Stored titles truncate around 60 chars ("…about my…"), so match the
+  // opener, comfortably clear of the cut and still unmistakably machine text.
+  "Write a short, first-person reflective journal entry",
+] as const;
+
+/** True when the row is a generated run rather than a user-facing chat. */
+export function isGeneratedChatSession(session: SessionRow): boolean {
+  if (session.generated) return true;
+  if (session.origin != null && CHAT_HIDDEN_ORIGINS.has(session.origin)) return true;
+  const title = session.title ?? "";
+  return LEGACY_JOURNAL_PROMPT_PREFIXES.some((prefix) => title.startsWith(prefix));
+}
+
 export function filterVisibleChatSessions(
   sessions: SessionRow[],
   familiarId: string | null,
+  opts?: {
+    /** Keep Cave-archived rows (`archived_at` set) — the chat list's explicit
+     *  "Show archived" toggle. Rails and pickers never opt in, so an archived
+     *  chat can't resurface in the siderail through any caller's data path. */
+    includeArchived?: boolean;
+  },
 ): SessionRow[] {
+  const includeArchived = opts?.includeArchived ?? false;
   return sessions
     .filter((session) => !DEAD_CHAT_STATUSES.has(session.status))
+    .filter((session) => includeArchived || !session.archived_at)
+    .filter((session) => !isGeneratedChatSession(session))
     .filter((session) => familiarId === null || session.familiarId === familiarId)
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
 }
@@ -168,6 +204,7 @@ export function deriveChatProjectGroups(
         projectId: project?.id ?? null,
         projectRoot,
         projectName: project?.name ?? inferredProjectName,
+        projectColor: project?.color ?? null,
         sessions: sorted,
         defaultFamiliarId: latest?.familiarId ?? null,
         updatedAt: latest ? sessionTimestamp(latest) : null,
@@ -177,6 +214,10 @@ export function deriveChatProjectGroups(
       if (a.projectRoot === null && b.projectRoot === null) return 0;
       if (a.projectRoot === null) return 1;
       if (b.projectRoot === null) return -1;
+      // Latest activity first: the project holding the most recent chat tops
+      // the rail, so resuming the current conversation never needs scrolling.
+      const byRecency = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+      if (byRecency !== 0) return byRecency;
       const aProject = a.projectId ? projects.find((project) => project.id === a.projectId) : null;
       const bProject = b.projectId ? projects.find((project) => project.id === b.projectId) : null;
       if (aProject && bProject) return compareProjectsAlphabetically(aProject, bProject);

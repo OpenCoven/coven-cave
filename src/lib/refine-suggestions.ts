@@ -19,6 +19,7 @@ export const DEFAULT_REFINE_SUGGESTIONS: readonly string[] = [
   "Polish the visual hierarchy, spacing, and alignment",
   "Improve accessibility — color contrast, labels, and focus states",
   "Add subtle motion and micro-interactions",
+  "Tighten the copy — shorter, clearer labels and headings",
 ];
 
 type Rule = {
@@ -69,12 +70,13 @@ const FALLBACKS: string[] = [
 /**
  * Up to `limit` context-aware suggestions for this artifact, de-duplicated
  * against the defaults so the two rows never repeat an idea. Always returns at
- * least one item by topping up from neutral fallbacks.
+ * least one item by topping up from neutral fallbacks. Like the chat next-path
+ * chips, the row comes as a pair or a spread — never exactly 3.
  */
 export function generateRefineSuggestions(
   code: string,
   kind: ArtifactKind = "html",
-  limit = 3,
+  limit = 4,
 ): string[] {
   const src = code ?? "";
   const taken = new Set(DEFAULT_REFINE_SUGGESTIONS.map((s) => s.toLowerCase()));
@@ -95,5 +97,8 @@ export function generateRefineSuggestions(
     if (out.length >= limit) break;
     add(fb);
   }
+  // 2-or-4 policy: when the pool lands on exactly 3, trim to a tight pair
+  // rather than showing the middling row.
+  if (out.length === 3) out.pop();
   return out;
 }

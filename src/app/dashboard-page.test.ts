@@ -13,7 +13,14 @@ assert.match(page, /dr-page/, "dashboard should use the shared surface styling")
 
 const cockpitUrl = new URL("../components/dashboard/dashboard-cockpit.tsx", import.meta.url);
 assert.equal(existsSync(cockpitUrl), true, "DashboardCockpit component should exist");
-const cockpit = readFileSync(cockpitUrl, "utf8");
+// The cockpit is split across the data/layout root, the presentational panel
+// layer, and the pure label helpers (cave-tsoz) — this contract covers the
+// whole surface, so read the split as one source.
+const cockpit = [
+  readFileSync(cockpitUrl, "utf8"),
+  readFileSync(new URL("../components/dashboard/cockpit-panels.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/dashboard-cockpit-format.ts", import.meta.url), "utf8"),
+].join("\n");
 
 // The cockpit folds the original triage/summary zones in…
 assert.match(cockpit, /ActionInbox/, "cockpit keeps the action inbox (triage) panel");
@@ -158,5 +165,62 @@ assert.match(heatmap, /<title>/, "heatmap cells carry native hover titles");
 assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary");
 assert.match(cockpit, /ariaLabel=\{`Board status:/, "board donut passes a data summary to AT");
 assert.match(cockpit, /ariaLabel=\{`Confidence factors by familiar:/, "confidence heatmap passes a data summary to AT");
+
+// ── Drag a11y (cave-0k5b): titles, not ids ───────────────────────────────────
+// dnd-kit's default announcements read the raw widget ids; the cockpit supplies
+// its own with human panel titles + 1-based positions, and each grip names its
+// panel instead of a generic "Drag to rearrange".
+assert.match(cockpit, /const dragAnnouncements: Announcements = \{/, "cockpit defines custom drag announcements");
+assert.match(cockpit, /accessibility=\{\{ announcements: dragAnnouncements \}\}/, "DndContext receives the custom announcements");
+assert.match(cockpit, /moved to position \$\{pos\.index\} of \$\{pos\.count\}/, "drops announce the panel's new position");
+assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each grip names its panel");
+// The titles map must cover every layout id, or announcements degrade to ids.
+{
+  const layoutIds = cockpit.match(/DEFAULT_LAYOUT: Layout = \{\s*main: \[([^\]]*)\],\s*rail: \[([^\]]*)\]/s);
+  const ids = `${layoutIds[1]},${layoutIds[2]}`.match(/"([^"]+)"/g).map((q) => q.slice(1, -1));
+  for (const id of ids) {
+    assert.match(cockpit, new RegExp(`^  ${id}: "`, "m"), `PANEL_TITLES covers "${id}"`);
+  }
+}
+
+// ── ActionInbox follows the cockpit's 30s repoll (cave-bzch) ─────────────────
+// The widget froze on its mount-time copy; it now adopts each fresh
+// needsAttention list, with locally-acted ids filtered until the incoming
+// list confirms removal (a racing poll can't resurrect a cleared row).
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  assert.match(inbox, /setItems\(initialItems\.filter\(\(it\) => !actedIdsRef\.current\.has\(it\.id\)\)\)/, "prop updates sync into the widget minus acted ids");
+  assert.match(inbox, /actedIdsRef\.current\.add\(item\.id\)/, "single actions register the acted id");
+  assert.match(inbox, /ids\.forEach\(\(id\) => actedIdsRef\.current\.add\(id\)\)/, "bulk actions register acted ids");
+}
+// The workspace SSE 'updated' branch bails on content-equal echoes, so an
+// optimistic complete/dismiss/snooze doesn't trigger one redundant re-render
+// of every inboxItemsWithEphemeral consumer.
+{
+  const ws = readFileSync(new URL("../components/workspace.tsx", import.meta.url), "utf8");
+  assert.match(ws, /if \(JSON\.stringify\(prev\[idx\]\) === JSON\.stringify\(e\.item\)\) return prev;/, "SSE update echoes keep the array identity");
+  // Same guard for the reconnect path: a snapshot that matches current state
+  // must not re-render every inboxItemsWithEphemeral consumer.
+  assert.match(
+    ws,
+    /setInboxItems\(\(prev\) => \(arrayContentEqual\(prev, e\.items\) \? prev : e\.items\)\);/,
+    "SSE reconnect snapshots keep the array identity when content-identical",
+  );
+}
+
+// The dashboard's inline today-summary renders the stored narrative; legacy
+// narratives may still carry the piggybacked <coven:next-paths> block, so the
+// render must exclude it.
+{
+  const todaySummary = readFileSync(
+    new URL("../components/dashboard/today-summary.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    todaySummary,
+    /extractNextPaths\(summary\.narrative\.text\)\.visible/,
+    "today-summary should exclude the next-paths suggestions block from the narrative",
+  );
+}
 
 console.log("dashboard-page.test.ts: ok");

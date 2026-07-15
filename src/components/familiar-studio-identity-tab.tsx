@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
@@ -101,8 +101,9 @@ function IdentityField({
         ) : (
           <input type="text" {...(sharedProps as any)} />
         )}
-        <button
-          type="button"
+        <IconButton
+          icon="ph:arrow-counter-clockwise"
+          size="lg"
           aria-label={`Reset ${label} to daemon value`}
           title="Reset to daemon value"
           disabled={!hasOverride}
@@ -110,10 +111,7 @@ function IdentityField({
             onReset();
             setDraft("");
           }}
-          className="familiar-studio-identity__reset"
-        >
-          <Icon name="ph:arrow-counter-clockwise" width={12} />
-        </button>
+        />
       </div>
     </label>
   );

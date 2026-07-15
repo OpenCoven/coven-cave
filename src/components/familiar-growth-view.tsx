@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { AuthedImage } from "@/components/ui/authed-image";
 import {
   buildFamiliarCardStats,
   type CovenMemoryEntry,
@@ -14,6 +15,7 @@ import {
 import { FamiliarGrowthReport } from "@/components/familiar-growth-report";
 import { deriveGrowthReport, type FamiliarGrowthReport as GrowthReportModel } from "@/lib/familiar-growth-signals";
 import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -121,7 +123,8 @@ export function FamiliarGrowthView({
   const [now, setNow] = useState(() => Date.now());
   const { announce } = useAnnouncer();
 
-  const load = useCallback(async ({ quiet = false } = {}) => {
+  // `silent` marks the recurring background poll — refresh without announcing.
+  const load = useCallback(async ({ quiet = false, silent = false } = {}) => {
     if (quiet) setRefreshing(true);
     else setLoading(true);
     try {
@@ -150,7 +153,7 @@ export function FamiliarGrowthView({
       setError(errors.length > 0 ? errors.join(" · ") : null);
       // Selection is reconciled against the attention-sorted roster below, so
       // a fresh load lands on the familiar that most needs attention.
-      if (quiet) announce("Growth data refreshed.");
+      if (quiet && !silent) announce("Growth data refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "growth data unavailable");
     } finally {
@@ -163,6 +166,10 @@ export function FamiliarGrowthView({
     if (initialData) return;
     void load();
   }, [initialData, load]);
+
+  // Growth is a live triage surface — keep health labels, pulses, and
+  // last-active stamps current without a manual refresh. Hidden tabs pause.
+  usePausablePoll(() => void load({ quiet: true, silent: true }), 60_000);
 
   const stats = useMemo(
     () => buildFamiliarCardStats({
@@ -295,13 +302,16 @@ export function FamiliarGrowthView({
                       aria-pressed={selectedItem}
                       onClick={() => setSelectedFamiliarId(familiar.id)}
                     >
-                      {familiar.avatarUrl ? (
-                        <img className="retro-avatar growth-familiar__avatar" src={familiar.avatarUrl} alt="" />
-                      ) : (
-                        <span className="retro-avatar growth-familiar__avatar">
-                          {familiar.display_name.slice(0, 1).toUpperCase()}
-                        </span>
-                      )}
+                      <AuthedImage
+                        className="retro-avatar growth-familiar__avatar"
+                        src={familiar.avatarUrl}
+                        alt=""
+                        fallback={
+                          <span className="retro-avatar growth-familiar__avatar">
+                            {familiar.display_name.slice(0, 1).toUpperCase()}
+                          </span>
+                        }
+                      />
                       <span className="growth-familiar__copy">
                         <b>{familiar.display_name}</b>
                         <small>{familiar.role || familiar.harness || "familiar"}</small>

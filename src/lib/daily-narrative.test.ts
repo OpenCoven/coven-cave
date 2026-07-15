@@ -75,6 +75,20 @@ const now = new Date("2026-06-18T21:15:00.000Z");
   const long = normalizeNarrativeText("x".repeat(NARRATIVE_MAX_CHARS + 500));
   assert.ok(long.length <= NARRATIVE_MAX_CHARS, "narrative should cap at the max length");
   assert.match(long, /…$/, "capped narrative should end with an ellipsis");
+  // The chat pipeline appends a <coven:next-paths> suggestions block to every
+  // reply; the report narrative must exclude it entirely.
+  assert.equal(
+    normalizeNarrativeText(
+      "A steady day of shipping.\n\n<coven:next-paths>\n- Review the open PR\n- Plan tomorrow\n</coven:next-paths>",
+    ),
+    "A steady day of shipping.",
+    "the piggybacked next-paths block should be stripped from the narrative",
+  );
+  assert.equal(
+    normalizeNarrativeText("Partial day.\n<coven:next-paths>\n- Run the te"),
+    "Partial day.",
+    "an unterminated next-paths block should also be stripped",
+  );
 }
 
 console.log("daily-narrative.test.ts: ok");

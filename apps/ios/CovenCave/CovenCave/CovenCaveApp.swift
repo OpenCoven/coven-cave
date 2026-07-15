@@ -14,7 +14,15 @@ struct CovenCaveApp: App {
         let mode = AppearanceMode(rawValue: appearanceRaw) ?? .desktop
         let resolved = mode.resolve(desktop: app.chrome)
         return WindowGroup {
-            RootView()
+            // Wide windows earn the split layouts (cave-bgmg): non-Max iPhones
+            // report a COMPACT horizontal size class in landscape, so every
+            // NavigationSplitView collapses and the lists stretch into one
+            // sparse full-width column. Any window wide enough for two real
+            // columns behaves as regular — the same call Apple makes for Max
+            // phones — which engages the existing balanced splits everywhere.
+            WideSplitEnabler {
+                RootView()
+            }
                 .environment(app)
                 // Propagate the chrome palette to every view, tint app-wide
                 // controls with its accent, and apply the resolved light/dark mode.
@@ -49,6 +57,25 @@ struct CovenCaveApp: App {
                 // the matching tab/sheet. Handled even before connect — the tab is
                 // set so the right surface shows once the desktop is reached.
                 .onOpenURL { app.handleDeepLink($0) }
+        }
+    }
+}
+
+/// Promote the horizontal size class to `.regular` in any window wide enough
+/// for two real columns (cave-bgmg). Non-Max iPhones report `.compact` in
+/// landscape, collapsing every NavigationSplitView into one sparse full-width
+/// column; ≥700pt of width is the same bar Apple's Max phones clear. Narrow
+/// windows keep the inherited class untouched.
+private struct WideSplitEnabler<Content: View>: View {
+    @Environment(\.horizontalSizeClass) private var inherited
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        GeometryReader { geo in
+            content.environment(
+                \.horizontalSizeClass,
+                geo.size.width >= 700 ? .regular : inherited
+            )
         }
     }
 }

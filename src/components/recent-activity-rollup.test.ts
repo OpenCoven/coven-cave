@@ -36,4 +36,13 @@ assert.match(
   "the sessions poll pauses during active input composition",
 );
 
+// The poll is guarded like every other polled surface: a monotonic reqId drops
+// a superseded overlapping load, and arrayContentEqual keeps the previous
+// reference when an idle tick rebuilds an identical list (no needless re-render
+// of this always-mounted sidebar rollup).
+assert.match(source, /const loadReqRef = useRef\(0\)/, "the rollup poll tracks a request id");
+assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load bumps the request id");
+assert.match(source, /if \(reqId !== loadReqRef\.current\) return;/, "a superseded load drops its writes");
+assert.match(source, /setSessions\(\(prev\) => \(arrayContentEqual\(prev, next\) \? prev : next\)\)/, "an unchanged poll keeps the previous sessions reference");
+
 console.log("recent-activity-rollup.test.ts: ok");

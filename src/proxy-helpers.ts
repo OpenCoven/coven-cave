@@ -44,7 +44,7 @@ function portFromHost(host: string | null) {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
-function isTailscaleServeHost(host: string | null) {
+export function isTailscaleServeHost(host: string | null) {
   const hostname = hostnameFromHost(host);
   return Boolean(hostname?.endsWith(".ts.net"));
 }
@@ -268,4 +268,11 @@ export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",
   "multipart/form-data",
+  // The local-only backdrop endpoint accepts raw, size-bounded raster bytes so
+  // it can reject an oversized upload while streaming instead of materialising
+  // multipart/base64 overhead. The route still verifies MIME + magic bytes;
+  // SVG remains deliberately unsupported.
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ];

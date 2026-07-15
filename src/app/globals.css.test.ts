@@ -138,4 +138,17 @@ assert.doesNotMatch(
   ".cave-mode-fade must not retain end-state animation styles (containing-block trap, cave-cco)",
 );
 
+// The chat/code sidebar responds to its own panel width, not the viewport —
+// at narrow drag widths the per-row project tile yields its slot to the title.
+assert.match(
+  css,
+  /\.cnav\s*\{[\s\S]*?container-type:\s*inline-size;[\s\S]*?container-name:\s*cnav;/,
+  ".cnav is an inline-size query container",
+);
+assert.match(
+  css,
+  /@container cnav \(max-width: 212px\)\s*\{[\s\S]*?\.cnav__thread-proj\s*\{\s*display:\s*none;/,
+  "narrow cnav panels drop the per-row project tile so titles keep room",
+);
+
 console.log("globals.css.test.ts (mode-fade containing block) OK");

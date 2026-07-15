@@ -45,7 +45,7 @@ assert.match(
 //    even a directly-mounted list can't show another familiar's threads.
 assert.match(
   chatList,
-  /return filterVisibleChatSessions\(rows, familiar\?\.id \?\? null\);/,
+  /return filterVisibleChatSessions\(rows, familiar\?\.id \?\? null, \{ includeArchived: showArchived \}\);/,
   "ChatList must filter its visible rows by the familiar",
 );
 

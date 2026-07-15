@@ -67,6 +67,15 @@ export async function GET() {
         : !reviewRes.ok
           ? reviewRes.status
           : createdRes.status;
+      if (failedStatus === 401) {
+        // The stored PAT was rejected (revoked/expired) — flag it so the
+        // client reopens the connect form instead of pinning a raw 401
+        // against a form gated on configured===false (cave-cjgg/cave-d6zq).
+        return NextResponse.json(
+          { ok: false, error: "GitHub rejected the stored token (revoked or expired).", items: [], configured: true, patInvalid: true },
+          { status: 200 },
+        );
+      }
       return NextResponse.json(
         { ok: false, error: `GitHub API error: HTTP ${failedStatus}`, items: [] },
         { status: 502 },

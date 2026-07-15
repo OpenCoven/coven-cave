@@ -40,4 +40,16 @@ assert.match(
   "the open-file loader drops a stale response when the selection changes",
 );
 
+// The Familiar tab's capability panel (extracted to chat-familiar-view.tsx)
+// awaits four fetches with one Promise.all — same rule: a slow response must
+// not setState after cleanup, even though the keyed host remounts per familiar.
+const familiarView = readFileSync(new URL("./chat-familiar-view.tsx", import.meta.url), "utf8");
+assert.match(familiarView, /let cancelled = false;/, "the capability loader declares a cancelled guard");
+assert.match(
+  familiarView,
+  /\.then\(\(\[rolesRes, skillsRes, capsRes, harnessesRes\]\) => \{\s*if \(cancelled\) return;/,
+  "the capability loader drops stale/post-unmount responses before any setState",
+);
+assert.match(familiarView, /return \(\) => \{ cancelled = true; \};/, "the capability loader cleans up by cancelling in-flight work");
+
 console.log("inspector-pane-load-guards.test.ts: ok");

@@ -16,7 +16,7 @@ assert.equal(isMissingExecutableError(new Error("spawn coven ENOENT")), false);
 assert.deepEqual(covenCliMissingError(), {
   ok: false,
   code: "ENOENT",
-  error: "coven CLI not found on PATH. Open Setup to install it, then try again.",
+  error: "Coven CLI not found on PATH. Open Setup to install it, then try again.",
 });
 
 console.log("coven-spawn-error.test.ts: ok");

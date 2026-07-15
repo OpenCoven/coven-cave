@@ -66,6 +66,16 @@ test("mobile tailscale app mode records tokenless ownership separately from invi
   assert.match(script, /recorded_server_mode_is app/);
   assert.match(script, /clear_mobile_tokens/);
   assert.match(script, /rm -f "\$TOKEN_FILE" "\$SIDECAR_TOKEN_FILE"/);
+  assert.match(script, /rm -f "\$INVITE_FILE" "\$EXPIRES_FILE"/);
+});
+
+test("mobile tailscale app mode takes over an untracked same-checkout dev server", () => {
+  assert.match(script, /take_over_same_checkout_server_for_app\(\)/);
+  assert.match(script, /\[ "\$COMMAND" != "app" \]/);
+  assert.match(script, /occupant_is_this_checkout/);
+  assert.match(script, /kill "\$OCCUPANT_PID"/);
+  assert.match(script, /wait_for_port_to_clear "\$PORT"/);
+  assert.match(script, /Taking over untracked same-checkout dev server/);
 });
 
 test("mobile tailscale runner persists state for remote invite regeneration", () => {

@@ -1,33 +1,44 @@
 "use client";
 
 // Marketplace hub — the store and your familiars' setup merged into one
-// surface. A single slim header row holds the section tabs (Browse · Roles ·
-// Skills · Capabilities, with live counts) and the scoped search — no hero.
-// Browse is the plugin store (collections, categories, cards);
-// Roles/Skills/Capabilities are the "what my familiars can do" views that used
-// to live on the separate Roles page. Deep links via WorkspaceMode still work —
-// the "roles" and "capabilities" modes open the matching section here.
+// surface. A single slim header row holds the section tabs (Browse · Crafts ·
+// Skills · Build, with live counts) and the scoped search — no
+// hero. Browse is the plugin store (collections, categories, cards);
+// Crafts sits between Role context and effective capabilities; Skills is
+// the "what my familiars can do" view that used
+// to live on the separate Roles page; Build authors a new SKILL.md into a
+// local skill root. Deep links via WorkspaceMode still work —
+// "roles" and "capabilities" land on Browse while those sections are hidden.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
+import type { CraftActionError } from "@/components/marketplace/craft-detail";
+import { CraftCreateDrawer, type CraftDrawerSeed } from "@/components/marketplace/craft-create-drawer";
+import {
+  clearCraftArrivalWatch,
+  findArrivedDraftId,
+  readCraftArrivalWatch,
+  type CraftArrivalWatch,
+} from "@/lib/craft-arrival";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
-import { RolesSection, type RoleEntry } from "@/components/marketplace/roles-section";
+import { SkillBuilder } from "@/components/marketplace/skill-builder";
 import { SkillBrowser, type SkillBrowserEntry } from "@/components/skill-browser";
 import {
   SkillDetailDrawer,
   type FamiliarForSkill,
   type SkillEntry as SkillDetailEntry,
 } from "@/components/skill-detail-drawer";
-import { CapabilitiesViewSurface } from "@/components/capabilities-view";
 import {
   categoriesFrom,
   filterPlugins,
@@ -41,26 +52,39 @@ import {
   type MarketplacePlugin,
 } from "@/lib/marketplace-catalog";
 
-export type MarketplaceSection = "browse" | "roles" | "skills" | "capabilities";
+export type MarketplaceSection = "browse" | "crafts" | "roles" | "skills" | "build" | "capabilities";
 
+// Roles and Capabilities are hidden from the hub (kept in the
+// MarketplaceSection type so `mode === "roles"` / `mode === "capabilities"`
+// deep links keep type-checking — they land on Browse). The RolesSection
+// component, its CSS, and the addons.roles config flag were removed as dead
+// code (cave-vp4h); the Capabilities surface, its normalize helper, and their
+// CSS followed (cave-4n7j — git history keeps them). /api/roles and
+// /api/capabilities stay intact: they serve live role definitions and the
+// familiar-studio Brain tab / inspector capability chips.
 const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
   { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
-  { id: "roles", label: "Roles", icon: "ph:mask-happy" },
+  { id: "crafts", label: "Crafts", icon: "ph:package-bold" },
   { id: "skills", label: "Skills", icon: "ph:sparkle" },
-  { id: "capabilities", label: "Capabilities", icon: "ph:lightning-bold" },
+  { id: "build", label: "Build", icon: "ph:hammer" },
 ];
 
 // One-line hint per section — surfaces as the tab tooltip (the old hero
 // subtitle, demoted so the header stays a single row).
 const SECTION_HINT: Record<MarketplaceSection, string> = {
-  browse: "Browse MCP servers and skills, then add them to give your familiars new capabilities.",
+  browse: "The catalog — add MCP servers, connected APIs, skills, and prompt packs to your Cave.",
+  crafts: "Versioned Role loadouts — preview, verify, equip, update, and detach Craft bundles.",
   roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
-  skills: "Reusable SKILL.md procedures your familiars can load while they work.",
-  capabilities: "What each runtime supports — compare tools and features side by side.",
+  skills: "Skills already in your Cave — reusable SKILL.md procedures familiars load while they work.",
+  build: "Author a new skill — write the SKILL.md your familiars load, straight into a local skill root.",
+  capabilities: "What each runtime you've installed can do — retired from the hub; deep links land on Browse.",
 };
 
-const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> = {
+// Build owns its surface end-to-end, so the hub search hides there and this
+// record only types the searchable sections.
+const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities" | "build">, string> = {
   browse: "Search the marketplace",
+  crafts: "Search Crafts",
   roles: "Search roles",
   skills: "Search skills",
 };
@@ -71,6 +95,8 @@ const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
   { id: "mcp", label: "MCP servers" },
   { id: "skill", label: "Skills" },
   { id: "prompt", label: "Prompts" },
+  { id: "knowledge-pack", label: "Knowledge packs" },
+  { id: "craft", label: "Crafts" },
 ];
 
 const SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: string }> = [
@@ -98,21 +124,21 @@ function toSkillDetail(skill: SkillBrowserEntry): SkillDetailEntry {
 type Props = {
   /** Which section to land on — deep links from the roles/capabilities modes. */
   initialSection?: MarketplaceSection;
-  /** Pre-selects the harness filter on the Capabilities section. */
-  activeHarness?: string | null;
   /** Familiars offered by the skill detail drawer's "try it" affordances. */
   familiars?: FamiliarForSkill[];
-  /** Opens a chat with the familiar that owns a role. */
+  /** Opens a chat with the familiar that owns a role. Unused while the Roles
+   *  section is hidden; kept so re-enabling Roles is a UI-only change. */
   onOpenChat?: (familiarId: string) => void;
 };
 
 export function MarketplaceViewSurface({
   initialSection = "browse",
-  activeHarness = null,
   familiars = [],
-  onOpenChat,
 }: Props = {}) {
-  const [section, setSection] = useState<MarketplaceSection>(initialSection);
+  // Roles and Capabilities are hidden: their deep links land on Browse.
+  const [section, setSection] = useState<MarketplaceSection>(
+    initialSection === "roles" || initialSection === "capabilities" ? "browse" : initialSection,
+  );
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -125,6 +151,17 @@ export function MarketplaceViewSurface({
   const [sort, setSort] = useState<SortKey>("recommended");
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [creatingCraft, setCreatingCraft] = useState(false);
+  // Editing an existing draft reopens the create drawer pre-seeded (F5).
+  const [craftSeed, setCraftSeed] = useState<CraftDrawerSeed | null>(null);
+  // Tab-level arrival watch (F2): a dispatched describe-build outlives the
+  // drawer, so the hub resumes the wait, shows an in-flight row on Crafts,
+  // and opens the draft when it lands.
+  const [craftWatch, setCraftWatch] = useState<CraftArrivalWatch | null>(null);
+  useEffect(() => {
+    setCraftWatch(readCraftArrivalWatch());
+  }, [creatingCraft, section]);
+  const [craftErrors, setCraftErrors] = useState<Record<string, CraftActionError | undefined>>({});
   // Ids with an install/uninstall in flight. A Set (not a scalar) so two
   // concurrent installs each keep their own busy state — with a scalar, the
   // second click overwrote the first and whichever settled first cleared the
@@ -141,11 +178,7 @@ export function MarketplaceViewSurface({
     setBusyIds(next);
   }, []);
 
-  // Setup state (Roles / Skills sections).
-  const [roles, setRoles] = useState<RoleEntry[]>([]);
-  const [rolesLoaded, setRolesLoaded] = useState(false);
-  const [rolesError, setRolesError] = useState<string | null>(null);
-  const [busyRoleKey, setBusyRoleKey] = useState<string | null>(null);
+  // Setup state (Skills section).
   const [skills, setSkills] = useState<SkillBrowserEntry[]>([]);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
@@ -155,7 +188,6 @@ export function MarketplaceViewSurface({
   // and clobber the list (the useProjects hygiene pattern). A superseded load
   // bails before touching state; only the winning load flips its loaded flag.
   const loadCtl = useRef<AbortController | null>(null);
-  const rolesCtl = useRef<AbortController | null>(null);
   const skillsCtl = useRef<AbortController | null>(null);
   // Install / remove / role-toggle / configure surface their outcome as
   // visual-only <p> banners (not toasts), so mirror success + errors to the
@@ -195,26 +227,33 @@ export function MarketplaceViewSurface({
     }
   }, []);
 
-  const loadRoles = useCallback(async () => {
-    rolesCtl.current?.abort();
-    const ctl = new AbortController();
-    rolesCtl.current = ctl;
-    setRolesLoaded(false);
-    try {
-      const res = await fetch("/api/roles", { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as { ok?: boolean; roles?: RoleEntry[]; error?: string };
-      if (ctl.signal.aborted) return;
-      if (!json.ok) throw new Error(json.error ?? `roles http ${res.status}`);
-      setRoles(json.roles ?? []);
-      setRolesError(null);
-    } catch (err) {
-      if (ctl.signal.aborted) return;
-      setRoles([]);
-      setRolesError(err instanceof Error ? err.message : "roles unavailable");
-    } finally {
-      if (!ctl.signal.aborted) setRolesLoaded(true);
+  // Resume the arrival wait at the hub level (F2): while a describe-build is
+  // in flight, poll the drafts store even with the drawer closed; when the
+  // familiar's draft lands, clear the watch, announce, and open it.
+  const checkCraftArrival = useCallback(async () => {
+    const watch = readCraftArrivalWatch();
+    if (!watch) {
+      setCraftWatch(null);
+      return;
     }
-  }, []);
+    try {
+      const res = await fetch("/api/marketplace/crafts/drafts", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; drafts?: Array<{ id?: string }> };
+      if (!json.ok || !Array.isArray(json.drafts)) return;
+      const arrived = findArrivedDraftId(watch, json.drafts.map((draft) => draft.id));
+      if (arrived) {
+        clearCraftArrivalWatch();
+        setCraftWatch(null);
+        announce("Your familiar's Craft draft arrived", "polite");
+        void load().then(() => setSelected(arrived));
+      }
+    } catch {
+      // Local API — the next tick retries.
+    }
+  }, [announce, load]);
+  usePausablePoll(() => void checkCraftArrival(), 5000, {
+    enabled: craftWatch !== null && !creatingCraft,
+  });
 
   const loadSkills = useCallback(async (search = "") => {
     skillsCtl.current?.abort();
@@ -247,14 +286,12 @@ export function MarketplaceViewSurface({
 
   useEffect(() => {
     void load();
-    void loadRoles();
     void loadSkills();
     return () => {
       loadCtl.current?.abort();
-      rolesCtl.current?.abort();
       skillsCtl.current?.abort();
     };
-  }, [load, loadRoles, loadSkills]);
+  }, [load, loadSkills]);
 
   useEffect(() => {
     if (section !== "skills") return;
@@ -292,10 +329,6 @@ export function MarketplaceViewSurface({
     for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;
   }, [plugins]);
-  const rolesSummary = useMemo(() => {
-    const activeRoles = roles.reduce((n, role) => n + (role.active ? 1 : 0), 0);
-    return { activeRoles, totalRoles: roles.length };
-  }, [roles]);
 
   // The slim header's tab items — label plus a live count per section. Counts
   // appear once their loader settles so the header never flashes a stale 0;
@@ -308,12 +341,12 @@ export function MarketplaceViewSurface({
         icon: s.icon,
         count:
           s.id === "browse" && loaded ? plugins.length
-          : s.id === "roles" && rolesLoaded ? roles.length
+          : s.id === "crafts" && loaded ? plugins.filter((plugin) => plugin.kind === "craft").length
           : s.id === "skills" && skillsLoaded ? skills.length
           : undefined,
         title: SECTION_HINT[s.id],
       })),
-    [loaded, plugins.length, rolesLoaded, roles.length, skillsLoaded, skills.length],
+    [loaded, plugins.length, skillsLoaded, skills.length],
   );
 
   const activeCollection = useMemo(
@@ -336,6 +369,14 @@ export function MarketplaceViewSurface({
   }, [plugins, query, category, kind, sort, collectionIds, activeCollection]);
   const groupedFiltered = useMemo(() => groupPluginsByCategory(filtered), [filtered]);
   const groupedKindCounts = useMemo(() => countByKind(filtered), [filtered]);
+  const craftPlugins = useMemo(
+    () => sortPlugins(filterPlugins(plugins, { query, kind: "craft" }), sort),
+    [plugins, query, sort],
+  );
+  // Lifecycle grouping (docs/craft-ux.md F11): local drafts surface as their
+  // own strip above the published catalog instead of interleaving with it.
+  const draftCrafts = useMemo(() => craftPlugins.filter((plugin) => plugin.draft), [craftPlugins]);
+  const publishedCrafts = useMemo(() => craftPlugins.filter((plugin) => !plugin.draft), [craftPlugins]);
 
   const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selected) ?? null, [plugins, selected]);
   const configuringPlugin = useMemo(() => plugins.find((p) => p.id === configuringId) ?? null, [plugins, configuringId]);
@@ -353,109 +394,153 @@ export function MarketplaceViewSurface({
   }, []);
 
   const add = useCallback(async (id: string) => {
+    const plugin = plugins.find((entry) => entry.id === id);
+    if (!plugin) return;
+    const isCraft = plugin.kind === "craft";
     markBusy(id, true);
-    setInstalled(id, true);
+    if (!isCraft) setInstalled(id, true);
+    setError(null); // a fresh attempt clears any prior failure banner (it's only
+                    // set on error and was otherwise never cleared without a reload)
+    setCraftErrors((current) => ({ ...current, [id]: undefined }));
     try {
-      const res = await fetch("/api/marketplace/install", {
+      const endpoint = plugin.kind === "craft"
+        ? "/api/marketplace/crafts/install"
+        : "/api/marketplace/install";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      const json = (await res.json()) as { ok?: boolean; error?: string };
-      if (!json.ok) throw new Error(json.error ?? "install failed");
-      announce("Added to your setup", "polite");
-    } catch (err) {
-      setInstalled(id, false);
-      const msg = err instanceof Error ? err.message : "install failed";
-      setError(msg);
-      announce(msg, "assertive");
-    } finally {
-      markBusy(id, false);
-    }
-  }, [markBusy, setInstalled, announce]);
-
-  const remove = useCallback(async (id: string) => {
-    markBusy(id, true);
-    setInstalled(id, false);
-    try {
-      const res = await fetch("/api/marketplace/uninstall", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      const json = (await res.json()) as { ok?: boolean; error?: string };
-      if (!json.ok) throw new Error(json.error ?? "uninstall failed");
-      announce("Removed from your setup", "polite");
-    } catch (err) {
-      setInstalled(id, true);
-      const msg = err instanceof Error ? err.message : "uninstall failed";
-      setError(msg);
-      announce(msg, "assertive");
-    } finally {
-      markBusy(id, false);
-    }
-  }, [markBusy, setInstalled, announce]);
-
-  const toggleRole = useCallback(async (role: RoleEntry) => {
-    const key = `${role.familiar}:${role.id}`;
-    const next = !role.active;
-    setBusyRoleKey(key);
-    setRoles((current) =>
-      current.map((item) => (item.id === role.id && item.familiar === role.familiar ? { ...item, active: next } : item)),
-    );
-    try {
-      const res = await fetch("/api/roles", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: role.id, familiar: role.familiar, active: next }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? `roles http ${res.status}`);
-      announce(next ? "Role enabled" : "Role disabled", "polite");
-    } catch (err) {
-      setRoles((current) =>
-        current.map((item) =>
-          item.id === role.id && item.familiar === role.familiar ? { ...item, active: role.active } : item,
-        ),
-      );
-      const msg = err instanceof Error ? err.message : "role update failed";
-      setRolesError(msg);
-      announce(msg, "assertive");
-    } finally {
-      setBusyRoleKey(null);
-    }
-  }, [announce]);
-
-  // A role-card skill chip opens that skill's detail drawer (resolving the
-  // chip's name against the scanned local skills). Unknown/not-yet-loaded
-  // skills fall back to the Skills section, pre-filtered to the name.
-  const openSkillByName = useCallback(
-    (name: string) => {
-      const q = name.toLowerCase();
-      const match = skills.find(
-        (s) =>
-          s.id === name ||
-          s.slug?.toLowerCase() === q ||
-          s.packageName?.toLowerCase() === q ||
-          (s.owner && s.repo
-            ? `${s.owner.toLowerCase()}/${s.repo.toLowerCase()}` === q
-            : false) ||
-          s.name.toLowerCase() === q ||
-          s.owner?.toLowerCase() === q,
-      );
-      if (match) {
-        setSelectedSkill(toSkillDetail(match));
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        installedAt?: string;
+        verifiedAt?: string;
+        runtime?: string;
+        craftVersion?: string;
+        diagnostic?: CraftActionError;
+      };
+      if (!json.ok) {
+        const message = json.error ?? "install failed";
+        if (isCraft) {
+          setCraftErrors((current) => ({
+            ...current,
+            [id]: {
+              message,
+              code: json.code,
+              affectedRoles: json.diagnostic?.affectedRoles,
+              affectedRoleCount: json.diagnostic?.affectedRoleCount,
+              affectedRolesTruncated: json.diagnostic?.affectedRolesTruncated,
+            },
+          }));
+        } else {
+          setInstalled(id, false);
+          setError(message);
+        }
+        announce(message, "assertive");
         return;
       }
-      setSection("skills");
-      setQuery(name);
-    },
-    [skills],
-  );
+      if (isCraft) {
+        setPlugins((current) => current.map((entry) => entry.id === id ? {
+          ...entry,
+          installed: true,
+          updateAvailable: false,
+          installation: {
+            version: json.craftVersion ?? entry.version,
+            source: "catalog",
+            installedAt: json.installedAt ?? new Date().toISOString(),
+            runtime: json.runtime,
+            verifiedAt: json.verifiedAt,
+            craftVersion: json.craftVersion ?? entry.version,
+          },
+        } : entry));
+        announce("Craft installed and verified", "polite");
+      } else {
+        announce("Added to your setup", "polite");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "install failed";
+      if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
+      else {
+        setInstalled(id, false);
+        setError(msg);
+      }
+      announce(msg, "assertive");
+    } finally {
+      markBusy(id, false);
+    }
+  }, [announce, markBusy, plugins, setInstalled]);
+
+  const remove = useCallback(async (id: string) => {
+    const plugin = plugins.find((entry) => entry.id === id);
+    if (!plugin) return;
+    const isCraft = plugin.kind === "craft";
+    markBusy(id, true);
+    if (!isCraft) setInstalled(id, false);
+    setError(null); // clear any prior failure banner on a fresh attempt
+    setCraftErrors((current) => ({ ...current, [id]: undefined }));
+    try {
+      const endpoint = plugin.kind === "craft"
+        ? "/api/marketplace/crafts/uninstall"
+        : "/api/marketplace/uninstall";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        code?: string;
+        diagnostic?: CraftActionError;
+      };
+      if (!json.ok) {
+        const message = json.error ?? "uninstall failed";
+        if (isCraft) {
+          setCraftErrors((current) => ({
+            ...current,
+            [id]: {
+              message,
+              code: json.code,
+              affectedRoles: json.diagnostic?.affectedRoles,
+              affectedRoleCount: json.diagnostic?.affectedRoleCount,
+              affectedRolesTruncated: json.diagnostic?.affectedRolesTruncated,
+            },
+          }));
+        } else {
+          setInstalled(id, true);
+          setError(message);
+        }
+        announce(message, "assertive");
+        return;
+      }
+      if (isCraft) {
+        setPlugins((current) => current.map((entry) => {
+          if (entry.id !== id) return entry;
+          const { installation: _installation, ...withoutInstallation } = entry;
+          return { ...withoutInstallation, installed: false, updateAvailable: false };
+        }));
+        announce("Craft removed", "polite");
+      } else {
+        setInstalled(id, false);
+        announce("Removed from your setup", "polite");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "uninstall failed";
+      if (isCraft) setCraftErrors((current) => ({ ...current, [id]: { message: msg } }));
+      else {
+        setInstalled(id, true);
+        setError(msg);
+      }
+      announce(msg, "assertive");
+    } finally {
+      markBusy(id, false);
+    }
+  }, [announce, markBusy, plugins, setInstalled]);
 
   const activeError =
     section === "browse" ? error
-    : section === "roles" ? rolesError
     : section === "skills" ? skillsError
     : null;
 
@@ -475,40 +560,43 @@ export function MarketplaceViewSurface({
     // viewport, so the surface also adapts inside a narrow drag-to-split pane
     // on a wide screen (same pattern as chat's chatlist/composer containers).
     <section className="marketplace-view @container/marketplace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
-      {/* Slim header — one row: section tabs (live counts, subtitle as
-          tooltip) plus the scoped search. The shared Tabs primitive supplies
+      {/* Compact header — one slim topmost band (shared .surface-compact
+          chrome with Rituals and the GitHub surface): small title, size-sm
+          segment section tabs (live counts, subtitle as tooltip), scoped
+          search on the right. The shared Tabs primitive supplies
           role=tablist/tab, roving tabindex, and the marketplace-tab / panel
           aria wiring via idPrefix. */}
-      <header className="border-b border-[var(--border-hairline)] px-4 @min-[560px]/marketplace:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-x-4">
-          <div className="-mx-3 min-w-0 overflow-x-auto">
-            <Tabs
-              items={sectionTabs}
-              value={section}
-              onChange={selectSection}
-              ariaLabel="Marketplace sections"
-              idPrefix="marketplace"
-              bordered={false}
-            />
-          </div>
-          {section !== "capabilities" ? (
+      <header className="surface-compact-header">
+        <h1 className="surface-compact-title">Marketplace</h1>
+        <Tabs
+          items={sectionTabs}
+          value={section}
+          onChange={selectSection}
+          ariaLabel="Marketplace sections"
+          idPrefix="marketplace"
+          variant="segment"
+          size="sm"
+          className="surface-compact-tabs"
+        />
+        <div className="surface-compact-actions">
+          {section !== "capabilities" && section !== "build" ? (
             <SearchInput
               ref={searchRef}
               value={query}
               onValueChange={setQuery}
               onClear={() => setQuery("")}
               placeholder={SEARCH_LABEL[section]}
-              containerClassName="my-1.5 w-full self-center @min-[680px]/marketplace:w-72"
+              containerClassName="surface-compact-search"
               aria-label={SEARCH_LABEL[section]}
             />
           ) : null}
         </div>
-        {activeError ? (
-          <p role="alert" className="mb-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
-            {activeError}
-          </p>
-        ) : null}
       </header>
+      {activeError ? (
+        <p role="alert" className="mx-4 mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          {activeError}
+        </p>
+      ) : null}
 
       {section === "browse" ? (
         <div
@@ -560,10 +648,10 @@ export function MarketplaceViewSurface({
             </p>
             <nav className="flex flex-col gap-0.5" aria-label="Your setup">
               <SetupRailLink
-                icon="ph:mask-happy"
-                label="Roles"
-                detail={rolesLoaded ? `${rolesSummary.activeRoles}/${rolesSummary.totalRoles}` : undefined}
-                onClick={() => selectSection("roles")}
+                icon="ph:package-bold"
+                label="Crafts"
+                detail={loaded ? String(plugins.filter((plugin) => plugin.kind === "craft").length) : undefined}
+                onClick={() => selectSection("crafts")}
               />
               <SetupRailLink
                 icon="ph:sparkle"
@@ -572,9 +660,9 @@ export function MarketplaceViewSurface({
                 onClick={() => selectSection("skills")}
               />
               <SetupRailLink
-                icon="ph:lightning-bold"
-                label="Capabilities"
-                onClick={() => selectSection("capabilities")}
+                icon="ph:hammer"
+                label="Build a skill"
+                onClick={() => selectSection("build")}
               />
             </nav>
           </aside>
@@ -639,7 +727,10 @@ export function MarketplaceViewSurface({
             <div className="marketplace-browse-summary mb-4">
               <p className="min-w-0 self-center truncate text-[12px] text-[var(--text-muted)]">
                 {!loaded ? (
-                  "Loading the catalog…"
+                  // One loading language per surface: the grid below already
+                  // shows skeleton rows, so the count line shimmers too instead
+                  // of mixing in a "Loading…" string (cave-5qmm).
+                  <Skeleton variant="text-sm" width={132} className="self-center" />
                 ) : (
                   <>
                     {scopeLabel ? (
@@ -717,24 +808,138 @@ export function MarketplaceViewSurface({
             )}
           </div>
         </div>
-      ) : section === "roles" ? (
+      ) : section === "crafts" ? (
         <div
           role="tabpanel"
-          id="marketplace-panel-roles"
-          aria-labelledby="marketplace-tab-roles"
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 @min-[560px]/marketplace:px-6"
+          id="marketplace-panel-crafts"
+          aria-labelledby="marketplace-tab-crafts"
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-5 @min-[640px]/marketplace:px-7"
         >
-          <RolesSection
-            roles={roles}
-            loaded={rolesLoaded}
-            query={query}
-            onClearQuery={() => setQuery("")}
-            busyRoleKey={busyRoleKey}
-            onToggleRole={(role) => void toggleRole(role)}
-            onOpenChat={onOpenChat}
-            onOpenSkill={openSkillByName}
-            onBrowseMarketplace={() => selectSection("browse")}
-          />
+          <section className="craft-loadout-intro" aria-labelledby="craft-loadout-heading">
+            <div>
+              <p className="craft-loadout-intro__eyebrow">Role loadouts</p>
+              <h2 id="craft-loadout-heading">Equip a way of working</h2>
+              <p>A Craft is a versioned bundle of skills, prompts, workflows, and runtime capabilities that a Role equips as one unit.</p>
+              <div className="mt-3">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leadingIcon="ph:package-bold"
+                  onClick={() => {
+                    setCraftSeed(null);
+                    setCreatingCraft(true);
+                  }}
+                >
+                  Create Craft
+                </Button>
+              </div>
+            </div>
+            <div className="craft-loadout-path" role="list" aria-label="Craft capability hierarchy">
+              {[
+                ["Familiar", "Who acts"],
+                ["Role", "How they show up"],
+                ["Craft", "What they equip"],
+                ["Capabilities", "What becomes effective"],
+              ].map(([label, detail], index) => (
+                <span key={label} role="listitem">
+                  <small>{String(index + 1).padStart(2, "0")}</small>
+                  <strong>{label}</strong>
+                  <em>{detail}</em>
+                  {index < 3 ? <Icon name="ph:arrow-right-bold" width={12} aria-hidden /> : null}
+                </span>
+              ))}
+            </div>
+          </section>
+
+          <div className="craft-loadout-toolbar">
+            <p>{craftPlugins.length} {craftPlugins.length === 1 ? "Craft" : "Crafts"}</p>
+            <StandardSelect
+              label="Sort Crafts"
+              value={sort}
+              onChange={(next) => setSort(next as SortKey)}
+              className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
+              options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+            />
+          </div>
+
+          {craftWatch && !creatingCraft ? (
+            <div role="status" className="craft-arrival-banner">
+              <Icon
+                name="ph:circle-notch-bold"
+                width={14}
+                aria-hidden
+                className="animate-spin motion-reduce:animate-none"
+              />
+              <span>
+                A familiar is drafting a Craft from your description — it opens here when it lands.
+              </span>
+              <button
+                type="button"
+                className="focus-ring craft-arrival-banner__stop"
+                onClick={() => {
+                  clearCraftArrivalWatch();
+                  setCraftWatch(null);
+                }}
+              >
+                Stop waiting
+              </button>
+            </div>
+          ) : null}
+
+          {!loaded ? <SkeletonRows count={3} /> : craftPlugins.length === 0 ? (
+            <EmptyState
+              icon="ph:package-bold"
+              headline={query ? "No matching Crafts" : "No public Crafts yet"}
+              subtitle={query ? "Try a different Craft name or capability." : "Audited Research Crafts will appear here when they are enabled."}
+            />
+          ) : (
+            <>
+              {draftCrafts.length > 0 ? (
+                <section className="craft-grid-group" aria-labelledby="craft-drafts-heading">
+                  <div className="craft-grid-group__head">
+                    <h3 id="craft-drafts-heading">Your drafts</h3>
+                    <p>Local and reversible — review, refine, and publish when ready.</p>
+                  </div>
+                  <div className="marketplace-category-grid" aria-label="Draft Crafts">
+                    {draftCrafts.map((plugin) => (
+                      <MarketplaceCard
+                        key={plugin.id}
+                        plugin={plugin}
+                        busy={busyIds.has(plugin.id)}
+                        onOpen={setSelected}
+                        onAdd={add}
+                        onRemove={remove}
+                        onConfigure={setConfiguringId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              {publishedCrafts.length > 0 ? (
+                <section className="craft-grid-group" aria-labelledby="craft-published-heading">
+                  {draftCrafts.length > 0 ? (
+                    <div className="craft-grid-group__head">
+                      <h3 id="craft-published-heading">Published</h3>
+                      <p>Versioned Crafts from the audited catalog, installable and equippable.</p>
+                    </div>
+                  ) : null}
+                  <div className="marketplace-category-grid" aria-label="Available Crafts">
+                    {publishedCrafts.map((plugin) => (
+                      <MarketplaceCard
+                        key={plugin.id}
+                        plugin={plugin}
+                        busy={busyIds.has(plugin.id)}
+                        onOpen={setSelected}
+                        onAdd={add}
+                        onRemove={remove}
+                        onConfigure={setConfiguringId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </>
+          )}
         </div>
       ) : section === "skills" ? (
         // Full-bleed 3-column browser that owns its own per-column scrolling.
@@ -749,20 +954,23 @@ export function MarketplaceViewSurface({
             loaded={skillsLoaded}
             query={query}
             onClearQuery={() => setQuery("")}
-            onCreateSkill={() => selectSection("capabilities")}
+            onCreateSkill={() => selectSection("build")}
             onChanged={() => void loadSkills(query)}
           />
         </div>
       ) : (
-        // Self-contained surface: it owns its own scroll, header, search, and
-        // filters, so it renders full-bleed (no shared padding/scroll wrapper).
+        // Authoring surface: form + live SKILL.md preview, own scroll.
         <div
           role="tabpanel"
-          id="marketplace-panel-capabilities"
-          aria-labelledby="marketplace-tab-capabilities"
+          id="marketplace-panel-build"
+          aria-labelledby="marketplace-tab-build"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <CapabilitiesViewSurface activeHarness={activeHarness} />
+          <SkillBuilder
+            familiars={familiars}
+            onSaved={() => void loadSkills("")}
+            onViewSkills={() => selectSection("skills")}
+          />
         </div>
       )}
 
@@ -774,9 +982,20 @@ export function MarketplaceViewSurface({
           key={selectedPlugin.id}
           plugin={selectedPlugin}
           busy={busyIds.has(selectedPlugin.id)}
+          actionError={craftErrors[selectedPlugin.id]}
+          onActionCleared={() => setCraftErrors((current) => ({ ...current, [selectedPlugin.id]: undefined }))}
           onClose={() => setSelected(null)}
           onAdd={() => void add(selectedPlugin.id)}
           onRemove={() => void remove(selectedPlugin.id)}
+          onDraftDeleted={() => {
+            setSelected(null);
+            void load();
+          }}
+          onAdjustRoles={(seed) => {
+            setSelected(null);
+            setCraftSeed(seed);
+            setCreatingCraft(true);
+          }}
         />
       ) : null}
 
@@ -789,6 +1008,21 @@ export function MarketplaceViewSurface({
           onChanged={() => void load()}
         />
       ) : null}
+
+      <CraftCreateDrawer
+        open={creatingCraft}
+        seed={craftSeed}
+        onClose={() => {
+          setCreatingCraft(false);
+          setCraftSeed(null);
+        }}
+        onCreated={(id) => {
+          setCreatingCraft(false);
+          setCraftSeed(null);
+          void load().then(() => setSelected(id));
+          announce("Craft draft saved", "polite");
+        }}
+      />
 
       <SkillDetailDrawer
         skill={selectedSkill}

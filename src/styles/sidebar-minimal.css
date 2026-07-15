@@ -63,6 +63,44 @@
   border-color: transparent;
 }
 
+/* Header familiar switcher (cave-vtk9) — the scope selector on every page.
+   Zero horizontal padding so the trigger's edges line up exactly with the
+   New-chat CTA below it (.sidebar-actions is also flush). */
+.sidebar-familiar-switch {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 0;
+}
+.sidebar-familiar-switch .familiar-quickswitch {
+  min-width: 0;
+  flex: 1;
+}
+/* The trigger wears the New-chat CTA's exact chrome (outlined accent, 34px,
+   control radius) as a full-width multiselector dropdown — the two stacked
+   full-width controls read as one family; the caret marks the selector. */
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 34px;
+  gap: 10px;
+  padding: 0 8px;
+  justify-content: flex-start;
+  border-radius: var(--radius-control);
+  border: 2px solid var(--accent-presence);
+  background: transparent;
+}
+.sidebar-familiar-switch .familiar-switcher__trigger--labeled:hover {
+  background: color-mix(in oklch, var(--accent-presence) 20%, transparent);
+  border-color: var(--accent-presence);
+}
+.sidebar-familiar-switch .familiar-switcher__trigger-label {
+  font-size: 13px;
+  font-weight: 600;
+}
 .sidebar-title {
   font-size: 13px;
   font-weight: 600;
@@ -441,7 +479,7 @@
 }
 
 .sidebar-section-label:focus-visible {
-  outline: 2px solid var(--accent, currentColor);
+  outline: 2px solid var(--ring-focus, currentColor);
   outline-offset: 1px;
 }
 
@@ -468,7 +506,9 @@
   height: 11px;
   align-self: center;
   border-radius: 999px;
-  background: var(--accent, currentColor);
+  /* Brand accent — var(--accent) is the shadcn surface token and reads as
+     background here, hiding the tick. */
+  background: var(--accent-presence, currentColor);
   opacity: 0.55;
   flex: none;
 }
@@ -525,6 +565,14 @@
   margin-top: var(--space-3);
 }
 
+/* Row whose page is open as a secondary split tile (drag-to-split) but is not
+   the primary surface: a lighter wash of the active accent so it reads
+   "open, not focused" instead of stealing the active highlight. */
+.sidebar-folder-row--split {
+  background: color-mix(in oklch, var(--accent-presence) 4%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+
 .sidebar-folder-icon {
   flex-shrink: 0;
   opacity: 0.6;
@@ -535,6 +583,7 @@
 }
 
 .sidebar-folder-row--active .sidebar-folder-icon,
+.sidebar-folder-row--split .sidebar-folder-icon,
 .sidebar-folder-row:hover .sidebar-folder-icon {
   opacity: 1;
 }
@@ -989,7 +1038,7 @@
   cursor: pointer; color: var(--text-secondary); transition: background 0.12s ease, color 0.12s ease; }
 .recent-activity__head:hover { background: var(--bg-raised); color: var(--text-primary); }
 .recent-activity__label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent, currentColor); opacity: 0.55; flex: none; }
+.recent-activity__label::before { content: ""; width: 2px; height: 11px; border-radius: 999px; background: var(--accent-presence, currentColor); opacity: 0.55; flex: none; }
 .recent-activity__chevron { transition: transform 140ms ease; }
 .recent-activity__chevron--collapsed { transform: rotate(-90deg); }
 .recent-activity__list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
@@ -1028,11 +1077,34 @@
   align-items: center;
 }
 
-/* Wordmark, section headers, and the recent-activity rollup have no compact
-   form, so they drop out entirely in the rail. */
-.shell-nav--rail .sidebar-header,
+/* Section headers and the recent-activity rollup have no compact form, so
+   they drop out entirely in the rail. */
 .shell-nav--rail .sidebar-section-label,
 .shell-nav--rail .recent-activity {
+  display: none;
+}
+
+/* The header familiar switcher survives the rail as the avatar-only trigger:
+   the trigger label drops, the 28px avatar stays reachable. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-label {
+  display: none;
+}
+.shell-nav--rail .sidebar-familiar-switch {
+  padding: 0;
+  justify-content: center;
+}
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger,
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger--labeled {
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  justify-content: center;
+  border-width: 1px;
+}
+/* The dropdown caret is expanded-state chrome — drop it on the rail. */
+.shell-nav--rail .sidebar-familiar-switch .familiar-switcher__trigger-caret {
   display: none;
 }
 

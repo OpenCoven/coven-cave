@@ -11,9 +11,18 @@ assert.match(
 
 assert.match(
   lib,
-  /Image::new_owned\(rgba, SIZE, SIZE\)/,
-  "Tray icon should be generated as an RGBA alpha-mask image",
+  /include_bytes!\("\.\.\/icons\/tray-icon-36\.rgba"\)/,
+  "Tray icon should embed the pre-rendered Coven logo RGBA payload",
 );
+
+{
+  const { readFileSync } = await import("node:fs");
+  const rgba = readFileSync(new URL("../src-tauri/icons/tray-icon-36.rgba", import.meta.url));
+  assert.equal(rgba.length, 36 * 36 * 4, "tray RGBA payload is exactly 36x36 RGBA");
+  let marked = 0;
+  for (let i = 3; i < rgba.length; i += 4) if (rgba[i] > 200) marked++;
+  assert.ok(marked > 100, "tray RGBA payload carries a non-trivial alpha mark");
+}
 
 assert.match(
   lib,

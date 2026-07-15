@@ -39,8 +39,15 @@ struct ChatView: View {
     @State private var dictation = SpeechDictation()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [PendingImage] = []
+    @State private var draftPersistenceTask: Task<Void, Never>?
     /// How many images one message can carry.
     private let maxAttachments = 4
+    private let draftPersistenceDelay: UInt64 = 250_000_000
+    // Composer "+" menu and the attach destinations it fans out to.
+    @State private var showActionMenu = false
+    @State private var showPhotosPicker = false
+    @State private var showCamera = false
+    @State private var showFileImporter = false
     @State private var responseReader: ResponseReaderItem?
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
@@ -78,12 +85,46 @@ struct ChatView: View {
     }
     private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
 
+    private func writeDraftPersistence(_ value: String, key: String) {
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
+    }
+
+    private func scheduleDraftPersistence(_ value: String) {
+        draftPersistenceTask?.cancel()
+        draftPersistenceTask = Task { [draftKey] in
+            try? await Task.sleep(nanoseconds: draftPersistenceDelay)
+            guard !Task.isCancelled else { return }
+            writeDraftPersistence(value, key: draftKey)
+        }
+    }
+
+    private func flushDraftPersistence() {
+        draftPersistenceTask?.cancel()
+        draftPersistenceTask = nil
+        writeDraftPersistence(draft, key: draftKey)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             messageScroll
-            if !thread.isGroup, let familiarId = thread.familiarIds.first {
-                ChatModelBar(thread: thread, familiarId: familiarId)
-            }
+                // While the "+" menu is up, the transcript becomes its scrim:
+                // a light dim signals the mode and any outside tap dismisses.
+                .overlay {
+                    if showActionMenu {
+                        Color.black.opacity(0.15)
+                            .ignoresSafeArea(edges: .top)
+                            .onTapGesture { showActionMenu = false }
+                            .accessibilityLabel("Close attach menu")
+                            .accessibilityAddTraits(.isButton)
+                    }
+                }
+            // Model access moved into the header's agent pill (and /model), so
+            // the composer anchors the screen with nothing between it and the
+            // transcript.
             composer
         }
         // Keep the conversation in a centred reading column on iPad.
@@ -97,13 +138,28 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 1) {
-                    Text(thread.title).font(.headline).lineLimit(1)
-                    if thread.isGroup {
-                        Text("\(thread.familiarIds.count) familiars")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    } else if let role = app.familiar(thread.familiarIds.first ?? "")?.role {
-                        Text(role).font(.caption2).foregroundStyle(.secondary)
+                // Agent pill: who you're talking to, and (direct chats) the door
+                // to the model/agent picker. Groups keep a static pill — the
+                // fan-out has no single model to switch.
+                if thread.isGroup {
+                    PillSelector(label: thread.title,
+                                 sublabel: "\(thread.familiarIds.count) familiars",
+                                 chevron: false,
+                                 accessibilityHint: nil,
+                                 action: {}) {
+                        AvatarView(familiar: nil, size: 22,
+                                   fallbackName: thread.title)
+                    }
+                    .disabled(true)
+                } else {
+                    let familiar = app.familiar(thread.familiarIds.first ?? "")
+                    PillSelector(label: thread.title,
+                                 sublabel: familiar?.role,
+                                 accessibilityHint: "Opens the model and agent picker",
+                                 action: { Task { await switchModel("") } }) {
+                        AvatarView(familiar: familiar,
+                                   url: familiar.flatMap { app.client?.avatarURL(for: $0) },
+                                   size: 22)
                     }
                 }
             }
@@ -127,29 +183,18 @@ struct ChatView: View {
                     return n > 0 ? "Linked tasks, \(n)" : "Linked tasks"
                 }())
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showCommands = true } label: {
-                    Image(systemName: "command")
-                }
-                .accessibilityLabel("Commands")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: ThreadMarkdownExport(title: thread.title,
-                                                     markdown: app.exportMarkdown(thread)),
-                          preview: SharePreview(thread.title)) {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                .accessibilityLabel("Export as Markdown")
-            }
+            // The header stays lean (sim review, cave feedback): Commands lives
+            // in the composer's + menu (same sheet), and Markdown export stays
+            // on the thread list's flows — neither earns a toolbar slot here.
         }
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
         }
         .sheet(isPresented: $showModelPicker) {
-            ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent) { id in
+            ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent, onSelect: { id in
                 guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
                 Task { await applyModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId)) }
-            }
+            }, onSwitchFamiliar: { showFamiliarPicker = true })
         }
         .sheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { familiar in
@@ -194,13 +239,14 @@ struct ChatView: View {
             app.markFamiliarViewed(thread.familiarIds)
         }
         // Persist every edit per-thread; send() clears the draft, which removes
-        // the stored copy here so a sent message leaves nothing behind.
+        // the stored copy here so a sent message leaves nothing behind. Debounce
+        // the UserDefaults write: doing synchronous persistence for every
+        // character makes the iOS composer visibly hitch on long chats.
         .onChange(of: draft) { _, value in
-            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                UserDefaults.standard.removeObject(forKey: draftKey)
-            } else {
-                UserDefaults.standard.set(value, forKey: draftKey)
-            }
+            scheduleDraftPersistence(value)
+        }
+        .onDisappear {
+            flushDraftPersistence()
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
@@ -229,15 +275,29 @@ struct ChatView: View {
                                       onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
                                       onForward: { beginForward($0) },
                                       onRetry: canRetry(message) ? { retryAssistant(message) } : nil,
-                                      onReply: { beginReply($0) })
+                                      onReply: { beginReply($0) },
+                                      operatorName: app.operatorDisplayName,
+                                      operatorAvatarURL: app.operatorAvatarURL)
                         .id(message.id)
+                        // New bubbles settle in with a soft rise-and-fade
+                        // (native Messages behaviour) instead of popping;
+                        // deletions fade out. Driven by the count-keyed
+                        // animation below; Reduce Motion turns it off.
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)),
+                            removal: .opacity))
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 14)
+                .animation(reduceMotion ? nil : .spring(duration: 0.3), value: thread.messages.count)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Open at the latest message without the post-layout jump a
+            // proxy.scrollTo onAppear causes (the onAppear call stays as a
+            // backstop for restored offsets).
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
             // Pull to re-sync a direct chat that may have advanced on another
             // device (no-op for groups / unsent threads, see ChatThread.reload).
             .refreshable {
@@ -253,14 +313,7 @@ struct ChatView: View {
             // A fresh thread with no messages shouldn't read as a blank void.
             .overlay {
                 if thread.messages.isEmpty {
-                    ContentUnavailableView {
-                        Label("Start the conversation", systemImage: "bubble.left.and.bubble.right")
-                    } description: {
-                        Text(thread.isGroup
-                             ? "Send a message to all \(thread.familiarIds.count) familiars."
-                             : "Send a message to \(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "this familiar") to begin.")
-                    }
-                    .allowsHitTesting(false)
+                    emptyState
                 }
             }
             // Track whether the user is parked at the latest message so a
@@ -283,6 +336,7 @@ struct ChatView: View {
                             .overlay(Circle().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
                     }
+                    .buttonStyle(.glassPress)
                     .padding(.trailing, 14)
                     .padding(.bottom, 10)
                     .transition(.scale.combined(with: .opacity))
@@ -290,20 +344,82 @@ struct ChatView: View {
                 }
             }
             .animation(.snappy(duration: 0.2), value: atBottom)
+            // Follow the stream only while the reader is parked at the bottom.
+            // Scrolling up to reread must never be yanked back down by each
+            // arriving token — the native Messages contract; returning to the
+            // bottom re-engages following via `atBottom`.
             .onChange(of: thread.messages.last?.text) { _, _ in
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                guard atBottom else { return }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
+            // A new message reveals itself when it's the user's own send (you
+            // always watch your message leave) or when already at the bottom —
+            // otherwise the unread stays put behind the jump-to-latest button.
             .onChange(of: thread.messages.count) { _, _ in
-                withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                guard atBottom || thread.messages.last?.role == .user else { return }
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
         }
+    }
+
+    // MARK: - Empty state
+
+    /// Spacious cold-start state: a quiet greeting up top, and a short stack of
+    /// starter rows in the lower half. Rows FILL the composer (focused, ready
+    /// to tweak) rather than firing a send — same convention as the desktop
+    /// quick-chat suggestions.
+    private var emptyState: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(spacing: 10) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 26, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text(thread.isGroup
+                     ? "Message all \(thread.familiarIds.count) familiars"
+                     : "Message \(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "your familiar")")
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 24)
+            Spacer()
+            VStack(spacing: 8) {
+                ForEach(emptySuggestions, id: \.label) { suggestion in
+                    EmptyChatSuggestionRow(systemImage: suggestion.icon, label: suggestion.label) {
+                        draft = suggestion.label
+                        composerFocused = true
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
+        }
+    }
+
+    private var emptySuggestions: [(icon: String, label: String)] {
+        [
+            ("sparkles", "What can you help me with?"),
+            ("checklist", "Summarize my open tasks"),
+            ("calendar", "What's on my calendar today?"),
+            ("doc.text", "Draft a short status update"),
+        ]
     }
 
     // MARK: - Composer
 
     private var composer: some View {
         VStack(spacing: 8) {
+            if showActionMenu {
+                FloatingActionMenu(actions: composerActions) { showActionMenu = false }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .transition(.scale(scale: 0.94, anchor: .bottomLeading).combined(with: .opacity))
+            }
             if showingSlashMenu {
                 SlashCommandMenu(commands: slashMatches) { command in pickFromMenu(command) }
                     .padding(.horizontal, 12)
@@ -326,6 +442,7 @@ struct ChatView: View {
             }
             composerBar
         }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showActionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
@@ -341,6 +458,35 @@ struct ChatView: View {
             // user's selection order.
             Task { for item in picked { await loadPickedImage(item) } }
         }
+        // The "+" menu's attach destinations. The pickers hang off the composer
+        // (not the menu rows) so the menu can dismiss before they present.
+        .photosPicker(isPresented: $showPhotosPicker,
+                      selection: $photoItems,
+                      maxSelectionCount: maxAttachments,
+                      matching: .images,
+                      photoLibrary: .shared())
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { image in stage(image) }
+                .ignoresSafeArea()
+        }
+        .fileImporter(isPresented: $showFileImporter,
+                      allowedContentTypes: [.image],
+                      allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            for url in urls { loadFileImage(url) }
+        }
+    }
+
+    /// The composer's "+" fan-out. Camera/Photos/Files all land in the same
+    /// staged-attachment path; Commands is the tool entry (same sheet as the
+    /// header's ⌘ affordance on desktop).
+    private var composerActions: [FloatingAction] {
+        [
+            FloatingAction(id: "camera", systemImage: "camera", label: "Camera") { showCamera = true },
+            FloatingAction(id: "photos", systemImage: "photo.on.rectangle", label: "Photos") { showPhotosPicker = true },
+            FloatingAction(id: "files", systemImage: "folder", label: "Files") { showFileImporter = true },
+            FloatingAction(id: "commands", systemImage: "command", label: "Commands") { showCommands = true },
+        ]
     }
 
     /// A scrollable row of attached-image thumbnails above the composer, each
@@ -385,34 +531,45 @@ struct ChatView: View {
     private func loadPickedImage(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let image = UIImage(data: data) else { return }
+        await MainActor.run { stage(image) }
+    }
+
+    /// Load an image picked from the Files app (security-scoped) and stage it
+    /// through the same resize path as camera/photo attachments.
+    private func loadFileImage(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url),
+              let image = UIImage(data: data) else { return }
+        stage(image)
+    }
+
+    /// One staging path for every attach source (photos, camera, files):
+    /// downscale for the upload cap, encode a `data:` URL, respect the
+    /// per-message attachment limit.
+    private func stage(_ image: UIImage) {
+        guard pendingImages.count < maxAttachments else { return }
         let resized = image.resizedForUpload()
         guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { return }
         let dataUrl = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
-        await MainActor.run {
-            guard pendingImages.count < maxAttachments else { return }
-            // Unique per-image name so several attachments on one message don't
-            // collide server-side.
-            let name = "photo-\(UUID().uuidString.prefix(8)).jpg"
-            pendingImages.append(PendingImage(image: resized, dataUrl: dataUrl,
-                                              mimeType: "image/jpeg", name: name))
-            Haptics.tap()
-        }
+        // Unique per-image name so several attachments on one message don't
+        // collide server-side.
+        let name = "photo-\(UUID().uuidString.prefix(8)).jpg"
+        pendingImages.append(PendingImage(image: resized, dataUrl: dataUrl,
+                                          mimeType: "image/jpeg", name: name))
+        Haptics.tap()
     }
 
     private var composerBar: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            // Attach an image; the server delivers it to the familiar.
-            PhotosPicker(selection: $photoItems,
-                         maxSelectionCount: maxAttachments,
-                         matching: .images,
-                         photoLibrary: .shared()) {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 34, height: 34)
-                    .glassFill(.control, in: Circle())
+            // "+" opens the floating attach/tools menu (Camera · Photos ·
+            // Files · Commands) instead of jumping straight into one picker.
+            CircularIconButton(systemImage: showActionMenu ? "xmark" : "plus",
+                               active: showActionMenu,
+                               label: showActionMenu ? "Close attach menu" : "Attach or run a tool") {
+                composerFocused = false
+                showActionMenu.toggle()
             }
-            .accessibilityLabel("Attach images")
 
             // Hairline capsule with the field and a trailing control inside it:
             // a mic when empty, a filled send/run button once there's text.
@@ -431,6 +588,13 @@ struct ChatView: View {
                         guard !press.modifiers.contains(.shift) else { return .ignored }
                         guard canSend else { return .ignored }
                         send()
+                        return .handled
+                    }
+                    // Hardware Escape closes the "+" menu (outside tap and row
+                    // selection are the touch paths).
+                    .onKeyPress(keys: [.escape]) { _ in
+                        guard showActionMenu else { return .ignored }
+                        showActionMenu = false
                         return .handled
                     }
 
@@ -470,7 +634,11 @@ struct ChatView: View {
                     }
                 }
             }
+            .glassFill(.control, in: Capsule())
             .overlay(Capsule().strokeBorder(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1))
+            // The focused field earns the accent halo — the design language's
+            // one "active" cue — matching the drawer's search treatment.
+            .accentGlow(active: composerFocused || dictation.isRecording)
             .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
             .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
             .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
@@ -617,7 +785,7 @@ struct ChatView: View {
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
         case .openCalendar:
             app.selectedTab = .calendar
-            app.showToast("Opened Schedules", systemImage: "calendar", style: .info)
+            app.showToast("Opened Rituals", systemImage: "calendar", style: .info)
         case .openDeveloper(let section):
             devSectionRaw = section
             app.selectedTab = .dev
@@ -798,7 +966,7 @@ struct ChatView: View {
     /// Display name for a message's author, used in the reply banner/quote.
     private func replyAuthor(_ message: DisplayMessage) -> String {
         switch message.role {
-        case .user: return "You"
+        case .user: return app.operatorDisplayName
         case .system: return "System"
         case .assistant: return message.familiarId.flatMap(app.familiar)?.displayName ?? "Familiar"
         }
@@ -852,7 +1020,7 @@ struct ChatView: View {
     private func forwardSenderName(for message: DisplayMessage) -> String {
         switch message.role {
         case .user:
-            return "You"
+            return app.operatorDisplayName
         case .assistant:
             return app.familiar(message.familiarId ?? "")?.displayName ?? "Assistant"
         case .system:

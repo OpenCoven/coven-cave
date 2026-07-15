@@ -305,7 +305,7 @@ export function OpenCovenSubmissionPanel() {
   }
 
   return (
-    <section className="mb-5 rounded-[var(--radius-control)] border border-border bg-card p-3 shadow-sm">
+    <section className="@container mb-5 rounded-[var(--radius-control)] border border-border bg-card p-3 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -314,7 +314,11 @@ export function OpenCovenSubmissionPanel() {
           </div>
           <p className="mt-1 max-w-3xl text-[12px] text-muted-foreground">
             Submit once to OpenCoven, validate against OpenCoven contracts, publish into the
-            OpenCoven catalog, then route through OpenCoven execution services.
+            OpenCoven catalog, then route through OpenCoven execution services. A{" "}
+            <strong className="font-medium text-[var(--text-secondary)]">harness</strong> is an agent
+            environment (like Claude Code); a{" "}
+            <strong className="font-medium text-[var(--text-secondary)]">runtime</strong> is the
+            execution layer it runs on — harnesses stay disabled until a compatible runtime exists.
           </p>
         </div>
         <div className="flex shrink-0 rounded-[var(--radius-control)] border border-border bg-background p-1" aria-label="Submission type">
@@ -333,7 +337,7 @@ export function OpenCovenSubmissionPanel() {
         </div>
       </div>
 
-      <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="mt-3 grid gap-3 @min-[1100px]:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-background px-3 py-2 text-[12px] text-muted-foreground hover:border-[var(--border-strong)]">
             <span className="min-w-0 truncate">
@@ -533,10 +537,7 @@ function CatalogDiscovery({ catalog }: { catalog: CatalogEntry[] }) {
                   <dt className="font-medium text-foreground">Version</dt>
                   <dd>{entry.latestCompatibleVersion}</dd>
                 </div>
-                <div>
-                  <dt className="font-medium text-foreground">Validation status</dt>
-                  <dd>{entry.validationStatus}</dd>
-                </div>
+                {/* Validation status renders once, as the header badge. */}
                 <div>
                   <dt className="font-medium text-foreground">Examples / docs</dt>
                   <dd>

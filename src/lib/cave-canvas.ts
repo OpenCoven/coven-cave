@@ -1,20 +1,20 @@
 // Persistence for Triage Canvas node positions.
 //
-// Positions live in their own file (`~/.coven/cave-canvas.json`) keyed by card
-// id, deliberately separate from `cave-board.json`. The canvas is a *view* of
+// Positions live in their own file (`~/.coven/cave/canvas.json`) keyed by card
+// id, deliberately separate from the board file. The canvas is a *view* of
 // the board's cards — keeping layout out of the Card schema means the board
 // owner (and the many other sessions that mutate it) never has to know the
 // canvas exists, and a canvas write can never clobber card data.
 
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { homedir } from "node:os";
+import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import type { CanvasPosition, CanvasPositions } from "@/lib/canvas-layout";
 import { sanitizeArtifacts, type CanvasArtifact } from "@/lib/canvas-artifacts";
 
-const CANVAS_PATH = path.join(homedir(), ".coven", "cave-canvas.json");
+const CANVAS_PATH = path.join(caveHome(), "canvas.json");
 
 export type CanvasFile = {
   version: number;

@@ -3,23 +3,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { Card } from "@/lib/cave-board-types";
+import { createTaskFromChat, type ChatHandoffContext } from "@/lib/chat-task-handoff";
 
 /**
  * Popover for linking an existing board task to the current chat. Lists the
  * board's cards (minus those already linked to this session) and, on pick,
  * PATCHes the card's `sessionId` to this chat — the chat→task assign side that
  * mirrors the board's "Start chat from task" flow.
+ *
+ * When the chat surface supplies a `handoff` context (recent turns + the
+ * chat's familiar/project), the picker also offers "New task from this chat":
+ * a one-click chat→board handoff that creates an inbox card pre-linked to this
+ * session, carrying a transcript excerpt and source audit trail in its notes
+ * (see chat-task-handoff.ts). The search query doubles as the new card's title.
  */
 export function TaskLinkPicker({
   sessionId,
   linkedIds,
   onAssigned,
   onClose,
+  handoff,
 }: {
   sessionId: string;
   linkedIds: Set<string>;
   onAssigned: (card: Card) => void;
   onClose: () => void;
+  handoff?: ChatHandoffContext | null;
 }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +78,26 @@ export function TaskLinkPicker({
       .slice(0, 50);
   }, [cards, linkedIds, query]);
 
+  const createFromChat = async () => {
+    if (!handoff) return;
+    setBusyId("__new__");
+    setError(null);
+    try {
+      const result = await createTaskFromChat({
+        sessionId,
+        context: handoff,
+        title: query.trim() || undefined,
+      });
+      if (!result.ok || !result.card) throw new Error(result.error ?? "Failed to create task");
+      onAssigned(result.card);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create task");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const assign = async (card: Card) => {
     setBusyId(card.id);
     setError(null);
@@ -111,6 +140,27 @@ export function TaskLinkPicker({
         <div className="px-2.5 py-1.5 text-[11px] text-[var(--color-danger,#ef4444)]">{error}</div>
       ) : null}
       <div className="max-h-[16rem] overflow-y-auto py-1">
+        {handoff ? (
+          <button
+            type="button"
+            disabled={busyId !== null}
+            onClick={() => void createFromChat()}
+            aria-label={
+              query.trim()
+                ? `Create a new task "${query.trim()}" from this chat`
+                : "Create a new task from this chat"
+            }
+            className="flex w-full items-center gap-2 border-b border-[var(--border-hairline)] px-2.5 py-1.5 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          >
+            <Icon name="ph:plus" width={12} className="shrink-0 text-[var(--accent-presence)]" />
+            <span className="min-w-0 flex-1 truncate">
+              {query.trim() ? `New task: “${query.trim()}”` : "New task from this chat"}
+            </span>
+            <span className="shrink-0 text-[var(--text-muted)]">
+              {busyId === "__new__" ? "creating…" : "inbox"}
+            </span>
+          </button>
+        ) : null}
         {cards === null ? (
           <div className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">Loading tasks…</div>
         ) : results.length === 0 ? (

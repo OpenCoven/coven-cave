@@ -120,7 +120,7 @@ assert.equal(
   "ts target → typescript grammar",
 );
 assert.equal(
-  diffContentLang("+++ b//Users/buns/repo/src/lib/stream-events.ts\n+import x"),
+  diffContentLang("+++ b//Users/dev/repo/src/lib/stream-events.ts\n+import x"),
   "typescript",
   "write-style diff with absolute (double-slash) path resolves",
 );
