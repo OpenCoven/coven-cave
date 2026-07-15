@@ -51,6 +51,7 @@ function toMergedRef(pr: GitHubPullRequestInput & { mergedAt?: string | null }):
     url: pr.url,
     beadIds: extractBeadIds(pr),
     mergedAt: pr.mergedAt ?? null,
+    headRefName: pr.headRefName ?? null,
   };
 }
 
