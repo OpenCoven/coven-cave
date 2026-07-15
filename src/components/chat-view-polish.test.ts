@@ -73,7 +73,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(ghSafeVisible\)/,
+  /const reasoningSplit = splitReasoning\(extractAgentAttachmentMarkers\(turn\.text\)\.text\)[\s\S]*const inlineReasoning = reasoningSplit\.reasoning[\s\S]*const \{ visible: visibleWithGh, suggestions: nextPaths \} = extractNextPaths\(skillSplit\.visible\)/,
   "Assistant turns should split visible content from collapsible reasoning before extracting next-path suggestions",
 );
 

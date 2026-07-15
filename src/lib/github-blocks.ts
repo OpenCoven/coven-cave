@@ -73,9 +73,11 @@ const KINDS: ReadonlySet<string> = new Set(["pr", "issue", "review-thread", "com
 
 // A complete display marker: `<coven:github kind="pr" repo="o/r" number="7" />`
 // (self-closing slash optional). Attribute order is free; values are
-// double-quoted. Action markers (`<coven:github-action …>`) are recognized so
-// they never render as raw text, but W1a mounts no card for them (W2b does).
-const MARKER_RE = /<coven:github(-action)?\b([^>]*?)\/?>/g;
+// double-quoted, and the attributes segment treats quoted strings as atomic so
+// a `>` inside a quoted title can't terminate the match early. Action markers
+// (`<coven:github-action …>`) are recognized so they never render as raw
+// text, but W1a mounts no card for them (W2b does).
+const MARKER_RE = /<coven:github(-action)?\b((?:[^">]|"[^"]*")*?)\/?>/g;
 
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
