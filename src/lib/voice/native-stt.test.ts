@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   createNativeSttEars,
   nativeSttAvailable,
+  nativeSttAvailability,
+  selectNativeEarsEngine,
   STT_EVENT,
 } from "./native-stt.ts";
 
@@ -90,12 +92,13 @@ function collector() {
   };
 }
 
-function makeEars({ lang } = {}) {
+function makeEars({ lang, requireOnDevice } = {}) {
   const fx = fakeBridge();
   const timers = fakeTimers();
   const got = collector();
   const ears = createNativeSttEars(fx.bridge, {
     lang,
+    requireOnDevice,
     stabilityMs: 1_000,
     maxUtteranceMs: 9_000,
     setTimeout: timers.setTimeout,
@@ -109,7 +112,9 @@ test("listen starts a native session; stable partial finishes it; final restarts
 
   ears.listen();
   await tick();
-  assert.deepEqual(fx.argsFor("speech_stt_start"), [{ session: 1, lang: "en-US" }]);
+  assert.deepEqual(fx.argsFor("speech_stt_start"), [
+    { session: 1, lang: "en-US", requireOnDevice: false },
+  ]);
 
   fx.emit({ session: 1, kind: "partial", text: "open the" });
   fx.emit({ session: 1, kind: "partial", text: "open the grimoire" });
@@ -125,7 +130,11 @@ test("listen starts a native session; stable partial finishes it; final restarts
   await tick();
   assert.deepEqual(got.finals, ["open the grimoire"]);
   // One-shot native task: a fresh session keeps the ears open.
-  assert.deepEqual(fx.argsFor("speech_stt_start").at(-1), { session: 2, lang: "en-US" });
+  assert.deepEqual(fx.argsFor("speech_stt_start").at(-1), {
+    session: 2,
+    lang: "en-US",
+    requireOnDevice: false,
+  });
   assert.deepEqual(got.errors, []);
 });
 
@@ -160,7 +169,11 @@ test("hush stops the native session and blocks the auto-restart", async () => {
   // A fresh listen() opens a new numbered session.
   ears.listen();
   await tick();
-  assert.deepEqual(fx.argsFor("speech_stt_start").at(-1), { session: 2, lang: null });
+  assert.deepEqual(fx.argsFor("speech_stt_start").at(-1), {
+    session: 2,
+    lang: null,
+    requireOnDevice: false,
+  });
 });
 
 test("engine errors surface once and stop listening until asked again", async () => {
@@ -250,5 +263,74 @@ test("nativeSttAvailable reflects the probe and never throws", async () => {
       listen: async () => () => {},
     }),
     false,
+  );
+});
+
+// ── Hybrid on-device policy (cave-vpe1) ─────────────────────────────────────
+
+test("strict ears carry requireOnDevice on every native session", async () => {
+  const { fx } = await (async () => {
+    const made = makeEars({ lang: "en-US", requireOnDevice: true });
+    made.ears.listen();
+    await tick();
+    made.fx.emit({ session: 1, kind: "final", text: "so mote it be" });
+    await tick();
+    return made;
+  })();
+  assert.deepEqual(fx.argsFor("speech_stt_start"), [
+    { session: 1, lang: "en-US", requireOnDevice: true },
+    { session: 2, lang: "en-US", requireOnDevice: true },
+  ]);
+});
+
+test("nativeSttAvailability passes the language and survives probe failures", async () => {
+  const calls = [];
+  const availability = await nativeSttAvailability(
+    {
+      invoke: async (cmd, args) => {
+        calls.push([cmd, args]);
+        return { supported: true, onDevice: true, locale: "en-US" };
+      },
+      listen: async () => () => {},
+    },
+    "en-US",
+  );
+  assert.deepEqual(calls, [["speech_stt_available", { lang: "en-US" }]]);
+  assert.deepEqual(availability, { supported: true, onDevice: true, locale: "en-US" });
+
+  assert.equal(
+    await nativeSttAvailability({
+      invoke: async () => {
+        throw new Error("no ipc");
+      },
+      listen: async () => () => {},
+    }),
+    null,
+  );
+});
+
+test("engine selection: on-device wins, strict refuses dictation, fallback is labeled", () => {
+  assert.equal(
+    selectNativeEarsEngine({ onDevice: true, locale: "en-US" }, true),
+    "native-on-device",
+  );
+  assert.equal(
+    selectNativeEarsEngine({ onDevice: true, locale: "en-US" }, false),
+    "native-on-device",
+  );
+  // Non-strict callers fall back to Apple dictation — honestly labeled.
+  assert.equal(
+    selectNativeEarsEngine({ onDevice: false, locale: "fr-FR" }, false),
+    "native-dictation",
+  );
+  // The Local provider's "no cloud" contract: hard refusal with an
+  // actionable path to the dictation model download.
+  assert.throws(
+    () => selectNativeEarsEngine({ onDevice: false, locale: "fr-FR" }, true),
+    (err) =>
+      err.name === "VoiceConnectError" &&
+      err.message === "stt_on_device_unsupported" &&
+      /fr-FR/.test(err.hint) &&
+      /Dictation/.test(err.hint),
   );
 });

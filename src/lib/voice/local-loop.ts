@@ -130,10 +130,17 @@ async function connect(
   const instructions = connection.instructions ?? "";
   const turns: LocalBrainTurn[] = [...(connection.conversationSeed ?? [])];
 
+  // The Local provider's contract is "no cloud": native ears must run the
+  // on-device dictation model or refuse (cave-vpe1, hybrid policy) — this
+  // rejects with stt_on_device_unsupported instead of ever reaching Apple's
+  // dictation service.
+  const preferredEars = await resolvePreferredEars({ requireOnDevice: true });
+
   return connectSpeechLoop({
     mic,
     voiceName: connection.voice,
-    ears: await resolvePreferredEars(),
+    ears: preferredEars?.factory,
+    earsEngine: preferredEars?.engine,
     callbacks,
     brainErrorCode: "local_brain_failed",
     brainErrorHint: "The local model call failed — is the loopback server still running?",

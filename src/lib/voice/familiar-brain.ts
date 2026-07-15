@@ -114,10 +114,16 @@ async function connect(
     throw new VoiceConnectError("familiar_brain_invalid_grant");
   }
 
+  // Brain turns already ride the network to the harness, so the ears may
+  // fall back to Apple dictation on model-less Macs — labeled honestly via
+  // earsEngine (cave-vpe1).
+  const preferredEars = await resolvePreferredEars();
+
   return connectSpeechLoop({
     mic,
     voiceName: connection.voice,
-    ears: await resolvePreferredEars(),
+    ears: preferredEars?.factory,
+    earsEngine: preferredEars?.engine,
     callbacks,
     brainErrorCode: "familiar_brain_failed",
     brainErrorHint: FAMILIAR_BRAIN_ERROR_HINT,

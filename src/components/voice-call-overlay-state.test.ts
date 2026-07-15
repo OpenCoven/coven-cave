@@ -52,6 +52,25 @@ test("connecting → live on CONNECTED", () => {
   assert.equal(typeof next.startedAt, "number");
 });
 
+test("CONNECTED carries the ears engine label for the live UI (cave-vpe1)", () => {
+  let s = reduce(initialState, { type: "START" });
+  s = reduce(s, { type: "MIC_READY" });
+  s = reduce(s, { type: "SESSION_GRANTED", callId: "c1" });
+  const next = reduce(s, {
+    type: "CONNECTED",
+    startedAt: Date.now(),
+    earsEngine: "native-on-device",
+  });
+  assert.equal(next.state, "live");
+  assert.equal(next.earsEngine, "native-on-device");
+  // Realtime providers report no ears mode — the field simply stays unset.
+  const bare = reduce(
+    { ...initialState, state: "connecting", callId: "c1" },
+    { type: "CONNECTED", startedAt: 1 },
+  );
+  assert.equal(bare.earsEngine, undefined);
+});
+
 test("connecting → closed on CLOSE_REQUEST (clean cancel, no error)", () => {
   let s = reduce(initialState, { type: "START" });
   s = reduce(s, { type: "MIC_READY" });

@@ -1,3 +1,5 @@
+import type { VoiceEarsEngine } from "@/lib/voice/types";
+
 export type CallStateName =
   | "idle"
   | "requesting-mic"
@@ -16,6 +18,8 @@ export type CallState = {
   errorCode?: string;
   missingKey?: string;
   hint?: string;
+  /** How a live loop-based call hears (cave-vpe1); unset for realtime providers. */
+  earsEngine?: VoiceEarsEngine;
 };
 
 export const initialState: CallState = { state: "idle", muted: false };
@@ -26,7 +30,7 @@ export type CallEvent =
   | { type: "MIC_DENIED" }
   | { type: "SESSION_GRANTED"; callId: string }
   | { type: "SESSION_FAILED"; errorCode: string; missingKey?: string; hint?: string }
-  | { type: "CONNECTED"; startedAt: number }
+  | { type: "CONNECTED"; startedAt: number; earsEngine?: VoiceEarsEngine }
   | { type: "DISCONNECTED" }
   | { type: "PROVIDER_ERROR"; errorCode: string; hint?: string }
   | { type: "CLOSE_REQUEST" }
@@ -56,7 +60,7 @@ export function reduce(s: CallState, ev: CallEvent): CallState {
       };
     case "CONNECTED":
       if (s.state !== "connecting") return s;
-      return { ...s, state: "live", startedAt: ev.startedAt };
+      return { ...s, state: "live", startedAt: ev.startedAt, earsEngine: ev.earsEngine };
     case "PROVIDER_ERROR":
       return { ...s, state: "error", errorCode: ev.errorCode, hint: ev.hint };
     case "CLOSE_REQUEST":

@@ -191,9 +191,15 @@ async function connect(
     throw new VoiceConnectError("elevenlabs_invalid_grant");
   }
 
+  // ElevenLabs TTS is already a cloud leg, so the ears may fall back to
+  // Apple dictation on model-less Macs — labeled honestly via earsEngine
+  // (cave-vpe1).
+  const preferredEars = await resolvePreferredEars();
+
   return connectSpeechLoop({
     mic,
-    ears: await resolvePreferredEars(),
+    ears: preferredEars?.factory,
+    earsEngine: preferredEars?.engine,
     mouth: createElevenLabsMouth({
       voiceId: connection.voiceId || DEFAULT_ELEVENLABS_VOICE_ID,
       modelId: connection.modelId || DEFAULT_ELEVENLABS_MODEL_ID,

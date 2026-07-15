@@ -137,6 +137,25 @@ assert.match(
   /type:\s*"PROVIDER_ERROR",[\s\S]{0,120}errorCode:\s*err instanceof Error \? err\.message : "connect_failed",[\s\S]{0,120}hint:\s*voiceErrorHint\(err\)/,
   "connect failures thread their hint into PROVIDER_ERROR",
 );
+
+// ── The live call says how it hears (cave-vpe1, hybrid on-device policy) ─────
+// The engine label is honesty UI: "on-device" is the no-cloud promise kept;
+// dictation/browser modes tell the user their audio rides a service.
+assert.match(
+  component,
+  /dispatch\(\{\s*type:\s*"CONNECTED",\s*startedAt:\s*Date\.now\(\),\s*earsEngine:\s*live\.earsEngine\s*\}\)/,
+  "CONNECTED carries the LiveSession's ears engine into call state",
+);
+assert.match(
+  component,
+  /state\.state === "live" && state\.earsEngine && \(/,
+  "live calls render the ears-engine badge when a loop provider reports one",
+);
+assert.match(
+  component,
+  /case "native-on-device": return "Hearing on-device";[\s\S]{0,120}case "native-dictation": return "Hearing via Apple dictation";[\s\S]{0,120}case "web-speech": return "Hearing via browser speech";/,
+  "every ears engine mode has an honest human label",
+);
 assert.match(
   component,
   /startsWith\("sdp_exchange_failed_"\)/,

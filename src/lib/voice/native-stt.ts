@@ -15,6 +15,8 @@
 // dropped by id.
 
 import type { SpeechEars, SpeechEarsFactory, SpeechEarsHandlers } from "./speech-loop.ts";
+import type { VoiceEarsEngine } from "./types.ts";
+import { VoiceConnectError } from "./types.ts";
 
 /** Event channel mirrored from src-tauri/src/speech.rs. */
 export const STT_EVENT = "speech-stt:event";
@@ -49,19 +51,42 @@ export async function loadNativeSttBridge(): Promise<NativeSttBridge | null> {
   return { invoke, listen };
 }
 
+/** Availability payload mirrored from src-tauri/src/speech.rs. */
+export type SttAvailabilityPayload = {
+  supported?: boolean;
+  /** The resolved recognizer can transcribe fully on-device. */
+  onDevice?: boolean;
+  locale?: string | null;
+  reason?: string | null;
+};
+
+/** Probe the native engine's availability + on-device support for a
+ *  language; null when the probe itself fails. */
+export async function nativeSttAvailability(
+  bridge: NativeSttBridge,
+  lang?: string,
+): Promise<SttAvailabilityPayload | null> {
+  try {
+    return await bridge.invoke<SttAvailabilityPayload>("speech_stt_available", {
+      lang: lang ?? null,
+    });
+  } catch {
+    return null;
+  }
+}
+
 /** Ask the native side whether it has a speech engine (macOS only today). */
 export async function nativeSttAvailable(bridge: NativeSttBridge): Promise<boolean> {
-  try {
-    const availability = await bridge.invoke<{ supported?: boolean }>("speech_stt_available");
-    return availability?.supported === true;
-  } catch {
-    return false;
-  }
+  return (await nativeSttAvailability(bridge))?.supported === true;
 }
 
 export type NativeSttEarsOptions = {
   /** BCP-47 tag for the recognizer locale; empty for the system default. */
   lang?: string;
+  /** Hard-require the on-device dictation model (the Local provider's
+   *  "no cloud" contract) — the native side refuses to fall back to
+   *  Apple's dictation service (cave-vpe1). */
+  requireOnDevice?: boolean;
   stabilityMs?: number;
   maxUtteranceMs?: number;
   /** Injectable timers for tests. */
@@ -160,7 +185,11 @@ export function createNativeSttEars(
       void subscribed.then(() => {
         if (closed || !wanted || current !== session) return;
         bridge
-          .invoke("speech_stt_start", { session, lang: opts.lang ?? null })
+          .invoke("speech_stt_start", {
+            session,
+            lang: opts.lang ?? null,
+            requireOnDevice: opts.requireOnDevice ?? false,
+          })
           .catch((err) => {
             if (closed || current !== session) return;
             current = 0;
@@ -202,15 +231,50 @@ export function createNativeSttEars(
   };
 }
 
+/** Preferred ears plus which engine mode they run on (for honest call UI). */
+export type PreferredEars = {
+  factory: SpeechEarsFactory;
+  engine: Extract<VoiceEarsEngine, "native-on-device" | "native-dictation">;
+};
+
+/** The hybrid on-device policy (cave-vpe1) as a pure, pinnable decision:
+ *  strict callers get on-device or an actionable VoiceConnectError; everyone
+ *  else gets the honest engine label for whatever this Mac can do. */
+export function selectNativeEarsEngine(
+  availability: Pick<SttAvailabilityPayload, "onDevice" | "locale">,
+  requireOnDevice: boolean,
+): PreferredEars["engine"] {
+  if (availability.onDevice) return "native-on-device";
+  if (requireOnDevice) {
+    throw new VoiceConnectError(
+      "stt_on_device_unsupported",
+      `This Mac can't transcribe ${availability.locale || "the current language"} on-device — download the dictation model under System Settings → Keyboard → Dictation, or pick a cloud voice provider in Familiar Studio → Brain.`,
+    );
+  }
+  return "native-dictation";
+}
+
 /**
  * The ears the current window should use: the native macOS engine inside the
  * Tauri shell, undefined elsewhere (the loop falls back to WebSpeech).
+ * `requireOnDevice` applies the Local provider's "no cloud" contract —
+ * rejects with `stt_on_device_unsupported` instead of ever reaching Apple's
+ * dictation service.
  */
-export async function resolvePreferredEars(): Promise<SpeechEarsFactory | undefined> {
+export async function resolvePreferredEars(
+  opts: { requireOnDevice?: boolean } = {},
+): Promise<PreferredEars | undefined> {
   const bridge = await loadNativeSttBridge();
   if (!bridge) return undefined;
-  if (!(await nativeSttAvailable(bridge))) return undefined;
-  return createNativeSttEars(bridge, {
-    lang: typeof navigator !== "undefined" ? navigator.language || undefined : undefined,
-  });
+  const lang = typeof navigator !== "undefined" ? navigator.language || undefined : undefined;
+  const availability = await nativeSttAvailability(bridge, lang);
+  if (availability?.supported !== true) return undefined;
+  const engine = selectNativeEarsEngine(availability, opts.requireOnDevice ?? false);
+  return {
+    factory: createNativeSttEars(bridge, {
+      lang,
+      requireOnDevice: opts.requireOnDevice ?? false,
+    }),
+    engine,
+  };
 }

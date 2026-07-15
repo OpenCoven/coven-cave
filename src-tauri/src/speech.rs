@@ -34,11 +34,30 @@
 use serde::Serialize;
 use tauri::AppHandle;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SttAvailability {
     pub supported: bool,
+    /// The resolved recognizer can transcribe fully on-device (no Apple
+    /// dictation service). Drives the hybrid policy: the Local provider
+    /// requires this; familiar/ElevenLabs modes fall back with labeling.
+    pub on_device: bool,
+    /// Locale identifier the recognizer resolved to, when one exists.
+    pub locale: Option<String>,
     /// Human-readable reason when unsupported (platform, denied permission).
     pub reason: Option<String>,
+}
+
+/// The on-device policy for one recognition session (cave-vpe1, hybrid):
+/// callers that REQUIRE on-device (the Local provider's "no cloud" contract)
+/// hard-fail when this Mac lacks the dictation model; everyone else prefers
+/// on-device when present and otherwise falls back to Apple's dictation
+/// service. Returns whether `requiresOnDeviceRecognition` should be set.
+pub fn on_device_policy(require: bool, supports: bool) -> Result<bool, &'static str> {
+    if require && !supports {
+        return Err("stt_on_device_unsupported");
+    }
+    Ok(supports)
 }
 
 pub const STT_EVENT: &str = "speech-stt:event";
@@ -57,30 +76,38 @@ pub struct SttEvent {
 }
 
 #[tauri::command]
-pub fn speech_stt_available() -> SttAvailability {
+pub async fn speech_stt_available(app: AppHandle, lang: Option<String>) -> SttAvailability {
     #[cfg(target_os = "macos")]
     {
-        SttAvailability { supported: true, reason: None }
+        macos::availability(app, lang).await
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = (app, lang);
         SttAvailability {
             supported: false,
+            on_device: false,
+            locale: None,
             reason: Some("native speech recognition is only wired up on macOS".into()),
         }
     }
 }
 
 #[tauri::command]
-pub fn speech_stt_start(app: AppHandle, session: u32, lang: Option<String>) -> Result<(), String> {
+pub fn speech_stt_start(
+    app: AppHandle,
+    session: u32,
+    lang: Option<String>,
+    require_on_device: Option<bool>,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        macos::start(app, session, lang);
+        macos::start(app, session, lang, require_on_device.unwrap_or(false));
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, session, lang);
+        let _ = (app, session, lang, require_on_device);
         Err("native speech recognition is only wired up on macOS".into())
     }
 }
@@ -152,6 +179,60 @@ mod macos {
         }
     }
 
+    /// Resolve the recognizer for a requested language: the locale's own
+    /// recognizer when macOS has one, else the system default; `None` when
+    /// recognition is unavailable entirely. Main thread only.
+    fn resolve_recognizer(lang: Option<String>) -> Option<Retained<SFSpeechRecognizer>> {
+        lang.filter(|l| !l.trim().is_empty())
+            .and_then(|l| {
+                let locale = NSLocale::localeWithLocaleIdentifier(&NSString::from_str(l.trim()));
+                unsafe { SFSpeechRecognizer::initWithLocale(SFSpeechRecognizer::alloc(), &locale) }
+            })
+            .or_else(|| Some(unsafe { SFSpeechRecognizer::new() }))
+            .filter(|r| unsafe { r.isAvailable() })
+    }
+
+    /// Availability + engine-mode probe. Recognizer objects are main-thread
+    /// only, so the async command hops there and channels the answer back.
+    pub async fn availability(app: AppHandle, lang: Option<String>) -> super::SttAvailability {
+        let unavailable = || super::SttAvailability {
+            supported: false,
+            on_device: false,
+            locale: None,
+            reason: Some("macOS speech recognition is unavailable for this language right now".into()),
+        };
+        let (tx, rx) = std::sync::mpsc::channel::<super::SttAvailability>();
+        let dispatched = app.run_on_main_thread(move || {
+            let availability = match resolve_recognizer(lang) {
+                Some(recognizer) => super::SttAvailability {
+                    supported: true,
+                    on_device: unsafe { recognizer.supportsOnDeviceRecognition() },
+                    locale: Some(unsafe { recognizer.locale().localeIdentifier() }.to_string()),
+                    reason: None,
+                },
+                None => super::SttAvailability {
+                    supported: false,
+                    on_device: false,
+                    locale: None,
+                    reason: Some(
+                        "macOS speech recognition is unavailable for this language right now".into(),
+                    ),
+                },
+            };
+            let _ = tx.send(availability);
+        });
+        if dispatched.is_err() {
+            return unavailable();
+        }
+        tauri::async_runtime::spawn_blocking(move || {
+            rx.recv_timeout(std::time::Duration::from_secs(5)).ok()
+        })
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(unavailable)
+    }
+
     fn emit_error(app: &AppHandle, session: u32, code: &'static str, message: String) {
         emit(app, SttEvent { session, kind: "error", text: None, code: Some(code), message: Some(message) });
         emit(app, SttEvent { session, kind: "end", text: None, code: None, message: None });
@@ -174,10 +255,12 @@ mod macos {
         });
     }
 
-    pub fn start(app: AppHandle, session: u32, lang: Option<String>) {
+    pub fn start(app: AppHandle, session: u32, lang: Option<String>, require_on_device: bool) {
         let app2 = app.clone();
         let run = app.run_on_main_thread(move || match unsafe { SFSpeechRecognizer::authorizationStatus() } {
-            SFSpeechRecognizerAuthorizationStatus::Authorized => start_engine(app2, session, lang),
+            SFSpeechRecognizerAuthorizationStatus::Authorized => {
+                start_engine(app2, session, lang, require_on_device)
+            }
             SFSpeechRecognizerAuthorizationStatus::Denied
             | SFSpeechRecognizerAuthorizationStatus::Restricted => {
                 emit_error(
@@ -195,7 +278,7 @@ mod macos {
                     let lang = lang.clone();
                     let _ = app3.run_on_main_thread(move || {
                         if status == SFSpeechRecognizerAuthorizationStatus::Authorized {
-                            start_engine(app4, session, lang);
+                            start_engine(app4, session, lang, require_on_device);
                         } else {
                             emit_error(
                                 &app4,
@@ -215,7 +298,7 @@ mod macos {
     }
 
     /// Main-thread body: build recognizer + request + mic tap, start the task.
-    fn start_engine(app: AppHandle, session: u32, lang: Option<String>) {
+    fn start_engine(app: AppHandle, session: u32, lang: Option<String>, require_on_device: bool) {
         debug_assert!(MainThreadMarker::new().is_some());
         // A newer session replaces any live one (the JS ears serialize this,
         // but a stray overlap must not leak a running engine).
@@ -229,15 +312,7 @@ mod macos {
             }
         });
 
-        let recognizer = lang
-            .filter(|l| !l.trim().is_empty())
-            .and_then(|l| {
-                let locale = NSLocale::localeWithLocaleIdentifier(&NSString::from_str(l.trim()));
-                unsafe { SFSpeechRecognizer::initWithLocale(SFSpeechRecognizer::alloc(), &locale) }
-            })
-            .or_else(|| Some(unsafe { SFSpeechRecognizer::new() }))
-            .filter(|r| unsafe { r.isAvailable() });
-        let Some(recognizer) = recognizer else {
+        let Some(recognizer) = resolve_recognizer(lang) else {
             emit_error(
                 &app,
                 session,
@@ -247,13 +322,30 @@ mod macos {
             return;
         };
 
+        let set_on_device = match super::on_device_policy(
+            require_on_device,
+            unsafe { recognizer.supportsOnDeviceRecognition() },
+        ) {
+            Ok(set) => set,
+            Err(code) => {
+                emit_error(
+                    &app,
+                    session,
+                    code,
+                    "This Mac has no on-device dictation model for the language — download it under System Settings → Keyboard → Dictation, or switch this familiar to a cloud voice provider.".into(),
+                );
+                return;
+            }
+        };
+
         let request = unsafe { SFSpeechAudioBufferRecognitionRequest::new() };
         unsafe {
             request.setShouldReportPartialResults(true);
-            // Prefer the on-device dictation model when this Mac has it — the
-            // local provider's promise is "no cloud". Machines without the
-            // model fall back to Apple's system dictation service.
-            if recognizer.supportsOnDeviceRecognition() {
+            // Hybrid policy (cave-vpe1): on-device whenever this Mac has the
+            // dictation model; strict callers (the Local provider's "no
+            // cloud" contract) already hard-failed above instead of falling
+            // back to Apple's dictation service.
+            if set_on_device {
                 request.setRequiresOnDeviceRecognition(true);
             }
         }
@@ -369,5 +461,22 @@ mod macos {
         if let Err(err) = run {
             warn!("speech_stt_stop[{session}]: main-thread dispatch failed: {err}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::on_device_policy;
+
+    #[test]
+    fn on_device_policy_is_hybrid() {
+        // Strict callers (Local provider) hard-fail without the model…
+        assert_eq!(on_device_policy(true, false), Err("stt_on_device_unsupported"));
+        // …and pin recognition on-device when it exists.
+        assert_eq!(on_device_policy(true, true), Ok(true));
+        // Non-strict callers prefer on-device but may fall back to Apple's
+        // dictation service (requiresOnDeviceRecognition stays unset).
+        assert_eq!(on_device_policy(false, true), Ok(true));
+        assert_eq!(on_device_policy(false, false), Ok(false));
     }
 }
