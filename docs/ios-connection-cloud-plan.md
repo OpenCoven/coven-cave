@@ -291,9 +291,10 @@ iOS read-only cache seeded from last-known data (separate, larger effort).
 
 ### Open questions (Thread 3)
 
-1. Key custody: vault key inside the passphrase envelope (one passphrase
-   restores everything) vs never leaves the machine (re-enter PATs)?
-   Recommendation: include, passphrase-wrapped.
+1. Key custody: **decided 2026-07-15 — include, passphrase-wrapped.** The
+   vault key travels inside the encrypted backup envelope so one backup
+   passphrase restores the vault and stored PATs/tokens. Plaintext secrets must
+   never appear outside that envelope.
 2. Storage stance: strictly user-owned destinations, or is a first-party
    hosted option ever acceptable?
 3. Daemon DB in scope? (461 MB vs 15-50 MB; transcripts survive without it.

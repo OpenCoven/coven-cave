@@ -1206,6 +1206,26 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           familiarDone={hasFamiliars}
         />
 
+        <section className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-4">
+          <div className="flex items-start gap-3">
+            <Icon name="ph:archive" width={18} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+            <div>
+              <div className="text-[13px] font-semibold text-[var(--text-primary)]">Restoring a previous Cave?</div>
+              <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                Use a .ccbackup file and its passphrase to restore chats, projects, memory, and vault-backed tokens before continuing setup.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.href = "/settings?group=Backup#general"; }}
+            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+          >
+            <Icon name="ph:arrow-counter-clockwise" />
+            Restore from backup
+          </button>
+        </section>
+
         {setupComplete ? (
           // The finish CTA lives in the footer of a long scrolling page; when
           // the last step ticks, the counter reads 4/4 but the next action is
