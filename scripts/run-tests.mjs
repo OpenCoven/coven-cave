@@ -203,6 +203,7 @@ export const SUITES = {
     "src/lib/daily-note.test.ts",
     "src/components/familiar-daily-notes.test.ts",
     "src/lib/dashboard-model.test.ts",
+    "src/lib/dashboard-cockpit-format.test.ts",
     "src/lib/dashboard-analytics.test.ts",
     "src/lib/coven-analytics.test.ts",
     "src/app/dashboard-page.test.ts",

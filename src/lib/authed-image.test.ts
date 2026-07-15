@@ -166,7 +166,8 @@ for (const rel of [
   "../components/familiar-growth-view.tsx",
   "../components/familiar-analytics-view.tsx",
   "../components/familiars-view.tsx",
-  "../components/dashboard/dashboard-cockpit.tsx",
+  // The cockpit's avatar-rendering rows live in its presentational panel layer.
+  "../components/dashboard/cockpit-panels.tsx",
 ]) {
   const src = read(rel);
   assert.match(src, /AuthedImage/, `${rel} renders avatars via <AuthedImage>`);
