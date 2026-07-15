@@ -52,7 +52,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-15 (voice models): speech-model management adds 4 API route
   // handlers for readiness/download polling/removal, traced at 5,443 — raised
   // to 5,450 with narrow headroom.
-  fileCount: 5_450,
+  // 2026-07-15 (integrated main): the voice routes landed after the manual
+  // export/restore routes, producing 5,452–5,458 files across CI platforms.
+  // Keep seven files of measured headroom without changing runtime contents.
+  fileCount: 5_465,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
