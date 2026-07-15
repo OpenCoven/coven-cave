@@ -7,7 +7,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { InboxItem, ItemKind } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import { MUTABLE_KINDS, type InboxPrefs, type MutableKind, type SoundMode } from "@/lib/inbox-prefs-shape";
-import { isInboxItemUnread, unreadInboxCount } from "@/lib/inbox-feed";
+import { collapseInboxSeries, isInboxItemPastDue, isInboxItemUnread, unreadInboxCount } from "@/lib/inbox-feed";
 import { normalizeInboxTitle } from "@/lib/inbox-title";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -23,7 +23,7 @@ type Props = {
   onPrefsChanged: () => void;
 };
 
-type KindFilter = "all" | ItemKind;
+type KindFilter = "all" | "past-due" | ItemKind;
 
 const KIND_FILTERS: { kind: ItemKind; label: string }[] = [
   { kind: "response-needed", label: "Waiting" },
@@ -159,17 +159,40 @@ export function NotificationBell({
     return [...ephemeral, ...firedSorted];
   }, [items]);
 
-  const recent = useMemo(
-    () =>
-      (kindFilter === "all" ? feed : feed.filter((i) => i.kind === kindFilter)).slice(0, 30),
-    [feed, kindFilter],
+  // Collapse every occurrence of the same repeating schedule into ONE row —
+  // a daily stand-up that fired five times reads "×5", not five entries
+  // burying everything else (cave-w7z0).
+  const grouped = useMemo(() => collapseInboxSeries(feed), [feed]);
+
+  // Past due = reminders whose moment passed and are still waiting (the pure
+  // isInboxItemPastDue predicate). A group is past due when any member is.
+  const pastDueGroups = useMemo(
+    () => grouped.filter((g) => g.items.some((i) => isInboxItemPastDue(i))),
+    [grouped],
   );
+
+  // Filtering to zero must never strand the user: when the last past-due item
+  // is handled, the chip disappears — fall back to All instead of an empty
+  // list with no way out.
+  useEffect(() => {
+    if (kindFilter === "past-due" && pastDueGroups.length === 0) setKindFilter("all");
+  }, [kindFilter, pastDueGroups.length]);
+
+  const recent = useMemo(() => {
+    const filtered =
+      kindFilter === "all"
+        ? grouped
+        : kindFilter === "past-due"
+          ? pastDueGroups
+          : grouped.filter((g) => g.latest.kind === kindFilter);
+    return filtered.slice(0, 30);
+  }, [grouped, pastDueGroups, kindFilter]);
 
   // Only offer chips for kinds that actually have notifications — an empty
   // filter is a dead end, not a management tool.
   const kindChips = useMemo(
-    () => KIND_FILTERS.filter(({ kind }) => feed.some((i) => i.kind === kind)),
-    [feed],
+    () => KIND_FILTERS.filter(({ kind }) => grouped.some((g) => g.latest.kind === kind)),
+    [grouped],
   );
 
   // Badge and list share one unread definition (unreadInboxCount) so they can
@@ -183,17 +206,19 @@ export function NotificationBell({
   );
 
   // Acknowledge without resolving: reading quiets the badge, the item stays
-  // listed until dismissed/done. Ephemeral response-needed rows (eph:*) are
-  // client-synthesized and have nothing to mark server-side.
+  // listed until dismissed/done. Takes the whole id set of a series row — one
+  // atomic bulk POST, not a per-occurrence fan-out. Ephemeral response-needed
+  // rows (eph:*) are client-synthesized and have nothing to mark server-side.
   const markRead = useCallback(
-    async (id: string) => {
-      if (id.startsWith("eph:")) return;
+    async (ids: string[]) => {
+      const real = ids.filter((id) => !id.startsWith("eph:"));
+      if (real.length === 0) return;
       await mutate(
         () =>
           fetch("/api/inbox/bulk", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ action: "read", ids: [id] }),
+            body: JSON.stringify({ action: "read", ids: real }),
           }),
         "Mark read failed — check your connection.",
       );
@@ -223,10 +248,20 @@ export function NotificationBell({
     return () => window.removeEventListener("pointerdown", onDown);
   }, [open]);
 
+  // Dismiss a row — for a collapsed repeating-schedule row that's EVERY
+  // occurrence in the series, as one atomic bulk POST (single file write +
+  // broadcast server-side, same shape as clear-all).
   const dismiss = useCallback(
-    async (id: string) => {
+    async (ids: string[]) => {
+      const real = ids.filter((id) => !id.startsWith("eph:"));
+      if (real.length === 0) return;
       await mutate(
-        () => fetch(`/api/inbox/${id}/dismiss`, { method: "POST" }),
+        () =>
+          fetch("/api/inbox/bulk", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "dismiss", ids: real }),
+          }),
         "Dismiss failed — check your connection.",
       );
     },
@@ -442,16 +477,18 @@ export function NotificationBell({
               </ul>
             </div>
           ) : null}
-          {kindChips.length > 1 ? (
+          {kindChips.length > 1 || pastDueGroups.length > 0 ? (
             <div
               role="group"
-              aria-label="Filter notifications by kind"
+              aria-label="Filter notifications"
               className="notification-bell__filters flex flex-wrap gap-1 border-b border-[var(--border-hairline)] px-3 py-2"
             >
               {[{ kind: "all" as const, label: "All" }, ...kindChips].map(({ kind, label }) => {
                 const active = kindFilter === kind;
                 const count =
-                  kind === "all" ? feed.length : feed.filter((i) => i.kind === kind).length;
+                  kind === "all"
+                    ? grouped.length
+                    : grouped.filter((g) => g.latest.kind === kind).length;
                 return (
                   <button
                     key={kind}
@@ -467,6 +504,22 @@ export function NotificationBell({
                   </button>
                 );
               })}
+              {pastDueGroups.length > 0 ? (
+                // Warning-tinted so the overdue slice is findable at a glance —
+                // this is a status filter, not a kind, hence the distinct hue.
+                <button
+                  onClick={() => setKindFilter("past-due")}
+                  aria-pressed={kindFilter === "past-due"}
+                  title="Only reminders whose time has passed and are still waiting on you"
+                  className={`notification-bell__past-due-chip focus-ring rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                    kindFilter === "past-due"
+                      ? "border-[color-mix(in_oklch,var(--color-warning)_55%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--text-primary)]"
+                      : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_12%,transparent)]"
+                  }`}
+                >
+                  Past due <span aria-hidden className="opacity-70">{pastDueGroups.length}</span>
+                </button>
+              ) : null}
             </div>
           ) : null}
           <ul className="notification-bell__list max-h-[420px] overflow-y-auto p-2 text-xs">
@@ -475,10 +528,16 @@ export function NotificationBell({
                 {kindFilter === "all" ? "No notifications." : "Nothing in this filter."}
               </li>
             ) : null}
-            {recent.map((it) => {
+            {recent.map((group) => {
+              const it = group.latest;
+              const seriesCount = group.items.length;
               const fname = it.familiarId ? familiarName(it.familiarId) : null;
               const muted = it.familiarId ? prefs.mutedFamiliars.includes(it.familiarId) : false;
-              const unread = isInboxItemUnread(it);
+              const unread = group.items.some(isInboxItemUnread);
+              const pastDue = group.items.some((m) => isInboxItemPastDue(m));
+              const unreadIdsInGroup = group.items
+                .filter(isInboxItemUnread)
+                .map((m) => m.id);
               return (
                 <li
                   key={it.id}
@@ -515,6 +574,20 @@ export function NotificationBell({
                           </>
                         ) : null}
                         <div className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={normalizeInboxTitle(it.title)}>{normalizeInboxTitle(it.title)}</div>
+                        {seriesCount > 1 ? (
+                          <span
+                            className="notification-bell__series-count shrink-0 rounded-full border border-[var(--border-strong)] bg-[var(--bg-raised)] px-1.5 text-[9px] font-semibold leading-4 text-[var(--text-secondary)]"
+                            title={`${seriesCount} notifications from this repeating schedule, grouped`}
+                          >
+                            ×{seriesCount}
+                            <span className="sr-only"> notifications from this repeating schedule</span>
+                          </span>
+                        ) : null}
+                        {pastDue ? (
+                          <span className="notification-bell__past-due-tag shrink-0 rounded-full border border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] px-1.5 text-[9px] font-semibold leading-4 text-[var(--color-warning)]">
+                            Past due
+                          </span>
+                        ) : null}
                       </div>
                       {it.body ? (
                         <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--text-muted)]">
@@ -547,10 +620,13 @@ export function NotificationBell({
                       <BellBtn
                         primary
                         onClick={() => {
-                          // Opening acknowledges the item, but the parent's
-                          // onOpenItem handler already marks it read (every
-                          // open-path funnels through markInboxItemRead) — so
-                          // the bell must not POST a second, redundant read.
+                          // Opening acknowledges the row. The parent's
+                          // onOpenItem handler marks the opened item read
+                          // (every open-path funnels through
+                          // markInboxItemRead), so only the OTHER unread
+                          // occurrences of a collapsed series need a read here.
+                          const others = unreadIdsInGroup.filter((id) => id !== it.id);
+                          if (others.length > 0) void markRead(others);
                           setOpen(false);
                           onOpenItem(it);
                         }}
@@ -560,8 +636,12 @@ export function NotificationBell({
                     ) : null}
                     {unread && it.kind !== "response-needed" ? (
                       <BellBtn
-                        onClick={() => void markRead(it.id)}
-                        title="Mark as read — keeps the notification, quiets the badge"
+                        onClick={() => void markRead(unreadIdsInGroup)}
+                        title={
+                          seriesCount > 1
+                            ? "Mark every notification from this schedule as read — keeps them, quiets the badge"
+                            : "Mark as read — keeps the notification, quiets the badge"
+                        }
                       >
                         Read
                       </BellBtn>
@@ -571,7 +651,16 @@ export function NotificationBell({
                         <BellBtn onClick={() => void snooze(it.id)} title="Snooze 10 minutes">
                           Snooze
                         </BellBtn>
-                        <BellBtn onClick={() => void dismiss(it.id)}>Dismiss</BellBtn>
+                        <BellBtn
+                          onClick={() => void dismiss(group.items.map((m) => m.id))}
+                          title={
+                            seriesCount > 1
+                              ? `Dismiss all ${seriesCount} notifications from this schedule`
+                              : undefined
+                          }
+                        >
+                          {seriesCount > 1 ? "Dismiss all" : "Dismiss"}
+                        </BellBtn>
                       </>
                     ) : null}
                   </div>

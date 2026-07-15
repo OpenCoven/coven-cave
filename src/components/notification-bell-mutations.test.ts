@@ -66,11 +66,20 @@ assert.doesNotMatch(
 );
 
 // Ephemeral response-needed rows (eph:*) are client-synthesized — there is
-// nothing to mark read server-side, so markRead must skip them.
+// nothing to mark read server-side, so markRead must skip them. It takes the
+// full id set of a collapsed series row and still issues ONE bulk POST.
 assert.match(
   src,
-  /const markRead = useCallback\(\s*\n\s*async \(id: string\) => \{\s*\n\s*if \(id\.startsWith\("eph:"\)\) return;/,
+  /const markRead = useCallback\(\s*\n\s*async \(ids: string\[\]\) => \{\s*\n\s*const real = ids\.filter\(\(id\) => !id\.startsWith\("eph:"\)\);\s*\n\s*if \(real\.length === 0\) return;/,
   "markRead skips ephemeral response-needed rows",
+);
+
+// Dismissing a collapsed repeating-schedule row clears the WHOLE series in one
+// atomic bulk POST — never a per-occurrence fan-out.
+assert.match(
+  src,
+  /const dismiss = useCallback\(\s*\n\s*async \(ids: string\[\]\) => \{[\s\S]*?"\/api\/inbox\/bulk"[\s\S]*?action: "dismiss", ids: real/,
+  "dismiss takes the series id set through one bulk POST",
 );
 
 // The badge counts unread from the SAME items the list shows (one shared

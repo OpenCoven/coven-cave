@@ -2,10 +2,13 @@
 import assert from "node:assert/strict";
 import {
   buildInboxGroups,
+  collapseInboxSeries,
   groupInboxFeed,
   INBOX_GROUP_BY_OPTIONS,
   inboxActivityTime,
   inboxKindLabel,
+  inboxSeriesKey,
+  isInboxItemPastDue,
   isInboxItemUnread,
   unreadInboxCount,
 } from "./inbox-feed.ts";
@@ -201,6 +204,68 @@ const item = (over = {}) => ({
 // ── the group-by options cover every mode exactly once ──────────────────────
 {
   assert.deepEqual(INBOX_GROUP_BY_OPTIONS.map((o) => o.value), ["attention", "kind", "familiar"]);
+}
+
+// ── inboxSeriesKey: recurring items share a key, one-shots have none ────────
+{
+  const rec = { type: "daily", hour: 9, minute: 0 };
+  const a = item({ id: "a", title: "Stand-up", recurrence: rec, familiarId: "f1" });
+  const b = item({ id: "b", title: "  stand-up ", recurrence: rec, familiarId: "f1" });
+  assert.equal(inboxSeriesKey(a), inboxSeriesKey(b), "same schedule → same key (title normalized)");
+  assert.equal(inboxSeriesKey(item({ recurrence: { type: "none" } })), null, "one-shots have no series");
+  assert.equal(inboxSeriesKey(item({ recurrence: undefined, kind: "response-needed" })), null, "missing recurrence → no series");
+  assert.notEqual(
+    inboxSeriesKey(a),
+    inboxSeriesKey(item({ id: "c", title: "Stand-up", recurrence: rec, familiarId: "f2" })),
+    "same schedule under a different familiar is a different series",
+  );
+  assert.notEqual(
+    inboxSeriesKey(a),
+    inboxSeriesKey(item({ id: "d", title: "Stand-up", recurrence: { type: "daily", hour: 10, minute: 0 }, familiarId: "f1" })),
+    "a different recurrence spec is a different series",
+  );
+}
+
+// ── collapseInboxSeries: occurrences of one schedule become one group ───────
+{
+  const rec = { type: "daily", hour: 9, minute: 0 };
+  const groups = collapseInboxSeries([
+    item({ id: "new", title: "Stand-up", recurrence: rec, status: "fired", firedAt: "2026-06-03T09:00:00Z" }),
+    item({ id: "solo", title: "One-shot", status: "fired", firedAt: "2026-06-02T12:00:00Z" }),
+    item({ id: "old", title: "Stand-up", recurrence: rec, status: "fired", firedAt: "2026-06-01T09:00:00Z" }),
+  ]);
+  assert.equal(groups.length, 2, "three items collapse to two rows");
+  assert.deepEqual(groups[0].items.map((i) => i.id), ["new", "old"], "series holds every occurrence, input order kept");
+  assert.equal(groups[0].latest.id, "new", "the newest occurrence fronts the group");
+  assert.equal(groups[1].key, null, "the one-shot passes through as a singleton");
+  assert.deepEqual(groups[1].items.map((i) => i.id), ["solo"]);
+}
+
+// ── collapseInboxSeries: latest wins by activity time, not input order ──────
+{
+  const rec = { type: "interval", everyMs: 60_000 };
+  const groups = collapseInboxSeries([
+    item({ id: "older", title: "Ping", recurrence: rec, status: "fired", firedAt: "2026-06-01T00:00:00Z" }),
+    item({ id: "newer", title: "Ping", recurrence: rec, status: "fired", firedAt: "2026-06-05T00:00:00Z" }),
+  ]);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].latest.id, "newer", "latest is by activity, even when input isn't sorted");
+  assert.equal(groups[0].key, inboxSeriesKey(groups[0].latest), "the group key matches its members'");
+}
+
+// ── isInboxItemPastDue: due moment passed + still waiting on the user ───────
+{
+  const now = Date.parse("2026-06-10T12:00:00Z");
+  const pastDue = (over) => isInboxItemPastDue(item(over), now);
+  assert.equal(pastDue({ status: "fired", fireAt: "2026-06-10T09:00:00Z", firedAt: "2026-06-10T09:00:00Z" }), true, "fired reminder past its time is past due");
+  assert.equal(pastDue({ status: "pending", fireAt: "2026-06-10T09:00:00Z" }), true, "a pending reminder whose fireAt slipped by is past due (missed while quit)");
+  assert.equal(pastDue({ status: "pending", fireAt: "2026-06-11T09:00:00Z" }), false, "an upcoming reminder is not past due");
+  assert.equal(pastDue({ status: "done", fireAt: "2026-06-10T09:00:00Z" }), false, "resolved reminders are never past due");
+  assert.equal(pastDue({ status: "dismissed", fireAt: "2026-06-10T09:00:00Z" }), false, "dismissed reminders are never past due");
+  assert.equal(pastDue({ status: "fired", fireAt: null, firedAt: "2026-06-10T09:00:00Z" }), true, "fired with no fireAt falls back to firedAt");
+  assert.equal(pastDue({ kind: "agent", status: "fired", fireAt: "2026-06-10T09:00:00Z" }), false, "announcement kinds have no due moment");
+  assert.equal(pastDue({ kind: "daily-summary", status: "fired", firedAt: "2026-06-10T09:00:00Z" }), false, "daily summaries are never past due");
+  assert.equal(pastDue({ status: "pending", fireAt: null }), false, "no due time → not past due");
 }
 
 console.log("inbox-feed.test.ts passed");
