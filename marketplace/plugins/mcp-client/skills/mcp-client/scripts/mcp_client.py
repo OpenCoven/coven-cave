@@ -11,8 +11,11 @@ Supports all MCP transports:
 Config Resolution (priority order):
 1. MCP_CONFIG_PATH env var (path to config file)
 2. MCP_CONFIG env var (inline JSON)
-3. .mcp.json in current directory
+3. references/mcp-config.json in this skill
 4. ~/.claude.json (Claude Code user config)
+
+Project-local .mcp.json files are intentionally not auto-discovered because
+they can define executable stdio servers.
 
 Usage:
     python mcp_client.py servers                           # List configured servers
@@ -51,12 +54,7 @@ def find_config_file() -> Optional[Path]:
     if skill_config.exists():
         return skill_config
 
-    # Priority 3: .mcp.json in current directory
-    local_config = Path(".mcp.json")
-    if local_config.exists():
-        return local_config
-
-    # Priority 4: ~/.claude.json (Claude Code config)
+    # Priority 3: ~/.claude.json (Claude Code config)
     claude_config = Path.home() / ".claude.json"
     if claude_config.exists():
         return claude_config
@@ -79,7 +77,9 @@ def load_config() -> dict:
     if not config_path:
         raise FileNotFoundError(
             "No MCP config found. Set MCP_CONFIG_PATH, MCP_CONFIG, "
-            "or create .mcp.json in the current directory."
+            "create references/mcp-config.json in this skill, or configure ~/.claude.json. "
+            "Project-local .mcp.json files are not auto-discovered; use "
+            "MCP_CONFIG_PATH explicitly only for trusted workspace configs."
         )
 
     with open(config_path) as f:
@@ -87,6 +87,29 @@ def load_config() -> dict:
 
     # Handle both formats: {"mcpServers": {...}} and direct {...}
     return config.get("mcpServers", config)
+
+
+def build_stdio_env(config_env: Optional[dict[str, str]]) -> dict[str, str]:
+    """Build a minimal environment for stdio MCP subprocesses.
+
+    Stdio MCP server definitions are executable commands, so they must not
+    receive the caller's full secret-bearing environment by default. Preserve a
+    small set of non-secret process-launch variables for command lookup and
+    platform compatibility, then apply explicit per-server env values.
+    """
+    env: dict[str, str] = {}
+
+    if path := os.environ.get("PATH"):
+        env["PATH"] = path
+
+    for name in ("SYSTEMROOT", "SystemRoot", "WINDIR", "COMSPEC", "PATHEXT"):
+        if value := os.environ.get(name):
+            env[name] = value
+
+    if config_env:
+        env.update({str(key): str(value) for key, value in config_env.items()})
+
+    return env
 
 
 def get_server_config(servers: dict, server_name: str) -> dict:
@@ -162,10 +185,10 @@ async def create_session(config: dict):
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
-        # Build environment with current env + config env
-        env = {**os.environ}
-        if config_env := config.get("env"):
-            env.update(config_env)
+        # Do not pass the caller's full environment to config-supplied stdio
+        # commands. Repository-controlled MCP configs can otherwise exfiltrate
+        # inherited API keys and tokens as soon as a session is opened.
+        env = build_stdio_env(config.get("env"))
 
         server_params = StdioServerParameters(
             command=config["command"],
@@ -316,8 +339,11 @@ Examples:
 Config sources (checked in order):
     1. MCP_CONFIG_PATH environment variable
     2. MCP_CONFIG environment variable (inline JSON)
-    3. .mcp.json in current directory
-    4. ~/.claude.json"""
+    3. references/mcp-config.json in this skill
+    4. ~/.claude.json
+
+Project-local .mcp.json files are not auto-discovered; pass trusted workspace
+configs explicitly with MCP_CONFIG_PATH."""
     print(usage)
 
 
