@@ -329,6 +329,10 @@ export function MarketplaceViewSurface({
     () => sortPlugins(filterPlugins(plugins, { query, kind: "craft" }), sort),
     [plugins, query, sort],
   );
+  // Lifecycle grouping (docs/craft-ux.md F11): local drafts surface as their
+  // own strip above the published catalog instead of interleaving with it.
+  const draftCrafts = useMemo(() => craftPlugins.filter((plugin) => plugin.draft), [craftPlugins]);
+  const publishedCrafts = useMemo(() => craftPlugins.filter((plugin) => !plugin.draft), [craftPlugins]);
 
   const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selected) ?? null, [plugins, selected]);
   const configuringPlugin = useMemo(() => plugins.find((p) => p.id === configuringId) ?? null, [plugins, configuringId]);
@@ -818,19 +822,52 @@ export function MarketplaceViewSurface({
               subtitle={query ? "Try a different Craft name or capability." : "Audited Research Crafts will appear here when they are enabled."}
             />
           ) : (
-            <div className="marketplace-category-grid" aria-label="Available Crafts">
-              {craftPlugins.map((plugin) => (
-                <MarketplaceCard
-                  key={plugin.id}
-                  plugin={plugin}
-                  busy={busyIds.has(plugin.id)}
-                  onOpen={setSelected}
-                  onAdd={add}
-                  onRemove={remove}
-                  onConfigure={setConfiguringId}
-                />
-              ))}
-            </div>
+            <>
+              {draftCrafts.length > 0 ? (
+                <section className="craft-grid-group" aria-labelledby="craft-drafts-heading">
+                  <div className="craft-grid-group__head">
+                    <h3 id="craft-drafts-heading">Your drafts</h3>
+                    <p>Local and reversible — review, refine, and publish when ready.</p>
+                  </div>
+                  <div className="marketplace-category-grid" aria-label="Draft Crafts">
+                    {draftCrafts.map((plugin) => (
+                      <MarketplaceCard
+                        key={plugin.id}
+                        plugin={plugin}
+                        busy={busyIds.has(plugin.id)}
+                        onOpen={setSelected}
+                        onAdd={add}
+                        onRemove={remove}
+                        onConfigure={setConfiguringId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              {publishedCrafts.length > 0 ? (
+                <section className="craft-grid-group" aria-labelledby="craft-published-heading">
+                  {draftCrafts.length > 0 ? (
+                    <div className="craft-grid-group__head">
+                      <h3 id="craft-published-heading">Published</h3>
+                      <p>Versioned Crafts from the audited catalog, installable and equippable.</p>
+                    </div>
+                  ) : null}
+                  <div className="marketplace-category-grid" aria-label="Available Crafts">
+                    {publishedCrafts.map((plugin) => (
+                      <MarketplaceCard
+                        key={plugin.id}
+                        plugin={plugin}
+                        busy={busyIds.has(plugin.id)}
+                        onOpen={setSelected}
+                        onAdd={add}
+                        onRemove={remove}
+                        onConfigure={setConfiguringId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </>
           )}
         </div>
       ) : section === "skills" ? (

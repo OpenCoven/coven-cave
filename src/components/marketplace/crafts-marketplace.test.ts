@@ -50,6 +50,26 @@ assert.match(createDrawer, /initialPrompt: buildCraftAgentPrompt\(\{ description
 assert.match(createDrawer, /Draft with familiar/, "describe mode has an explicit agentic CTA");
 assert.match(createDrawer, /What happens next/, "describe mode explains the agentic loop");
 
+// ── One-flow authoring (docs/craft-ux.md CP2) ────────────────────────────────
+// Describe-first with last-used memory; pick-roles previews the REAL
+// extraction ledger (client-side pure synthesis) before anything is written;
+// one shared preview component renders draft contents in the drawer and the
+// detail; the Crafts grid separates local drafts from the published catalog.
+assert.match(createDrawer, /\{ id: "describe"[\s\S]*?\{ id: "extract"/, "describe leads the creation-mode tabs");
+assert.match(createDrawer, /MODE_MEMORY_KEY = "cave:craft-create:mode"/, "the last-used creation mode is remembered");
+assert.match(createDrawer, /buildCraftDraftFromRoles\(\{ familiar, roles: selectedRoles \}\)/, "pick-roles synthesizes the real draft client-side for preview");
+assert.match(createDrawer, /Preview draft/, "role selection advances to a preview step before saving");
+assert.match(createDrawer, /Adjust roles/, "the preview step returns to selection without losing state");
+assert.match(createDrawer, /extractionLedgerGroups\(previewDraft\.extraction\.ledger\)/, "the preview renders the extraction ledger, not just counts");
+{
+  const draftPreview = await readFile(new URL("./craft-draft-preview.tsx", import.meta.url), "utf8");
+  assert.match(draftPreview, /export function CraftDraftPreview/, "draft contents render through one shared component");
+  assert.match(draftPreview, /craft-draft-ledger/, "the shared preview keeps the stable ledger styling hook");
+}
+assert.match(detail, /<CraftDraftPreview groups=\{craftSpecGroups\(craft\)\}/, "draft detail renders the same shared preview");
+assert.match(view, /Your drafts/, "the Crafts grid groups local drafts above the published catalog");
+assert.match(css, /\.craft-grid-group \{/, "Craft lifecycle groups have a stable visual hook");
+
 // ── Describe-it closes its loop (cave-46wg) ──────────────────────────────────
 // The dispatched brief is no longer fire-and-forget: the drawer snapshots the
 // drafts store, polls while waiting, and hands an ARRIVED draft to the same

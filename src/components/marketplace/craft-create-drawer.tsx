@@ -8,6 +8,11 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { buildCraftAgentPrompt } from "@/lib/craft-agent-prompt";
+import { buildCraftDraftFromRoles } from "@/lib/craft-draft";
+import {
+  CraftDraftPreview,
+  extractionLedgerGroups,
+} from "@/components/marketplace/craft-draft-preview";
 import type { RoleEntry } from "@/app/api/roles/route";
 
 type RolesResponse = {
@@ -22,14 +27,31 @@ type DraftResponse = {
   error?: string;
 };
 
-/** Two ways in: hand-pick roles, or describe the Craft and let a familiar
- *  build it agentically through the drafts API. */
+/** Two ways in: describe the Craft and let a familiar build it agentically
+ *  through the drafts API, or hand-pick roles. Describe leads for first-time
+ *  users; the last-used mode is remembered so power users land back on
+ *  Pick roles (docs/craft-ux.md, CP2). */
 type CreateMode = "extract" | "describe";
 
 const CREATE_MODES: ReadonlyArray<TabItem<CreateMode>> = [
-  { id: "extract", label: "Pick roles", icon: "ph:stack" },
   { id: "describe", label: "Describe it", icon: "ph:sparkle" },
+  { id: "extract", label: "Pick roles", icon: "ph:stack" },
 ];
+
+const MODE_MEMORY_KEY = "cave:craft-create:mode";
+
+function initialCreateMode(): CreateMode {
+  if (typeof window === "undefined") return "describe";
+  try {
+    return window.localStorage.getItem(MODE_MEMORY_KEY) === "extract" ? "extract" : "describe";
+  } catch {
+    return "describe";
+  }
+}
+
+/** Pick-roles is a two-step flow: select roles, then preview the real
+ *  extraction ledger before anything is written. */
+type ExtractStep = "select" | "preview";
 
 type Props = {
   open: boolean;
@@ -39,7 +61,8 @@ type Props = {
 
 export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [mode, setMode] = useState<CreateMode>("extract");
+  const [mode, setMode] = useState<CreateMode>(initialCreateMode);
+  const [step, setStep] = useState<ExtractStep>("select");
   const [roles, setRoles] = useState<RoleEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +80,21 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   useFocusTrap(open, ref, { onEscape: onClose });
 
   useEffect(() => {
-    if (!open) setAwaiting(false);
+    if (!open) {
+      setAwaiting(false);
+      setStep("select");
+    }
   }, [open]);
+
+  const chooseMode = useCallback((next: CreateMode) => {
+    setMode(next);
+    setStep("select");
+    try {
+      window.localStorage.setItem(MODE_MEMORY_KEY, next);
+    } catch {
+      // Mode memory is a convenience; private mode may refuse it.
+    }
+  }, []);
 
   const checkForArrivedDraft = useCallback(async () => {
     try {
@@ -157,6 +193,18 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
     });
   }, []);
 
+  // Preview-before-save (docs/craft-ux.md F3): the extraction builder is pure
+  // and client-importable, so the real ledger renders before anything is
+  // written. Save still POSTs; the server rebuild stays authoritative.
+  const previewDraft = useMemo(() => {
+    if (!familiar || selectedRoles.length === 0) return null;
+    try {
+      return buildCraftDraftFromRoles({ familiar, roles: selectedRoles });
+    } catch {
+      return null;
+    }
+  }, [familiar, selectedRoles]);
+
   const save = useCallback(async () => {
     if (!familiar || selectedRoleIds.size === 0) return;
     setSaving(true);
@@ -224,7 +272,9 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
             <h2 className="craft-create-drawer__title">Create Craft</h2>
             <p className="craft-create-drawer__subtitle">
               {mode === "extract"
-                ? "Extract a reusable bundle from a familiar's roles."
+                ? step === "preview"
+                  ? "Review the extracted bundle before saving the draft."
+                  : "Extract a reusable bundle from a familiar's roles."
                 : "Describe the Craft — a familiar builds and verifies the draft for you."}
             </p>
           </div>
@@ -236,7 +286,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
         <Tabs
           items={CREATE_MODES}
           value={mode}
-          onChange={setMode}
+          onChange={chooseMode}
           ariaLabel="How to create this Craft"
           variant="segment"
           size="sm"
@@ -301,6 +351,28 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
               </div>
             ) : null}
           </>
+        ) : step === "preview" ? (
+          <>
+            <section className="craft-create-drawer__roles" aria-label="Draft preview">
+              <h3>Draft preview</h3>
+              {previewDraft ? (
+                <>
+                  <p className="craft-create-drawer__status">
+                    <strong>{previewDraft.plugin.displayName}</strong>
+                    {" · "}
+                    {selectedRoles.length} {selectedRoles.length === 1 ? "role" : "roles"} from {familiar}.
+                    Review the extracted bundle, then save.
+                  </p>
+                  <CraftDraftPreview
+                    groups={extractionLedgerGroups(previewDraft.extraction.ledger)}
+                    ariaLabel="Extraction preview"
+                  />
+                </>
+              ) : (
+                <p className="craft-create-drawer__status">Select at least one role to preview the draft.</p>
+              )}
+            </section>
+          </>
         ) : (
           <>
             <label className="craft-create-drawer__field">
@@ -339,8 +411,8 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
               )}
             </section>
 
-            <section className="craft-draft-ledger" aria-label="Extraction preview">
-              <h3>Extraction preview</h3>
+            <section className="craft-draft-ledger" aria-label="Selection summary">
+              <h3>Selection summary</h3>
               <div className="craft-draft-ledger__stats">
                 <span><strong>{counts.components}</strong> components</span>
                 <span><strong>{counts.skills}</strong> skills</span>
@@ -363,16 +435,31 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
             >
               {awaiting ? "Drafting…" : "Draft with familiar"}
             </Button>
+          ) : step === "preview" ? (
+            <>
+              <Button variant="secondary" size="sm" leadingIcon="ph:arrow-left" onClick={() => setStep("select")}>
+                Adjust roles
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                leadingIcon="ph:package-bold"
+                loading={saving}
+                disabled={!previewDraft}
+                onClick={save}
+              >
+                Save draft
+              </Button>
+            </>
           ) : (
             <Button
               variant="primary"
               size="sm"
-              leadingIcon="ph:package-bold"
-              loading={saving}
+              leadingIcon="ph:magnifying-glass-bold"
               disabled={!familiar || selectedRoleIds.size === 0}
-              onClick={save}
+              onClick={() => setStep("preview")}
             >
-              Save draft
+              Preview draft
             </Button>
           )}
         </div>
