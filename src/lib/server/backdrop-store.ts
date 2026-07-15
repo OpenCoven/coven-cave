@@ -61,7 +61,9 @@ export function familiarBackdropPath(familiarId: string): string {
   if (!FAMILIAR_BACKDROP_ID_RE.test(familiarId) || familiarId.includes("..")) {
     throw new BackdropValidationError("invalid familiar id", 400);
   }
-  const dir = familiarBackdropDir();
+  // Resolve the base too: a trailing separator on the env override would
+  // otherwise double up in the prefix check and reject valid paths.
+  const dir = path.resolve(familiarBackdropDir());
   const target = path.resolve(dir, `familiar-${familiarId}.img`);
   if (target !== dir && !target.startsWith(dir + path.sep)) {
     throw new BackdropValidationError("invalid familiar id", 400);

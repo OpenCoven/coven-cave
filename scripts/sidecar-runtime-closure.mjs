@@ -41,7 +41,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // skills landed 2026-07-14). Raise deliberately, never reflexively.
   // 2026-07-15: +4 GitHub write routes (review/merge/rerun/dispatch,
   // cave-fpqx.9) traced the runtime to 5,258 — raised to 5,300.
-  fileCount: 5_300,
+  // 2026-07-15 (later): main reached 5,300 and the familiars/[id]/backdrop
+  // route (cave-j0dz) tipped it to 5,301 — raised to 5,320.
+  fileCount: 5_320,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
