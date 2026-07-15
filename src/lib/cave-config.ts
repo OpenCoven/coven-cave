@@ -521,9 +521,11 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
           })
         : current.chatAutoArchive,
   };
-  // Never persist an embedded hub access token (cave-1v95): pasting the
-  // tokened invite URL stays the pairing UX, but the credential goes to the
-  // local encrypted vault and only the clean URL reaches config.json.
+  // Split an embedded hub access token out before persisting (cave-1v95):
+  // pasting the tokened invite URL stays the pairing UX, but the credential
+  // goes to the local encrypted vault and only the clean URL reaches
+  // config.json. Best-effort by design — if the vault write fails, the
+  // embedded token is kept in place so hub connectivity never breaks.
   sanitizeMultiHostHubToken(updated);
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);

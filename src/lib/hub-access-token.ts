@@ -37,24 +37,29 @@ export function splitHubAccessToken(rawUrl: string): { url: string; token?: stri
 }
 
 /** The hub access token from its out-of-config homes: explicit env override
- *  first, then the local encrypted vault. */
+ *  first, then the local encrypted vault. Values are trimmed; blank custody
+ *  resolves to null rather than a truthy-but-invalid credential. */
 export function storedHubAccessToken(): string | null {
   const env = process.env[HUB_ACCESS_TOKEN_KEY]?.trim();
   if (env) return env;
   try {
-    return getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY);
+    return getLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY)?.trim() || null;
   } catch {
     return null;
   }
 }
 
 /** Persist the hub access token to the local encrypted vault (0600 key file,
- *  AES-256-GCM store — see local-encrypted-vault.ts). Best-effort: a vault
- *  write failure must not take config saves down with it; the caller keeps
- *  the embedded token in that case. Returns whether the token is stored. */
+ *  AES-256-GCM store — see local-encrypted-vault.ts). Trims first and refuses
+ *  blank values, so a caller can never park an invalid truthy credential.
+ *  Best-effort: a vault write failure must not take config saves down with
+ *  it; the caller keeps the embedded token in that case. Returns whether the
+ *  token is stored. */
 export function rememberHubAccessToken(token: string): boolean {
+  const trimmed = token.trim();
+  if (!trimmed) return false;
   try {
-    setLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY, token);
+    setLocalEncryptedSecret(HUB_ACCESS_TOKEN_KEY, trimmed);
     return true;
   } catch {
     return false;

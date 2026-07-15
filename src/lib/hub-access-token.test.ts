@@ -63,6 +63,10 @@ const CONFIG_PATH = path.join(process.env.COVEN_HOME, "cave", "config.json");
   process.env.COVEN_CAVE_HUB_ACCESS_TOKEN = "v1.env";
   assert.equal(storedHubAccessToken(), "v1.env", "an explicit env override wins over the vault");
   delete process.env.COVEN_CAVE_HUB_ACCESS_TOKEN;
+  assert.equal(rememberHubAccessToken("   "), false, "blank tokens are refused, not parked in the vault");
+  assert.equal(storedHubAccessToken(), "v1.vaulted", "a refused write leaves prior custody intact");
+  assert.equal(rememberHubAccessToken("  v1.padded \n"), true, "padded input is trimmed before storage");
+  assert.equal(storedHubAccessToken(), "v1.padded", "custody resolves trimmed, never truthy-but-padded");
 }
 
 // ── saveConfig never persists the embedded token ──────────────────────────────
