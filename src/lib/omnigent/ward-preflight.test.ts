@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   buildOmnigentIdentityPrefix,
@@ -144,4 +145,20 @@ test("WardPreflightError formats violations", () => {
   assert.equal(err.familiarId, "broken-fam");
   assert.match(err.message, /Ward preflight failed/);
   assert.match(err.message, /SOUL\.md/);
+});
+
+// The escape hatch stays internal (review finding on #3216): the public
+// sessions route must never forward a caller-supplied skipWardPreflight, so
+// familiar-bound API runs always preflight. Source pin over the route.
+test("the sessions route cannot relay skipWardPreflight from request bodies", () => {
+  const route = readFileSync(
+    new URL("../../app/api/omnigent/sessions/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(route, /skipWardPreflight/, "the route never touches the escape hatch");
+  assert.match(
+    route,
+    /createOmnigentRun\(config, \{/,
+    "runs go through the shared resolver (which defaults the hatch to off)",
+  );
 });
