@@ -1,10 +1,20 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
+import React, { useEffect, useRef, useState, useCallback, useImperativeHandle } from "react";
 import { Icon } from "@/lib/icon";
 import { IconButton } from "@/components/ui/icon-button";
 import { BrowserQuickOpen } from "@/components/browser-quick-open";
 import { useTauriPlatform } from "@/lib/tauri-platform";
+import {
+  deactivateAllNativeBrowserWebviews,
+  withNativeBrowserSequence,
+} from "@/lib/native-browser-lifecycle";
+import {
+  createExpectedBrowserNavigation,
+  decideBrowserNavigationEvent,
+  type BrowserNavigationRequest,
+  type ExpectedBrowserNavigation,
+} from "@/lib/browser-navigation-queue";
 
 // ── Favicon helpers (mirrors open-sesame FaviconService pattern) ──────────────
 // Primary: Google S2 API (works from renderer, no CORS)
@@ -69,7 +79,6 @@ function TabFavicon({ url, title, size = 20 }: { url: string; title: string; siz
 //
 // Tab design:
 // - Pinned tabs persisted in localStorage (user-customizable)
-// - Dynamic localhost tab auto-injected when a project dev server is detected
 // - Each tab uses a separate native webview label: `<paneLabel>-tab-<id>`
 
 type TauriBridge = {
@@ -86,8 +95,15 @@ async function loadTauri(): Promise<TauriBridge | null> {
   return { invoke, listen };
 }
 
+function invokeNativeBrowserDeactivateAll(bridge: TauriBridge | null, label: string): void {
+  if (bridge) {
+    void bridge.invoke("browser_deactivate_all", withNativeBrowserSequence({ label }));
+    return;
+  }
+  deactivateAllNativeBrowserWebviews(label);
+}
+
 const HOME_URL = "https://opencoven.ai";
-const LOCALHOST_PORTS = [3000, 3001, 5173, 8080, 4000, 4321];
 const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";
 const PINNED_STORAGE_KEY = "cave.browser.pinnedTabs.v1";
 const RAIL_PINNED_STORAGE_KEY = "cave.browser.railPinned.v1";
@@ -97,8 +113,7 @@ export type BrowserTab = {
   url: string;
   title: string;
   pinned: boolean;
-  /** "localhost" tabs are dynamic — auto-added/removed based on dev server detection */
-  kind: "pinned" | "localhost";
+  kind: "pinned";
 };
 
 function normalizeUrl(raw: string): string {
@@ -141,7 +156,9 @@ function loadPinnedTabs(): BrowserTab[] {
   if (typeof window === "undefined") return defaultPinnedTabs();
   try {
     const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as BrowserTab[];
+    // Filter out stale non-pinned entries persisted by older versions
+    // (e.g. the auto-injected localhost tab).
+    if (raw) return (JSON.parse(raw) as BrowserTab[]).filter((t) => t.kind === "pinned");
   } catch { /* ignore */ }
   return defaultPinnedTabs();
 }
@@ -179,24 +196,8 @@ function defaultPinnedTabs(): BrowserTab[] {
     // be a dedicated "Coven" sidebar surface — folded into the browser instead).
     { id: "opencoven-docs", url: "https://docs.opencoven.ai", title: "Docs", pinned: true, kind: "pinned" },
     { id: "opencoven-feedback", url: "https://feedback.opencoven.ai", title: "Feedback", pinned: true, kind: "pinned" },
-    { id: "opencvn-x", url: "https://x.com/OpenCvn", title: "OpenCvn", pinned: true, kind: "pinned" },
     { id: "github", url: "https://github.com/OpenCoven", title: "GitHub", pinned: true, kind: "pinned" },
   ];
-}
-
-async function probeLocalhost(port: number): Promise<boolean> {
-  try {
-    const res = await fetch(`http://localhost:${port}`, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(800),
-      mode: "no-cors",
-    });
-    // no-cors always returns opaque — if it didn't throw, something is there
-    void res;
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── Native-overlay occlusion ─────────────────────────────────────────
@@ -212,9 +213,11 @@ async function probeLocalhost(port: number): Promise<boolean> {
 //      live regions (toasts) are ignored so a corner toast doesn't blank the
 //      page.
 function surfaceIsCovered(surface: HTMLElement, rect: DOMRect): boolean {
-  const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
-  for (const dialog of dialogs) {
-    if (dialog.getClientRects().length > 0) return true;
+  const overlays = document.querySelectorAll(
+    '[role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"], [data-native-webview-cover="true"]',
+  );
+  for (const overlay of overlays) {
+    if (overlay.getClientRects().length > 0) return true;
   }
   const inset = 12;
   const points: Array<[number, number]> = [
@@ -241,7 +244,10 @@ export type BrowserPaneHandle = {
   navigateTo: (url: string) => void;
 };
 
-export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activeFamiliarId?: string | null }>(function BrowserPane({ label = "default", activeFamiliarId = null }: { label?: string; activeFamiliarId?: string | null }, ref: React.Ref<BrowserPaneHandle>) {
+// The imperative handle rides a regular `handleRef` prop (not an element ref):
+// BrowserPane loads through next/dynamic (lazy-surfaces), whose wrapper does
+// not forward element refs — a plain prop crosses the boundary losslessly.
+export function BrowserPane({ label = "default", activeFamiliarId = null, active = true, handleRef, navigationRequest = null, onNavigationConsumed }: { label?: string; activeFamiliarId?: string | null; active?: boolean; handleRef?: React.Ref<BrowserPaneHandle>; navigationRequest?: BrowserNavigationRequest | null; onNavigationConsumed?: (request: BrowserNavigationRequest) => void }) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [bridge, setBridge] = useState<TauriBridge | null>(null);
@@ -265,6 +271,8 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   const [loading, setLoading] = useState(false);
   const [addressBar, setAddressBar] = useState<string>(HOME_URL);
   const [quickOpen, setQuickOpen] = useState(false);
+  const quickOpenRef = useRef(false);
+  quickOpenRef.current = quickOpen;
   const [railHover, setRailHover] = useState(false);
   const [railPinned, setRailPinned] = useState(loadRailPinned);
   // Rail expands on hover/focus and stays expanded while the quick-open
@@ -286,6 +294,14 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
 
   // History per-tab
   const historyRef = useRef<Record<string, { stack: string[]; idx: number }>>({});
+  const expectedPageLoadRef = useRef<Record<string, ExpectedBrowserNavigation>>({});
+  const acceptedNavigationIdRef = useRef<number | null>(null);
+  const pendingNavigationRef = useRef<BrowserNavigationRequest | null>(null);
+  const acknowledgePendingNavigation = useCallback((request: BrowserNavigationRequest) => {
+    if (pendingNavigationRef.current?.id !== request.id) return;
+    pendingNavigationRef.current = null;
+    onNavigationConsumed?.(request);
+  }, [onNavigationConsumed]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
   const activeUrl = activeTab?.url ?? HOME_URL;
@@ -297,6 +313,16 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   function nativeTabLabelPrefix() {
     return `${NATIVE_BROWSER_LABEL_PREFIX}${label}-tab-`;
   }
+
+  const hideAllNativeTabsNow = useCallback(() => {
+    if (!bridge || !nativeBrowserAvailable) return;
+    tabs.forEach((tab) => {
+      void bridge.invoke(
+        "browser_hide",
+        withNativeBrowserSequence({ label: tabLabel(tab.id) }),
+      );
+    });
+  }, [bridge, nativeBrowserAvailable, label, tabs]);
 
   // ── Tauri bridge ──────────────────────────────────────────────────
   useEffect(() => {
@@ -316,6 +342,28 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     return () => { cancelled = true; };
   }, [nativeBrowserAvailable, platform]);
 
+  // ── Deactivate native webviews on unmount ─────────────────────────
+  // Surface routing can unmount and remount BrowserPane in rapid succession.
+  // Hide its OS-level WebViews before the React surface leaves, but retain
+  // them so re-entry cannot race an asynchronous close still present in
+  // Tauri's WebView registry. bridge arrives asynchronously, hence the ref.
+  const bridgeRef = useRef<TauriBridge | null>(null);
+  bridgeRef.current = bridge;
+  useEffect(() => {
+    return () => {
+      invokeNativeBrowserDeactivateAll(bridgeRef.current, label);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Native child webviews are OS-level layers above the React DOM. If this pane
+  // is kept mounted while inactive, fail closed so stale browser layers cannot
+  // cover visible controls elsewhere in the app.
+  useEffect(() => {
+    if (active) return;
+    invokeNativeBrowserDeactivateAll(bridge, label);
+  }, [active, bridge, label]);
+
   // ── Page-load + title events ──────────────────────────────────────
   useEffect(() => {
     if (!bridge || !nativeBrowserAvailable) return;
@@ -327,14 +375,28 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     let unlistenLoad: (() => void) | null = null;
     let unlistenTitle: (() => void) | null = null;
 
-    void bridge.listen<{ label: string; url: string; phase: string }>(
+    void bridge.listen<{ label: string; url: string; phase: string; sequence: number }>(
       "browser:page-load",
       (e) => {
-        const { label: evLabel, url: evUrl, phase } = e.payload;
+        const { label: evLabel, url: evUrl, phase, sequence } = e.payload;
         // Match any of our tab labels
         const eventPrefix = nativeTabLabelPrefix();
         if (!evLabel.startsWith(eventPrefix)) return;
         const tabId = evLabel.slice(eventPrefix.length);
+        const expected = expectedPageLoadRef.current[tabId];
+        const eventDecision = decideBrowserNavigationEvent(
+          evUrl,
+          expected,
+          phase === "started" ? "started" : "finished",
+          Date.now(),
+          sequence,
+        );
+        if (!eventDecision.accept) return;
+        if (eventDecision.nextExpected) {
+          expectedPageLoadRef.current[tabId] = eventDecision.nextExpected;
+        } else {
+          delete expectedPageLoadRef.current[tabId];
+        }
         if (phase === "started") {
           if (tabId === activeTabId) setLoading(true);
         } else {
@@ -363,13 +425,27 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       },
     ).then((fn) => { if (cancelled) fn(); else unlistenLoad = fn; });
 
-    void bridge.listen<{ label: string; title: string; url: string }>(
+    void bridge.listen<{ label: string; title: string; url: string; sequence: number }>(
       "browser:title",
       (e) => {
-        const { label: evLabel, title, url: evUrl } = e.payload;
+        const { label: evLabel, title, url: evUrl, sequence } = e.payload;
         const eventPrefix = nativeTabLabelPrefix();
         if (!evLabel.startsWith(eventPrefix)) return;
         const tabId = evLabel.slice(eventPrefix.length);
+        const expected = expectedPageLoadRef.current[tabId];
+        const eventDecision = decideBrowserNavigationEvent(
+          evUrl,
+          expected,
+          "title",
+          Date.now(),
+          sequence,
+        );
+        if (!eventDecision.accept) return;
+        if (eventDecision.nextExpected) {
+          expectedPageLoadRef.current[tabId] = eventDecision.nextExpected;
+        } else {
+          delete expectedPageLoadRef.current[tabId];
+        }
         setTabTitles((prev) => ({ ...prev, [tabId]: title }));
         if (tabId === activeTabId) setAddressBar(evUrl);
       },
@@ -388,7 +464,10 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   // stale and overlapping the toolbar. Reconcile against the live rect
   // every frame instead, issuing IPC only when the rounded bounds change.
   useEffect(() => {
-    if (!bridge || !nativeBrowserAvailable) return;
+    if (!active || !bridge || !nativeBrowserAvailable) {
+      if (!active) invokeNativeBrowserDeactivateAll(bridge, label);
+      return;
+    }
     const surface = surfaceRef.current;
     if (!surface) return;
 
@@ -397,20 +476,20 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     let hidden = false;
     let last = { x: 0, y: 0, w: 0, h: 0 };
     let lastRun = 0;
+    let forceReconcilePending = false;
 
     const hideAll = () => {
       tabIds.forEach((id) => {
-        void bridge.invoke("browser_hide", { label: tabLabel(id) });
+        void bridge.invoke("browser_hide", withNativeBrowserSequence({ label: tabLabel(id) }));
       });
     };
 
-    const tick = (now: number) => {
-      raf = requestAnimationFrame(tick);
+    const reconcile = (now: number, force = false) => {
       // Throttle to ~10 Hz and idle while the tab is hidden. This loop
       // otherwise runs a getBoundingClientRect + a full-document occlusion
       // check (querySelectorAll + up to 5 elementFromPoint hit-tests)
       // 60x/second continuously, even when nothing is moving.
-      if (document.visibilityState !== "visible" || now - lastRun < 100) return;
+      if (document.visibilityState !== "visible" || (!force && now - lastRun < 100)) return;
       lastRun = now;
       const rect = surface.getBoundingClientRect();
       // Hide every webview when the panel is collapsed, the toolbar is open,
@@ -442,26 +521,62 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           // Show active tab at the live rect, hide others.
           tabIds.forEach((id) => {
             if (id === activeTabId) {
-              void bridge.invoke("browser_set_bounds", { label: tabLabel(id), ...next });
+              void bridge.invoke("browser_set_bounds", withNativeBrowserSequence({ label: tabLabel(id), ...next }));
             } else {
-              void bridge.invoke("browser_hide", { label: tabLabel(id) });
+              void bridge.invoke("browser_hide", withNativeBrowserSequence({ label: tabLabel(id) }));
             }
           });
         }
       }
     };
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      const force = forceReconcilePending;
+      forceReconcilePending = false;
+      reconcile(now, force);
+    };
     raf = requestAnimationFrame(tick);
+
+    const scheduleImmediateReconcile = () => {
+      forceReconcilePending = true;
+    };
+    const resizeObserver = new ResizeObserver(scheduleImmediateReconcile);
+    resizeObserver.observe(surface);
+    const mutationObserver = new MutationObserver(scheduleImmediateReconcile);
+    mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["role", "aria-modal", "hidden", "open", "class", "style"],
+    });
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        hidden = true;
+        hideAll();
+      } else {
+        scheduleImmediateReconcile();
+      }
+    };
+    window.addEventListener("resize", scheduleImmediateReconcile);
+    window.addEventListener("scroll", scheduleImmediateReconcile, true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", scheduleImmediateReconcile);
+      window.removeEventListener("scroll", scheduleImmediateReconcile, true);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       hideAll();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, nativeBrowserAvailable, label, activeTabId, tabs.map((t) => t.id).join(",")]);
+  }, [active, bridge, nativeBrowserAvailable, label, activeTabId, tabs.map((t) => t.id).join(",")]);
 
   // ── Navigate active tab when URL changes ─────────────────────────
   useEffect(() => {
-    if (!bridge || !nativeBrowserAvailable || !activeTab) return;
+    if (!active || !bridge || !nativeBrowserAvailable || !activeTab) return;
+    let cancelled = false;
     // Small delay to let panel layout fully settle before reading bounds
     const timer = setTimeout(() => {
       const surface = surfaceRef.current;
@@ -476,67 +591,35 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       // would never re-hide it. The page still loads; the loop re-seats it
       // at the live rect once the cover lifts.
       const covered = toolbarOpenRef.current || surfaceIsCovered(surface, rect);
-      void bridge.invoke("browser_navigate", {
+      const navigationArgs = withNativeBrowserSequence({
         label: tabLabel(activeTab.id),
         url: activeTab.url,
         x: covered ? WEBVIEW_OFFSCREEN : rect.left,
         y: covered ? WEBVIEW_OFFSCREEN : rect.top,
         w: rect.width, h: rect.height,
       });
+      expectedPageLoadRef.current[activeTab.id] = createExpectedBrowserNavigation(
+        activeTab.url,
+        Date.now(),
+        navigationArgs.sequence as number,
+      );
+      void bridge.invoke("browser_navigate", navigationArgs).then(() => {
+        if (cancelled) return;
+        const pending = pendingNavigationRef.current;
+        if (pending && normalizeUrl(pending.url) === activeTab.url) {
+          acknowledgePendingNavigation(pending);
+        }
+      }).catch(() => {
+        if (!cancelled) setUnavailable(true);
+      });
       setAddressBar(activeTab.url);
     }, 80);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id]);
-
-  // ── Localhost probe ───────────────────────────────────────────────
-  // Each closed port logs an ERR_CONNECTION_REFUSED in the console (a no-cors
-  // fetch can't be silenced), so probe sparingly: only while the document is
-  // visible, and on a slow cadence — never poll a backgrounded window.
-  useEffect(() => {
-    let cancelled = false;
-    const probe = async () => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      for (const port of LOCALHOST_PORTS) {
-        if (cancelled) break;
-        const live = await probeLocalhost(port);
-        if (live && !cancelled) {
-          const locUrl = `http://localhost:${port}`;
-          setTabs((prev) => {
-            const existing = prev.find((t) => t.kind === "localhost");
-            if (existing?.url === locUrl) return prev;
-            const filtered = prev.filter((t) => t.kind !== "localhost");
-            return [
-              ...filtered,
-              {
-                id: `localhost-${port}`,
-                url: locUrl,
-                title: `localhost:${port}`,
-                pinned: false,
-                kind: "localhost",
-              },
-            ];
-          });
-          return;
-        }
-      }
-      if (!cancelled) {
-        // No localhost found — remove stale localhost tab
-        setTabs((prev) => prev.filter((t) => t.kind !== "localhost"));
-      }
-    };
-    void probe();
-    const interval = setInterval(() => void probe(), 30000);
-    // Re-probe promptly when the user returns to the tab rather than waiting
-    // out the slow interval.
-    const onVisible = () => { if (document.visibilityState === "visible") void probe(); };
-    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisible);
+      clearTimeout(timer);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id, acknowledgePendingNavigation]);
 
   // ── Tab actions ───────────────────────────────────────────────────
   const switchTab = useCallback((id: string) => {
@@ -571,25 +654,31 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       pinned: true,
       kind: "pinned",
     };
-    const next = [...tabs.filter((t) => t.kind === "pinned"), newTab, ...tabs.filter((t) => t.kind === "localhost")];
+    const next = [...tabs, newTab];
     setTabs(next);
-    savePinnedTabs(next.filter((t) => t.kind === "pinned"));
+    savePinnedTabs(next);
   };
 
   const removeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const tab = tabs.find((t) => t.id === id);
-    if (!tab || tab.kind === "localhost") return; // localhost tabs aren't manually closeable
-    if (bridge) void bridge.invoke("browser_close", { label: tabLabel(id) });
+    if (!tab) return;
+    if (bridge) void bridge.invoke("browser_close", withNativeBrowserSequence({ label: tabLabel(id) }));
     const next = tabs.filter((t) => t.id !== id);
     setTabs(next);
-    savePinnedTabs(next.filter((t) => t.kind === "pinned"));
-    if (activeTabId === id) setActiveTabId(next[0]?.id ?? "home");
+    savePinnedTabs(next);
+    delete historyRef.current[id];
+    delete expectedPageLoadRef.current[id];
+    // Closing the ACTIVE tab must fully activate the replacement: setting the
+    // id alone left the address bar, loading state, and history pointing at
+    // the closed tab until the user manually switched (cave-5hnh).
+    if (activeTabId === id) switchTab(next[0]?.id ?? "home");
   };
 
   // ── Per-tab navigation ────────────────────────────────────────────
   const navigateTo = (raw: string) => {
     const next = normalizeUrl(raw);
+    expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(next);
     const nextTabs = tabs.map((t) =>
       t.id === activeTabId ? { ...t, url: next } : t,
     );
@@ -605,14 +694,34 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     }
 
     const updatedActiveTab = nextTabs.find((t) => t.id === activeTabId);
-    if (updatedActiveTab?.kind === "pinned") {
-      savePinnedTabs(nextTabs.filter((t) => t.kind === "pinned"));
+    if (updatedActiveTab) {
+      savePinnedTabs(nextTabs);
     }
     // Reveal the page again now that the user has committed a destination.
     setToolbarOpen(false);
   };
 
-  useImperativeHandle(ref, () => ({ navigateTo }), [navigateTo]);
+  useImperativeHandle(handleRef, () => ({ navigateTo }), [navigateTo]);
+
+  // The Browser surface is lazy-loaded, so a timer/ref handoff can fire before
+  // this component mounts and permanently lose a Settings URL. Consume the
+  // declarative request only after navigateTo has committed it to tab state.
+  // Desktop requests are acknowledged after Rust accepts and schedules
+  // browser_navigate; this keeps the cold-start sessionStorage handoff durable
+  // without waiting on a slow or wedged WebView2 navigation.
+  useEffect(() => {
+    if (!active || !navigationRequest) return;
+    if (acceptedNavigationIdRef.current !== navigationRequest.id) {
+      acceptedNavigationIdRef.current = navigationRequest.id;
+      pendingNavigationRef.current = navigationRequest;
+      navigateTo(navigationRequest.url);
+    }
+    if (platform !== "unknown" && (!nativeBrowserAvailable || unavailable)) {
+      acknowledgePendingNavigation(navigationRequest);
+    }
+    // navigateTo intentionally uses the current render's active tab state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, navigationRequest?.id, navigationRequest?.url, platform, nativeBrowserAvailable, unavailable, acknowledgePendingNavigation]);
 
   const h = historyRef.current[activeTabId] ?? { stack: [activeUrl], idx: 0 };
   const canBack = h.idx > 0;
@@ -623,6 +732,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     if (!hh || hh.idx <= 0) return;
     hh.idx -= 1;
     const prev = hh.stack[hh.idx];
+    expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(prev);
     setTabs((t) => t.map((tab) => tab.id === activeTabId ? { ...tab, url: prev } : tab));
     setAddressBar(prev);
   };
@@ -632,6 +742,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     if (!hh || hh.idx >= hh.stack.length - 1) return;
     hh.idx += 1;
     const next = hh.stack[hh.idx];
+    expectedPageLoadRef.current[activeTabId] = createExpectedBrowserNavigation(next);
     setTabs((t) => t.map((tab) => tab.id === activeTabId ? { ...tab, url: next } : tab));
     setAddressBar(next);
   };
@@ -645,11 +756,12 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       if (!paneRef.current?.contains(e.target as Node)) return;
       e.stopPropagation();
       e.preventDefault();
+      if (!quickOpenRef.current) hideAllNativeTabsNow();
       setQuickOpen((v) => !v);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  }, [hideAllNativeTabsNow]);
 
   // `[` → toggle rail pin (scoped to pane focus, mirroring Cmd+K).
   useEffect(() => {
@@ -675,6 +787,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       if ((e.metaKey || e.ctrlKey) && (e.key === "l" || e.key === "L")) {
         if (!inPane) return;
         e.preventDefault();
+        hideAllNativeTabsNow();
         setToolbarOpen(true);
       } else if (e.key === "Escape" && toolbarOpenRef.current && inPane) {
         e.preventDefault();
@@ -683,7 +796,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  }, [hideAllNativeTabsNow]);
 
   // Focus the address bar when the toolbar opens (after the slide-down).
   useEffect(() => {
@@ -740,7 +853,10 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               webview covers the rest of the pane; this strip never is. */}
           <button
             type="button"
-            onClick={() => setToolbarOpen((v) => !v)}
+            onClick={() => {
+              if (!toolbarOpenRef.current) hideAllNativeTabsNow();
+              setToolbarOpen((v) => !v);
+            }}
             title="Address bar (⌘L)"
             aria-label="Toggle address bar"
             className={[
@@ -756,7 +872,6 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
-          const isLocalhost = tab.kind === "localhost";
           return (
             <div
               key={tab.id}
@@ -785,17 +900,14 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               )}
               {/* Favicon / indicator */}
               <span className="relative flex shrink-0 items-center justify-center">
-                {isLocalhost
-                  ? <span className="h-2 w-2 rounded-full bg-green-400" />
-                  : <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
-                }
+                <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
               </span>
               {/* Label — only when rail is expanded; favicon-only when collapsed */}
               {railExpanded ? (
                 <span className="w-[44px] truncate text-center text-[10px] leading-tight">{title}</span>
               ) : null}
               {/* Close on hover */}
-              {tab.kind === "pinned" && tabs.filter((t) => t.kind === "pinned").length > 1 && (
+              {tabs.length > 1 && (
                 <button
                   onClick={(e) => removeTab(tab.id, e)}
                   className="touch-always-visible focus-ring absolute top-1 right-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 text-[var(--fg-muted)] transition-opacity"
@@ -829,35 +941,41 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           {/* Toolbar — absolute overlay that slides down when open. The page
               webview is hidden while it's open (see the bounds sync), so the
               DOM toolbar and the native overlay never fight for the same space. */}
+          {/* The summoned toolbar wears the shared .surface-compact chrome
+              (40px band, hairline, 26px controls) so the browser matches the
+              header family when its chrome IS visible — while staying
+              chromeless (full-viewport page) the rest of the time. It keeps
+              its opaque raised bg since it overlays the page. */}
           <header
           className={[
-            "browser-toolbar absolute inset-x-0 top-0 z-30 flex min-h-10 items-center gap-1",
-            "border-b border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1.5",
+            "browser-toolbar surface-compact-header absolute inset-x-0 top-0 z-30",
+            "bg-[var(--bg-raised)]",
             "transition-transform duration-150 ease-out",
             toolbarOpen ? "translate-y-0" : "pointer-events-none -translate-y-full",
           ].join(" ")}
           aria-hidden={!toolbarOpen}
           inert={!toolbarOpen || undefined}
         >
+          <h1 className="surface-compact-title">Browser</h1>
           {/* Back */}
           <button type="button" onClick={goBack} disabled={!canBack}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
             title="Back" aria-label="Back">
             <Icon name="ph:arrow-left-bold" width={13} />
           </button>
           {/* Forward */}
           <button type="button" onClick={goForward} disabled={!canForward}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)] disabled:opacity-30 disabled:cursor-default"
             title="Forward" aria-label="Forward">
             <Icon name="ph:arrow-right-bold" width={13} />
           </button>
           {/* Reload */}
           <button type="button"
             onClick={() => {
-              if (bridge) void bridge.invoke("browser_reload", { label: tabLabel(activeTabId) });
+              if (bridge) void bridge.invoke("browser_reload", withNativeBrowserSequence({ label: tabLabel(activeTabId) }));
               else navigateTo(activeUrl);
             }}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title={loading ? "Stop" : "Reload"} aria-label={loading ? "Stop" : "Reload"}>
             {loading
               ? <Icon name="ph:x-bold" width={12} />
@@ -884,7 +1002,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           </form>
           {/* Home */}
           <button type="button" onClick={() => navigateTo(HOME_URL)}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title="Home" aria-label="Home">
             <Icon name="ph:house-bold" width={13} />
           </button>
@@ -899,13 +1017,13 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
                 window.open(activeUrl, "_blank", "noopener");
               }
             }}
-            className="browser-toolbar-button focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title="Open in system browser" aria-label="Open in system browser">
             <Icon name="ph:arrow-square-out" width={13} />
           </button>
           {/* Close toolbar — restores the full-pane page */}
           <button type="button" onClick={() => setToolbarOpen(false)}
-            className="browser-toolbar-button browser-toolbar-close focus-ring grid h-7 w-7 place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
+            className="browser-toolbar-button browser-toolbar-close focus-ring grid h-[26px] w-[26px] place-items-center rounded text-[var(--fg-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--fg-base)]"
             title="Close (Esc)" aria-label="Close address bar">
             <Icon name="ph:x-bold" width={12} />
           </button>
@@ -937,7 +1055,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
           />
         ) : (
-          <div ref={surfaceRef} className="absolute inset-0" />
+          <div ref={surfaceRef} data-native-browser-viewport className="absolute inset-0" />
         )}
       </div>
       <footer
@@ -948,4 +1066,4 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       </div>{/* end main area */}
     </div>
   );
-});
+}

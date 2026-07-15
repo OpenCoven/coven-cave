@@ -15,13 +15,33 @@ struct CaveClient {
         }
     }
 
-    private var session: URLSession {
+    /// One shared session for REST calls. A `URLSession` is never deallocated
+    /// once created, so building one per request (the old computed property)
+    /// leaked sessions and re-negotiated TLS on every call; a single shared
+    /// instance keeps connections pooled and warm.
+    private static let restSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
-        config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
         return URLSession(configuration: config)
-    }
+    }()
+
+    /// Dedicated session for chat SSE streams. `timeoutIntervalForResource`
+    /// bounds the WHOLE transfer (the per-request `timeoutInterval` only
+    /// resets the idle clock), so sharing the REST session's cap silently
+    /// killed any reply that streamed longer than it — long agentic turns
+    /// died mid-stream at the old 60s cap. Streams get a day-long resource
+    /// window; the idle timeout still catches a genuinely dead connection.
+    private static let streamSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 600
+        config.timeoutIntervalForResource = 24 * 3600
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
+    }()
+
+    private var session: URLSession { Self.restSession }
 
     func data(for req: URLRequest) async throws -> (Data, URLResponse) {
         let method = (req.httpMethod ?? "GET").uppercased()
@@ -134,6 +154,45 @@ struct CaveClient {
         guard let path = familiar.avatarUrl, let base = connection.baseURL else { return nil }
         if path.hasPrefix("http") { return URL(string: path) }
         return URL(string: path, relativeTo: base)?.absoluteURL
+    }
+
+    // MARK: - Operator profile
+
+    /// The human operator's profile (name + avatar metadata) from
+    /// `GET /api/profile`. Read-only on iOS; editing lives in the desktop's
+    /// Settings → Profile.
+    func operatorProfile() async throws -> OperatorProfile {
+        let req = try request("api/profile")
+        let (data, resp) = try await data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(OperatorProfileResponse.self, from: data).operatorProfile
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// URL for the operator's server avatar image (`GET /api/profile/avatar`),
+    /// cache-busted by `updatedAt` so a new desktop upload invalidates the
+    /// image. A plain image load can't set an `Authorization` header, so when
+    /// the desktop enforces a mobile access token it is attached as a
+    /// `coven_access_token` query param — the same credential the server
+    /// accepts from the query string (server.ts). `nil` when unconfigured.
+    func operatorAvatarURL(updatedAt: String?) -> URL? {
+        guard let base = connection.baseURL,
+              var comps = URLComponents(
+                url: base.appendingPathComponent("api/profile/avatar"),
+                resolvingAgainstBaseURL: false)
+        else { return nil }
+        var items: [URLQueryItem] = []
+        if let updatedAt, !updatedAt.isEmpty {
+            items.append(URLQueryItem(name: "v", value: updatedAt))
+        }
+        if let token = CaveConnection.accessToken {
+            items.append(URLQueryItem(name: "coven_access_token", value: token))
+        }
+        if !items.isEmpty { comps.queryItems = items }
+        return comps.url
     }
 
     // MARK: - Sessions
@@ -323,7 +382,7 @@ struct CaveClient {
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
-                    let (bytes, resp) = try await session.bytes(for: req)
+                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     try Self.check(resp)
 
                     var dataLines: [String] = []

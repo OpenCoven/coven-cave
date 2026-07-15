@@ -16,10 +16,18 @@ assert.match(
   "WorkspaceMode union keeps \"agents\" for internal familiar detail flows",
 );
 
+// Chat-first boot (cave-hsa6): the app opens on the conversation. Home remains
+// one step away — the chat Back control's lastNonChatMode still defaults to
+// "home", and ⌘1 / nav / deep links reach it as before.
 assert.match(
   workspace,
-  /useState<WorkspaceMode>\("home"\)/,
-  "Default workspace mode should land on Home after removing Familiars from Work nav",
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
+  "Default workspace mode lands on Chat (chat-first boot, cave-hsa6)",
+);
+assert.match(
+  workspace,
+  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
+  "the chat Back control still returns to Home by default",
 );
 
 // The "Coven" surface (docs-pane) was purged — its docs/feedback/social live as
@@ -163,8 +171,8 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description:/,
-  "Sidebar Browser keeps its shortcut hint",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
 );
 
 assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");

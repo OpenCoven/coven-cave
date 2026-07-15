@@ -80,6 +80,17 @@ export function useFocusTrap(
         const first = focusables[0];
         const last = focusables[focusables.length - 1];
         const activeEl = document.activeElement as HTMLElement | null;
+        // Recapture: if focus escaped the container (a late autofocus
+        // elsewhere, a click on the backdrop, a removed element), Tab must
+        // pull it back in — otherwise every subsequent Tab silently walks
+        // the page BEHIND the dialog and the "trap" never applies again.
+        // (Live-reproduced: the home composer's mount autofocus stole focus
+        // from the onboarding wizard and Tab toured the covered workspace.)
+        if (!activeEl || !container.contains(activeEl)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+          return;
+        }
         if (e.shiftKey && activeEl === first) {
           e.preventDefault();
           last.focus();

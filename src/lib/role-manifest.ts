@@ -1,6 +1,6 @@
 /**
  * Pure text transforms for ROLE.md list fields (skills, tools, plugins,
- * workflows). Mirrors the parsing in `src/app/api/roles/route.ts` so writes
+ * workflows, crafts). Mirrors the parsing in `src/app/api/roles/route.ts` so writes
  * stay readable by the existing roles GET. Everything outside the targeted
  * list block — frontmatter, prose, other lists — is preserved byte-for-byte.
  */

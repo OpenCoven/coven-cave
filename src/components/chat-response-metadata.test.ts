@@ -162,12 +162,12 @@ assert.match(
 // directory: scheme stripped, home collapsed to ~, long paths left-truncated
 // so the repo folder survives. The full path stays in the tooltip title.
 {
-  const local = formatRuntime("local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave");
+  const local = formatRuntime("local:/Users/dev/Documents/GitHub/OpenCoven/coven-cave");
   assert.equal(local?.label, "~/…/coven-cave", "local cwd shows home-relative, repo-name-preserving");
   assert.equal(local?.title, "~/Documents/GitHub/OpenCoven/coven-cave", "tooltip keeps the full cwd");
 
   assert.equal(formatRuntime("local:/home/val/proj")?.label, "~/proj", "linux home collapses too");
-  assert.equal(formatRuntime("local:/Users/buns")?.label, "~", "bare home is ~");
+  assert.equal(formatRuntime("local:/Users/dev")?.label, "~", "bare home is ~");
   assert.equal(formatRuntime("local:/opt/work/repo")?.label, "/opt/…/repo", "non-home absolute path keeps its root slash");
 
   const ssh = formatRuntime("ssh:beacon:/home/val/srv");

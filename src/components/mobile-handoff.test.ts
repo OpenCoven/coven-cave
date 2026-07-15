@@ -6,6 +6,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
@@ -20,9 +21,25 @@ assert.match(topBar, /top-bar__mobile-handoff/, "TopBar handoff button should ha
 assert.doesNotMatch(sidebar, /onOpenMobileHandoff/, "Sidebar should not carry a mobile handoff button");
 assert.doesNotMatch(sidebar, /Open on phone/, "Sidebar should not expose an Open-on-phone control");
 assert.match(workspace, /MobileHandoffModal/, "Workspace should mount the mobile handoff modal");
-assert.match(workspace, /MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled"/, "Workspace should persist the mobile mode toggle under a stable key");
+assert.match(workspace, /readMobileModeEnabled, writeMobileModeEnabled/, "Workspace should use the shared canonical mobile preference adapter");
 assert.match(workspace, /useState\(readMobileModeEnabled\)/, "Workspace should default mobile mode from persisted state");
-assert.match(workspace, /function readMobileModeEnabled\(\)[\s\S]*return true/, "Mobile mode should default on when the user has not disabled it");
+assert.match(workspace, /writeMobileModeEnabled\(enabled\)/, "Workspace should persist mobile-mode changes through the canonical adapter");
+assert.match(settings, /readMobileModeEnabled, writeMobileModeEnabled/, "Settings should share the same canonical mobile preference adapter");
+assert.match(
+  mobileModePref,
+  /return readAppPreferences\(\)\.phone\.mobileMode/,
+  "mobile mode reads the server-bootstrapped preference instead of the current origin",
+);
+assert.match(
+  mobileModePref,
+  /updateAppPreferences\(\{ phone: \{ mobileMode: enabled \} \}\)/,
+  "mobile mode writes a typed patch to the canonical preference store",
+);
+assert.doesNotMatch(
+  mobileModePref,
+  /localStorage\.(?:getItem|setItem|removeItem)/,
+  "the shared mobile-mode adapter must not treat one loopback origin as authority",
+);
 assert.match(workspace, /action: "app-start"/, "Workspace should reconcile the native iOS Tailscale route while mobile mode is enabled");
 assert.match(workspace, /action: "app-stop"/, "Workspace should stop the native iOS Tailscale route when mobile mode is disabled");
 assert.match(workspace, /mobileModeHost/, "Workspace should keep the current native app host returned by the route");
@@ -41,8 +58,11 @@ assert.match(modal, /handoff\?\.inviteUrl \|\| handoff\?\.url/, "Modal should pr
 assert.match(modal, /mobile-handoff__link[\s\S]*href=\{handoff\.inviteUrl \|\| handoff\.url\}/, "Modal should display the invite link as a clickable link");
 assert.match(css, /\.mobile-handoff__link/, "Invite link should have stable styling");
 assert.match(modal, /action: "reset"/, "Modal should expose explicit Tailscale Serve reset");
-assert.match(handoffRoute, /inviteUrl: invite\.url/, "API should expose inviteUrl as the canonical invite field");
-assert.match(handoffRoute, /appUrl: invite\.url/, "API should keep appUrl as an inviteUrl alias for compatibility");
+// cave-i74f: the invite may carry a #chat-<id> fragment (Continue on phone),
+// so the canonical field is the fragment-aware inviteUrl.
+assert.match(handoffRoute, /const inviteUrl = withChatFragment\(invite\.url, chatId\);/, "the web invite rides the chat fragment when a handoff targets a conversation");
+assert.match(handoffRoute, /inviteUrl,\r?\n\s*url: inviteUrl,/, "API should expose inviteUrl as the canonical invite field");
+assert.match(handoffRoute, /appUrl: inviteUrl/, "API should keep appUrl as an inviteUrl alias for compatibility");
 assert.match(handoffRoute, /action === "app-start"/, "API should expose a native app mobile-mode start action");
 assert.match(handoffRoute, /action === "app-stop"/, "API should expose a native app mobile-mode stop action");
 assert.match(handoffRoute, /nativeHost/, "API should return the exact host the native iOS app should connect to");
@@ -50,7 +70,29 @@ assert.match(handoffRoute, /nativeUrl/, "API should return the full Tailscale Se
 assert.match(handoffRoute, /ensureNativeAppServe/, "API should share one reconcile path for stale Tailscale Serve targets");
 assert.match(handoffRoute, /nativeAppBackendUrl/, "native mobile mode should choose a backend separately from invite handoff");
 assert.match(handoffRoute, /COVEN_CAVE_NATIVE_APP_BACKEND_URL/, "native mobile mode should allow an explicit loopback backend override");
-assert.match(handoffRoute, /COVEN_CAVE_BUNDLE === "1"[\s\S]*http:\/\/127\.0\.0\.1:3000/, "bundled desktop app must publish the tokenless native backend, not its authenticated sidecar port");
+// cave-gzje: the packaged bundle publishes ITS OWN sidecar and mints signed
+// invites — it must not depend on a dev checkout's tokenless :3000 server.
+assert.doesNotMatch(
+  handoffRoute,
+  /http:\/\/127\.0\.0\.1:3000/,
+  "bundled app-start must not hard-depend on the dev checkout's tokenless :3000 server",
+);
+assert.match(handoffRoute, /function nativeTokenlessMode\(\)/, "the tokenless/invite trust decision should be a single named predicate");
+assert.match(
+  handoffRoute,
+  /if \(!nativeTokenlessMode\(\)\) \{[\s\S]*?createMobileInvite\(\{[\s\S]*?accessSecret: mobileAccessSecret\(\),[\s\S]*?sidecarToken: process\.env\.COVEN_CAVE_AUTH_TOKEN/,
+  "token-gated app-start mints the signed invite the packaged phone pairs with",
+);
+assert.match(
+  handoffRoute,
+  /qrTarget = withChatFragment\(invite\.url, chatId\)/,
+  "the token-gated app-start QR is the SIGNED invite, still carrying the chat fragment",
+);
+assert.match(
+  handoffRoute,
+  /appInviteUrl: invite\.appInviteUrl/,
+  "app-start returns the covencave:// deep link so the Copy-app-link button works",
+);
 assert.match(handoffRoute, /verifyNativeAppBackend/, "native mobile mode should verify the tokenless backend before publishing Serve");
 assert.match(handoffRoute, /\/api\/familiars/, "native backend readiness should use the same lightweight endpoint as the iOS connection probe");
 assert.match(handoffRoute, /pnpm mobile:tailscale:app/, "native backend readiness errors should point to the documented app-mode command");
@@ -85,8 +127,28 @@ assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mo
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
 assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings should keep reconciling mobile mode while enabled (pausable poll, paused in a hidden tab)");
 assert.match(settings, /Mobile mode/, "Settings should label the one-click native iOS route switch");
-assert.match(settings, /Default on/, "Settings should communicate that mobile mode is on by default");
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");
+
+// ── The pairing card (cave-rkiw): one scan, plain language, jargon demoted ──
+assert.match(settings, /describeMobileHandoffError/, "Settings translates handoff failures into plain language");
+assert.match(
+  settings,
+  /Pairing runs in the packaged Cave app/,
+  "the plain-dev failure tells users to open the packaged app instead of quoting pnpm incantations",
+);
+assert.match(settings, /Technical details/, "the raw handoff error stays available behind a disclosure");
+assert.match(
+  settings,
+  /aria-label="Pairing code for your iPhone camera"[\s\S]{0,80}dangerouslySetInnerHTML=\{\{ __html: handoff\.qrSvg \}\}/,
+  "Settings renders the pairing QR right in the phone section",
+);
+assert.match(settings, /Scan with your iPhone camera/, "the pairing card leads with the one-scan instruction");
+assert.match(settings, /Manual setup/, "typing the address is demoted to a collapsed manual-setup path");
+assert.doesNotMatch(
+  settings,
+  /Enter the address in the app/,
+  "the four-step type-the-host walkthrough is retired from the section body",
+);
 assert.match(css, /\.mobile-handoff-qr/, "QR block should have stable layout CSS");
 assert.match(css, /@media \(max-width: 1023px\)[\s\S]*\.top-bar__mobile-handoff[\s\S]*display: none/, "Phone handoff button should hide on mobile/tablet chrome");
 assert.match(mobileStub, /Invite link or Tailscale URL/, "Mobile connection screen should label the real accepted input");

@@ -94,16 +94,57 @@ The bridge discovers bead IDs from PR title, branch name, body, and labels such 
 
 The merge gate is intentionally conservative. A familiar may prepare a PR for merge, but merge authority still follows repository policy and Val's explicit instructions. For guarded branches, do not merge because Beads says ready; Beads only records that the GitHub state appears ready.
 
+## Morning and Evening Triage Patrol
+
+The patrol is the twice-daily sweep that keeps the PR lanes and the Beads
+queue honest without anyone hand-copying GitHub state. Run it at the start
+and end of every working session (or schedule it — a Coven cron or reminder
+invoking the package script works):
+
+```bash
+pnpm beads:prs:patrol                       # report-only; window picked by local clock
+pnpm beads:prs:patrol -- --window evening   # explicit window
+pnpm beads:prs:patrol:apply                 # also mirror every linked PR's state into its beads
+```
+
+The two windows order the same lanes for different intents:
+
+- **Morning** leads with `Fix first` (failing checks, requested changes),
+  then reviews, then the landing queue — unblock the day before adding to it.
+- **Evening** leads with `Ready to land` — land or hand off what's finished
+  before close, then clear blockers so tomorrow's morning patrol starts clean.
+
+Every patrol also flags two gaps regardless of window:
+
+- **Unlinked PRs** mention no bead id — they are invisible to the Beads
+  queue. Link a bead (title, branch name, body, or a `bead:<id>` label) or
+  consciously decide the PR doesn't need one.
+- **Stale PRs** (default: no update in 24h, `--stale-hours` to tune) are
+  drifting — rebase, nudge review, or close them.
+
+`--apply` is the patrol-sized version of the bridge's per-PR apply: it
+mirrors every linked PR's lane, check, review, and merge state into its
+beads via `--external-ref` and an appended state note. The patrol never
+merges anything — `ready-to-merge` is a queue to work through the merge
+gate above, not authority to merge.
+
 ## Cave Adapter
 
-Cave exposes a local `/api/beads` adapter for UI surfaces. It shells out to `bd` through argv arrays and reads JSON from `bd ready --json`, `bd show <id> --json`, and mutation commands. Mutations stay local-only and must use bounded JSON bodies.
+Cave exposes a local `/api/beads` adapter for UI surfaces. It shells out to `bd` through argv arrays and reads JSON from `bd ready --json`, `bd show <id> --json`, and mutation commands (`claim`, `comment`, `close`). A sibling `/api/beads/prs` route is the browser-facing half of the PR bridge: it shells `gh` server-side and returns the same classified open-PR summaries the CLI patrol produces, plus a light list of recently-merged PRs for cleanup detection. Both routes are local-origin- and path-guarded; mutations use bounded JSON bodies.
 
-The first UI should be a Familiar Work Queue:
+## Familiar Work Queue
 
-- Ready beads grouped by priority and blocker state.
-- Owner, familiar label, surface label, branch/worktree, PR, and Linear link visible on each card.
-- Claim, comment, and close actions mapped to the local adapter.
-- Verification evidence shown before close, not hidden in a chat transcript.
+The **Work Queue** surface (nav rail, or `?mode=familiar-work-queue`) is the PR control tower. It fuses ready beads with the bridge's open-PR lanes into one per-familiar, per-surface view — and, per the epic's design note, it invents no PR truth of its own: every lane comes from `/api/beads` + `/api/beads/prs`.
+
+Lanes, ordered fix-first → land → review → bead-driven → waiting:
+
+- **Checks failing** / **Changes requested** — open PRs that need work before more review.
+- **Needs review** / **Ready to merge** — approved-and-green PRs show a *merge eligible* badge, never a merge button: merge authority still follows repository policy (see the merge gate above).
+- **No open PR** — ready beads no PR references yet (epics excluded), with a **Claim** action.
+- **Post-merge cleanup** — a merged PR whose bead is still open, with a **Close bead** action. (Detection is limited to beads still in the `ready` set; worktree/branch removal stays a CLI step.)
+- **Waiting** — draft, pending-checks, and blocked PRs; shown but never counted as actionable.
+
+Each card carries the familiar and surface labels, the bead id, live check/review state, and a stale flag (no update in 24h). A per-familiar rollup along the top filters the whole board to one familiar. The pure join lives in `src/lib/beads-work-queue.ts`; claim/close map to the `/api/beads` adapter with verification recorded in the bead, not a chat transcript.
 
 ## Guardrails
 

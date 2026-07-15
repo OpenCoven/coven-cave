@@ -4,6 +4,10 @@ import { readFile } from "node:fs/promises";
 
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
+const navigationQueue = await readFile(new URL("../lib/browser-navigation-queue.ts", import.meta.url), "utf8");
+const rustBrowser = await readFile(new URL("../../src-tauri/src/browser.rs", import.meta.url), "utf8");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
 assert.match(
@@ -33,7 +37,7 @@ assert.match(
 );
 assert.match(
   pane,
-  /function loadRailPinned\(\)[\s\S]*?if \(raw === "0"\) return false;[\s\S]*?return true;\n\}/,
+  /function loadRailPinned\(\)[\s\S]*?if \(raw === "0"\) return false;[\s\S]*?return true;\r?\n\}/,
   "loadRailPinned() must default to true (rail open) when no preference is stored",
 );
 assert.match(
@@ -111,13 +115,13 @@ assert.match(
 );
 assert.match(
   pane,
-  /querySelectorAll\('\[role="dialog"\], \[aria-modal="true"\]'\)/,
-  "any visible dialog (Modal, onboarding, palette, quick chat) counts as cover",
+  /querySelectorAll\([\s\S]{0,180}\[role="dialog"\][\s\S]{0,180}\[role="menu"\][\s\S]{0,180}\[role="listbox"\]/,
+  "visible dialogs, menus, and listboxes count as native-webview covers",
 );
 assert.match(
   pane,
-  /dialog\.getClientRects\(\)\.length > 0/,
-  "hidden-but-mounted dialogs must not count as cover",
+  /overlay\.getClientRects\(\)\.length > 0/,
+  "hidden-but-mounted overlays must not count as cover",
 );
 assert.match(
   pane,
@@ -149,6 +153,166 @@ assert.match(
   "navigate loads covered webviews offscreen; the bounds loop re-seats them when the cover lifts",
 );
 
+// ───────── Native webview lifecycle: deactivate on surface leave ─────────
+// Surface transitions hide and retain WebViews. Destroying them here races a
+// rapid re-entry against Tauri's asynchronous registry removal and can reuse a
+// closing WebView2 as a black, invisible input layer.
+assert.match(
+  pane,
+  /function invokeNativeBrowserDeactivateAll\(bridge: TauriBridge \| null, label: string\): void/,
+  "BrowserPane has a direct native-webview deactivation helper",
+);
+assert.match(
+  pane,
+  /invokeNativeBrowserDeactivateAll\(bridgeRef\.current, label\);/,
+  "unmount cleanup deactivates the pane's native webviews",
+);
+assert.match(
+  nativeLifecycle,
+  /__TAURI_INTERNALS__\?: NativeBrowserInternals/,
+  "cleanup can call browser_deactivate_all before the async bridge is ready",
+);
+assert.match(
+  pane,
+  /active\?: boolean/,
+  "BrowserPane accepts an explicit active flag",
+);
+assert.match(
+  pane,
+  /if \(active\) return;[\s\S]{0,120}invokeNativeBrowserDeactivateAll\(bridge, label\);/,
+  "inactive BrowserPane instances deactivate their native webviews",
+);
+assert.match(
+  pane,
+  /if \(!active \|\| !bridge \|\| !nativeBrowserAvailable\)/,
+  "bounds sync cannot re-show a native browser layer while inactive",
+);
+assert.match(
+  pane,
+  /if \(!active \|\| !bridge \|\| !nativeBrowserAvailable \|\| !activeTab\) return;/,
+  "navigation cannot create or re-seat native browser layers while inactive",
+);
+assert.match(
+  workspace,
+  /import \{ deactivateAllNativeBrowserWebviews \} from "@\/lib\/native-browser-lifecycle"/,
+  "Workspace uses the shared native browser cleanup helper",
+);
+assert.match(
+  workspace,
+  /mode === "browser" \|\|[\s\S]{0,180}target\.kind === "browser" \|\| \(target\.kind === "page" && target\.mode === "browser"\)/,
+  "Workspace tracks browser visibility across primary and split panes",
+);
+assert.match(
+  workspace,
+  /if \(browserVisible\) return;[\s\S]{0,80}deactivateAllNativeBrowserWebviews\(\);/,
+  "Workspace deactivates stale native browser webviews when Browser is no longer visible",
+);
+const deactivateAllFn = rustBrowser.match(
+  /pub fn browser_deactivate_all\([\s\S]*?\r?\n\}\r?\n\r?\n\/\/\/ Destroy every native browser WebView/,
+)?.[0] ?? "";
+assert.match(deactivateAllFn, /schedule_scope_reconcile/, "pane deactivation schedules ordered native reconciliation for every matching WebView");
+assert.doesNotMatch(deactivateAllFn, /hide_webview|show_webview_at/, "pane deactivation performs no WebView2 call on the IPC path");
+assert.doesNotMatch(deactivateAllFn, /webview\.close\(\)/, "surface deactivation must never destroy a WebView");
+assert.match(pane, /bridge\.invoke\("browser_close"[\s\S]{0,160}tabLabel\(id\)/, "explicit tab removal still destroys its WebView");
+assert.match(
+  rustBrowser,
+  /pub fn browser_close_all\([\s\S]{0,500}BrowserScopeAction::Close/,
+  "browser_close_all records a close barrier for matching cave-browser webviews",
+);
+assert.match(rustBrowser, /snapshot\.visibility == BrowserVisibility::Closed[\s\S]{0,500}hide_webview[\s\S]{0,300}webview\.close\(\)/, "ordered worker hides before destroying a closed WebView");
+
+// Rapid enter/leave and overlay transitions can schedule passive cleanup from
+// an older render after a newer visibility intent. Every mutation carries a
+// monotonic sequence so Rust rejects stale hide/close work.
+assert.match(
+  nativeLifecycle,
+  /Math\.max\([\s\S]{0,100}lastNativeBrowserSequence \+ 1,[\s\S]{0,100}Date\.now\(\) \* 1024/,
+  "native browser sequences remain monotonic across rapid commands and renderer reloads",
+);
+assert.match(pane, /const navigationArgs = withNativeBrowserSequence\([\s\S]{0,500}bridge\.invoke\("browser_navigate", navigationArgs\)/, "browser_navigate includes a lifecycle sequence");
+for (const command of ["browser_set_bounds", "browser_hide", "browser_close", "browser_deactivate_all", "browser_reload"]) {
+  assert.match(
+    pane + nativeLifecycle,
+    new RegExp(`${command}[\\s\\S]{0,220}withNativeBrowserSequence|withNativeBrowserSequence[\\s\\S]{0,220}${command}`),
+    `${command} includes a lifecycle sequence`,
+  );
+}
+assert.match(
+  rustBrowser,
+  /struct BrowserLifecycleState\(Arc<Mutex<BrowserLifecycleInner>>\)/,
+  "Rust shares ordered native browser lifecycle intent across detached workers",
+);
+assert.match(
+  rustBrowser,
+  /pub fn browser_navigate[\s\S]{0,1800}schedule_browser_reconcile\(app, lifecycle, label\);[\s\S]{0,100}Ok\(\(\)\)/,
+  "browser navigation accepts and schedules native work without waiting on a slow WebView2 call",
+);
+assert.match(
+  rustBrowser,
+  /The lock is never held across a WebView2 call[\s\S]{0,500}pub struct BrowserLifecycleState/,
+  "the lifecycle lock cannot deadlock a re-entrant bounds command during child creation",
+);
+assert.match(
+  rustBrowser,
+  /struct BrowserLabelIntent[\s\S]{0,500}navigation:[\s\S]{0,300}bounds:[\s\S]{0,300}visibility:/,
+  "Rust retains a complete URL, bounds, and visibility intent per native WebView",
+);
+assert.match(
+  rustBrowser,
+  /fn command_sequence_is_current[\s\S]{0,800}sequence < barrier\.sequence[\s\S]{0,500}sequence >= intent\.latest_sequence/,
+  "Rust rejects stale per-WebView commands",
+);
+assert.match(
+  rustBrowser,
+  /fn advance_scope_barrier[\s\S]{0,700}sequence < barrier\.sequence/,
+  "Rust rejects stale pane-deactivation and per-webview commands",
+);
+assert.match(rustBrowser, /worker_locks: HashMap<String, Arc<Mutex<\(\)>>/, "native work is serialized per WebView label");
+assert.match(rustBrowser, /worker_signals: HashMap<String, Arc<BrowserWorkerSignal>>/, "duplicate bounds and lifecycle work is coalesced per WebView label");
+assert.match(rustBrowser, /for _ in 0\.\.16/, "native workers bound reconciliation churn");
+assert.match(rustBrowser, /settled_revision == Some\(snapshot\.revision\)/, "native workers converge to the newest intent revision");
+for (const regression of [
+  "newest_navigation_wins_even_when_workers_would_finish_out_of_order",
+  "navigate_then_hide_keeps_loading_intent_but_never_exposes_input_layer",
+  "close_during_creation_cannot_be_resurrected_by_late_bounds",
+]) {
+  assert.match(rustBrowser, new RegExp(`fn ${regression}`), `${regression} has deterministic reducer coverage`);
+}
+
+// ───────── Native webview lifecycle: no 1×1 offscreen parking ─────────
+// Shrinking the parked webview to 1×1 lets WKWebView drop its backing layer;
+// re-seating it with set_bounds could then render black. hide_webview must
+// move it offscreen only, keeping its real size so the layer stays realized.
+const hideWebviewFn = rustBrowser.match(
+  /fn hide_webview\(webview: &tauri::Webview\) -> Result<\(\), String> \{[\s\S]*?\n\}/,
+)?.[0];
+assert.ok(hideWebviewFn, "hide_webview() exists in src-tauri/src/browser.rs");
+assert.match(hideWebviewFn, /#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.hide\(\)/, "Windows hides WebView2 so it cannot capture clicks");
+assert.match(hideWebviewFn, /#\[cfg\(not\(target_os = "windows"\)\)\][\s\S]*set_position\(LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)\)/, "non-Windows retains offscreen parking");
+assert.match(
+  rustBrowser,
+  /fn show_webview_at[\s\S]*set_bounds\(Rect \{[\s\S]*position:[\s\S]*size:[\s\S]*#\[cfg\(target_os = "windows"\)\][\s\S]*webview\.show\(\)/,
+  "Windows atomically applies clamped bounds before revealing WebView2",
+);
+assert.match(rustBrowser, /fn browser_bounds_within_client[\s\S]{0,900}!x\.is_finite\(\)[\s\S]{0,500}browser bounds must be finite/, "invalid browser bounds fail closed");
+assert.match(rustBrowser, /fn ensure_browser[\s\S]{0,1200}offscreen_browser_creation_bounds[\s\S]*main\.add_child/, "first-created WebViews use the same bounded geometry policy");
+assert.match(rustBrowser, /fn offscreen_browser_creation_bounds[\s\S]{0,600}browser_bounds_within_client/, "offscreen creation bounds are derived from the bounded geometry policy");
+assert.match(rustBrowser, /fn show_webview_at[\s\S]{0,1200}browser_bounds_within_client[\s\S]*set_bounds/, "existing WebViews use the bounded geometry policy");
+
+// Settings URLs survive the lazy Browser chunk and are cleared only after
+// BrowserPane acknowledges the declarative request.
+assert.match(navigationQueue, /enqueueBrowserNavigation/, "browser navigation has a durable queue");
+assert.match(workspace, /navigationRequest=\{browserNavigationQueue\[0\] \?\? null\}/, "Workspace passes the oldest queued URL declaratively");
+assert.match(pane, /bridge\.invoke\("browser_navigate"[\s\S]{0,700}\.then\(\(\) => \{[\s\S]{0,400}acknowledgePendingNavigation\(pending\)/, "desktop navigation acknowledges only after native reconciliation succeeds");
+assert.match(pane, /decideBrowserNavigationEvent\([\s\S]{0,100}evUrl,[\s\S]{0,100}expected,/, "native WebView events are checked against the newest requested URL");
+assert.match(pane, /phase === "started" \? "started" : "finished"[\s\S]{0,150}!eventDecision\.accept[\s\S]{0,180}eventDecision\.nextExpected/, "stale WebView loads stay guarded through redirects and the newest finished event");
+assert.match(navigationQueue, /phase === "started" && expected\.started && !expected\.completed[\s\S]{0,500}chainUrls: \[\.\.\.expected\.chainUrls, actualUrl\]/, "redirect starts remain in the newest navigation generation");
+assert.match(navigationQueue, /eventSequence === 0[\s\S]{0,300}eventSequence < expected\.sequence[\s\S]{0,300}eventSequence > expected\.sequence/, "native event generations reject unattributed and older loads before advancing the high-water guard");
+assert.match(navigationQueue, /eventSequence > expected\.sequence[\s\S]{0,350}expectationFromAuthoritativeEvent/, "newer user navigation retains a guard against delayed old titles and finishes");
+assert.match(rustBrowser, /browser_report_user_navigation[\s\S]{0,600}window\.addEventListener\("click"/, "same-context child clicks are attributed before their native navigation events");
+assert.match(workspace, /getItem\(PENDING_IN_APP_BROWSER_URL_KEY\) === request\.url[\s\S]*removeItem/, "session storage clears only after acknowledgement");
+assert.doesNotMatch(workspace, /setTimeout\(\(\) => browserPaneRef\.current\?\.navigateTo/, "lazy Browser navigation no longer relies on a one-shot timer/ref");
+
 // ───────── Task 4: Quick-open backdrop ─────────
 const qo = await readFile(new URL("./browser-quick-open.tsx", import.meta.url), "utf8");
 assert.match(qo, /bg-black\/40 backdrop-blur-sm/, "Backdrop must use bg-black/40 + backdrop-blur-sm");
@@ -169,18 +333,22 @@ assert.match(pane, /if \(h\.stack\[h\.idx\] === evUrl\) \{/, "page-load history 
 
 // ───────── Correctness: listen() unlisten race + perf throttle ─────────
 assert.match(pane, /then\(\(fn\) => \{ if \(cancelled\) fn\(\); else unlisten/, "async listen() unlistens if the effect was already torn down");
-assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| now - lastRun < 100\) return;/, "the bounds-reconcile rAF loop is throttled + idle-gated");
+assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| \(!force && now - lastRun < 100\)\) return;/, "the fallback bounds loop is throttled + idle-gated");
+assert.match(pane, /forceReconcilePending = true/, "urgent bounds changes are coalesced into the next animation frame");
+assert.match(pane, /new ResizeObserver\(scheduleImmediateReconcile\)/, "resizes schedule a coalesced native bounds reconcile");
+assert.match(pane, /new MutationObserver\(scheduleImmediateReconcile\)/, "overlay DOM changes schedule a coalesced visibility reconcile");
+assert.match(pane, /visibilitychange[\s\S]{0,300}hideAll\(\)/, "backgrounding immediately hides native webviews");
 
 // ───────── a11y: tab strip is a real tablist ─────────
 assert.match(pane, /role="tablist" aria-orientation="vertical"/, "tab strip is a tablist");
-assert.match(pane, /role="tab"\n\s*tabIndex=\{0\}/, "each tab uses role=tab");
+assert.match(pane, /role="tab"\r?\n\s*tabIndex=\{0\}/, "each tab uses role=tab");
 assert.match(pane, /aria-selected=\{isActive\}/, "the active tab is announced via aria-selected");
 assert.doesNotMatch(pane, /aria-pressed=\{isActive\}/, "tabs use aria-selected, not aria-pressed");
 assert.match(pane, /aria-label=\{`Close tab: \$\{title\}`\}/, "the close button names its tab");
 assert.match(pane, /aria-label="Address bar"/, "the address input is labeled");
 assert.match(pane, /inert=\{!toolbarOpen \|\| undefined\}/, "the collapsed toolbar is inert (its controls leave the tab order)");
 // quick-open palette is a focus-trapped dialog
-assert.match(qo, /role="dialog"\n\s*aria-modal="true"/, "quick-open palette is an aria-modal dialog");
+assert.match(qo, /role="dialog"\r?\n\s*aria-modal="true"/, "quick-open palette is an aria-modal dialog");
 assert.match(qo, /useFocusTrap\(true, cardRef, \{ onEscape: onClose/, "quick-open traps focus + restores it on close");
 
 console.log("browser-polish.test.ts: ok");

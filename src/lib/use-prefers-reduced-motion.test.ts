@@ -60,7 +60,7 @@ assert.match(
 // Regression: JS smooth-scroll call sites must gate on the preference, because an
 // explicit `behavior: "smooth"` option overrides the CSS scroll-behavior reset.
 const callSites = [
-  "../components/projects/project-row.tsx",
+  "../components/projects-view.tsx",
   "../components/board-kanban.tsx",
   "../components/salem/salem-widget.tsx",
 ];

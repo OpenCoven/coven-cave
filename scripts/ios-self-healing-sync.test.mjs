@@ -32,8 +32,8 @@ assert.match(
 assert.match(model, /func recoverConnectionInBackground\(\) async/, "AppModel should expose background recovery");
 assert.match(
   model,
-  /func recoverConnectionInBackground[\s\S]*?await refreshConnection\(reloadLoadedSurfaces: true\)/,
-  "background recovery should ask refreshConnection to reload opened surfaces",
+  /func recoverConnectionInBackground[\s\S]*?await refreshConnection\(reloadLoadedSurfaces: true, quiet: true\)/,
+  "background recovery should reload opened surfaces quietly (no .checking blink → no pill flash on healthy path changes)",
 );
 assert.match(
   model,

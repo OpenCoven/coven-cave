@@ -13,11 +13,11 @@ const SESSION = {
   title: "Task: Review Version Control in Cave",
   status: "running",
   origin: "board",
-  project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  project_root: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   harness: "claude",
   familiarId: "nova",
   model: "openclaw-local",
-  runtime: "local:/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  runtime: "local:/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   exit_code: null,
   archived_at: null,
   created_at: ISO,
@@ -32,7 +32,7 @@ const CARD = {
   priority: "medium",
   familiarId: "nova",
   sessionId: "s-task",
-  cwd: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+  cwd: "/Users/dev/Documents/GitHub/OpenCoven/coven-cave",
   links: [],
   github: [],
   labels: [],
@@ -64,6 +64,10 @@ async function setup(page: Page) {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Nav is minimized-by-default; keep it expanded here so the chat layout keeps
+    // its full width (see cave:shell:min-applied — the sidebar-minimize flag).
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),

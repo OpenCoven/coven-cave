@@ -16,18 +16,29 @@ import {
   mergeTaskGitHubLinks,
   taskGitHubLinkFromGitHubItem,
 } from "@/lib/task-github";
+import type { AsanaItem } from "@/lib/asana-tasks";
+import {
+  mergeLinksWithAsana,
+  mergeTaskAsanaLinks,
+  taskAsanaLinkFromAsanaItem,
+} from "@/lib/task-asana";
 import { Icon } from "@/lib/icon";
+import { useCopy } from "@/lib/use-copy";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { CHAT_OPEN_PROJECTS_EVENT, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
+import { InlineAsanaPATSetup } from "@/components/asana-connect-inline";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 import type { CardPatch } from "@/lib/board-card-ops";
+import { sessionStatusTone, sessionStatusWord } from "@/lib/session-status";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -52,6 +63,9 @@ const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
 };
 
 function openProjectsSurface() {
+  // Latch BEFORE the mode flip: a freshly-mounting ChatSurface consumes it on
+  // mount, so the Projects tab opens even when the event loses the race (cave-c2zf).
+  markProjectsTabPending();
   window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
   window.setTimeout(() => {
     window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
@@ -76,6 +90,9 @@ type Props = {
    *  daemon offline → 502). Without this the failure only appears as a
    *  small banner at the top of the board, hidden behind the open drawer. */
   chatLinkError?: string | null;
+  /** Harness-failure recovery: rebind the card's familiar to this adapter and
+   *  re-run the task-chat start (provided only when chatLinkError is this card's). */
+  onUseHarnessFix?: (harnessId: string) => void | Promise<void>;
 };
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
@@ -194,6 +211,7 @@ function GitHubAttachSection({
   const [query, setQuery] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [patRejected, setPatRejected] = useState(false);
   const [fetchKey, setFetchKey] = useState(0);
   const coarse = useIsCoarsePointer();
 
@@ -204,12 +222,19 @@ function GitHubAttachSection({
     setErr(null);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string }) => {
+      .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
         // Drop a superseded/post-close response (open toggled or PAT re-saved).
         if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
+          setPatRejected(false);
+        } else if (d.patInvalid) {
+          // Rejected token: reopen the connect form (it was gated on
+          // configured===false, unreachable with a stored-but-dead PAT).
+          setItems([]);
+          setConfigured(false);
+          setPatRejected(true);
         } else {
           setErr(d.error ?? "failed");
         }
@@ -347,7 +372,14 @@ function GitHubAttachSection({
               <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
             )}
             {!loading && !err && configured === false && (
-              <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setFetchKey((k) => k + 1); }} />
+              <>
+                {patRejected && (
+                  <div style={{ padding: "10px 10px 0", fontSize: 11, color: "var(--color-danger)" }}>
+                    GitHub rejected the stored token (revoked or expired) — reconnect below.
+                  </div>
+                )}
+                <InlinePATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
+              </>
             )}
             {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
               <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
@@ -418,6 +450,233 @@ function GitHubAttachSection({
 }
 
 
+
+// ── Asana attach ──────────────────────────────────────────────────────────────
+// Mirrors GitHubAttachSection. Surfaces the connected user's incomplete Asana
+// tasks (via /api/asana/assigned, populated once the Asana PAT is stored) so a
+// card can be linked to the work it tracks. When no PAT is configured the
+// inline connect form appears — the in-app "enable Asana" on-ramp.
+function AsanaAttachSection({
+  card,
+  onPatch,
+  onOpenUrl,
+}: {
+  card: Card;
+  onPatch: (id: string, patch: CardPatch) => void;
+  onOpenUrl?: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<AsanaItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [patRejected, setPatRejected] = useState(false);
+  const [fetchKey, setFetchKey] = useState(0);
+  const coarse = useIsCoarsePointer();
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    // Scope to the card's familiar: the picker offers the Asana tasks THIS
+    // agent is assigned to work with (per-agent enablement + workspace scope).
+    const url = card.familiarId
+      ? `/api/asana/assigned?familiarId=${encodeURIComponent(card.familiarId)}`
+      : "/api/asana/assigned";
+    fetch(url, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { ok: boolean; items?: AsanaItem[]; configured?: boolean; error?: string; patInvalid?: boolean }) => {
+        if (cancelled) return;
+        if (d.ok) {
+          setItems(d.items ?? []);
+          setConfigured(d.configured ?? true);
+          setPatRejected(false);
+        } else if (d.patInvalid) {
+          // Rejected token: reopen the connect form with an explanation. The
+          // raw 401 used to render here forever — and the form was gated on
+          // configured===false, which a stored-but-dead PAT never satisfies
+          // (cave-d6zq).
+          setItems([]);
+          setConfigured(false);
+          setPatRejected(true);
+        } else {
+          setErr(d.error ?? "failed");
+        }
+      })
+      .catch(() => { if (!cancelled) setErr("fetch failed"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, fetchKey, card.familiarId]); // fetchKey bumped to refetch after PAT save
+
+  const attachedUrls = new Set([...(card.links ?? []), ...(card.asana ?? []).map((item) => item.url)]);
+
+  const filtered = items.filter((item) => {
+    if (!query.trim()) return true;
+    const q = query.toLowerCase();
+    return item.title.toLowerCase().includes(q) || (item.projectName?.toLowerCase().includes(q) ?? false);
+  });
+
+  const attachedItems = mergeTaskAsanaLinks(
+    card.asana ?? [],
+    ...items.filter((i) => attachedUrls.has(i.url)).map(taskAsanaLinkFromAsanaItem),
+  );
+
+  function attach(item: AsanaItem) {
+    if (attachedUrls.has(item.url)) return;
+    const asana = mergeTaskAsanaLinks(card.asana ?? [], taskAsanaLinkFromAsanaItem(item));
+    onPatch(card.id, { asana, links: mergeLinksWithAsana(card.links, asana) });
+  }
+
+  function detach(url: string) {
+    const asana = (card.asana ?? []).filter((item) => item.url !== url);
+    onPatch(card.id, { asana, links: card.links.filter((l) => l !== url) });
+  }
+
+  const subtitle = (item: { projectName?: string; dueOn?: string | null }) =>
+    [item.projectName, item.dueOn ? `due ${item.dueOn}` : null].filter(Boolean).join(" · ");
+
+  return (
+    <div className="board-drawer-field">
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <Icon name="ph:check-circle" width={11} />
+          Asana
+          {attachedItems.length > 0 && <span className="board-drawer-count-pill">{attachedItems.length}</span>}
+        </span>
+        <button
+          type="button"
+          className="board-toolbar-btn"
+          onClick={() => setOpen((v) => !v)}
+          style={{ fontSize: 10, padding: "2px 8px" }}
+        >
+          <Icon name={open ? "ph:caret-up" : "ph:check-circle"} width={11} />
+          {open ? "Hide" : "Attach"}
+        </button>
+      </div>
+
+      {attachedItems.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 6 }}>
+          {attachedItems.map((item) => (
+            <div key={item.id} style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "var(--bg-elevated)", borderRadius: 6,
+              padding: "5px 8px", border: "1px solid var(--border-hairline)"
+            }}>
+              <button
+                type="button"
+                className="board-github-attachment-open"
+                onClick={() => onOpenUrl?.(item.url)}
+                title="Open in Asana"
+                style={{
+                  flex: 1, minWidth: 0, display: "inline-flex", alignItems: "center", gap: 6,
+                  border: 0, padding: 0, background: "transparent", color: "var(--text-primary)",
+                  textAlign: "left", cursor: "pointer",
+                }}
+              >
+                <Icon name="ph:check-circle" width={12} className={item.completed ? "text-[var(--color-success)]" : "text-[var(--text-muted)]"} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {item.title}{subtitle(item) ? ` — ${subtitle(item)}` : ""}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="board-toolbar-btn"
+                style={{ fontSize: 10, padding: "1px 6px" }}
+                onClick={() => detach(item.url)}
+                title="Detach"
+              >
+                <Icon name="ph:x-bold" width={9} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div style={{ border: "1px solid var(--border-hairline)", borderRadius: 8, overflow: "hidden", background: "var(--bg-raised)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)" }}>
+            <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" />
+            <input
+              autoFocus={!coarse}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search tasks, projects…"
+              style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 12, color: "var(--text-primary)" }}
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery("")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+                <Icon name="ph:x" width={11} />
+              </button>
+            )}
+          </div>
+
+          <div style={{ maxHeight: 240, overflowY: "auto" }}>
+            {loading && (
+              <div style={{ padding: "10px" }}><SkeletonRows count={4} /></div>
+            )}
+            {err && (
+              <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>
+            )}
+            {!loading && !err && configured === false && (
+              <>
+                {patRejected && (
+                  <div style={{ padding: "10px 10px 0", fontSize: 11, color: "var(--color-danger)" }}>
+                    Asana rejected the stored token (revoked or expired) — reconnect below.
+                  </div>
+                )}
+                <InlineAsanaPATSetup onSaved={() => { setItems([]); setConfigured(null); setPatRejected(false); setFetchKey((k) => k + 1); }} />
+              </>
+            )}
+            {!loading && !err && configured !== false && filtered.length === 0 && items.length === 0 && (
+              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+                No incomplete tasks assigned to you.
+              </div>
+            )}
+            {!loading && !err && configured !== false && items.length > 0 && filtered.length === 0 && (
+              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>No matches.</div>
+            )}
+            {filtered.map((item) => {
+              const attached = attachedUrls.has(item.url);
+              return (
+                <div key={item.id} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "7px 10px", borderBottom: "1px solid var(--border-hairline)",
+                  background: attached ? "color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised))" : undefined,
+                }}>
+                  <Icon name="ph:check-circle" width={13} className="text-[var(--text-muted)]" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.title}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {subtitle(item) || "Asana task"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="board-toolbar-btn"
+                      style={{
+                        fontSize: 10, padding: "2px 7px",
+                        ...(attached ? { color: "var(--accent-presence)", borderColor: "var(--accent-presence)" } : {}),
+                      }}
+                      onClick={() => attached ? detach(item.url) : attach(item)}
+                    >
+                      <Icon name={attached ? "ph:check-bold" : "ph:paperclip-bold"} width={10} />
+                      {attached ? "Attached" : "Attach"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Links ────────────────────────────────────────────────────────────────────
 function LinksSection({
@@ -957,7 +1216,94 @@ function StepsSection({
   );
 }
 
-export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError }: Props) {
+// ── Debug ─────────────────────────────────────────────────────────────────────
+// Raw card internals — ids, paths, retry/timeout knobs, and the full card JSON.
+// Collapsed by default like Lifecycle (power-user info), but every stored field
+// stays reachable from the drawer: progressive disclosure, not capability loss.
+
+function DebugKVRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, padding: "2px 0", fontSize: 11 }}>
+      <span style={{ flexShrink: 0, color: "var(--text-muted)" }}>{k}</span>
+      <span
+        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "var(--text-secondary)" }}
+        title={v}
+      >
+        {v}
+      </span>
+    </div>
+  );
+}
+
+function CopyJsonButton({ getText }: { getText: () => string }) {
+  const { copied, copy } = useCopy();
+  return (
+    <button
+      type="button"
+      className="board-toolbar-btn"
+      style={{ fontSize: 10, padding: "2px 8px" }}
+      onClick={() => copy(getText())}
+    >
+      <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={10} />
+      {copied ? "Copied" : "Copy JSON"}
+    </button>
+  );
+}
+
+function DebugSection({ card }: { card: Card }) {
+  const [open, setOpen] = useState(false);
+  const timeoutMs = card.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const rows: Array<[string, string]> = [
+    ["card id", card.id],
+    ["session", card.sessionId ?? "—"],
+    ["project", card.projectId ?? "—"],
+    ["cwd", card.cwd ?? "—"],
+    ["template", card.template ?? "—"],
+    ["lifecycle", card.lifecycleAt ? `${card.lifecycle} · since ${card.lifecycleAt}` : card.lifecycle],
+    ["retries", `${card.retryCount}/${card.maxRetries}`],
+    ["timeout", timeoutMs % 60_000 === 0 ? `${timeoutMs / 60_000}m` : `${timeoutMs}ms`],
+    ["needs human", card.needsHuman ? "yes" : "no"],
+  ];
+  return (
+    <div className="board-drawer-field">
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <Icon name="ph:bug-bold" width={11} />
+          Debug
+        </span>
+        <button
+          type="button"
+          className="board-toolbar-btn"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          title={open ? "Hide debug details" : "Show debug details"}
+          style={{ fontSize: 10, padding: "2px 8px" }}
+        >
+          <Icon name={open ? "ph:caret-up" : "ph:caret-down"} width={11} />
+          {open ? "Hide" : "Show"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border-hairline)", background: "var(--bg-base)" }}>
+            {rows.map(([k, v]) => (
+              <DebugKVRow key={k} k={k} v={v} />
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Raw card</span>
+            <CopyJsonButton getText={() => JSON.stringify(card, null, 2)} />
+          </div>
+          <pre style={{ maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, padding: 8, borderRadius: 8, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", fontFamily: "ui-monospace, monospace", fontSize: 10, lineHeight: 1.5, color: "var(--text-secondary)" }}>
+            {JSON.stringify(card, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError, onUseHarnessFix }: Props) {
   const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1185,7 +1531,15 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   </span>
                   <span className="board-drawer-chat-body">
                     <span className="board-drawer-chat-title">{session.title || "(untitled)"}</span>
-                    <span className="board-drawer-chat-desc">Open conversation</span>
+                    {/* cave-32ks: live session state — dot + word — so the
+                        drawer answers "is the familiar on it?" at a glance. */}
+                    <span className="board-drawer-chat-desc">
+                      <span
+                        className={`board-drawer-chat-status-dot board-drawer-chat-status-dot--${sessionStatusTone(session.status)}`}
+                        aria-hidden
+                      />
+                      {sessionStatusWord(session.status)} · open conversation
+                    </span>
                   </span>
                   <Icon name="ph:arrow-square-out" width={12} className="board-drawer-chat-trail" />
                 </button>
@@ -1213,6 +1567,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                       ? chatLinkError
                       : "Start a conversation with this card's familiar."}
                   </span>
+                  {(() => {
+                    const failure =
+                      chatLinkError && onUseHarnessFix ? parseHarnessFailure(chatLinkError) : null;
+                    return failure ? (
+                      <HarnessFixActions
+                        failure={failure}
+                        busy={chatLinking}
+                        onUseHarness={onUseHarnessFix}
+                        className="mt-1"
+                      />
+                    ) : null;
+                  })()}
                 </span>
                 <button
                   type="button"
@@ -1233,6 +1599,8 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           <LinksSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 
           <GitHubAttachSection card={card} familiars={familiars} onPatch={onPatch} onOpenUrl={onOpenUrl} />
+
+          <AsanaAttachSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 
           <AttachmentsSection card={card} onPatch={onPatch} />
 
@@ -1298,7 +1666,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   <div className="board-drawer-lifecycle-row">
                     <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
                     {card.lifecycle === "running" && <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />}
+                    {card.retryCount > 0 && (
+                      <span className="board-drawer-count-pill" title={`Retried ${card.retryCount} of ${card.maxRetries} times`}>
+                        retry {card.retryCount}/{card.maxRetries}
+                      </span>
+                    )}
                   </div>
+                  {card.lifecycleReason ? (
+                    <p style={{ margin: 0, fontSize: 10.5, overflowWrap: "anywhere", color: card.lifecycle === "failed" ? "var(--color-danger)" : "var(--text-muted)" }}>
+                      <span style={{ marginRight: 6, fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>Reason</span>
+                      {card.lifecycleReason}
+                    </p>
+                  ) : null}
                   {moves.length > 0 && (
                     <div className="board-drawer-lifecycle-actions">
                       {moves.map((m) => (
@@ -1321,10 +1700,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   <span><span className="board-drawer-stamp-label">Created</span> {`${formatDate(card.createdAt, dtPrefs, { year: true })} ${formatClock(card.createdAt, dtPrefs)}`}</span>
                   <span className="board-drawer-stamp-sep">·</span>
                   <span><span className="board-drawer-stamp-label">Updated</span> {`${formatDate(card.updatedAt, dtPrefs, { year: true })} ${formatClock(card.updatedAt, dtPrefs)}`}</span>
+                  {card.lifecycleAt ? (
+                    <>
+                      <span className="board-drawer-stamp-sep">·</span>
+                      <span><span className="board-drawer-stamp-label">State since</span> {`${formatDate(card.lifecycleAt, dtPrefs, { year: true })} ${formatClock(card.lifecycleAt, dtPrefs)}`}</span>
+                    </>
+                  ) : null}
                 </div>
               </>
             )}
           </div>
+
+          <DebugSection card={card} />
         </div>
 
         <div className="board-drawer-footer">

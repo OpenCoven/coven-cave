@@ -73,6 +73,25 @@ targets:
     dependencies:
       - target: CovenCave
 
+  # UI tests that drive the app on a simulator — e.g. the Diary's ink flow
+  # (draw → recognize → reply), which host-side synthetic input can't reach
+  # without macOS Accessibility grants. Run:
+  #   xcodebuild test -project CovenCave.xcodeproj -scheme CovenCave \
+  #     -destination 'platform=iOS Simulator,name=<sim>' \
+  #     -only-testing:CovenCaveUITests
+  CovenCaveUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: CovenCaveUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ai.opencoven.cave.uitests
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    dependencies:
+      - target: CovenCave
+
   # Widget extension hosting the "task running" Live Activity (Lock Screen +
   # Dynamic Island) and the home-screen "Up Next" widget. Shares
   # TaskActivityAttributes.swift + WidgetSnapshot.swift with the app target;
@@ -102,5 +121,6 @@ schemes:
     test:
       targets:
         - CovenCaveTests
+        - CovenCaveUITests
     run:
       config: Debug

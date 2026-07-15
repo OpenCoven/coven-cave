@@ -1,7 +1,11 @@
 import type { Card } from "@/lib/cave-board-types";
 import { createItem, loadInbox, markDone } from "@/lib/cave-inbox";
 import { broadcastCreated, broadcastUpdated } from "@/lib/inbox-scheduler";
-import { loadState } from "@/lib/cave-config";
+import { archiveSessionLocal, loadConfig, loadState } from "@/lib/cave-config";
+import {
+  normalizeChatAutoArchivePolicy,
+  shouldAutoArchiveOnTaskCompletion,
+} from "@/lib/chat-auto-archive";
 import {
   archiveNudgeForCard,
   archiveNudgesToResolve,
@@ -58,4 +62,35 @@ export async function resolveArchiveNudges(sessionId: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+/**
+ * A card just reached the end of its execution lifecycle: either auto-archive
+ * its linked chat (when the auto-archive policy opts in) or fall back to the
+ * default "ready to archive" nudge. Best-effort — a failure here must never
+ * mask the successful lifecycle transition.
+ */
+export async function handleTaskCompletion(
+  card: Card,
+): Promise<{ action: "archived" | "nudged" | "none" }> {
+  try {
+    const [config, state] = await Promise.all([loadConfig(), loadState()]);
+    const policy = normalizeChatAutoArchivePolicy(config.chatAutoArchive);
+    const sessionId = typeof card.sessionId === "string" ? card.sessionId : null;
+    if (
+      card.lifecycle === "completed" &&
+      shouldAutoArchiveOnTaskCompletion(sessionId, policy, {
+        keep: state.sessionKeep,
+        archivedSessionIds: Object.keys(state.sessionArchived ?? {}),
+      })
+    ) {
+      await archiveSessionLocal(sessionId as string);
+      await resolveArchiveNudges(sessionId as string);
+      return { action: "archived" };
+    }
+  } catch {
+    /* fall through to the nudge path */
+  }
+  const item = await emitArchiveNudge(card);
+  return { action: item ? "nudged" : "none" };
 }

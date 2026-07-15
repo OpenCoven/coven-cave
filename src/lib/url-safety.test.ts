@@ -18,7 +18,7 @@ assert.equal(isSafeGitHubUrl("https://www.github.com/OpenCoven/coven-cave"), tru
 assert.equal(isSafeGitHubUrl("https://gist.github.com/OpenCoven/coven-cave"), false);
 assert.equal(isSafeGitHubUrl("https://example.test/OpenCoven/coven-cave"), false);
 
-assert.equal(isSafeVscodeFileUrl("vscode://file/Users/buns/example.md"), true);
-assert.equal(isSafeVscodeFileUrl(" vscode://file/C:/Users/buns/example.md "), true);
+assert.equal(isSafeVscodeFileUrl("vscode://file/Users/dev/example.md"), true);
+assert.equal(isSafeVscodeFileUrl(" vscode://file/C:/Users/dev/example.md "), true);
 assert.equal(isSafeVscodeFileUrl("vscode://extension/ms-python.python"), false);
 assert.equal(isSafeVscodeFileUrl("javascript:alert(1)"), false);

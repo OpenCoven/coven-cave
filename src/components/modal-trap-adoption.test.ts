@@ -10,6 +10,7 @@ const FILES = [
   "github-action-popover.tsx",
   "code-quick-open.tsx",
   "new-reminder-modal.tsx",
+  "notification-bell.tsx",
 ];
 
 for (const file of FILES) {

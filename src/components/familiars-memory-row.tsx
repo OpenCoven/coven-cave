@@ -64,7 +64,7 @@ export function MemoryRowItem({
           </span>
         </span>
       </button>
-      <div className="flex items-center gap-1 pr-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
+      <div className="touch-always-visible flex items-center gap-1 pr-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover/row:opacity-100">
         <button
           type="button"
           onClick={onExpand}

@@ -10,6 +10,10 @@ struct AvatarView: View {
     /// corner when the familiar reports a status. Opt-in so it only appears on
     /// "who's around" surfaces (chat list, header), not every avatar.
     var showStatus: Bool = false
+    /// Name used for the initials fallback when `familiar` is nil — e.g. the
+    /// human operator, who has no `Familiar` record. Ignored when `familiar`
+    /// is set.
+    var fallbackName: String? = nil
 
     var body: some View {
         let color = Theme.color(for: familiar)
@@ -47,7 +51,7 @@ struct AvatarView: View {
     }
 
     private func initials(_ color: Color) -> some View {
-        Text(Theme.initials(familiar?.displayName ?? "?"))
+        Text(Theme.initials(familiar?.displayName ?? fallbackName ?? "?"))
             .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
             .foregroundStyle(color)
     }

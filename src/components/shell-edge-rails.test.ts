@@ -32,27 +32,35 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-top" data-tauri-drag-region=""(?: onPointerDown=\{onTitlebarPointerDown\})?>[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>/,
+  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>/,
   "the top bar row leads with the nav toggle before the rendered top bar",
 );
+// `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
+// bare region on DIRECT presses on the attributed element, so empty chrome
+// inside .menu-bar/.top-bar children would short-circuit the composedPath walk
+// and never drag. `deep` covers the whole subtree while drag.js's clickable
+// check keeps buttons/inputs/focusable widgets working. The drag itself is an
+// ACL-gated IPC call — see capabilities/loopback-window-drag.json (the webview
+// is an external http://127.0.0.1 origin, a REMOTE ACL context, so it needs an
+// explicit remote-scoped grant; without it start_dragging is silently denied).
 assert.equal(
-  shell.match(/<div className="shell-top" data-tauri-drag-region=""(?: onPointerDown=\{onTitlebarPointerDown\})?>/g)?.length,
+  shell.match(/<div className="shell-top" data-tauri-drag-region="deep">/g)?.length,
   2,
-  "both shell top bars (placeholder + desktop) should expose the Tauri drag region on the titlebar container",
+  "both shell top bars (placeholder + desktop) should expose the deep Tauri drag region on the titlebar container",
+);
+assert.doesNotMatch(
+  shell,
+  /startDragging|onTitlebarPointerDown/,
+  "shell should not hand-roll a startDragging pointer handler — Tauri drag.js owns the drag (and double-click zoom) via the deep drag-region attributes",
 );
 assert.equal(
-  shell.match(/onPointerDown=\{onTitlebarPointerDown\}/g)?.length,
-  2,
-  "every shell-top wires the native startDragging handler so the window drags on external-URL webviews",
-);
-assert.equal(
-  shell.match(/<div className="shell-top__bar" data-tauri-drag-region="">/g)?.length,
+  shell.match(/<div className="shell-top__bar" data-tauri-drag-region="deep">/g)?.length,
   2,
   "both rendered top-bar wrappers should remain draggable when their empty chrome is clicked",
 );
 assert.match(
   shell,
-  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" \/>\s*\{navToggle\}/,
+  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" \/>\s*\{navToggle\}/,
   "the desktop top bar should expose a dedicated non-interactive drag lane before its controls",
 );
 assert.match(
@@ -96,8 +104,8 @@ assert.doesNotMatch(
 // icon buttons matching the other controls in the row.
 assert.match(
   css,
-  /\.shell-top\s*\{[\s\S]*?display:\s*flex;[\s\S]*?align-items:\s*center;[\s\S]*?min-height:\s*44px;[\s\S]*?border-bottom:\s*1px solid var\(--border-hairline\);/,
-  "the top bar row owns the shared band background and centers its controls",
+  /\.shell-top\s*\{[\s\S]{0,600}?display:\s*flex;[\s\S]{0,200}?align-items:\s*center;[\s\S]{0,300}?min-height:\s*34px;[\s\S]{0,400}?border-bottom:\s*0;/,
+  "the top bar row is the slim seamless band (34px, borderless) and centers its controls",
 );
 assert.match(
   css,
@@ -226,5 +234,131 @@ assert.doesNotMatch(
   /cave:familiar-panel-toggle/,
   "Shell no longer wires the retired in-panel collapse event",
 );
+
+
+// ── Dia-style traffic lights follow the side panel (cave-9ja2) ──────────────
+{
+  const librs = readFileSync(new URL("../../src-tauri/src/lib.rs", import.meta.url), "utf8");
+  assert.match(
+    shell,
+    /const trafficLightsVisible = navOpen \|\| navPeeking \|\| isMobile;/,
+    "lights show whenever the panel is open, hover-peeked, or the layout is mobile",
+  );
+  assert.match(
+    shell,
+    /invoke\("set_traffic_lights_visible", \{ visible \}\)/,
+    "the shell drives the native buttons through the app command",
+  );
+  // Title-bar fit contract: the 78px inset is released only AFTER the native
+  // hide is confirmed — marking "hidden" optimistically slid the nav toggle +
+  // history chevrons under still-visible lights when the command failed.
+  assert.match(
+    shell,
+    /applyNative\(false\)\s*\.then\(\(\) => \{\s*if \(!cancelled\) root\.dataset\.trafficLights = "hidden";/,
+    "the root attribute flips to hidden only once the native hide resolves",
+  );
+  assert.match(
+    shell,
+    /\.catch\(\(\) => \{[\s\S]{0,220}?if \(!cancelled\) root\.dataset\.trafficLights = "visible";/,
+    "a failed native hide keeps the inset reserved for the still-visible lights",
+  );
+  assert.match(
+    shell,
+    /window\.addEventListener\("focus", onFocus\)/,
+    "focus re-asserts the hidden state after AppKit re-shows the buttons",
+  );
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: 12px;/,
+    "hiding the lights releases the 78px title-bar inset",
+  );
+  assert.match(
+    librs,
+    /fn set_traffic_lights_visible\(window: tauri::WebviewWindow, visible: bool\)/,
+    "the Rust command exists",
+  );
+  assert.match(
+    librs,
+    /standardWindowButton: kind/,
+    "the command toggles NSWindow's standard buttons",
+  );
+  assert.match(
+    librs,
+    /shell_pick_directory,\s*set_traffic_lights_visible,/,
+    "the command is registered with the invoke handler",
+  );
+}
+
+// ── Title-bar fit is comprehensive (cave-i7wf follow-up) ────────────────────
+// The overlay title bar is a property of the WINDOW, not of the workspace
+// shell: the traffic lights float over every route (/settings, /dashboard,
+// reports, analytics) and at every window width. The root marker is owned
+// globally and each full-window title band reserves the lights inset.
+{
+  const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  const marker = readFileSync(new URL("./tauri-titlebar-marker.tsx", import.meta.url), "utf8");
+  assert.match(layout, /<TauriTitlebarMarker \/>/, "the root layout owns the titlebar marker");
+  assert.match(
+    marker,
+    /isMacDesktopShell\(\)/,
+    "the marker uses the shared macOS-desktop-shell detection",
+  );
+  assert.doesNotMatch(
+    shell,
+    /dataset\.tauriTitlebar =/,
+    "the workspace shell no longer sets the marker — it must survive shell unmount",
+  );
+  assert.match(
+    shell,
+    /if \(!isMacDesktopShell\(\)\) return;/,
+    "the lights effect detects the platform directly instead of racing the marker mount",
+  );
+  // The shell-top reserve applies at every width (a sub-1024 window put the
+  // mobile top-bar's controls under the lights when it was media-gated).
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{\s*padding-left: var\(--titlebar-lights-inset\);\s*\}/,
+    "the shell-top lights inset is not desktop-media-gated",
+  );
+  // Full-window route bands reserve the same inset…
+  for (const band of ["settings-shell__header", "dr-topbar", "fa-topbar"]) {
+    assert.match(
+      css,
+      new RegExp(`:root\\[data-tauri-titlebar\\] \\.${band} \\{\\s*padding-left: (?:var\\(--titlebar-lights-inset\\)|max\\(var\\(--titlebar-lights-inset\\))`),
+      `${band} reserves the traffic-light inset on macOS`,
+    );
+  }
+  // …but the analytics band embedded in the workspace shell (inspector tab)
+  // sits mid-window and must NOT.
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-frame \.fa-topbar \{\s*padding-left: 24px;/,
+    "the inspector-embedded analytics breadcrumb keeps its own padding",
+  );
+  // Titlebar glass stays honest: blur is paired with the reduced-transparency
+  // and no-backdrop-filter fallbacks.
+  assert.match(
+    css,
+    /:root\[data-tauri-titlebar\] \.shell-top \{[\s\S]{0,340}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the native shell titlebar carries subtle glass",
+  );
+  const dashboardCss = readFileSync(new URL("../styles/dashboard.css", import.meta.url), "utf8");
+  assert.match(
+    dashboardCss,
+    /\.settings-shell__header \{[\s\S]{0,600}?backdrop-filter: blur\(var\(--glass-blur\)\) saturate\(var\(--glass-saturate\)\);/,
+    "the settings header is glass",
+  );
+  assert.match(
+    dashboardCss,
+    /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]{0,400}?\.settings-shell__header/,
+    "settings header glass respects reduced transparency",
+  );
+  const settingsShell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+  assert.match(
+    settingsShell,
+    /surface-compact-header shrink-0"[\s\S]{0,400}?data-tauri-drag-region="deep"/,
+    "the settings header is a real window drag region (CSS app-region is inert on loopback URLs)",
+  );
+}
 
 console.log("shell-edge-rails.test.ts OK");

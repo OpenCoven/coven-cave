@@ -131,3 +131,123 @@ for (const mode of ["dark", "light"] as const) {
 }
 
 console.log(`theme-contrast-audit: ${checked} pairs across ${THEME_IDS.length} themes × 2 modes, 0 failures`);
+
+// ── fixed dark code chrome (cave-chat.css, CHAT-D13-01/02) ──────────────────
+// Code blocks and system turns keep a fixed dark-terminal surface in BOTH
+// modes, so their inks are fixed too — theme-independent, but they still must
+// clear AA. Worst case is light mode: the 92%-alpha chrome composites over a
+// near-white page, lightening the surface under the light inks. Audit over
+// opaque white as the harshest base any theme can supply.
+
+const chatCss = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+
+const chromeRootBlock = chatCss.match(/:root\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+const chrome: TokenMap = new Map();
+for (const m of chromeRootBlock.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+  chrome.set(m[1], m[2].trim());
+}
+// The body surface lives in globals.css (shared with the file editor).
+const codeSurface = css.match(/--code-surface:\s*([^;]+);/)?.[1];
+assert.ok(codeSurface, "--code-surface must be defined in globals.css");
+chrome.set("--code-surface", codeSurface!);
+for (const required of [
+  "--code-chrome-ink",
+  "--code-chrome-ink-muted",
+  "--code-chrome-ink-faint",
+  "--code-chrome-accent",
+  "--code-chrome-surface-raised",
+  "--code-chrome-surface-control",
+  "--code-chrome-surface-control-hover",
+  "--code-chrome-success",
+  "--code-chrome-danger",
+]) {
+  assert.ok(chrome.has(required), `cave-chat.css :root must define ${required}`);
+}
+
+const OPAQUE_WHITE: Rgba = { r: 1, g: 1, b: 1, alpha: 1 };
+function chromeSurface(token: string, base: Rgba = OPAQUE_WHITE): Rgba {
+  const c = resolveThemeColor(chrome, token);
+  assert.ok(c, `${token} must resolve to a color`);
+  return flattenOnto(c!, base);
+}
+
+const codeBody = chromeSurface("--code-surface");
+const codeRaised = chromeSurface("--code-chrome-surface-raised", codeBody);
+const codeControl = chromeSurface("--code-chrome-surface-control", codeBody);
+const codeControlHover = chromeSurface("--code-chrome-surface-control-hover", codeBody);
+
+// Derived inks as declared in cave-chat.css — resolved from the live rules so
+// the audit can't drift from the stylesheet.
+function declaredColor(selectorRe: RegExp, label: string): string {
+  const block = chatCss.match(selectorRe)?.[0] ?? "";
+  const value = block.match(/color:\s*([^;]+);/)?.[1];
+  assert.ok(value, `${label}: color declaration not found`);
+  return value!.trim();
+}
+chrome.set("--_lang-ink", declaredColor(/\.cave-code-lang \{[^}]*\}/, ".cave-code-lang"));
+chrome.set("--_ln-ink", declaredColor(/\.cave-ln \{[^}]*\}/, ".cave-ln"));
+chrome.set(
+  "--_add-strip",
+  (chatCss.match(/\.cave-diff-add \{[^}]*background:\s*([^;]+);/) ?? [])[1] ?? "",
+);
+chrome.set(
+  "--_del-strip",
+  (chatCss.match(/\.cave-diff-del \{[^}]*background:\s*([^;]+);/) ?? [])[1] ?? "",
+);
+
+const addStrip = chromeSurface("--_add-strip", codeBody);
+const delStrip = chromeSurface("--_del-strip", codeBody);
+
+const chromeFailures: string[] = [];
+const chromePairs: Array<{ fg: string; bg: Rgba; bgName: string; min: number }> = [
+  // 10-12px labels, filenames, line counts, expand button, system meta.
+  { fg: "--code-chrome-ink-faint", bg: codeBody, bgName: "code body", min: 4.5 },
+  { fg: "--code-chrome-ink-faint", bg: codeRaised, bgName: "chrome header", min: 4.5 },
+  { fg: "--code-chrome-ink-faint", bg: codeControl, bgName: "copy button", min: 4.5 },
+  { fg: "--code-chrome-ink-muted", bg: codeBody, bgName: "code body", min: 4.5 },
+  { fg: "--code-chrome-ink-muted", bg: codeRaised, bgName: "chrome header", min: 4.5 },
+  { fg: "--code-chrome-ink", bg: codeControlHover, bgName: "copy button hover", min: 4.5 },
+  // Language eyebrow + line-number ordinals (the CHAT-D13-02 micro-type).
+  { fg: "--_lang-ink", bg: codeRaised, bgName: "chrome header", min: 4.5 },
+  { fg: "--_ln-ink", bg: codeBody, bgName: "code body", min: 4.5 },
+  // Diff +/- markers and the copy-confirmed state on their actual strips.
+  { fg: "--code-chrome-success", bg: addStrip, bgName: "diff add strip", min: 4.5 },
+  { fg: "--code-chrome-danger", bg: delStrip, bgName: "diff del strip", min: 4.5 },
+  { fg: "--code-chrome-success", bg: codeControl, bgName: "copy button", min: 4.5 },
+];
+for (const pair of chromePairs) {
+  const fg = resolveThemeColor(chrome, pair.fg);
+  assert.ok(fg, `${pair.fg} must resolve`);
+  const ratio = contrastRatio(flattenOnto(fg!, pair.bg), pair.bg);
+  if (ratio < pair.min) {
+    chromeFailures.push(
+      `code chrome: ${pair.fg} on ${pair.bgName} = ${ratio.toFixed(2)} (needs ${pair.min})`,
+    );
+  }
+}
+assert.deepEqual(
+  chromeFailures,
+  [],
+  `code-chrome contrast regressions:\n${chromeFailures.join("\n")}`,
+);
+
+// Opacity dimmers stacked on the faint ink are how sub-AA text evaded
+// automated scans pre-fix (alpha-composited text). Keep them out.
+for (const selector of [
+  /\.cave-code-lang \{[^}]*\}/,
+  /\.cave-code-filename \{[^}]*\}/,
+  /\.cave-bubble-system-label--dim \{[^}]*\}/,
+]) {
+  const block = chatCss.match(selector)?.[0] ?? "";
+  assert.ok(block.length > 0, `selector ${selector} must exist in cave-chat.css`);
+  assert.ok(
+    !/\bopacity:/.test(block),
+    `${selector}: no opacity dimmer on chrome ink (CHAT-D13-02)`,
+  );
+}
+assert.ok(
+  !/\.cave-diff-meta \{[^}]*opacity:/.test(chatCss),
+  ".cave-diff-meta: no opacity dimmer (CHAT-D13-02)",
+);
+
+console.log(`theme-contrast-audit: code-chrome ${chromePairs.length} pairs, 0 failures`);

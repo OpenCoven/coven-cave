@@ -67,6 +67,10 @@ assert.match(
   /initialPrompt:\s*buildRehabilitationBrief\(/,
   "Rehab chat is seeded with the rehabilitation brief as its initial prompt",
 );
-assert.match(source, /familiar-studio-contract__rehab/, "Rehab button has its own BEM class");
+assert.match(
+  source,
+  /<Button[\s\S]*variant="primary"[\s\S]*Work with \{familiar\.display_name\} to fix this[\s\S]*<\/Button>/,
+  "Rehab action uses the shared primary Button",
+);
 
 console.log("familiar-studio-contract-tab.test.ts: ok");

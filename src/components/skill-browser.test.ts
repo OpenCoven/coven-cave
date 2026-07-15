@@ -6,11 +6,18 @@ const src = readFileSync(new URL("./skill-browser.tsx", import.meta.url), "utf8"
 const hub = readFileSync(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-// ── Three-column browser: rail · list · detail ───────────────────────────────
+// ── Merged discovery panel (header + filters + list) · detail pane ──────────
 assert.match(src, /export function SkillBrowser\(/, "exports the SkillBrowser component");
-assert.match(src, /className="skill-browser__rail"/, "renders the category rail");
-assert.match(src, /className="skill-browser__list"/, "renders the card list");
+assert.match(src, /className="skill-browser__rail"/, "renders the filter strip");
+assert.match(src, /className="skill-browser__list"/, "renders the merged discovery panel");
 assert.match(src, /className="skill-browser__detail"/, "renders the detail pane");
+// Merged panel: the leaderboard header and the filter strip both live INSIDE
+// the list panel (panel opens, then header, then filters) — not beside it.
+assert.ok(
+  src.indexOf('className="skill-browser__list"') < src.indexOf('className="skill-browser__leaderboard"') &&
+    src.indexOf('className="skill-browser__leaderboard"') < src.indexOf('className="skill-browser__rail"'),
+  "leaderboard header and filter strip are nested inside the merged list panel, header first",
+);
 
 // Category rail: All / Installed / Claude Code / Generic with derived counts.
 assert.match(src, /label: "All Skills"/, "rail has an All Skills entry");
@@ -60,9 +67,27 @@ assert.match(src, /function matchesBrowseFilter\(skill: SkillBrowserEntry, filte
 assert.match(src, /function matchesTopic\(skill: SkillBrowserEntry, topicId: string\)/, "topic filters are applied by helper");
 assert.match(src, /matchesBrowseFilter\(s, browse\)/, "visible skills are filtered by browse state");
 assert.match(src, /matchesTopic\(s, topic\)/, "visible skills are filtered by topic state");
-assert.match(src, /className="skill-browser__browse"/, "renders the Browse chip row");
+assert.match(src, /className="skill-browser__browse"/, "renders the badge-toggle chip row");
 assert.match(src, /className="skill-browser__topics"/, "renders the Topics chip row");
-assert.match(src, /className="skill-browser__agents"/, "renders the agent compatibility filter row");
+// cave-99k1 simplification: the rail collapsed from five labeled groups to
+// two. Categories + Browse merged into one Filter group (badge toggles click
+// off back to "all"; zero-count claude/generic categories hide), Rank rides
+// the leaderboard header, and the agent chips became one compact select.
+assert.match(src, /aria-label="Filter skills"/, "one merged Filter group replaces Categories + Browse");
+assert.doesNotMatch(src, /aria-label="Browse skills"/, "the separate Browse group stays deleted");
+assert.match(src, /setBrowse\(active \? "all" : item\.id\)/, "badge toggles deselect back to the full list");
+assert.match(
+  src,
+  /RAIL\.filter\(\(cat\) => cat\.id === "all" \|\| cat\.id === "installed" \|\| counts\[cat\.id\] > 0\)/,
+  "zero-count claude/generic categories stay hidden",
+);
+assert.match(
+  src,
+  /skill-browser__leaderboard-title[\s\S]{0,400}skill-browser__modes/,
+  "Rank lives in the leaderboard header, not its own rail group",
+);
+assert.match(src, /className="skill-browser__agent-select"/, "agents collapse into one compact select");
+assert.match(src, /label="Filter by agent"/, "the agent select stays labeled for AT");
 assert.match(src, /function installCommand\(skill: SkillBrowserEntry\)/, "builds a skills CLI install command");
 assert.match(src, /function useCommand\(skill: SkillBrowserEntry\)/, "builds a skills CLI use command");
 assert.match(src, /function sourceTarget\(skill: SkillBrowserEntry\)/, "derives the skills CLI source from owner/repo or package");
@@ -77,12 +102,20 @@ assert.match(src, /Install state/, "detail decision summary labels install state
 assert.match(src, /Trust signal/, "detail decision summary labels trust signal");
 assert.match(src, /Source/, "detail decision summary labels source");
 assert.match(css, /\.skill-browser__decision \{[\s\S]*?grid-template-columns/, "detail decision summary uses a responsive grid");
-assert.match(css, /\.skill-browser__decision-card \{[\s\S]*?min-height:/, "detail decision cards reserve stable height");
-assert.match(src, /copyText\(installCommand\(selected\)\)/, "detail pane can copy the install command");
-assert.match(src, /function handleInstall\(\)/, "detail pane can install a selected directory skill");
-assert.match(src, /fetch\("\/api\/skills\/directory\/install"/, "install action calls the guarded install route");
-assert.match(src, /body: JSON\.stringify\(\{ id: selected\.id, source: sourceTarget\(selected\), agents: \["claude-code", "codex"\] \}\)/, "install action requests Claude Code and Codex installation");
-assert.match(src, /onChanged\?\.\(\)/, "successful install asks the parent to rescan installed state");
+// Minimalist stat cards: just the labelled value, no description paragraph and
+// no fixed card height.
+assert.doesNotMatch(src, /skill-browser__decision-card"[\s\S]{0,220}<p>/, "decision cards drop the description paragraph");
+assert.doesNotMatch(css, /\.skill-browser__decision-card \{[^}]*min-height:/, "minimalist decision cards no longer reserve a fixed height");
+// The install command line is itself the copy affordance — click sweeps a green
+// progressive fill and flips to "Copied"; the separate Install button/pill and
+// standalone copy icon are gone (keep just Use + Copy prompt).
+assert.match(src, /copyText\(installCommand\(selected\)\)/, "the CLI line copies the install command");
+assert.match(src, /skill-browser__cli\$\{copiedInstall \? " is-copied"/, "the install command is a clickable copy button");
+assert.match(src, /className="skill-browser__cli-fill"/, "the CLI copy renders a progressive fill overlay");
+assert.match(css, /\.skill-browser__cli\.is-copied \.skill-browser__cli-fill \{[\s\S]*?width: 100%;[\s\S]*?transition: width/, "the fill sweeps to 100% on copy");
+assert.doesNotMatch(src, /function handleInstall\(/, "the one-click Install button/pill is removed (copy the CLI or Use instead)");
+assert.doesNotMatch(src, /className="skill-browser__install-button"/, "the Install button markup is gone");
+assert.match(src, /onChanged\?\.\(\)/, "a successful delete asks the parent to rescan installed state");
 assert.match(src, /function handleUseSkill\(\)/, "detail pane can use a selected skill without installing it");
 assert.match(src, /fetch\("\/api\/skills\/directory\/use"/, "use action calls the guarded skills use route");
 assert.match(src, /function requestSkillPrompt\(selectedSkill: SkillBrowserEntry\)/, "use and copy prompt share the guarded prompt request");
@@ -94,7 +127,15 @@ assert.match(src, /className="skill-browser__prompt-button"/, "detail pane rende
 assert.match(src, /leadingIcon="ph:clipboard-text"/, "copy-prompt action uses a clipboard icon");
 assert.match(src, /import \{ Button \}/, "SkillBrowser labelled actions use the shared Button primitive");
 assert.match(src, /import \{ IconButton \}/, "SkillBrowser icon actions use the shared IconButton primitive");
-assert.doesNotMatch(src, /<button\b/, "SkillBrowser should not hand-roll button controls");
+// Labelled/icon actions must use the shared Button/IconButton. The sole
+// exception is the bespoke CLI copy-chip (a code line with a progressive fill
+// overlay the primitive can't express) — accessible via type="button" +
+// aria-label. Assert exactly one raw button and that it's that one.
+{
+  const rawButtons = src.match(/<button\b/g) ?? [];
+  assert.equal(rawButtons.length, 1, "the only hand-rolled button is the bespoke CLI copy-chip; everything else uses the shared Button");
+  assert.match(src, /<button\s+type="button"\s+className=\{`skill-browser__cli/, "the one raw button is the clickable CLI copy line");
+}
 assert.doesNotMatch(
   src,
   /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
@@ -190,6 +231,15 @@ assert.match(css, /\.skill-browser__activity \{/, "CSS includes the 8-week activ
 assert.match(css, /\.skill-browser__activity-bar \{/, "CSS includes individual activity bars");
 assert.match(css, /\.skill-browser__card \{[\s\S]*?min-height: 72px;/, "skill cards reserve enough height for activity and install stats");
 assert.match(css, /\.skill-browser__card\.is-active \{/, "the selected card is highlighted");
-assert.match(css, /@media \(max-width: 900px\)[\s\S]*?\.skill-browser__rail \{ display: none;/, "the rail collapses on small screens");
+assert.match(
+  css,
+  /\.skill-browser__rail \{[\s\S]*?flex-direction: row/,
+  "the filter strip is a horizontal chip row inside the merged panel at every width",
+);
+assert.doesNotMatch(
+  css,
+  /\.skill-browser__rail[^{]*\{[^}]*display:\s*none/,
+  "the filter strip is the only category control, so it must never be display:none",
+);
 
 console.log("skill-browser.test.ts OK");

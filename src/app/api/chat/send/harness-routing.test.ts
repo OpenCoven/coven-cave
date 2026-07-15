@@ -428,8 +428,32 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const harnessPrompt = buildPromptWithRuntimeScope\(/,
+  /const scopedPrompt = buildPromptWithRuntimeScope\(/,
   "Every chat harness prompt should carry the runtime filesystem boundary",
+);
+
+assert.match(
+  chatRoute,
+  /const harnessPrompt = buildPromptWithBoundaryReminder\(scopedPrompt, body\.sessionId\)/,
+  "The harness prompt should carry the corrective boundary reminder when the previous turn went out of bounds",
+);
+
+assert.match(
+  chatRoute,
+  /boundarySentinel\?\.observe\(block\.name, block\.input\)/,
+  "Envelope tool_use blocks should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /if \(!isPost\) boundarySentinel\?\.observe\(name, rest\)/,
+  "pre_tool_use hook lines should feed the boundary sentinel",
+);
+
+assert.match(
+  chatRoute,
+  /recordBoundaryViolations\(boundarySessionId, boundaryViolations\)/,
+  "Boundary violations should be recorded to steer the conversation's next turn",
 );
 
 assert.match(
@@ -541,7 +565,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /buildPromptWithFamiliarStartupContext\([\s\S]*appendMentionedFilesBlock[\s\S]*\[dailyMemoryContext\]/,
+  /buildPromptWithFamiliarStartupContext\([\s\S]*appendMentionedFilesBlock[\s\S]*\[operatorProfileContext,\s*dailyMemoryContext\]/,
   "The harness prompt should include the familiar startup context before task and identity wrappers",
 );
 
@@ -876,6 +900,18 @@ assert.match(
 );
 
 assert.match(
+  chatRoute,
+  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?assistantFilter\.push\(cleaned\)[\s\S]*?kind: "assistant_chunk", text: filtered/,
+  "Coven stream-json output events must pass through the Codex assistant filter instead of being discarded as handled JSON",
+);
+
+assert.match(
+  chatRoute,
+  /ev\.type === "output" && typeof ev\.text === "string"[\s\S]*?recordStdoutErrorTail\(cleaned\)[\s\S]*?assistantFilter\.push\(cleaned\)/,
+  "Coven stream-json output events must preserve error-looking stdout text for empty-response diagnostics before filtering",
+);
+
+assert.match(
   streamEvents,
   /kind: "done";[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
   "The done StreamEvent must carry optional usage and costUsd fields (CHAT-D12-02)",
@@ -1122,6 +1158,63 @@ assert.ok(
   "--model must be pushed before the -- prompt separator",
 );
 
+// ── Directory grants (gated --add-dir passthrough) ─────────────────────────
+// Granted project roots must be forwarded to the harness or they stay
+// prompt-text-only: the runtime-scope preamble describes the grants, but a
+// harness that only trusts its cwd denies every access to them.
+assert.match(
+  chatRoute,
+  /covenRunSupportsAddDirFlag/,
+  "--add-dir forwarding must gate on the coven run capability probe",
+);
+assert.match(
+  chatRoute,
+  /binding\.harness !== "openclaw" && \(await covenRunSupportsAddDir\(\)\)/,
+  "OpenClaw never forwards --add-dir; every other harness gates on the probe",
+);
+assert.match(
+  chatRoute,
+  /addDirForwardingEnabled && !sshRuntime/,
+  "--add-dir forwarding is local-only; SSH runtimes own their remote filesystem",
+);
+assert.match(
+  chatRoute,
+  /for \(const dir of forwardAddDirs\) a\.push\("--add-dir", dir\);/,
+  "Local argv should push each granted root via the repeatable --add-dir flag",
+);
+assert.ok(
+  localArgvBlock[0].indexOf('a.push("--add-dir"') < localArgvBlock[0].indexOf('a.push("--", prompt)'),
+  "--add-dir must be pushed before the -- prompt separator",
+);
+assert.match(
+  chatRoute,
+  /\.filter\(\(root\) => root && root !== spawnRoot\)/,
+  "The spawn cwd is already trusted and must not be re-forwarded",
+);
+// The grant LIST is computed ungated (local runtimes only); the coven-run
+// probe only gates the `coven run --add-dir` forwarding, never the list
+// itself — the copilot direct spawn consumes it without the coven probe.
+assert.match(
+  chatRoute,
+  /const grantDirs = !sshRuntime\s*\n?\s*\? Array\.from\(/,
+  "Granted-root list must be computed independently of the coven run probe",
+);
+assert.match(
+  chatRoute,
+  /const forwardAddDirs = addDirForwardingEnabled && !sshRuntime \? grantDirs : \[\];/,
+  "coven run forwarding stays gated on the --add-dir capability probe",
+);
+// Copilot direct-stream grant forwarding (cave-n1yc): the direct spawn never
+// goes through `coven run`, so it must receive the UNGATED grant list and
+// emit copilot's native repeatable --add-dir pairs itself. Without this,
+// read-only copilot sessions get no granted-root access at all and full
+// sessions ride --allow-all instead of the declared grant boundary.
+assert.match(
+  chatRoute,
+  /return buildCopilotStreamArgs\(\{[\s\S]*?addDirs: grantDirs,[\s\S]*?\}\);/,
+  "The copilot direct spawn must forward the ungated grant list as addDirs",
+);
+
 assert.match(
   chatRoute,
   /responseMetadata\.confirmedModel = confirmedModel;/,
@@ -1135,5 +1228,61 @@ assert.match(
 );
 
 console.log("model parity routing tests passed");
+
+// ── Copilot JSONL stream wiring (cave-yesg) ──────────────────────────────────
+// `coven run copilot --stream-json` launches the CLI one-shot and pipes raw
+// prose, so tool calls never reach the chat. Copilot chats must spawn the CLI
+// directly with its manifest-declared stream args and parse its JSONL events;
+// every other adapter (and SSH runtimes) keeps the coven run path.
+
+assert.match(
+  chatRoute,
+  /import \{[\s\S]*?copilotStreamSpec,[\s\S]*?\} from "@\/lib\/copilot-stream";/,
+  "Chat send should source copilot stream wiring from the shared copilot-stream lib",
+);
+
+assert.match(
+  chatRoute,
+  /const copilotStream =\s*\n?\s*!sshRuntime && binding\.harness === "copilot" \? copilotStreamSpec\(\) : null;/,
+  "The copilot stream path is gated to local copilot chats and falls back to passthrough when the manifest stops declaring stream mode",
+);
+
+assert.match(
+  chatRoute,
+  /const \{ command, fixedArgs \} = copilotStream\s*\n?\s*\? \{ command: copilotStream\.executable, fixedArgs: \[\] as string\[\] \}\s*\n?\s*: covenLaunchCommand\(\);/,
+  "Copilot stream turns spawn the adapter binary directly; everything else spawns coven",
+);
+
+assert.match(
+  chatRoute,
+  /if \(copilotStream\) \{\s*\n\s*handleCopilotLine\(line, isJson\);\s*\n\s*return;/,
+  "Copilot stdout routes through the copilot JSONL handler, never the AssistantFilter (raw JSON frames must not leak into the bubble)",
+);
+
+assert.match(
+  chatRoute,
+  /copilotIdentityPreamble\(\s*\n?\s*body\.familiarId,/,
+  "The direct copilot spawn bypasses `coven run --familiar`, so the route must mirror coven's identity preamble itself",
+);
+
+assert.match(
+  chatRoute,
+  /No session, task, or name matched/,
+  "Copilot --resume misses (e.g. pre-stream conversations whose harnessSessionId lives in coven's store) must trigger the transparent fresh-session retry",
+);
+
+assert.match(
+  chatRoute,
+  /copilotText\.reset\(\);/,
+  "The resume retry must clear per-attempt copilot text-dedup state alongside the tracker",
+);
+
+assert.match(
+  chatRoute,
+  /const a = \["run", binding\.harness, "--stream-json"\];/,
+  "Adapters without a Cave-known stream protocol keep the coven run passthrough fallback",
+);
+
+console.log("copilot stream routing tests passed");
 
 console.log("harness-routing tests passed");

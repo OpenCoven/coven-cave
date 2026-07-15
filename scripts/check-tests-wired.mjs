@@ -32,7 +32,8 @@ function walk(dir, acc) {
     return acc; // dir may not exist
   }
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === ".next" || entry.name.startsWith(".")) continue;
+    // "target" and "gen" are src-tauri build-output dirs (huge, gitignored).
+    if (entry.name === "node_modules" || entry.name === ".next" || entry.name === "target" || entry.name === "gen" || entry.name.startsWith(".")) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, acc);
     else if (/\.test\.(ts|mjs)$/.test(entry.name)) acc.push(path.relative(root, full).split(path.sep).join("/"));
@@ -40,7 +41,13 @@ function walk(dir, acc) {
   return acc;
 }
 
-const onDisk = [...walk(path.join(root, "src"), []), ...walk(path.join(root, "scripts"), [])].sort();
+const onDisk = [
+  ...walk(path.join(root, "src"), []),
+  ...walk(path.join(root, "scripts"), []),
+  // src-tauri source pins (capability ACLs, release runtime) were invisible to
+  // this guard and sat orphaned — never running in any CI suite — for weeks.
+  ...walk(path.join(root, "src-tauri"), []),
+].sort();
 
 const referenced = new Set();
 for (const files of Object.values(SUITES)) {

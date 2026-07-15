@@ -10,6 +10,52 @@
 - Do not push directly to `main`; use the protected PR path for repository changes.
 - Before release or TestFlight work, reconcile through clean `main`, then verify from that state.
 
+## Starting The Tauri Desktop App
+
+Use the desktop shell when validating native-only surfaces such as the terminal,
+browser pane, window chrome, sidecar behavior, updater wiring, or Tauri
+permissions. Do not open Codex browser previews for this repo; use the native
+Tauri window, or the user's default browser for web-only checks.
+
+Preferred dev command:
+
+```bash
+bash scripts/dev-app.sh
+```
+
+Run it in the foreground from your repo checkout or worktree and leave that
+terminal attached. Stop it with `Ctrl-C`. The wrapper:
+
+- picks the first free loopback port in `3000..3010`, or honors `PORT=3001`
+- starts the Next custom dev server on that port when needed
+- writes a temporary Tauri config so `devUrl` points at the actual port
+- runs `pnpm exec tauri dev` against the desktop shell
+
+Expected early output looks like:
+
+```text
+[dev:app] port 3001 is free
+[dev:app] starting dev server on 3001
+Running BeforeDevCommand (`PORT=3001 pnpm dev`)
+> Ready on http://127.0.0.1:3001
+Running DevCommand (`cargo run --no-default-features --color always --`)
+```
+
+First launch may spend several minutes downloading and compiling Rust crates
+before the window appears. Treat Cargo `Compiling ...` lines as progress, not a
+hang. If port `3000` is occupied, for example by Docker, the wrapper should move
+to `3001`; if all ports in the range are occupied, free one or run with an
+explicit port:
+
+```bash
+PORT=3007 bash scripts/dev-app.sh
+```
+
+`pnpm dev:app` calls the same wrapper. Prefer the direct `bash` form in agent
+handoffs because its logs make the startup sequence and selected port obvious.
+Do not background the command when the goal is to verify the app started; a
+detached wrapper can exit without leaving useful Tauri logs.
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker
@@ -99,3 +145,18 @@ bd prime                # Refresh Beads context
 - Record branch/worktree, session, familiar owner, and verification evidence in the bead before handoff.
 - Close with `bd close <id>` only after merge or explicit completion criteria are satisfied.
 - Never put secrets in bead text, and never treat `.beads/issues.jsonl` as the sync source of truth.
+
+## Crediting Contributors
+
+When you re-land or build on someone else's work — a fork PR, an issue author's proposal, a co-author — **credit the human contributor with a working GitHub-linked trailer** so they show up in the contributors graph and on their profile:
+
+```
+Co-authored-by: Full Name <ID+username@users.noreply.github.com>
+```
+
+- Use the **numeric-id no-reply form**. Get the id with `gh api users/<login> --jq .id`.
+- **Never** use a machine or `.local` email (e.g. `name@Someones-Mac.local`) in a co-author trailer — it links to no account and gives **zero** credit.
+- When a squash-merge folds a contributor's PR into an internal branch, **preserve their `Co-authored-by:` line in the squash commit message** (pass an explicit commit message to the merge). A trailer that only lands as free text in the PR body does not count.
+- For substantial external contributions, also add the person to [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+
+This is about crediting **people**. Don't add trailers or footers that credit an AI model, assistant, vendor, or coding harness.

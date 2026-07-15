@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -23,7 +24,10 @@ const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const sessions = /* @__PURE__ */ new Map();
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
-const DETACH_GRACE_MS = 6e4;
+const DETACH_GRACE_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_PTY_DETACH_GRACE_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 3e5;
+})();
 function appendScrollback(session, data) {
   session.scrollback.push(data);
   session.scrollbackBytes += data.length;
@@ -54,7 +58,18 @@ function timingSafeEqualString(a, b) {
   return diff === 0;
 }
 function isExpectedToken(value) {
-  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+  if (!ACCESS_TOKEN || !value) return false;
+  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
+  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+}
+function isValidSignedAccessToken(value, secret) {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -77,17 +92,19 @@ function sameOrigin(value, expectedOrigin) {
     const url = new URL(value);
     if (url.origin === expectedOrigin) return true;
     const expected = new URL(expectedOrigin);
+    if (url.host === expected.host) return true;
     return url.protocol === expected.protocol && url.port === expected.port && isLoopbackHost(url.host) && isLoopbackHost(expected.host);
   } catch {
     return false;
   }
 }
-function isAllowedUpgradeSource(req) {
+function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
   const host = req.headers.host;
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  const loopbackHost = isLoopbackHost(host);
-  if (!loopbackHost) {
+  if (!isLoopbackHost(host)) {
+    if (!host) return false;
+    if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
     return tailnetTrusted && !req.headers.origin;
   }
   return sameOrigin(req.headers.origin, `http://${host}`);
@@ -228,6 +245,13 @@ function onWsMessage(threadId, data) {
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
     }
+  } else if (tag === 5) {
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+    }
   }
 }
 function adoptSession(session, ws, cols, rows) {
@@ -298,12 +322,13 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  if (!isAllowedUpgradeSource(req)) {
+  const tokenAuthenticated = ACCESS_TOKEN ? isAuthorized(req, query) : false;
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
+  if (ACCESS_TOKEN && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -328,6 +353,27 @@ server.on("upgrade", (req, socket, head) => {
     handlePtyConnection(ws, threadId, cols, rows, cwd);
   });
 });
-server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
-});
+server.keepAliveTimeout = 75e3;
+server.headersTimeout = 8e4;
+function startListening(attempt = 0) {
+  const currentPort = port + attempt;
+  const maxAttempts = 10;
+  server.listen(currentPort, hostname, () => {
+    console.log(`> Ready on http://${hostname}:${currentPort}`);
+    if (process.env.PORT !== String(currentPort)) {
+      process.env.PORT = String(currentPort);
+    }
+  });
+  server.once("error", (err) => {
+    if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
+      console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+      server.removeAllListeners("error");
+      server.removeAllListeners("listening");
+      startListening(attempt + 1);
+    } else {
+      console.error(err);
+      process.exit(1);
+    }
+  });
+}
+startListening();

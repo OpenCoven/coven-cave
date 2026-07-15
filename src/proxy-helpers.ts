@@ -44,7 +44,7 @@ function portFromHost(host: string | null) {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
-function isTailscaleServeHost(host: string | null) {
+export function isTailscaleServeHost(host: string | null) {
   const hostname = hostnameFromHost(host);
   return Boolean(hostname?.endsWith(".ts.net"));
 }
@@ -78,6 +78,46 @@ export function isAllowedRequestSource(value: string | null, expectedOrigin: str
   return sameOrigin(value, expectedOrigin);
 }
 
+/**
+ * The origins a genuinely first-party request may declare, in the order they
+ * should be tried.
+ *
+ * `req.nextUrl.origin` is pinned to the port Next was CONSTRUCTED with —
+ * server.ts passes the configured `PORT` to `next({ port })` before the
+ * listener runs, and `startListening()` then falls back to the next free port
+ * when the configured one is taken. So on a fallback the browser's real Origin
+ * (the port it actually connected to, carried by the Host header) never equals
+ * `nextUrl.origin` and every /api request 403s "forbidden origin" (cave-5sg).
+ *
+ * The request's own Host header carries the real authority. The host gate in
+ * proxy() has already constrained it to loopback (or an authenticated /
+ * tailnet-trusted remote), so a Host-derived origin is a safe second accepted
+ * value: a cross-site browser attacker's Origin still won't match the Host
+ * (the browser sets both and cannot forge either), and DNS-rebinding is caught
+ * by the loopback host gate. `nextUrl.origin` is kept first so the
+ * Tailscale-Serve / forwarded-host path (where Next trusts x-forwarded-host)
+ * is entirely unchanged.
+ */
+export function expectedRequestOrigins(
+  nextUrlOrigin: string,
+  protocol: string | null,
+  host: string | null,
+): string[] {
+  const origins = [nextUrlOrigin];
+  if (host) {
+    const scheme = protocol && protocol.length > 0 ? protocol : "http:";
+    const derived = `${scheme}//${host}`;
+    if (derived !== nextUrlOrigin) origins.push(derived);
+  }
+  return origins;
+}
+
+/** True when `value` (an Origin/Referer) matches ANY accepted origin. An
+ *  absent value passes (mirrors sameOrigin's null tolerance). */
+export function isAllowedRequestSourceAny(value: string | null, expectedOrigins: string[]) {
+  return expectedOrigins.some((origin) => isAllowedRequestSource(value, origin));
+}
+
 export function shouldRequireMobileAccessCredential(
   _host: string | null,
   _hasSuppliedCredential: boolean,
@@ -100,6 +140,125 @@ export function bearerFromReferer(value: string | null, expectedOrigin: string) 
   }
 }
 
+/** bearerFromReferer against ANY accepted origin — so a referer carrying the
+ *  real fallback port still yields its token when nextUrl.origin lags behind
+ *  (see expectedRequestOrigins). Returns the first token found. */
+export function bearerFromRefererAny(value: string | null, expectedOrigins: string[]) {
+  for (const origin of expectedOrigins) {
+    const token = bearerFromReferer(value, origin);
+    if (token) return token;
+  }
+  return null;
+}
+
+/**
+ * True when an unauthenticated request is a browser PAGE navigation (an
+ * HTML-accepting GET outside /api/). Only these get the HTML access-gate
+ * page; API routes, mutations, and non-browser clients (curl, fetch) keep
+ * the machine-readable JSON 401 envelope.
+ */
+export function isHtmlNavigationRequest(
+  method: string,
+  pathname: string,
+  accept: string | null,
+) {
+  if (method !== "GET") return false;
+  if (pathname === "/api" || pathname.startsWith("/api/")) return false;
+  return Boolean(accept && accept.toLowerCase().includes("text/html"));
+}
+
+/**
+ * The access-gate page served (with a 401) to unauthenticated browser
+ * navigations when COVEN_CAVE_ACCESS_TOKEN is configured. Deliberately
+ * static — nothing from the request is interpolated — and script-free.
+ * The form submits the token as the existing ACCESS_TOKEN_QUERY_PARAM GET
+ * parameter, so verification and the cookie exchange reuse the audited
+ * query-token path in the proxy; this page adds no new auth logic.
+ */
+export function accessGatePage({ invalidToken = false }: { invalidToken?: boolean } = {}) {
+  const note = invalidToken
+    ? '<p class="note" role="alert">That token didn&rsquo;t verify &mdash; it may have expired. Mint a new pairing link and try again.</p>'
+    : "";
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Access required · Coven Cave</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    display: grid;
+    place-items: center;
+    min-height: 100vh;
+    background: oklch(0.13 0.022 293);
+    color: oklch(0.93 0.01 293);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+  main {
+    width: min(360px, calc(100vw - 48px));
+    padding: 28px;
+    border: 1px solid oklch(0.93 0.01 293 / 12%);
+    border-radius: 16px;
+    background: oklch(0.165 0.025 293);
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #9a8ecd;
+    box-shadow: 0 0 0 4px oklch(0.62 0.08 293 / 16%);
+    margin-bottom: 16px;
+  }
+  h1 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
+  p { margin: 0 0 16px; color: oklch(0.66 0.018 293); font-size: 13px; }
+  .note { color: oklch(0.72 0.14 78); }
+  form { display: flex; gap: 8px; }
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    border: 1px solid oklch(0.93 0.01 293 / 22%);
+    border-radius: 999px;
+    background: oklch(0.13 0.022 293);
+    color: inherit;
+    font: inherit;
+  }
+  input:focus-visible, button:focus-visible {
+    outline: 2px solid oklch(0.62 0.08 293 / 55%);
+    outline-offset: 1px;
+  }
+  button {
+    padding: 8px 16px;
+    border: 1px solid oklch(0.93 0.01 293 / 22%);
+    border-radius: 999px;
+    background: oklch(0.20 0.028 293);
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: oklch(0.24 0.030 293); }
+</style>
+</head>
+<body>
+<main>
+  <div class="dot" aria-hidden="true"></div>
+  <h1>Access token required</h1>
+  <p>This Cave is protected. Open your pairing link, or paste an access token below.</p>
+  ${note}
+  <form method="get" action="">
+    <input type="password" name="${ACCESS_TOKEN_QUERY_PARAM}" autocomplete="off" required aria-label="Access token" placeholder="Access token">
+    <button type="submit">Unlock</button>
+  </form>
+</main>
+</body>
+</html>
+`;
+}
+
 export const ACCESS_TOKEN_COOKIE = "coven_cave_access";
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
 export const TOKEN_PARAM = "covenCaveToken";
@@ -109,4 +268,11 @@ export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",
   "multipart/form-data",
+  // The local-only backdrop endpoint accepts raw, size-bounded raster bytes so
+  // it can reject an oversized upload while streaming instead of materialising
+  // multipart/base64 overhead. The route still verifies MIME + magic bytes;
+  // SVG remains deliberately unsupported.
+  "image/jpeg",
+  "image/png",
+  "image/webp",
 ];

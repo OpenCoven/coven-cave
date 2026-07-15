@@ -15,7 +15,7 @@
 //   pnpm hfr:export --subagents links.json  # splice in delegation edges
 //
 // Options:
-//   --dir <path>            conversations dir (default $COVEN_HOME/cave-conversations)
+//   --dir <path>            conversations dir (default $COVEN_HOME/cave/conversations)
 //   --session <id>          export a single conversation by id
 //   --familiar <id>         only conversations for this familiar
 //   --subagents <path>      JSON array of {parentSessionId, childSessionId, ...}
@@ -46,7 +46,15 @@ type Options = {
 
 function defaultConversationsDir(): string {
   const home = process.env.COVEN_HOME ?? path.join(homedir(), ".coven");
-  return path.join(home, "cave-conversations");
+  const caveDir = process.env.COVEN_CAVE_HOME ?? path.join(home, "cave");
+  const current = path.join(caveDir, "conversations");
+  // Pre-migration installs still have the legacy top-level dir.
+  try {
+    readdirSync(current);
+    return current;
+  } catch {
+    return path.join(home, "cave-conversations");
+  }
 }
 
 function parseArgs(argv: string[]): Options {
@@ -102,7 +110,7 @@ function parseArgs(argv: string[]): Options {
 
 const HELP = `coven-hfr-export — export Coven familiar runs as HFR observer-hook JSONL
 
-  --dir <path>            conversations dir (default $COVEN_HOME/cave-conversations)
+  --dir <path>            conversations dir (default $COVEN_HOME/cave/conversations)
   --session <id>          export a single conversation by id
   --familiar <id>         only conversations for this familiar; must select one
   --subagents <path>      JSON array of {parentSessionId, childSessionId, ...}

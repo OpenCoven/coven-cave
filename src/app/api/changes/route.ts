@@ -7,6 +7,8 @@ import path from "node:path";
 import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import { daemonSessionRoots, resolveWithinSessionRoots } from "@/lib/server/session-project-roots";
 import { isCheckpointName, parseNumstatZ, parsePorcelainZ, planRevert } from "@/lib/git-changes";
+import { isSafeBranchName } from "@/lib/issue-worktree";
+import { provisionBranchWorktree } from "@/lib/server/issue-worktree-provision";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +22,13 @@ const DEV_NULL = os.devNull;
  * GET  ?projectRoot=<abs>&path=<rel>       → unified diff for one file (capped)
  * GET  ?projectRoot=<abs>&checkpoints=1    → list saved checkpoints
  * GET  ?projectRoot=<abs>&checkpoint=<name>→ one checkpoint's patch text (capped)
+ * GET  ?projectRoot=<abs>&branches=1       → local branches (current/worktree marked)
  * POST { projectRoot, path, confirmUntracked? } → revert ONE file (auto-checkpoints first)
  * POST { projectRoot, action: "checkpoint" } → save a patch snapshot
  * POST { projectRoot, action: "restore-checkpoint", checkpoint } → git apply a snapshot
  * POST { projectRoot, action: "delete-checkpoint", checkpoint } → remove a snapshot
+ * POST { projectRoot, action: "switch-branch", branch } → git switch (chat's branch menu)
+ * POST { projectRoot, action: "create-worktree", branch, baseRef? } → .worktrees/<branch>
  *
  * Security posture: every git invocation goes through execFile with an
  * argument array — no shell, so paths are never string-interpolated into a
@@ -77,6 +82,22 @@ async function currentBranch(repoRoot: string): Promise<string> {
   return stdout.trim();
 }
 
+/** Linked-worktree name (the checkout dir's basename) when repoRoot is a
+ *  `git worktree` checkout rather than the primary clone, else null. A linked
+ *  worktree's --git-dir (.git/worktrees/<name>) differs from its
+ *  --git-common-dir (the primary clone's .git). */
+async function worktreeName(repoRoot: string): Promise<string | null> {
+  try {
+    const { stdout } = await git(repoRoot, ["rev-parse", "--git-dir", "--git-common-dir"]);
+    const [gitDir, commonDir] = stdout.trim().split("\n");
+    if (!gitDir || !commonDir) return null;
+    if (path.resolve(repoRoot, gitDir) === path.resolve(repoRoot, commonDir)) return null;
+    return path.basename(repoRoot);
+  } catch {
+    return null;
+  }
+}
+
 /** The repo's default branch: origin/HEAD when known, else main/master, else main. */
 async function defaultBranch(repoRoot: string): Promise<string> {
   try {
@@ -91,6 +112,63 @@ async function defaultBranch(repoRoot: string): Promise<string> {
     } catch { /* not present */ }
   }
   return "main";
+}
+
+/** True when `ref` resolves to a commit in this repo. */
+async function refExists(repoRoot: string, ref: string): Promise<boolean> {
+  try {
+    await git(repoRoot, ["rev-parse", "--verify", "--quiet", ref]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type BranchRow = {
+  name: string;
+  /** This checkout's current branch. */
+  current: boolean;
+  /** Checkout dir basename when some worktree has the branch checked out. */
+  worktree: string | null;
+};
+
+/** Branch-menu payload cap: enough for real repos, bounded for pathological ones. */
+const MAX_BRANCH_ROWS = 40;
+
+/** Local branches (newest commit first, current branch pinned to the top)
+ *  plus which worktree, if any, has each one checked out — powers the chat
+ *  composer's branch menu. */
+async function listBranches(repoRoot: string) {
+  const [{ stdout: refsOut }, { stdout: wtOut }, current] = await Promise.all([
+    git(repoRoot, ["for-each-ref", "refs/heads", "--sort=-committerdate", "--format=%(refname:short)"]),
+    git(repoRoot, ["worktree", "list", "--porcelain"]),
+    currentBranch(repoRoot),
+  ]);
+  const checkedOut = new Map<string, string>();
+  let dir: string | null = null;
+  for (const line of wtOut.split("\n")) {
+    if (line.startsWith("worktree ")) dir = line.slice("worktree ".length).trim();
+    else if (line.startsWith("branch refs/heads/") && dir) {
+      checkedOut.set(line.slice("branch refs/heads/".length).trim(), path.basename(dir));
+    }
+  }
+  const branches: BranchRow[] = [];
+  for (const raw of refsOut.split("\n")) {
+    const name = raw.trim();
+    if (!name) continue;
+    // Tool-internal refs (e.g. beads' __dolt_remote_info__) aren't human
+    // switch targets — keep them out of the menu.
+    if (/^__.*__$/.test(name)) continue;
+    branches.push({
+      name,
+      current: name === current,
+      worktree: checkedOut.get(name) ?? null,
+    });
+    if (branches.length >= MAX_BRANCH_ROWS) break;
+  }
+  // Stable sort: current branch first, recency order preserved within the rest.
+  branches.sort((a, b) => Number(b.current) - Number(a.current));
+  return NextResponse.json({ ok: true, branches });
 }
 
 /** Server-generated, shell-safe feature branch name derived from the commit
@@ -239,7 +317,58 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
     /* no HEAD yet — list without counts */
   }
 
-  return NextResponse.json({ ok: true, repo: true, repoRoot, files });
+  // Current branch rides along so callers (the Projects hub's Git section)
+  // don't need a second git endpoint. Unborn repos have no HEAD — omit.
+  let branch: string | null = null;
+  try {
+    branch = await currentBranch(repoRoot);
+  } catch {
+    /* no HEAD yet */
+  }
+
+  // Linked-worktree name rides along too (composer git chip) — null in the
+  // primary checkout, the checkout dir's basename in a `git worktree`.
+  const worktree = await worktreeName(repoRoot);
+
+  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, worktree, files });
+}
+
+/** PR context for the current branch (composer git chip): the open/merged pull
+ *  request heading this branch, via `gh pr view` — null when there is no PR,
+ *  no branch (detached/unborn HEAD), or `gh` is unavailable/unauthenticated.
+ *  Read-only and network-bound, so it's a separate `?pr=1` query the client
+ *  fetches once per branch instead of riding the 5s status poll. */
+async function branchPr(repoRoot: string): Promise<NextResponse> {
+  let branch: string | null = null;
+  try {
+    branch = await currentBranch(repoRoot);
+  } catch {
+    /* no HEAD yet */
+  }
+  if (!branch || branch === "HEAD") return NextResponse.json({ ok: true, branch, pr: null });
+  try {
+    const { stdout } = await ghCli(repoRoot, [
+      "pr", "view", branch, "--json", "number,url,state,isDraft",
+    ]);
+    const parsed = JSON.parse(stdout) as {
+      number?: number; url?: string; state?: string; isDraft?: boolean;
+    };
+    if (typeof parsed.number === "number" && typeof parsed.url === "string" && PR_URL_RE.test(parsed.url)) {
+      return NextResponse.json({
+        ok: true,
+        branch,
+        pr: {
+          number: parsed.number,
+          url: parsed.url,
+          state: typeof parsed.state === "string" ? parsed.state : "OPEN",
+          isDraft: parsed.isDraft === true,
+        },
+      });
+    }
+  } catch {
+    /* no PR for this branch, or gh missing/unauthenticated — a clean null */
+  }
+  return NextResponse.json({ ok: true, branch, pr: null });
 }
 
 async function diffFile(repoRoot: string, relPath: string, absPath: string): Promise<NextResponse> {
@@ -277,6 +406,8 @@ export async function GET(req: NextRequest) {
   const filePath = req.nextUrl.searchParams.get("path");
   const wantCheckpoints = req.nextUrl.searchParams.get("checkpoints");
   const checkpointName = req.nextUrl.searchParams.get("checkpoint");
+  const wantPr = req.nextUrl.searchParams.get("pr");
+  const wantBranches = req.nextUrl.searchParams.get("branches");
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "missing projectRoot param" }, { status: 400 });
   }
@@ -310,6 +441,8 @@ export async function GET(req: NextRequest) {
         truncated,
       });
     }
+    if (wantPr !== null) return await branchPr(root.repoRoot);
+    if (wantBranches !== null) return await listBranches(root.repoRoot);
     if (filePath === null) return await listChanges(root.repoRoot);
     const abs = resolveContainedFile(root.repoRoot, filePath);
     if (!abs) return pathNotAllowed();
@@ -422,11 +555,13 @@ export async function POST(req: NextRequest) {
     projectRoot?: string;
     path?: string;
     confirmUntracked?: boolean;
-    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr";
+    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr" | "switch-branch" | "create-worktree";
     checkpoint?: string;
     message?: string;
     title?: string;
     prBody?: string;
+    branch?: string;
+    baseRef?: string;
   };
   try {
     body = await req.json();
@@ -548,6 +683,51 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
     }
+  }
+  // Switch the checkout's branch — the chat composer's branch menu. `git
+  // switch` carries clean local edits along and refuses (with a precise
+  // stderr) when they'd be clobbered or the branch is checked out in another
+  // worktree; that refusal is surfaced verbatim rather than forced with -f.
+  if (action === "switch-branch") {
+    const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+    if (!isSafeBranchName(branch)) {
+      return NextResponse.json({ ok: false, error: "invalid branch name" }, { status: 400 });
+    }
+    const isLocal = await refExists(root.repoRoot, `refs/heads/${branch}`);
+    if (!isLocal && !(await refExists(root.repoRoot, `refs/remotes/origin/${branch}`))) {
+      return NextResponse.json({ ok: false, error: "branch not found" }, { status: 404 });
+    }
+    try {
+      await git(root.repoRoot, ["switch", branch]);
+      return NextResponse.json({ ok: true, branch: await currentBranch(root.repoRoot) });
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 409 });
+    }
+  }
+  // Provision a `.worktrees/<branch>` checkout for a user-named branch (the
+  // chat composer's "New worktree…" flow) — idempotent; new branches start
+  // from origin/main when available. Naming + validation live in
+  // @/lib/issue-worktree; the git work in @/lib/server/issue-worktree-provision.
+  if (action === "create-worktree") {
+    const branch = typeof body.branch === "string" ? body.branch.trim() : "";
+    if (!isSafeBranchName(branch)) {
+      return NextResponse.json({ ok: false, error: "invalid branch name" }, { status: 400 });
+    }
+    const result = await provisionBranchWorktree(
+      root.repoRoot,
+      branch,
+      typeof body.baseRef === "string" ? body.baseRef : null,
+    );
+    if (!result.ok) {
+      return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({
+      ok: true,
+      worktree: result.worktree,
+      branch: result.branch,
+      created: result.created,
+      baseRef: result.baseRef,
+    });
   }
   if (action === "restore-checkpoint" || action === "delete-checkpoint") {
     if (typeof body.checkpoint !== "string") {

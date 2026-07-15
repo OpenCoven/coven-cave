@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
-import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher } from "@/lib/coven-bin";
 import {
   openCovenToolStatuses,
   type OpenCovenToolStatus,
@@ -57,18 +57,20 @@ function checkCovenCli(tool: OpenCovenToolStatus | undefined): Step {
   if (!tool?.installed) {
     return {
       ok: false,
-      hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+      hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
     };
   }
-  if (tool.outdated) {
+  if (tool.outdated || !tool.compatible) {
     const detail =
       tool.current && tool.latest
         ? `Update available: ${tool.current} -> ${tool.latest}`
+        : tool.current
+          ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
         : "Update available";
     return {
       ok: false,
       detail,
-      hint: `Update the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
+      hint: `Update the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
     };
   }
   const location = tool.path ?? tool.binary;
@@ -85,7 +87,10 @@ async function commandPath(binary: string): Promise<string | null> {
       env: covenSpawnEnv(),
       timeout: 1500,
     });
-    return stdout.trim().split(/\r?\n/)[0] || null;
+    const lines = stdout.split(/\r?\n/);
+    return process.platform === "win32"
+      ? pickWindowsLauncher(lines)
+      : lines.map((l) => l.trim()).find(Boolean) ?? null;
   } catch {
     return null;
   }
@@ -173,6 +178,12 @@ async function checkDaemon(): Promise<Step> {
   return { ok: false, hint: res.error ?? `daemon http ${res.status}` };
 }
 
+/**
+ * Advisory since familiar creation moved out of the wizard: the roster count
+ * still ships in the payload (Salem context and the wizard read it), but a
+ * familiar-less machine is DONE with setup — the in-app Summoning Circle
+ * (Familiars surface) owns creation now, so this never gates `complete`.
+ */
 async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   const res = await callDaemon<unknown[]>({
     path: "/api/v1/familiars",
@@ -183,6 +194,7 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
     return {
       step: {
         ok: true,
+        optional: true,
         detail: `${count} familiar${count === 1 ? "" : "s"} loaded`,
       },
       count,
@@ -191,8 +203,9 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   return {
     step: {
       ok: false,
+      optional: true,
       hint: res.ok
-        ? "Create a familiar from any available runtime source, or add one to ~/.coven/familiars.toml."
+        ? "Summon your first familiar inside Cave — Familiars → Summon familiar."
         : "daemon offline",
     },
     count,
@@ -240,7 +253,7 @@ async function checkBinding(
   if (!hasDefaults) {
     return {
       ok: false,
-      hint: "Create a familiar from Codex, Claude Code, Hermes, or an OpenClaw agent.",
+      hint: "Summon a familiar inside Cave (Familiars → Summon familiar) from Codex, Claude Code, Hermes, or an OpenClaw agent.",
     };
   }
   if (!familiarsAvailable) {
@@ -262,7 +275,7 @@ async function checkBinding(
     if (available.length > 0) {
       return {
         ok: false,
-        hint: `Default binding "${harness} · ${model}" points at ${label}, which has no installed runtime or agent. Create a familiar from ${available.join(", ")} to update your default.`,
+        hint: `Default binding "${harness} · ${model}" points at ${label}, which has no installed runtime or agent. Summon a familiar from ${available.join(", ")} to update your default.`,
       };
     }
     return {
@@ -305,9 +318,14 @@ export async function GET() {
     adapters: adapters.step,
     daemon,
     familiars: familiarsRes.step,
-    binding,
+    // Advisory like `familiars`: creation lives in the in-app Summoning
+    // Circle, so setup is complete once the infrastructure is — the binding
+    // detail stays informative for the checklist and diagnostics only.
+    binding: { ...binding, optional: true },
   };
-  // Optional steps (git) surface in the checklist but never gate completion.
+  // Optional steps (git, familiars, binding) surface in the checklist but
+  // never gate completion — `complete` means the INFRASTRUCTURE is ready
+  // (CLI, home, runtime, daemon); the first familiar is summoned in-app.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
   return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });

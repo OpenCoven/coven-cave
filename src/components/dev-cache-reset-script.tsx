@@ -1,5 +1,3 @@
-import Script from "next/script";
-
 const DEV_CACHE_RESET_SCRIPT = `
 (function () {
   try {
@@ -51,10 +49,10 @@ const DEV_CACHE_RESET_SCRIPT = `
 
 export function DevCacheResetScript() {
   if (process.env.NODE_ENV !== "development") return null;
+  // This must be in the initial document, before hydration and before app code.
   return (
-    <Script
+    <script
       id="dev-cache-reset"
-      strategy="beforeInteractive"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: development-only stale SW cleanup before hydration
       dangerouslySetInnerHTML={{ __html: DEV_CACHE_RESET_SCRIPT }}
     />

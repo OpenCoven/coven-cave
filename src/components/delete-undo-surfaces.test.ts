@@ -10,6 +10,7 @@ for (const rel of [
   "./vault-panel.tsx",
   "./automations-view.tsx",
   "./journal/journal-entries.tsx",
+  "./familiar-studio-lifecycle-tab.tsx",
 ]) {
   const src = read(rel);
   assert.match(src, /import \{ useUndoDelete \} from "@\/lib\/use-undo-delete"/, `${rel} imports useUndoDelete`);
@@ -25,19 +26,26 @@ for (const rel of [
   assert.match(src, /deletePending\.item\.key/, "vault hides the pending secret row during the undo window");
 }
 
-// Automations: reminders + automations both hide by pending id; reminder, codex,
-// and bulk deletes all route through the deferred helper.
+// Automations: inbox rows + automations both hide by pending id; the inbox
+// bulk delete routes through the deferred helper (no async confirm).
 {
   const src = read("./automations-view.tsx");
-  assert.match(src, /hiddenIds\.has\(it\.id\)/, "automations hides pending reminders/inbox rows");
+  assert.match(src, /hiddenIds\.has\(it\.id\)/, "automations hides pending inbox rows");
   assert.match(src, /hiddenIds\.has\(a\.id\)/, "automations hides pending codex automations");
-  assert.match(src, /const bulkDeleteReminders = \(\) =>/, "bulk reminder delete is deferred (no async confirm)");
+  assert.match(src, /const inboxBulkDelete = \(\) =>/, "bulk inbox delete is deferred (no async confirm)");
 }
 
 // Journal: a pending date makes the day read as empty without mutating `day`.
 {
   const src = read("./journal/journal-entries.tsx");
   assert.match(src, /day\?\.date !== deletePending\?\.item/, "journal treats the pending day as empty during the undo window");
+}
+
+// Familiar lifecycle: a familiar pending removal hides from BOTH the active and
+// archived lists during the undo window (the toast is its only handle).
+{
+  const src = read("./familiar-studio-lifecycle-tab.tsx");
+  assert.match(src, /f\.id === pendingRemoveId/, "lifecycle tab hides the pending familiar row during the undo window");
 }
 
 console.log("delete-undo-surfaces.test.ts OK");

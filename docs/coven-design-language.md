@@ -7,7 +7,10 @@ live reference page at `/aesthetic`; per-surface decisions live in
 `docs/specs/`. This document ties them together and codifies the rules that
 were previously only implicit.
 
-**When this doc and the code disagree, the code is right — then fix one of them.**
+**Code is authoritative for implemented visual and token behavior.
+Section 10 is authoritative for interface language; tracked product deviations
+are migration debt, not precedent. Reconcile every mismatch rather than
+letting it drift.**
 
 ---
 
@@ -64,9 +67,10 @@ color.
   `--border-strong` (22%) for inputs/emphasis. Because they derive from
   `--foreground`, they invert automatically in light mode.
 - Radii: `--radius-control: 8px` · `--radius-card: 12px` ·
-  `--radius-panel: 16px` · and the signature **999px pill** (§3).
+  `--radius-panel: 16px` · and the signature **999px pill** (§3), tokenized as
+  `--radius-pill` so it tracks the corner-radius appearance setting.
 - Spacing: 4px grid (`--space-1` … `--space-10`).
-- Type: Geist Sans + JetBrains Mono; ladder `--text-2xs` (10px) →
+- Type: EB Garamond (display/hero) + Inter (body/UI) + JetBrains Mono (code/labels) — Coven canon per OpenCoven DESIGN.md §4. Geist stays in the selectable catalog but is no longer the shipped default. Ladder: `--text-2xs` (10px) →
   `--text-display` (28px); eyebrow tracking `0.08em` + uppercase for tiny
   labels.
 - Motion: `--duration-fast: 120ms` / `base: 180ms` / `slow: 260ms` with the
@@ -154,7 +158,7 @@ The witchiness operates on **two levels, deliberately dosed**:
 |---|---|
 | **familiar** | an agent. Its identity contract is `SOUL.md` + `IDENTITY.md` + **`ward.toml`** (guardrails) + memory |
 | **coven** | a multi-familiar group session; also the org/instance |
-| **cave** | this app — the local control room (`~/.coven`, `cave-state.json`) |
+| **cave** | this app — the local control room (`~/.coven/cave`, `state.json`) |
 | **sacrifice** | soft-delete a session (reversible; `sacrificedAt`) |
 | **summon** | restore/unarchive a session |
 | **ward** | a familiar's guardrail file |
@@ -236,21 +240,153 @@ Non-negotiables, all with existing primitives:
 - **Compact by default, touch-safe on mobile**: 44px `--touch-target`,
   ≥16px inputs on touch (iOS zoom), safe-area insets tokenized.
 
-## 8. Shipping checklist for a new surface
+## 8. Chrome discipline & progressive disclosure
+
+Density (§1) is about how much *content* fits; chrome discipline is about how
+little *machinery* is allowed to sit on top of it. Powerful ≠ busy: every
+capability stays reachable, but visibility is earned, not granted.
+
+### The chrome budget
+
+A surface header (or toolbar) shows at most **three always-visible actions plus
+one overflow**. Everything else moves down the disclosure ladder. Tab strips
+count: two stacked strips on one surface is over budget — merge or demote one.
+Badges are chrome too: a badge means **live state** (running, failed, unread);
+static metadata is muted text, not a pill.
+
+### The disclosure ladder
+
+Place every control on the lowest rung it can live on, by
+`frequency × destructiveness`:
+
+1. **Always visible** — the surface's primary verb(s) and anything used
+   constantly (search, the single CTA).
+2. **Reveal on hover/focus** — per-row/per-card secondary actions. Use the
+   shared `.reveal-scope` / `.reveal-on-hover` utilities (`globals.css`), never
+   ad-hoc opacity: they guarantee keyboard parity (`:focus-within` reveal),
+   touch parity (permanently visible on coarse pointers), a11y-tree presence
+   (opacity-hide only), and token-driven motion.
+3. **Overflow menu** — occasional actions. Use `ui/overflow-menu.tsx`
+   (`OverflowMenu`): the standard "⋯" trigger + `PopoverItem` menu with
+   `aria-haspopup`/`aria-expanded`, auto-close on select, and the Popover
+   scaffold's Escape/focus-return for free.
+4. **⌘K only** — rare, global, or expert actions. Anything relocated off rungs
+   1–3 **must** be registered in the command palette so it stays one keystroke
+   away.
+
+**Relocation, never removal.** Minimalism passes may move a control down the
+ladder; deleting a capability needs its own decision. Every relocated control
+stays reachable in ≤2 interactions.
+
+### Quiet hierarchy
+
+- **One hairline per boundary.** Where two panes or a card and its container
+  meet, exactly one border owns the seam — no double hairlines.
+- **Prefer surface steps to borders.** Inside a card, separate regions with
+  the elevation ladder (§2) and spacing, not nested boxes.
+- **Selection summons tools.** Bulk-action toolbars appear with selection and
+  leave with it (`ui/selection-toolbar.tsx`), not as permanent chrome.
+- **Panels open on demand, closed by default.** Inspectors, debug panes, and
+  secondary rails start closed; opening is one action (toolbar, overflow, or
+  ⌘K) and the state persists per the surface's conventions.
+
+## 9. Shipping checklist for a new surface
 
 1. Tokens only — no hardcoded colors, radii, or font sizes; verify in dark
    *and* light, plus one non-default theme.
 2. Reuse the primitives (`src/components/ui/`: Button, EmptyState, Skeleton,
    Popover, Modal, ViewHeader, SearchInput…) before writing new ones.
-3. Empty, loading, and error states designed — each ending with a next step.
-4. Announcer calls on mutations; focus rings; Escape/focus-return on anything
+3. Chrome within budget (§8): ≤3 always-visible actions + one `OverflowMenu`;
+   secondary row actions on `.reveal-on-hover`; relocated actions in ⌘K.
+4. Empty, loading, and error states designed — each ending with a next step.
+5. Announcer calls on mutations; focus rings; Escape/focus-return on anything
    that opens; reduced-motion story for anything that moves.
-5. Container queries for narrow-pane behavior; lazy-load if the chunk is
+6. Container queries for narrow-pane behavior; lazy-load if the chunk is
    heavy; respect the bundle budget.
-6. Copy: sentence case, terse, one flourish maximum, domain nouns not
+7. Copy follows §10: sentence case, persistent labels, canonical placeholders,
+   actionable state copy, one flourish maximum, and domain nouns rather than
    synonyms.
-7. Source-text pin tests for the contracts you'd be sad to lose (this repo's
+8. Source-text pin tests for the contracts you'd be sad to lose (this repo's
    convention — see the existing `*.test.ts` pin suites).
+
+## 10. Interface copy and field contract
+
+The visual rules above and the language rules below form one interface
+contract. Contextual prose stays with its surface; reusable components own
+control semantics, state hierarchy, and accessibility.
+
+### Vocabulary
+
+- **Tasks** is the top-level user-facing noun in navigation, mobile tabs,
+  headings, commands, empty states, and actions. Use **task board** when the
+  kanban/table layout itself matters. Do not use bare **Board** as a
+  destination.
+- Use **task** instead of visible **card** unless describing card-shaped
+  presentation. Internal card types and APIs do not need cosmetic renames.
+- Use **chat** for a conversation people open and **session** only for
+  execution, debugging, or connection contexts where the distinction matters.
+- Keep the domain nouns in §4. Use **scheduled job** in ordinary interface
+  copy; reserve **cron** for cron syntax and scheduler diagnostics.
+- Use **project** for the user-facing codebase container. Use **working
+  directory** or `cwd` only when the filesystem concept is the actual field.
+
+### Action copy
+
+- Use sentence case, active voice, and the action's real verb: **Save changes**,
+  **Create task**, **Open settings**, **Retry**.
+- Avoid generic **Submit**, **OK**, and **Confirm** when the actual operation is
+  known.
+- Keep one verb through the lifecycle: **Publish** → **Publishing…** →
+  **Published**.
+- Icon-only controls need state-aware accessible names. Toggle names describe
+  the next action: **Pin chat** / **Unpin chat**.
+- Name destructive objects and consequences. Prefer undo for reversible
+  actions; use confirmation for irreversible actions.
+
+### Field semantics
+
+- Every editable control has a persistent visible label or an equally durable
+  accessible name for a self-explanatory global control. A placeholder never
+  replaces a persistent label.
+- Put purpose in the label, constraints in help text, and repair instructions
+  in the error slot. One string does not perform multiple jobs.
+- Mark optional fields beside the label with **Optional**. Required controls
+  use native required semantics rather than decorative asterisks.
+- Connect help and errors with `aria-describedby` on React and equivalent
+  native accessibility semantics. Invalid controls expose their invalid state
+  programmatically.
+
+### Placeholder grammar
+
+Placeholders show an example, expected format, or input intent. They do not
+repeat the label, hold required instructions, disguise a default value, or
+carry a keyboard shortcut that disappears while typing.
+
+- Search a known collection: `Search <items>…`
+- Narrow a visible collection: `Filter <items>…`
+- Open a deferred choice: `Choose <item>…`
+- Create or compose: `Describe the task…`, `Message Sage…`, `Add a note…`
+- Show format: `e.g., owner/repository` or `e.g., 0 9 * * 1-5`
+- Secret input: `Paste personal access token`, paired with a provider-specific
+  label
+
+Use the single ellipsis character `…`, never three periods. Put optionality,
+shortcut hints, and critical constraints in persistent text outside the
+placeholder.
+
+### State copy
+
+- Name small loads: **Loading tasks…**, not bare **Loading…**. Use skeletons
+  when the content shape is known.
+- A true empty state has a short status headline, a concrete next step, and an
+  action when the person can resolve it.
+- A filtered empty state names the scope or query and offers **Clear filters**
+  where appropriate.
+- Never render a failed request as a convincing empty collection. Use
+  **Couldn't load <object>**, safe diagnostic detail, and a concrete recovery
+  action such as **Retry** or **Open settings**.
+- Announcements and toasts use the same action vocabulary as the visible
+  control.
 
 ---
 

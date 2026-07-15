@@ -1,0 +1,25 @@
+{
+  "name": "mcp-client",
+  "version": "0.1.0",
+  "description": "Connect to any MCP server (Zapier, GitHub, Sequential Thinking, \u2026) with progressive disclosure \u2014 tool schemas load on demand instead of bloating the context window.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Universal MCP Client",
+    "shortDescription": "Connect to any MCP server (Zapier, GitHub, Sequential Thinking, \u2026) with progressive disclosure \u2014 tool schemas load on demand instead of bloating the context window.",
+    "longDescription": "Use when interacting with external MCP servers \u2014 listing configured servers, discovering tools, reading one tool's schema, or executing a call \u2014 through a bundled Python client script instead of registering a server's full tool surface in context. Supports stdio (command + args), SSE, streamable HTTP, and Bearer-auth remote servers via a Claude-Desktop-compatible mcp-config.json.",
+    "developerName": "OpenCoven",
+    "category": "Core MCP",
+    "capabilities": [
+      "mcp",
+      "client",
+      "zapier",
+      "tools",
+      "progressive-disclosure",
+      "integrations"
+    ],
+    "defaultPrompt": "Help me use Universal MCP Client safely."
+  }
+}

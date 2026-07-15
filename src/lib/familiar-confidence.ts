@@ -1,3 +1,8 @@
+// DEMOTED: synthetic weighted-factor confidence, now used only by the
+// dashboard cockpit's roster table. The familiar analytics page derives its
+// headline confidence from real thread self-reports instead — see
+// src/lib/thread-confidence.ts (deriveThreadConfidence).
+
 import type { DaemonFamiliar } from "@/app/api/familiars/route";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { FamiliarGrowthReport } from "@/lib/familiar-growth-signals";

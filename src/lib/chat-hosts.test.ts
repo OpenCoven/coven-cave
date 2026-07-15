@@ -78,8 +78,16 @@ assert.deepEqual(
   { ok: true, runtime: { kind: "ssh", host: "vm-1", cwd: "/srv/elsewhere", command: "coven" } },
   "resume re-pins the conversation's host AND its recorded cwd",
 );
-// …but a host that has since been unregistered falls back to the binding.
-assert.deepEqual(resolve(null, "ssh:gone-host:/srv"), { ok: true, runtime: null });
+// …but a host that has since been unregistered FAILS CLOSED: silently falling
+// back to the (local) binding lost the remote context and surprise-relocated
+// execution (cave-4zdp). The error names the host and the re-pick path.
+{
+  const gone = resolve(null, "ssh:gone-host:/srv");
+  assert.equal(gone.ok, false, "recorded-host-gone refuses, not silently local");
+  assert.match(gone.error, /gone-host/, "names the missing host");
+  assert.match(gone.error, /no longer registered/, "explains why");
+  assert.match(gone.error, /host chip/i, "points at the re-pick affordance");
+}
 assert.deepEqual(resolve(null, "local:/Users/val/repo"), { ok: true, runtime: null }, "local conversations defer to the binding");
 assert.deepEqual(resolve(null, null), { ok: true, runtime: null });
 

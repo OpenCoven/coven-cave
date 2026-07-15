@@ -14,9 +14,10 @@ async function gotoApp(page: Page) {
   });
   await page.goto("/");
   // Wait until the workspace has hydrated — the global keydown handler is
-  // attached in a useEffect, so a key pressed before hydration is lost. The
-  // home composer textbox is a reliable "interactive now" signal.
-  await page.getByRole("textbox").first().waitFor({ state: "visible", timeout: 30_000 });
+  // attached in a useEffect, so a key pressed before hydration is lost. The app
+  // boots into Chat (cave-hsa6); the always-present top-bar search input (role
+  // searchbox) is the reliable "interactive now" signal on every boot surface.
+  await page.getByRole("searchbox").first().waitFor({ state: "visible", timeout: 30_000 });
   await page.waitForTimeout(500);
 }
 
@@ -24,7 +25,9 @@ async function gotoApp(page: Page) {
 // so match the dialog by its accessible name rather than an aria-label attr.
 const sheet = (page: Page) => page.getByRole("dialog", { name: /Keyboard shortcuts/ });
 
-const GROUPS = ["Panels & navigation", "Terminal & panes", "Browser", "Composer", "Slash menu", "Other"];
+// "Terminal & panes" was removed from the catalog — its bindings lived only in
+// the unmounted ComuxView, and the sheet stays truthful (cave-7c9i).
+const GROUPS = ["Panels & navigation", "Browser", "Composer", "Slash menu", "Other"];
 
 test.describe("keyboard shortcuts sheet", () => {
   test("opens with ?, lists every catalog group, closes with Escape", async ({ page }) => {
@@ -39,7 +42,9 @@ test.describe("keyboard shortcuts sheet", () => {
     }
     // Representative rows, including one from the #1605 additions.
     await expect(sheet(page).getByText("Open the command palette")).toBeVisible();
-    await expect(sheet(page).getByText("Broadcast input to every visible pane")).toBeVisible();
+    await expect(sheet(page).getByText("Recall prompt history (home composer, empty input)")).toBeVisible();
+    // Removed-with-the-group row must NOT resurface (cave-7c9i).
+    await expect(sheet(page).getByText("Broadcast input to every visible pane")).toBeHidden();
 
     await page.keyboard.press("Escape");
     await expect(sheet(page)).toBeHidden();
@@ -54,9 +59,11 @@ test.describe("keyboard shortcuts sheet", () => {
 
   test("? does nothing while typing in a text field", async ({ page }) => {
     await gotoApp(page);
-    const composer = page.getByRole("textbox").first();
-    await composer.click();
-    await composer.pressSequentially("?");
+    // Any editable target exercises the guard; the top-bar search input is the
+    // one always present on the chat boot surface (cave-hsa6).
+    const editable = page.getByRole("searchbox").first();
+    await editable.click();
+    await editable.pressSequentially("?");
     // The guard (isEditableTarget) must suppress the sheet so "?" types normally.
     await expect(sheet(page)).toBeHidden();
   });

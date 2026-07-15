@@ -22,8 +22,11 @@ struct CaveConnection: Codable, Equatable {
             return URL(string: trimmed)
         }
 
-        // MagicDNS .ts.net → HTTPS, default port (Tailscale Serve terminates TLS).
-        if trimmed.lowercased().hasSuffix(".ts.net") || trimmed.lowercased().contains(".ts.net/") {
+        // MagicDNS .ts.net → HTTPS, with or without an explicit port
+        // (`tailscale serve` often terminates TLS on :8443, so a relocated
+        // "host.ts.net:8443" must still derive https, not http).
+        let hostPart = trimmed.split(separator: ":").first.map(String.init) ?? trimmed
+        if hostPart.lowercased().hasSuffix(".ts.net") || trimmed.lowercased().contains(".ts.net/") {
             return URL(string: "https://\(trimmed)")
         }
 
@@ -72,7 +75,11 @@ struct CaveConnection: Codable, Equatable {
             add("https://\(hostname):8443")   // Tailscale Serve's usual TLS port
             add("https://\(hostname)")        // bare 443
         } else {
-            for port in ["3000", "4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
+            // The desktop falls back through 3000-3010 when ports are taken
+            // (scripts/dev-app.sh / server.ts PORT), so probe the whole range —
+            // discovery is concurrent, so the extra candidates cost no wall time.
+            for port in 3000...3010 { add("http://\(hostname):\(port)") }
+            for port in ["4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
             add("https://\(hostname):8443")
         }
         return out

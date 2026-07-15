@@ -1,0 +1,43 @@
+{
+  "name": "remotion",
+  "version": "0.1.0",
+  "description": "Create and edit programmatic videos in React with Remotion \u2014 compositions, animations, sequencing, audio, and captions backed by a 30-topic rules library.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "remotion",
+    "video",
+    "react",
+    "animation",
+    "composition",
+    "captions"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/remotion",
+  "x-coven": {
+    "displayName": "Remotion Video",
+    "category": "Media & Creative",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/coleam00/second-brain-skills",
+      "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/remotion",
+      "https://www.remotion.dev/docs"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

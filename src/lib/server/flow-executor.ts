@@ -24,6 +24,9 @@ import { flowMissingRequiredInputs } from "@/lib/required-inputs";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun } from "@/lib/server/flow-store";
+import { startCopilotFlowRun } from "@/lib/server/flow-copilot-session";
+import { copilotStreamSpec } from "@/lib/copilot-stream";
+import { isSshRuntime } from "@/lib/familiar-runtime";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 
@@ -142,6 +145,68 @@ export async function startFlowSession(
     triggerInput: options.triggerInput,
     mode: options.mode,
   });
+
+  const finishStart = async (sessionId: string): Promise<StartFlowSessionResult> => {
+    await Promise.all([
+      familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
+      setSessionTitle(
+        sessionId,
+        options.targetNodeId ? `Flow step: ${flow.name} / ${options.targetNodeId}` : `Flow: ${flow.name}`,
+      ),
+    ]);
+
+    const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
+    const byId = new Map(flow.nodes.map((node) => [node.id, node]));
+    const customData = extractFlowCustomData(flow);
+    const redacted = flowRunRedactsData(flow, options.mode ?? "manual");
+    const seenActiveAgentStep = { value: false };
+    const run = await recordFlowRun({
+      flowId: flow.id,
+      flowName: flow.name,
+      status: "running",
+      mode: options.mode ?? "manual",
+      ...(Object.keys(customData).length > 0 ? { customData } : {}),
+      ...(redacted ? { redacted: true } : {}),
+      startedAt: new Date().toISOString(),
+      steps: order.map((stepId) => ({
+        id: stepId,
+        type: byId.get(stepId)?.type ?? "unknown",
+        status: initialFlowRunStepStatus(flow, stepId, seenActiveAgentStep),
+      })),
+      summary: `agent session ${sessionId.slice(0, 8)}`,
+      source: "cave",
+      sessionId,
+      flowSnapshot: flow,
+    });
+
+    return { ok: true, run, sessionId, executor: "session" };
+  };
+
+  // The daemon's nonInteractive launch mangles multi-word prompts for the
+  // copilot adapter (unquoted argv split — the CLI errors with "your prompt
+  // was not quoted"), which broke every copilot flow session, including
+  // research-mission iterations. Chat answers the same daemon deficiency by
+  // spawning the CLI directly with a real argv (cave-yesg); do the same here.
+  // Local runtimes only — SSH runtimes stay on the daemon path to the remote
+  // host. The run persists its transcript as a Cave conversation under the
+  // session id, which is where the flow transcript endpoint and the
+  // research-mission reconcile already look first.
+  const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
+  if (binding.harness === "copilot" && !sshBound) {
+    const spec = copilotStreamSpec();
+    if (spec) {
+      const { sessionId } = startCopilotFlowRun({
+        spec,
+        prompt,
+        projectRoot,
+        familiarId,
+        familiarName: "display_name" in binding ? binding.display_name : undefined,
+        familiarRole: "role" in binding ? binding.role : undefined,
+      });
+      return finishStart(sessionId);
+    }
+  }
+
   const res = await callDaemon<{ id: string; status: string }>({
     method: "POST",
     path: "/api/v1/sessions",
@@ -170,37 +235,5 @@ export async function startFlowSession(
   }
 
   const sessionId = res.data.id;
-  await Promise.all([
-    familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
-    setSessionTitle(
-      sessionId,
-      options.targetNodeId ? `Flow step: ${flow.name} / ${options.targetNodeId}` : `Flow: ${flow.name}`,
-    ),
-  ]);
-
-  const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
-  const byId = new Map(flow.nodes.map((node) => [node.id, node]));
-  const customData = extractFlowCustomData(flow);
-  const redacted = flowRunRedactsData(flow, options.mode ?? "manual");
-  const seenActiveAgentStep = { value: false };
-  const run = await recordFlowRun({
-    flowId: flow.id,
-    flowName: flow.name,
-    status: "running",
-    mode: options.mode ?? "manual",
-    ...(Object.keys(customData).length > 0 ? { customData } : {}),
-    ...(redacted ? { redacted: true } : {}),
-    startedAt: new Date().toISOString(),
-    steps: order.map((stepId) => ({
-      id: stepId,
-      type: byId.get(stepId)?.type ?? "unknown",
-      status: initialFlowRunStepStatus(flow, stepId, seenActiveAgentStep),
-    })),
-    summary: `agent session ${sessionId.slice(0, 8)}`,
-    source: "cave",
-    sessionId,
-    flowSnapshot: flow,
-  });
-
-  return { ok: true, run, sessionId, executor: "session" };
+  return finishStart(sessionId);
 }

@@ -12,7 +12,7 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["general", "daemon", "familiars", "mobile", "appearance", "about"];
+  const ids = ["profile", "general", "daemon", "familiars", "mobile", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);
@@ -25,7 +25,7 @@ test("getSectionMeta / settingsSectionLabel resolve, with a safe fallback", () =
   assert.equal(getSectionMeta("appearance").label, "Appearance");
   assert.equal(settingsSectionLabel("mobile"), "Phone");
   // Unknown id falls back to the first section rather than throwing.
-  assert.equal(getSectionMeta("nope").id, "general");
+  assert.equal(getSectionMeta("nope").id, "profile");
 });
 
 // ── SettingsOverview header (source-text) ────────────────────────────────────
@@ -44,6 +44,7 @@ test("the overview header renders mark, kicker, title, description, and the stri
 // ── shell wiring (source-text) ───────────────────────────────────────────────
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
 
 test("the shell sources sections from settings-sections and renders the overview", () => {
   assert.match(shell, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
@@ -56,6 +57,7 @@ test("the shell sources sections from settings-sections and renders the overview
   // The shared search index is sourced from settings-sections.
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header.
+  assert.match(profile, /section="profile"/, "profile page passes its section from the split panel");
   for (const id of ["general", "daemon", "mobile", "appearance", "about"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }

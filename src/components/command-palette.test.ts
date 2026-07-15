@@ -56,10 +56,28 @@ assert.match(
   "CommandPalette reports query edits back to the top-bar search",
 );
 
+assert.match(source, /SETTINGS_INDEX/, "the palette reuses the canonical Settings search index");
+assert.match(source, /kind:\s*"open-setting"/, "Settings results dispatch an exact navigation intent");
+assert.match(source, /aria-label="Filter search results"/, "result categories expose an accessible filter toolbar");
+assert.match(source, /paletteResultSummary/, "query and category changes produce a result summary");
+assert.match(source, /aria-live="polite"/, "result summaries are announced without interrupting the user");
+assert.match(source, /recentSearches\.map/, "empty-query browse mode exposes recent searches");
+assert.match(source, /Clear recent searches/, "recent search history is explicitly clearable");
+assert.match(source, /aria-label="Clear search query"/, "the palette offers a visible clear-query action");
+
 assert.match(
   source,
   /kind:\s*"salem-answer"/,
   "Command palette includes a Salem AI answer row",
+);
+
+// (cave-42r5) Ask-Salem trails the local matches: Enter on a typed query opens
+// the best local hit; the AI row is the fallback (rows[0] only when nothing
+// matches locally).
+assert.match(
+  source,
+  /return \[\.\.\.localRows, \.\.\.salemRows\];/,
+  "local matches come before the Ask-Salem fallback row",
 );
 
 assert.match(
@@ -138,7 +156,7 @@ assert.match(
 );
 assert.doesNotMatch(
   source,
-  /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.groupchat|addons\?\.journal|addons\?: AddonsConfig/,
+  /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.journal|addons\?: AddonsConfig/,
   "surface rows are no longer hidden behind add-on config",
 );
 assert.match(
@@ -161,8 +179,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const \{ projects \} = useProjects\(\)/,
-  "palette reads the project list to offer project navigation",
+  /const \{ projects \} = useProjects\(\{ familiarId: activeFamiliarId, enabled: open \}\)/,
+  "palette scopes project navigation to the active familiar's granted projects and only fetches while open",
 );
 assert.match(
   source,
@@ -174,11 +192,12 @@ assert.match(
   /intent:\s*\{ kind: "open-project", root: p\.root \}/,
   "an open-project row carries the project root",
 );
-// Consumer: workspace opens the Projects tab then focuses the chosen project.
+// Consumer: workspace latches the Projects tab (fresh-mount race, cave-c2zf),
+// opens it, then focuses the chosen project.
 assert.match(
   workspace,
-  /intent\.kind === "open-project"[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
-  "workspace opens the Projects tab then focuses the chosen project",
+  /intent\.kind === "open-project"[\s\S]{0,200}?markProjectsTabPending\(\)[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
+  "workspace latches then opens the Projects tab and focuses the chosen project",
 );
 
 // Board view-switch: the palette offers "Board: Kanban/Table/Gantt" rows that
@@ -202,3 +221,12 @@ assert.match(
 );
 
 console.log("command-palette.test.ts OK");
+
+// ── Salem answer stays inside the palette (issue #2988) ──────────────────────
+// Long answers previously grew the region unboundedly and overflowed the
+// viewport; it now caps and scrolls like the listbox below it.
+assert.match(
+  source,
+  /max-h-\[45vh\] overflow-y-auto border-b/,
+  "the Salem answer region caps its height and scrolls internally",
+);

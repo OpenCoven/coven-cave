@@ -7,11 +7,16 @@ const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url),
 // attachmentIcon (and fileToAttachment/isTextLike) moved to the shared lib so
 // the home composer can reuse the exact same capture + glyph logic.
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
+// The auto-grow routine moved to the shared hook (use-autogrow-textarea) so the
+// chat and home composers can't drift; the growth-behavior pins live against
+// the hook source, with call-site pins keeping both composers on it.
+const autogrowHook = readFileSync(new URL("../lib/use-autogrow-textarea.ts", import.meta.url), "utf8");
+const homeComposerSource = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 
 assert.match(
-  source,
-  /function resizeComposer\(\)[\s\S]*?Math\.min\(el\.scrollHeight,\s*maxHeight\)/,
-  "Chat composer should auto-grow up to a bounded height",
+  autogrowHook,
+  /Math\.min\(el\.scrollHeight,\s*maxHeight\)/,
+  "Composer textareas should auto-grow up to a bounded height",
 );
 
 assert.match(
@@ -21,21 +26,27 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /const computedMaxHeight = Number\.parseFloat\(window\.getComputedStyle\(el\)\.maxHeight\);[\s\S]*const maxHeight = Number\.isFinite\(computedMaxHeight\) \? computedMaxHeight : COMPOSER_MAX_HEIGHT;/,
-  "Chat composer should honor the responsive CSS max-height while resizing",
+  autogrowHook,
+  /const computedMaxHeight = Number\.parseFloat\(window\.getComputedStyle\(el\)\.maxHeight\);[\s\S]*const maxHeight = Number\.isFinite\(computedMaxHeight\) \? computedMaxHeight : fallbackMaxHeight;/,
+  "Composer auto-grow should honor the responsive CSS max-height while resizing",
 );
 
 assert.match(
-  source,
+  autogrowHook,
   /const isOverflowing = el\.scrollHeight > maxHeight;[\s\S]*el\.style\.overflowY = isOverflowing \? "auto" : "hidden";/,
-  "Chat composer should only enable internal scrolling after it reaches the height cap",
+  "Composer auto-grow should only enable internal scrolling after it reaches the height cap",
 );
 
 assert.match(
   source,
-  /useEffect\(\(\) => \{[\s\S]*resizeComposer\(\)[\s\S]*\}, \[input\]\)/,
-  "Chat composer should resize whenever input text changes",
+  /useAutogrowTextarea\(inputRef, input, \{ fallbackMaxHeight: COMPOSER_MAX_HEIGHT \}\)/,
+  "Chat composer should resize through the shared auto-grow hook whenever input changes",
+);
+
+assert.match(
+  homeComposerSource,
+  /useAutogrowTextarea\(textareaRef, text, \{\s*fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,?\s*\}\)/,
+  "Home composer should share the same auto-grow hook (parity with chat)",
 );
 
 assert.match(
@@ -106,25 +117,25 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-utility-row"[\s\S]*<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>[\s\S]*className="cave-composer-settings-row" aria-label="Chat response controls"/,
-  "Composer should place Host with utility controls before the response-control row",
+  /className="cave-composer-utility-row"[\s\S]*<ComposerOptionsMenu[\s\S]*hostValue=\{composerHostValue\}/,
+  "Composer places the collapsed Options menu in the utility row (host lives inside it now)",
 );
 
 assert.match(
   source,
-  /className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]*label="Access"[\s\S]*label="Model"[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
-  "Composer dropdown row should expose Access, Model, Thinking, and Speed in order",
+  /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,
+  "The Options menu exposes Access, Model, Thinking, and Speed sections in order",
 );
 
 // Model selection moved out of the composer UI into the /model slash command.
 assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");
 assert.match(source, /command === "\/model"/, "the chat composer handles the /model command");
 
-assert.match(
-  source,
-  /className="cave-composer-select__value" aria-hidden[\s\S]*\{selected\}/,
-  "Composer select pills should render a separate visual value so the native select can own the whole hit target",
-);
+// Options render as inline radio pills — no nested StandardSelect popover in the panel.
+const optionsSource = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
+assert.match(optionsSource, /role="radio"/, "Options choices are radio pills");
+assert.match(optionsSource, /composer-options__choice/, "Options choices use the choice-pill class");
+assert.doesNotMatch(source, /StandardSelect/, "the composer no longer wraps controls in StandardSelect pills");
 
 assert.match(
   source,
@@ -146,14 +157,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-composer-settings-row\s*\{[\s\S]*flex-wrap:\s*wrap[\s\S]*overflow-x:\s*visible/,
-  "Composer settings row should wrap controls instead of clipping or hiding available row width",
-);
-
-assert.match(
-  source,
-  /<StandardSelect<T>[\s\S]*className="cave-composer-select"[\s\S]*showCaret=\{false\}[\s\S]*renderValue=\{\(\) =>/,
-  "Composer control selects should delegate the full-pill hit target to StandardSelect",
+  /\.composer-options__choices\s*\{[\s\S]*flex-wrap:\s*wrap/,
+  "Options menu choices wrap instead of clipping when a control has many options",
 );
 
 console.log("chat-view-first-class.test.ts: ok");

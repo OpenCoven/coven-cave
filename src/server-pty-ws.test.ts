@@ -16,10 +16,78 @@ assert.match(src, /if \(!ACCESS_TOKEN\) return false/, "PTY WebSocket auth fails
 // no token (the local desktop app / dev server) the loopback host+origin gate is
 // the protection — guarding the 401 on ACCESS_TOKEN keeps credential-less local
 // connections working. #714 dropped this guard and 401'd every local terminal.
-assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+assert.match(src, /if \(ACCESS_TOKEN && !tokenAuthenticated\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+// Credentials are verified BEFORE the source gate: a paired device over
+// `tailscale serve` arrives with a non-loopback `<host>.ts.net` Host, so a
+// valid signed token must relax the host gate (mirrors proxy.ts's
+// isAllowedApiHost(mobileAccessAuthenticated) on REST). Without this the
+// paired iOS terminal 403s at the host gate while REST works — the "terminal
+// tab never connects" bug (cave-iz1j).
+assert.match(
+  src,
+  /const tokenAuthenticated = ACCESS_TOKEN \? isAuthorized\(req, query\) : false;/,
+  "PTY upgrade verifies the access token before the source gate",
+);
+assert.match(
+  src,
+  /isAllowedUpgradeSource\(req, tokenAuthenticated\)/,
+  "token-authenticated upgrades pass the non-loopback host gate (paired iOS terminal over tailscale serve)",
+);
+assert.match(
+  src,
+  /if \(!host\) return false;/,
+  "non-loopback host gate fails closed when the Host header is missing",
+);
+assert.match(
+  src,
+  /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);/,
+  "a verified token relaxes the non-loopback host gate but still passes the origin gate",
+);
+// Serve terminates TLS, so a legit handoff browser page is https://<host>.ts.net
+// while the expectation string is built as http://<Host> — host equality (the
+// real cross-site defence) must satisfy the origin gate regardless of scheme.
+assert.match(
+  src,
+  /if \(url\.host === expected\.host\) return true;/,
+  "origin gate accepts a scheme-agnostic same-host Origin (Serve-terminated TLS)",
+);
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
+// Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
+// src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
+// pairing flow mints them and the phone renews them monthly. The WS gate must
+// verify those or every paired terminal 401s while REST works fine.
+assert.match(
+  src,
+  /function isValidSignedAccessToken\(value: string, secret: string\): boolean/,
+  "PTY WebSocket auth verifies signed mobile access tokens, not only the raw secret",
+);
+assert.match(
+  src,
+  /if \(timingSafeEqualString\(value, ACCESS_TOKEN\)\) return true;\s*\n\s*return isValidSignedAccessToken\(value, ACCESS_TOKEN\);/,
+  "isExpectedToken accepts the raw secret OR a valid signed token",
+);
+assert.match(
+  src,
+  /parts\.length !== 4 \|\| parts\[0\] !== "v1"/,
+  "signed-token verification pins the v1 wire format",
+);
+assert.match(
+  src,
+  /expiresAt <= Date\.now\(\)/,
+  "signed-token verification rejects expired tokens",
+);
+assert.match(
+  src,
+  /createHmac\("sha256", secret\)[\s\S]{0,120}digest\("base64url"\)/,
+  "signed-token verification recomputes the HMAC-SHA256 base64url signature",
+);
+assert.match(
+  src,
+  /timingSafeEqualString\(parts\[3\], expected\)/,
+  "signed-token signatures compare in constant time",
+);
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
-assert.match(src, /const loopbackHost = isLoopbackHost\(host\)/, "server classifies loopback WebSocket hosts");
+assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server classifies loopback WebSocket hosts");
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
 assert.match(src, /sameOrigin\(req\.headers\.origin/, "server rejects cross-origin WebSocket upgrades");
 assert.match(src, /process\.env\.HOSTNAME \?\? "127\.0\.0\.1"/, "server binds to loopback by default");
@@ -45,9 +113,15 @@ assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");
 assert.match(src, /tag === 0x04/, "server receives resize tag 0x04");
+assert.match(src, /tag === 0x05/, "server receives an explicit kill tag 0x05 (cave-wujw)");
+assert.match(
+  src,
+  /tag === 0x05[\s\S]{0,500}sessions\.delete\(threadId\)[\s\S]{0,200}session\.pty\.kill\(\)/,
+  "the 0x05 kill frame reaps the shell immediately (clear detach timer, delete, kill), bypassing the grace window",
+);
 // Always loopback by default (both dev and prod)
 assert.match(src, /isAllowedUpgradeSource/, "server validates WebSocket upgrade host and origin");
-assert.match(src, /if \(!loopbackHost\)/, "server only relaxes the loopback host gate through an explicit non-loopback branch");
+assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server only relaxes the loopback host gate through an explicit non-loopback branch");
 // The peer address is always loopback-gated, even in tokenless tailnet mode —
 // tailscale serve forwards from 127.0.0.1, so a non-loopback peer is a direct
 // LAN/WAN connection that must never be trusted.
@@ -72,7 +146,13 @@ assert.equal(
 const sidecarBundle = readFileSync(new URL("../scripts/sidecar-bundle.sh", import.meta.url), "utf8");
 assert.match(
   sidecarBundle,
-  /cp "\$ROOT\/server\.mjs" "\$DEST\/server\.mjs"/,
+  /node "\$ROOT\/scripts\/sidecar-runtime-closure\.mjs"/,
+  "sidecar bundle delegates packaging to the traced runtime assembler",
+);
+const sidecarClosure = readFileSync(new URL("../scripts/sidecar-runtime-closure.mjs", import.meta.url), "utf8");
+assert.match(
+  sidecarClosure,
+  /copyResolvedEntry\(path\.join\(projectRoot, "server\.mjs"\), path\.join\(destination, "server\.mjs"\)/,
   "sidecar bundle ships the custom PTY-bridge server next to the standalone tree",
 );
 const tauriLib = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
@@ -162,5 +242,25 @@ assert.match(
   /if \(session\.detachTimer\) \{\s*clearTimeout\(session\.detachTimer\)/,
   "adoptSession cancels the pending reap when a client reattaches in time",
 );
+// The grace window is sized for mobile too: backgrounding the iOS app kills
+// its socket, and a 60s window meant a two-minute app-switch came back to a
+// dead shell. 5 minutes by default, tunable per install.
+assert.match(
+  src,
+  /COVEN_CAVE_PTY_DETACH_GRACE_MS/,
+  "detach grace is tunable via COVEN_CAVE_PTY_DETACH_GRACE_MS",
+);
+assert.match(
+  src,
+  /const DETACH_GRACE_MS = [\s\S]{0,200}?300_000/,
+  "detach grace defaults to 5 minutes so a backgrounded phone reattaches to a live shell",
+);
+
+// Idle keep-alive: Node's 5s default closes idle sockets just as pooled
+// clients (URLSession on iOS, tailscale serve upstreams) reuse them, which
+// surfaces as sporadic "network connection lost". headersTimeout must stay
+// above keepAliveTimeout so a reused socket isn't reaped mid-headers.
+assert.match(src, /server\.keepAliveTimeout = 75_000/, "server extends the idle keep-alive window past client reuse");
+assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds keepAliveTimeout");
 
 console.log("server-pty-ws.test.ts OK");

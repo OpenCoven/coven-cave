@@ -3,11 +3,20 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const defaultCapability = JSON.parse(readFileSync(new URL("../capabilities/default.json", import.meta.url), "utf8"));
+const browserChildReportingCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/browser-child-reporting.json", import.meta.url), "utf8"),
+);
 const loopbackBrowserCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-browser.json", import.meta.url), "utf8"),
 );
 const loopbackMainEventsCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-main-events.json", import.meta.url), "utf8"),
+);
+const loopbackWindowDragCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-window-drag.json", import.meta.url), "utf8"),
+);
+const loopbackUpdaterCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-updater.json", import.meta.url), "utf8"),
 );
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
@@ -16,6 +25,9 @@ const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
+const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
+const trayQuickChat = readFileSync(new URL("../../src/components/tray-quick-chat.tsx", import.meta.url), "utf8");
+const updateAvailable = readFileSync(new URL("../../src/components/update-available.tsx", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -29,8 +41,13 @@ const requiredPermissionIds = [
   "allow-browser-hide",
   "allow-browser-hide-all-except",
   "allow-browser-close",
+  "allow-browser-deactivate-all",
+  "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
+  "allow-sidecar-startup-status",
+  "allow-retry-sidecar-startup",
+  "allow-cancel-sidecar-startup",
 ];
 
 const requiredCommands = [
@@ -45,13 +62,36 @@ const requiredCommands = [
   "browser_hide",
   "browser_hide_all_except",
   "browser_close",
+  "browser_deactivate_all",
+  "browser_close_all",
   "browser_reload",
   "shell_open",
+  "sidecar_startup_status",
+  "retry_sidecar_startup",
+  "cancel_sidecar_startup",
 ];
+
+// Node 22 (CI's runtime) has no global URLPattern, so match capability
+// remote URL patterns component-wise the way Tauri's urlpattern crate does
+// for the simple `scheme://host:port/path` + `*` shapes this repo uses.
+// Backslash escapes in patterns (e.g. the IPv6 colons in
+// "http://[\:\:1]:*/*") are URLPattern literal escapes — strip them first.
+function originMatchesPattern(pattern, origin) {
+  const literal = pattern.replace(/\\(.)/g, "$1");
+  const parts = /^([a-z][a-z0-9+.-]*|\*):\/\/(\[[^\]]*\]|[^:/]*)(?::([^/]*))?(\/.*)?$/i.exec(literal);
+  assert.ok(parts, `unsupported capability URL pattern shape: ${pattern}`);
+  const [, scheme, host, port, path] = parts;
+  const url = new URL(origin);
+  const schemeOk = scheme === "*" || url.protocol === `${scheme.toLowerCase()}:`;
+  const hostOk = host === "*" || url.hostname.toLowerCase() === host.toLowerCase();
+  const portOk = port === "*" || (port ?? "") === url.port;
+  const pathOk = path === undefined || path === "/*" || url.pathname === path;
+  return schemeOk && hostOk && portOk && pathOk;
+}
 
 function capabilityAllowsOrigin(capability, origin) {
   const patterns = capability.remote?.urls ?? [];
-  return patterns.some((pattern) => new URLPattern(pattern).test(origin));
+  return patterns.some((pattern) => originMatchesPattern(pattern, origin));
 }
 
 function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
@@ -66,6 +106,8 @@ function assertCapabilityDoesNotGrant(capability, deniedPermissions) {
 
 test("packaged desktop app can use native browser and terminal commands", () => {
   assert.equal(defaultCapability.local, true, "packaged local app origin must receive the default capability");
+  assert.deepEqual(defaultCapability.webviews, ["main"], "default authority must be limited to the main webview");
+  assert.equal(defaultCapability.windows, undefined, "default authority must not cover every child in the main window");
   assert.deepEqual(
     defaultCapability.platforms,
     ["linux", "macOS", "windows"],
@@ -93,6 +135,16 @@ test("packaged desktop app can use native browser and terminal commands", () => 
 });
 
 test("packaged sidecar loopback origins can use browser commands and main-webview PTY", () => {
+  assert.deepEqual(
+    loopbackBrowserCapability.webviews,
+    ["main"],
+    "loopback browser and PTY controls must be limited to the trusted main webview",
+  );
+  assert.equal(
+    loopbackBrowserCapability.windows,
+    undefined,
+    "loopback controls must not cover native browser child webviews",
+  );
   for (const origin of [
     "http://127.0.0.1:3000/",
     "http://localhost:3000/",
@@ -160,8 +212,9 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-browser-hide",
     "allow-browser-hide-all-except",
     "allow-browser-close",
+    "allow-browser-deactivate-all",
+    "allow-browser-close-all",
     "allow-browser-reload",
-    "allow-browser-report-title",
   ]) {
     assert.ok(
       loopbackBrowserCapability.permissions.includes(permission),
@@ -176,10 +229,89 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
 
   assertCapabilityDoesNotGrant(loopbackBrowserCapability, [
     "default",
+    "allow-browser-report-title",
+    "allow-browser-report-scroll",
+    "allow-browser-report-user-navigation",
     "allow-shell-open",
+    "allow-sidecar-startup-status",
+    "allow-retry-sidecar-startup",
+    "allow-cancel-sidecar-startup",
   ]);
 });
 
+test("native browser children can report metadata but cannot control browser layers", () => {
+  assert.deepEqual(browserChildReportingCapability.webviews, ["cave-browser-*"]);
+  assert.equal(browserChildReportingCapability.windows, undefined);
+  assert.equal(browserChildReportingCapability.local, false);
+  assert.ok(capabilityAllowsOrigin(browserChildReportingCapability, "https://github.com/OpenCoven/coven-cave"));
+  assert.ok(capabilityAllowsOrigin(browserChildReportingCapability, "http://localhost:43123/page"));
+  assert.deepEqual(
+    browserChildReportingCapability.permissions,
+    [
+      "allow-browser-report-title",
+      "allow-browser-report-scroll",
+      "allow-browser-report-user-navigation",
+    ],
+  );
+  for (const [permission, command] of [
+    ["allow-browser-report-title", "browser_report_title"],
+    ["allow-browser-report-scroll", "browser_report_scroll"],
+    ["allow-browser-report-user-navigation", "browser_report_user_navigation"],
+  ]) {
+    assert.equal(
+      defaultPermissions.includes(`"${permission}"`),
+      false,
+      `${permission} must stay out of the trusted-main default permission set`,
+    );
+    assert.match(
+      commandPermissions,
+      new RegExp(String.raw`identifier\s*=\s*"${permission}"[\s\S]{0,240}commands\.allow\s*=\s*\[[^\]]*"${command}"`),
+      `${permission} must map to ${command}`,
+    );
+  }
+  assertCapabilityDoesNotGrant(browserChildReportingCapability, [
+    "default",
+    "allow-pty-start",
+    "allow-browser-navigate",
+    "allow-browser-set-bounds",
+    "allow-browser-hide",
+    "allow-browser-close",
+    "allow-browser-deactivate-all",
+    "allow-browser-close-all",
+    "allow-browser-reload",
+  ]);
+
+  for (const command of [
+    "browser_navigate",
+    "browser_set_bounds",
+    "browser_hide",
+    "browser_hide_all_except",
+    "browser_close",
+    "browser_deactivate_all",
+    "browser_close_all",
+    "browser_reload",
+  ]) {
+    assert.match(
+      browserRust,
+      new RegExp(String.raw`pub (?:async )?fn ${command}\([\s\S]{0,260}caller: tauri::Webview[\s\S]{0,500}ensure_browser_controller\(&caller\)\?;`),
+      `${command} must reject browser-child callers even if a capability is misconfigured`,
+    );
+  }
+  assert.match(browserRust, /pub fn browser_report_title\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)/);
+  assert.match(browserRust, /title\.chars\(\)\.take\(512\)/, "untrusted child titles must be bounded");
+  assert.match(browserRust, /pub fn browser_report_scroll\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}scroll_y\.is_finite\(\)/);
+  assert.match(
+    browserRust,
+    /pub fn browser_report_user_navigation\([\s\S]{0,300}caller: tauri::Webview[\s\S]{0,500}starts_with\(BROWSER_LABEL_PREFIX\)[\s\S]{0,500}event_tracker_for_label\(lifecycle\.inner\(\), &label\)/,
+    "navigation attribution must validate and use the actual child caller label",
+  );
+  assert.match(
+    libRust,
+    /browser::browser_report_user_navigation,/,
+    "the child navigation-attribution command must be registered",
+  );
+});
+
 test("privileged PTY commands require the trusted main webview at runtime", () => {
   assert.match(ptyRust, /static TRUSTED_MAIN_ORIGINS:/);
   assert.match(ptyRust, /pub fn trust_main_origin\(url: &Url\)/);
@@ -192,7 +324,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       ptyRust,
-      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }
@@ -209,7 +341,7 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       ptyRust,
-      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }
@@ -227,10 +359,140 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
     const escapedCommand = command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     assert.match(
       ptyRust,
-      new RegExp(String.raw`pub fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
+      new RegExp(String.raw`pub (?:async )?fn ${escapedCommand}\([^)]*webview: Webview[\s\S]*?ensure_trusted_pty_caller\(&webview\)\?;`),
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }
+});
+
+// The main webview loads from an external http://127.0.0.1 URL, which the
+// capability ACL treats as a REMOTE execution context — capabilities without a
+// matching remote.urls block (like default.json) do not apply there at all.
+// Titlebar drag / drag-region double-click therefore need this explicit
+// remote-scoped grant; without it Tauri's drag.js and any startDragging()
+// call are silently denied and the window can never be dragged (the CSS
+// app-region hint is equally inert on external URLs).
+test("loopback app webviews can drive native window drag for the seamless titlebar", () => {
+  assert.deepEqual(
+    loopbackWindowDragCapability.webviews,
+    ["main", "quick-chat"],
+    "drag permissions cover only the main and decoration-less quick-chat webviews, never browser children",
+  );
+  assert.equal(loopbackWindowDragCapability.windows, undefined);
+  assert.deepEqual(
+    loopbackWindowDragCapability.platforms,
+    ["linux", "macOS", "windows"],
+    "window-drag permissions are desktop-only and must not leak into mobile Tauri builds",
+  );
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+    "http://127.0.0.1:64203/",
+    "http://localhost:64203/",
+    "http://[::1]:64203/",
+  ]) {
+    assert.ok(
+      capabilityAllowsOrigin(loopbackWindowDragCapability, origin),
+      `loopback origin ${origin} must be allowed to start a native window drag`,
+    );
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackWindowDragCapability, "http://example.com:64203/"),
+    false,
+    "remote non-loopback origins should stay denied",
+  );
+  assert.deepEqual(
+    loopbackWindowDragCapability.permissions,
+    ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"],
+    "the drag capability grants exactly the drag + drag-region double-click commands and nothing else",
+  );
+
+  // The web side must actually mark the drag handles: `deep` covers empty
+  // chrome anywhere inside the titlebar subtree while drag.js's clickable
+  // check keeps controls working. Bare (valueless) regions only drag on
+  // direct presses on the attributed element, which is why the shell uses
+  // `deep` everywhere.
+  assert.ok(
+    shellTsx.includes('<div className="shell-top" data-tauri-drag-region="deep">'),
+    "the shell titlebar must be a deep Tauri drag region",
+  );
+  assert.ok(
+    trayQuickChat.includes(
+      '<header className="quick-chat-overlay__header tray-quick-chat__header" data-tauri-drag-region="deep">',
+    ),
+    "the quick-chat tray header must be a deep Tauri drag region so the decoration-less window can be moved",
+  );
+});
+
+// Like window drag above, the in-app updater runs from the loopback main
+// webview — a REMOTE execution context where the local-only default.json
+// grants (updater:default / process:default) never apply. Without this
+// remote-scoped capability every plugin-updater check() throws an ACL denial
+// and update-available.tsx falls back to "Open installer in Browser", which
+// defeats the whole in-app update experience. Scoped to webviews:["main"]
+// (not windows) so in-app browser child webviews that a user navigates to a
+// localhost page can never invoke install/relaunch IPC.
+test("the trusted main loopback webview can run the native in-app updater", () => {
+  assert.deepEqual(
+    loopbackUpdaterCapability.webviews,
+    ["main"],
+    "updater/relaunch IPC must be limited to the trusted main webview — never in-app browser child webviews on loopback origins",
+  );
+  assert.equal(
+    loopbackUpdaterCapability.windows,
+    undefined,
+    "scope by webview label, not window label — browser child webviews live inside the main window",
+  );
+  assert.deepEqual(
+    loopbackUpdaterCapability.platforms,
+    ["linux", "macOS", "windows"],
+    "updater permissions are desktop-only and must not leak into mobile Tauri builds",
+  );
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+    "http://127.0.0.1:64203/",
+    "http://localhost:64203/",
+    "http://[::1]:64203/",
+  ]) {
+    assert.ok(
+      capabilityAllowsOrigin(loopbackUpdaterCapability, origin),
+      `loopback origin ${origin} must be allowed to run the native updater`,
+    );
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackUpdaterCapability, "http://example.com:64203/"),
+    false,
+    "remote non-loopback origins should stay denied",
+  );
+  assert.deepEqual(
+    loopbackUpdaterCapability.permissions,
+    ["updater:default", "process:allow-restart", "os:allow-platform", "os:allow-arch"],
+    "grant exactly check/download/install (updater:default), relaunch, and the platform/arch reads used to pick installer fallbacks — nothing else (no process:allow-exit)",
+  );
+
+  // The web side must actually drive the native path: check(), prepare the
+  // signed download while the old app remains usable, explicitly install,
+  // and relaunch. If a refactor drops these the capability grant is dead.
+  assert.ok(
+    updateAvailable.includes('await import("@tauri-apps/plugin-updater")'),
+    "update-available.tsx must check for updates through the native plugin-updater",
+  );
+  assert.ok(
+    updateAvailable.includes("prepareNativeUpdate") && updateAvailable.includes("installPreparedUpdate"),
+    "update-available.tsx must separate signed download preparation from explicit install",
+  );
+  assert.equal(
+    updateAvailable.includes("downloadAndInstall"),
+    false,
+    "update preparation must not exit the old app as soon as download finishes",
+  );
+  assert.ok(
+    updateAvailable.includes('await import("@tauri-apps/plugin-process")'),
+    "update-available.tsx must relaunch through plugin-process after installing",
+  );
 });
 
 test("browser event labels use the same native prefix in Rust and React", () => {
@@ -262,7 +524,9 @@ test("terminal commands use Tauri camelCase command arguments", () => {
   );
   assert.match(
     bottomTerminal,
-    /invoke\("pty_resize", \{[\s\S]*threadId: threadId,[\s\S]*cols:[\s\S]*rows:/,
+    // cols/rows may be longhand (`cols: cols`) or shorthand (`cols,`) — #2651
+    // moved to shorthand and this pin (then unwired from CI) silently drifted.
+    /invoke\("pty_resize", \{[\s\S]*threadId: threadId,[\s\S]*cols[,:][\s\S]*rows[,:]/,
     "pty_resize must pass threadId so desktop resize reaches Rust",
   );
   assert.match(

@@ -12,12 +12,16 @@
    same rules fire there too. */
 .board-shell { display:flex; flex-direction:column; height:100%; overflow:hidden; background:var(--bg-base); color:var(--text-primary); container:board / inline-size; }
 
-.board-header { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; flex-wrap:nowrap; }
-.board-header-title { flex:0 0 auto; font-size:14px; font-weight:600; color:var(--text-primary); }
+/* Compact chrome (matches .surface-compact-header / .gh-compact-header): one
+   slim 40px band; --board-control-h shrinks header controls to the shared 26px
+   without touching the same classes reused outside the band (inspector, gantt).
+   The mobile container query below re-inflates everything to touch targets. */
+.board-header { display:flex; align-items:center; gap:8px; padding:5px 12px; min-height:40px; --board-control-h:26px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; flex-wrap:nowrap; }
+.board-header-title { flex:0 0 auto; font-size:12px; font-weight:600; color:var(--text-primary); }
 .board-header-controls { display:flex; align-items:center; gap:6px; margin-left:auto; flex:0 0 auto; flex-wrap:nowrap; }
 .board-search-wrap { position:relative; display:flex; align-items:center; flex:1 1 auto; min-width:0; max-width:620px; margin-left:8px; }
 .board-search-icon { position:absolute; left:9px; color:var(--text-muted); pointer-events:none; }
-.board-search-input { width:100%; height:30px; padding:0 30px 0 30px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-primary); outline:none; transition:background .12s,border-color .12s; }
+.board-search-input { width:100%; height:var(--board-control-h,30px); padding:0 30px 0 30px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-primary); outline:none; transition:background .12s,border-color .12s; }
 .board-search-input::placeholder { color:var(--text-muted); }
 .board-search-input:focus { border-color:color-mix(in oklch,var(--accent-presence) 52%,transparent); background:var(--bg-hover); }
 .board-search-kbd { position:absolute; right:7px; display:flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px; border:1px solid var(--border-hairline); border-radius:4px; background:var(--bg-base); color:var(--text-muted); font-family:var(--font-mono); font-size:10px; line-height:1; pointer-events:none; }
@@ -25,7 +29,7 @@
 .board-search-clear:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-search-clear:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
 
-.board-toolbar-btn { display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 10px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:12px; font-weight:450; cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
+.board-toolbar-btn { display:inline-flex; align-items:center; gap:5px; height:var(--board-control-h,30px); padding:0 10px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:12px; font-weight:450; cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
 .board-toolbar-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-toolbar-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
 .board-toolbar-btn--active { background:color-mix(in oklch,var(--accent-presence) 14%,var(--bg-raised)); border-color:color-mix(in oklch,var(--accent-presence) 40%,transparent); color:var(--text-primary); }
@@ -34,23 +38,31 @@
 
 .board-clear-confirm { display:flex; gap:6px; }
 
+/* Tasks|Queue segment tabs (shared Tabs, variant=segment) — standardized to the
+   group-toggle footprint: same total height (control + 1px borders) and the
+   same 10px/12px button metrics as .board-group-toggle-btn, while keeping the
+   segment aesthetic (hairline container, rounded active pill). Same recipe as
+   .gh-compact-tabs below. */
+.board-header-tabs { flex:0 0 auto; height:calc(var(--board-control-h,28px) + 2px); padding:2px; }
+.board-header-tabs [role="tab"] { height:100%; padding:0 10px; font-size:12px; }
+
 .board-group-toggle { display:flex; border:1px solid var(--border-strong); border-radius:var(--radius-control); overflow:hidden; }
 /* Leading zoom glyph so the compact D/W/M reads as a timeline zoom, not a range filter. */
 .board-group-toggle .cg-zoom-cell { display:flex; align-items:center; padding:0 4px 0 8px; background:var(--bg-raised); color:var(--text-muted); border-right:1px solid var(--border-strong); }
-.board-group-toggle-btn { display:flex; align-items:center; justify-content:center; padding:0 10px; height:28px; background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; font-size:12px; font-weight:500; transition:background .12s,color .12s; white-space:nowrap; }
+.board-group-toggle-btn { display:flex; align-items:center; justify-content:center; padding:0 10px; height:var(--board-control-h,28px); background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; font-size:12px; font-weight:500; transition:background .12s,color .12s; white-space:nowrap; }
 .board-group-toggle-btn+.board-group-toggle-btn { border-left:1px solid var(--border-strong); }
 .board-group-toggle-btn:hover { background:var(--bg-hover); color:var(--text-secondary); }
 .board-group-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
 .board-group-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
 .board-group-toggle-btn--solo { border:1px solid var(--border-strong); border-radius:var(--radius-control); }
 .board-view-toggle { display:flex; border:1px solid var(--border-strong); border-radius:var(--radius-control); overflow:hidden; }
-.board-view-toggle-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; transition:background .12s,color .12s; }
+.board-view-toggle-btn { display:flex; align-items:center; justify-content:center; width:var(--board-control-h,28px); height:var(--board-control-h,28px); background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; transition:background .12s,color .12s; }
 .board-view-toggle-btn+.board-view-toggle-btn { border-left:1px solid var(--border-strong); }
 .board-view-toggle-btn:hover { background:var(--bg-hover); color:var(--text-secondary); }
 .board-view-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
 .board-view-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
 
-.board-new-card-btn { height:30px; padding:0 12px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--accent-presence-foreground); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
+.board-new-card-btn { height:var(--board-control-h,30px); padding:0 12px; border-radius:var(--radius-control); border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--accent-presence-foreground); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
 .board-new-card-btn:hover { background:color-mix(in oklch, var(--accent-presence) 85%, #000); transform:scale(1.02); }
 .board-new-card-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:2px; }
 
@@ -110,6 +122,13 @@
     border-radius: 8px;
     padding-inline: 14px;
     font-size: 13px;
+  }
+
+  /* The overflow '⋯' trigger is a tap-only control on phones — grow it to
+     the minimum touch target (WCAG 2.5.5). */
+  .board-header-controls .ui-icon-btn {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
 
   .board-toolbar-btn {
@@ -233,18 +252,6 @@
 .board-table--grid thead th:hover .board-table-col-resize::after,
 .board-table-col-resize:hover::after { opacity:1; }
 
-.projects-table-wrap { flex:1; min-height:0; }
-.projects-table-row--compact td { padding-top:6px; padding-bottom:6px; }
-.projects-table-row--comfortable td { padding-top:10px; padding-bottom:10px; }
-.projects-table-detail-row { cursor:default; }
-.projects-table-detail-row:hover { background:transparent; }
-.projects-table-detail-row td {
-  padding:0 10px 12px;
-  overflow:visible;
-  background:var(--bg-base);
-}
-.projects-table-detail { min-width:0; }
-
 .board-swimlane { flex-shrink:0; border-bottom:1px solid var(--border-hairline); }
 .board-swimlane-header { display:flex; align-items:center; gap:8px; padding:8px 16px 6px; font-size:11px; font-weight:600; color:var(--text-secondary); letter-spacing:.05em; text-transform:uppercase; user-select:none; }
 .board-swimlane-toggle { display:inline-flex; align-items:center; gap:8px; background:none; border:none; padding:0; margin:0; font:inherit; color:inherit; letter-spacing:inherit; text-transform:inherit; cursor:pointer; }
@@ -366,6 +373,10 @@
 .board-kanban-priority-pill--high { background:color-mix(in oklch,var(--color-warning) 18%,transparent); color:color-mix(in oklch,var(--color-warning) 70%,#fff); }
 .board-kanban-priority-pill--medium { background:color-mix(in oklch,var(--accent-presence) 18%,transparent); color:color-mix(in oklch,var(--accent-presence) 80%,#fff); }
 .board-kanban-priority-pill--low { background:var(--bg-elevated); color:var(--text-muted); }
+/* Glyph-only marker: the loud all-caps text pill became a tiny flag that
+   echoes the card's left color bar (cave-8nw2). Same per-priority color
+   classes; the tint square stays compact. */
+.board-kanban-priority-pill--glyph { padding:2px; border-radius:4px; }
 /* The pill text is lightened toward #fff for legibility on the dark-mode tint.
    In light mode that lightened text fails WCAG on the faint tint, so darken it
    toward #000 instead (≈5.8–7:1 vs the prior 2.0–2.6:1). */
@@ -382,6 +393,12 @@
 .board-kanban-card-chip--more { color:var(--text-muted); background:transparent; border-color:transparent; padding:1px 2px; }
 .board-kanban-card-chip--chat { color:var(--accent-presence); background:color-mix(in oklch,var(--accent-presence) 12%,transparent); border-color:color-mix(in oklch,var(--accent-presence) 35%,var(--border-hairline)); }
 .board-kanban-card-chip--chat svg { color:var(--accent-presence); }
+/* cave-32ks: the chat chip carries the linked session's live status — dot +
+   word, toned per state. Running keeps the accent; done/failed/idle re-tint. */
+.board-kanban-card-chip-dot { width:5px; height:5px; border-radius:999px; background:currentColor; flex-shrink:0; }
+.board-kanban-card-chip--chat-done { color:var(--color-success); background:color-mix(in oklch,var(--color-success) 10%,transparent); border-color:color-mix(in oklch,var(--color-success) 32%,var(--border-hairline)); }
+.board-kanban-card-chip--chat-failed { color:var(--color-danger); background:color-mix(in oklch,var(--color-danger) 10%,transparent); border-color:color-mix(in oklch,var(--color-danger) 32%,var(--border-hairline)); }
+.board-kanban-card-chip--chat-idle { color:var(--text-secondary); background:var(--bg-elevated); border-color:var(--border-hairline); }
 .board-kanban-card-chip--schedule { color:var(--text-secondary); background:var(--bg-elevated); border-color:var(--border-hairline); }
 .board-kanban-card-chip--schedule svg { color:var(--text-muted); }
 .board-kanban-card-chip--due-soon { color:var(--color-warning); background:color-mix(in oklch,var(--color-warning) 12%,transparent); border-color:color-mix(in oklch,var(--color-warning) 32%,var(--border-hairline)); }
@@ -404,7 +421,7 @@
 
 .board-drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.30); z-index:300; animation:board-backdrop-in .18s ease; }
 @keyframes board-backdrop-in { from{opacity:0} to{opacity:1} }
-.board-drawer { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:var(--bg-raised); border-left:1px solid var(--border-strong); z-index:301; display:flex; flex-direction:column; overflow:hidden; box-shadow:-8px 0 32px rgba(0,0,0,.20); animation:board-drawer-in .22s ease-out; }
+.board-drawer { position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:var(--glass-raised); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); border-left:1px solid var(--border-strong); z-index:301; display:flex; flex-direction:column; overflow:hidden; box-shadow:-8px 0 32px rgba(0,0,0,.20); animation:board-drawer-in .22s ease-out; }
 @keyframes board-drawer-in { from{transform:translateX(100%)} to{transform:translateX(0)} }
 .board-drawer--closing { animation:board-drawer-out .18s ease-in forwards; }
 @keyframes board-drawer-out { from{transform:translateX(0)} to{transform:translateX(100%)} }
@@ -486,7 +503,12 @@
 .board-drawer-chat-icon--empty { background:var(--bg-elevated); color:var(--text-muted); }
 .board-drawer-chat-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
 .board-drawer-chat-title { font-size:12px; font-weight:500; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.board-drawer-chat-desc { font-size:10.5px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.board-drawer-chat-desc { font-size:10.5px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-flex; align-items:center; gap:5px; }
+/* cave-32ks: live session status dot in the drawer's chat card. */
+.board-drawer-chat-status-dot { width:5px; height:5px; border-radius:999px; flex-shrink:0; background:var(--text-muted); }
+.board-drawer-chat-status-dot--running { background:var(--accent-presence); }
+.board-drawer-chat-status-dot--done { background:var(--color-success); }
+.board-drawer-chat-status-dot--failed { background:var(--color-danger); }
 .board-drawer-chat-trail { color:var(--text-muted); flex-shrink:0; }
 .board-drawer-chat-card--linked:hover .board-drawer-chat-trail { color:var(--text-primary); }
 .board-drawer-chat-cta { display:inline-flex; align-items:center; gap:5px; min-height:28px; padding:0 10px; border-radius:var(--radius-control); border:1px solid color-mix(in oklch,var(--accent-presence) 50%,transparent); background:color-mix(in oklch,var(--accent-presence) 18%,transparent); color:var(--text-primary); font-size:11.5px; font-weight:500; cursor:pointer; flex-shrink:0; transition:background .12s,border-color .12s; }
@@ -592,6 +614,13 @@
   background:color-mix(in oklab,var(--color-success) 10%,transparent);
   color:var(--color-success);
 }
+/* Rejected/expired PAT: a clickable chip (opens the PAT modal) in danger tint. */
+.gh-compact-auth--invalid {
+  border-color:color-mix(in oklab,var(--color-danger) 42%,transparent);
+  background:color-mix(in oklab,var(--color-danger) 10%,transparent);
+  color:var(--color-danger);
+  cursor:pointer;
+}
 .gh-compact-rate {
   color:var(--text-muted);
   font-size:10px;
@@ -617,28 +646,8 @@
   align-items:center;
   gap:6px;
 }
-.gh-compact-group {
-  display:flex;
-  align-items:center;
-  gap:2px;
-}
-.gh-compact-group-button {
-  display:inline-flex;
-  align-items:center;
-  height:var(--gh-control-h);
-  border-radius:6px;
-  padding:0 8px;
-  color:var(--text-muted);
-  font-size:11px;
-  line-height:1;
-  transition:background-color .12s,color .12s;
-}
-.gh-compact-group-button:hover { color:var(--text-secondary); background:var(--bg-hover); }
-.gh-compact-group-button.is-active {
-  color:var(--text-primary);
-  background:var(--bg-raised);
-  font-weight:600;
-}
+/* .gh-compact-group / .gh-select-sep retired — grouping moved into the
+   header overflow menu (§8). */
 .gh-compact-actions {
   display:flex;
   align-items:center;
@@ -649,7 +658,9 @@
   max-width:28rem;
   border-radius:var(--radius-panel);
   border:1px solid var(--border-hairline);
-  background:var(--bg-elevated);
+  background:var(--glass-elevated);
+  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
   padding:1.5rem;
   box-shadow:var(--shadow-popover, 0 25px 50px -12px rgb(0 0 0 / .25));
 }
@@ -668,17 +679,84 @@
 .gh-workspace {
   position:relative;
   z-index:1;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(340px,420px);
-  gap:14px;
   height:100%;
   min-height:0;
   overflow:hidden;
   padding:14px;
 }
+
+/* Wide panes: resizable list ⇄ detail split (react-resizable-panels). The old
+   1040px viewport media query became a measured-width mode class — a
+   drag-to-split pane can be narrow while the window is wide. */
+.gh-workspace--split .gh-workspace-group { height:100%; }
+.gh-list-pane { min-width:0; height:100%; }
+.gh-detail-pane { min-width:0; height:100%; }
+.gh-workspace-separator { margin:0 6px; }
+.gh-detail-holder {
+  position:relative;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+.gh-workspace--split .gh-detail-holder { height:100%; }
+.gh-workspace--split .gh-glass-panel {
+  flex:1 1 auto;
+  min-height:0;
+}
+/* Collapse control floats over the panel corner; earns visibility (§8). */
+.gh-detail-collapse {
+  position:absolute;
+  top:20px;
+  right:20px;
+  z-index:2;
+}
+/* Collapsed detail = a slim rail that keeps the expand affordance on-screen. */
+.gh-detail-rail {
+  height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding-top:10px;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 70%,transparent);
+  border-radius:8px;
+  background:color-mix(in oklab,var(--bg-raised) 46%,transparent);
+}
+
+/* Narrow panes: detail stacks above the list (same DOM, mode class). */
+.gh-workspace--stacked {
+  display:grid;
+  grid-template-columns:1fr;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:14px;
+}
+.gh-workspace--stacked .gh-detail-holder { order:-1; }
+.gh-workspace--stacked .gh-glass-panel:not(.gh-glass-panel--empty) {
+  height:min(460px,52dvh);
+}
+.gh-workspace--stacked .gh-detail-toggle-bar { order:-1; }
+/* Dashed border = invitation: the collapsed details are one tap away. */
+.gh-detail-toggle-bar {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:7px 10px;
+  border:1px dashed color-mix(in oklab,var(--border-hairline) 76%,transparent);
+  border-radius:8px;
+  background:transparent;
+  color:var(--text-muted);
+  font-size:11.5px;
+  cursor:pointer;
+}
+.gh-detail-toggle-bar:hover {
+  color:var(--text-secondary);
+  border-color:var(--border-strong);
+}
+
 .gh-list-panel {
   min-width:0;
   height:100%;
+  overflow-x:auto;
   border:1px solid color-mix(in oklab,var(--border-hairline) 76%,transparent);
   border-radius:8px;
   background:color-mix(in oklab,var(--bg-raised) 62%,transparent);
@@ -721,7 +799,6 @@
 .gh-select:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-primary); background-color:var(--bg-hover); }
 .gh-select:focus-visible { outline:none; border-color:var(--accent-presence); }
 .gh-select:disabled { opacity:.45; cursor:not-allowed; }
-.gh-select-sep { width:1px; height:calc(var(--gh-control-h) - 8px); background:var(--border-hairline); }
 
 /* Free-text search box for the GitHub activity list. */
 .gh-search { display:inline-flex; align-items:center; gap:5px; height:var(--gh-control-h); max-width:200px; padding:0 6px; border:1px solid var(--border-hairline); border-radius:var(--radius-control); background-color:var(--bg-base); transition:border-color .12s; }
@@ -742,10 +819,15 @@
 .gh-group-count { display:inline-flex; align-items:center; min-width:16px; height:15px; padding:0 5px; border-radius:9999px; background:var(--bg-base); color:var(--text-muted); font-size:9.5px; font-weight:600; }
 
 .gh-actions { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }
+/* Reveal exceptions (§8 — state never hides): the selected row keeps its
+   actions visible, and a row whose action errored must keep the error badge
+   on screen. */
+.gh-row.is-selected .gh-actions.reveal-on-hover,
+.gh-actions.reveal-on-hover:has(.gh-action-error) { opacity:1; }
 .gh-action-wrap { position:relative; display:inline-flex; }
 .gh-action-error { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; margin-left:4px; border-radius:50%; background:var(--color-danger); color:#fff; font-size:10px; font-weight:700; }
-.gh-action-popover { position:absolute; top:calc(100% + 4px); right:0; z-index:60; min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--bg-elevated); box-shadow:0 12px 30px rgba(0,0,0,.18); }
-.gh-action-popover--wide { padding:0; min-width:280px; background:transparent; border:none; box-shadow:none; }
+.gh-action-popover { position:absolute; top:calc(100% + 4px); right:0; z-index:60; min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--glass-elevated); backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate)); box-shadow:0 12px 30px rgba(0,0,0,.18); }
+.gh-action-popover--wide { padding:0; min-width:280px; background:transparent; border:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
 .gh-action-popover-title { padding:0 4px 6px; font-size:11px; color:var(--text-muted); }
 .gh-action-popover-list { list-style:none; margin:0; padding:0; max-height:220px; overflow-y:auto; }
 .gh-action-popover-item { display:flex; align-items:center; gap:8px; width:100%; padding:5px 7px; border:none; background:transparent; color:var(--text-secondary); font-size:11.5px; text-align:left; cursor:pointer; border-radius:var(--radius-control); }
@@ -753,11 +835,14 @@
 .gh-action-popover-item:disabled { opacity:.55; cursor:wait; }
 .gh-action-popover-item-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gh-action-popover-item-familiar { color:var(--text-muted); font-size:10.5px; }
+/* Detail-panel actions sit at the panel's LEFT edge, so a right-anchored popover
+   extends into the scroll container's unreachable left overflow and gets clipped.
+   Anchor to the actions row itself (wrap goes static) and open from the left. */
+.gh-glass-actions .gh-action-wrap { position:static; }
+.gh-glass-actions .gh-action-popover { left:0; right:auto; max-width:100%; }
 
 .gh-glass-panel {
-  position:sticky;
-  top:14px;
-  align-self:start;
+  position:relative;
   min-width:0;
   display:flex;
   flex-direction:column;
@@ -937,12 +1022,6 @@
   -ms-overflow-style:none;
 }
 .gh-glass-panel-scroll::-webkit-scrollbar { width:0; height:0; }
-
-@media (min-width: 1041px) {
-  .gh-glass-panel:not(.gh-glass-panel--empty) {
-    height:100%;
-  }
-}
 
 .gh-issue-subline {
   display:flex;
@@ -1314,76 +1393,226 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .gh-composer-actions {
   display:flex;
   align-items:center;
-  justify-content:space-between;
+  justify-content:flex-end;
   gap:8px;
   margin-top:6px;
 }
-.gh-composer-tag { position:relative; }
-.gh-composer-tag-btn {
+
+/* ── Person chip → clickable profile ─────────────────────────────────────── */
+.gh-person--button {
+  appearance:none;
+  border:none;
+  background:none;
+  padding:1px 3px;
+  margin:0 -3px;
+  border-radius:7px;
+  cursor:pointer;
+  font:inherit;
+}
+.gh-person--button:hover { background:var(--bg-raised); }
+.gh-person--button:hover .gh-person-login { color:var(--text-primary); }
+
+/* ── Floating GitHub profile card ────────────────────────────────────────── */
+.gh-profile-card {
+  position:fixed;
+  z-index:60;
+  padding:14px;
+  border:1px solid var(--border-hairline);
+  border-radius:14px;
+  background:var(--glass-elevated);
+  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow:0 16px 44px rgba(0,0,0,0.34);
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+.gh-profile-loading,
+.gh-profile-error { color:var(--text-muted); font-size:12px; }
+.gh-profile-error { display:flex; flex-direction:column; gap:8px; }
+.gh-profile-head { display:flex; align-items:center; gap:10px; }
+.gh-profile-avatar {
+  width:48px;
+  height:48px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--bg-raised);
+  flex-shrink:0;
+}
+.gh-profile-avatar--fallback {
   display:inline-flex;
   align-items:center;
-  gap:4px;
-  padding:3px 9px;
-  border-radius:7px;
+  justify-content:center;
+  font-size:20px;
+  font-weight:700;
+  color:var(--text-secondary);
   border:1px solid var(--border-hairline);
-  background:transparent;
+}
+.gh-profile-id { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.gh-profile-name { font-size:14px; font-weight:650; color:var(--text-primary); }
+.gh-profile-login {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
   color:var(--text-muted);
+}
+.gh-profile-type {
+  padding:0 5px;
+  border-radius:999px;
+  border:1px solid var(--border-hairline);
+  font-size:9px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+}
+.gh-profile-bio {
+  font-size:12px;
+  line-height:1.5;
+  color:var(--text-secondary);
+  word-break:break-word;
+}
+.gh-profile-stats {
+  display:flex;
+  gap:12px;
+  font-size:11.5px;
+  color:var(--text-muted);
+  padding:2px 0;
+  border-top:1px solid var(--border-hairline);
+  border-bottom:1px solid var(--border-hairline);
+}
+.gh-profile-stats strong { color:var(--text-primary); font-weight:650; }
+.gh-profile-meta {
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  font-size:11.5px;
+  color:var(--text-secondary);
+}
+.gh-profile-meta > span,
+.gh-profile-link {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.gh-profile-meta > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gh-profile-link {
+  align-self:flex-start;
+  background:none;
+  border:none;
+  padding:0;
+  color:var(--accent-presence);
+  font:inherit;
+  cursor:pointer;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-profile-link:hover { text-decoration:underline; }
+
+/* ── Comment reactions ───────────────────────────────────────────────────── */
+.gh-reactions { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.gh-reaction {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:1px 7px;
+  border-radius:999px;
+  border:1px solid var(--border-hairline);
+  background:var(--bg-base);
   font-size:11px;
+  color:var(--text-secondary);
+  line-height:1.5;
+}
+
+/* ── PR review summaries in the timeline ─────────────────────────────────── */
+.gh-review-entry {
+  border:1px solid var(--border-hairline);
+  border-left:2px solid var(--text-muted);
+  border-radius:10px;
+  background:var(--bg-base);
+  padding:8px 10px;
+}
+.gh-review-entry.is-approved { border-left-color:var(--color-success); }
+.gh-review-entry.is-changes { border-left-color:var(--color-danger); }
+.gh-review-verdict { display:inline-flex; flex-shrink:0; }
+.gh-review-verb { font-size:11.5px; color:var(--text-muted); }
+
+/* ── CI action details (per-PR checks) ───────────────────────────────────── */
+.gh-checks-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.gh-checks-rollup {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-size:10.5px;
+  font-weight:600;
+}
+.gh-checks-rollup-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.gh-checks-rollup--passing { color:var(--color-success); }
+.gh-checks-rollup--failing { color:var(--color-danger); }
+.gh-checks-rollup--pending { color:var(--color-warning); }
+.gh-checks-toggle {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  align-self:flex-start;
+  background:none;
+  border:none;
+  padding:2px 0;
+  color:var(--text-secondary);
+  font-size:11.5px;
   font-weight:550;
   cursor:pointer;
 }
-.gh-composer-tag-btn:hover:not(:disabled) {
-  color:var(--text-secondary);
-  background:var(--bg-raised);
-}
-.gh-composer-tag-btn:disabled { opacity:0.4; cursor:default; }
-.gh-composer-tag-menu {
-  position:absolute;
-  bottom:calc(100% + 4px);
-  left:0;
-  z-index:20;
-  min-width:160px;
-  max-height:220px;
-  overflow-y:auto;
-  padding:4px;
-  border:1px solid var(--border-hairline);
-  border-radius:10px;
-  background:var(--bg-elevated);
-  box-shadow:0 8px 24px rgba(0,0,0,0.28);
+.gh-checks-toggle:hover { color:var(--text-primary); }
+.gh-checks-list {
+  list-style:none;
+  margin:8px 0 0;
+  padding:0;
   display:flex;
   flex-direction:column;
   gap:2px;
 }
-.gh-composer-tag-item {
+.gh-check-row {
   display:flex;
   align-items:center;
-  gap:7px;
-  padding:5px 8px;
-  border-radius:7px;
+  gap:8px;
+  padding:5px 6px;
+  border-radius:8px;
+}
+.gh-check-row:hover { background:var(--bg-raised); }
+.gh-check-icon { display:inline-flex; flex-shrink:0; }
+.gh-check-name {
+  flex:1;
+  min-width:0;
+  font-size:12px;
+  color:var(--text-secondary);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-check-app {
+  flex-shrink:0;
+  font-size:10px;
+  color:var(--text-muted);
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--bg-base);
+  border:1px solid var(--border-hairline);
+}
+.gh-check-dur { flex-shrink:0; font-size:10.5px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.gh-check-logs {
+  flex-shrink:0;
+  display:inline-flex;
   background:none;
   border:none;
-  color:var(--text-secondary);
-  font-size:12px;
-  text-align:left;
+  padding:2px;
+  color:var(--text-muted);
   cursor:pointer;
 }
-.gh-composer-tag-item:hover {
-  background:var(--bg-hover);
-  color:var(--text-primary);
-}
-
-@media (max-width: 1040px) {
-  .gh-workspace { grid-template-columns:1fr; }
-  .gh-glass-panel {
-    position:relative;
-    top:auto;
-    order:-1;
-    align-self:stretch;
-  }
-  .gh-glass-panel:not(.gh-glass-panel--empty) {
-    height:min(460px,52dvh);
-  }
-}
+.gh-check-logs:hover { color:var(--text-secondary); }
 
 @media (max-width: 760px) {
   .gh-compact-header {
@@ -1405,7 +1634,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   .gh-workspace { padding:10px; gap:10px; }
   .gh-glass-panel { padding:12px; }
   .gh-glass-hero h3 { font-size:17px; }
-  .gh-list-panel { overflow-x:auto; }
 }
 
 /* ────────────────────────────────────────────────────────────────────
@@ -1671,7 +1899,16 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .board-gantt {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Frame, not the scroller: controls pinned at top, the timeline scroller
+     fills the middle, the unscheduled tray sits at the bottom. The timeline's
+     own bounded viewport (.board-gantt__scroll) owns BOTH scrollbars so the
+     sticky header/left-column stay put and the horizontal bar stays reachable
+     (cave-hsh). Previously .board-gantt scrolled the whole chart as one block,
+     which scrolled the header off-screen and parked the h-scrollbar below the
+     fold. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 14px;
 }
 .board-gantt--empty {
@@ -1720,7 +1957,15 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
    Dense dark timeline: sticky left table (Group/Task · Owner · Start · End ·
    status dot) + a day/week grid with status-coloured bars, milestone diamonds,
    a red TODAY line, and a legend. Redefines .board-gantt-row__bar by category. */
-.board-gantt__scroll { overflow-x: auto; overflow-y: visible; }
+/* The single bounded scroll viewport for the whole timeline — both axes. As a
+   flex child it fills the frame's remaining height, so .cg-head (sticky top)
+   and .cg-left (sticky left) stay pinned while rows scroll under them and the
+   timeline pans, and both scrollbars stay on-screen (cave-hsh). */
+.board-gantt__scroll { flex: 1; min-height: 0; overflow: auto; }
+/* Controls (top) and the unscheduled tray (bottom) keep their natural height so
+   only the timeline viewport between them scrolls. */
+.board-gantt > .cg-controls,
+.board-gantt > .board-gantt-unscheduled { flex: 0 0 auto; }
 .cg {
   --cg-row-h: 26px;
   width: max-content;
@@ -1944,3 +2189,27 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .cg-sw--pending { background: var(--color-warning); }
 .cg-sw--at-risk { background: var(--color-danger); }
 .cg-today-sw { width: 0; height: 12px; border-left: 2px solid var(--color-danger); display: inline-block; }
+
+/* ── Frosted-glass fallbacks ─────────────────────────────────────────────────
+   Glass needs a live blur behind it — restore the opaque surfaces wherever
+   backdrop-filter is unavailable or the OS asked for less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .board-drawer { background: var(--bg-raised); }
+  .gh-pat-dialog,
+  .gh-action-popover:not(.gh-action-popover--wide),
+  .gh-profile-card { background: var(--bg-elevated); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .board-drawer {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .gh-pat-dialog,
+  .gh-action-popover:not(.gh-action-popover--wide),
+  .gh-profile-card {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

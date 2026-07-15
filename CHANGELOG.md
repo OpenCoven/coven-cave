@@ -7,6 +7,837 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Features
+- **Voice: ElevenLabs pickers browse your saved voices** — the ElevenLabs voice and model fields in Familiar Studio → Brain are now dropdowns backed by your account: the new vault-keyed `GET /api/voice/elevenlabs/catalog` proxy lists the voices saved in your ElevenLabs voice library (name + category, cloned voices included) and the TTS-capable models your plan offers, a saved id that's no longer in the library stays selectable instead of being silently cleared, and when the key is missing or the catalog fails the pickers degrade to the raw-id inputs with an actionable hint (cave-g8s0).
+- **Voice: ElevenLabs provider — the familiar's brain with a signature voice** — pick "ElevenLabs (true voice)" in Familiar Studio → Brain: turns still run through the familiar's own harness runtime (real chat turns, same as Familiar brain), but replies are spoken by ElevenLabs streaming TTS — `voiceName` holds an ElevenLabs voice id (default: Rachel), `voiceModel` an ElevenLabs model id (default: `eleven_turbo_v2_5`), and every sentence chunk is synthesized through the new vault-keyed `POST /api/voice/elevenlabs/tts` proxy so `ELEVENLABS_API_KEY` never reaches the client. Minting probes the key with actionable failures (missing/invalid/unreachable), the Studio preview button auditions the actual ElevenLabs voice, and the speech loop gains a pluggable mouth (system synthesizer stays the default) (cave-pntg).
+- **Voice: "Familiar brain (true voice)" provider** — a voice call can now BE the familiar instead of an impression of one: pick the new provider in Familiar Studio → Brain and every spoken turn runs as a real chat turn through the familiar's own harness runtime (`/api/chat/send`), with its full identity, memory, skills, and tools — replies stream sentence-by-sentence into the system synthesizer so the familiar starts talking before its turn finishes, next-path suggestion blocks are never spoken, and turns persist as first-class conversation history (no transcript double-append). Keyless like the local provider; ears and mouth ride a shared speech loop extracted from it (cave-exii).
+- **Voice picker: gender, accent, and spoken previews** — the Familiar Studio → Brain voice menu now describes every OpenAI realtime voice with its perceived gender, accent, and character (`Masculine · British · gentle, melodic`), keeps the current pick's traits visible under the closed select, and adds the realtime-only `cedar` and `marin` voices. A play/stop button beside the picker speaks a sample: OpenAI samples are minted once per voice through the new `GET /api/voice/preview` (vault-keyed TTS proxy, per-voice cached, realtime-only voices degrade to a "no sample yet" note) and played via the sidecar-token fetch path, while the local provider auditions the named system voice through the browser synthesizer (cave-c2ad).
+- **Distribution: Homebrew tap** — macOS installs via `brew install --cask opencoven/tap/coven-cave`: the new [OpenCoven/homebrew-tap](https://github.com/OpenCoven/homebrew-tap) serves the signed per-arch DMGs and keeps itself current from releases (instant `repository_dispatch` bump from the release pipeline when `HOMEBREW_TAP_TOKEN` is configured, 6-hourly schedule as the no-secrets fallback), with `brew style`/`brew audit`/install smoke tests guarding every cask change (cave-ylqc).
+- **Marketplace Build: template gallery, agentic drafting, and a dry-run tester** — the Build tab starts from a gallery of skill kinds (procedure / tool wrapper / reference / review / orchestration) whose bodies Tab-fill through the shared `{{placeholder|default}}` engine, merged `user > pack > built-in` with pack-shipped and `~/.coven/skill-templates` templates via `GET /api/skills/templates` (packs declare a `skillTemplates` array in `catalog.json`); "Draft with AI" turns a description into a reviewable form fill through one bounded read-only assist (`POST /api/skills/draft`) with in-place Enhance on the instructions and a "Build in chat" brief carrying the full build-API contract (plus a companion `skill-builder` agent skill); and after saving, "Test this skill" proves the trigger fires — and optionally walks the steps in narration — through `POST /api/skills/dry-run`, with the same tester and daemon eval-loop status on the Skills detail drawer (cave-6ptj, cave-yz8n, cave-cyfc).
+- **Crafts: "Describe it" closes its loop** — the create drawer now waits for the familiar's build: it snapshots the drafts store when the brief dispatches, polls while you watch the chat, and opens the arrived draft for review (with a cancelable waiting state). Draft detail gains **Refine in chat** (recreate-and-replace through a brief that carries the draft id + ledger), **Prepare for catalog** (a brief that walks the human-reviewed vendored-sources → catalog.json → sync-check → PR path, never writing the catalog directly), and a two-step **Delete draft** backed by a new guarded `DELETE /api/marketplace/crafts/drafts` (cave-46wg).
+- **Grimoire: stitch patterns + sew destinations** — sewing can aim at a shape (Glossary entry, API contract, Decision record, How-to) whose section scaffold steers the distillation and prefills the manual sew (tags included), and file the entry into an existing vault collection — a collection's schema fields join the scaffold so pack-seeded collections keep their shape (cave-kwx4).
+- **Grimoire: "Sew in chat" round trip** — the chat sew is now a brief carrying the thread id and the local sew API contract (plus a companion `stitch-sewer` agent skill), so the familiar saves the agreed draft itself with pin provenance and thread completion; the intake picks a chat-sewn entry up on re-focus and swaps to it like an in-intake sew (cave-x1za).
+
+### Changed
+- **Voice calls speak as the familiar's real identity** — voice instructions are no longer a five-field costume: `hydrateForVoiceCall` now assembles chat-parity identity for every provider (openai/gemini/local) — the Coven identity canon, the familiar's active roles, its SOUL.md / IDENTITY.md / MEMORY.md contract files inlined from the workspace, and the familiar-scoped Knowledge Vault block — each clamped so an oversized file can never fail a call mint, and each degrading gracefully when absent (cave-knq2).
+- **Notch: parked top-center, never chasing the mouse** — the notch quick-chat pill no longer follows the cursor along the top strip; it stays fixed in the middle of the top bar where a notch belongs. The follow-mouse follower thread, its config field, and the panel's follow toggle are removed; existing `notch-config.json` files with the old `followMouse` key keep loading (the key is ignored), and the fit-menu-bar toggle and hand-editable sizes are unchanged (cave-cw5c).
+- **Shared assist runner** — the stitch sew's bounded `codex exec` lane (read-only sandbox pinned inside the module, stdin prompt, `--output-last-message` parse) is extracted to `src/lib/server/assist-runner.ts` for every authoring assist to reuse (cave-c40b).
+
+### Fixed
+- **Recent chats stop disappearing: PR context is attributed per session, and auto reflections can't archive a live thread** — the sessions list stamped the project root's *currently checked-out* branch's PR onto every chat sharing that root, so one merged PR mass-archived unrelated conversations (two dozen chats vanished for a single `cast-codes` merge — some seconds after their last message). Chats now record their own work branch when a turn is saved and PR badges/auto-archive key off that (root-branch fallback only in branch-stable worktrees; unattributable rows are never PR-swept). Separately, `archiveOnReflection` treated every auto self-report as a wrap-up signal, but those fire when a *turn* completes — threads archived ~30s after each reply while still in use. Auto reflections now only archive threads already idle ≥30 minutes; manual reflections still archive immediately (cave-9q24).
+- **Analytics: Resolve actually launches the thread** — thread-signal Resolve buttons on the familiar analytics pages dispatched `cave:agents-new-chat` into the void: those pages are standalone routes where no workspace listener is mounted, so the click was a silent no-op. Resolve now hands the primed resolution prompt off through sessionStorage and navigates to the workspace, which consumes it at boot into an auto-sent familiar chat — same handoff shape the in-app browser uses (cave-hbpb).
+- **Workspace: chat-bridge effect no longer leaks the continue-on-phone listener** — the effect that bridges `cave:agents-new-chat` also registers `cave:continue-on-phone`, but its cleanup removed only the former; re-runs or remounts stacked handlers and could open the phone-pairing modal multiple times (cave-z9z8).
+- **Tools: Update can now clear stale PATH launchers** — when `npm install -g` succeeds but an older copy of the same package still shadows the fresh install on PATH (orphaned nvm trees, old Homebrew-node prefixes), the Update/Repair flow no longer fails forever with "a stale executable is still first on PATH": it removes the stale same-package launcher under strict identity gates (the fresh npm-prefix copy must verify first; unrelated binaries and directories are never touched) and re-verifies — and when removal isn't safe or permitted, the error now carries the exact manual command instead of a dead end (cave-kii6).
+
+
+## [0.1.0] - 2026-07-12
+
+> 🌙 **First minor milestone.** CovenCave steps out of the 0.0.x patch stream with a rebuilt marketplace (Capabilities retired, Skills modernized, Crafts agentically buildable), familiar access groups with per-project read/write levels, cross-platform find-anything search, first-class OpenCode, a bounded research mission desk, the CovenWiki Phase 3 regeneration CLI, and a wide band of chat/settings/perf/a11y hardening — with React Compiler now on across the app.
+
+### Features
+- **Marketplace: Capabilities retired, Skills modernized, Crafts agentically buildable** — the marketplace drops the legacy Capabilities surface, refreshes the Skills experience, and makes Crafts something familiars can build agentically rather than hand-authored only (cave-4n7j) (#3072).
+- **Permissions: familiar access groups** — familiars can be organized into access groups with read/write project levels, so project visibility and mutation rights are governed per group instead of all-or-nothing (#3071).
+- **Search: cross-platform find-anything** — global search on iOS plus a command-palette search on web, so "find anything" works consistently across platforms (#3070).
+- **Research: bounded mission desk** — a bounded research mission desk for scoping and running research missions inside Cave (#3046).
+- **CovenWiki: Phase 3 regeneration hook CLI** — a `scan / diff / plan / run` CLI for the CovenWiki Phase 3 regeneration hook (#3064).
+- **Runtimes: first-class OpenCode** — the registry-accepted OpenCode runtime now gets first-class treatment across Cave: a deliberate runtime glyph in the composer chip and adapter surfaces (instead of the generic fallback), and sign-in failure detection that offers the copyable `opencode auth login` fix. Everything else (onboarding detection, chat trust, adapter-manifest scaffolding, model selection, raw-stdout chat passthrough) already flows from the synced runtime registry (#3062).
+- **Chat: consolidated Settings tab + auto-archive on thread reflections** — the chat page gains a Settings tab (beside Sessions and Projects) consolidating device-wide chat behavior: the full auto-archive policy (master switch, archive on task completion, idle windows for external and any chats) is now editable in the app instead of config-file only. It also introduces a new trigger — archive on thread reflection: when enabled, a thread archives itself the moment its reflection (self-report) lands, for manual and auto reflections alike; periodic reports and keep-marked chats never auto-archive, and the reflect flow refreshes the session list so the row moves immediately (#3050).
+- **Onboarding: hand-held first run through the first chat** — the setup wizard now shows a three-beat journey strip (Set up Cave → Summon a familiar → First chat) so it never reads as a dead-ended infra checklist; completing setup surfaces an above-the-fold success banner, and the finish CTA keeps its promise by opening the Summoning Circle directly (decided on the wizard's own fresh status, immune to the workspace's slower daemon poll). In the circle, the name stage gains one-click identity templates (Code reviewer, Research assistant, Project planner, Writing partner) that fill the role and required description, and the success stage hands keyboard focus to "Begin the first conversation" so Enter completes the funnel (cave-uvv7).
+- **Chat: keep/extend controls in the chat list** — per-chat keep/extend controls surface directly in the chat list, alongside a tailnet mobile-access marker fix in the proxy path (#3068).
+- **Quick-chat: one shared notch route** — the notch is served from `/quick-chat?notch=1`, a single shared route instead of a divergent surface (#3043).
+
+### Fixes
+- **iOS: search deep link no longer tears down the tab tree** — the `.search` deep link is consumed so a stale marker can't collapse the tab tree on iOS (#3073).
+- **Notifications: bell Open lands on the Inbox view** — a notification row's Open now marks the item read, scopes to its familiar, and opens the Inbox (Schedules) surface instead of jumping straight into a chat session; session jumps remain on the chat surface and Home "needs you" paths (cave-ipze) (#3067).
+- **UI: stop consuming `--accent` as the brand accent** — the shadcn surface token `--accent` is no longer hijacked as the brand accent color (cave-ilkk) (#3066).
+- **a11y: tablist semantics restored on the chat right-panel section tabs** — the right-panel section tabs regain proper tablist roles/keyboard semantics (cave-t7uz) (#3065).
+- **Stitches: GitHub pin field primed with the repo prefix** — the GitHub pin input is pre-filled with the repo prefix (#3063).
+- **Familiars: no phantom Summoning Circle on revisit** — a summon request handled by an already-open Familiars surface left the cross-surface latch armed, so the next visit popped the circle open uninvited; the event listener now consumes the latch too (cave-ibvl) (#3054).
+- **Settings: recover missing OpenCoven tools** — a recovery path for missing OpenCoven tool installs, plus verified tool-update handling (#3031, #3029).
+- **Settings: normalize Windows paths in post-install recheck** — the post-install recheck comparison normalizes Windows paths so a valid install isn't misread as missing (#3058).
+- **Knowledge: hardened knowledge packs** — code-review follow-ups hardening the knowledge packs flow (#3051, #3045).
+- **UI: guard fire-and-forget fetches** — a dead daemon can no longer crash the app through unguarded fire-and-forget fetches (cave-nwm5) (#3053).
+- **About: diagnostics path redaction hardened + safe diagnostic states** — About diagnostics redact paths more strictly and preserve safe diagnostic states (#3059, #3061).
+- **Settings: reattach to running OpenCoven installs** — Settings correctly reattaches to already-running OpenCoven installs (#3060).
+- **Familiars: consume the summon latch in the already-mounted path** — the summon latch is consumed when Familiars is already mounted (cave-ibvl) (#3054).
+
+### Performance
+- **React Compiler enabled** — the React Compiler is turned on across the app (cave-n9a8) (#3056).
+- **Chat: coalesce SSE assistant chunks** — `assistant_chunk` frames are coalesced into one commit per flush window (cave-w50e) (#3055).
+- **Chat: memoize the transcript subtree** — the transcript subtree is memoized out of ChatView's keystroke path (cave-likl) (#3049).
+- **Polls: hidden-window discipline** — client polls pause for hidden windows, with a structural guard (cave-e794) (#3057).
+- **Sessions: async git enrichment + SWR cache** — `/api/sessions/list` git enrichment goes async, and the list gains a stale-while-revalidate cache (cave-n37w, cave-5m1c) (#3044, #3052).
+
+## [0.0.182] - 2026-07-12
+
+> 🧼 **The open-issue sweep, plus Hermes chat out of the box.** Every open UI issue from the queue lands fixed — the drifting comment pill, overflowing Salem answers, the stranded post-summon error screen, and the silent Enhance button — alongside working Hermes-familiar chat on fresh machines and a chat-tab home for the inspector.
+
+### Features
+- **Onboarding: hermes-coven shim auto-installs** — installing Hermes through the Cave now wires the `hermes-coven` shim automatically, so Hermes-familiar chat works out of the box with no manual shim step (#3025).
+- **Chat: inspector lives in chat tabs** — finishes the inspector-into-chat-tabs migration, so session inspection happens in a chat page tab instead of a separate inspector pane (#3022).
+
+### Fixes
+- **Chat: comment pill tracks its selection** — the floating Comment affordance repositions with the live selection on scroll/resize instead of hovering over unrelated prose (#3024).
+- **Search: long Salem answers scroll** — the Ask Salem answer region caps its height inside the palette instead of overflowing the viewport (#3024).
+- **Chat: roster errors self-heal** — a transient familiar-roster failure (e.g. right after summoning your first familiar) now retries automatically instead of stranding an error screen behind a manual Retry (#3024).
+- **Tasks: Enhance reports its outcome** — the top-bar Enhance button now states what happened (enhanced count, nothing to do, or failure) instead of finishing silently (#3024).
+- **Chat: stranded "created" sessions are reaped** — daemon session rows left in "created" when the harness spawn dies pre-handshake are cleaned up instead of accumulating (#3023).
+- **Runtimes: Hermes 1.0.1 sync** — registry sync picks up the hermes-coven shim and the `-q` prompt fix, unbreaking Hermes-familiar chat (#3021).
+
+## [0.0.181] - 2026-07-12
+
+> 🔍 **Trace what your familiars actually did.** Familiar analytics gains a session trace timeline (the daemon event stream finally has a surface), a Recent sessions drill-through list, a clickable 14-day pulse, and live auto-refresh — plus hardened cave-home migration and GitHub chat-launch fixes.
+
+### Features
+- **Analytics: session tracing + live drill-throughs** — a session trace overlay reads the daemon event timeline per session (reachable from the Familiars Sessions tab and the analytics page); familiar analytics adds a Recent sessions section where every row opens its thread or its trace, the hero 14-day pulse becomes a clickable day filter, response-confidence events link back to the conversation that produced them, analytics and growth auto-refresh every 60s, and growth signals carry next-step action links (#3018).
+- **Cave: hardened home migration** — the cave-home startup migration merges directories per-file instead of skipping on collision, and surfaces conflicts instead of silently dropping them (#3019).
+
+### Fixes
+- **GitHub: chat launch payload aligned** — GitHub popover and safe-merge chat launches use `initialPrompt` (the retired `context` field is gone) and safe merge forwards the working `projectRoot`, matching the chat surface contract (#3017).
+- **Tools: Coven CLI freshness floor + Windows shims** — raises the Coven CLI compatibility floor to 0.0.54, fixes Windows npm `.cmd` shim parsing so extensionless package bins resolve correctly, and uses the packaged CovenCave logo on the startup splash (#3011).
+
+## [0.0.180] - 2026-07-12
+
+> 🔌 **OpenCoven tools clarity: correct coven-code install path, cleaner harness versions, and GPT-5.6 models.** Every coven-code surface now points at the scoped `@opencoven/coven-code` package (min 0.6.0) instead of the deprecated bare squat, harness version probes ignore log noise, the notch centers correctly across monitors, and familiar auth failures explain how to recover.
+
+### Features
+- **Models: GPT-5.6 Codex models** — adds the GPT-5.6 Codex model family (`gpt-5.6-sol`/`-terra`/`-luna`) and moves the default familiar model to `gpt-5.6-sol` (#3007).
+- **Cave: dedicated cave home with startup migration** — a dedicated cave home directory with an automatic startup migration and a one-click migration banner (#3005).
+
+### Fixes
+- **Onboarding: coven-code installs only as `@opencoven/coven-code`** — the bare `coven-code` npm package is a different, deprecated package (stuck at 0.0.22); every install/status/update surface now targets the scoped `@opencoven/coven-code` exclusively, with a 0.6.0 compatibility floor (#3013).
+- **Runtimes: corrected coven-code install hint** — synced the registry so the install hint points at `@opencoven/coven-code` (the old `@opencoven/coven` does not exist on npm) (#3014, #3015).
+- **Harnesses: skip log noise in version probes** — version detection ignores leading timestamp/log-level lines (e.g. OpenCode's `WARN FZF not found`) instead of reporting them as the version (#3006).
+- **Notch: exact-center on the mouse's screen** — the quick-chat notch always centers on the top-bar middle and opens on whatever monitor the cursor is on unless pinned (#3009).
+- **Familiars: actionable hub-auth error** — a 401/403 loading familiars now explains that the hub rejected this Cave's token and to reconnect, instead of a bare status code (#3008).
+- **Onboarding: require descriptions for new familiars** — new familiars must carry a description (#3002).
+- **Onboarding: quiet npm "Unknown env config" warnings** — npm config warnings no longer leak into Tools output (#3001).
+- **Startup: sidecar cache validation** — validates the sidecar cache on startup (#3010).
+
+### Chores
+- **Copy: capitalize "Coven CLI"** — consistent "Coven CLI" casing across prose (#3012).
+
+## [0.0.179] - 2026-07-12
+
+> 🧹 **Chat housekeeping, familiar lifecycle, and updater polish.** Chats gain an automatic archive policy and a centered quick-chat notch, familiars get a discoverable Remove entry and a cleaner picker, the copilot harness renders tool calls, and the update banner leads with the native installer.
+
+### Features
+- **Chat: automatic archive policy** — a configurable policy sweeps stale chat sessions into the archive automatically, with session list/detail support and a settings surface (#2995).
+- **Quick-chat: centered notch** — an optional centered notch that expands into quick chat (#2981).
+- **Familiars: discoverable Remove entry** — the familiar detail panel gains a per-familiar overflow menu with Edit in Studio and Remove familiar…, routing to the canonical lifecycle confirm with undo and restore (#2993).
+
+### Fixes
+- **Chat: copilot harness tool calls** — tool calls on the copilot harness render via its JSONL stream instead of staying invisible (#2985).
+- **Updater: native retry before browser fallback** — when the native update check fails, the banner now recommends retrying the signed native installer before falling back to the browser (#2986).
+- **Familiars: cleaner defaults** — internal Coven familiar names no longer appear in the summoning circle's name dice, and the generated first-install roster is filtered from the picker (#2994).
+- **Secrets: one GitHub token** — `GITHUB_PAT` is the single source of truth for the GitHub token; the duplicate `GITHUB_PERSONAL_ACCESS_TOKEN` vault entry is collapsed into it (#2989).
+- **Linux: leaner AppImage** — libmount is stripped from the AppImage bundle (#2987).
+
+## [0.0.178] - 2026-07-12
+
+> 🪄 **Craft authoring, GitHub event subscriptions, and chat reliability.** Cave can now create local draft Crafts from familiar roles, subscribe to GitHub repository activity, keep pinned chats synchronized across surfaces, and render captured Codex output events reliably on the Windows harness path.
+
+Patch release on top of v0.0.177.
+
+### Features
+- **Crafts: create local draft Crafts from familiars** — the Crafts page can extract a reversible local draft from a familiar's selected roles, including direct and effective skills, tools/capabilities, MCP servers, plugins, prompts, workflows, origin labels, and a review ledger before save (#2974, #2975).
+- **GitHub: subscribe to repository events** — repository activity can now subscribe to opened PRs and CI completion events for Cave-side project awareness (#2978).
+- **Desktop: Coven logo menu-bar icon** — the menu-bar tray now uses the Coven logo so Cave is easier to recognize at a glance (#2979).
+
+### Fixes
+- **Chat: captured Codex output events render correctly** — Coven stream-json `output` events are routed through the assistant filter, persisted, and still preserve error-looking output text for empty-response diagnostics on the Windows captured-piped path (#2982).
+- **Chat: pinned chats persist across surfaces** — pinned chat state now flows through one shared subscribable store, so chat pins stay in sync between surfaces (#2980).
+
+### Docs
+- **Settings: attribution note** — the preference-persistence changelog credit now names the original author correctly (#2977).
+
+## [0.0.177] - 2026-07-12
+
+> 🗨️ **Chat context, discoverability, and durable settings.** The composer gains a live git context chip (branch · worktree · PR), chats get a visible rename button and smart chat→task autofill with promoted inspector tabs and AI project icons, granted project roots are now enforced at the harness level, and preferences survive sidecar port changes.
+
+### Features
+- **Chat: git context chip in the composer** — when the chat's project root is a git repo, the composer utility row shows the branch, uncommitted-change count, linked worktree, and the branch's PR; the PR segment opens in the in-app browser (#2967).
+- **Chat: smart chat→task autofill + promoted inspector tabs + AI project icons** — creating a task from a chat mines links, GitHub references, priority keywords, natural-language due dates, and plan-list subtasks into a full board draft; inspector sections are promoted into the right-panel tab strip, and projects gain AI-generated icons (#2970).
+- **Chat: visible rename button** — a pencil button beside the chat title opens the inline rename editor, making renaming discoverable; clicking the title and the overflow-menu item still work (#2968).
+
+### Fixes
+- **Chat: granted project roots enforced at the harness** — runtime grants are forwarded via `coven run --add-dir`, so familiars can actually read granted directories instead of failing on prompt-text-only grants (#2969).
+- **Settings: preferences persist across sidecar ports** — appearance, theme, backdrop, and reading settings are server-persisted and bootstrapped at startup, so they no longer reset when the app serves from a different port (#2971, supersedes #2952).
+
+## [0.0.176] - 2026-07-11
+
+> 🪟 **Windows stability + chat robustness.** Native browser lockups and unresponsive shutdown are fixed, the send route gains a non-blocking filesystem boundary sentinel and a resilient chat-title helper, quick-chat gets a conversation cache, and mobile chat scroll anchoring is repaired.
+
+### Features
+- **Chat: conversation cache + quick-chat UX** — recently viewed conversations are cached so quick-chat and thread switches feel instant, with the composer/UX polish that shipped alongside it (#2961).
+- **Settings: scalable familiar picker** — the familiar picker scales cleanly across window sizes instead of clipping or overflowing (#2950).
+- **Cross-platform UI consistency program (Phase 0)** — shared field primitives land as the foundation for consistent form/input styling across desktop, mobile, and web (#2951).
+
+### Fixes
+- **Windows: native browser lockups and unresponsive shutdown** — the WebView2 environment callback work is isolated so a slow or hung callback can no longer freeze the main thread, plus a close watchdog and offscreen-at-full-size child realization prevent the shutdown hang (#2947, #2963).
+- **Mobile: chat scroll anchoring** — the conversation no longer jumps or loses its anchor while streaming on mobile (#2946).
+- **Chat: resilient conversation-title helper** — the `chatSummaryTitle` helper is restored with Windows path coverage so title derivation works consistently across platforms (#2955).
+
+### Security
+- **Chat: runtime filesystem boundary gains a non-blocking sentinel** — the send route now watches streamed tool calls for user-space paths outside the granted roots. Violations never interrupt the turn: they surface as a progress notice on the turn and append a corrective boundary reminder to the conversation's next harness prompt so the familiar self-corrects (observe → surface → steer) (#2949).
+
+## [0.0.175] - 2026-07-11
+
+> 🪟 **Faster, quieter Windows packaging plus a batch of chat/board/desktop polish.** The Windows sidecar runtime now ships content-addressed and zstd-compressed with prepared background updates and a startup-progress surface, quick-chat gains attachments + message queueing, chat threads split into panes, and a run of picker/board/pairing fixes land.
+
+### Features
+- **Quick chat: drag-and-drop/paste attachments, message queueing, and companion composer upgrades** — the tray/overlay composer stages files via drag-and-drop or paste as chips (attachment-only sends allowed, bridge composes natively), send-while-streaming queues the message and drains it in order on a natural done (Stop/error keeps it parked), plus slash-dispatch send path, project-root picker plumbing, Tab-accept reply recommendations, and Enhance sparkle/caret segments that stay inside their rectangle on mobile (#2937, #2938).
+- **Chat: threads auto-name themselves with a short summary title** — when a thread's first exchange completes, the send route derives a concise title (filler-cleaned prompt, or the assistant's opening heading for long asks, clamped at a word boundary). Manual renames — including mid-stream ones — always win, and error/cancelled first turns keep the default.
+- **Chat: split panes** — drag a conversation from the thread rail onto the chat surface to snap it left / right / above / below the current chat as a resizable pane. Each secondary pane carries a slim header (title · open as main · ✕); opening a pane's thread as the primary chat collapses it back out of the strip. Desktop full-width chat only (#2941).
+- **Analytics: thread signals launch resolution threads** — review-queue items and actionable signal rows (blockers, access/clarity gaps, capabilities) now open a new chat primed with an auto-sent prompt that directs the familiar to diagnose, apply, and verify the fix, replacing the discuss-only prompt. Informational rows (skills used most) stay task-only.
+- **Windows: prepared background updates + startup progress** — updates download and verify in the background, and a startup-progress surface (with retry/cancel controls) shows sidecar runtime bring-up instead of a blank wait (#2916).
+- **iOS: honest reconnect pill** — tabs stay mounted through connection drops so a brief network blip shows a reconnect pill rather than tearing down and remounting the whole surface (cave-y482 part 2) (#2935).
+- **Avatars: shared AvatarLightbox primitive** — one reusable lightbox for avatar imagery across the app (cave-ocy8) (#2931).
+
+### Security
+- **Chat: runtime filesystem boundary gains a non-blocking sentinel** — the send route now watches streamed tool calls for user-space paths outside the granted roots. Violations never interrupt the turn: they surface as a progress notice on the turn and append a corrective boundary reminder to the conversation's next harness prompt so the familiar self-corrects (observe → surface → steer).
+
+### Fixes
+- **Folder picker is summoned to the foreground** — the native "choose a folder" dialog no longer opens hidden behind the window. On Windows the `FolderBrowserDialog` now gets a `TopMost` owner form so it comes forward focused; macOS activates System Events before `choose folder`; Linux runs zenity modal (#2614, #2944).
+- **A failed chat send keeps you in the conversation** — when the Coven CLI can't be resolved from the app's environment, the send failure now surfaces as an inline error strip with your message preserved for one-click Retry and a soft "Open Setup" link (wizard overlay, not a hard navigation) instead of eating the message and bouncing to Setup (#2618, #2944).
+- **Board: table never mounts with the selected card hidden** — switching to the table view with a card selected in the collapsed-by-default "done" group used to leave no row for the anchor scroll to find; the collapse initializer is now selection-aware and the still-selected card is revealed after a view-mode switch (cave-iote) (#2940, #2943).
+- **Board: detail-panel action popover no longer clips** — the popover anchors left so it isn't cut off at the panel edge (#2936).
+- **Projects: deduped by normalized root at load** — projects registered under differently-normalized paths no longer show as duplicates (#2932).
+- **Desktop: mobile pairing secret persists across restarts** — the pairing secret survives app restarts so paired mobile devices stay paired (cave-y482) (#2933).
+- **Artifact comments: Comment fab stays on-screen** — the fab's x is clamped so wide selections don't push it off the viewport (#2934).
+
+### Performance
+- **Windows: content-addressed, compressed runtime extraction** — the packaged sidecar runtime is content-addressed and zstd-compressed (decompressed via the Windows inbox `tar.exe`), with lifecycle diagnostics and a guarded MSI uninstall cache cleanup, cutting extraction time and disk churn on install/upgrade (#2930, #2942).
+
+## [0.0.174] - 2026-07-11
+
+> 💬 **Copilot chats natively, cleaner Windows packaging, and the Grimoire becomes Memories.** Copilot (and other manifest adapters) now render their replies correctly in chat, the packaged Windows sidecar runtime is pruned and MSI publication is gated, and the knowledge surface is renamed Memories.
+
+Rolls up on top of v0.0.172 — this release also carries the v0.0.173-stamped work below (board/palette project-scoping, chat/board polish, rollout-audit hardening, and the MSI sidecar collapse), which was stamped but never cut as its own release. **Windows note:** the v0.0.172 → v0.0.174 upgrade is the one-time legacy bridge that removes v0.0.172's expanded sidecar tree; archive-to-archive upgrades after this are the fast path.
+
+### Features
+- **Analytics: thread signals become a scrollable, task-promoting data table** spanning both columns (#2920, cave-bhh2).
+
+### Fixes
+- **Chat: Copilot (and other manifest adapters) render replies natively** — external adapters pipe raw CLI stdout without codex/claude output shapes, so the assistant filter was eating whole replies; they now pass through verbatim (with CRLF/backspace handling). Plus the code rail fills wide panels and the sidenav "Grimoire" is renamed **Memories** (#2927, cave-ns35).
+- **Projects: drop stale scope on refetch; gate the palette project fetch until open** — prevents a mid-refetch pick from reaching a project the new familiar can't access (board chat-launch 403) (#2918).
+- **Board: Tasks|Queue segment tabs standardized to the group-toggle footprint** (#2921).
+
+### Windows runtime
+- **Prune the packaged sidecar runtime closure** — traced dep closure instead of the whole tree, with file/size budgets (#2922, by @romgenie).
+- **Gate MSI publication + upgrade diagnostics** — an MSI can't publish before its budget passes (#2923, by @romgenie).
+
+### Internal
+- **Runtimes: one label authority** — consolidated runtime label resolution, alias + merge-label fixes (#2919).
+
+
+## [0.0.173] - 2026-07-10
+
+> Board & palette project-scoping correctness, chat/board polish, and rollout-audit hardening.
+
+Patch release on top of v0.0.172.
+
+> **Windows upgrade note:** v0.0.172 → v0.0.173 is the one-time legacy bridge. Windows Installer must still remove v0.0.172's expanded sidecar tree; archive-to-archive upgrades after v0.0.173 are the representative fast path.
+
+### Changes
+- fix(windows): collapse the MSI sidecar payload into one verified runtime archive, reducing per-file upgrade work (#2911)
+- fix(projects): drop stale scope on refetch; gate palette project fetch on open (#2908)
+- docs: iOS onboarding + constant connection + cloud persistence — review & plan (cave-rku9) (#2909)
+- fix(rollout): five P3s from the evening re-audit (#2907)
+- feat(cave): chat/board polish batch — palette, pickers, header row, review fixes (#2906)
+- fix(rollout): three P2s from the evening re-audit (#2904)
+
+
+## [0.0.172] - 2026-07-10
+
+> Analytics & daily-report polish, marketplace Crafts and Grimoire Stitches, plus cross-platform production hardening.
+
+Patch release on top of v0.0.171.
+
+### Changes
+- fix(prod): short-circuit the POSIX login-shell PATH probe on Windows (#2902)
+- fix(stitches): review hardening — connect-time SSRF guard, sandboxed sew, fence-safe output parse (cave-746p) (#2900)
+- chore: delete retired ComuxView + FlowView sources; settle rail PTY lifecycle (cave-c3yt) (#2901)
+- fix(prod): cross-platform path bug, silent quick-add failure, app error boundaries (#2899)
+- feat(marketplace): add audited research Crafts (#2898)
+- style(daily-report): full-bleed stats row + ultra-minimal Apple-style cards (#2896)
+- fix(marketplace): preserve Craft dialog focus fallback (#2895)
+- fix(board): reconcile bulk patch failures once, after the batch settles (cave-381s) (#2897)
+- fix(rollout): seven P3 papercuts and dead-ends from the 100k-ft audit (#2894)
+- feat(marketplace): equip Roles with Crafts (#2893)
+- feat(grimoire): Stitches — KB intake via pins & threads, sewn agentically or by hand (cave-v7zs) (#2891)
+- style(chrome): frost the opaque floating overlay chrome (cave-il65) (#2890)
+- fix(inspector): open memory files via the server-resolved path, not a hardcoded dev home (#2889)
+- fix(rollout): eight P2 dead-ends and papercuts from the 100k-ft audit (#2888)
+- fix(marketplace): preserve Craft transaction diagnostics (#2887)
+- feat(marketplace): verify Craft installs with Codex (#2886)
+- fix(shell): keep headers adaptive across screen sizes (#2885)
+- fix(rollout): six P1 UX dead-ends from the 100k-ft audit (#2884)
+- feat(analytics): weight-honest confidence breakdown + clearly-labeled metrics (#2883)
+- feat(chat): closed right panel leaves a rail — the reflection of the left sidebar (cave-zn19) (#2879)
+- feat(marketplace): add Craft schema and Seeker's Lens (#2881)
+- feat(analytics): give the standalone analytics route the left sidepanel (#2882)
+- feat(analytics): thread signals span both columns with a scrollable, task-promoting data table (cave-bhh2) (#2880)
+- refactor(runtimes): one label authority, alias + merge-label fixes, hoisted rank map (#2878)
+- fix(chat): right sidebar mirrors the left panel's glass — flush fit, no far-right gap, whole tab labels (cave-wc78) (#2877)
+
+
+## [0.0.171] - 2026-07-09
+
+> 🧹 **Tidier familiars, leaner chat header** — removing a familiar is now undo-safe (a distinct track from Archive), and the chat header slims to Find + a kebab with compact project selection.
+
+Patch release on top of v0.0.170.
+
+### Features
+- **Familiars: undo-safe Remove beside Archive** (#2873, cave-ykwk) — a dual-track lifecycle so Remove and Archive are distinct, and Remove can be undone.
+
+### Improvements
+- **Chat: the header slims to Find + a kebab menu** with compact project selection (#2874).
+
+
+## [0.0.170] - 2026-07-09
+
+> 🧑‍🤝‍🧑 **Asana, assignable per familiar** — connect Asana once, then decide per agent whether (and in which workspace) it works with your tasks, right in Familiar Studio → Brain. The board and Queue show each agent only their scoped tasks.
+
+Patch release on top of v0.0.169.
+
+### Features
+- **Asana: seamless connect + per-agent assignment** (#2871, cave-vn19). One app-wide connection, then a per-familiar "Work with Asana tasks" toggle + optional workspace scope in the Brain tab. `/api/asana/assigned` honors each agent's assignment; the board inspector scopes to the card's familiar and the Queue strip to the active one (hidden for opted-out agents).
+
+### Improvements
+- **Asana: the Queue strip refreshes on the 30s poll** (#2870, cave-m4h9) with an equality guard against re-render churn.
+
+
+## [0.0.169] - 2026-07-09
+
+> Mobile Cave reconnects cleanly over Tailscale when a stale dev server is in the way, Queue gains Asana-linked task context, and runtime sync gets its second review hardening pass.
+
+Patch release on top of v0.0.168.
+
+### Changes
+- fix(runtimes): second review pass — build-metadata precedence, un-persisted checkout token (#2868)
+- feat(asana): integrate Asana tasks into the board, beads, and Queue (#2865)
+- fix(mobile): recover stale Cave app server (#2867)
+
+
+## [0.0.168] - 2026-07-09
+
+> In-app updates work again on macOS — the updater tarball no longer breaks the app's code seal — plus a comprehensive title-bar fit and subtle titlebar glass.
+
+Patch release on top of v0.0.167.
+
+### Changes
+- fix(release): updater tarball ships no AppleDouble entries — kills the macOS 'app is damaged' update error (cave-csl8) (#2864)
+- fix(shell): comprehensive title-bar fit + subtle titlebar glass (cave-y894) (#2862)
+- feat(cave): analytics model-performance votes, settings polish, composer/home refinements (#2860)
+
+
+## [0.0.167] - 2026-07-09
+
+> 🪄 **Polish + hardening pass** — the marketplace's prompt-pack "Try it" becomes an unmissable bordered pill with a hand-off arrow instead of near-invisible ghost text, and the desktop title-bar controls stop hiding under the macOS traffic lights. Under the hood: a ReDoS-prone path regex is replaced with a plain `trimEnd`, and the runtime-sync tooling gets spec-correct prerelease semver plus CI-triggering bot PRs.
+
+Patch release on top of v0.0.166.
+
+### Improvements
+- **Marketplace: "Try it" is finally visible** (#2857) — the prompt-pack hand-off is now a bordered secondary pill with an arrow instead of ghost text that blended into the card.
+- **Shell: title-bar controls never sit under the traffic lights** (#2856, cave-i7wf) — window controls reflow clear of the macOS traffic-light cluster.
+
+### Fixes
+- **Security: no more ReDoS-prone path regex** (#2845, CodeQL #99) — `next-paths.ts` uses `trimEnd` instead of a catastrophically-backtracking regex.
+- **Runtimes: review follow-ups** (#2858) — spec-correct prerelease semver handling and CI-triggering bot PRs in the runtime-sync workflow.
+- **Runtimes: drop a no-op identity newline replacement** in `sync-runtimes.mjs` (#2844).
+
+
+## [0.0.166] - 2026-07-09
+
+> 📓 **Journal moves into the Grimoire** — daily reflections are now a tab beside Docs and Graph, so the whole knowledge surface lives in one room. Plus registry-driven runtime adapter scaffolds and an analytics contract-compliance pass.
+
+Patch release on top of v0.0.165.
+
+### Features
+- **Grimoire: Journal is now a tab** (#2854). The Docs/Graph switcher grows a third tab — Docs · Journal · Graph — rendering the full daily-reflection surface (day rail, generate, edit/delete with undo) in place. The Journal nav item opens it directly instead of routing to Settings; per-familiar journals still live in Settings → Familiars → Journal.
+
+### Improvements
+- **Runtimes: adapter scaffolds come straight from the registry** (#2853, cave-laxg).
+- **Analytics: contract compliance shown beside confidence, with one-click enable for self-reporting** (#2852, cave-ydv5).
+
+
+## [0.0.165] - 2026-07-09
+
+> 🏛️ **Rooms for every vocation** — the Cave becomes role-aware: a registry-driven Role Surface system gives Familiars specialized workspaces (a Research Desk, a Comms operations center, an Archive) instead of generic tabs. Plus the Coven adopts its canonical typography, an "ultimate Enhance" streaming rewrite across every composer, and a full prompt-template + marketplace-pack workflow.
+
+A feature release on top of v0.0.164.
+
+### Features
+- **Role Surface system — registry-driven rooms for Familiar vocations** (#2849, cave-htyp). A role-aware Cave with no role-specific branching in the shell: register a surface and it becomes a first-class room. Ships three — Research Desk (researcher), Comms Operations (messenger), The Archive (indexer) — with per-Familiar × per-surface state. See `docs/role-surfaces.md`.
+- **Typography: adopt the Coven canon** — EB Garamond display, Inter body, JetBrains Mono (#2850).
+- **Composer: ultimate Enhance** — model-backed streaming rewrite, race-safe, with an intent menu, across all three composers (#2842, cave-b6c2).
+- **Prompts: template power** — placeholder Tab flow, favorites/recents/tags, save/edit/delete (#2847, cave-jg6k).
+- **Marketplace: browsable prompt packs** — real previews, one-click Try it, prompt-pack shipping + docs (#2848, cave-1f9h).
+- **Runtimes: sync accepted runtimes from the coven-runtimes registry** (#2841) — one command (or an automated PR) brings a newly-accepted runtime into Cave.
+- **Chat: project group headers gain an activity meta line + explicit project colors** (#2846).
+- **Cron: a prompt bar + analytics UX polish**, alongside a static Coven font preview (#2843).
+
+
+## [0.0.164] - 2026-07-09
+
+> 🚦 **Chrome that knows when to leave** — the macOS traffic lights hide with the side panel and glide back when it opens, Dia-style. iOS gets real split layouts on wide windows and a decluttered chat header, cron details fit every screen, and releases now stamp themselves with one command.
+
+Patch release on top of v0.0.163.
+
+### Features
+- **Shell: traffic lights follow the side panel, Dia-style** (#2837, cave-9ja2). Closed panel → the native buttons hide and the title bar reclaims their inset; open or hover-peek → they glide back.
+- **iOS: wide windows engage the split layouts** — no more sparse full-width columns (#2838, cave-bgmg).
+- **Marketplace: skills-leaderboard detail** — click-to-copy CLI, minimalist stats, tidy actions (#2834).
+- **Release tooling: one-command stamp script + partial updater-manifest resilience** (#2833, cave-ef6f).
+
+### Fixes
+- **Crons: cron detail fits every screen** — balanced expanded columns, adaptive list rows, honest mobile chrome (#2839).
+- **Grimoire: editor batch** — dirty-tab dot + close confirm, next-paths stripped from journal (#2836, cave-vv2h/cave-onp8).
+- **iOS: chat header sheds the Commands and Share toolbar buttons** (#2835, cave-yey7).
+- **Release tooling: stamp script survives the gitignored-but-tracked generated iOS plist** (`git add -f`; found on this stamp's first real run).
+
+
+## [0.0.163] - 2026-07-09
+
+> 📱 **Hand off THIS chat to your phone** — the QR pairing carries the current conversation across and finally confirms it took. The Work Queue rides the Tasks page as a tab, the familiar switcher reads as a clean dropdown with a prominent Summon button, multi-file turns collapse into one "Review all" entry, and the chat header slims down for narrow panels. Plus a readable transcript over custom backdrops, mid-save file-switch no longer bleeds content, and Grimoire graph nodes are keyboard-traversable.
+
+Patch release on top of v0.0.162.
+
+### Features
+- **Mobile: Continue on phone hands off the current chat** (#2827, cave-i74f). The QR code carries THIS conversation to the phone, and pairing now reports success instead of leaving you guessing.
+- **Tasks: the Work Queue rides the Tasks page as a tab** (#2830, cave-oa1z) — queue and task views live together instead of split across surfaces.
+- **Familiars: the switcher reads as a clean dropdown with a prominent Summon button** (#2825, cave-6p5l).
+- **Chat: multi-file turns get one "Review all" entry into the Changes tab** (#2823, cave-qva4) instead of a row per file.
+- **Chat: slim header + narrow-panel-aware sidebar rows** (#2831, cave-bmv0) — the header trims down and sidebar rows adapt when the panel is narrow.
+- **Inbox: toast vibe pass** (#2828, cave-18nk) — glass surface, kind-tinted chip, and pill actions.
+
+### Fixes
+- **Chat: readable transcript over a custom backdrop** (#2829, cave-5oeu) — a frosted reading column plus quiet-text lift keeps the transcript legible over any wallpaper.
+- **Grimoire: shell/nav batch** (#2820, cave-quct, cave-eg6f, cave-v1j0) — the graph reaches mobile layouts, the rail supports keyboard nav, and memory groups by source root.
+- **Grimoire: quick wins** (#2822) — preference-aware journal dates, eviction announce, an editor skeleton, tappable chips, and search screen-reader counts.
+- **Code: mid-save file switch no longer paints the saved file's content over the file you moved to** (#2824, cave-uv0t).
+
+### Accessibility
+- **Grimoire: keyboard traversal for graph nodes** (#2821, cave-2cx8) — Tab cycles nodes, Enter opens.
+
+## [0.0.162] - 2026-07-09
+
+> 🖼️ **Your wallpapers, straight from the camera roll** — the backdrop picker now takes HEIC photos directly, no conversion detour. Plus the side-panel footer stays put on chat pages, familiar switching can't flash another familiar's sessions, Grimoire's graph reaches narrow screens, and daily narratives drop their stowaway next-paths block.
+
+Patch release on top of v0.0.161.
+
+### Fixes
+- **Backdrop: HEIC/HEIF wallpapers work in the picker** (#2815, cave-cjpb). The desktop app decodes iPhone photos natively; where a plain browser can't, the error now says what to do instead of a generic failure.
+- **Shell: the side-panel footer (Dashboard + Settings) stays on chat pages** (#2811).
+- **Workspace: switching familiars can't briefly show the previous familiar's sessions** (#2812, cave-jibj) — session loads are sequence-guarded.
+- **Daily report: narratives no longer carry a piggybacked next-paths block** (#2813).
+- **Grimoire: Graph mode is reachable on narrow/mobile layouts** (#2814, cave-quct).
+
+## [0.0.161] - 2026-07-09
+
+> 📱 **Threads that stay yours** — the iOS app stops flooding its Threads list with journal-generated runs, matching the web. The task loop closes on the board with live status chips and one-click Mark done, harness failures grow inline fix actions, and Claude Fable 5 joins the Copilot model menu.
+
+Patch release on top of v0.0.160.
+
+### Fixes
+- **iOS: journal/generated runs stay out of familiar thread lists** (#2806, cave-48aa). The Swift session model now carries `origin`/`generated` and filters with the same rule as the web (#2798) — generated flag, hidden origins including `journal`, and the legacy truncated-title fallback.
+- **Settings: typography controls pin to one standard 28px height** (#2809).
+
+### Features
+- **Board + chat: the task loop closes** — live session status on card chips and one-click Mark done from a settled chat (#2805, cave-32ks).
+- **Chat + board: inline fix actions for harness/runtime failures** (#2807, cave-noox).
+- **Models: Claude Fable 5 joins the Copilot model menu** (#2808, cave-ufvy).
+
+## [0.0.160] - 2026-07-08
+
+> 📖 **Responses worth reading** — the chat's Expand view becomes a real reading surface, tables read as rows instead of spreadsheets, inline code stops shouting, and mermaid diagrams finally wear the theme — on a drawing canvas, inline and fullscreen. Plus a backdrop vibe for Home + Chat and journal-run chats that tidy themselves away.
+
+Feature release on top of v0.0.159.
+
+### Features
+- **Chat: modern reading polish** (#2801, cave-po4f). The Expand reader gets a centered 72ch book measure on a larger reading scale; inline code chips go quiet-neutral; tables move to row separators with sticky headers, zebra + hover tints, and a roomier expanded lightbox; mermaid diagrams render token-native across all 19 themes on a dot-grid drawing canvas, with a glassy zoom/pan toolbar fullscreen; user bubbles and thinking blocks soften.
+- **Appearance: backdrop vibe** — an image behind Home + Chat with the accent derived from it (#2799, cave-bq7s).
+- **Calendar: the agenda is a scannable timeline** (#2803, cave-cal-agenda) — date badges with sticky day headers, a connecting spine, relative cues ("in 2h", "now"), and cron cadence chips; today wears the presence accent.
+- **Onboarding: first-run golden path** (#2802, cave-fy1q) — daemon auto-start, summoning-circle draft survival, and a time-to-first-reply funnel.
+
+### Fixes
+- **Chat: journal-run chats auto-hide** — `origin:journal` provenance with a truncated-title legacy fallback (#2798, cave-buih).
+- **Journal: delete announces once** — UndoToast already speaks it (#2800, cave-6rhk).
+
+## [0.0.159] - 2026-07-08
+
+> 🪟 **Frosted glass and a Copilot in the cave** — overlay chrome goes translucent with real backdrop depth, GitHub Copilot CLI joins as a first-class runtime, the Changes panel reviews your diff in one click, and mornings start with a "Needs you" triage strip.
+
+Patch release on top of v0.0.158.
+
+### Features
+- **Harness: GitHub Copilot CLI is a first-class runtime** (#2791) — bundled `copilot` adapter with install hints and aliases, a `github/`-provider model menu (Auto, GPT-5.5, Claude Opus 4.8 / Sonnet 5 / Haiku 4.5, Gemini 3.1 Pro), onboarding, logos, and analytics awareness.
+- **Chrome: glassmorphic overlays** (#2790, cave-6u0j) — popovers, modals, the ⌘K palette, and the notification bell pair translucent theme-derived fills with backdrop blur, with opaque fallbacks for `prefers-reduced-transparency` and no-`backdrop-filter` environments.
+- **Code: a Review button in the Changes panel** (#2785, cave-nqoy) starts a new session that reviews the uncommitted working-tree changes like a commit review — verdict first, then bugs, security, test gaps, nits.
+- **Home: a "Needs you" morning-triage strip** (#2793, cave-925w) — one glance, one source, with today's report a click away.
+- **Projects: hub round 2** (#2789, cave-dn9w) — task deep-links, Reveal in Finder, and the color row demoted to the overflow.
+- **Settings: the summon chip rides the familiar roster** — picker wraps, project filter, capped decisions (#2782).
+- **Dashboard: the recent daily-reports list scrolls** (#2794).
+
+### Fixes
+- **Appearance: theme-token edits layer on the selected theme** and the redundant color editor is gone (#2792, cave-qz3m).
+- **Composer: visible input text and icons** — icons take the primary tier, placeholders 85% foreground (#2778, cave-tjcx).
+
+### Accessibility
+- **Journal: audible mutations, real headings, visible focus, and a spoken disabled reason** (#2780, cave-t1ou).
+
+### Performance
+- **Journal: day reads no longer block on the memory-inventory scan** (#2784, cave-tgx9).
+- **Sidebar: the recent-activity poll is guarded** with content equality + a sequence id (#2779, cave-lb4e).
+
+### Polish
+- **Chrome: the title bar slims to the traffic-light height** (#2781, cave-p78p).
+- **Marketplace: the skill-browser rail slims from five labeled groups to three** (#2786, cave-99k1).
+- **Home: the news lane drops its newspaper chrome marker** (#2788, cave-e2zx).
+
+### Docs
+- **Golden paths** — eight journeys with grounded current state and conservative enablement plans (#2787, cave-60fu).
+
+## [0.0.158] - 2026-07-08
+
+> 🗂️ **Nothing hides the folder browser** — the project directory picker escapes its host's stacking context and always renders on top. Stale polls stop clobbering fresh state on schedules and the board, the sidenav familiar switcher settles into its final chrome, and the inbox goes quieter over SSE.
+
+Patch release on top of v0.0.157.
+
+### Fixes
+- **Projects: the directory-picker modal portals to `<body>`** (#2773, cave-lj6j). A transformed/backdrop-filtered host (the home composer card) trapped the fixed scrim in its stacking context, letting composer chrome paint over the open folder browser. It now renders above everything from every mount.
+- **Schedules: sequence-guarded loads** — a stale poll can no longer revert a just-toggled or just-saved cron (#2771, cave-1303). **Board: same guard** for stale poll/focus GETs vs fresher optimistic moves (#2766, cave-vdvy).
+- **Chat: the sidebar's familiar switcher is restored** — the chat page's only familiar control (#2768, cave-l3ay); **runtime + host chips share the round icon buttons' pill radius** (#2769).
+
+### Features
+- **Sidenav: the familiar switcher is a full-width multiselector wearing the New-chat chrome** (#2761), aligned edge-to-edge with New chat, caret on the right edge (#2772).
+
+### Performance
+- **Inbox: SSE stays quiet when nothing changed** — content-equal updates drop, reconnect snapshots keep array identity, and ActionInbox follows the cockpit repoll (#2762, #2770, cave-bzch).
+
+### Internal
+- CI: the release workflow's Intel leg retries its network-dependent steps (#2767, cave-1hha).
+
+## [0.0.157] - 2026-07-08
+
+> 🔔 **Heard, not just seen** — inbox triage speaks to assistive tech: one snooze menu with real menu semantics everywhere, actions that announce what they did, urgency-aware toasts, and capabilities that narrate their refreshes. Plus the familiar switcher in every page's sidenav and split tiles that fit every screen.
+
+Patch release on top of v0.0.156.
+
+### Features
+- **Shell: the familiar switcher lives in the sidenav header on every page** (#2750, cave-vtk9).
+
+### Fixes
+- **Inbox: prefs writes are serialized** — concurrent PATCHes can no longer drop each other's changes (#2758, cave-g6ew).
+- **Shell: split tiles fit every screen** — pixel floor, even remounts, container-keyed grids (#2743, cave-hivd).
+
+### Accessibility
+- **One SnoozeMenu, real menu semantics** (#2760, cave-1y0d). The shared snooze menu (inbox toast, inspector, calendar, dashboard) declares `aria-haspopup`/`aria-expanded`, renders a named `role=menu` with `menuitem` options, traps focus with Escape-to-trigger, and the dashboard's hand-rolled copy is gone. Inbox actions announce their outcomes — item titles for single actions, counts for bulk — and the icon-only dismiss names its item.
+- **Toasts: urgency-aware politeness, pausable auto-hide, one titled dismiss** (#2757, cave-bj68).
+- **Capabilities: refresh lifecycle and copy outcomes are announced** (#2755, cave-vmj8).
+
+## [0.0.156] - 2026-07-08
+
+> 🎛️ **A palette worthy of the slash** — the chat composer's slash view becomes a sectioned palette: Commands and Skills headers, icon-led rows with inline descriptions, and a roomy elevated panel. The shell picks up a familiar dropdown atop the chat sidebar with a Codex-style title bar.
+
+Patch release on top of v0.0.155.
+
+### Features
+- **Chat: slash menus become a sectioned palette** (#2752, cave-nl9n). Sentence-case Commands/Skills headers, leading icons with medium names and unified muted inline descriptions, inset rounded row highlights, and an elevated rounded panel — across the slash menu, /model, /skill, /prompt, and @-file pickers. Keyboard contract unchanged.
+- **Shell: familiar dropdown heads the chat sidebar** · Codex-style title bar · one-row sidepanel chrome (#2747).
+
+### Fixes
+- **Models: the GPT-5.1 generation retires from the codex model menu** (#2751).
+- **Settings: On/Off switches match the shared button shape** (#2741, cave-9yll).
+- **Calendar: week view falls back to day rendering in narrow split panes** (#2748, cave-87zv).
+
+## [0.0.155] - 2026-07-08
+
+> 🔍 **Review means the one you picked** — a chat edit card's Review no longer keeps snapping the Changes panel back to its own file while an agent is mid-edit; whichever diff you expand stays expanded. Plus a roomier reading measure and a friendlier crons detail panel.
+
+Patch release on top of v0.0.154.
+
+### Fixes
+- **Chat: Review jump-to-diff applies exactly once** (#2742, cave-bvbw). The Changes panel's focus effect re-asserted the original Review target on every 5-second poll while an agent was editing, clobbering whichever diff you had manually selected. Each Review click now consumes its focus once (still retrying until a just-edited file appears in the list), and path matching aligns on `/` boundaries so look-alike filenames can't cross-match.
+
+### Features
+- **Crons: sleek beginner-friendly detail panel**, expandable to full page width (#2740, cave-4p6k).
+- **Chat: the shared reading/composer measure widens one step** (46rem → 52rem) for roomier transcripts (#2739, cave-cy8o).
+
+## [0.0.154] - 2026-07-08
+
+> ⚗️ **One family of controls** — the composer's runtime chip lands everywhere (logo + model, one-click switching, now on Home too) and every icon button rounds up to match it. The daemon's control-plane catalog gets a proxy route, the projects hub takes five upgrades, and an a11y sweep makes bells, schedules, calendars, and pickers honest to assistive tech.
+
+Feature release on top of v0.0.153.
+
+### Features
+- **Composer: always-on runtime chip** (#2711, cave-yq5l) — the active runtime's logo + effective model live in the composer, one click to switch either; **on Home too, with instant roster refresh after runtime switches** (#2718, cave-v25g).
+- **Composer: icon buttons match the chip** (#2735, cave-8jp4). Attach/voice/options/stop/send become 30px capsules like the runtime and host chips — one control family at every breakpoint.
+- **Daemon: control-plane capability catalog proxy** (#2695/#2724). `GET /api/daemon/capabilities` normalizes the daemon's catalog with three feature-detectable states (offline / no catalog / ok).
+- **Projects: five hub updates** (#2730, cave-ihox) — task quick-add, honest git chip, Recent sort, meta titles, grants clarity; **one project per root enforced in the store** (#2732, cave-729h).
+- **Home: Chat/Task tabs above the composer card**, project chip width fit, wordless News lane (#2725).
+- **Chat: externally-generated sessions stay out of the chat lists** (#2719, cave-73fr); **file links render only when the click can actually open them** (#2698).
+- **Chrome: seamless ultra-minimalist title bar** (#2714, cave-r1f5).
+
+### Fixes
+- **Quick chat: the thread fills the window height** — the dropdown-era 46vh cap is gone (#2729, cave-8f9h); **intent-based follow release for quick-chat + group chat** (#2696, cave-o8si).
+- **Home/palette: IME composition no longer sends half-composed drafts** (#2720, #2705); **palette Enter opens the top local match** with Ask-Salem as the fallback row (#2706).
+- **GitHub: detail fetches abort on switch, optimistic resolves protected, PAT modal guarded mid-save** (#2726, cave-b8ba); **review familiar backfills once the list loads** (#2723).
+- **Automations: stable in-flight run poll** (no interval churn, no N+1 fan-out — #2716), stale-response guard on the run log (#2702), status-shaped run icons + associated labels (#2703).
+- **Settings: abort/ordering guards on daemon-status + config fetches** (#2701); the undefined `var(--danger)` becomes the real `--color-danger` token (#2700).
+- **Board: a card's cwd derives server-side from its project, never the client body** (#2708, cave-pw83).
+- **Browser: closing the active tab fully activates its replacement** (#2707); **popovers close on focus-out** per their non-modal role (#2712).
+- **UX: confusion-helpers sweep** — jargon defined at decision points, states labeled, verbs made honest (#2699).
+
+### Accessibility
+- **Bell**: trigger names its dialog, chips are real toggles, times stay live, pointer-wide dismiss (#2728); failed notification mutations are announced (#2727).
+- **Schedules**: both detail panels are real dialogs (#2717). **Calendar**: month gridcells keep a single tab stop (#2710) with a committed e2e keyboard model (#2722). **Projects**: the directory picker traps focus (#2733).
+
+### Internal
+- CI: `timeout-minutes` on every job — hung steps no longer stall required checks for the 6-hour default (#2715). Shared inline slash-menus hook (#2697). Committed e2e spec for the runtime-chip switch flow (#2721). Canvas sandbox postMessage invariant pinned (#2704).
+
+## [0.0.153] - 2026-07-08
+
+> 🕸️ **The grimoire grows a graph** — every doc's [[wiki-links]] and semantic kinships spread across a force-directed canvas you can wander. Chat learns the Codex model catalog, the browser pane finally leaves the boot bundle, and suggestion chips close out their 2-or-4 arc with the dead CSS swept.
+
+Feature release on top of v0.0.152.
+
+### Features
+- **Grimoire: Obsidian-class doc graph** (#2676, cave-hand). Semantic edge generation plus a force-directed canvas viewer, with a surface UX pass to match.
+- **Chat: Codex model catalog + anonymous-calm landing** (#2677). Model picking covers the Codex catalog; the landing calms down when no familiar is signed in; skill scans dedupe by realpath.
+- **Marketplace: "Explain code" starter prompt in the Essentials pack** (#2690).
+
+### Accessibility
+- **Flow** (#2680, cave-sky3; #2685, cave-6pp8). React Flow controls and viewport pan/zoom honor `prefers-reduced-motion`; graph nodes open from the keyboard, not just double-click.
+- **Dashboard** (#2687, cave-0k5b). Drag announcements speak panel titles and positions; grips name their panel.
+- **Grimoire** (#2686, cave-mglw). Deletes and saves are announced; the document strip is a full tabs pattern.
+- **Notifications + board** (#2684, cave-6fqb). The notification popover traps focus; the selected board card stays in view across view switches.
+
+### Performance
+- **Browser pane lazy-loads** (#2683, cave-masj) — the last surface out of the boot bundle.
+- **Familiars: single 30s memory poll** (#2679, cave-5dnw) — the embedded memory view mirrors the parent feed instead of double-fetching.
+
+### Changed
+- **Settings and Capabilities action buttons standardize on the shared Button primitive** (#2675, #2678, cave-0k3z).
+- **Dead code swept**: the unused /api/youtube chain and RailMemoryList (#2682, cave-kdkg), the zones-era dashboard model surface and test-only `dashboardLayout()` (#2688, #2689, cave-pbk4), hidden-Roles marketplace remnants (#2692, cave-vp4h), and the unreachable 3-column suggestion-pill breakpoint (#2693, cave-98bs) — closing out the chips 2-or-4 arc.
+- **Terminal docs pin the keepalive visibility invariant** (#2681, cave-hnn5).
+
+## [0.0.152] - 2026-07-08
+
+> 🪟 **Quick chat, multiplied** — the tray window holds several conversations at once behind a glassy new face: tabs that inherit your familiar, ⌘N to open another, and vibrancy shining through on macOS. The summoning circle learns to hold a full OpenClaw roster, and the calendar gets a proper accessibility pass.
+
+Feature release on top of v0.0.151.
+
+### Features
+- **Quick chat: multi-chat tabs + glassmorphic tray window** (#2666, cave-m80j). A tab strip holds several quick chats; the add button or ⌘/Ctrl+N opens a new chat on the familiar you're already talking to; ⌘/Ctrl+W or the pill's × closes one, and closing the last chat closes the quick chat itself. Background tabs keep streaming. On macOS the window goes transparent with OS vibrancy behind translucent, blurred surfaces (with a reduced-transparency fallback), and the window is resizable now.
+- **Chat: instant compose boot + board-aware starter pills on the landing** (#2664, cave-qvwu).
+
+### Fixes
+- **Summoning circle: long vessel lists scroll inside the panel** (#2669, cave-hpsz). A full OpenClaw roster no longer blows past the dialog or paints under the Cancel/Continue footer.
+- **Calendar accessibility pass** (#2663, #2665, #2668, #2670). The open event panel reconciles with live items, reschedules are announced with the owning familiar named on every chip, the now-line ticks on the wall-clock minute, and the month view is a real ARIA grid with 2-D roving day cells.
+- **Group chat** (#2662, #2667). IME-composition Enter is ignored in the composer, mention picker, and rename; a11y labels, keyboard-visible focus, and per-coven composer drafts.
+- **Chat: /skill picker renders one row per skill id** — no duplicate React keys (#2671, cave-rru2).
+- **Terminal: find-bar match counter is non-live** (#2655, cave-eatw).
+
+### Performance
+- **Group chat: throttled transcript persistence, capped stored tail, single-pass thread grouping** (#2661, cave-lh78).
+
+## [0.0.151] - 2026-07-08
+
+> 🔁 **Updates that update themselves** — the native in-app updater finally works in packaged builds: check, download with progress, install, and relaunch without ever leaving the cave. Plus a rounder terminal: tabs you can drive from the keyboard, an SR mirror that follows visibility, and shells that end when their tab does.
+
+Patch release on top of v0.0.150.
+
+### Fixes
+- **Desktop: the native in-app updater is no longer ACL-denied** (#2654, cave-51yk). The updater/relaunch permissions only existed in the local-only capability, but the main window runs from the loopback origin — a remote ACL context — so every native check silently failed and update prompts fell back to browser downloads. A remote-scoped `loopback-updater` capability (trusted main webview only) restores one-click *Install & restart*, and the update banner now re-checks every 6 hours so long-running caves hear about new releases. Users on ≤ v0.0.150 make one final browser-download update to this release; every update after is fully in-app.
+- **Terminal: keyboard-operable tab strip + per-pane AT labels + reduced-motion cursor** (#2652, cave-p767).
+- **Terminal: the screen-reader mirror follows pane visibility instead of focus, and `pty_resize` is throttled** (#2651, cave-2956).
+- **Terminal: WS-transport shells are reaped on tab close** instead of lingering for a 5-minute grace (#2649, cave-wujw).
+
+### Internal
+- `src-tauri` test files (capability ACL pins, release-runtime pins) are now wired into the CI app suite — they previously ran nowhere, which is how the updater denial and a drifted terminal pin went unnoticed (#2654, #2653).
+
+## [0.0.150] - 2026-07-08
+
+> 🔮 **The Summoning Circle** — familiar creation leaves the setup wizard for a gamified in-app rite: choose a vessel (this machine, SSH, or an OpenClaw agent), name it, give it form, and summon — then return to the circle to enhance. Chat becomes the front door, seven surfaces adopt the shared compact chrome, and Windows launching gets sturdier.
+
+Feature release on top of v0.0.149.
+
+### Features
+- **Familiars: the Summoning Circle** (#2635, cave-xxy8). Creation is a staged rite around an animated circle — vessel (local runtime, remote over SSH with a pre-summon connection test, or an OpenClaw agent bridge), name (with suggestions and a live id preview), form (sigil, portrait, aura), summoning (with celebration). An Enhancement Rite alters existing familiars — identity, form, and mind batched behind one act, with honest vitality signals.
+- **Onboarding ends at infrastructure** (#2637, cave-ej9r). The wizard stops at tools → Coven home → runtime → daemon; familiar creation lives exclusively in the Summoning Circle, and a familiar-less dismissal lands on the circle's invitation.
+- **Chat-first IA** (#2632, #2633, cave-hsa6). Cave boots into a ChatGPT-style compose landing — the conversation is the front door.
+- **Chat: quieter shell** (#2628 cave-xsq.7, #2629 cave-xsq.8, #2606 cave-xsq.5, #2608 cave-xsq.6). Code rail closed by default, Journal + Grimoire join the quiet nav cluster, Group demotes to an icon, and the quick-chat overlay retires for a thin chat launcher.
+- **Shared compact chrome across seven surfaces** (#2627, #2631, #2634, #2636, #2638, #2639, #2644). Schedules, Marketplace, Tasks, Grimoire, Work queue, the browser toolbar, and Settings adopt the one slim GitHub-style header band.
+- **Chat: adaptive suggestion chips** (#2642, #2648). Next-path and artifact-refine chips come as 2 or 4, never a fixed 3.
+- **Home: Continue/News digest carousel restored** (#2630, cave-ican) and the orphaned column components removed (#2645, cave-he9d).
+- **Familiars: drag-to-reorder the Lifecycle roster** (#2609, cave-f2vo).
+- **Work queue: world-class pass** (#2638, #2641, cave-d3pg). Truthful degradation, freshness, poll performance, cleanup dedup, composer focus.
+
+### Fixes
+- **Chat: stale-state fixes on rapid thread/root switch + /clear teardown** (#2607, cave-b63); **system echoes survive mid-stream** (#2646, cave-7ft); **the Reflect header button gets its own sparkle** — no more twin brains (#2643, cave-gdth); **quieter code-block header** (#2640, cave-8bfz).
+- **Windows: sturdier launching** (#2621, #2625). Spawn PATH rebuilds from the registry instead of a login shell, and `coven` resolves through PATH before the literal-name fallback. The onboarding Smart App Control notice now explains itself and links Microsoft's doc (#2622).
+- **Browser: close inactive native webviews** (#2626) and a WAAPI mode-fade replacing the localhost probe (#2620).
+- **Board: simpler new-task modal** without workspace-specific defaults (#2647).
+- **Desktop: folder picker no longer says "Choose a folder for Graphify"** (#2623); **platform-aware search shortcut badge** instead of a hard-coded ⌘K (#2624).
+
+## [0.0.149] - 2026-07-07
+
+> 🩹 **Chat polish** — prompt snippets fold into the composer's Options menu, and group chat gains a race-safe session recorder that aborts an in-flight broadcast when you switch covens.
+
+Release on top of v0.0.148.
+
+### Features
+- **Chat: prompt snippets in the Options menu** (#2602, cave-xsq.4). The snippet picker moves into the composer's Options menu.
+
+### Fixes
+- **Group chat: race-safe session recording** (#2603, cave-z4s). `recordSession` is race-safe and aborts an in-flight broadcast on a coven switch.
+
+## [0.0.148] - 2026-07-07
+
+> 🔗 **Grimoire grows up** — the markdown editor gains a full `[[wiki-link]]` system (parser, outgoing chips, and a graph viewer), multi-tab editing, Open-in-Grimoire cross-links, live-follow of agent writes, and a diff-based 409 conflict resolver. Chat picks up a centered reading column, leaner per-message metadata, and create-task-from-chat. Plus more cave-4op button standardization and the legacy avatar store's retirement.
+
+Feature release on top of v0.0.147.
+
+### Features
+- **Grimoire: `[[wiki-links]]`** (#2587, #2588, #2597, cave-xr0). A wiki-link parser + resolver, outgoing-link chips below the editor, and a cross-document graph viewer.
+- **Grimoire: multi-tab editing** (#2582, cave-90u). Open several documents at once, persisted across reloads.
+- **Grimoire: Open-in-Grimoire cross-links + delete/trash actions** (#2580, cave-kv3).
+- **Markdown editor: live-follow agent writes** (#2583, cave-e3b). Open memory docs update as agents write them.
+- **Markdown editor: 409 conflict resolver** (#2577, cave-utl). A diff view with keep-mine / take-theirs / merge, replacing cancel-and-reopen.
+- **Chat: centered reading column + leaner metadata** (#2589, #2596, cave-xsq). A focused reading width, and name-plus-time per message with extras on hover.
+- **Chat: create task from chat** (#2595, cave-px7). Turn a chat turn into a board task with a source audit trail.
+
+### Refactors
+- **Control standardization** (#2591, #2584, #2581, cave-4op). Board banner actions, the GitHub profile card, and the onboarding CTAs move onto the shared `Button`.
+- **Marketplace: ultra-minimal Recommended cards** (#2586). Flat cards, chrome on hover.
+- **Retire the legacy browser-local avatar store** (#2590, cave-154). The operator avatar is server-backed now.
+
+### Fixes
+- **Chat: thread-switch isolation** (#2594). Composer state and stream teardown scope per thread, with IME-safe Enter.
+- **Popovers stack above the board task drawer** (#2579).
+
+## [0.0.147] - 2026-07-07
+
+> ⚡ **Faster and steadier** — memory inventory gets a 130x speedup, the markdown editor picks up debounced autosave for knowledge & journal docs, and the Work Queue surfaces a "Needs attention" strip for stale and unlinked PRs. Plus a round of session-changes and automations button refactors onto shared primitives.
+
+Feature release on top of v0.0.146.
+
+### Features
+- **Work Queue: "Needs attention" strip** (#2568, cave-x1j). Surfaces stale and unlinked PRs at a glance.
+- **Markdown editor: debounced autosave** (#2574, cave-b2v). Knowledge and journal docs now save automatically as you type.
+
+### Performance
+- **Memory inventory: 130x faster** (#2570, cave-od4). Head reads, pooled I/O, and an mtime cache slash inventory time.
+
+### Refactors
+- **Session changes: shared button primitives** (#2571, #2572, cave-4op). Commit/PR footer buttons standardize on the shared `Button`, and icon-only buttons normalize to the borderless `IconButton`.
+- **Automations: shared row actions** (#2573, cave-4op). The remaining Schedules row actions route through the shared `RowActionButton`.
+
+## [0.0.146] - 2026-07-07
+
+> 📝 **Write where you think** — a new OpenKnowledge-style markdown editor lands across memory, knowledge, and journal, and the marketplace folds its Skills filter rail and leaderboard into one panel. Plus a Gantt scroll fix, cleaner GitHub comments, and a calendar controls refactor onto shared primitives.
+
+Feature release on top of v0.0.145.
+
+### Features
+- **Grimoire: OpenKnowledge-style markdown editor** (#2562). A unified markdown editing surface for memory, knowledge, and journal entries.
+- **Marketplace: unified Skills panel** (#2563, cave-8hn). The Skills filter rail and leaderboard merge into a single panel.
+
+### Fixes
+- **tasks: Gantt timeline scrolls on one bounded viewport** (#2559, cave-hsh). The Gantt timeline now scrolls within a single bounded viewport instead of overflowing.
+- **github: remove @familiar tagging from the comment composer** (#2560, cave-803). The GitHub comment composer no longer injects @familiar tags.
+
+### Refactors & chores
+- **calendar: standardize toolbar, action, and jump-to-date mini-month controls on shared Button/IconButton primitives** (#2565, #2566, #2567, cave-4op).
+- **marketplace: hide the Roles section for now** (#2564, cave-8vy).
+
+## [0.0.145] - 2026-07-07
+
+> 🛠️ **The work queue grows up** — the Familiar Work Queue lands as a beads + PR control tower with handoff notes and evidence-gated close, iOS finally reads your operator profile (name/avatar instead of "You"), and Projects gets a Files drill-through into the code rail. Plus a solid batch of daemon-resilience, dashboard, proxy, and nav fixes.
+
+Feature release on top of v0.0.144.
+
+### Features
+- **Familiar Work Queue — beads + PR control tower** (#2547, cave-hlv.4). The epic's control-tower slice: a unified view over beads and open PRs.
+- **Work queue: handoff notes + evidence-gated close** (#2553, cave-hlv.2). Cards carry handoff notes, and closing requires evidence — no silent completions.
+- **iOS reads the operator profile** (#2550, cave-8xb). The iOS surface shows your name and avatar from the operator profile instead of a hard-coded "You".
+- **Projects: Files drill-through into the code rail** (#2548, cave-z44). Jump from a project in the hub straight into its files in the code rail.
+
+### Fixes
+- **Daemon: bound and settle every call; retry transient GETs** (#2551, cave-4po). Every daemon call is now bounded and settled, with automatic retry on transient GET failures.
+- **nav: honest Schedules top-bar button + split-open sidebar state** (#2555, re-land #2501). The Schedules button reflects real state and the sidebar opens split correctly.
+- **browser: close native webviews on surface leave** (#2545, re-land #2500). Native webviews are torn down on leave instead of parked 1×1 offscreen.
+- **dashboard: dedupe stalled-PR signals by URL + cap the Signals panel** (#2543, cave-2it). Stalled-PR signals de-dupe by URL and the panel is length-capped.
+- **proxy: accept the real listen port in the CSRF origin gate on port fallback** (#2544, cave-5sg). The CSRF origin gate honors the actual listen port when the dev server falls back.
+- **settings: show only section labels in the left nav** (#2549, cave-iwb). The settings left nav drops the description row for a cleaner label-only list.
+
+### Tests & docs
+- **e2e: dashboard cockpit interaction contracts** (#2554, cave-1if).
+- **docs: clarify Tauri dev startup** (#2546).
+
+## [0.0.144] - 2026-07-06
+
+> ✨ **A home that feels like yours** — the cold-start surface gets a world-class visual pass (presence eyebrow, breathing hearth glow, resume affordance), and a new **server-side operator profile** lets you set your name, pronouns, bio, timezone, links, and avatar once — surfaced across chat and handed to your familiars as startup context.
+
+Feature release on top of v0.0.143. Ships the redesigned home surface and the operator profile system.
+
+### Features
+- **Home world-class visual pass** (#2540). A distinctive cold-start surface: a time-aware presence eyebrow with a glowing accent dot, an accent-tinted project name in the headline, a signature breathing "hearth glow" behind the composer that brightens on focus, informational pills for board continuations, an always-visible `Resume →` affordance on the newest Continue card, and staggered entrance choreography — all collapsed under `prefers-reduced-motion` and honoring every pinned composer/centering/column contract.
+- **Server-side operator profile** (#2541). Set your name, pronouns, bio, timezone, links, and avatar from a new **Settings → Profile** section. Text fields persist under a `profile` key in `cave-config.json`; the avatar is a single atomic file (SVG rejected as a stored-XSS vector). `GET/PATCH /api/profile` + `GET/POST/DELETE /api/profile/avatar` (field validation, 2 MB cap, ETag/304). The hard-coded "You" across chat, group chat, reply quotes, and grant labels now routes through your display name, and new sessions receive an `operator-profile` startup-context block — zero overhead when unset.
+
+## [0.0.143] - 2026-07-06
+
+> 🧹 **A tighter, more honest cockpit** — the dashboard's Familiar Insights table becomes sortable and filterable, a new space-usage panel gives you an honest read on where `~/.coven` disk is going (with cleanup drill-throughs), and the quick-chat box gets a hardening pass. Behind the scenes, a twice-daily PR triage patrol lands to keep the review queue from rotting.
+
+Patch release on top of v0.0.142. Ships dashboard analytics polish, local space-usage analytics, a quick-chat hardening pass, and the morning/evening PR triage patrol.
+
+### Features
+- **Sortable + filterable dashboard insights, plus local space-usage analytics** (#2538). The Familiar Insights table gets real `aria-sort` column headers (click cycles sorted ↔ reversed ↔ curated default) and a live-count filter; a new space-usage panel does a bounded, symlink-safe scan of `~/.coven` and reports honest lower bounds (`1.3 GB+` when capped) with per-area cleanup drill-throughs. Donut/heatmap diagrams gain hover detail and accessible `role=img` summaries.
+- **Morning/evening PR triage patrol** (#2536). `pnpm beads:prs:patrol` sweeps every open PR into a window-ordered digest — mornings lead with *Fix first*, evenings with *Ready to land* — and flags stale + unlinked PRs. `--apply` mirrors linked PR state into beads; the patrol itself never merges.
+
+### Fixes
+- **Quick-chat hardening** (#2537). Hardened the quick-chat box and de-duplicated the overlay/tray internals.
+
+## [0.0.142] - 2026-07-06
+
+> 📊 **Analytics you can actually steer by** — familiar analytics and growth pages get pulse trends, drill-through KPIs, and a triage roster, while the marketplace gets an ultraminimal header and a full functionality pass. On iPad, **The Diary** arrives: an experimental Apple Pencil handwriting surface.
+
+Feature release on top of v0.0.141. Ships a revamped analytics/growth surface, a marketplace overhaul, the new experimental iOS Diary, Projects-table polish, and a batch of connection/desktop/onboarding/GitHub fixes.
+
+### Features
+- **Familiar analytics + growth revamp** (#2469). Pulse trend lines, drill-through KPIs, and a triage roster across the familiar analytics and growth pages, with dashboard cockpit analytics accuracy fixed so the numbers match reality.
+- **Marketplace ultraminimal header + UX pass** (#2463). A comprehensive functionality and UX pass on the marketplace with a stripped-down header.
+- **The Diary — experimental Apple Pencil handwriting page (iPad)** (#2457, #2458, #2471). A new experimental handwriting surface for iPad: longer replies, no option menus, sentence-length pen-lift detection, and presented from RootView so connection flaps can't dismiss it mid-session.
+- **Projects table polish** (#2459). UI/UX cleanup on the Projects table, including de-duped project listings.
+
+### Fixes
+- **Seamless, stable iOS ↔ desktop connection** (#2465, cave-30b). Hardens the mobile/desktop connection path so it stays stable instead of flapping.
+- **Titlebar drag** (#2464). Grants `start_dragging` to the loopback webview so the desktop titlebar actually drags.
+- **Onboarding focus trap** (#2466). Keeps the wizard's focus trap airtight and stops it relaunching on already-set-up machines.
+- **mobile:tailscale port squatting** (#2468, cave-gbo). Stops `mobile:tailscale` dead-ending when the port is squatted by an untracked server.
+- **GitHub review-conversation regressions** (#2467). Addresses regressions surfaced in PR #2450 review conversations.
+
+### Polish
+- **GitHub surface** (#2456). Profile cache, live checks refresh, and thread-comment reactions.
+
+### Tests
+- **Inline file editing + Diary UI tests** (#2470). Adds coverage for inline file editing and the new Diary UI.
+
+## [0.0.141] - 2026-07-06
+
+> ⚡ **Quick chat is now a real conversation** — the menubar / ⌘J dropdown holds a full multi-turn thread: streaming replies, context that carries across turns, copy & regenerate, all without leaving what you were doing.
+
+Feature release on top of v0.0.140. Remakes the quick-chat menubar dropdown
+into a genuine multi-turn conversational surface.
+
+### Features
+- **Multi-turn quick chat** (#2451). The menubar / ⌘J quick-chat dropdown is now a real conversation instead of a one-shot ask: threaded user + familiar turns that resume the same session so follow-ups keep their context, streaming with a caret and a "thinking" pulse then full markdown once the reply lands, per-reply copy and regenerate, Stop mid-stream, an avatar familiar picker, empty-state starter chips, and Enter-to-send (Shift+Enter for a newline, ⌘/Ctrl+Enter still sends). The draft clears the instant a turn is sent, switching familiar starts a fresh thread, and the dropdown now traps focus (Tab cycles, Escape closes, focus returns to the trigger). The Tauri tray quick-chat window shares the same upgrade.
+
+### Docs
+- **Add `CONTRIBUTORS.md`** to credit community contributions. Records the fixes and improvements from Chris Thomas ([@Aimplemented](https://github.com/Aimplemented)) whose original PRs were re-landed through internal branches during merge — group-chat parallel first-pass replies (#2206), tokenless native iOS Serve route (#2404), installer links via the system handler (#2381, #2414), and the current-session-id flag (#1989).
+
 ## [0.0.140] - 2026-07-05
 
 Docs release on top of v0.0.139. Adds the approved design spec for the
@@ -1130,7 +1961,7 @@ Patch release: respect persisted home navigation state after the v0.0.102 chat-w
 ### Fixed
 - **Shell** — reverted the forced home-screen nav reopen so fresh desktop launches still default open, but a deliberate collapsed nav stays collapsed across reloads and app launches (#920).
 - **Windows OpenClaw bridge** — Cave now resolves and launches npm `openclaw.cmd` shims safely, so OpenClaw-backed familiars such as TARS do not require a hand-built `openclaw.exe`.
-- **OpenCoven tools update** — updating the coven CLI from Cave now best-effort stops the running daemon first and surfaces clearer guidance if Windows still has `coven.exe` locked.
+- **OpenCoven tools update** — updating the Coven CLI from Cave now best-effort stops the running daemon first and surfaces clearer guidance if Windows still has `coven.exe` locked.
 
 ## [0.0.102] - 2026-06-18
 
@@ -1179,7 +2010,7 @@ Patch release: Salem perch proximity polish, companion rail alignment fixes, nex
 Patch release: Windows first-run daemon startup fix and a Salem typecheck guard after 0.0.98.
 
 ### Fixed
-- **Windows setup** — Cave now resolves npm-installed `coven.cmd` shims from `%APPDATA%\npm` / `npm_config_prefix`, preserves Windows PATH delimiters, and starts the daemon through shell mode for the fixed `coven daemon start` command. This fixes the welcome screen reporting `covenCli.ok: true` while the daemon button still surfaced "coven CLI not found on PATH."
+- **Windows setup** — Cave now resolves npm-installed `coven.cmd` shims from `%APPDATA%\npm` / `npm_config_prefix`, preserves Windows PATH delimiters, and starts the daemon through shell mode for the fixed `coven daemon start` command. This fixes the welcome screen reporting `covenCli.ok: true` while the daemon button still surfaced "Coven CLI not found on PATH."
 - **Salem** — restored the floating Salem perch `retreat` prop and right-edge retreat behavior so the workspace typecheck stays green.
 
 ## [0.0.98] - 2026-06-16
@@ -1541,7 +2372,7 @@ Chats that persist and a workflow canvas you can rearrange by hand.
 - **Chat conversations no longer fork on resumed turns** — continued turns now resume in the conversation's original working directory (harness session stores are cwd-scoped) and keep a stable cave-owned conversation id while the harness's per-resume session id is tracked internally. Previously each continued turn could lose project context and spawn a new sidebar session.
 - **Workflow canvas edges render** — step nodes gained explicit connection handles (React Flow error #008), with a toggleable themed minimap.
 - **Machines without Node or Git are covered** — Node ships inside the app bundle (the release now refuses to build without it); Git became an advisory setup check with platform-aware install hints, missing-git API errors are actionable, and the README gains a dependency table.
-- **Friendly error when the coven CLI is missing**, and mobile-access token checks no longer trust spoofable `Host` headers.
+- **Friendly error when the Coven CLI is missing**, and mobile-access token checks no longer trust spoofable `Host` headers.
 
 ### Changed
 - **Workflow studio polish** — role attach rows align as fixed columns with right-pinned familiar tags; all studio scroll regions use thin dark scrollbars.

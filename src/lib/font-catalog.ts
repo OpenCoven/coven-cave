@@ -5,8 +5,13 @@
  * app. Unselected fonts cost nothing at runtime: they're declared with
  * `preload: false` and @font-face only downloads files for families that
  * rendered text actually uses.
+ *
+ * The catalog now has three slots (per OpenCoven DESIGN.md §4):
+ *   - "serif" — display / headline / hero face; identity moments
+ *   - "sans"  — UI / body / prose face; everything you read
+ *   - "mono"  — code / terminal / label face; everything you inspect
  */
-export type FontSlot = "sans" | "mono";
+export type FontSlot = "serif" | "sans" | "mono";
 
 export type FontOption = {
   id: string;
@@ -18,19 +23,26 @@ export type FontOption = {
 export type FontPair = {
   id: string;
   label: string;
+  serifId: string;
   sansId: string;
   monoId: string;
 };
 
+export const SERIF_FALLBACK =
+  '"Iowan Old Style", Georgia, "Times New Roman", serif';
 export const SANS_FALLBACK =
   'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 export const MONO_FALLBACK =
   'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
 
 export const FONT_OPTIONS: FontOption[] = [
-  // ── Sans (UI) ──
-  { id: "geist", label: "Geist", slot: "sans", cssVar: "--font-geist-sans" },
+  // ── Serif (display / hero / identity) ──
+  { id: "eb-garamond", label: "EB Garamond", slot: "serif", cssVar: "--font-eb-garamond" },
+  { id: "instrument-serif", label: "Instrument Serif", slot: "serif", cssVar: "--font-instrument-serif" },
+  { id: "fraunces", label: "Fraunces", slot: "serif", cssVar: "--font-fraunces" },
+  // ── Sans (UI / body) ──
   { id: "inter", label: "Inter", slot: "sans", cssVar: "--font-inter" },
+  { id: "geist", label: "Geist", slot: "sans", cssVar: "--font-geist-sans" },
   { id: "roboto", label: "Roboto", slot: "sans", cssVar: "--font-roboto" },
   { id: "open-sans", label: "Open Sans", slot: "sans", cssVar: "--font-open-sans" },
   { id: "lato", label: "Lato", slot: "sans", cssVar: "--font-lato" },
@@ -43,8 +55,8 @@ export const FONT_OPTIONS: FontOption[] = [
   { id: "figtree", label: "Figtree", slot: "sans", cssVar: "--font-figtree" },
   { id: "public-sans", label: "Public Sans", slot: "sans", cssVar: "--font-public-sans" },
   // ── Mono (code / terminal) ──
-  { id: "geist-mono", label: "Geist Mono", slot: "mono", cssVar: "--font-geist-mono" },
   { id: "jetbrains-mono", label: "JetBrains Mono", slot: "mono", cssVar: "--font-jetbrains-mono" },
+  { id: "geist-mono", label: "Geist Mono", slot: "mono", cssVar: "--font-geist-mono" },
   { id: "fira-code", label: "Fira Code", slot: "mono", cssVar: "--font-fira-code" },
   { id: "source-code-pro", label: "Source Code Pro", slot: "mono", cssVar: "--font-source-code-pro" },
   { id: "ibm-plex-mono", label: "IBM Plex Mono", slot: "mono", cssVar: "--font-ibm-plex-mono" },
@@ -54,59 +66,63 @@ export const FONT_OPTIONS: FontOption[] = [
 ];
 
 export const DEFAULT_FONT_ID: Record<FontSlot, string> = {
-  // Geist Sans: already preloaded by Next.js, renders immediately — clean neutral UI
-  sans: "geist",
-  // JetBrains Mono: canonical mono per OpenCoven DESIGN.md / brand/ui/typography.css
-  // Best-in-class readability for code, terminal output, and dense labels at small sizes
+  // EB Garamond: canonical Coven display face — classical old-style serif,
+  // "grimoire not corporate" — DESIGN.md §4.
+  serif: "eb-garamond",
+  // Inter: canonical Coven UI face — highly legible sans, works at every
+  // size. Replaces Geist as the shipped default (Geist stays selectable).
+  sans: "inter",
+  // JetBrains Mono: canonical mono per OpenCoven DESIGN.md / brand/ui/typography.css.
+  // Best-in-class readability for code, terminal output, and dense labels at small sizes.
   mono: "jetbrains-mono",
 };
 
 export const FONT_PAIRS: FontPair[] = [
   {
+    id: "coven-canon",
+    label: "Coven Canon — EB Garamond · Inter · JetBrains Mono",
+    serifId: "eb-garamond",
+    sansId: "inter",
+    monoId: "jetbrains-mono",
+  },
+  {
+    id: "editorial-witch",
+    label: "Editorial Witch — Instrument Serif · Inter · JetBrains Mono",
+    serifId: "instrument-serif",
+    sansId: "inter",
+    monoId: "jetbrains-mono",
+  },
+  {
+    id: "shapeshifter",
+    label: "Shapeshifter — Fraunces · Inter · JetBrains Mono",
+    serifId: "fraunces",
+    sansId: "inter",
+    monoId: "jetbrains-mono",
+  },
+  {
     id: "geist-jetbrains",
-    label: "Geist + JetBrains Mono",
+    label: "Geist + JetBrains Mono (legacy)",
+    serifId: "eb-garamond",
     sansId: "geist",
     monoId: "jetbrains-mono",
   },
   {
-    id: "inter-geist-mono",
-    label: "Inter + Geist Mono",
-    sansId: "inter",
-    monoId: "geist-mono",
-  },
-  {
-    id: "manrope-space-mono",
-    label: "Manrope + Space Mono",
-    sansId: "manrope",
-    monoId: "space-mono",
-  },
-  {
-    id: "public-sans-roboto-mono",
-    label: "Public Sans + Roboto Mono",
-    sansId: "public-sans",
-    monoId: "roboto-mono",
-  },
-  {
     id: "ibm-plex-pair",
     label: "IBM Plex Sans + IBM Plex Mono",
+    serifId: "eb-garamond",
     sansId: "ibm-plex-sans",
     monoId: "ibm-plex-mono",
   },
   {
     id: "source-pair",
     label: "Source Sans 3 + Source Code Pro",
+    serifId: "eb-garamond",
     sansId: "source-sans-3",
     monoId: "source-code-pro",
   },
-  {
-    id: "dm-sans-fira-code",
-    label: "DM Sans + Fira Code",
-    sansId: "dm-sans",
-    monoId: "fira-code",
-  },
 ];
 
-export const DEFAULT_FONT_PAIR_ID = "geist-jetbrains";
+export const DEFAULT_FONT_PAIR_ID = "coven-canon";
 
 export function fontOptionById(id: string): FontOption | undefined {
   return FONT_OPTIONS.find((o) => o.id === id);
@@ -116,12 +132,16 @@ export function fontPairById(id: string): FontPair | undefined {
   return FONT_PAIRS.find((pair) => pair.id === id);
 }
 
-export function fontPairForFonts(sansId: string, monoId: string): FontPair | undefined {
-  return FONT_PAIRS.find((pair) => pair.sansId === sansId && pair.monoId === monoId);
+export function fontPairForFonts(serifId: string, sansId: string, monoId: string): FontPair | undefined {
+  return FONT_PAIRS.find(
+    (pair) => pair.serifId === serifId && pair.sansId === sansId && pair.monoId === monoId,
+  );
 }
 
 export function slotFallback(slot: FontSlot): string {
-  return slot === "sans" ? SANS_FALLBACK : MONO_FALLBACK;
+  if (slot === "serif") return SERIF_FALLBACK;
+  if (slot === "sans") return SANS_FALLBACK;
+  return MONO_FALLBACK;
 }
 
 export function fontStack(option: FontOption): string {

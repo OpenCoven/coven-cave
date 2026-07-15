@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
@@ -47,14 +47,15 @@ async function fetchReviewBundle(repo: string, number: number): Promise<FetchedR
   return { comments, threads };
 }
 
-/** Open the Canvas surface (where HTML artifacts render) on the Sketch layer. */
-function openCanvasArtifacts() {
+/** Open a standalone HTML artifact in a browser tab (the Canvas page retired;
+ *  the artifact is still persisted via /api/canvas for future surfaces). */
+function openArtifactHtml(html: string) {
   try {
-    window.localStorage.setItem("cave:canvas:layer", "sketch");
+    const blob = new Blob([html], { type: "text/html" });
+    window.open(URL.createObjectURL(blob), "_blank", "noopener");
   } catch {
-    /* ignore storage failures */
+    /* popup blocked — the artifact is still saved */
   }
-  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "canvas" } }));
 }
 
 function newArtifactId(repo: string, number: number | null): string {
@@ -65,13 +66,22 @@ function newArtifactId(repo: string, number: number | null): string {
 /**
  * Review actions for the PR detail pane: export the PR review as a standalone
  * HTML artifact, or have a familiar write a review that's saved the same way.
- * Both land a Canvas "html" artifact and jump to Canvas to view/share it.
+ * Both persist an "html" artifact (POST /api/canvas) and open it in a browser tab.
  */
 export function GhReviewActions({ pr, familiars }: { pr: PrInfo; familiars: Familiar[] }) {
   const [busy, setBusy] = useState<null | "export" | "review">(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [familiarId, setFamiliarId] = useState<string>(familiars[0]?.id ?? "");
+
+  // `familiars` loads async, so on first mount it's usually [] and the initializer
+  // above captures "". A useState initializer never re-runs, which left the
+  // "Review with" button permanently disabled (disabled on !familiarId) even after
+  // familiars arrived. Backfill the first familiar once the list populates, without
+  // clobbering a selection the user has already made.
+  useEffect(() => {
+    if (!familiarId && familiars[0]) setFamiliarId(familiars[0].id);
+  }, [familiars, familiarId]);
 
   const reset = () => {
     setError(null);
@@ -92,8 +102,8 @@ export function GhReviewActions({ pr, familiars }: { pr: PrInfo; familiars: Fami
       });
       const ok = await saveCanvasArtifact(artifact);
       if (!ok) throw new Error("Couldn’t save the artifact.");
-      setStatus("Opening in Canvas…");
-      openCanvasArtifacts();
+      setStatus("Saved — opened in a browser tab.");
+      openArtifactHtml(artifact.code);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
     } finally {
@@ -127,8 +137,8 @@ export function GhReviewActions({ pr, familiars }: { pr: PrInfo; familiars: Fami
       });
       const ok = await saveCanvasArtifact(artifact);
       if (!ok) throw new Error("Couldn’t save the review artifact.");
-      setStatus("Opening in Canvas…");
-      openCanvasArtifacts();
+      setStatus("Saved — opened in a browser tab.");
+      openArtifactHtml(artifact.code);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Review failed.");
     } finally {

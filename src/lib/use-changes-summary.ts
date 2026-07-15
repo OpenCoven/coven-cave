@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 /**
  * Lightweight "are there uncommitted edits?" signal for a project root, without
@@ -23,12 +24,21 @@ type ChangesSummary = {
   loaded: boolean;
   /** The root is not a git repo (no diffs to show). */
   notARepo: boolean;
+  /** Current branch (null before load, when not a repo, or on an unborn HEAD). */
+  branch: string | null;
+  /** Linked-worktree name (checkout dir basename) — null in the primary checkout. */
+  worktree: string | null;
+  /** Immediate refetch — for callers that just mutated git state (e.g. the
+   *  composer's branch switch) and shouldn't wait out the 5s poll. */
+  reload: () => void;
 };
 
 type ChangesResponse = {
   ok?: boolean;
   repo?: boolean;
   files?: unknown[];
+  branch?: string | null;
+  worktree?: string | null;
 };
 
 export function useChangesSummary(
@@ -38,47 +48,56 @@ export function useChangesSummary(
   const [count, setCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [notARepo, setNotARepo] = useState(false);
+  const [branch, setBranch] = useState<string | null>(null);
+  const [worktree, setWorktree] = useState<string | null>(null);
   const inFlight = useRef(false);
+  // Generation guard: bumped whenever (projectRoot, active) changes so a
+  // response still in flight for the PREVIOUS root can't write its summary
+  // into the new root's state.
+  const generation = useRef(0);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!active || !projectRoot) return;
-
-    let cancelled = false;
-    const load = async () => {
-      if (inFlight.current) return;
-      if (document.visibilityState !== "visible") return;
-      inFlight.current = true;
-      try {
-        const res = await fetch(
-          `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`,
-          { cache: "no-store" },
-        );
-        const json = (await res.json()) as ChangesResponse;
-        if (cancelled) return;
-        if (res.ok && json.ok) {
-          setNotARepo(json.repo === false);
-          setCount(Array.isArray(json.files) ? json.files.length : 0);
-        }
-      } catch {
-        /* transient — keep the last known summary */
-      } finally {
-        inFlight.current = false;
-        if (!cancelled) setLoaded(true);
+    if (inFlight.current) return;
+    if (document.visibilityState !== "visible") return;
+    const gen = generation.current;
+    inFlight.current = true;
+    try {
+      const res = await fetch(
+        `/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`,
+        { cache: "no-store" },
+      );
+      const json = (await res.json()) as ChangesResponse;
+      if (generation.current !== gen) return;
+      if (res.ok && json.ok) {
+        setNotARepo(json.repo === false);
+        setCount(Array.isArray(json.files) ? json.files.length : 0);
+        setBranch(typeof json.branch === "string" ? json.branch : null);
+        setWorktree(typeof json.worktree === "string" ? json.worktree : null);
       }
-    };
-
-    void load();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    const id = window.setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
-      window.clearInterval(id);
-    };
+    } catch {
+      /* transient — keep the last known summary */
+    } finally {
+      inFlight.current = false;
+      if (generation.current === gen) setLoaded(true);
+    }
   }, [projectRoot, active]);
 
-  return { count, loaded, notARepo };
+  // Initial load per (root, active) change; the recurring poll + the
+  // on-return refresh are usePausablePoll's job (cave-e794 — this hook used
+  // to hand-roll the interval + visibilitychange trio the shared hook
+  // centralizes).
+  useEffect(() => {
+    generation.current += 1;
+    if (!active || !projectRoot) return;
+    void load();
+  }, [load, projectRoot, active]);
+
+  usePausablePoll(() => void load(), POLL_MS, { enabled: active && Boolean(projectRoot) });
+
+  const reload = useCallback(() => {
+    void load();
+  }, [load]);
+
+  return { count, loaded, notARepo, branch, worktree, reload };
 }

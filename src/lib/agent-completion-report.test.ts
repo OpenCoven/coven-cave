@@ -312,7 +312,7 @@ const fullReport: AgentCompletionReport = {
     ],
   },
   footer:
-    "_Worktree: `coven.wt/chore-remove-dead-docs-site-builder`. Authored: `Val Alexander <bunsthedev@gmail.com>` co-authored with Nova._",
+    "_Worktree: `coven.wt/chore-remove-dead-docs-site-builder`. Authored: `Val Alexander <val@example.com>` co-authored with Nova._",
 };
 const fullOut = formatAgentCompletionReportMarkdown(fullReport);
 

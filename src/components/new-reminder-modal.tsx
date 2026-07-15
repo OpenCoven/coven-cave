@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar } from "@/lib/types";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen } from "@/lib/parse-when";
+import { describeRecurrence, nextOccurrences } from "@/lib/schedule-plan";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -22,6 +23,8 @@ export type NewReminderDraft = {
   familiarId: string | null;
   recurrence?: Recurrence;
   link?: LinkRef | null;
+  /** The human phrase the plan came from — persisted so edits round-trip it. */
+  whenText?: string | null;
 };
 
 type RecurPreset =
@@ -31,6 +34,7 @@ type RecurPreset =
   | "every-day"
   | "every-weekday"
   | "every-weekend"
+  | "custom"
   | "cron";
 
 const RECUR_PRESETS: { value: RecurPreset; label: string }[] = [
@@ -47,11 +51,15 @@ function recurrenceFor(
   preset: RecurPreset,
   fireAt: string,
   cronExpr: string,
+  customRec: Recurrence | null,
 ): Recurrence {
   if (preset === "none") return { type: "none" };
   if (preset === "every-30m") return { type: "interval", everyMs: 30 * 60_000 };
   if (preset === "every-1h") return { type: "interval", everyMs: 60 * 60_000 };
   if (preset === "cron") return { type: "cron", expr: cronExpr.trim() };
+  // The phrase (or the reminder being edited) described a schedule no preset
+  // represents — keep the exact plan instead of silently downgrading it.
+  if (preset === "custom") return customRec ?? { type: "none" };
   const d = new Date(fireAt);
   const hour = d.getHours();
   const minute = d.getMinutes();
@@ -85,22 +93,26 @@ type Props = {
 };
 
 // Mirror of the parsed-recurrence → preset effect, used to map an existing
-// reminder's stored recurrence back onto the picker when editing.
+// reminder's stored recurrence back onto the picker when editing. Anything a
+// named preset can't represent maps to "custom" carrying the exact recurrence,
+// so editing never silently rewrites the stored plan.
 function presetForRecurrence(rec: Recurrence | undefined): {
   preset: RecurPreset;
   cronExpr?: string;
+  customRec?: Recurrence;
 } {
   if (!rec || rec.type === "none") return { preset: "none" };
   if (rec.type === "interval" && rec.everyMs === 30 * 60_000)
     return { preset: "every-30m" };
   if (rec.type === "interval" && rec.everyMs === 60 * 60_000)
     return { preset: "every-1h" };
+  if (rec.type === "interval") return { preset: "custom", customRec: rec };
   if (rec.type === "daily") return { preset: "every-day" };
   if (rec.type === "weekly") {
     const days = rec.days.slice().sort().join(",");
     if (days === "1,2,3,4,5") return { preset: "every-weekday" };
     if (days === "0,6") return { preset: "every-weekend" };
-    return { preset: "none" };
+    return { preset: "custom", customRec: rec };
   }
   if (rec.type === "cron") return { preset: "cron", cronExpr: rec.expr };
   return { preset: "none" };
@@ -132,6 +144,12 @@ export function NewReminderModal({
   const [familiarId, setFamiliarId] = useState<string | null>(defaultFamiliarId);
   const [recurPreset, setRecurPreset] = useState<RecurPreset>("none");
   const [cronExpr, setCronExpr] = useState<string>("*/15 * * * *");
+  // The exact recurrence behind the "custom" preset (from the phrase or the
+  // reminder being edited) — held verbatim so the saved plan matches it.
+  const [customRec, setCustomRec] = useState<Recurrence | null>(null);
+  // In edit mode the picker starts from the STORED recurrence; only once the
+  // user retypes the phrase does the parse retake the picker (whenDirty).
+  const [whenDirty, setWhenDirty] = useState(false);
   const [link, setLink] = useState<LinkRef | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,10 +164,12 @@ export function NewReminderModal({
       setWhenText(editing.whenText ?? "");
       setManualFireAt(editing.whenText ? "" : toLocalInput(editing.fireAt));
       setFamiliarId(defaultFamiliarId);
-      const { preset, cronExpr: cron } = presetForRecurrence(editing.recurrence);
+      const { preset, cronExpr: cron, customRec: custom } = presetForRecurrence(editing.recurrence);
       setRecurPreset(preset);
       setCronExpr(cron ?? "*/15 * * * *");
+      setCustomRec(custom ?? null);
       setLink(editing.link ?? null);
+      setWhenDirty(false);
       setError(null);
       return;
     }
@@ -159,7 +179,9 @@ export function NewReminderModal({
     setFamiliarId(defaultFamiliarId);
     setRecurPreset("none");
     setCronExpr("*/15 * * * *");
+    setCustomRec(null);
     setLink(null);
+    setWhenDirty(false);
     setError(null);
   }, [open, defaultFamiliarId, defaultFireAt, defaultWhenText, defaultTitle, editing]);
 
@@ -175,28 +197,18 @@ export function NewReminderModal({
   }, [whenText]);
 
   // If the natural-language phrase implies a recurrence, reflect it in the
-  // picker — user sees what was inferred and can override.
+  // picker — user sees what was inferred and can override. Schedules with no
+  // named preset (e.g. "every tuesday 4pm") become the "custom" preset holding
+  // the exact parsed recurrence instead of silently saving a one-shot. In edit
+  // mode this only kicks in after the user actually retypes the phrase.
   useEffect(() => {
-    if (isEditing) return;
+    if (isEditing && !whenDirty) return;
     if (!parsed) return;
-    const r = parsed.recurrence;
-    if (r.type === "none") {
-      setRecurPreset("none");
-    } else if (r.type === "interval" && r.everyMs === 30 * 60_000) {
-      setRecurPreset("every-30m");
-    } else if (r.type === "interval" && r.everyMs === 60 * 60_000) {
-      setRecurPreset("every-1h");
-    } else if (r.type === "daily") {
-      setRecurPreset("every-day");
-    } else if (r.type === "weekly") {
-      const days = r.days.slice().sort().join(",");
-      if (days === "1,2,3,4,5") setRecurPreset("every-weekday");
-      else if (days === "0,6") setRecurPreset("every-weekend");
-    } else if (r.type === "cron") {
-      setRecurPreset("cron");
-      setCronExpr(r.expr);
-    }
-  }, [parsed, isEditing]);
+    const { preset, cronExpr: cron, customRec: custom } = presetForRecurrence(parsed.recurrence);
+    setRecurPreset(preset);
+    if (cron) setCronExpr(cron);
+    setCustomRec(custom ?? null);
+  }, [parsed, isEditing, whenDirty]);
 
   const cronFields = useMemo(() => {
     if (recurPreset !== "cron") return null;
@@ -237,8 +249,11 @@ export function NewReminderModal({
         title: title.trim(),
         fireAt: resolvedFireAt,
         familiarId,
-        recurrence: recurrenceFor(recurPreset, resolvedFireAt, cronExpr),
+        recurrence: recurrenceFor(recurPreset, resolvedFireAt, cronExpr, customRec),
         link,
+        // Persist the phrase that produced the plan so editing round-trips
+        // the human input, not just the machine schedule.
+        whenText: whenText.trim() || null,
       };
       if (editing && onUpdate) {
         await onUpdate(editing.id, draft);
@@ -253,6 +268,7 @@ export function NewReminderModal({
     }
   };
 
+  const hour12 = readDateTimePrefs().clock !== "24h";
   const previewLabel = resolvedFireAt
     ? new Date(resolvedFireAt).toLocaleString(undefined, {
         weekday: "short",
@@ -261,9 +277,22 @@ export function NewReminderModal({
         hour: "numeric",
         minute: "2-digit",
         // Honor the user's 12h/24h clock preference for the fire-time preview.
-        hour12: readDateTimePrefs().clock !== "24h",
+        hour12,
       })
     : null;
+
+  // The plan the dialog will actually save, echoed back for verification:
+  // cadence sentence for recurring plans + the next few concrete fires.
+  const planRecurrence = resolvedFireAt
+    ? recurrenceFor(recurPreset, resolvedFireAt, cronExpr, customRec)
+    : null;
+  const planCadence = planRecurrence ? describeRecurrence(planRecurrence, { hour12 }) : null;
+  // Cheap (≤3 next-occurrence steps) — computed per render; no hook after the
+  // early `if (!open) return null` above.
+  const planUpcoming: string[] =
+    planRecurrence && planRecurrence.type !== "none"
+      ? nextOccurrences(planRecurrence, Date.now(), 3)
+      : [];
 
   return (
     <div
@@ -286,7 +315,7 @@ export function NewReminderModal({
               {isEditing ? "Edit reminder" : "New reminder"}
             </h2>
             <p className="text-[12px] text-[var(--text-muted)]">
-              Type a natural phrase like “in 30m” or pick a date.
+              Type a natural phrase like “in 30m” or “every tuesday 4pm” — the plan below shows exactly what will fire.
             </p>
           </div>
           <IconButton
@@ -312,23 +341,53 @@ export function NewReminderModal({
             value={whenText}
             onChange={(e) => {
               setWhenText(e.target.value);
+              setWhenDirty(true);
               if (e.target.value.trim()) setManualFireAt("");
             }}
-            placeholder="in 30m · in 2h · today 17:30 · tomorrow 9am"
+            placeholder="in 30m · tomorrow at 9am · every tuesday 4pm · jul 20"
             className={`w-full rounded-[var(--radius-control)] border bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
               whenText && !parsed
                 ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
                 : "border-[var(--border-hairline)] focus:border-[var(--accent-presence)]"
             }`}
           />
-          <div className="mt-1 flex items-center justify-between text-[10px] text-[var(--text-muted)]">
-            <span>
-              {whenText && !parsed
-                ? "Couldn't parse — try “in 30m”, “today 9pm”, or use the picker below."
-                : parsed
-                ? `Parsed → ${previewLabel}`
-                : "Or pick exactly:"}
-            </span>
+          <div
+            aria-live="polite"
+            className="mt-1.5 text-[10px] text-[var(--text-muted)]"
+          >
+            {whenText && !parsed ? (
+              <span>Couldn't parse — try “in 30m”, “tomorrow at 9am”, “every tuesday 4pm”, or use the picker below.</span>
+            ) : resolvedFireAt ? (
+              <div className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 py-1.5">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-semibold uppercase tracking-widest text-[var(--accent-presence)]">
+                    {planCadence ? "Repeats" : "Once"}
+                  </span>
+                  <span className="text-[11px] text-[var(--text-primary)]">
+                    {planCadence ?? previewLabel}
+                  </span>
+                </div>
+                {planUpcoming.length > 0 ? (
+                  <div className="mt-0.5">
+                    Next:{" "}
+                    {planUpcoming
+                      .map((isoDate) =>
+                        new Date(isoDate).toLocaleString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          hour: "numeric",
+                          minute: "2-digit",
+                          hour12,
+                        }),
+                      )
+                      .join(" · ")}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <span>Or pick exactly:</span>
+            )}
           </div>
         </Field>
 
@@ -350,7 +409,19 @@ export function NewReminderModal({
             <Select
               value={recurPreset}
               onChange={(v) => setRecurPreset(v as RecurPreset)}
-              options={RECUR_PRESETS}
+              options={
+                // "Custom" only exists while a phrase/edit holds an exact
+                // schedule no named preset represents — never hand-pickable.
+                recurPreset === "custom"
+                  ? [
+                      {
+                        value: "custom",
+                        label: `Custom — ${describeRecurrence(customRec ?? { type: "none" }, { hour12 }) ?? "from phrase"}`,
+                      },
+                      ...RECUR_PRESETS,
+                    ]
+                  : RECUR_PRESETS
+              }
             />
           </Field>
           <Field label="Familiar">

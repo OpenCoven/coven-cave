@@ -1,5 +1,5 @@
 /* In-chat artifact viewer — Canvas/Code tabs embedded in an assistant bubble.
-   Sibling to the Canvas page's sketch node (same dots + segmented pill). */
+   Same dots + segmented pill styling as the retired Canvas page's sketch node (see feature/journal-canvas-surface). */
 .chat-artifact {
   margin: 8px 0;
   background: var(--bg-panel);
@@ -41,7 +41,10 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 .chat-artifact__dots { display: inline-flex; gap: 5px; }
-.chat-artifact__dots i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.chat-artifact__dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.chat-artifact__dot--danger { background: var(--color-danger); }
+.chat-artifact__dot--warning { background: var(--color-warning); }
+.chat-artifact__dot--success { background: var(--color-success); }
 .chat-artifact__title { font-size: var(--text-xs); color: var(--text-secondary); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-artifact__spacer { flex: 1; }
 .chat-artifact__actions { display: inline-flex; gap: 6px; align-items: center; }
@@ -137,8 +140,12 @@
 .chat-artifact__refine-foot { display: flex; align-items: center; gap: 8px; }
 .chat-artifact__refine-hint { font-size: 10px; color: var(--text-muted); }
 .chat-artifact__refine-go {
-  flex: none; font-size: var(--text-xs); font-weight: 600; color: #fff;
-  background: var(--accent, #6b8fbf); border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer;
+  flex: none; font-size: var(--text-xs); font-weight: 600;
+  /* Filled brand-accent CTA: --accent-presence with its paired foreground
+     (var(--accent) is the near-background shadcn surface token — in light
+     mode it left white text on a near-white fill). */
+  color: var(--accent-presence-foreground, #fff);
+  background: var(--accent-presence, #6b8fbf); border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer;
   transition: filter 0.12s ease;
 }
 .chat-artifact__refine-go:hover:not(:disabled) { filter: brightness(1.08); }

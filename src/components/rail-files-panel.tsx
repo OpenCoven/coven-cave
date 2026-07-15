@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { useCallback, useEffect, useState } from "react";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Icon } from "@/lib/icon";
 import { ProjectTree } from "@/components/project-tree";
 import { RailFilePreview } from "@/components/rail-file-preview";
@@ -19,18 +19,57 @@ export function RailFilesPanel({
   projectRoot,
   familiarId,
   isFullscreen = false,
+  focusPath,
+  focusLine,
+  focusNonce,
 }: {
   projectRoot: string | null;
   familiarId?: string | null;
   isFullscreen?: boolean;
+  focusPath?: string | null;
+  focusLine?: number;
+  focusNonce?: number;
 }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
+  // The fullscreen IDE split (tree / editor / diffs) persists across sessions —
+  // same react-resizable-panels persistence the chat split uses.
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: "workspace-rail-files-ide",
+    panelIds: ["workspace-rail-files-tree", "workspace-rail-files-editor", "workspace-rail-files-diffs"],
+  });
+
+  // Open a path selected outside the tree (the preview's changed-file
+  // launchpad hands back repo-relative paths) — resolve against the root the
+  // same way focusPath events are.
+  const openPath = useCallback(
+    (path: string) => {
+      setSelectedPath(
+        path.startsWith("/")
+          ? path
+          : projectRoot
+            ? `${projectRoot.replace(/\/$/, "")}/${path.replace(/^\.?\//, "")}`
+            : path,
+      );
+    },
+    [projectRoot],
+  );
 
   // A new project resets the selection so a stale file from the previous repo
   // doesn't linger in the preview.
   useEffect(() => {
     setSelectedPath(null);
   }, [projectRoot]);
+
+  useEffect(() => {
+    if (!focusPath) return;
+    const nextPath = focusPath.startsWith("/")
+      ? focusPath
+      : projectRoot
+        ? `${projectRoot.replace(/\/$/, "")}/${focusPath.replace(/^\.?\//, "")}`
+        : focusPath;
+    setSelectedPath(nextPath);
+  }, [focusLine, focusNonce, focusPath, projectRoot]);
 
   if (!projectRoot) {
     return (
@@ -44,7 +83,12 @@ export function RailFilesPanel({
   if (isFullscreen) {
     return (
       <div className="workspace-rail__files workspace-rail__files--ide">
-        <Group className="workspace-rail__files-ide-group" orientation="horizontal">
+        <Group
+          className="workspace-rail__files-ide-group"
+          orientation="horizontal"
+          defaultLayout={defaultLayout}
+          onLayoutChanged={onLayoutChanged}
+        >
           <Panel
             id="workspace-rail-files-tree"
             className="workspace-rail__files-tree-pane"
@@ -71,7 +115,7 @@ export function RailFilesPanel({
             minSize="36%"
           >
             <div className="workspace-rail__files-preview workspace-rail__files-preview--ide">
-              <RailFilePreview path={selectedPath} projectRoot={projectRoot} familiarId={familiarId} />
+              <RailFilePreview path={selectedPath} projectRoot={projectRoot} familiarId={familiarId} onOpenPath={openPath} />
             </div>
           </Panel>
           <Separator className="workspace-rail__files-separator shell-separator">
@@ -103,7 +147,7 @@ export function RailFilesPanel({
         />
       </div>
       <div className="workspace-rail__files-preview">
-        <RailFilePreview path={selectedPath} projectRoot={projectRoot} familiarId={familiarId} />
+        <RailFilePreview path={selectedPath} projectRoot={projectRoot} familiarId={familiarId} onOpenPath={openPath} />
       </div>
     </div>
   );

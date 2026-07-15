@@ -30,6 +30,23 @@ require_value() {
   local label="${2:-required value}"
   [ -n "$value" ] || { echo "Missing required value: $label" >&2; exit 1; }
 }
+# Retry transient-failure commands (Apple timestamp service, notary submit,
+# the Next build's Google Fonts fetch) — the Intel leg failed 3 of 4 cuts on
+# exactly these network-dependent steps (cave-1hha).
+retry() {
+  local attempts="$1"; shift
+  local delay="$1"; shift
+  local n=1
+  until "$@"; do
+    if [ "$n" -ge "$attempts" ]; then
+      echo "    ! giving up after $attempts attempts: $1" >&2
+      return 1
+    fi
+    echo "    retry $n/$((attempts - 1)) in ${delay}s: $1" >&2
+    sleep "$delay"
+    n=$((n + 1))
+  done
+}
 print_notary_log() {
   local submission_id="$1"
 
@@ -87,23 +104,47 @@ run_notary_submit() {
   set -e
 
   submission_id=$(awk '/^[[:space:]]*id:/ { print $2; exit }' "$output")
+  # Return codes: 0 accepted · 2 Apple REJECTED the submission (never retry) ·
+  # 1 transient/submit failure (the caller retries — cave-1hha).
   if [ "$submit_status" -ne 0 ]; then
     print_notary_log "$submission_id"
     rm -f "$output"
-    exit "$submit_status"
+    return 1
   fi
   if grep -Eq "Submission in terminal status: Invalid|Current status: Invalid|^[[:space:]]*status:[[:space:]]*Invalid" "$output"; then
     print_notary_log "$submission_id"
     rm -f "$output"
-    exit 1
+    return 2
   fi
   if ! grep -Eq "Submission in terminal status: Accepted|Received new status: Accepted|^[[:space:]]*status:[[:space:]]*Accepted" "$output"; then
     echo "Notary submission did not report Accepted; refusing to staple." >&2
     print_notary_log "$submission_id"
     rm -f "$output"
-    exit 1
+    return 1
   fi
   rm -f "$output"
+  return 0
+}
+notarize_with_retries() {
+  local attempt rc
+  for attempt in 1 2 3; do
+    set +e
+    run_notary_submit
+    rc=$?
+    set -e
+    case "$rc" in
+      0) return 0 ;;
+      2) echo "Apple rejected the submission (Invalid) — not retrying." >&2; exit 1 ;;
+      *)
+        if [ "$attempt" -eq 3 ]; then
+          echo "Notary submission failed after 3 attempts." >&2
+          exit 1
+        fi
+        echo "==> Notary submission attempt $attempt failed transiently; retrying in 60s" >&2
+        sleep 60
+        ;;
+    esac
+  done
 }
 cleanup_dmg_artifacts() {
   local mount
@@ -249,7 +290,7 @@ echo "==> Running pnpm tauri build"
 # mismatches between the generated script and the installed create-dmg.
 # Keep App Store Connect credentials out of this subprocess so Tauri does not
 # take its built-in notarization path before this script assembles the DMG.
-env \
+retry 2 30 env \
   -u APPLE_API_KEY \
   -u APPLE_API_KEY_PATH \
   -u APPLE_API_ISSUER \
@@ -294,13 +335,13 @@ NATIVE_COUNT=$(wc -l < "$NATIVE_FILES_TMP" | tr -d ' ')
 echo "    found $NATIVE_COUNT native files"
 while IFS= read -r f; do
   if [ "$f" = "$APP_PATH/Contents/Resources/resources/node/bin/node" ]; then
-    codesign --force --options runtime --timestamp \
+    retry 3 10 codesign --force --options runtime --timestamp \
       --entitlements "$NODE_ENTITLEMENTS" \
       --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
         echo "    ! failed to sign bundled Node with entitlements: $f" >&2
       }
   else
-    codesign --force --options runtime --timestamp \
+    retry 3 10 codesign --force --options runtime --timestamp \
       --sign "$SIGNING_IDENTITY" "$f" >/dev/null 2>&1 || {
         echo "    ! failed to sign: $f" >&2
       }
@@ -309,7 +350,7 @@ done < "$NATIVE_FILES_TMP"
 rm "$NATIVE_FILES_TMP"
 
 echo "==> Sealing the .app envelope"
-codesign --force --options runtime --timestamp \
+retry 3 15 codesign --force --options runtime --timestamp \
   --sign "$SIGNING_IDENTITY" "$APP_PATH"
 
 echo "==> Verifying signature"
@@ -333,7 +374,7 @@ codesign --force --timestamp \
   --sign "$SIGNING_IDENTITY" "$DMG_PATH"
 
 echo "==> Submitting DMG for notarization"
-run_notary_submit
+notarize_with_retries
 
 echo "==> Stapling notarization ticket"
 xcrun stapler staple "$DMG_PATH"
@@ -377,11 +418,63 @@ echo "Wrote checksum entry to $SUMS_PATH"
 # installed app must still pass Gatekeeper, which only the notarized bundle
 # does. Non-fatal by design: a failure here must never sink a release — the
 # DMG is the source of truth and the app falls back to manual download.
+#
+# CRITICAL (v0.0.167 "app is damaged" regression): the tarball must contain
+# NO AppleDouble (._*) entries. macOS bsdtar embeds xattrs/resource forks as
+# `._` sidecar entries by default; the Tauri updater's Rust extractor
+# materializes those as literal files INSIDE the .app, which invalidates the
+# code seal ("a sealed resource is missing or invalid") — Gatekeeper then
+# refuses the updated app with "CovenCave is damaged and can't be opened".
+# COPYFILE_DISABLE=1 + --no-mac-metadata + --no-xattrs keep the archive to
+# real files only, and the round-trip gate below refuses to ship a tarball
+# whose extracted app no longer verifies.
 if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
   echo ""
   echo "==> Building signed updater artifact (.app.tar.gz)"
   UPDATER_TARBALL="$DMG_DIR/CovenCave.app.tar.gz"
-  if tar -czf "$UPDATER_TARBALL" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"; then
+  build_updater_tarball() {
+    COPYFILE_DISABLE=1 tar --no-mac-metadata --no-xattrs -czf "$UPDATER_TARBALL" \
+      -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+  }
+  verify_updater_tarball() {
+    # Round-trip the archive through a metadata-NAIVE extractor (python
+    # tarfile). bsdtar can't be trusted for this check: it hides AppleDouble
+    # entries from `-t` listings and re-merges them into xattrs on extract,
+    # masking exactly the corruption the Tauri updater's Rust extractor
+    # produces — it writes `._*` entries as literal files inside the
+    # swapped-in .app.
+    local probe_dir
+    probe_dir=$(mktemp -d)
+    if ! python3 - "$UPDATER_TARBALL" "$probe_dir" <<'PY'
+import sys, tarfile
+with tarfile.open(sys.argv[1]) as t:
+    try:
+        t.extractall(sys.argv[2], filter="fully_trusted")
+    except TypeError:  # Python < 3.12: no filter kwarg
+        t.extractall(sys.argv[2])
+PY
+    then
+      rm -rf "$probe_dir"
+      echo "    ! updater tarball failed to extract" >&2
+      return 1
+    fi
+    # 1. Zero AppleDouble files may materialize.
+    if find "$probe_dir" -name '._*' -print -quit | grep -q .; then
+      rm -rf "$probe_dir"
+      echo "    ! updater tarball contains AppleDouble (._*) entries — the extracted app would fail Gatekeeper" >&2
+      return 1
+    fi
+    # 2. The code seal must survive the round trip — the same integrity check
+    #    Gatekeeper runs on the swapped-in update.
+    if ! codesign --verify --deep --strict "$probe_dir/CovenCave.app" >/dev/null 2>&1; then
+      rm -rf "$probe_dir"
+      echo "    ! extracted updater app fails codesign verification" >&2
+      return 1
+    fi
+    rm -rf "$probe_dir"
+    return 0
+  }
+  if build_updater_tarball && verify_updater_tarball; then
     if pnpm exec tauri signer sign "$UPDATER_TARBALL"; then
       echo "    wrote $UPDATER_TARBALL (+ .sig)"
     else
@@ -389,7 +482,8 @@ if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
       rm -f "$UPDATER_TARBALL"
     fi
   else
-    echo "    ! updater tarball creation failed; skipping" >&2
+    echo "    ! updater tarball creation/verification failed; skipping (users fall back to manual DMG download)" >&2
+    rm -f "$UPDATER_TARBALL"
   fi
 else
   echo "==> TAURI_SIGNING_PRIVATE_KEY unset; skipping updater artifact"

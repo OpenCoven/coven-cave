@@ -31,7 +31,11 @@ export type RuntimeScope =
 function normalizePath(p: string): string {
   if (process.platform === "win32") {
     if (/^[a-zA-Z]:$/.test(p)) return p + "\\";
-    return p.replace(/\//g, "\\\\");
+    // Convert forward slashes to a SINGLE backslash. The earlier replacement
+    // used an escaped-backslash literal that expanded to TWO backslashes per
+    // slash, producing malformed Windows paths that broke the spawn cwd and the
+    // allow-list path comparison.
+    return p.replace(/\//g, "\\");
   }
   return p;
 }

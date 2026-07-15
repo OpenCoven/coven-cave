@@ -5,13 +5,17 @@ import Foundation
 /// from `connection.baseURL` (with proper query-item encoding) rather than the
 /// core client's path-only helper.
 extension CaveClient {
-    private var devSession: URLSession {
+    /// Shared across all dev-tab calls — one pooled session instead of a
+    /// leaked `URLSession` per request (see `restSession` in the core client).
+    private static let devSharedSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 25
-        config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
         return URLSession(configuration: config)
-    }
+    }()
+
+    private var devSession: URLSession { Self.devSharedSession }
 
     /// Build a request against `<base>/<path>` with optional query items.
     private func devRequest(
@@ -30,6 +34,11 @@ extension CaveClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        // Same credential as the core client — without it every dev-tab call
+        // (projects, code browse, GitHub) 401s on a token-gated desktop.
+        if let token = CaveConnection.accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         if let body {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -10,10 +10,16 @@ import {
   timingSafeEqualString,
   isLoopbackHost,
   isAllowedApiHost,
+  isTailscaleServeHost,
   sameOrigin,
   isAllowedRequestSource,
+  isAllowedRequestSourceAny,
+  expectedRequestOrigins,
   bearerFromReferer,
+  bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
+  isHtmlNavigationRequest,
+  accessGatePage,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 
@@ -81,6 +87,20 @@ async function mobileAccessGate(req: NextRequest) {
   const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
   const verification = await mobileAccessVerification(req, expected, suppliedTokens);
   if (!verification) {
+    // Browser page navigations get an HTML access page instead of a raw JSON
+    // dead end. Same 401, same fail-closed posture — the page's form submits
+    // the token as ACCESS_TOKEN_QUERY_PARAM, re-entering the audited
+    // query-token exchange below. API routes and non-browser clients keep the
+    // machine-readable envelope.
+    if (isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))) {
+      return new NextResponse(accessGatePage({ invalidToken: suppliedTokens.length > 0 }), {
+        status: 401,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    }
     return jsonError(401, "unauthorized");
   }
 
@@ -151,8 +171,16 @@ export async function proxy(req: NextRequest) {
   // callers if the dev server were ever bound to anything other than
   // 127.0.0.1. The token equality check below is the only thing
   // legitimately optional in browser-dev mode.
-  const expectedOrigin = req.nextUrl.origin;
   const requestHost = req.headers.get("host");
+  // Accept the Origin/Referer against the configured-port origin (nextUrl,
+  // which the Serve/forwarded-host path relies on) AND the port the browser
+  // actually reached us on (from Host). The latter is what unbreaks a server
+  // that fell back to a free port — see expectedRequestOrigins (cave-5sg).
+  const expectedOrigins = expectedRequestOrigins(
+    req.nextUrl.origin,
+    req.nextUrl.protocol,
+    requestHost,
+  );
   const mobileAccessAuthenticated = mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
     : false;
@@ -167,6 +195,8 @@ export async function proxy(req: NextRequest) {
   if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)) {
     return jsonError(403, "forbidden host");
   }
+  const mobileAccessMarker =
+    mobileAccessAuthenticated || (tailnetTrusted && isTailscaleServeHost(requestHost));
 
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
@@ -187,22 +217,23 @@ export async function proxy(req: NextRequest) {
   if (!headerCsrfTrusted) {
     const origin = req.headers.get("origin");
     const referer = req.headers.get("referer");
-    if (!isAllowedRequestSource(origin, expectedOrigin)) {
+    if (!isAllowedRequestSourceAny(origin, expectedOrigins)) {
       return jsonError(403, "forbidden origin");
     }
-    if (!isAllowedRequestSource(referer, expectedOrigin)) {
+    if (!isAllowedRequestSourceAny(referer, expectedOrigins)) {
       return jsonError(403, "forbidden referer");
     }
     // Production GET webhooks are intentionally state-changing: a matching
     // request starts an agent-backed flow. In tokenless Tailscale mode there is
     // no sidecar secret to prove the caller is first-party, and browsers can
     // issue cross-site GET navigations/subresources with both Origin and
-    // Referer omitted (for example via Referrer-Policy: no-referrer). Require a
+    // Referer omitted (for example via Referrer-Policy: no-referrer). The same
+    // applies to a request authenticated only by the mobile-access cookie
+    // (SameSite=Lax still rides top-level GET navigations). Require a
     // same-origin source header for that narrow state-changing GET surface so
     // absent headers cannot bypass the CSRF gate.
     if (
-      tailnetTrusted &&
-      !sidecarToken &&
+      ((tailnetTrusted && !sidecarToken) || mobileAccessAuthenticated) &&
       isProductionWebhookGet(req.nextUrl.pathname, req.method) &&
       !origin &&
       !referer
@@ -217,20 +248,27 @@ export async function proxy(req: NextRequest) {
   const suppliedToken =
     req.headers.get(TOKEN_HEADER) ??
     req.nextUrl.searchParams.get(TOKEN_PARAM) ??
-    bearerFromReferer(req.headers.get("referer"), expectedOrigin);
+    bearerFromRefererAny(req.headers.get("referer"), expectedOrigins);
   const sidecarAuthenticated = Boolean(sidecarToken) && suppliedToken === sidecarToken;
 
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"
       ? jsonError(500, "missing sidecar auth token")
-      : nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
+      : nextWithMobileAccessMarker(req, mobileAccessMarker);
   }
 
-  if (!sidecarAuthenticated) {
+  if (!sidecarAuthenticated && !mobileAccessAuthenticated) {
+    // A verified signed mobile invite is the paired phone's credential: the
+    // token is minted by this desktop from its access secret and already
+    // passed mobileAccessGate above. Requiring the webview's per-launch
+    // sidecar token ON TOP would 401 every native REST call in the packaged
+    // bundle — the phone can never learn that token — which is exactly the
+    // "packaged app cannot pair" failure (cave-gzje). CSRF stays covered: the
+    // Origin/Referer gates above ran for every non-header-trusted request.
     return jsonError(401, "unauthorized");
   }
 
-  return nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
+  return nextWithMobileAccessMarker(req, mobileAccessMarker);
 }
 
 export const config = {

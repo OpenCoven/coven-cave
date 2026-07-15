@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
@@ -55,8 +56,14 @@ const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
 // drag-reorganize, tab switch) or the page reloads; killing the shell the
 // instant the old socket closes turned every one of those into a dead/blank
 // pane with a brand-new shell. Detach instead of kill, and let the timer reap
-// only genuinely-abandoned shells.
-const DETACH_GRACE_MS = 60_000;
+// only genuinely-abandoned shells. The default is sized for the iOS app too:
+// backgrounding the phone kills its socket, and a 60s window meant stepping
+// away for two minutes came back to a dead shell — 5 minutes keeps a quick
+// app-switch/lock survivable while still bounding abandoned shells.
+const DETACH_GRACE_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_PTY_DETACH_GRACE_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 300_000;
+})();
 
 function appendScrollback(session: PtySession, data: Buffer): void {
   session.scrollback.push(data);
@@ -95,7 +102,26 @@ function timingSafeEqualString(a: string, b: string): boolean {
 }
 
 function isExpectedToken(value: string | undefined | null): boolean {
-  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+  if (!ACCESS_TOKEN || !value) return false;
+  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
+  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+}
+
+// Mirrors src/lib/mobile-access-token.ts (server.mjs is transpiled standalone,
+// so it can't import from src/): `v1.<expiresAtMs>.<nonce>.<sig>` where
+// sig = base64url(HMAC-SHA256(secret, "v1.<expiresAtMs>.<nonce>")). Paired
+// phones and QR-paired browsers hold these SIGNED tokens — not the raw secret
+// — so the PTY upgrade must honour them or every paired terminal 401s.
+function isValidSignedAccessToken(value: string, secret: string): boolean {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`v1.${parts[1]}.${parts[2]}`)
+    .digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 
 function bearerToken(req: IncomingMessage): string | null {
@@ -123,6 +149,13 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
     if (url.origin === expectedOrigin) return true;
 
     const expected = new URL(expectedOrigin);
+    // Scheme-agnostic host match: `tailscale serve` terminates TLS upstream,
+    // so a browser page served over https://<host>.ts.net opens its terminal
+    // socket with Origin https://… while the expectation string here is built
+    // as http://<Host>. The host (incl. port) equality is the actual
+    // cross-site defence — a hostile page cannot declare this host as its
+    // Origin — so the scheme difference must not 403 the upgrade.
+    if (url.host === expected.host) return true;
     return (
       url.protocol === expected.protocol &&
       url.port === expected.port &&
@@ -134,26 +167,36 @@ function sameOrigin(value: string | undefined, expectedOrigin: string): boolean 
   }
 }
 
-function isAllowedUpgradeSource(req: IncomingMessage): boolean {
+function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false): boolean {
   const host = req.headers.host;
   // The peer must always be loopback: `tailscale serve` terminates TLS and
   // forwards to 127.0.0.1, so a legitimate tailnet client still arrives over
   // loopback. A non-loopback peer is a direct LAN/WAN connection — never trust.
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  const loopbackHost = isLoopbackHost(host);
-  if (!loopbackHost) {
-    // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
-    // `pnpm mobile:tailscale:app`): `tailscale serve` forwards the request's
-    // `<host>.ts.net` Host — NOT 127.0.0.1 — so the loopback host gate would
-    // otherwise 403 the iOS terminal over the tailnet. Only native clients that
-    // omit Origin may use this relaxation; browser WebSockets carry Origin and
-    // can make Host and Origin match after DNS rebinding. By default (no flag)
-    // WebSocket upgrades remain loopback-host only.
+  if (!isLoopbackHost(host)) {
+    // A meaningful same-origin/host gate needs a Host header; fail closed on
+    // malformed upgrade requests instead of letting them ride a relaxation.
+    if (!host) return false;
+    // Two ways a non-loopback Host is legitimate — both arrive via `tailscale
+    // serve`, which forwards the request's `<host>.ts.net` Host, NOT 127.0.0.1:
+    //   1. A token-authenticated upgrade (paired iOS app / handoff browser
+    //      holding a signed access token): the credential proves the caller,
+    //      exactly like proxy.ts's isAllowedApiHost(mobileAccessAuthenticated)
+    //      relaxation on REST. Without this, a paired phone's terminal 403s at
+    //      the host gate while every REST call works (the "terminal tab never
+    //      connects" bug). The sameOrigin gate below still blocks cross-site
+    //      browser upgrades.
+    //   2. Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
+    //      `pnpm mobile:tailscale:app`): tailnet membership is the ingress
+    //      boundary. Only native clients that omit Origin may use this
+    //      relaxation; browser WebSockets always carry Origin and can make
+    //      Host and Origin match after DNS rebinding, so an Origin-bearing
+    //      upgrade must not ride the trust flag.
+    // By default (no flag, no credential) upgrades remain loopback-host only.
+    if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
     return tailnetTrusted && !req.headers.origin;
   }
-
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 
@@ -324,6 +367,18 @@ function onWsMessage(threadId: string, data: RawData): void {
     if (cols > 0 && rows > 0) {
       session.pty.resize(cols, rows);
     }
+  } else if (tag === 0x05) {
+    // Explicit tab-close (client sent a kill frame): reap the shell NOW rather
+    // than detaching with a grace window. Without this, a WS-transport tab close
+    // just drops the socket, which the close handler treats as a transient
+    // detach — leaking the shell (and its foreground job) for DETACH_GRACE_MS.
+    if (session.detachTimer) clearTimeout(session.detachTimer);
+    sessions.delete(threadId);
+    try {
+      session.pty.kill();
+    } catch {
+      // Already gone.
+    }
   }
 }
 
@@ -429,7 +484,14 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  if (!isAllowedUpgradeSource(req)) {
+  // Verify credentials before the host gate: a valid signed access token
+  // (paired iOS terminal / handoff browser over `tailscale serve`, which
+  // forwards the `<host>.ts.net` Host) legitimately arrives with a
+  // non-loopback Host and must pass the source gate on the strength of its
+  // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
+  const tokenAuthenticated = ACCESS_TOKEN ? isAuthorized(req, query) : false;
+
+  if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
@@ -441,7 +503,7 @@ server.on("upgrade", (req, socket, head) => {
   // connections are the local app itself. #714 dropped this and 401'd every
   // local terminal (reintroducing the v0.0.72 "Terminal connection failed"
   // regression that server-pty-ws.test.ts warns about).
-  if (ACCESS_TOKEN && !isAuthorized(req, query)) {
+  if (ACCESS_TOKEN && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -471,6 +533,40 @@ server.on("upgrade", (req, socket, head) => {
   });
 });
 
-server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
-});
+// Keep idle HTTP/1.1 connections open longer than clients hold them for
+// reuse. Node's 5s default races connection pooling in URLSession (the iOS
+// app) and `tailscale serve`'s upstream proxying — the server closes an idle
+// socket just as the client reuses it, surfacing as sporadic "network
+// connection lost" errors. headersTimeout must exceed keepAliveTimeout so a
+// reused socket isn't reaped while request headers are mid-flight.
+server.keepAliveTimeout = 75_000;
+server.headersTimeout = 80_000;
+
+function startListening(attempt: number = 0): void {
+  const currentPort = port + attempt;
+  const maxAttempts = 10;
+
+  server.listen(currentPort, hostname, () => {
+    console.log(`> Ready on http://${hostname}:${currentPort}`);
+    // Export the final port so wrapper scripts (dev-app.sh, etc.) can discover it.
+    if (process.env.PORT !== String(currentPort)) {
+      process.env.PORT = String(currentPort);
+    }
+  });
+
+  server.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
+      console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+      server.removeAllListeners("error");
+      // listen() attached its callback via once('listening') before the failed
+      // bind — clear it too, or every stale callback fires on the winning port.
+      server.removeAllListeners("listening");
+      startListening(attempt + 1);
+    } else {
+      console.error(err);
+      process.exit(1);
+    }
+  });
+}
+
+startListening();

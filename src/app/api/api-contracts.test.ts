@@ -17,8 +17,14 @@ type RouteContract = {
 };
 
 const contracts: RouteContract[] = [
+  { route: "/access-groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/access-groups/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/app/latest-release", methods: ["GET"], kind: "json" },
+  { route: "/asana/assigned", methods: ["GET"], kind: "json" },
+  { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
+  { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/beads", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/beads/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]/lifecycle", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/board/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -26,11 +32,13 @@ const contracts: RouteContract[] = [
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/canvas", methods: ["GET", "PUT", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
+  { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json" },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
+  { route: "/chat/stop", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
@@ -40,24 +48,32 @@ const contracts: RouteContract[] = [
   { route: "/config", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/coven-memory", methods: ["GET"], kind: "json" },
   { route: "/coven/exec", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/daemon/capabilities", methods: ["GET"], kind: "json" },
   { route: "/daemon/start", methods: ["POST"], kind: "json" },
   { route: "/daemon/status", methods: ["GET"], kind: "json" },
   { route: "/escalations/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/escalations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/familiars/[id]/avatar", methods: ["GET", "POST"], kind: "stream", pathGuard: true },
+  { route: "/familiars/[id]/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-report", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/familiars/[id]/self-reports/[sessionId]", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/familiars/[id]/self-reports/snapshots", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/self-reports", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/response-confidence", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
+  { route: "/familiars/[id]", methods: ["DELETE"], kind: "json", pathGuard: true },
+  { route: "/familiars/removed", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/familiars", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
-  { route: "/feedback/message", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/feedback/message", methods: ["POST", "GET"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/fs-browse", methods: ["GET"], kind: "json", pathGuard: true, localOriginGuard: true },
   { route: "/github/activity", methods: ["GET"], kind: "json" },
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
+  { route: "/github/checks", methods: ["GET"], kind: "json" },
   { route: "/github/repos", methods: ["GET"], kind: "json" },
+  { route: "/github/subscriptions", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/github/user", methods: ["GET"], kind: "json" },
   { route: "/flows", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/runs", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -67,45 +83,62 @@ const contracts: RouteContract[] = [
   { route: "/flows/webhook-test", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
   { route: "/flows/webhook-test/[...path]", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
   { route: "/flows/webhook-test/listen", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/hosts", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/hosts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/github/comment", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/comments", methods: ["GET"], kind: "json" },
+  { route: "/github/commit", methods: ["GET"], kind: "json" },
+  { route: "/github/dispatch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/github/issue", methods: ["POST", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/item", methods: ["GET"], kind: "json" },
+  { route: "/github/merge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/github/rerun", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/resolve-thread", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/github/review", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/github/runs", methods: ["GET"], kind: "json" },
   { route: "/github/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/github/tasks", methods: ["GET"], kind: "json" },
   { route: "/github/worktree", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/grimoire/graph", methods: ["GET"], kind: "json" },
   { route: "/harnesses", methods: ["GET"], kind: "json" },
   { route: "/home-tweets", methods: ["GET"], kind: "json" },
   { route: "/inbox/[id]/dismiss", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/inbox/[id]/done", methods: ["POST"], kind: "json", localOriginGuard: true },
   { route: "/inbox/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/[id]/snooze", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/inbox/bulk", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/daily-summary", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty", localOriginGuard: true },
   { route: "/inbox/prefs", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/stream", methods: ["GET"], kind: "stream" },
   { route: "/journal", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/knowledge", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
+  { route: "/knowledge/collections", methods: ["GET"], kind: "json" },
+  { route: "/knowledge/packs", methods: ["GET"], kind: "json" },
+  { route: "/knowledge/packs/seed", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
   { route: "/marketplace", methods: ["GET"], kind: "json" },
-  { route: "/marketplace/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/marketplace/uninstall", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/marketplace/crafts/drafts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/marketplace/crafts/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/marketplace/crafts/plan", methods: ["GET"], kind: "json" },
+  { route: "/marketplace/crafts/uninstall", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/marketplace/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/marketplace/pack-prompts", methods: ["GET"], kind: "json" },
+  { route: "/marketplace/uninstall", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/validate-endpoint", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/memory/delete", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/memory/file", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/memory/file", methods: ["GET", "PUT"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/memory/inspector", methods: ["GET"], kind: "json" },
   { route: "/memory/purge", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/memory/restore", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/memory", methods: ["GET"], kind: "json" },
-  { route: "/onboarding/install", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/onboarding/install", methods: ["GET", "DELETE", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/onboarding/codex-port-preflight", methods: ["POST"], kind: "json" },
   { route: "/onboarding/ssh-check", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -114,17 +147,28 @@ const contracts: RouteContract[] = [
   { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
+  { route: "/preferences/backdrop", methods: ["GET", "PUT", "DELETE"], kind: "stream", localOriginGuard: true },
+  { route: "/preferences", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/project-grants", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/project-file", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/project-tree", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/projects/icon", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
+  { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
+  { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/research/missions/[id]/actions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/research/missions/[id]/schedule", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/research/missions/[id]", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/research/missions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
   { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
@@ -140,14 +184,28 @@ const contracts: RouteContract[] = [
   { route: "/skills/file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/skills/eval-loop/[familiarId]", methods: ["GET"], kind: "json" },
   { route: "/skills/directory", methods: ["GET"], kind: "json" },
+  { route: "/skills/build", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/skills/draft", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/skills/caveman", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/skills/dry-run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/skills/templates", methods: ["GET"], kind: "json" },
   { route: "/skills/directory/[slug]", methods: ["GET"], kind: "json" },
   { route: "/skills/directory/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/directory/use", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/local", methods: ["GET", "DELETE"], kind: "json" },
+  { route: "/skills/packages/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills", methods: ["GET"], kind: "json" },
+  { route: "/space-usage", methods: ["GET"], kind: "json" },
+  { route: "/stitches", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/stitches/pins", methods: ["POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
+  { route: "/stitches/sew", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/theme", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/voice/elevenlabs/catalog", methods: ["GET"], kind: "json" },
+  { route: "/voice/elevenlabs/tts", methods: ["POST"], kind: "stream", readsJson: true },
+  { route: "/voice/local/chat", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/voice/preview", methods: ["GET"], kind: "stream" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/transcript", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/workflows/delete", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -158,7 +216,6 @@ const contracts: RouteContract[] = [
   { route: "/workflows/save", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/workflows", methods: ["GET"], kind: "json" },
-  { route: "/youtube", methods: ["GET"], kind: "json" },
 ];
 
 function walkRoutes(dir: string): string[] {
@@ -250,25 +307,93 @@ for (const contract of contracts) {
     /media:\s*draft\.media/,
     "/inbox/daily-summary should persist the generated media card",
   );
+  assert.match(
+    dailySummarySource,
+    /broadcastUpdated\(/,
+    "/inbox/daily-summary refreshes must broadcast an updated event (created would re-toast)",
+  );
+  assert.match(
+    dailySummarySource,
+    /dateMismatch/,
+    "/inbox/daily-summary must reject payloads computed for a different day (midnight-rollover race)",
+  );
+  assert.match(
+    dailySummarySource,
+    /fetchMergedPrsForDay\(now\)\.catch\(/,
+    "/inbox/daily-summary should gather merged PRs server-side, degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /loadBoard\(\)\.catch\(/,
+    "/inbox/daily-summary should gather completed cards server-side, degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /narrative:\s*narrativeInput \?\? existing\.media\?\.narrative/,
+    "/inbox/daily-summary fact refreshes must preserve the narrative layered on top",
+  );
+  assert.match(
+    dailySummarySource,
+    /function sanitizeNarrative/,
+    "/inbox/daily-summary must validate client-submitted narratives before storing",
+  );
+  assert.match(
+    dailySummarySource,
+    /NARRATIVE_MAX_STORED_CHARS/,
+    "/inbox/daily-summary must bound stored narrative length",
+  );
+  assert.match(
+    dailySummarySource,
+    /extractNextPaths\(input\.text\)/,
+    "/inbox/daily-summary must strip the piggybacked next-paths block before storing a narrative",
+  );
 }
 
-// CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an
-// honest cancelled record — the partial text streamed so far, or a minimal
-// "(cancelled)" marker — never the fabricated empty-response error
-// diagnostic. Both adapter paths (coven stream-json and the OpenClaw bridge)
-// carry the guard, so a reload shows the cancel, not a harness error.
+// CHAT-D5-02 (amended by cave-id5): cancelling a streaming response is an
+// explicit POST /api/chat/stop — it SIGTERMs the harness and persists an
+// honest cancelled record (the partial text streamed so far, or a minimal
+// "(cancelled)" marker), never the fabricated empty-response error
+// diagnostic. A bare `req.signal` abort is a TRANSPORT DROP, not a cancel:
+// the harness keeps running (bounded by the detach cap) and the finished
+// turn persists for resync. Both adapter paths (coven stream-json and the
+// OpenClaw bridge) carry the guard.
 {
   const sendSource = readFileSync(
     path.join(apiRoot, "chat", "send", "route.ts"),
     "utf8",
   );
-  const abortReads = [
-    ...sendSource.matchAll(/const cancelledByUser = (?:args\.)?req\.signal\.aborted;/g),
+  const stopReads = [
+    ...sendSource.matchAll(/const cancelledByUser = runHandle\.stopRequested;/g),
   ];
   assert.equal(
-    abortReads.length,
+    stopReads.length,
     2,
-    "/chat/send: both adapter paths must detect a user abort before synthesizing diagnostics",
+    "/chat/send: both adapter paths must detect a deliberate stop (not a bare abort) before synthesizing diagnostics",
+  );
+  assert.doesNotMatch(
+    sendSource,
+    /const cancelledByUser = (?:args\.)?req\.signal\.aborted;/,
+    "/chat/send: a bare transport abort must never be read as a user cancel",
+  );
+  const runRegistrations = [...sendSource.matchAll(/= registerChatRun\(/g)];
+  assert.equal(
+    runRegistrations.length,
+    2,
+    "/chat/send: both adapter paths must register with the stop registry",
+  );
+  assert.match(
+    sendSource,
+    /setTimeout\(kill(?:Child|CurrentChild), CHAT_DETACH_MAX_MS\)/,
+    "/chat/send: a transport drop must arm the detach cap instead of killing immediately",
+  );
+  const stopSource = readFileSync(
+    path.join(apiRoot, "chat", "stop", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    stopSource,
+    /requestChatStop/,
+    "/chat/stop must resolve stops through the shared run registry",
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(
@@ -303,6 +428,31 @@ for (const contract of contracts) {
     /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
     "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
   );
+
+  // SSE heartbeats: a long tool run can stream nothing for minutes, and a
+  // silent connection gets dropped by NATs/proxies and client idle timeouts
+  // (the iOS app most of all). Both adapter paths must emit comment frames
+  // — which every consumer skips (frames not starting with "data:") — and
+  // clear the interval when the stream closes.
+  assert.match(
+    sendSource,
+    /const SSE_HEARTBEAT = new TextEncoder\(\)\.encode\(": hb\\n\\n"\)/,
+    "/chat/send: heartbeat is an SSE comment frame, invisible to data: parsers",
+  );
+  const heartbeatStarts = [...sendSource.matchAll(/const heartbeat = startSseHeartbeat\(controller,/g)];
+  assert.equal(
+    heartbeatStarts.length,
+    2,
+    "/chat/send: both adapter paths must start the SSE heartbeat",
+  );
+  const heartbeatClears = [
+    ...sendSource.matchAll(/closed = true;\s*\n\s*clearInterval\(heartbeat\);/g),
+  ];
+  assert.equal(
+    heartbeatClears.length,
+    2,
+    "/chat/send: both adapter paths must clear the heartbeat when the stream closes",
+  );
 }
 
 {
@@ -322,33 +472,78 @@ for (const contract of contracts) {
   );
   assert.match(
     sessionsListSource,
-    /execFileSync\("git"/,
-    "/sessions/list: sessions should be enriched from local git context",
+    /import \{ enrichSessionsWithGitContext \} from "@\/lib\/session-git-enrich"/,
+    "/sessions/list: sessions should be enriched from local git context (async lib)",
+  );
+  assert.doesNotMatch(
+    sessionsListSource,
+    /execFileSync|execSync|spawnSync/,
+    "/sessions/list: the polled list route must never run sync subprocesses on the event loop (cave-n37w)",
   );
   assert.match(
     sessionsListSource,
+    /await enrichSessionsWithGitContext\(/,
+    "/sessions/list: git enrichment should be awaited (async), not run synchronously",
+  );
+  assert.match(
+    sessionsListSource,
+    /const sessionsListCache = createSwrCache<SessionsListResult>\(/,
+    "/sessions/list: repeated callers should share a stale-while-revalidate cached response",
+  );
+  assert.match(
+    sessionsListSource,
+    /canServeStale: \(result\) => result\.payload\.ok/,
+    "/sessions/list: error payloads must never be served stale (no pinned 503s)",
+  );
+  assert.match(
+    sessionsListSource,
+    /SESSIONS_LIST_STALE_SERVE_MS = 30_000/,
+    "/sessions/list: stale serve window covers the poll cadence so polls never block on recompute",
+  );
+
+  const swrCacheSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "swr-cache.ts"),
+    "utf8",
+  );
+  assert.match(
+    swrCacheSource,
+    /const existing = inFlight\.get\(key\);\s*\n\s*if \(existing\) return existing;/,
+    "swr-cache: concurrent callers should await one in-flight computation",
+  );
+  assert.match(
+    swrCacheSource,
+    /revalidate\(key, compute\)\.catch\(\(\) => undefined\);\s*\n\s*return entry\.value;/,
+    "swr-cache: stale reads serve the cached value and revalidate in the background",
+  );
+
+  const sessionGitEnrichSource = readFileSync(
+    path.join(apiRoot, "..", "..", "lib", "session-git-enrich.ts"),
+    "utf8",
+  );
+  assert.match(
+    sessionGitEnrichSource,
+    /promisify\(execFile\)/,
+    "session-git-enrich: git must run through async execFile (no event-loop block)",
+  );
+  assert.doesNotMatch(
+    sessionGitEnrichSource,
+    /execFileSync|execSync|spawnSync/,
+    "session-git-enrich: no sync subprocess fallbacks",
+  );
+  assert.match(
+    sessionGitEnrichSource,
     /"branch", "--show-current"[\s\S]*"rev-parse", "--short", "HEAD"/,
-    "/sessions/list: git context should expose branch or detached head",
+    "session-git-enrich: git context should expose branch or detached head",
   );
   assert.match(
-    sessionsListSource,
+    sessionGitEnrichSource,
     /"rev-parse", "--show-toplevel"[\s\S]*"rev-parse", "--git-common-dir"/,
-    "/sessions/list: git context should detect worktree-backed roots",
+    "session-git-enrich: git context should detect worktree-backed roots",
   );
   assert.match(
-    sessionsListSource,
+    sessionGitEnrichSource,
     /"rev-parse", "--is-inside-work-tree"/,
-    "/sessions/list: git context should skip non-worktree roots before slower git probes",
-  );
-  assert.match(
-    sessionsListSource,
-    /let sessionsListCache:[\s\S]*let sessionsListInFlight:/,
-    "/sessions/list: repeated callers should share a short-lived cached response",
-  );
-  assert.match(
-    sessionsListSource,
-    /const inFlight = sessionsListInFlight\.get\(cacheKey\);[\s\S]*if \(inFlight\) return inFlight;/,
-    "/sessions/list: concurrent callers should await one in-flight session list computation",
+    "session-git-enrich: git context should skip non-worktree roots before slower git probes",
   );
 }
 

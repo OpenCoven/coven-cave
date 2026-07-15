@@ -44,4 +44,17 @@ assert.match(view, /<StandardSelect<CardPriority \| "">[\s\S]*?onChange=\{\(next
 assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
 assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
 
+// §8 chrome budget: entering select mode is an occasional verb — it lives in
+// the shared overflow menu rather than as an always-visible toolbar button.
+assert.match(
+  view,
+  /<OverflowMenu ariaLabel="More task actions">/,
+  "board header renders the shared overflow menu",
+);
+assert.match(
+  view,
+  /<PopoverItem\s*icon="ph:check-square"\s*onSelect=\{\(\) => cardSelect\.setSelectMode\(true\)\}/,
+  "Select multiple is an overflow-menu item",
+);
+
 console.log("board-bulk-select.test.ts: ok");

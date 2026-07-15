@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { SkillDryRunTester } from "@/components/marketplace/skill-builder";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 export type SkillEntry = {
   id: string;
@@ -44,14 +46,30 @@ export function SkillDetailDrawer({
   familiars: FamiliarForSkill[];
   onClose: () => void;
 }) {
+  const panelRef = useRef<HTMLElement | null>(null);
+  // Focus moves into the drawer on open and returns to the trigger on close;
+  // Escape comes with it (the old hand-rolled listener left focus stranded
+  // behind the backdrop).
+  useFocusTrap(Boolean(skill), panelRef, { onEscape: onClose });
+
+  // Daemon eval-loop state, when the loop is active for a familiar
+  // (docs/authoring-assist.md §3.3, cave-cyfc): authored skills and evaluated
+  // skills stop being different worlds. Quiet when the daemon is offline.
+  const [evalStatus, setEvalStatus] = useState<string | null>(null);
+  const familiarId = familiars[0]?.id;
   useEffect(() => {
-    if (!skill) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [skill, onClose]);
+    setEvalStatus(null);
+    if (!skill || !familiarId) return;
+    const ctl = new AbortController();
+    fetch(`/api/skills/eval-loop/${encodeURIComponent(familiarId)}`, { cache: "no-store", signal: ctl.signal })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; state?: { status?: unknown } | null }) => {
+        if (ctl.signal.aborted || !json.ok || !json.state) return;
+        if (typeof json.state.status === "string" && json.state.status) setEvalStatus(json.state.status);
+      })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [skill, familiarId]);
 
   if (!skill) return null;
 
@@ -66,12 +84,18 @@ export function SkillDetailDrawer({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+        className="fixed inset-0 z-40 bg-[var(--backdrop-scrim)] backdrop-blur-[2px]"
         onClick={onClose}
         aria-hidden="true"
       />
       {/* Drawer */}
-      <aside className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-sm flex-col bg-[var(--bg-panel)] shadow-2xl sm:max-w-[380px]">
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${skill.name} details`}
+        className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-sm flex-col bg-[var(--bg-panel)] shadow-2xl sm:max-w-[380px]"
+      >
         {/* Header */}
         <div className="flex items-start gap-3 border-b border-[var(--border-hairline)] px-5 py-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[15px] font-semibold text-[var(--text-primary)]">
@@ -147,29 +171,38 @@ export function SkillDetailDrawer({
             </div>
           )}
 
+          {evalStatus ? (
+            <p className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+              <Icon name="ph:arrows-clockwise" width={11} aria-hidden />
+              Eval loop: {evalStatus}
+            </p>
+          ) : null}
+
+          {/* Dry-run: would a familiar pick this skill up? (cave-cyfc) */}
+          {skill.description ? (
+            <SkillDryRunTester skill={{ name: skill.name, description: skill.description }} />
+          ) : null}
+
           {/* Per-familiar assignment */}
           {familiars.length > 0 && (
             <div>
               <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-[var(--text-muted)]">
                 Assigned to
               </p>
+              {/* Plain rows — the old decorative toggles looked switchable
+                  but did nothing. */}
               <div className="space-y-1">
                 {familiars.map((f) => (
-                  <div
-                    key={f.id}
-                    className="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-[var(--bg-raised)]"
-                  >
+                  <div key={f.id} className="flex items-center gap-2 rounded-lg px-3 py-2">
+                    <Icon name="ph:paw-print-fill" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                     <span className="text-[12px] text-[var(--text-secondary)]">
                       {f.display_name}
-                    </span>
-                    <span className="text-[var(--text-muted)] opacity-40">
-                      <Icon name="ph:toggle-left-bold" width={20} />
                     </span>
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[10px] text-[var(--text-muted)] opacity-60">
-                Assignment writes to daemon config — coming soon.
+              <p className="mt-2 text-[10px] text-[var(--text-muted)]">
+                Every familiar can load this skill while it works.
               </p>
             </div>
           )}

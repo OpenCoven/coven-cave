@@ -141,6 +141,70 @@ assert.equal(
   "archived local chats should return when includeArchived is enabled",
 );
 
+const archiveOverrideState = {
+  ...state,
+  sessionKeep: { "local-1": "2026-06-08T22:00:00.000Z", "daemon-1": "2026-06-08T22:00:00.000Z" },
+  sessionArchiveExtendedUntil: {
+    "local-1": "2026-07-01T00:00:00.000Z",
+    "daemon-1": "2026-07-15T00:00:00.000Z",
+  },
+};
+
+assert.equal(
+  localConversationSessionRows([localConversation], archiveOverrideState, false)[0].keep,
+  true,
+  "local conversation rows should carry the keep flag from Cave state",
+);
+assert.equal(
+  localConversationSessionRows([localConversation], archiveOverrideState, false)[0].archive_extended_until,
+  "2026-07-01T00:00:00.000Z",
+  "local conversation rows should carry the extension deadline from Cave state",
+);
+assert.equal(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "daemon-1",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Daemon chat",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-08T19:00:00.000Z",
+        updated_at: "2026-06-08T19:05:00.000Z",
+      },
+    ],
+    localConversations: [],
+    state: archiveOverrideState,
+    includeArchived: false,
+  })[0].keep,
+  true,
+  "daemon rows should carry the keep flag from Cave state",
+);
+assert.equal(
+  mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "daemon-1",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Daemon chat",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-08T19:00:00.000Z",
+        updated_at: "2026-06-08T19:05:00.000Z",
+      },
+    ],
+    localConversations: [],
+    state: archiveOverrideState,
+    includeArchived: false,
+  })[0].archive_extended_until,
+  "2026-07-15T00:00:00.000Z",
+  "daemon rows should carry the extension deadline from Cave state",
+);
+
 // A daemon session whose `updated_at` was bumped by a mere resume/view should
 // order by the matching local conversation's last-message time, not the later
 // view time — so reopening an old chat doesn't float it to the top.
@@ -236,5 +300,97 @@ const analyticsRows = localConversationSessionRows(
   false,
 );
 assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps to regular chat");
+
+// Provenance: a daemon session with no Cave conversation and only the
+// inferred-"chat" default is a generated run (journal narrative, flow,
+// automation, CLI) — flagged so chat lists can hide it. A conversation-backed
+// row keeps the conversation's recorded origin and is never flagged.
+{
+  const bareState = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const daemonRun = (id, title) => ({
+    id,
+    project_root: "/repo",
+    harness: "codex",
+    title,
+    status: "completed",
+    exit_code: 0,
+    archived_at: null,
+    created_at: "2026-06-08T18:00:00.000Z",
+    updated_at: "2026-06-08T18:05:00.000Z",
+  });
+  const rows = mergeSessionRows({
+    daemonSessions: [
+      daemonRun("spawned-run", "Write a short narrative of my day"),
+      daemonRun("cron-run", "[cron] nightly sweep"),
+      daemonRun("canvas-run", "Build a pricing page"),
+    ],
+    localConversations: [
+      {
+        sessionId: "canvas-run",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Build a pricing page",
+        updatedAt: "2026-06-08T18:06:00.000Z",
+        origin: "canvas",
+      },
+    ],
+    state: bareState,
+    includeArchived: false,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("spawned-run")?.generated, true, "daemon-only inferred-chat run is flagged generated");
+  assert.equal(byId.get("cron-run")?.origin, "cron", "explicit provenance patterns still infer their origin");
+  assert.equal(byId.get("cron-run")?.generated, undefined, "non-default inferred origins carry no generated flag");
+  assert.equal(byId.get("canvas-run")?.origin, "canvas", "a conversation's recorded origin beats title inference");
+  assert.equal(byId.get("canvas-run")?.generated, undefined, "conversation-backed rows are real chats, never flagged");
+}
+
+// Work-branch passthrough (cave-9q24): the branch a conversation recorded at
+// its last turn must surface on the merged row as `workBranch` — it is the
+// only per-session PR-attribution signal. Daemon rows without a conversation
+// carry none.
+{
+  const bareState = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const rows = mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "branched",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Fix the flaky spec",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-08T18:00:00.000Z",
+        updated_at: "2026-06-08T18:05:00.000Z",
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: "branched",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Fix the flaky spec",
+        updatedAt: "2026-06-08T18:06:00.000Z",
+        origin: "chat",
+        branch: "feat/fix-flaky-spec",
+      },
+      {
+        sessionId: "local-branched",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Local only",
+        updatedAt: "2026-06-08T18:07:00.000Z",
+        origin: "chat",
+        branch: "feat/local-work",
+      },
+    ],
+    state: bareState,
+    includeArchived: false,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("branched")?.workBranch, "feat/fix-flaky-spec", "conversation branch surfaces on the merged daemon row");
+  assert.equal(byId.get("local-branched")?.workBranch, "feat/local-work", "local-only rows carry their recorded branch too");
+}
 
 console.log("session-list-merge.test.ts: ok");

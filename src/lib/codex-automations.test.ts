@@ -15,7 +15,7 @@ reasoning_effort = "medium"
 execution_environment = "worktree"
 cwds = ["/tmp/old"]
 tags = ["ios", "audit"]
-skill_path = "/Users/buns/.coven/skills/coven-task-manager"
+skill_path = "/Users/dev/.coven/skills/coven-task-manager"
 `;
 
 const patched = patchTomlAutomationFields(original, {
@@ -26,7 +26,7 @@ const patched = patchTomlAutomationFields(original, {
   model: "gpt-5.5",
   reasoning_effort: "high",
   execution_environment: "worktree",
-  cwds: ["/Users/buns/Documents/GitHub/OpenCoven/coven-cave"],
+  cwds: ["/Users/dev/Documents/GitHub/OpenCoven/coven-cave"],
   tags: ["ios", "priority", "audit"],
   familiars: ["nova", "salem"],
 });
@@ -38,12 +38,12 @@ assert.match(patched, /^rrule = "RRULE:FREQ=WEEKLY;BYHOUR=6;BYMINUTE=30;BYDAY=MO
 assert.match(patched, /^model = "gpt-5.5"/m);
 assert.match(patched, /^reasoning_effort = "high"/m);
 assert.match(patched, /^execution_environment = "worktree"/m);
-assert.match(patched, /^cwds = \["\/Users\/buns\/Documents\/GitHub\/OpenCoven\/coven-cave"\]/m);
+assert.match(patched, /^cwds = \["\/Users\/dev\/Documents\/GitHub\/OpenCoven\/coven-cave"\]/m);
 assert.match(patched, /^tags = \["ios", "priority", "audit"\]/m);
 assert.match(patched, /^familiars = \["nova", "salem"\]/m);
 assert.ok(patched.includes("prompt = '''Daily task: iOS Application Priority Audit\n\nLook for drift.\n'''"));
 assert.ok(!patched.includes("Old prompt"));
-assert.ok(patched.includes('skill_path = "/Users/buns/.coven/skills/coven-task-manager"'));
+assert.ok(patched.includes('skill_path = "/Users/dev/.coven/skills/coven-task-manager"'));
 
 const oddlyFormatted = `version = 1
   status = 'PAUSED' # keep old comment

@@ -47,39 +47,14 @@ assert.match(
   "Mobile chat should prevent the shell detail from becoming a second scroll owner",
 );
 
-// The Inspector/Debug/Changes panels live in a 230px right sidebar that is
-// hidden when there's no room beside the chat thread — a phone viewport OR a
-// narrow drag-to-split pane on a wide screen. In both cases they must remain
-// reachable — rendered in a right-edge sheet over a dismissible scrim —
-// instead of silently vanishing.
-assert.match(
+// The Inspector/Debug/Changes right sidebar is retired — the code rail is the
+// only right sidepanel, and mobile-code-rail.test.ts owns its narrow-layout
+// sheet pins. What remains here: the pane-width heuristic that decides the
+// inline-vs-sheet presentation for the code rail.
+assert.doesNotMatch(
   source,
-  /scope === "conversation" && rightPanel !== null && \(isMobile \|\| paneNarrow\) && \(/,
-  "ChatSurface should render the session panels as a sheet when the inline sidebar is hidden",
-);
-
-// The sheet's visibility is JS-gated (isMobile || paneNarrow) — a viewport
-// lg:hidden here would wrongly hide it inside a narrow split pane on desktop.
-assert.match(
-  source,
-  /className="chat-right-sheet fixed inset-0 z-\[200\] flex justify-end"/,
-  "Session-panel sheet should be a fixed right-edge overlay without a viewport-gated lg:hidden",
-);
-
-assert.match(
-  source,
-  /aria-label="Close session panels"[\s\S]*?onClick=\{\(\) => setRightPanel\(null\)\}/,
-  "Mobile session-panel sheet should close on scrim tap",
-);
-
-// Gate the inline desktop sidebar as the exact complement of the sheet so only
-// one RightPanel mounts at a time — otherwise InspectorPane double-fetches and
-// duplicates DOM ids. paneNarrow tracks the surface's own measured width so a
-// narrow drag-to-split pane on a wide viewport also swaps to the sheet.
-assert.match(
-  source,
-  /const showRightSidebar = rightPanel !== null && !isMobile && !paneNarrow/,
-  "Inline desktop right sidebar should not mount when the pane or viewport is narrow (avoids duplicate RightPanel)",
+  /chat-right-sheet|rightPanel/,
+  "the retired session-panel sheet must not come back",
 );
 assert.match(
   source,

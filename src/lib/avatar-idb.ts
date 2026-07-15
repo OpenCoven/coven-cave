@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Minimal IndexedDB driver for the Cave avatar stores.
+ * Minimal IndexedDB driver for active Cave avatar stores.
  *
  * Avatars are base64 data URLs (up to ~2.8MB each) — far too big for
  * localStorage's ~5MB origin quota, which is shared with every other cave:*
@@ -15,7 +15,7 @@
 
 export type AvatarRecord = { dataUrl: string; mime: string; updatedAt: string };
 
-export type AvatarStore = "familiarImages" | "userAvatar" | "projectAvatars";
+export type AvatarStore = "familiarImages" | "projectAvatars";
 
 export type AvatarStorageDriver = {
   getAll(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
@@ -25,7 +25,7 @@ export type AvatarStorageDriver = {
 
 const DB_NAME = "cave-avatars";
 const DB_VERSION = 2; // v2: + projectAvatars
-const STORES: readonly AvatarStore[] = ["familiarImages", "userAvatar", "projectAvatars"];
+const STORES: readonly AvatarStore[] = ["familiarImages", "projectAvatars"];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 

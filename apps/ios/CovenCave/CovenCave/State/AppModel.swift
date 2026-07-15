@@ -5,7 +5,7 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks, calendar, dev, settings }
+enum AppTab: String { case chats, tasks, calendar, dev, settings, search }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -31,7 +31,17 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
-    var connectionState: ConnectionState = .unconfigured
+    /// Stamped the moment the state LEAVES `.connected` — the last instant the
+    /// desktop was known reachable — so the reconnect pill can say
+    /// "last seen 2 min ago" honestly during a drop.
+    private(set) var lastConnectedAt: Date?
+    var connectionState: ConnectionState = .unconfigured {
+        didSet {
+            if oldValue == .connected, connectionState != .connected {
+                lastConnectedAt = Date()
+            }
+        }
+    }
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
@@ -53,9 +63,19 @@ final class AppModel {
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
 
+    /// A familiar selected from global Search. `ChatsHomeView` consumes this
+    /// one-shot intent and opens the existing thread-list destination.
+    var familiarToOpen: Familiar?
+
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
+
+    /// The Diary (Pencil-handwriting experiment) is presented from `RootView`,
+    /// ABOVE the connectionState switch — a transient flap to `.checking`
+    /// swaps `MainTabView` out and would destroy any cover presented from
+    /// within it, dismissing the diary mid-reply and aborting its stream.
+    var diaryPresented = false
 
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
@@ -78,6 +98,11 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    func requestOpenFamiliar(_ familiar: Familiar) {
+        selectedTab = .chats
+        familiarToOpen = familiar
     }
 
     /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
@@ -152,6 +177,33 @@ final class AppModel {
         guard let client else { return }
         if let snapshot = try? await client.fetchTheme() {
             adopt(snapshot)
+        }
+    }
+
+    // MARK: - Operator profile
+
+    /// The human operator's profile (`GET /api/profile`), mirrored from the
+    /// desktop so the operator's own chat turns show their name/avatar instead
+    /// of a generic "You". `nil` until it loads (disconnected / pre-fetch).
+    var operatorProfile: OperatorProfile?
+
+    /// Name to show for the operator's messages — the profile name, or "You".
+    var operatorDisplayName: String { operatorProfile?.displayName ?? "You" }
+
+    /// Server avatar image URL for the operator, or `nil` when none is set (the
+    /// UI falls back to name initials). Cache-busted by the profile's mtime.
+    var operatorAvatarURL: URL? {
+        guard let client, operatorProfile?.avatarPresent == true else { return nil }
+        return client.operatorAvatarURL(updatedAt: operatorProfile?.avatarUpdatedAt)
+    }
+
+    /// Fetch the operator profile. Best-effort: on failure the last snapshot
+    /// stands (chat keeps showing the current name rather than flashing to
+    /// "You" on a transient poll miss), mirroring `loadTheme`.
+    func loadOperatorProfile() async {
+        guard let client else { return }
+        if let profile = try? await client.operatorProfile() {
+            if operatorProfile != profile { operatorProfile = profile }
         }
     }
 
@@ -459,7 +511,7 @@ final class AppModel {
     /// Surface a widget tap targets. The widget body deep-links to `.reminders`
     /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
     /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
-    enum DeepLink: String { case tasks, reminders, calendar }
+    enum DeepLink: String { case tasks, reminders, calendar, search }
 
     var deepLink: DeepLink?
 
@@ -477,6 +529,7 @@ final class AppModel {
         switch target {
         case .tasks, .reminders: selectedTab = .tasks
         case .calendar: selectedTab = .calendar
+        case .search: selectedTab = .search
         }
         deepLink = target
     }
@@ -638,14 +691,22 @@ final class AppModel {
         connectionMonitor.start(queue: connectionMonitorQueue)
     }
 
+    /// Quiet: the state only changes on an outcome, so a healthy path change
+    /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
+    /// flash the reconnect pill over perfectly good tabs.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
-        await refreshConnection(reloadLoadedSurfaces: true)
+        await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    private var shouldReloadLoadedSurfaces: Bool {
+    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// through a connection drop (RootView shows the reconnect pill over it
+    /// instead of tearing down to the Connect screen).
+    var hasLoadedSurfaces: Bool {
         !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
     }
+
+    private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
 
     private func pairingMessage() -> String {
         CaveConnection.accessToken == nil
@@ -656,8 +717,48 @@ final class AppModel {
     private func handleSurfaceError(_ error: Error) -> String {
         if CaveError.isAuthFailure(error) {
             connectionState = .needsAuth(pairingMessage())
+        } else if connectionState == .connected {
+            scheduleAutoRecover()
         }
         return error.localizedDescription
+    }
+
+    /// Last time a failed surface load triggered an automatic reconnect —
+    /// bounds the recovery loop so cascading failures fold into one probe.
+    private var lastAutoRecoverAt: Date = .distantPast
+
+    /// A surface load failed while the state says connected — the desktop may
+    /// have restarted or moved ports without a network-path change, which
+    /// NWPathMonitor can't see. Re-run discovery in the background, at most
+    /// once per cooldown, so the app heals itself instead of sitting on a
+    /// stale "connected" with every surface erroring.
+    private func scheduleAutoRecover() {
+        let cooldown: TimeInterval = 10
+        guard Date().timeIntervalSince(lastAutoRecoverAt) > cooldown else { return }
+        lastAutoRecoverAt = Date()
+        Task { [weak self] in await self?.recoverConnectionInBackground() }
+    }
+
+    /// The connected state can be stale after a long suspension: the desktop
+    /// may have restarted or relocated while iOS had the app frozen, with no
+    /// path change for the supervisor to see. Revalidate with one cheap probe
+    /// on foreground — the common case (still reachable) costs a single
+    /// request and repaints nothing; a dead endpoint falls into the usual
+    /// retry/discovery path. A successful probe also gives the rolling token
+    /// renewal a chance to run for long-foregrounded devices.
+    func validateConnectionOnForeground() async {
+        guard connection != nil, connectionState == .connected else { return }
+        if let client, await client.ping() {
+            // Profile first (the just-succeeded ping proves the current token is
+            // valid), then the rolling token renewal + queue flush stay adjacent
+            // — the offline-compose flush invariant pins that pair.
+            await loadOperatorProfile()
+            await refreshAccessTokenIfNeeded()
+            flushQueuedMessages()
+            return
+        }
+        guard connectionState == .connected else { return }
+        await connectWithRetry()
     }
 
     private func refreshLoadedSurfaces() async {
@@ -668,11 +769,16 @@ final class AppModel {
         if projectsLoaded { await loadProjects() }
         if journalLoaded { await loadJournal() }
         await loadTheme()
+        await loadOperatorProfile()
     }
 
-    func refreshConnection(reloadLoadedSurfaces: Bool = false) async {
+    /// `quiet` probes without first flipping the state to `.checking`, so a
+    /// background retry (e.g. the unreachable screen's auto-retry ticker)
+    /// doesn't bounce the UI through intermediate states — the state only
+    /// changes when the probe has an outcome.
+    func refreshConnection(reloadLoadedSurfaces: Bool = false, quiet: Bool = false) async {
         guard let connection else { connectionState = .unconfigured; return }
-        connectionState = .checking
+        if !quiet { connectionState = .checking }
 
         // Try the configured endpoint first, then auto-relocate to a working
         // port (e.g. the user typed a `.ts.net` host without `:8443`).
@@ -680,8 +786,13 @@ final class AppModel {
         switch await Self.discoverBaseURL(connection.candidateBaseURLs) {
         case .found(let working):
             if working != configured {
-                // Relocate: persist the working URL so future launches connect directly.
-                let relocated = CaveConnection(host: working.absoluteString)
+                // Relocate: persist the working endpoint so future launches
+                // connect directly. Stored as bare `host:port` when the
+                // default scheme derivation reproduces the URL — a bare host
+                // keeps future discovery able to probe alternate ports if the
+                // desktop moves again, while a full URL is treated as
+                // user-explicit and would pin the connection forever.
+                let relocated = CaveConnection(host: Self.canonicalHost(for: working))
                 self.connection = relocated
                 relocated.save()
                 if let port = working.port {
@@ -690,11 +801,13 @@ final class AppModel {
             }
             connectionState = .connected
             await refreshAccessTokenIfNeeded()
+            flushQueuedMessages()
             if reloadLoadedSurfaces {
                 await refreshLoadedSurfaces()
             } else {
                 await loadFamiliars()
                 await loadTheme()
+                await loadOperatorProfile()
             }
         case .unauthorized:
             connectionState = .needsAuth(pairingMessage())
@@ -703,14 +816,48 @@ final class AppModel {
         }
     }
 
+    /// Send every message composed while offline, oldest first per thread,
+    /// now that the desktop is reachable again. Fire-and-forget: replies
+    /// stream in like any send, and a re-drop mid-flush re-queues cleanly
+    /// (the next reconnect picks it back up). Guarded so overlapping
+    /// reconnect signals (foreground probe + path monitor) flush once.
+    private var flushingQueued = false
+    func flushQueuedMessages() {
+        guard let client, !flushingQueued else { return }
+        let pending = threads.filter { thread in thread.messages.contains { $0.isQueued } }
+        guard !pending.isEmpty else { return }
+        flushingQueued = true
+        Task {
+            defer { flushingQueued = false }
+            for thread in pending {
+                await thread.replayQueued(client: client) { [weak self] in
+                    guard let self else { return }
+                    self.touch(thread)
+                }
+            }
+        }
+    }
+
     /// Rolling renewal: when the stored signed token is within a week of
     /// expiry, exchange it for a fresh 30-day one. Failures are non-fatal —
     /// the current token keeps working until it actually expires, at which
     /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
     private func refreshAccessTokenIfNeeded() async {
-        guard let client,
-              let token = CaveConnection.accessToken,
-              let expiry = CaveInvite.tokenExpiry(token) else { return }
+        guard let client, let token = CaveConnection.accessToken else { return }
+        guard let expiry = CaveInvite.tokenExpiry(token) else {
+            // Legacy raw-secret pairing: no expiry, so the rolling renewal
+            // below can never fire and the device stays on a never-expiring
+            // credential forever. The refresh route accepts the raw secret as
+            // a valid credential precisely to offer this migration path —
+            // exchange it once for a signed 30-day token. After the swap the
+            // stored token has an expiry, so this branch never runs again; on
+            // failure (offline, tokenless server) the raw secret keeps
+            // working and the next connect retries.
+            if let fresh = await client.refreshAccessToken() {
+                CaveConnection.saveAccessToken(fresh)
+            }
+            return
+        }
         let renewalWindow: TimeInterval = 7 * 24 * 3600
         let secondsUntilExpiry = expiry.timeIntervalSinceNow
         guard secondsUntilExpiry > 0 && secondsUntilExpiry < renewalWindow else { return }
@@ -750,24 +897,56 @@ final class AppModel {
         case none
     }
 
-    /// Probe candidate base URLs in order; adopt the first that answers as a
-    /// real Cave server. A 401/403 is TERMINAL, not a cue to keep walking:
-    /// it's a live Cave token gate talking, and the fix is pairing. Probing
-    /// past it can silently adopt a different instance on a sibling port
-    /// (e.g. a dev server on :3000) — the user thinks they're talking to the
-    /// desktop they paired with, but they aren't.
+    /// Probe every candidate base URL concurrently, then adjudicate strictly
+    /// in candidate order so the semantics match a sequential walk: the first
+    /// `.ok` in order wins, and a 401/403 earlier in the order is TERMINAL —
+    /// it's a live Cave token gate talking, and the fix is pairing. Adopting
+    /// a later candidate past it could silently connect to a different
+    /// instance on a sibling port (e.g. a dev server on :3000) — the user
+    /// thinks they're talking to the desktop they paired with, but they
+    /// aren't. Concurrency only changes the wall clock: one probe's timeout
+    /// (~6s) instead of the sum across candidates (30s+ on a cold launch).
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        for base in candidates {
-            switch await probe(base) {
-            case .ok: return .found(base)
+        guard !candidates.isEmpty else { return .none }
+        let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
+            for (index, base) in candidates.enumerated() {
+                group.addTask { (index, await Self.probe(base)) }
+            }
+            var collected = [ProbeResult?](repeating: nil, count: candidates.count)
+            for await (index, result) in group { collected[index] = result }
+            return collected
+        }
+        for (index, result) in results.enumerated() {
+            switch result {
+            case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
-            case .failed: continue
+            default: continue
             }
         }
         return .none
     }
 
+    /// Persist a relocated endpoint as `host:port` when the default scheme
+    /// derivation reproduces it (see the relocation comment in
+    /// `refreshConnection`); otherwise fall back to the explicit URL.
+    static func canonicalHost(for url: URL) -> String {
+        guard let host = url.host else { return url.absoluteString }
+        let compact = url.port.map { "\(host):\($0)" } ?? host
+        return CaveConnection(host: compact).baseURL == url ? compact : url.absoluteString
+    }
+
     private enum ProbeResult { case ok, unauthorized, failed }
+
+    /// Shared session for discovery probes — ephemeral (no cache/cookie
+    /// carry-over) and never recreated, so repeated discovery rounds don't
+    /// leak URLSessions the way per-probe construction did.
+    private static let probeSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 6
+        config.timeoutIntervalForResource = 10
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
 
     /// Reachability check that requires a *real* Cave API response — a 2xx whose
     /// body decodes as the familiars payload. A bare status check would accept
@@ -777,16 +956,13 @@ final class AppModel {
     /// adopt an actual Cave server. Sends the paired credential when one exists
     /// and reports a 401/403 distinctly — that's a Cave token gate talking.
     private static func probe(_ base: URL) async -> ProbeResult {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 6
-        config.waitsForConnectivity = false
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = CaveConnection.accessToken {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        guard let (data, resp) = try? await URLSession(configuration: config).data(for: req),
+        guard let (data, resp) = try? await probeSession.data(for: req),
               let http = resp as? HTTPURLResponse
         else { return .failed }
         if http.statusCode == 401 || http.statusCode == 403 { return .unauthorized }
@@ -903,7 +1079,9 @@ final class AppModel {
     func serverOnlySessions(for familiarId: String) -> [SessionRow] {
         let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
         return serverSessions
-            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) }
+            // Generated runs (journal narratives, canvas, crons) are not
+            // conversations — parity with the web chat lists (cave-48aa).
+            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) && !$0.isGeneratedRun }
             .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
     }
 

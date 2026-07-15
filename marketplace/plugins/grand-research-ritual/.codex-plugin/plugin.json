@@ -1,0 +1,33 @@
+{
+  "name": "grand-research-ritual",
+  "version": "0.1.0",
+  "description": "Bounded research orchestration with resumable state and explicit checkpoints.",
+  "author": {
+    "name": "OpenCoven",
+    "url": "https://github.com/OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "MIT",
+  "keywords": [
+    "research",
+    "craft"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Grand Research Ritual",
+    "shortDescription": "Bounded research orchestration with resumable state and explicit checkpoints.",
+    "longDescription": "Bounded research orchestration with resumable state and explicit checkpoints.",
+    "developerName": "OpenCoven",
+    "category": "Research Crafts",
+    "capabilities": [
+      "read_files",
+      "write_files",
+      "shell"
+    ],
+    "websiteURL": "https://opencoven.ai",
+    "defaultPrompt": [
+      "Use Grand Research Ritual to open a bounded research direction."
+    ]
+  }
+}

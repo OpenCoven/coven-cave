@@ -160,7 +160,10 @@ assert.match(
 
 // Mobile quick actions: Tasks. New chat now lives at the top of the left
 // sidebar (SidebarMinimal) for both desktop and mobile, so the top bar no
-// longer renders a New chat button.
+// longer renders a New chat button. The task quick actions themselves moved
+// into the shared overflow menu (§8 chrome budget — occasional verbs don't
+// earn always-visible chrome), with the live open-task badge kept on the
+// trigger.
 assert.match(
   source,
   /onViewTasks\?: \(\) => void/,
@@ -173,13 +176,18 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onViewTasks \?[\s\S]*className="top-bar__icon-btn top-bar__tasks"[\s\S]*onClick=\{onViewTasks\}/,
-  "Top bar renders a Tasks button when wired",
+  /<OverflowMenu ariaLabel="More actions"/,
+  "Top bar renders the shared overflow menu for relocated quick actions",
 );
 assert.match(
   source,
-  /taskCount && taskCount > 0 \? \(\s*<span className="top-bar__tasks-badge">/,
-  "Tasks button shows an open-task count badge, hidden at zero",
+  /onViewTasks \? \(\s*<PopoverItem icon="ph:kanban" onSelect=\{onViewTasks\}>/,
+  "View tasks lives in the overflow menu when wired",
+);
+assert.match(
+  source,
+  /<span className="top-bar__tasks-badge" aria-hidden="true">/,
+  "The open-task count badge stays visible on the overflow trigger (live state never hides)",
 );
 
 // Quick-chat reveal: a single top-bar icon button opens the in-app popover.

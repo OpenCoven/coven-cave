@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const draftHook = await readFile(new URL("../lib/use-composer-draft.ts", import.meta.url), "utf8");
+const attachHook = await readFile(new URL("../lib/use-attachment-staging.ts", import.meta.url), "utf8");
+const menusHook = await readFile(new URL("../lib/use-inline-slash-menus.ts", import.meta.url), "utf8");
+const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
 const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
@@ -33,26 +37,42 @@ assert.match(
 
 assert.match(
   source,
-  /home-composer-headline[\s\S]*?\{`What should we build in \$\{selectedProject\?\.name \?\? "Coven Cave"\}\?`\}/,
-  "HomeComposer headline should reflect the selected project name",
+  /home-composer-headline[\s\S]*?\{"What should we build in "\}[\s\S]*?home-composer-headline-project[\s\S]*?\{selectedProject\?\.name \?\? "CovenCave"\}/,
+  "HomeComposer headline should reflect the selected project name (accent-tinted project span)",
 );
 
+// ── Hero presence eyebrow ────────────────────────────────────────────────────
+// The greeting samples the client clock AFTER mount (SSR markup must stay
+// deterministic), fades in via .is-ready, and derives from the pure
+// greetingForHour helper so the boundaries unit-test exactly.
 assert.match(
   source,
-  /<ProjectPicker[\s\S]*?value=\{selectedProjectId \|\| null\}[\s\S]*?ariaLabel="Choose project"/,
-  "HomeComposer should render the shared custom project selector",
+  /import \{ greetingForHour \} from "@\/lib\/home-greeting"/,
+  "the hero greeting derives from the pure home-greeting helper",
+);
+assert.match(
+  source,
+  /const \[greeting, setGreeting\] = useState<string \| null>\(null\);[\s\S]*?useEffect\(\(\) => \{\s*setGreeting\(greetingForHour\(new Date\(\)\.getHours\(\)\)\);\s*\}, \[\]\)/,
+  "the greeting is sampled after mount so SSR/client markup can't drift",
+);
+assert.match(
+  source,
+  /home-composer-eyebrow\$\{greeting \? " is-ready" : ""\}/,
+  "the eyebrow fades in via .is-ready once the client greeting lands",
+);
+assert.match(
+  source,
+  /className="home-halo" aria-hidden/,
+  "the hearth-glow halo renders behind the composer card and is hidden from AT",
 );
 
+// Project selector lives in the composer toolbar so the user can choose which
+// project a new chat runs in (mirrors the chat composer). It's a standalone
+// ProjectPicker — its own search popover, so it can't nest in the ⚙ menu.
 assert.match(
   source,
-  /<ProjectPicker[\s\S]*?allowNoProject/,
-  "HomeComposer should offer an explicit No-project choice, matching chat semantics",
-);
-
-assert.match(
-  source,
-  /<ProjectPicker[\s\S]*?createProject=\{createProject\}/,
-  "The Add-project row should come from the shared register+grant picker flow",
+  /<ProjectPicker[\s\S]*value=\{selectedProjectId \|\| null\}[\s\S]*onChange=\{setSelectedProjectId\}[\s\S]*className="hc-project-selector"/,
+  "ProjectPicker is rendered in the home composer toolbar, wired to selectedProjectId",
 );
 
 assert.match(
@@ -81,14 +101,20 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /<HomeSelect[\s\S]*?value=\{selectedRuntimeModelValue\}[\s\S]*?ariaLabel="Choose runtime and model"/,
-  "HomeComposer should expose one combined custom runtime/model selector for the selected familiar",
+  /<ComposerOptionsMenu[\s\S]*?hostValue=\{runtimeHost \?\? LOCAL_HOST_ID\}[\s\S]*?onHostPick=\{setRuntimeHost\}/,
+  "HomeComposer collapses response controls into the chat composer's Options menu, with the Host picker wired to runtimeHost",
 );
 
 assert.match(
   source,
-  /runtimeModelSelectGroups[\s\S]*?label: adapter\.label,[\s\S]*?models\.map/,
-  "HomeComposer should group model choices under their runtime",
+  /id: "runtime",[\s\S]*?value: selectedRuntime,[\s\S]*?options: runtimeSectionOptions,[\s\S]*?handleSelectRuntime\(id\)/,
+  "the Options menu exposes a Runtime section that persists runtime picks",
+);
+
+assert.match(
+  source,
+  /\.\.\.\(runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?options: runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\),[\s\S]*?handleSelectModel\(id\)/,
+  "the Options menu Model section lists the selected runtime's catalog and is omitted for runtime-managed runtimes",
 );
 
 assert.match(
@@ -116,9 +142,9 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  source,
+  modelStateHook,
   /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{ harness: runtime, model: nextModel \},[\s\S]*?\}\)/,
-  "HomeComposer should persist runtime and model together when the combined selector changes runtime",
+  "useHomeModelState should persist runtime and model together when the combined selector changes runtime",
 );
 
 assert.doesNotMatch(
@@ -129,8 +155,8 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   destinations,
-  /id: "inbox"[\s\S]*label: "Schedules"/,
-  "HomeComposer should not offer Schedules as an original chat launch destination",
+  /id: "inbox"[\s\S]*label: "(Schedules|Rituals)"/,
+  "HomeComposer should not offer Rituals as an original chat launch destination",
 );
 
 assert.doesNotMatch(
@@ -159,20 +185,22 @@ assert.match(
 
 assert.match(
   source,
-  /if \(json\.ok\) \{ setText\(""\); writeHomeDraft\(""\); setAttachments\(\[\]\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
+  /if \(json\.ok\) \{ setText\(""\); clearDraft\(\); clearAttachments\(\); promptEnhance\.reset\(\); onNavigateToBoard\(\); \}/,
   "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
 );
 
-assert.match(
+// ── Familiar selector removed from home ──────────────────────────────────────
+// The active familiar is chosen in the side panel; home must not duplicate the
+// selector. The footer band's second chip is the runtime + model picker.
+assert.doesNotMatch(
   source,
-  /onSetActiveFamiliar: \(id: string\) => void/,
-  "HomeComposer should accept an active familiar setter for its home-screen agent selector",
+  /onSetActiveFamiliar/,
+  "HomeComposer no longer takes an active-familiar setter (selection lives in the side panel)",
 );
-
-assert.match(
+assert.doesNotMatch(
   source,
-  /<HomeSelect[\s\S]*?value=\{selectedFamiliarId\}[\s\S]*?ariaLabel="Choose chat agent"/,
-  "HomeComposer should include a custom agent selector when starting chat from home",
+  /HomeSelect|Choose chat agent|hc-access-chip/,
+  "HomeComposer no longer renders the home familiar selector chip",
 );
 
 assert.doesNotMatch(
@@ -189,12 +217,6 @@ assert.match(
 
 assert.match(
   source,
-  /COMMAND_RESPONSE_SPEED_OPTIONS/,
-  "HomeComposer should use shared response speed options",
-);
-
-assert.match(
-  source,
   /const \[thinkingEffort, setThinkingEffort\] = useState<CommandThinkingEffort>\(\s*COMMAND_CONTROL_DEFAULTS\.thinkingEffort,\s*\)/,
   "HomeComposer should initialise thinking effort from shared command control defaults",
 );
@@ -207,38 +229,22 @@ assert.match(
 
 assert.match(
   source,
-  /function HomeSelect\([\s\S]*?<StandardSelect[\s\S]*?label=\{ariaLabel\}[\s\S]*?popoverClassName="hc-home-select-popover"[\s\S]*?groupClassName="hc-home-select-group"[\s\S]*?renderValue=/,
-  "HomeComposer compact command select should delegate option rendering to StandardSelect with the supplied aria label and selected value",
+  /id: "thinking",[\s\S]*?label: "Thinking",[\s\S]*?COMMAND_THINKING_OPTIONS/,
+  "the Options menu exposes the shared thinking-effort options",
 );
 
 assert.match(
   source,
-  /"Choose thinking effort"/,
-  "HomeComposer should render a thinking effort select with an accessible label",
+  /id: "speed",[\s\S]*?label: "Speed",[\s\S]*?COMMAND_RESPONSE_SPEED_OPTIONS/,
+  "the Options menu exposes the shared response-speed options",
 );
+
+// Speed control removed from toolbar (response speed passed via initialControls default).
 
 assert.match(
   source,
-  /"Choose response speed"/,
-  "HomeComposer should render a response speed select with an accessible label",
-);
-
-assert.match(
-  css,
-  /\.hc-control-group\b/,
-  "HomeComposer CSS should define grouped command controls",
-);
-
-assert.match(
-  css,
-  /\.hc-control-group\s*\{[\s\S]*?flex-wrap: nowrap;[\s\S]*?gap: 6px;/,
-  "HomeComposer command clusters should stay together with compact internal spacing",
-);
-
-assert.match(
-  css,
-  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?margin-left: auto;/,
-  "HomeComposer action bar should keep the who cluster content-sized and pin the run cluster to the right edge",
+  /className="cave-composer-controls"[\s\S]*?className="cave-composer-control-row"[\s\S]*?className="cave-composer-utility-row"[\s\S]*?className="cave-composer-submit-row"/,
+  "HomeComposer reuses the chat composer's footer row structure",
 );
 
 assert.match(
@@ -259,10 +265,25 @@ assert.doesNotMatch(
   "HomeComposer should allow OpenClaw familiars through native chat send",
 );
 
+// The menu branches live in the shared hook (use-inline-slash-menus); the
+// keyboard handler depends on the hook's dispatcher + the current submit.
 assert.match(
   handleKeyDownBlock,
-  /\[[\s\S]*handleSubmit[\s\S]*modelMenuActive[\s\S]*modelOptions[\s\S]*\]/,
-  "HomeComposer Enter-submit keyboard handler should depend on the current submit callback and model menu state",
+  /\[handleMenuKey, handleSubmit, handleArrowKey, text\]/,
+  "HomeComposer Enter-submit keyboard handler should depend on the shared menu dispatcher and the current submit callback",
+);
+assert.match(
+  handleKeyDownBlock,
+  /if \(handleMenuKey\(e\)\) return;/,
+  "the inline menus consume their keys before Enter-submit and history recall",
+);
+// The Enter that confirms an IME candidate (CJK/pinyin/kana) reports
+// isComposing — it must never submit a half-composed prompt (cave-572k;
+// parity with chat-view's send guard).
+assert.match(
+  handleKeyDownBlock,
+  /e\.key === "Enter" && !e\.shiftKey && !e\.nativeEvent\.isComposing/,
+  "Enter during IME composition must not send — the candidate-confirm Enter belongs to the IME",
 );
 
 assert.doesNotMatch(
@@ -279,26 +300,53 @@ assert.doesNotMatch(
 // aria-activedescendant conveys the highlight while focus stays in the textarea.
 
 const chatSource = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+// HomeComposer delegates its popover JSX to the shared HomeSlashMenu component
+// (Task 6: collapse the three near-duplicate popovers into one); ChatView still
+// inlines its own menus, so the ARIA/JSX assertions below check each in its
+// own source file rather than looping over a single `src`.
+const slashMenu = await readFile(new URL("./home/home-slash-menu.tsx", import.meta.url), "utf8");
+
+assert.match(
+  slashMenu,
+  /id=\{listboxId\} role="listbox" aria-label=\{ariaLabel\}/,
+  "HomeSlashMenu should render a labelled listbox with a stable id",
+);
+assert.match(
+  slashMenu,
+  /role="option"\s+id=\{`\$\{listboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
+  "HomeSlashMenu rows should be options with stable ids and aria-selected on the highlighted row",
+);
+assert.match(
+  slashMenu,
+  /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
+  "HomeSlashMenu option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection",
+);
+assert.match(
+  source,
+  /<HomeSlashMenu[\s\S]*?listboxId=\{slashListboxId\}[\s\S]*?ariaLabel="Slash commands"/,
+  "HomeComposer should render its slash-command menu through HomeSlashMenu with the shared listbox id and a 'Slash commands' label",
+);
+
+assert.match(
+  chatSource,
+  /id=\{slashListboxId\} role="listbox" aria-label="Slash commands"/,
+  "ChatView slash menu should be a labelled listbox with a stable id",
+);
+assert.match(
+  chatSource,
+  /role="option"\s+id=\{`\$\{slashListboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
+  "ChatView slash rows should be options with stable ids and aria-selected on the highlighted row",
+);
+assert.match(
+  chatSource,
+  /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
+  "ChatView option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection",
+);
 
 for (const [name, src] of [
   ["HomeComposer", source],
   ["ChatView", chatSource],
 ]) {
-  assert.match(
-    src,
-    /id=\{slashListboxId\} role="listbox" aria-label="Slash commands"/,
-    `${name} slash menu should be a labelled listbox with a stable id`,
-  );
-  assert.match(
-    src,
-    /role="option"\s+id=\{`\$\{slashListboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
-    `${name} slash rows should be options with stable ids and aria-selected on the highlighted row`,
-  );
-  assert.match(
-    src,
-    /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
-    `${name} option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection`,
-  );
   assert.match(src, /aria-autocomplete="list"/, `${name} composer textarea should expose list autocomplete`);
   assert.match(src, /aria-haspopup="listbox"/, `${name} composer textarea should advertise the listbox popup`);
   assert.match(
@@ -321,39 +369,58 @@ for (const [name, src] of [
     /aria-activedescendant=\{\s*menuOpen \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
     `${name} aria-activedescendant should track the highlighted index and be absent when the menu is closed`,
   );
-  // menuOpen unifies the slash-command and /model listboxes (both share the
-  // listbox id), so the combobox ARIA covers the /model picker too — not just
-  // the slash menu. Both composers must use it. (HomeComposer additionally gates
-  // the slash term on its Escape-dismiss flag: `(!slashDismissed && …)`.)
+  // menuOpen unifies the slash-command, /model, /skill and /prompt listboxes
+  // (all share the listbox id) so the combobox ARIA covers whichever is open.
+  // Its definition lives in the shared hook; each composer must destructure it
+  // from there rather than deriving its own.
   assert.match(
     src,
-    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,40}slashSuggestions\.length > 0/,
-    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill)`,
+    /menuOpen,[\s\S]{0,200}?\} = useInlineSlashMenus\(\{/,
+    `${name} combobox ARIA must reflect every inline menu via the shared hook's menuOpen`,
   );
 }
 
-// ── HomeComposer combobox ARIA covers the /model picker, not just slash ──────
-// Both inline listboxes share the listbox id; menuOpen unifies them so the
-// textarea announces the /model picker too (was: slash-only). The slash term is
-// gated on the Escape-dismiss flag so a dismissed menu also drops the combobox
-// ARIA.
+// ── The menuOpen union itself lives in the shared hook ───────────────────────
+// The slash/skills terms fold the Escape-dismiss flag into the lists (emptied
+// while dismissed), so a dismissed menu also drops the combobox ARIA.
 assert.match(
-  source,
-  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| \(!slashDismissed && slashSuggestions\.length > 0\);/,
-  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill)",
+  menusHook,
+  /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/,
+  "menuOpen reflects every inline menu (slash, /model, /skill, /prompt, Skills group)",
 );
 
 // ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
-assert.match(source, /skillSlashOptions\(text, skills\)/, "HomeComposer offers inline /skill autocomplete");
+assert.match(menusHook, /skillSlashOptions\(text, skills\)/, "the shared hook offers inline /skill autocomplete");
 assert.match(source, /command === "\/skill" \|\| command === "\/skills"/, "HomeComposer handles the /skill and /skills commands");
-assert.match(source, /role="listbox" aria-label="Skills"/, "HomeComposer renders a Skills picker listbox");
-assert.match(source, /buildSkillPrompt\(skill\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt");
+assert.match(
+  source,
+  /<HomeSlashMenu[\s\S]*?ariaLabel="Skills"[\s\S]*?preview=\{<SkillDetailPreview/,
+  "HomeComposer renders a Skills picker listbox (via HomeSlashMenu) with the skill detail preview",
+);
+assert.match(source, /buildSkillPrompt\(skill, args\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt (typed arguments ride along)");
+assert.match(
+  source,
+  /skill\.argumentHint && !args && text\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/,
+  "A hinted skill autofills /skill <id> for argument editing instead of starting a chat",
+);
 
 // ── Destination pills are an accessible single-select radiogroup ─────────────
 assert.match(
   source,
-  /className="hc-dest-pills"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
+  /className="hc-dest-pills hc-dest-pills--inline"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
   "Destination pills form a labelled radiogroup with keyboard navigation",
+);
+// Reference layout: the Chat/Task pills sit INSIDE the card's control row,
+// next to the + attach trigger — not above the card, not in the footer band.
+assert.match(
+  source,
+  /cave-composer-utility-row[\s\S]*?aria-label="Attach images, videos, or files"[\s\S]*?hc-dest-pills hc-dest-pills--inline/,
+  "Destination pills render inside the utility row, after the attach trigger",
+);
+assert.doesNotMatch(
+  source,
+  /hc-dest-pills--above/,
+  "The above-card pill placement is retired",
 );
 assert.match(
   source,
@@ -366,25 +433,31 @@ assert.match(
   "The radiogroup supports arrow/Home/End keyboard selection per the ARIA radio pattern",
 );
 
-// ── Chat/Task lead the card as a mode strip above the textarea ───────────────
-assert.match(
+// ── Single-row toolbar replaces mode strip + run rail ───────────────────────
+// The top mode strip and the separate run rail were removed. The footer is the
+// chat composer's: attach + Chat/Task pills left, voice/enhance/send right; the
+// footer band beneath carries the project picker and the runtime + model chip.
+assert.doesNotMatch(
   source,
-  /hc-mode-strip[\s\S]*?className="hc-dest-pills"[\s\S]*?className="hc-textarea"/,
-  "The Chat/Task switch renders in a mode strip above the textarea, not in the action bar",
+  /className="hc-mode-strip"/,
+  "The mode strip is removed from the composer card",
+);
+assert.doesNotMatch(
+  source,
+  /className="hc-run-rail"/,
+  "The secondary run-settings rail is removed from the composer card",
 );
 assert.match(
-  css,
-  /\.hc-mode-strip\s*\{/,
-  "HomeComposer CSS should define the mode strip that seats the Chat/Task switch atop the card",
-);
-
-// ── Chat-only send config collapses when Task is the destination ─────────────
-// Runtime/model, Think, and Speed configure a chat send and are meaningless for
-// creating a board task, so they render only while the Chat mode is selected.
-assert.match(
   source,
-  /destination === "chat" \? \(\s*<div className="hc-run-rail" aria-label="Run settings">[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/div>\s*\) : null/,
-  "Runtime/model, Think, and Speed controls collapse out of the composer when Task is selected",
+  /cave-composer-utility-row[\s\S]*?ph:plus[\s\S]*?hc-dest-pills--inline[\s\S]*?cave-composer-submit-row[\s\S]*?<EnhanceControl[\s\S]*?aria-label="Send"[\s\S]*?className="hc-footer-band"[\s\S]*?<ProjectPicker[\s\S]*?<ComposerRuntimeChip[\s\S]*?<ComposerOptionsMenu/,
+  "Control row: + attach and Chat/Task pills left, enhance · send right; the footer band beneath carries project + runtime/model chip + Options",
+);
+// Voice input is hidden until it actually works — a permanently disabled mic
+// read as broken chrome (user-reported).
+assert.doesNotMatch(
+  source,
+  /aria-label="Voice input"/,
+  "the non-functional voice input button stays hidden",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────
@@ -395,21 +468,26 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  source,
+  modelStateHook,
   /\/api\/chat\/model-state\?familiarId=/,
-  "HomeComposer still GETs model-state (for the current model + harness)",
+  "useHomeModelState still GETs model-state (for the current model + harness)",
 );
 
 assert.match(
-  source,
+  modelStateHook,
   /scope: "familiar-default"/,
-  "HomeComposer persists a /model pick as the familiar default",
+  "useHomeModelState persists a /model pick as the familiar default",
 );
 
 assert.match(
-  source,
+  menusHook,
   /modelSlashOptions\(text, modelHarness\)/,
-  "HomeComposer offers inline /model autocomplete",
+  "the shared hook offers inline /model autocomplete",
+);
+assert.match(
+  source,
+  /onPickModel: \(id\) => \{ handleSelectModel\(id\); onToast\(`Model set to \$\{id\}\.`\); setText\(""\); \}/,
+  "a /model pick lands as the home model selection with a toast (chat appends a system line instead)",
 );
 
 assert.match(
@@ -419,22 +497,24 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  source,
+  modelStateHook,
   /scope: "session"/,
-  "HomeComposer must not use session scope — there is no session at home",
+  "useHomeModelState must not use session scope — there is no session at home",
 );
 
 // The home prompt draft survives a reload: text initialises from localStorage,
 // is written back on change, and is removed when emptied (e.g. after a send).
+// The plumbing lives in the shared use-composer-draft hook (parity with chat);
+// these pins hold the call sites, the hook test holds the semantics.
 assert.match(
   source,
-  /const \[text, setText\] = useState\(\(\) => readHomeDraft\(\)\)/,
+  /const \[text, setText\] = useState\(\(\) => readComposerDraft\(HOME_DRAFT_KEY\)\)/,
   "home composer text initialises from the persisted draft",
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeHomeDraft\(text\);\s*\}, HOME_DRAFT_WRITE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[text\]\)/,
-  "the home draft is debounced so mobile typing does not write localStorage on every keystroke",
+  /const \{ clearNow: clearDraft \} = useDraftPersistence\(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS\)/,
+  "the home draft persists through the shared debounced hook (no per-keystroke localStorage writes)",
 );
 // A send unmounts the composer (mode switches to chat/board), which cancels the
 // debounced draft-write before it can flush the cleared text — so the submit
@@ -442,32 +522,33 @@ assert.match(
 // resurrects on the next Home visit.
 assert.match(
   source,
-  /setText\(""\);\s*(?:\/\/[^\n]*\n\s*)*writeHomeDraft\(""\);/,
+  /setText\(""\);\s*(?:\/\/[^\n]*\n\s*)*clearDraft\(\);/,
   "the chat send path clears the persisted draft synchronously (not only via the debounced effect)",
 );
 assert.match(
-  source,
-  /if \(text\) window\.localStorage\.setItem\(HOME_DRAFT_KEY, text\);\s*else window\.localStorage\.removeItem\(HOME_DRAFT_KEY\)/,
-  "an emptied home draft removes the key (sent prompts don't reappear on reload)",
+  draftHook,
+  /if \(text\) window\.localStorage\.setItem\(key, text\);\s*else window\.localStorage\.removeItem\(key\)/,
+  "an emptied draft removes the key (sent prompts don't reappear on reload)",
 );
 
-// The ↑/↓ prompt-history also survives a reload.
+// The ↑/↓ prompt-history also survives a reload — shared hook; the pin holds
+// the keyed call site, the hook test holds the recall/persist semantics.
 assert.match(
   source,
-  /const \[history, setHistory\] = useState<string\[\]>\(\(\) => readComposerHistory\(HOME_HISTORY_KEY\)\)/,
-  "home prompt history initialises from the persisted recall stack",
+  /const \{ push: pushHistory, handleArrowKey \} = useComposerHistory\(HOME_HISTORY_KEY\)/,
+  "home prompt history rides the shared persisted recall stack",
 );
 assert.match(
   source,
-  /writeComposerHistory\(HOME_HISTORY_KEY, history\)/,
-  "home prompt history is persisted when it changes",
+  /if \(handleArrowKey\(e, text, setText\)\) return;/,
+  "↑/↓ recall is delegated to the shared hook from the home keyboard handler",
 );
 
-// ── Attachments + Enhance (added to the home composer) ──────────────────────
+// ── Attachments ─────────────────────────────────────────────────────────────
 assert.match(
   source,
-  /className="hc-add-btn"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:paperclip/,
-  "the + launcher is now a paperclip that opens the file picker",
+  /aria-label="Attach images, videos, or files"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:plus/,
+  "the + button opens the file picker (reference layout)",
 );
 assert.match(
   source,
@@ -485,15 +566,18 @@ assert.match(
   /initialAttachments: outgoing/,
   "staged attachments are threaded into the started chat",
 );
+// Enhance is the shared model-backed hook (cave-b6c2) — home mounts it with
+// destination-aware mode + attachment context; the local rule engine survives
+// only as the hook's offline fallback.
 assert.match(
   source,
-  /className=\{`hc-enhance-btn[\s\S]*?onClick=\{\(\) => void enhancePrompt\(\)\}/,
-  "an Enhance button invokes prompt enhancement",
+  /import \{ usePromptEnhance \} from "@\/lib\/use-prompt-enhance"/,
+  "Enhance uses the shared model-backed enhance hook",
 );
 assert.match(
   source,
-  /import \{ buildPromptEnhancement \} from "@\/lib\/prompt-enhancer"/,
-  "Enhance uses the shared pure prompt enhancer",
+  /familiarId: selectedFamiliarId \|\| null/,
+  "Enhance streams through the familiar the selector actually shows",
 );
 assert.doesNotMatch(
   source,
@@ -512,19 +596,27 @@ assert.match(
 );
 assert.match(
   source,
-  /enhanceOriginal != null &&[\s\S]*?onClick=\{revertEnhance\}/,
-  "a one-tap Undo reverts an enhancement",
+  /<EnhanceStrip[\s\S]*?state=\{promptEnhance\.state\}/,
+  "the shared enhance strip renders the loading/suggested/applied/error states",
 );
 
 // ── Drag-and-drop attachments ───────────────────────────────────────────────
+// The staging state machine (cap, dragDepth-counted overlay, files-win paste)
+// lives in the shared use-attachment-staging hook; these pins hold home's
+// wiring, the hook test holds the semantics.
 assert.match(
   source,
-  /onDrop=\{\(e\) => \{[\s\S]*?hasDraggedFiles\(e\.dataTransfer\.types\)[\s\S]*?void addFiles\(e\.dataTransfer\.files\)/,
-  "dropping files onto the composer card routes through addFiles",
+  /home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}\s*\{\.\.\.dropHandlers\}/,
+  "the composer card is the drop target (drag handlers attach to the card, not the page)",
 );
 assert.match(
-  source,
-  /onDragEnter=\{\(e\) => \{[\s\S]*?setDropActive\(true\)/,
+  attachHook,
+  /onDrop: \(e: DragEvent\) => \{[\s\S]*?hasDraggedFiles\(e\.dataTransfer\.types\)[\s\S]*?void addFiles\(e\.dataTransfer\.files\)/,
+  "dropping files routes through addFiles",
+);
+assert.match(
+  attachHook,
+  /onDragEnter: \(e: DragEvent\) => \{[\s\S]*?setDropActive\(true\)/,
   "a file drag arms the drop overlay",
 );
 assert.match(
@@ -536,8 +628,13 @@ assert.match(
 // ── Paste-to-attach ─────────────────────────────────────────────────────────
 assert.match(
   source,
-  /onPaste=\{\(e\) => \{[\s\S]*?e\.clipboardData\.items[\s\S]*?item\.kind === "file"[\s\S]*?void addFiles\(pastedFiles\)/,
-  "pasting files into the composer stages them as attachments",
+  /onPaste=\{handlePaste\}/,
+  "pasting into the composer routes through the shared files-win-over-text handler",
+);
+assert.match(
+  source,
+  /onLimit: \(\) => onToast\("Attachment limit reached \(10\)\."\)/,
+  "home surfaces the attachment cap as a toast (chat stays silent — deliberate asymmetry)",
 );
 
 // ── Image attachment thumbnails ─────────────────────────────────────────────
@@ -560,7 +657,7 @@ assert.match(
 );
 assert.match(
   source,
-  /hc-attachments-clear[\s\S]*?onClick=\{\(\) => setAttachments\(\[\]\)\}[\s\S]*?Clear all/,
+  /hc-attachments-clear[\s\S]*?onClick=\{clearAttachments\}[\s\S]*?Clear all/,
   "a Clear all control empties the staged attachments",
 );
 
@@ -570,29 +667,31 @@ assert.match(
 // (reset on text change) closes them; and the genuinely-silent state changes
 // (enhance success, attachment add — neither raises a toast) announce to the
 // shared live region so screen-reader users aren't left guessing.
+// (The dismiss machinery moved into the shared hook — one flag, reset on text,
+// options nulled while dismissed so every *MenuActive respects it.)
 assert.match(
-  source,
+  menusHook,
   /const \[slashDismissed, setSlashDismissed\] = useState\(false\)/,
   "a slashDismissed flag backs Escape-to-dismiss for the inline menus",
 );
 assert.match(
-  source,
-  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,120}setSlashDismissed\(true\);[\s\S]{0,40}return;/,
+  menusHook,
+  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,400}setSlashDismissed\(true\);[\s\S]{0,40}return true;/,
   "Escape closes any open inline menu (the footers advertise Esc cancel)",
 );
 assert.match(
-  source,
-  /setSlashIdx\(0\);\s*setSlashDismissed\(false\);/,
+  menusHook,
+  /setSlashIdx\(0\);\s*setSlashDismissed\(false\);\s*\}, \[text\]\);/,
   "the dismissed flag resets when the text changes so a fresh token re-opens the menu",
 );
 assert.match(
-  source,
-  /const modelMenuActive = !slashDismissed &&/,
+  menusHook,
+  /slashDismissed \? null : modelSlashOptions\(text, modelHarness\)/,
   "the model menu respects the dismissed flag",
 );
 assert.match(
-  source,
-  /const skillMenuActive = !slashDismissed &&/,
+  menusHook,
+  /slashDismissed \? null : skillSlashOptions\(text, skills\)/,
   "the skill menu respects the dismissed flag",
 );
 assert.match(
@@ -600,13 +699,24 @@ assert.match(
   /const \{ announce \} = useAnnouncer\(\)/,
   "HomeComposer wires the shared live-region announcer",
 );
+// Enhance announcements live in the shared hook now — use-prompt-enhance.test.ts
+// pins them (apply, suggest, offline, revert).
 assert.match(
   source,
-  /setText\(result\.enhanced\);\s*announce\("Prompt enhanced", "polite"\)/,
-  "a successful enhance is announced (the textarea swap is otherwise silent to AT)",
-);
-assert.match(
-  source,
-  /Attached \$\{next\.length\} file/,
+  /onAdded: \(count\) => announce\(`Attached \$\{count\} file/,
   "adding attachments is announced (there is no toast on the success path)",
 );
+
+// ── Composer input visibility (cave-tjcx, then user-revised) ────────────────
+// The icon buttons inherited the dim muted cascade while the runtime/host
+// chip labels beside them are --text-primary. Icons carry the primary tier
+// explicitly (in cave-chat.css); the placeholders render at 45% foreground so
+// hint text reads as a placeholder, not typed content (user-reported: 85%
+// looked like actual text).
+{
+  const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+  assert.match(css, /\.cave-composer-icon-button \{[\s\S]{0,600}?color: var\(--text-primary\);\n\}/, "composer icon buttons carry the primary text tier");
+  assert.match(source, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the home placeholder renders at 45% foreground (reads as a hint)");
+  const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+  assert.match(chat, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the chat placeholder matches (one composer family)");
+}

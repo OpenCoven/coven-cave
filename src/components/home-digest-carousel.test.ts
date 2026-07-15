@@ -23,18 +23,29 @@ assert.match(view, /tabIndex={tabIndex}/, "duplicated cards are removed from the
 // ── Empty/loading: nothing renders until ready, and nothing when no cards ──────
 assert.match(view, /if \(!ready \|\| cards\.length === 0\) return null/, "hidden until there's something to show");
 
-// ── Two rows: media (headlines) is split out onto its own track, away from chats
+// ── Two rows: media (headlines) is split out onto its own track, away from the
+//    chats track (needs-you + summary + sessions + suggestions).
 assert.match(view, /home-digest__track--media/, "media headlines render on their own separate track");
-assert.match(view, /c\.kind === "summary" \|\| c\.kind === "session"/, "chats row = summary + session cards");
+assert.match(view, /c\.kind !== "rss"/, "chats row = every non-rss card (needs + summary + sessions + suggestions)");
 assert.match(view, /c\.kind === "rss"/, "media row = the rss headline cards");
 
-// ── News carousel can be dismissed only from its explicit close affordance ────
-assert.match(view, /const \[mediaDismissed, setMediaDismissed\] = useState\(false\)/, "tracks dismissed state for the news/media carousel");
-assert.match(view, /mediaCards\.length > 0 && !mediaDismissed/, "dismissing media leaves the chat digest row intact");
-assert.match(view, /aria-label="Close news carousel"/, "news carousel exposes an accessible close button");
-assert.match(view, /onClick=\{\(\) => setMediaDismissed\(true\)\}/, "close button hides the news carousel");
-assert.doesNotMatch(view, /onMouseEnter=\{\(\) => setMediaDismissed\(true\)\}/, "hovering the close affordance must not hide the news carousel");
-assert.match(view, /home-digest__media-close/, "close button has a stable styling hook");
+// ── News is opt-out in Settings → General — no inline dismiss on the row ──────
+assert.match(view, /const newsEnabled = useHomeNewsEnabled\(\)/, "news visibility comes from the persistent user setting");
+assert.match(view, /mediaCards\.length > 0 && newsEnabled/, "disabling news leaves the chat digest row intact");
+assert.doesNotMatch(view, /mediaDismissed|setMediaDismissed/, "the per-mount dismissed state is retired (setting is the one source of truth)");
+assert.doesNotMatch(view, /aria-label="Close news carousel"/, "the inline X close button is removed");
+assert.doesNotMatch(view, /home-digest__media-close/, "no close-button markup remains");
+// cave-e2zx: the lane chrome is gone entirely — no icon marker, no band. The
+// track's aria-label is the lane's only (accessible) name; the reversed drift
+// direction separates it visually from the chats row.
+assert.doesNotMatch(view, /home-digest__media-chrome/, "the icon-only lane chrome stays deleted");
+assert.doesNotMatch(view, /home-digest__media-label/, "no lane-marker markup remains");
+assert.match(
+  view,
+  /home-digest__track home-digest__track--media" aria-label="Media headlines"/,
+  "the media track still names the lane for AT",
+);
+assert.doesNotMatch(view, />News</, "the visible 'News' word is removed from the media lane chrome");
 
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
 assert.match(view, /home-digest__thumb/, "media card renders an image thumbnail when available");
@@ -67,9 +78,17 @@ assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbn
 assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is enlarged for the image-forward row");
 assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
 assert.match(css, /\.home-digest__media[\s\S]*?position: relative/, "media row anchors the close button");
-assert.match(css, /\.home-digest__media-close[\s\S]*?position: absolute[\s\S]*?top: 0[\s\S]*?right: 0/, "news close button sits at the media row's top-right corner");
-assert.match(css, /\.home-digest__media-close\s*\{[^}]*pointer-events: auto/, "news close button is always directly clickable");
-assert.doesNotMatch(css, /\.home-digest__media-close\s*\{[^}]*opacity: 0/, "news close button must not be hidden behind hover-only reveal");
+assert.doesNotMatch(css, /home-digest__media-chrome/, "dead lane-chrome CSS is removed with the marker");
+assert.doesNotMatch(css, /home-digest__media-close/, "dead close-button CSS is removed with the inline dismiss");
+
+// ── Settings owns the opt-out: General section renders the switch ─────────────
+const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+assert.match(settings, /import \{ useHomeNewsEnabled, writeHomeNewsEnabled \} from "@\/lib\/home-news-pref"/, "settings imports the shared news pref");
+assert.match(
+  settings,
+  /label="News headlines"[\s\S]*?role="switch"[\s\S]*?aria-checked=\{newsEnabled\}[\s\S]*?writeHomeNewsEnabled\(!newsEnabled\)/,
+  "General settings exposes the News headlines switch backed by the pref",
+);
 
 // ── Wired into the home composer below "Jump back in" ─────────────────────────
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");
@@ -80,6 +99,26 @@ assert.match(
   view,
   /usePausablePoll\(\(\) => \{ void loadDigest\(\); \}, 60_000, \{ pauseWhileInputActive: true \}\)/,
   "the once-a-minute digest refresh pauses while the user is typing",
+);
+
+// ── Live presence tier (cave-9j6a): running sessions read from Home ──────────
+assert.match(view, /card\.kind === "live"/, "the carousel renders the live-card branch");
+assert.match(
+  view,
+  /className="home-digest__card home-digest__card--live"/,
+  "live cards wear the presence variant",
+);
+assert.match(view, /home-digest__live-dot/, "live cards carry the breathing status dot");
+assert.match(
+  view,
+  /home-digest__card--live"[\s\S]{0,800}Running now/,
+  "clicking a live card opens the session; AT hears 'Running now'",
+);
+assert.match(css, /\.home-digest__card--live \{/, "live variant styled from presence tokens");
+assert.match(
+  css,
+  /home-digest-live-pulse/,
+  "the dot pulse is a named keyframe (token durations zero it under reduced motion)",
 );
 
 console.log("home-digest-carousel.test.ts passed");

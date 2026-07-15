@@ -24,6 +24,18 @@ assert.match(
   "workspace should provide exitChatMode so the sidebar back control returns to the prior surface",
 );
 
+// ── Chat-first IA (cave-hsa6): the app boots straight into the conversation. ──
+assert.match(
+  workspace,
+  /const \[mode, setModeRaw\] = useState<CaveMode>\("chat"\)/,
+  "workspace should boot into chat mode, not home",
+);
+assert.match(
+  workspace,
+  /const \[lastNonChatMode, setLastNonChatMode\] = useState<CaveMode>\("home"\)/,
+  "the chat back-control still falls back to home when no other surface was visited",
+);
+
 // ── Subpanel removal: the in-surface thread rail is dropped in chat mode, since
 //    the ChatSidebar now owns the project-grouped thread list. ────────────────
 assert.match(
@@ -104,7 +116,7 @@ assert.match(
 );
 assert.match(
   workspaceSidebar,
-  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="sm"/,
+  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\} size="sm"/,
   "ThreadRow renders the shared ProjectAvatar tile with an accessible project name",
 );
 assert.match(

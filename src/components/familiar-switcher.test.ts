@@ -15,18 +15,23 @@ assert.match(
 );
 assert.match(
   source,
-  /active \?\s*\(\s*<FamiliarAvatar familiar=\{active\} size="sm" \/>\s*\) : \(\s*<Icon name="ph:sparkle"/,
-  "trigger shows the active familiar's avatar, falling back to an all-scope glyph",
+  /active && !multiScope \?\s*\(\s*<FamiliarAvatar familiar=\{active\} size="sm" \/>\s*\) : \(\s*<Icon name="ph:sparkle"/,
+  "trigger shows the active familiar's avatar; the all scope and a ≥2 multiselect fall back to the sparkle glyph",
 );
 assert.match(
   source,
-  /labeled \? <span className="familiar-switcher__trigger-label">\{active \? active\.display_name : "All familiars"\}<\/span> : null/,
-  "labeled trigger shows the selected familiar name",
+  /labeled \? <span className="familiar-switcher__trigger-label">\{triggerText\}<\/span> : null/,
+  "labeled trigger shows the scope text (name, All familiars, or the multiselect count)",
 );
-assert.doesNotMatch(
+assert.match(
   source,
-  /familiar-switcher__caret/,
-  "trigger does not add a dropdown caret",
+  /multiScope\s*\? `\$\{multiScope\.size\} familiars`/,
+  "a ≥2 multiselect summarizes as a count on the trigger",
+);
+assert.match(
+  source,
+  /familiar-switcher__trigger-caret/,
+  "the labeled trigger carries a dropdown caret (it reads as a selector)",
 );
 assert.match(
   source,
@@ -42,8 +47,22 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => \{ onSelectFamiliar\(f\.id\); setOpen\(false\); \}\}/,
-  "picking a familiar scopes to its id",
+  /onClick=\{\(e\) => pickFamiliar\(f\.id, e\)\}/,
+  "picking a familiar routes through pickFamiliar (solo vs multi)",
+);
+// Multiselect: the checkbox zone (or ⌘/Ctrl-click) toggles scope membership and
+// keeps the menu open; a plain click solo-selects and closes.
+assert.match(
+  source,
+  /e\.metaKey \|\| e\.ctrlKey \|\|\s*Boolean\(\(e\.target as HTMLElement\)\.closest\("\.familiar-switcher__checkbox"\)\)/,
+  "the checkbox zone and ⌘/Ctrl-click both mean multi",
+);
+assert.match(source, /if \(!multi\) setOpen\(false\);/, "multi picks keep the menu open for more toggles");
+assert.match(source, /aria-multiselectable="true"/, "the listbox announces multiselect");
+assert.match(
+  source,
+  /className=\{`familiar-switcher__checkbox\$\{isActive \? " is-checked" : ""\}`\}/,
+  "each row renders its checkbox zone with checked state",
 );
 
 // Presence + reply signals preserved from the retired dock.
@@ -80,15 +99,49 @@ assert.match(
 // per-row pin toggle.
 assert.doesNotMatch(source, /togglePin|familiar-switcher__pin|useFamiliarPins/, "the dropdown has no per-row pin toggle (pinning moved to Settings)");
 
-// Footer: create (onboarding), manage (Studio list view), reorder.
+// Footer: a prominent full-width Summon invitation, with manage (Studio list
+// view) and reorder as quieter actions beneath it (cave-6p5l).
 assert.match(
   source,
-  /new CustomEvent\("cave:onboarding-open"\)/,
-  "New routes to the onboarding create flow (familiars are daemon-owned)",
+  /requestSummonFamiliar\(\)/,
+  "Summon routes to the Summoning Circle on the Familiars surface (cave-3em5)",
+);
+assert.doesNotMatch(
+  source,
+  /cave:onboarding-open/,
+  "Summon must NOT open the onboarding wizard — it stops at infrastructure and cannot create familiars (cave-3em5)",
+);
+assert.match(
+  source,
+  /className="familiar-switcher__summon focus-ring"[\s\S]{0,200}ph:magic-wand-fill[\s\S]{0,100}Summon familiar/,
+  "the footer leads with a full-width Summon familiar button wearing the circle's wand",
 );
 assert.match(source, /openFamiliarStudioListView\(\)/, "Manage opens the Studio list view");
 assert.match(source, /setReordering\(true\)/, "Reorder enables drag mode");
 assert.match(source, /setFamiliarOrder\(arrayMove\(/, "reorder persists the new familiar order");
+
+// Rows read as a clean dropdown: the checkbox zone keeps its slot but only
+// fades in on hover/focus, when checked, or while a multiselect scope is live.
+assert.match(
+  source,
+  /data-multi=\{multiScope \? "true" : undefined\}/,
+  "the list flags a live multiselect scope so CSS can keep all checkboxes visible",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__checkbox \{[\s\S]*?opacity: 0;/,
+  "checkbox zones rest invisible so rows read as a plain dropdown",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__checkbox\.is-checked,[\s\S]*?\.familiar-switcher__list\[data-multi\] \.familiar-switcher__checkbox \{[\s\S]*?opacity: 1;/,
+  "checked rows, hovered rows, and a live multiselect reveal the checkbox",
+);
+assert.match(
+  globals,
+  /\.familiar-switcher__summon \{[\s\S]*?width: 100%;[\s\S]*?border: 1px dashed color-mix\(in oklch, var\(--accent-presence\)/,
+  "the Summon button is a full-width dashed invitation tinted with presence",
+);
 
 // Styling hooks exist.
 assert.match(globals, /\.familiar-switcher__trigger \{/, "trigger has dedicated styling");

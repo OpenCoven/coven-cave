@@ -5,10 +5,11 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const menuBarSwitcherRule = globals.match(/\.menu-bar__group--chat \.familiar-switcher__trigger\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+// The switcher moved to the sidenav header (cave-vtk9); its compact geometry
+// is pinned in sidebar-minimal.test.ts against the rail rules instead.
 
 // The bar provides desktop top chrome: chat with familiars, global
-// context-aware search, and view tasks/inbox. It is a labelled landmark so
+// context-aware search, and view tasks/schedules. It is a labelled landmark so
 // screen readers can find it.
 assert.match(
   source,
@@ -47,33 +48,26 @@ assert.doesNotMatch(
   "desktop menu bar search must NOT open on focus — the palette restores focus to this input on close, which would reopen it and trap the user",
 );
 
-// Left group — chat. The bar embeds FamiliarQuickSwitch: a strip of recent +
-// pinned familiar avatars for one-tap switching, plus the full switcher menu.
-assert.match(
+// Familiar scope moved to the SIDENAV header (cave-vtk9) — present on every
+// page there. The bar keeps search + task and schedule chrome and must not
+// hand-roll any familiar markup.
+assert.doesNotMatch(
   source,
-  /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
-  "embeds the quick-switch strip + switcher for scope/full list",
+  /FamiliarQuickSwitch|FamiliarSwitcher|menu-bar__group--chat/,
+  "the menu bar no longer hosts familiar selection (it lives in the sidenav header)",
 );
-// The top bar surfaces EVERY familiar, not just the default 6 most-recent.
-assert.match(
-  source,
-  /<FamiliarQuickSwitch[\s\S]*max=\{familiars\.length\}/,
-  "passes max={familiars.length} so the strip shows all familiars",
-);
-// The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
-// here — the menu bar must not hand-roll its own bubble/presence markup.
 assert.doesNotMatch(
   source,
   /menu-bar__familiars|menu-bar__familiar|MAX_QUICK_CHAT|quickChat/,
-  "menu bar delegates bubbles to FamiliarQuickSwitch rather than its own markup",
+  "menu bar must not hand-roll familiar bubble/presence markup",
 );
 assert.doesNotMatch(
   source,
   /computePresence\(|<FamiliarAvatar/,
-  "presence/avatar computation lives in FamiliarQuickSwitch, not the menu bar",
+  "presence/avatar computation does not live in the menu bar",
 );
 // The New chat control now lives at the top of the left sidebar
-// (SidebarMinimal), not the desktop menu bar — the bar keeps only the switcher.
+// (SidebarMinimal), not the desktop menu bar.
 assert.doesNotMatch(
   source,
   /menu-bar__new|menu-bar__compose|NewChatMenu/,
@@ -84,19 +78,9 @@ assert.doesNotMatch(
   /onChatWithFamiliar|onComposeChat/,
   "the menu bar no longer owns the chat-start handlers",
 );
-assert.match(
-  menuBarSwitcherRule,
-  /width:\s*28px;/,
-  "desktop menu-bar familiar selector should stay a square avatar button, not collapse to content width",
-);
-assert.doesNotMatch(
-  menuBarSwitcherRule,
-  /width:\s*auto;/,
-  "desktop menu-bar familiar selector must not use content-width sizing after the label/caret were removed",
-);
 
-// Right group — tasks. A Tasks button (board) and an Inbox button, each with a
-// live count badge that is hidden at zero.
+// Right group — tasks. A Tasks button (board) and a Schedules button, each
+// with a live count badge that is hidden at zero.
 assert.match(
   source,
   /className="menu-bar__task focus-ring"[\s\S]*onClick=\{onViewTasks\}/,
@@ -107,15 +91,34 @@ assert.match(
   /taskCount > 0 \? <span className="menu-bar__badge">\{fmtBadge\(taskCount\)\}<\/span> : null/,
   "the Tasks badge shows the open-task count and hides at zero",
 );
+// The old "Inbox" button was dishonest: workspace mode "inbox" IS the
+// Schedules surface (calendar + crons) and no dedicated inbox surface exists
+// (inbox items live in the notification bell). The button now says what it
+// does: Schedules, calendar icon, schedule needs-you badge.
 assert.match(
   source,
-  /onClick=\{onViewInbox\}/,
-  "the Inbox button jumps to the inbox",
+  /onClick=\{onViewSchedules\}/,
+  "the Schedules button jumps to the Schedules surface",
 );
 assert.match(
   source,
-  /inboxCount > 0 \? \(\s*<span className="menu-bar__badge menu-bar__badge--alert">/,
-  "the Inbox badge shows the attention count and hides at zero",
+  /aria-label=\{scheduleNeedsCount > 0 \? `View rituals — \$\{scheduleNeedsCount\} need attention` : "View rituals"\}/,
+  "the Rituals button is announced as rituals, not inbox",
+);
+assert.match(
+  source,
+  /<Icon name="ph:calendar-check"[\s\S]{0,160}<span className="menu-bar__task-label">Rituals<\/span>/,
+  "the Rituals button matches the sidebar's Rituals label + icon (label CSS-demoted in the seamless bar; aria-label carries the name)",
+);
+assert.doesNotMatch(
+  source,
+  /"View inbox"|<span>Inbox<\/span>|ph:tray/,
+  "no top-bar control claims to be an Inbox — there is no inbox surface to land on",
+);
+assert.match(
+  source,
+  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge">/,
+  "the Schedules badge matches the Tasks badge chrome (no alert tint) and hides at zero",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
@@ -127,13 +130,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /onViewInbox=\{\(\) => setMode\("inbox"\)\}/,
-  "View inbox switches to the inbox surface",
+  /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
+  "View schedules switches to the Schedules surface (workspace mode id 'inbox')",
 );
 assert.match(
   workspace,
-  /taskCount=\{boardTaskCount\}[\s\S]*inboxCount=\{inboxBadgeCount\}/,
-  "the bar is fed the live board task count and inbox badge count",
+  /taskCount=\{boardTaskCount\}[\s\S]*scheduleNeedsCount=\{scheduleNeedsCount\}/,
+  "the bar is fed the live board task count and the schedule needs-you count (same source as the sidebar Schedules badge)",
 );
 assert.match(
   workspace,
@@ -183,10 +186,18 @@ assert.match(
   /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label="Quick chat"/,
   "the desktop menu bar renders a data-quick-chat-trigger button wired to onOpenQuickChat",
 );
+// cave-xsq.6: the quick-chat trigger jumps straight into a fresh chat with the
+// active familiar (the parallel overlay was retired) rather than opening a
+// duplicate mini-chat popover.
 assert.match(
   workspace,
-  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => setQuickChatOpen\(true\)\}/,
-  "workspace wires the desktop menu bar's quick-chat trigger to open the popover",
+  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => startFamiliarChat\(activeId\)\}/,
+  "workspace wires the desktop menu bar's quick-chat trigger to start a chat with the active familiar",
+);
+assert.doesNotMatch(
+  workspace,
+  /QuickChatOverlay/,
+  "the parallel in-app quick-chat overlay is retired",
 );
 
 console.log("familiar-menu-bar.test.ts: ok");

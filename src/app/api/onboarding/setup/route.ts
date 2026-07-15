@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { caveHome } from "@/lib/coven-paths";
 import {
   loadConfig,
   normalizeMultiHostConfig,
@@ -71,15 +72,17 @@ export async function POST(req: Request) {
 
   const home = homedir();
   const covenDir = path.join(home, ".coven");
+  const caveDir = caveHome();
   const familiarsToml = path.join(covenDir, "familiars.toml");
-  const configJson = path.join(covenDir, "cave-config.json");
-  const conversationsDir = path.join(covenDir, "cave-conversations");
+  const configJson = path.join(caveDir, "config.json");
+  const conversationsDir = path.join(caveDir, "conversations");
   const memoryDir = path.join(covenDir, "memory");
   const adaptersDir = path.join(covenDir, "adapters");
 
   const wrote: string[] = [];
 
   await mkdir(covenDir, { recursive: true });
+  await mkdir(caveDir, { recursive: true });
   await mkdir(conversationsDir, { recursive: true });
   await mkdir(memoryDir, { recursive: true });
   await mkdir(adaptersDir, { recursive: true });
@@ -110,7 +113,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // Always update cave-config.json defaults so the user's chosen adapter
+  // Always update the cave config defaults so the user's chosen adapter
   // binding takes effect even if they re-run setup.
   //
   // IMPORTANT: nextConfig must carry over every field from `existing` that we
@@ -148,7 +151,7 @@ export async function POST(req: Request) {
     }),
   };
   await writeFile(configJson, JSON.stringify(nextConfig, null, 2), "utf8");
-  wrote.push("cave-config.json");
+  wrote.push("cave/config.json");
 
   return NextResponse.json({ ok: true, wrote, covenDir });
 }

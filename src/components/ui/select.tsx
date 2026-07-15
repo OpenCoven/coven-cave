@@ -3,7 +3,6 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { Popover, PopoverBody, PopoverItem } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
 
 export type StandardSelectOption<T extends string> = {
   value: T;
@@ -80,14 +79,13 @@ export function StandardSelect<T extends string>({
 
   return (
     <>
-      <Button
+      <button
         id={id}
         type="button"
         ref={triggerRef}
-        variant="secondary"
-        size="md"
         className={[
-            "min-w-0 justify-between gap-1 px-3 py-1.5 text-left text-[12px] leading-none",
+            "standard-select-trigger focus-ring inline-flex min-w-0 items-center justify-between gap-1 text-left leading-none disabled:pointer-events-none disabled:opacity-50",
+            className ? "" : "h-8 rounded-md border border-border bg-background px-3 py-1.5 text-[12px] text-foreground transition-colors hover:bg-muted",
             className ?? "",
           ]
           .filter(Boolean)
@@ -113,7 +111,7 @@ export function StandardSelect<T extends string>({
             aria-hidden
           />
         ) : null}
-      </Button>
+      </button>
 
       <Popover
         open={open}

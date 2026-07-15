@@ -16,13 +16,13 @@ assert.equal(
 assert.equal(
   displayCovenVersion({ daemonVersion: "0.0.0", installedVersion: "0.0.39" }),
   "0.0.39",
-  "daemon health placeholder should fall back to the installed coven CLI version",
+  "daemon health placeholder should fall back to the installed Coven CLI version",
 );
 
 assert.equal(
   displayCovenVersion({ daemonVersion: undefined, installedVersion: "0.0.39" }),
   "0.0.39",
-  "missing daemon health version should fall back to the installed coven CLI version",
+  "missing daemon health version should fall back to the installed Coven CLI version",
 );
 
 assert.equal(
