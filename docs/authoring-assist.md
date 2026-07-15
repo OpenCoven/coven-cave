@@ -304,7 +304,12 @@ human-reviewed.
 
 **Status:** landed — dispatch-time drafts snapshot + visibility-paused
 arrival polling in the create drawer, refine/publish briefs on draft detail,
-and recreate-and-replace draft deletion (guarded `DELETE`).
+and recreate-and-replace draft deletion (guarded `DELETE`). *Correction
+(2026-07-15):* the arrival loop only survives while the drawer stays mounted —
+following the chat it opens unmounts the marketplace and kills the poll — and
+the briefs' plan-verification step cannot resolve local drafts. Both gaps, and
+the flow redesign that closes them, are mapped in
+[`craft-ux.md`](craft-ux.md).
 
 ## 7 · One assist kit: extract the shared runner and contracts
 
