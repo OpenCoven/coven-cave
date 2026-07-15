@@ -169,6 +169,7 @@ export const SUITES = {
     "src/lib/flow/flow-webhook.test.ts",
     "src/lib/flow/flow-progress.test.ts",
     "src/lib/server/flow-executor.test.ts",
+    "src/lib/server/flow-copilot-session.test.ts",
     "src/lib/server/research-mission-store.test.ts",
     "src/lib/server/research-mission-runner.test.ts",
     "src/lib/flow/flow-execution-data.test.ts",
