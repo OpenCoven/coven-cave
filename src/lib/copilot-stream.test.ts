@@ -32,6 +32,11 @@ assert.deepEqual(
 assert.equal(spec.sessionIdFlag, "--session-id");
 assert.equal(spec.resumeFlag, "--resume");
 assert.equal(spec.modelFlag, "--model");
+assert.equal(
+  spec.addDirFlag,
+  "--add-dir",
+  "no manifest add_dir_flag override → copilot's native repeatable flag",
+);
 assert.deepEqual(spec.sandboxFullArgs, ["--allow-all"]);
 assert.deepEqual(spec.sandboxReadOnlyArgs, [
   "--deny-tool",
@@ -49,6 +54,7 @@ const freshArgs = buildCopilotStreamArgs({
   newSessionId: "11111111-2222-4333-8444-555555555555",
   model: "openai/gpt-5.5",
   permissionMode: "full",
+  addDirs: ["/Users/example/projects/alpha", "", "/Users/example/.coven/workspaces/familiars/sage"],
 });
 assert.deepEqual(
   freshArgs,
@@ -57,6 +63,10 @@ assert.deepEqual(
     "11111111-2222-4333-8444-555555555555",
     "--model",
     "gpt-5.5",
+    "--add-dir",
+    "/Users/example/projects/alpha",
+    "--add-dir",
+    "/Users/example/.coven/workspaces/familiars/sage",
     "--allow-all",
     "--output-format",
     "json",
@@ -65,7 +75,7 @@ assert.deepEqual(
     "-p",
     "do the thing",
   ],
-  "fresh turns pre-assign the session id, strip the model namespace, map full access to --allow-all, and trail the prompt after -p",
+  "fresh turns pre-assign the session id, strip the model namespace, trust each granted root via repeatable --add-dir (empty entries dropped), map full access to --allow-all, and trail the prompt after -p",
 );
 
 const resumeArgs = buildCopilotStreamArgs({
@@ -75,12 +85,15 @@ const resumeArgs = buildCopilotStreamArgs({
   newSessionId: null,
   model: null,
   permissionMode: "read",
+  addDirs: ["/Users/example/projects/alpha"],
 });
 assert.deepEqual(
   resumeArgs,
   [
     "--resume",
     "aaaa1111-2222-4333-8444-555555555555",
+    "--add-dir",
+    "/Users/example/projects/alpha",
     "--deny-tool",
     "write",
     "--deny-tool",
@@ -92,7 +105,7 @@ assert.deepEqual(
     "-p",
     "continue",
   ],
-  "resumed read-only turns use --resume and the manifest's deny-tool sandbox args",
+  "resumed read-only turns use --resume, still trust granted roots via --add-dir (cave-n1yc: read-only sessions previously got no grant access at all), and keep the manifest's deny-tool sandbox args",
 );
 
 // ── identity preamble (mirror of coven's FamiliarContext) ─────────────────────
