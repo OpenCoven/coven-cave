@@ -621,6 +621,7 @@ export const SUITES = {
     "src/lib/cave-config.test.ts",
     "src/lib/cave-config-state-race.test.ts",
     "src/lib/cave-config-write-race.test.ts",
+    "src/lib/hub-access-token.test.ts",
     "src/lib/font-storage.test.ts",
     "src/lib/font-css-vars.test.ts",
     "src/components/font-boot.test.ts",

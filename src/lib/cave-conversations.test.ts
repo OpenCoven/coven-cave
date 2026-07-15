@@ -357,4 +357,36 @@ console.log("cave-conversations.test.ts: ok");
   const again = await searchConversations("unique-marker-bbb");
   assert.equal(again.length, 1, "repeat search via the cache returns the same hit");
 }
+
+// ── Atomic persistence (cave-1v95): no torn writes, no temp residue ──────────
+{
+  const { readdir, readFile } = await import("node:fs/promises");
+  const { CONV_DIR } = await import("./cave-conversations.ts");
+  await saveConversation({
+    sessionId: "atomic-check",
+    familiarId: "charm",
+    harness: "codex",
+    createdAt: "2026-07-15T00:00:00.000Z",
+    updatedAt: "2026-07-15T00:00:00.000Z",
+    turns: [],
+  });
+  const entries = await readdir(CONV_DIR);
+  assert.ok(entries.includes("atomic-check.json"), "the conversation file lands");
+  assert.equal(
+    entries.filter((name) => name.endsWith(".tmp")).length,
+    0,
+    "atomic replace leaves no temp residue behind",
+  );
+  const source = await readFile(new URL("./cave-conversations.ts", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /writeJsonAtomic\(pathFor\(conv\.sessionId\), conv\)/,
+    "saveConversation must go through the atomic writer",
+  );
+  assert.doesNotMatch(
+    source,
+    /writeFile\(pathFor/,
+    "plain writeFile on a conversation path would reintroduce torn writes",
+  );
+}
 console.log("cave-conversations cache test OK");

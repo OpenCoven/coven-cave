@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
+import { mkdir, readFile, appendFile, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
 import type { SessionOrigin } from "./types.ts";
@@ -147,7 +148,10 @@ export async function loadConversation(sessionId: string): Promise<ConversationF
 export async function saveConversation(conv: ConversationFile): Promise<void> {
   await ensureDir();
   conv.updatedAt = new Date().toISOString();
-  await writeFile(pathFor(conv.sessionId), JSON.stringify(conv, null, 2), "utf8");
+  // Atomic replace (cave-1v95): conversations are the highest-churn store —
+  // a crash mid-write must leave the previous transcript intact, never a
+  // torn half-JSON that loadConversation silently drops.
+  await writeJsonAtomic(pathFor(conv.sessionId), conv);
 }
 
 export async function appendTurn(sessionId: string, turn: ChatTurn): Promise<void> {
