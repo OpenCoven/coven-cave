@@ -28,6 +28,12 @@ import { UpdateSettingsRow } from "@/components/update-available";
 import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
 import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
+import {
+  DEFAULT_STOP_PHRASE,
+  STOP_PHRASE_MAX_LENGTH,
+  useStopPhrase,
+  writeStopPhrase,
+} from "@/lib/stop-phrase";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
@@ -389,6 +395,9 @@ function GeneralSection() {
       <SettingsGroup label="Home">
         <HomeNewsToggle />
       </SettingsGroup>
+      <SettingsGroup label="Chat">
+        <StopPhraseField />
+      </SettingsGroup>
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
@@ -419,6 +428,39 @@ function HomeNewsToggle() {
       >
         <span className="settings-switch__knob" aria-hidden />
       </button>
+    </SettingsRow>
+  );
+}
+
+// The stop phrase is a safety valve: while a familiar is mid-task, typing
+// this exact phrase in any chat composer halts the run (the composer's busy
+// bail otherwise swallows plain sends). Commit on blur/Enter; clearing the
+// field disables interception.
+function StopPhraseField() {
+  const saved = useStopPhrase();
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? saved;
+  const commit = () => {
+    if (draft !== null && draft.trim() !== saved) writeStopPhrase(draft);
+    setDraft(null);
+  };
+  return (
+    <SettingsRow
+      label="Stop phrase"
+      description="Typing this in the composer while a task is running stops it. Leave empty to disable."
+    >
+      <input
+        value={value}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+        }}
+        placeholder={DEFAULT_STOP_PHRASE}
+        maxLength={STOP_PHRASE_MAX_LENGTH}
+        aria-label="Stop phrase"
+        className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
+      />
     </SettingsRow>
   );
 }

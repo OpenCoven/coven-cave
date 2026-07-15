@@ -4,6 +4,7 @@ import { createContext, forwardRef, Fragment, memo, useCallback, useContext, use
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { FeedbackContext } from "@/lib/message-feedback";
+import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { RichText } from "@/components/rich-text";
 import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
@@ -4471,6 +4472,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
+    // Global stop phrase (cave-uf2x): while a task is running, typing the
+    // configured phrase is a command — halt the turn (same path as the Stop
+    // button) instead of leaving the draft stranded behind the busy bail.
+    if (busy && matchesStopPhrase(text, readStopPhrase())) {
+      cancelSend();
+      setInput("");
+      clearDraft();
+      return;
+    }
     // CHAT-D5-01: sendRaw early-returns while a response is streaming, so
     // clearing the composer first would silently destroy the typed message
     // (and staged attachments). Bail before touching state — slash intents

@@ -92,6 +92,8 @@ export type CavePreferences = {
   };
   general: {
     newsHeadlines: boolean;
+    /** Composer phrase that halts a running chat task; "" disables it. */
+    stopPhrase: string;
   };
   phone: {
     mobileMode: boolean;
@@ -125,6 +127,15 @@ const DEFAULT_THEME: CaveThemePreferences = {
   updatedAt: "",
 };
 
+/** Default composer stop phrase; "" (after trim) turns the feature off. */
+export const DEFAULT_STOP_PHRASE = "stop";
+const STOP_PHRASE_MAX_LENGTH = 64;
+
+function normalizeStopPhrase(value: unknown): string {
+  if (typeof value !== "string") return DEFAULT_STOP_PHRASE;
+  return value.trim().slice(0, STOP_PHRASE_MAX_LENGTH);
+}
+
 export function createDefaultPreferences(initialized = false): CavePreferences {
   return {
     version: CAVE_PREFERENCES_VERSION,
@@ -154,7 +165,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         image: { present: false, mime: null, updatedAt: "" },
       },
     },
-    general: { newsHeadlines: true },
+    general: { newsHeadlines: true, stopPhrase: DEFAULT_STOP_PHRASE },
     phone: { mobileMode: true },
   };
 }
@@ -361,7 +372,10 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
         },
       },
     },
-    general: { newsHeadlines: general.newsHeadlines !== false },
+    general: {
+      newsHeadlines: general.newsHeadlines !== false,
+      stopPhrase: normalizeStopPhrase(general.stopPhrase),
+    },
     phone: { mobileMode: phone.mobileMode !== false },
   };
 }
@@ -578,10 +592,16 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
 
   if (Object.hasOwn(input, "general")) {
     const general = strictRecord(input.general, "general");
-    assertAllowedKeys(general, ["newsHeadlines"], "general");
-    patch.general = Object.hasOwn(general, "newsHeadlines")
-      ? { newsHeadlines: strictBoolean(general.newsHeadlines, "general.newsHeadlines") }
-      : {};
+    assertAllowedKeys(general, ["newsHeadlines", "stopPhrase"], "general");
+    const generalPatch: NonNullable<CavePreferencesPatch["general"]> = {};
+    if (Object.hasOwn(general, "newsHeadlines")) {
+      generalPatch.newsHeadlines = strictBoolean(general.newsHeadlines, "general.newsHeadlines");
+    }
+    if (Object.hasOwn(general, "stopPhrase")) {
+      if (typeof general.stopPhrase !== "string") fail("general.stopPhrase", "must be a string");
+      generalPatch.stopPhrase = normalizeStopPhrase(general.stopPhrase);
+    }
+    patch.general = generalPatch;
   }
   if (Object.hasOwn(input, "phone")) {
     const phone = strictRecord(input.phone, "phone");
