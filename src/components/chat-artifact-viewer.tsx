@@ -83,8 +83,11 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
 
   const openInBrowser = useCallback(() => {
     try {
-      const blob = new Blob([srcDoc], { type: "text/html" });
-      window.open(URL.createObjectURL(blob), "_blank", "noopener");
+      // Keep untrusted artifact HTML out of Cave's origin. A blob: URL created
+      // here would inherit the privileged app origin; a top-level data: URL gets
+      // an opaque origin, matching the iframe preview's isolation boundary.
+      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(srcDoc)}`;
+      window.open(dataUrl, "_blank", "noopener");
     } catch {
       /* popup blocked — the inline preview still works */
     }
