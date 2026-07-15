@@ -1580,16 +1580,44 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     ) : null;
                   })()}
                 </span>
-                <button
-                  type="button"
-                  className="board-drawer-chat-cta"
-                  disabled={chatLinking}
-                  title="Start chat"
-                  onClick={() => void onOpenTaskChat?.(card.id)}
-                >
-                  {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start"}
-                  <Icon name="ph:arrow-right-bold" width={11} />
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    className="board-drawer-chat-cta"
+                    disabled={chatLinking}
+                    title="Start chat"
+                    onClick={() => void onOpenTaskChat?.(card.id)}
+                  >
+                    {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start"}
+                    <Icon name="ph:arrow-right-bold" width={11} />
+                  </button>
+                  <button
+                    type="button"
+                    className="board-drawer-chat-cta"
+                    title="Run on Omnigent fleet"
+                    onClick={() => {
+                      void (async () => {
+                        const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+                        const { openExternalUrl } = await import("@/lib/open-external");
+                        const result = await startOmnigentRunFromBrowser({
+                          prompt: card.title,
+                          familiarId: card.familiarId ?? undefined,
+                          boardCardId: card.id,
+                          title: card.title,
+                          source: "cave-board",
+                        });
+                        if (!result.ok) {
+                          window.alert(result.error);
+                          return;
+                        }
+                        void openExternalUrl(result.webUrl);
+                      })();
+                    }}
+                  >
+                    Fleet
+                    <Icon name="ph:desktop" width={11} />
+                  </button>
+                </div>
               </div>
             )}
           </div>

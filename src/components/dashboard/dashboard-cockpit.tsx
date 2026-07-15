@@ -106,6 +106,10 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   // Truthful freshness: stamped when fetched data actually lands (not render
   // time), so a backgrounded tab shows real staleness when you come back.
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // GitHub token probe (never the token itself): true/false from /api/github/pat,
+  // null while unresolved or when the probe fails — the panel's empty state only
+  // offers "Connect GitHub" on a proven false, never on a guess.
+  const [ghConnected, setGhConnected] = useState<boolean | null>(null);
 
   // Keep setState off an unmounted tree: the polled `load` may resolve after
   // unmount. A ref survives across the stable `load` identity.
@@ -135,6 +139,10 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       const ghMap = new Map<string, GitHubItem>();
       for (const it of [...(ghAct?.items ?? []), ...(ghAssigned?.items ?? [])]) ghMap.set(it.id, it);
       put("github", [...ghMap.values()]);
+    });
+    void getJson<{ hasPat: boolean }>("/api/github/pat").then((r) => {
+      if (!aliveRef.current) return;
+      setGhConnected(typeof r?.hasPat === "boolean" ? r.hasPat : null);
     });
   }, []);
 
@@ -425,7 +433,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       }
       case "github": return (
         <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined} href="/?mode=github">
-          <GithubPanel items={data.github} loaded={ready.has("github")} />
+          <GithubPanel items={data.github} loaded={ready.has("github")} connected={ghConnected} />
         </Panel>);
       case "agenda": return (
         <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined} href="/?mode=calendar">

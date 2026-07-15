@@ -614,6 +614,12 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-ghrow__title { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cockpit-ghrow__meta { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .cockpit-ghrow__repo { font-size: 10.5px; color: var(--text-muted); }
+/* Empty-state bridge: shown only when the token probe proves GitHub is
+   disconnected — deep-links to the GitHub surface, which owns the PAT flow. */
+.cockpit-connect { display: inline-flex; align-items: center; margin-left: 8px; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; text-decoration: none;
+  color: var(--accent-presence-foreground); background: var(--accent-presence); }
+.cockpit-connect:hover { filter: brightness(1.08); }
 
 /* Agenda */
 .cockpit-agendarow { display: flex; align-items: baseline; gap: 10px; padding: 6px 4px; }

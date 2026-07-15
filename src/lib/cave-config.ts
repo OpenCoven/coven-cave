@@ -34,6 +34,14 @@ const DEFAULT_CONFIG: CaveConfig = {
   },
   marketplace: { installed: {} },
   multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
+  omnigent: {
+    baseUrl: "",
+    defaultAgentId: "",
+    defaultHostId: "",
+    defaultWorkspace: "",
+    hostMap: {},
+    exposeHostsInComposer: true,
+  },
   remoteHosts: [],
 };
 
@@ -66,6 +74,7 @@ function defaultConfig(): CaveConfig {
     addons: { ...DEFAULT_CONFIG.addons },
     marketplace: { installed: {} },
     multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
+    omnigent: { ...DEFAULT_CONFIG.omnigent },
     remoteHosts: [],
   };
 }
@@ -118,6 +127,13 @@ function defaultState(): CaveState {
   };
 }
 
+/** Per-familiar overrides for Omnigent session create. */
+export type FamiliarOmnigentBinding = {
+  agentId?: string;
+  hostId?: string;
+  workspace?: string;
+};
+
 export type FamiliarBinding = {
   harness: string;
   model: string;
@@ -139,6 +155,8 @@ export type FamiliarBinding = {
    *  the connected user's workspaces). */
   asanaWorkspaceGid?: string;
   runtime?: FamiliarRuntime;
+  /** Per-familiar Omnigent fleet defaults (agent/host/workspace). */
+  omnigent?: FamiliarOmnigentBinding;
 };
 
 type FamiliarBindingPatch = {
@@ -149,6 +167,7 @@ type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars" | "cha
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
   multiHost?: Partial<CaveMultiHostConfig>;
+  omnigent?: Partial<CaveOmnigentConfig>;
   remoteHosts?: CaveRemoteHost[];
   chatAutoArchive?: Partial<ChatAutoArchivePolicy>;
 };
@@ -188,6 +207,17 @@ export type CaveMultiHostConfig = {
   mode: "local" | "hub";
   hubUrl: string;
   executorUrls: string[];
+};
+
+/** Omnigent control-plane settings for Cave Fleet. Token is never stored —
+ *  server reads `~/.omnigent/auth_tokens.json` (or OMNIGENT_TOKEN). */
+export type CaveOmnigentConfig = {
+  baseUrl: string;
+  defaultAgentId: string;
+  defaultHostId: string;
+  defaultWorkspace: string;
+  hostMap: Record<string, string>;
+  exposeHostsInComposer: boolean;
 };
 
 /** A registered remote execution host chats can run on (over SSH). Cave never
@@ -239,6 +269,8 @@ export type CaveConfig = {
     knowledgePacks?: KnowledgePackSeedEntry[];
   };
   multiHost: CaveMultiHostConfig;
+  /** Omnigent server used by the Fleet surface (hosts / sessions / run). */
+  omnigent: CaveOmnigentConfig;
   /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
   remoteHosts: CaveRemoteHost[];
   /** Operator profile (Settings → Profile). Image lives in ~/.coven/user-avatar.*, not here. */
@@ -308,6 +340,7 @@ export async function loadConfig(): Promise<CaveConfig> {
           : [],
       },
       multiHost: normalizeMultiHostConfig(parsed.multiHost),
+      omnigent: normalizeOmnigentConfig(parsed.omnigent),
       remoteHosts: normalizeRemoteHosts(parsed.remoteHosts),
       // Must be listed — this explicit shape drops unknown keys, and a dropped
       // profile would be erased by the next saveConfig round-trip.
@@ -372,6 +405,50 @@ export function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | u
     ),
   );
   return { mode, hubUrl, executorUrls };
+}
+
+export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | undefined): CaveOmnigentConfig {
+  const rawUrl = typeof input?.baseUrl === "string" ? input.baseUrl.trim().replace(/\/+$/, "") : "";
+  let baseUrl = rawUrl;
+  if (rawUrl) {
+    try {
+      const parsed = new URL(rawUrl.includes("://") ? rawUrl : `https://${rawUrl}`);
+      baseUrl = `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      baseUrl = rawUrl;
+    }
+  }
+  const hostMap: Record<string, string> = {};
+  if (input?.hostMap && typeof input.hostMap === "object" && !Array.isArray(input.hostMap)) {
+    for (const [k, v] of Object.entries(input.hostMap)) {
+      const key = typeof k === "string" ? k.trim() : "";
+      const val = typeof v === "string" ? v.trim() : "";
+      if (key && val) hostMap[key] = val;
+    }
+  }
+  return {
+    baseUrl,
+    defaultAgentId: typeof input?.defaultAgentId === "string" ? input.defaultAgentId.trim() : "",
+    defaultHostId: typeof input?.defaultHostId === "string" ? input.defaultHostId.trim() : "",
+    defaultWorkspace: typeof input?.defaultWorkspace === "string" ? input.defaultWorkspace.trim() : "",
+    hostMap,
+    exposeHostsInComposer: input?.exposeHostsInComposer !== false,
+  };
+}
+
+export function normalizeFamiliarOmnigent(
+  input: FamiliarOmnigentBinding | undefined,
+): FamiliarOmnigentBinding | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const agentId = typeof input.agentId === "string" ? input.agentId.trim() : "";
+  const hostId = typeof input.hostId === "string" ? input.hostId.trim() : "";
+  const workspace = typeof input.workspace === "string" ? input.workspace.trim() : "";
+  if (!agentId && !hostId && !workspace) return undefined;
+  return {
+    ...(agentId ? { agentId } : {}),
+    ...(hostId ? { hostId } : {}),
+    ...(workspace ? { workspace } : {}),
+  };
 }
 
 export function defaultTravelState(): CaveTravelState {
@@ -448,6 +525,11 @@ function mergeFamiliarConfigs(
         (typeof value === "string" && value.trim() === "")
       ) {
         delete next[key as keyof FamiliarBinding];
+      } else if (key === "omnigent" && value && typeof value === "object" && !Array.isArray(value)) {
+        // Replace (not deep-merge) so cleared fields in Studio drop prior values.
+        const merged = normalizeFamiliarOmnigent(value as FamiliarOmnigentBinding);
+        if (merged) next.omnigent = merged;
+        else delete next.omnigent;
       } else {
         (next as Record<string, unknown>)[key] = value;
       }
@@ -498,6 +580,10 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
     multiHost: normalizeMultiHostConfig({
       ...current.multiHost,
       ...(patch.multiHost ?? {}),
+    }),
+    omnigent: normalizeOmnigentConfig({
+      ...current.omnigent,
+      ...(patch.omnigent ?? {}),
     }),
     // Deep-merge defaults
     defaults: {
@@ -581,6 +667,7 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
 
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
   const f = config.familiars[familiarId] ?? {};
+  const omnigent = normalizeFamiliarOmnigent(f.omnigent ?? config.defaults.omnigent);
   return {
     harness: f.harness ?? config.defaults.harness,
     model: f.model ?? config.defaults.model,
@@ -597,6 +684,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     asanaEnabled: f.asanaEnabled,
     asanaWorkspaceGid: f.asanaWorkspaceGid,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
+    ...(omnigent ? { omnigent } : {}),
   };
 }
 

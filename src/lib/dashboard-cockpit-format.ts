@@ -155,3 +155,15 @@ export function confidenceColor(value: number): string {
 export function longDate(now: Date): string {
   return now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
+
+/** Truthful empty state for the GitHub panel, keyed on the token probe
+ *  (`GET /api/github/pat` → hasPat). `null` = the probe itself failed, so
+ *  neither "connected" nor "not connected" can honestly be claimed — keep the
+ *  ambiguous copy rather than fabricate certainty. Only the known-disconnected
+ *  branch offers the connect affordance; showing it to a connected user whose
+ *  feed is merely quiet would name the wrong fix. */
+export function githubEmptyState(connected: boolean | null): { copy: string; showConnect: boolean } {
+  if (connected === false) return { copy: "GitHub isn't connected.", showConnect: true };
+  if (connected === true) return { copy: "No GitHub activity right now.", showConnect: false };
+  return { copy: "No GitHub activity, or no token configured.", showConnect: false };
+}

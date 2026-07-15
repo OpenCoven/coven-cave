@@ -42,6 +42,12 @@ export type Familiar = {
   asanaEnabled?: boolean;
   /** Optional Asana workspace gid this familiar is scoped to. */
   asanaWorkspaceGid?: string;
+  /** Per-familiar Omnigent fleet defaults (agent / host / workspace on host). */
+  omnigent?: {
+    agentId?: string;
+    hostId?: string;
+    workspace?: string;
+  };
 };
 
 export type DaemonStatus = {

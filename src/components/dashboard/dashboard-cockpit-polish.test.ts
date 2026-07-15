@@ -75,4 +75,22 @@ assert.match(
   "Good-tone note is a wash over hairline, not a heavy green banner",
 );
 
+// ── GitHub empty state names the fix only when it IS the fix ─────────────────
+// The cockpit probes /api/github/pat (hasPat only — never the token) and the
+// panel offers Connect GitHub solely on a proven-disconnected probe; a failed
+// probe keeps the ambiguous copy instead of prescribing a fix that may not apply.
+assert.match(cockpit, /getJson<\{ hasPat: boolean \}>\("\/api\/github\/pat"\)/, "cockpit probes token presence");
+assert.match(cockpit, /connected=\{ghConnected\}/, "probe result reaches the GitHub panel");
+assert.match(panels, /githubEmptyState\(connected\)/, "empty copy derives from the shared truthful helper");
+assert.match(
+  panels,
+  /<a className="cockpit-connect focus-ring" href="\/\?mode=github">Connect GitHub<\/a>/,
+  "disconnected empty state carries the connect affordance into the GitHub surface",
+);
+assert.doesNotMatch(
+  panels,
+  /No GitHub activity, or no token configured/,
+  "the hedged dead-end copy no longer lives in the panel itself",
+);
+
 console.log("dashboard-cockpit-polish.test.ts: ok");

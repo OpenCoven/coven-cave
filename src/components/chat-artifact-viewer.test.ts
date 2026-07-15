@@ -19,8 +19,12 @@ assert.doesNotMatch(src, /cave:navigate-mode/, "artifact viewer no longer deep-l
 assert.match(src, /Saved to Canvas/, "after save, confirms inline instead of navigating");
 assert.doesNotMatch(src, /new\s+Blob\s*\(\s*\[\s*srcDoc\b/, "open-in-browser must not create same-origin blob URLs from untrusted artifacts");
 assert.doesNotMatch(src, /URL\s*\.\s*createObjectURL\s*\(/, "open-in-browser must not use same-origin object URLs for untrusted artifacts");
-assert.match(src, /data:text\/html;charset=utf-8,/, "open-in-browser uses an opaque-origin data URL");
-assert.match(src, /encodeURIComponent\s*\(\s*srcDoc\s*\)/, "open-in-browser must encode artifact HTML when building the data URL");
+// Top-level data: URLs are silently blocked as navigations by every engine
+// (window.open returns null without throwing) — the mechanism shipped dead
+// once (cave-e3ia) and must not come back.
+assert.doesNotMatch(src, /data:text\/html/, "open-in-browser must not rely on blocked top-level data: navigations");
+assert.match(src, /openArtifactInTab\s*\(\s*srcDoc\s*\)/, "open-in-browser routes through the sandboxed carrier (artifact-open.ts)");
+assert.match(src, /Pop-up blocked/, "popup blocking is surfaced to the user instead of failing silently");
 
 // Expand-to-fullscreen: a toggle action enters a fullscreen overlay, Escape
 // exits, and — critically — the overlay is PORTALED to document.body so it
