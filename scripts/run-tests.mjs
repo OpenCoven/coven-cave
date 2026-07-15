@@ -240,6 +240,7 @@ export const SUITES = {
     "src/lib/skill-templates.test.ts",
     "src/lib/skill-draft.test.ts",
     "src/lib/skill-build-format.test.ts",
+    "src/lib/skill-caveman.test.ts",
     "src/lib/skill-dryrun.test.ts",
     "src/lib/skill-agent-prompt.test.ts",
     "src/components/terminal-scope.test.ts",
