@@ -23,8 +23,7 @@ import {
 import { deriveConfidenceScore, type ConfidenceScore } from "@/lib/familiar-confidence";
 import { deriveGrowthReport } from "@/lib/familiar-growth-signals";
 import { buildFamiliarCardStats, type FamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
-import type { ContractReport } from "@/lib/familiar-contract";
-import type { RetroRunsSnapshot } from "@/lib/retro-runs";
+import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
@@ -63,11 +62,6 @@ type CockpitData = {
 const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [], memory: [], space: [] };
 
 const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
-
-// Contracts are fetched per-familiar; bound the fan-out for large covens. Rows
-// beyond the cap still show activity/health (which need no contract) — they
-// just read "—" for confidence.
-const CONTRACT_FETCH_CAP = 12;
 
 // A KPI tile's visual props plus the data plumbing the root owns: which trend
 // metric feeds its sparkline and which fetch source gates its loading state.
@@ -183,29 +177,11 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
 
   // ── Per-familiar contract fetch (bounded) + one shared retro-runs snapshot.
   //    Keyed on the visible familiar set; rows recompute from live sessions. ──
-  const [confidenceRaw, setConfidenceRaw] = useState<{
-    contractsById: Map<string, ContractReport | null>; snapshot: RetroRunsSnapshot | null;
-  } | null>(null);
-  const contractFams = data.familiars.slice(0, CONTRACT_FETCH_CAP);
-  const contractKey = contractFams.map((f) => f.id).join(",");
-  const contractFetchedCount = contractFams.length;
-  const contractFetchPartial = data.familiars.length > contractFetchedCount;
-  useEffect(() => {
-    if (!contractKey) { setConfidenceRaw(null); return; }
-    let alive = true;
-    const ids = contractKey.split(",");
-    void Promise.all([
-      getJson<{ snapshot?: RetroRunsSnapshot }>("/api/retro-runs"),
-      ...ids.map((id) => getJson<{ report?: ContractReport }>(`/api/familiars/${encodeURIComponent(id)}/contract`)),
-    ]).then(([retro, ...contracts]) => {
-      if (!alive || !aliveRef.current) return;
-      const contractsById = new Map<string, ContractReport | null>();
-      ids.forEach((id, i) => contractsById.set(id, contracts[i]?.report ?? null));
-      setConfidenceRaw({ contractsById, snapshot: retro?.snapshot ?? null });
-    });
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractKey]);
+  const {
+    contracts: confidenceRaw,
+    fetchedCount: contractFetchedCount,
+    partial: contractFetchPartial,
+  } = useFamiliarContracts(data.familiars);
 
   // ── Per-familiar insight rows (+ full confidence for the heatmap). Growth and
   //    activity derive from sessions/memory for every familiar; confidence only

@@ -648,6 +648,7 @@ export const SUITES = {
     "src/lib/composer-history.test.ts",
     "src/lib/appearance-corner-radius.test.ts",
     "src/lib/use-changes-summary.test.ts",
+    "src/lib/use-familiar-contracts.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
     "src/components/composer-density.test.ts",
     "src/lib/memory-rows.test.ts",
