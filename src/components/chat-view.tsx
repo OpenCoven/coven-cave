@@ -99,6 +99,7 @@ import { extractNextPaths } from "@/lib/next-paths";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { GitHubCard } from "@/components/github-card";
+import { GitHubActionCard } from "@/components/github-action-card";
 import { SkillStageCard } from "@/components/skill-stage-card";
 import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
@@ -5967,6 +5968,14 @@ function splitSegmentsForGitHub(
     pieces.forEach((p, pi) => {
       if (p.kind === "text") {
         if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else if (p.kind === "action") {
+        // Agent-proposed write (design §3): always a proposal card — never
+        // auto-fired — regardless of the action kind's tier.
+        out.push({
+          kind: "block",
+          key: `gh-action-${si}-${pi}-${p.action.kind}`,
+          node: <GitHubActionCard action={p.action} />,
+        });
       } else {
         out.push({
           kind: "block",

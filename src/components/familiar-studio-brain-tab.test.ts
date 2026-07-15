@@ -126,4 +126,64 @@ assert.match(source, /role="switch"[\s\S]{0,80}aria-checked=\{draftAutoSelfRepor
 assert.match(source, /autoSelfReport: next \? true : null/, "off deletes the config key instead of writing false");
 assert.match(source, /if \("autoSelfReport" in patch\) setDraftAutoSelfReport/, "failed saves revert the toggle draft");
 
+// ── Voice picker: traits + preview (2026-07-15) ──────────────────────────────
+// The OpenAI voice menu is sourced from the shared realtime-voice catalog so
+// every option carries a perceived gender/accent/vibe detail line, and both
+// providers get a play/stop preview button beside the voice control.
+assert.match(
+  source,
+  /OPENAI_REALTIME_VOICES\.map\(\(voice\) => \(\{[\s\S]{0,200}detail: openAiVoiceDetail\(voice\)/,
+  "voice options come from the catalog with a gender/accent/vibe detail line",
+);
+assert.doesNotMatch(
+  source,
+  /\{ value: "alloy", label: "alloy" \}/,
+  "hand-rolled voice options are gone — the catalog is the single source",
+);
+assert.match(
+  source,
+  /openAiVoiceDetail\(selectedOpenAiVoice\)/,
+  "the current pick's traits stay visible under the closed select",
+);
+assert.match(
+  source,
+  /\/api\/voice\/preview\?voice=/,
+  "OpenAI previews fetch the server-minted sample (fetch carries the sidecar token)",
+);
+assert.match(
+  source,
+  /URL\.createObjectURL\(blob\)/,
+  "preview audio plays from a blob URL, not a bare <audio src> (auth bridge)",
+);
+assert.match(
+  source,
+  /SpeechSynthesisUtterance/,
+  "the local provider previews through the system synthesizer",
+);
+assert.match(
+  source,
+  /aria-label=\{previewActive \? "Stop voice preview" : "Preview voice"\}/,
+  "the preview button announces its play/stop state",
+);
+assert.match(
+  source,
+  /const previewActive = previewStatus !== "idle"/,
+  "loading is cancellable — the button reads Stop for any non-idle state instead of disabling",
+);
+assert.doesNotMatch(
+  source,
+  /disabled=\{previewStatus/,
+  "the preview button must not disable during loading (users can cancel in-flight previews)",
+);
+assert.match(
+  source,
+  /const gen = \+\+previewGenRef\.current/,
+  "in-flight previews are generation-guarded so stop can't be overtaken by late audio",
+);
+assert.match(
+  css,
+  /\.familiar-studio-brain__voice-preview\s*\{/,
+  "the preview button has dedicated styling beside the voice select",
+);
+
 console.log("familiar-studio-brain-tab.test.ts: ok");

@@ -165,3 +165,28 @@ Stage exists in silos, none rendered inside the chat thread:
 
 Required checks (live-verified 2026-07-14): Frontend build, Rust check,
 E2E (Playwright), Cross-environment required, Sidecar runtime required.
+
+---
+
+## Postscript: VERIFY re-audit (2026-07-15, cave-fpqx.5)
+
+Every gap in §7 closed across seven merged waves (all required checks green;
+design: [chat-github-integration.md](../chat-github-integration.md)):
+
+| §7 gap | Shipped by |
+| --- | --- |
+| 1. Inline GitHub cards in the transcript | W1a #3166 (markers + bare-line unfurl + Issue/PR cards) · W1b #3167 (checks strip, review threads, in-place expansion) |
+| 2. GitHub write actions | W2a #3170 (issue create/state, commit, runs + tier-1 card actions) · W2b #3183 (review/merge/rerun/dispatch, tier-2 confirm strip, agent proposal cards that never auto-fire, daemon-less e2e) |
+| 3. Rail GitHub-awareness | W5 #3178 (failing-checks badge on the rail strip + collapsed reopen, fed by the stage broadcast — reveal resolver untouched) |
+| 4. Skill-stage surfacing | W4 #3175 (`<coven:skill>` markers → SkillStageCard on streaming+settled turns; deterministic `/skill` invoked card; AssistantFilter passthrough pinned) |
+| 5. Unified stage chip | W3 #3173+#3174 (`stage-model.ts` shared by queue + new chat stage header: bead → PR → checks → review → merged) |
+
+Updated capability verdicts: §1 rail GitHub signals EXISTS (badge);
+§2 inline issue/PR/check/review cards EXISTS; §4 write side EXISTS
+(issue create/close, PR create remains out of scope by design, review
+submit, merge, re-run, dispatch); §5 in-thread skill stage EXISTS;
+§6 unified stage model + in-thread stage EXISTS.
+
+Residual follow-ups (non-blocking, filed as beads): commit/run card
+hydration, review-thread in-place reply, marker adoption prompt directive,
+failing-tint consistency.

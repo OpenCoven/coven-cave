@@ -6896,6 +6896,16 @@ a.mobile-handoff__link:hover {
   resize: vertical;
 }
 .familiar-studio-brain__toast { font-size: 11px; color: var(--color-warning); margin: 0; }
+/* Voice preview: speaker/stop IconButton framed like the input beside it. */
+.familiar-studio-brain__voice-preview {
+  align-self: stretch;
+  height: auto;
+  width: 34px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  border-radius: var(--radius-control);
+}
+.familiar-studio-brain__voice-preview:hover { border-color: var(--accent-presence); }
 .familiar-studio-brain__capabilities {
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-card);

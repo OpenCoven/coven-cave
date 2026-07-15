@@ -75,6 +75,19 @@ export type ResearchMissionRunnerDeps = {
   ): Promise<ResearchFlowStartResult>;
   loadFlowRun(id: string): Promise<FlowRunRecord | null>;
   loadConversation(sessionId: string): Promise<ConversationFile | null>;
+  /**
+   * Liveness of the agent session carrying the current iteration:
+   * - "running": still working — leave the mission running.
+   * - "finished": exited cleanly — reconcile from its transcript now (the
+   *   flow-run record alone never flips, so without this probe a finished
+   *   iteration reads "running" forever — cave-ibb7).
+   * - "gone": died, was killed, or the daemon no longer knows it — the
+   *   mission fails with Retry enabled instead of hanging.
+   * - "unknown": can't tell (daemon unreachable) — change nothing.
+   */
+  sessionState(sessionId: string): Promise<"running" | "finished" | "gone" | "unknown">;
+  /** Best transcript available for a flow session (conversation → JSONL → daemon events). */
+  readSessionTranscript(sessionId: string): Promise<string>;
   readMissionFile(id: string, relativePath: string): Promise<string | null>;
   readSources(id: string): Promise<ResearchSourceRef[]>;
   publishKnowledge(entry: KnowledgeEntry): Promise<KnowledgeEntry>;
@@ -203,6 +216,20 @@ function applyStartResult(
   };
 }
 
+/** A just-started session may not be observable yet — don't declare a
+ *  running iteration dead within its first minute (registration races). */
+const SESSION_STARTUP_GRACE_MS = 60_000;
+
+export function withinStartupGrace(startedAt: string | undefined, now: Date): boolean {
+  if (!startedAt) return false;
+  const started = Date.parse(startedAt);
+  if (Number.isNaN(started)) return false;
+  // Symmetric window: a slightly-future startedAt (clock skew) still gets
+  // grace, but a far-future one (bad data) can't suppress dead-session
+  // detection indefinitely.
+  return Math.abs(now.getTime() - started) < SESSION_STARTUP_GRACE_MS;
+}
+
 function conversationTranscript(conversation: ConversationFile | null): string {
   return (conversation?.turns ?? [])
     .filter((turn) => turn.role === "assistant")
@@ -319,7 +346,11 @@ async function reconcileCompletedRun(
   transcriptOverride?: string,
 ): Promise<ResearchMission> {
   const iteration = mission.iterations[iterationIndex];
-  const conversation = transcriptOverride === undefined && iteration.sessionId
+  // The conversation is loaded even when a transcript override is supplied:
+  // the override only replaces the transcript TEXT — reported cost still
+  // lives on the conversation turns and must keep feeding costUsd (and with
+  // it stopWhenCostUnavailable / maxSpendUsd policy).
+  const conversation = iteration.sessionId
     ? await deps.loadConversation(iteration.sessionId)
     : null;
   const control = parseResearchControl(transcriptOverride ?? conversationTranscript(conversation));
@@ -824,6 +855,36 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     const run = await deps.loadFlowRun(iteration.flowRunId);
     if (!run) return mission;
     if (run.status === "running" || run.status === "queued") {
+      // The flow-run record only says the run was STARTED — nothing flips it
+      // when the underlying agent session ends, so probe the session itself
+      // (cave-ibb7). A finished session reconciles from its transcript; a dead
+      // one fails the mission with Retry enabled instead of hanging forever.
+      if (run.status === "running" && iteration.sessionId) {
+        const state = await deps.sessionState(iteration.sessionId);
+        if (state === "finished") {
+          const transcript = await deps.readSessionTranscript(iteration.sessionId);
+          const reconciled = await reconcileCompletedRun(mission, iterationIndex, deps, transcript);
+          await deps.saveMission(reconciled);
+          return reconciled;
+        }
+        if (state === "gone" && !withinStartupGrace(iteration.startedAt, deps.now())) {
+          const timestamp = deps.now().toISOString();
+          const failed: ResearchMission = {
+            ...mission,
+            status: "failed",
+            updatedAt: timestamp,
+            lastError: "The research session ended without reporting — Retry starts a fresh iteration.",
+            iterations: mission.iterations.map((item, index) => index === iterationIndex ? {
+              ...item,
+              status: "failed",
+              finishedAt: timestamp,
+              summary: "Session ended without control markers",
+            } : item),
+          };
+          await deps.saveMission(failed);
+          return failed;
+        }
+      }
       const activeStatus: "running" | "queued" = run.status === "queued" ? "queued" : "running";
       const synced: ResearchMission = {
         ...mission,
@@ -1015,6 +1076,40 @@ export function makeProductionResearchMissionRunner() {
       if (!response.ok && !sessionAlreadyGone(response)) {
         throw new Error(response.error ?? "Research session could not be cancelled");
       }
+    },
+    sessionState: async (sessionId) => {
+      // Cave-direct copilot runs never exist on the daemon — the in-process
+      // registry is their only live signal (flow-copilot-session, cave-lhc0).
+      const { isCopilotFlowRunActive } = await import("./flow-copilot-session.ts");
+      if (isCopilotFlowRunActive(sessionId)) return "running";
+      // A persisted conversation with assistant output means the run finished
+      // and its transcript is readable (direct runs write it at close).
+      const { loadConversation } = await import("../cave-conversations.ts");
+      const conversation = await loadConversation(sessionId);
+      if (conversation?.turns?.some((turn) => turn.role === "assistant" && turn.text?.trim())) {
+        return "finished";
+      }
+      const { callDaemon } = await import("../coven-daemon.ts");
+      const res = await callDaemon<Array<{ id: string; status?: string; exit_code?: number | null }>>({
+        path: "/api/v1/sessions",
+        timeoutMs: 4_000,
+      });
+      if (!res.ok || !Array.isArray(res.data)) return "unknown";
+      const session = res.data.find((item) => item.id === sessionId);
+      if (!session) return "gone";
+      const status = (session.status ?? "").toLowerCase();
+      if (status === "completed" && (session.exit_code ?? 0) === 0) return "finished";
+      if (
+        ["failed", "killed", "exited", "dead", "stopped", "cancelled"].includes(status) ||
+        (session.exit_code ?? 0) !== 0
+      ) {
+        return "gone";
+      }
+      return "running";
+    },
+    readSessionTranscript: async (sessionId) => {
+      const { flowSessionTranscript } = await import("./flow-session-transcript.ts");
+      return flowSessionTranscript(sessionId);
     },
     createAutomation: async (input) => {
       const { createCodexAutomation } = await import("../codex-automations.ts");

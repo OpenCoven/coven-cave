@@ -8,6 +8,7 @@ import {
   makeResearchMissionRunner,
   parseResearchSourcesFile,
   sessionAlreadyGone,
+  withinStartupGrace,
   type ResearchMissionRunnerDeps,
 } from "./research-mission-runner.ts";
 
@@ -59,6 +60,8 @@ function deps(overrides: Partial<ResearchMissionRunnerDeps> = {}): ResearchMissi
     }),
     loadFlowRun: async () => null,
     loadConversation: async () => null,
+    sessionState: async () => "unknown",
+    readSessionTranscript: async () => "",
     readMissionFile: async () => null,
     readSources: async () => [],
     publishKnowledge: async (entry) => entry,
@@ -922,4 +925,97 @@ test("cancel treats an already-gone session as stopped (cave-malz)", () => {
   assert.equal(sessionAlreadyGone({ ok: false, status: 502 }), false);
   // A successful kill was a genuinely running session, not a gone one.
   assert.equal(sessionAlreadyGone({ ok: true, status: 200 }), false);
+});
+
+// ── Dead/finished session detection during flow reconcile (cave-ibb7) ─────────
+// The flow-run record only says a run STARTED; nothing flips it when the
+// underlying agent session ends. Reconcile probes the session itself.
+
+test("a finished session reconciles from its transcript while the flow run still says running", async () => {
+  const published: string[] = [];
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "running" }),
+    sessionState: async () => "finished",
+    readSessionTranscript: async () => [
+      "@@research-control",
+      '{"decision":"complete","reason":"Enough evidence","confidence":0.9}',
+      "@@research-artifacts-written",
+    ].join("\n"),
+    // The transcript override must not cost the mission its reported spend —
+    // costUsd still comes from the persisted conversation turns.
+    loadConversation: async () => ({
+      sessionId: "session-1",
+      familiarId: "sage",
+      harness: "codex",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+      turns: [{
+        id: "turn-1",
+        role: "assistant",
+        text: "narrative without markers",
+        costUsd: 1.25,
+        createdAt: NOW.toISOString(),
+      }],
+    }),
+    readMissionFile: async (_id, relativePath) =>
+      relativePath === "artifacts/primary.md" ? "# Evidence-backed answer\n" : null,
+    publishKnowledge: async (entry) => {
+      published.push(entry.body);
+      return entry;
+    },
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+  assert.equal(result.status, "completed");
+  assert.equal(result.iterations[0].status, "completed");
+  assert.equal(result.iterations[0].costUsd, 1.25);
+  assert.equal(published.length, 1);
+});
+
+test("a dead session fails the mission with Retry enabled instead of hanging", async () => {
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "running" }),
+    sessionState: async () => "gone",
+    // Two minutes after start — safely past the startup grace window.
+    now: () => new Date(NOW.getTime() + 120_000),
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+  assert.equal(result.status, "failed");
+  assert.equal(result.iterations[0].status, "failed");
+  assert.match(result.lastError ?? "", /Retry starts a fresh iteration/);
+  assert.ok(allowedResearchActions(result).includes("retry"), "failed missions offer Retry");
+});
+
+test("a gone-looking session within startup grace stays running (registration races)", async () => {
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "running" }),
+    sessionState: async () => "gone",
+    // deps.now() === iteration.startedAt — inside the grace window.
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+  assert.equal(result.status, "running");
+});
+
+test("an unknown session state (daemon unreachable) changes nothing", async () => {
+  const runner = makeResearchMissionRunner(deps({
+    loadFlowRun: async () => ({ ...RUN, status: "running" }),
+    sessionState: async () => "unknown",
+    now: () => new Date(NOW.getTime() + 120_000),
+  }));
+  const started = await runner.createAndStart(INPUT);
+  const result = await runner.reconcile(started);
+  assert.equal(result.status, "running");
+});
+
+test("withinStartupGrace bounds the dead-session verdict", () => {
+  const now = new Date("2026-07-15T00:10:00Z");
+  assert.equal(withinStartupGrace("2026-07-15T00:09:30Z", now), true);  // 30s old
+  assert.equal(withinStartupGrace("2026-07-15T00:08:00Z", now), false); // 2m old
+  // Clock skew gets grace, but far-future bad data can't suppress detection.
+  assert.equal(withinStartupGrace("2026-07-15T00:10:30Z", now), true);  // 30s ahead
+  assert.equal(withinStartupGrace("2026-07-15T00:20:00Z", now), false); // 10m ahead
+  assert.equal(withinStartupGrace(undefined, now), false);
+  assert.equal(withinStartupGrace("not-a-date", now), false);
 });
