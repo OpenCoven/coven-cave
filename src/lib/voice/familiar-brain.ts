@@ -10,7 +10,8 @@
 // `persistsTranscripts` tells the overlay NOT to double-append transcripts).
 //
 // Ears and mouth ride the shared speech loop (speech-loop.ts): device
-// SpeechRecognition in, system speechSynthesis out. Latency discipline: the
+// recognition in (Web Speech, or on-device SFSpeechRecognizer in the macOS
+// desktop shell), system speechSynthesis out. Latency discipline: the
 // reply streams, and complete sentences are voiced as they arrive — the
 // familiar starts talking before its harness turn finishes.
 

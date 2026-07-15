@@ -3,9 +3,10 @@
 // The realtime cloud providers ARE the conversational brain; a local call
 // assembles its own loop out of three local parts (the shared scaffold lives
 // in speech-loop.ts):
-//   ears  — SpeechRecognition where the WebView has it (Chrome web builds).
-//           WKWebView has none: native SFSpeechRecognizer (cave-0ogg) and the
-//           sidecar Whisper engine (cave-vony) are the tracked follow-ups.
+//   ears  — SpeechRecognition where the WebView has it (Chrome web builds),
+//           or on-device SFSpeechRecognizer through the Tauri shell on macOS
+//           (native-mac-ears.ts, cave-0ogg); the sidecar Whisper engine
+//           (cave-vony) is the tracked follow-up.
 //   brain — an OpenAI-compatible loopback server (Ollama / LM Studio) proxied
 //           through /api/voice/local/chat so CORS and base-url config stay
 //           server-owned. `voiceModel` names the local model.

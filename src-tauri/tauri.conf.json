@@ -52,6 +52,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    },
     "iOS": {
       "developmentTeam": "9LR8Z8UQ9X"
     },

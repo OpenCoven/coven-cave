@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the macOS bundle's Info.plist by Tauri (and embedded into
+     dev binaries), so TCC prompts for the voice call surfaces work. Without
+     NSSpeechRecognitionUsageDescription, SFSpeechRecognizer's
+     requestAuthorization call aborts the process outright. -->
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>CovenCave uses the microphone for voice calls with your familiars.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>CovenCave transcribes your voice on this Mac so familiars can hear you without sending audio to the cloud.</string>
+</dict>
+</plist>

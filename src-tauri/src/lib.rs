@@ -2486,6 +2486,8 @@ mod tests {
 mod browser;
 #[cfg(desktop)]
 mod pty;
+#[cfg(desktop)]
+mod speech;
 #[cfg(all(desktop, target_os = "windows"))]
 mod sidecar_archive;
 #[cfg(all(desktop, target_os = "windows"))]
@@ -2945,6 +2947,8 @@ pub fn run() {
             browser::browser_report_user_navigation,
             browser::browser_report_title,
             browser::browser_report_scroll,
+            speech::speech_stt_probe,
+            speech::speech_stt_transcribe,
             shell_open,
             shell_open_path,
             shell_pick_directory,

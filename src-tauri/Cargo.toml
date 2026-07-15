@@ -72,3 +72,27 @@ window-vibrancy = "0.6"
 # Raw msg_send access to NSWindow's standard buttons (traffic-light
 # show/hide follows the side panel); already in the tree via tauri/wry.
 objc2 = "0.6"
+# On-device speech-to-text (cave-0ogg): the packaged WKWebView has no Web
+# Speech recognition engine, so the voice speech loop's ears call
+# SFSpeechRecognizer through the speech.rs commands. Feature-trimmed to the
+# URL-file request path — no AVAudio buffer streaming, so the avf-audio and
+# core-media binding crates stay out of the tree.
+objc2-speech = { version = "0.3.2", default-features = false, features = [
+  "std",
+  "block2",
+  "SFSpeechRecognizer",
+  "SFSpeechRecognitionRequest",
+  "SFSpeechRecognitionResult",
+  "SFSpeechRecognitionTask",
+  "SFSpeechRecognitionTaskHint",
+  "SFTranscription",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSString",
+  "NSURL",
+  "NSLocale",
+  "NSError",
+] }
+block2 = "0.6"
+base64 = "0.21"
