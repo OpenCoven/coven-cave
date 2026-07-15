@@ -16,10 +16,10 @@ assert.match(
   "Automation detail should compose distinct inputs back into the prompt payload",
 );
 
-assert.match(source, /<FieldLabel>Goals<\/FieldLabel>/, "Automation detail should show a Goals input");
+assert.match(source, /<FieldLabel htmlFor=\{`cron-goals-\$\{auto\.id\}`\}>Goals<\/FieldLabel>/, "Automation detail should show a Goals input");
 assert.match(
   source,
-  /<FieldLabel>Deliverables<\/FieldLabel>/,
+  /<FieldLabel htmlFor=\{`cron-deliverables-\$\{auto\.id\}`\}>Deliverables<\/FieldLabel>/,
   "Automation detail should show a Deliverables input",
 );
 
@@ -97,3 +97,19 @@ assert.match(
   /function linkLabel/,
   "Should derive a sensible label per link kind",
 );
+// ── Field a11y (cave-dgli) ───────────────────────────────────────────────────
+// Detail-form labels are programmatically associated (FieldLabel htmlFor +
+// input id), bare schedule controls carry aria-labels, and the run-status
+// signal is a status-shaped icon (not a color-only dot).
+assert.match(source, /function FieldLabel\(\{ htmlFor, children \}/, "FieldLabel supports htmlFor association");
+for (const f of ["name", "tags", "goals", "deliverables", "model"]) {
+  assert.match(source, new RegExp(String.raw`htmlFor=\{\x60cron-${f}-\$\{auto\.id\}\x60\}`), `the ${f} field label points at its control`);
+  assert.match(source, new RegExp(String.raw`id=\{\x60cron-${f}-\$\{auto\.id\}\x60\}`), `the ${f} control carries its id`);
+}
+assert.match(source, /aria-label="Schedule time"/, "the schedule time input is named");
+assert.match(source, /aria-label="Raw RRULE"/, "the raw RRULE textarea is named");
+assert.match(source, /runStatusIcon\(r\.status\)/, "run rows encode status by icon shape, not color alone");
+{
+  const cwd = await readFile(new URL("./cwd-picker-field.tsx", import.meta.url), "utf8");
+  assert.match(cwd, /aria-label="Working directories, one per line"/, "the cwd textarea is named");
+}

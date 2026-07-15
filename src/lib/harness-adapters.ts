@@ -1,3 +1,5 @@
+import { REGISTRY_RUNTIMES } from "./runtime-registry.gen.ts";
+
 export type CompatibilityAdapter = {
   id: string;
   label: string;
@@ -5,7 +7,7 @@ export type CompatibilityAdapter = {
   chatSupported: boolean;
   versionArgs?: string[];
   installHint: string;
-  source: "bundled";
+  source: "bundled" | "registry";
 };
 
 export type LocalAdapterReport = CompatibilityAdapter & {
@@ -47,7 +49,9 @@ export type AdapterManifestScaffold = {
   contents: string;
 };
 
-export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
+// The hand-curated seed: Cave-specific labels, install copy, and probe args.
+// Curated entries win over registry entries with the same id.
+const CURATED_ADAPTERS: CompatibilityAdapter[] = [
   {
     id: "codex",
     label: "Codex",
@@ -65,6 +69,16 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     versionArgs: ["--version"],
     installHint:
       "Install Claude Code with `npm install -g @anthropic-ai/claude-code`, then run `claude doctor`.",
+    source: "bundled",
+  },
+  {
+    id: "copilot",
+    label: "Copilot",
+    binary: "copilot",
+    chatSupported: true,
+    versionArgs: ["--version"],
+    installHint:
+      "Install GitHub Copilot CLI with `npm install -g @github/copilot`, then run `copilot` and sign in with `/login`. Cave creates its Coven adapter manifest.",
     source: "bundled",
   },
   {
@@ -86,6 +100,41 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     source: "bundled",
   },
 ];
+
+// Registry-accepted runtimes (synced from OpenCoven/coven-runtimes by
+// `pnpm sync:runtimes`) extend the curated seed. Acceptance into the registry
+// carries conformance testing + review, so these are chat-trusted on par with
+// the bundled five. Curated entries keep their richer Cave-specific copy.
+const REGISTRY_ADAPTERS: CompatibilityAdapter[] = REGISTRY_RUNTIMES.filter(
+  (runtime) => !CURATED_ADAPTERS.some((adapter) => adapter.id === runtime.id),
+)
+  .map((runtime) => ({
+    id: runtime.id,
+    label: runtime.label,
+    binary: runtime.binary,
+    chatSupported: true,
+    installHint: runtime.installHint,
+    source: "registry" as const,
+  }))
+  .sort((a, b) => a.id.localeCompare(b.id));
+
+export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
+  ...CURATED_ADAPTERS,
+  ...REGISTRY_ADAPTERS,
+];
+
+// The familiar creation flow can only complete local/SSH summoning for the
+// runtimes it has explicit setup/copy/model behavior for today. OpenClaw is a
+// separate agent vessel, and registry additions stay hidden here until the
+// circle grows first-class support for their install and binding flow.
+export const SUMMONABLE_LOCAL_HARNESS_IDS = [
+  "codex",
+  "claude",
+  "copilot",
+  "hermes",
+] as const;
+
+const SUMMONABLE_LOCAL_HARNESSES = new Set<string>(SUMMONABLE_LOCAL_HARNESS_IDS);
 
 const TRUSTED_ONBOARDING_HARNESSES = new Set(
   COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id),
@@ -111,6 +160,10 @@ const HARNESS_ALIASES: Record<string, string> = {
   "hermes-agent": "hermes",
   "claude-code": "claude",
   "openai-codex": "codex",
+  "github-copilot": "copilot",
+  "copilot-cli": "copilot",
+  // OpenCode's npm package is `opencode-ai` (its binary is `opencode`).
+  "opencode-ai": "opencode",
 };
 
 export function canonicalHarnessId(harness: string): string {
@@ -129,18 +182,38 @@ export function isTrustedChatHarness(harness: string): boolean {
   return TRUSTED_CHAT_HARNESSES.has(canonicalHarnessId(harness));
 }
 
+export function isSummonableLocalHarness(harness: string): boolean {
+  return SUMMONABLE_LOCAL_HARNESSES.has(canonicalHarnessId(harness));
+}
+
+// The single display-label authority for runtime/harness ids: curated Cave
+// copy wins, then the synced registry's accepted label, then the raw id.
+// UI surfaces (runtime logo, capabilities map, adapter rows) should delegate
+// here instead of keeping their own label tables, which have drifted before
+// ("Copilot" vs "GitHub Copilot" vs the registry's "GitHub Copilot CLI").
+export function runtimeDisplayLabel(runtime: string): string {
+  const id = canonicalHarnessId(runtime);
+  const curated = COMPATIBILITY_ADAPTERS.find((adapter) => adapter.id === id);
+  if (curated) return curated.label;
+  const registry = REGISTRY_RUNTIMES.find((entry) => entry.id === id);
+  return registry?.label ?? runtime;
+}
+
 export function openClawAdapterReport(openclawAgentCount: number): AdapterReport {
+  // Identity/copy comes from the curated entry — the two used to be
+  // copy-pasted twins and drifted one edit at a time.
+  const curated = CURATED_ADAPTERS.find((adapter) => adapter.id === "openclaw")!;
   return {
-    id: "openclaw",
-    label: "OpenClaw",
-    binary: "openclaw",
-    chatSupported: true,
+    id: curated.id,
+    label: curated.label,
+    binary: curated.binary,
+    chatSupported: curated.chatSupported,
     installed: openclawAgentCount > 0,
     path: null,
     version: openclawAgentCount > 0
       ? `${openclawAgentCount} agent${openclawAgentCount === 1 ? "" : "s"}`
       : null,
-    installHint: "Install OpenClaw with `npm install -g openclaw@latest`, then connect or create an agent under ~/.openclaw/agents.",
+    installHint: curated.installHint,
     source: "openclaw",
     manifestPath: null,
   };
@@ -165,6 +238,16 @@ export function covenRunSupportsModelFlag(helpText: string): boolean {
 export function covenRunSupportsPermissionFlag(helpText: string): boolean {
   if (typeof helpText !== "string" || !helpText) return false;
   return /(^|\s)--permission(?![\w-])/m.test(helpText);
+}
+
+// Gated-forwarding probe for `coven run --add-dir <DIR>` (repeatable). Granted
+// project roots are only real grants if the spawned harness also trusts those
+// directories — the runtime-scope preamble alone leaves the harness denying
+// every access outside its cwd. Forwarding stays a no-op on CLIs that predate
+// the flag, since `coven run` rejects unknown flags.
+export function covenRunSupportsAddDirFlag(helpText: string): boolean {
+  if (typeof helpText !== "string" || !helpText) return false;
+  return /(^|\s)--add-dir(?![\w-])/m.test(helpText);
 }
 
 export function mergeAdapterReports(
@@ -201,7 +284,10 @@ export function mergeAdapterReports(
     const existing = merged.get(coven.id);
     merged.set(coven.id, {
       id: coven.id,
-      label: coven.label,
+      // Cave's curated label wins over the daemon manifest's — otherwise a
+      // registry-scaffolded manifest ("GitHub Copilot CLI") silently flips
+      // the adapters list away from Cave's copy ("Copilot").
+      label: existing?.label ?? coven.label,
       binary: coven.executable,
       chatSupported: existing?.chatSupported ?? isTrustedChatHarness(coven.id),
       installed: coven.available || existing?.installed === true,
@@ -213,11 +299,14 @@ export function mergeAdapterReports(
     });
   }
 
-  return [...merged.values()].sort((a, b) => {
-    const rank = (id: string) =>
-      id === "codex" ? 0 : id === "claude" ? 1 : id === "hermes" ? 2 : id === "openclaw" ? 3 : 4;
-    return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
-  });
+  // Curated adapters keep their seed order; registry additions follow
+  // alphabetically (COMPATIBILITY_ADAPTERS already encodes both). Built once
+  // per merge — not inside the comparator, which runs O(n log n) times.
+  const rankById = new Map(COMPATIBILITY_ADAPTERS.map((adapter, index) => [adapter.id, index]));
+  const rank = (id: string) => rankById.get(id) ?? COMPATIBILITY_ADAPTERS.length;
+  return [...merged.values()].sort(
+    (a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label),
+  );
 }
 
 export function adapterSetupState(reports: AdapterReport[]): AdapterSetupState {
@@ -230,7 +319,7 @@ export function adapterSetupState(reports: AdapterReport[]): AdapterSetupState {
   }
   return {
     ok: false,
-    hint: "Install Codex, Claude Code, Hermes, or connect an OpenClaw agent, then re-check. External adapters can also be added with Coven adapter manifests.",
+    hint: "Install a supported runtime (Codex, Claude Code, Copilot, Hermes, a registry runtime, or an OpenClaw agent), then re-check. External adapters can also be added with Coven adapter manifests.",
   };
 }
 
@@ -249,35 +338,19 @@ export function runtimeSourceSetupState(
   return local;
 }
 
+// Adapter manifests come straight from the synced coven-runtimes registry:
+// every scaffold is the exact conformance-tested $COVEN_HOME/adapters document
+// that was accepted upstream (copilot and hermes included — their hand-written
+// Cave copies were retired in favor of the registry versions, cave-laxg).
 export function adapterManifestScaffoldForHarness(
   harnessId: string,
 ): AdapterManifestScaffold | null {
-  if (harnessId !== "hermes") return null;
+  const registry = REGISTRY_RUNTIMES.find(
+    (runtime) => runtime.id === canonicalHarnessId(harnessId),
+  );
+  if (!registry) return null;
   return {
-    filename: "hermes.json",
-    contents: `${JSON.stringify(
-      {
-        adapters: [
-          {
-            id: "hermes",
-            label: "Hermes",
-            executable: "hermes",
-            interactive_prompt_prefix_args: ["chat", "--source", "coven", "-q"],
-            non_interactive_prompt_prefix_args: [
-              "chat",
-              "--source",
-              "coven",
-              "-Q",
-              "-q",
-            ],
-            install_hint:
-              "Install Hermes with the official script (github.com/NousResearch/hermes-agent#quick-install), run `hermes setup`, and make sure `hermes` is on PATH before using this adapter.",
-            system_prompt_flag: null,
-          },
-        ],
-      },
-      null,
-      2,
-    )}\n`,
+    filename: `${registry.id}.json`,
+    contents: `${JSON.stringify(registry.adapterManifest, null, 2)}\n`,
   };
 }

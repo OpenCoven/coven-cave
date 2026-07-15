@@ -10,6 +10,10 @@
  *   4. vault.yaml has a ref for this key → resolve via `op read`
  *   5. undefined
  *
+ * The vault.yaml mapping declares which backend a key uses: when it carries a
+ * ref (and is not declared `storage: "encrypted"`), the ref wins — a stale or
+ * orphaned entry left behind in the local encrypted store must never shadow it.
+ *
  * Resolved values are cached in process.env for the lifetime of the process
  * so subsequent calls are instant. The raw secret value is NEVER written to
  * any file — it lives only in process memory.
@@ -17,29 +21,67 @@
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Who a vault key is injected for at harness-spawn time.
+ * - `"shared"` (or absent): every spawn — backward-compatible default.
+ * - `string[]`: only harness sessions of the listed familiar ids; an empty
+ *   list grants nobody (the Cave server can still resolve the key itself).
+ */
+export type VaultScope = "shared" | string[];
+
 export type VaultEntry = {
   ref?: string;
-  storage?: "1password" | "encrypted";
+  storage?: "1password" | "encrypted" | "dashlane";
   description?: string;
   required?: boolean;
+  scope?: VaultScope;
 };
 
 export type VaultMap = Record<string, VaultEntry>;
+
+/**
+ * Normalize a raw `scope` value from vault.yaml. Absent/`"shared"` → shared;
+ * a bare familiar name → single-item grant list; malformed shapes fail closed
+ * (scoped to nobody) so a typo never widens access.
+ */
+export function normalizeVaultScope(scope: unknown): VaultScope {
+  if (scope == null) return "shared";
+  if (typeof scope === "string") {
+    const name = scope.trim().toLowerCase();
+    return name === "" || name === "shared" ? "shared" : [name];
+  }
+  if (Array.isArray(scope)) {
+    return scope
+      .filter((name): name is string => typeof name === "string" && name.trim() !== "")
+      .map((name) => name.trim().toLowerCase());
+  }
+  return [];
+}
+
+/** Whether a vault entry's value may be injected into a spawn for `familiarId`
+ *  (no familiar context — probes, runners, the daemon — gets shared keys only). */
+export function isVaultKeyGrantedTo(entry: VaultEntry | undefined, familiarId?: string | null): boolean {
+  const scope = normalizeVaultScope(entry?.scope);
+  if (scope === "shared") return true;
+  if (!familiarId?.trim()) return false;
+  return scope.includes(familiarId.trim().toLowerCase());
+}
 
 export type VaultStatus = "resolved" | "configured" | "encrypted" | "env-only" | "unresolved" | "error" | "no-ref";
 
 export type VaultMappingStatus = {
   key: string;
   ref: string | null;
-  storage: "1password" | "encrypted" | null;
+  storage: "1password" | "encrypted" | "dashlane" | null;
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -61,14 +103,14 @@ function isBundle(): boolean {
  * rewrites this file) must target a writable per-user location. Writing into
  * the bundle breaks its signature seal → Gatekeeper rejects the app and the
  * in-place auto-updater can no longer replace it. In bundle mode the file lives
- * under `<covenHome>/cave/`, seeded once from the bundle's shipped map.
+ * under `caveHome()`, seeded once from the bundle's shipped map.
  *
  * Resolution (first hit wins): `COVEN_VAULT_FILE` → bundle path → `<cwd>/vault.yaml`.
  */
 function vaultYamlPath(): string {
   const override = process.env.COVEN_VAULT_FILE?.trim();
   if (override) return override;
-  if (isBundle()) return join(covenHome(), "cave", "vault.yaml");
+  if (isBundle()) return join(caveHome(), "vault.yaml");
   return join(process.cwd(), "vault.yaml");
 }
 
@@ -146,6 +188,13 @@ export function saveVaultMap(map: VaultMap): void {
     }
     if (entry.description) lines.push(`  description: "${entry.description.replace(/"/g, "'")}"`);
     if (entry.required) lines.push(`  required: true`);
+    // Persist non-shared scopes (shared is the default and stays implicit).
+    // Grant names are familiar ids — restrict to their charset for YAML safety.
+    const scope = normalizeVaultScope(entry.scope);
+    if (scope !== "shared") {
+      const names = scope.filter((name) => /^[a-z0-9_-]+$/.test(name));
+      lines.push(`  scope: [${names.map((name) => `"${name}"`).join(", ")}]`);
+    }
     lines.push("");
   }
   const vaultYaml = vaultYamlPath();
@@ -175,20 +224,120 @@ export function validateOpRef(ref: unknown): string | null {
   return null;
 }
 
+// Apps launched from Finder/Spotlight inherit a minimal PATH
+// (/usr/bin:/bin:/usr/sbin:/sbin), so a CLI installed under Homebrew or the
+// user's local bin — where `op` (and other resolver CLIs) typically live — is
+// not found, and every reference silently resolves to "unresolved" in packaged
+// builds even when the CLI is installed and authenticated. Augment PATH with
+// the well-known install locations before spawning, so resolution works the
+// same in a packaged app as it does when launched from a shell.
+function resolverEnv(): NodeJS.ProcessEnv {
+  const home = homedir();
+  const candidates = [
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    join(home, ".local", "bin"),
+    join(home, "bin"),
+  ];
+  const current = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const merged = [...current, ...candidates.filter((dir) => !current.includes(dir))];
+  return { ...process.env, PATH: merged.join(delimiter) };
+}
+
+/** Base timeout for a `<cli> read` call, and the longer allowance for the
+ *  single retry after a timeout. The first read after app launch can blow past
+ *  the base timeout while the CLI's session daemon spins up (cave-ovps: a cold
+ *  `op read` took >8s and reported a healthy ref as "unresolved"; the killed
+ *  attempt warms the daemon, so the retry completes fast). Genuine failures
+ *  (bad ref, not signed in) exit non-zero quickly and are NOT retried.
+ *  Overridable for tests. */
+function refReadTimeoutMs(): number {
+  const raw = Number(process.env.COVEN_CAVE_REF_READ_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 8000;
+}
+
+function refReadRetryTimeoutMs(): number {
+  const raw = Number(process.env.COVEN_CAVE_REF_READ_RETRY_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+}
+
+function isTimeoutError(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as NodeJS.ErrnoException).code === "ETIMEDOUT";
+}
+
+/** Run `<cli> read <ref>`, retrying once with a longer timeout if the first
+ *  attempt was killed by the base timeout. Returns null on failure. */
+function cliRead(cli: "op" | "dcli", ref: string): string | null {
+  const run = (timeout: number) =>
+    execFileSync(cli, ["read", ref], {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout,
+      env: resolverEnv(),
+    }).trim();
+
+  try {
+    return run(refReadTimeoutMs()) || null;
+  } catch (e) {
+    if (!isTimeoutError(e)) return null;
+    try {
+      return run(refReadRetryTimeoutMs()) || null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 /** Call `op read` to fetch a secret reference. Returns null on failure. */
 function opRead(ref: string): string | null {
   if (validateOpRef(ref)) return null;
+  return cliRead("op", ref);
+}
 
-  try {
-    const value = execFileSync("op", ["read", ref], {
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 8000,
-    }).trim();
-    return value || null;
-  } catch {
-    return null;
+// ── dashlane (dcli) resolver ────────────────────────────────────────────────
+// Dashlane's CLI mirrors 1Password's model: a scheme-prefixed reference read
+// through a local, authenticated CLI. `dcli read dl://<id-or-title>/<field>`.
+// Which backend a mapping uses is carried entirely by the ref scheme, so the
+// resolver/status paths dispatch on the prefix — no extra persisted metadata.
+const DL_REF_PREFIX = "dl://";
+
+export function validateDashlaneRef(ref: unknown): string | null {
+  if (typeof ref !== "string") return "ref must be a string";
+  if (!ref.startsWith(DL_REF_PREFIX)) return "ref must start with dl://";
+  if (ref.length > OP_REF_MAX_LENGTH) return "ref is too long";
+  if (OP_REF_FORBIDDEN_CHARS.test(ref)) return "ref contains invalid characters";
+
+  const path = ref.slice(DL_REF_PREFIX.length).split("?")[0];
+  const segments = path.split("/");
+  if (segments.length < 2 || segments.some((segment) => !segment.trim())) {
+    return "ref must include a secret id/title and a field, e.g. dl://GitHub PAT/username";
   }
+
+  return null;
+}
+
+/** Call `dcli read` to fetch a Dashlane secret reference. Returns null on failure. */
+function dcliRead(ref: string): string | null {
+  if (validateDashlaneRef(ref)) return null;
+  return cliRead("dcli", ref);
+}
+
+/** The storage backend a reference resolves through, implied by its scheme. */
+export function refStorage(ref: string): "1password" | "dashlane" {
+  return ref.startsWith(DL_REF_PREFIX) ? "dashlane" : "1password";
+}
+
+/** Validate a secret reference, dispatching by scheme (op:// vs dl://). */
+export function validateRef(ref: unknown): string | null {
+  return typeof ref === "string" && ref.startsWith(DL_REF_PREFIX)
+    ? validateDashlaneRef(ref)
+    : validateOpRef(ref);
+}
+
+/** Resolve a secret reference via the appropriate CLI, dispatching by scheme. */
+function readRef(ref: string): string | null {
+  return ref.startsWith(DL_REF_PREFIX) ? dcliRead(ref) : opRead(ref);
 }
 
 /**
@@ -214,18 +363,21 @@ export function resolveSecret(key: string): string | undefined {
   const map = loadVaultMap();
   const entry = map[key];
 
-  const localEncrypted = entry?.storage === "encrypted" || hasLocalEncryptedSecret(key)
-    ? getLocalEncryptedSecret(key)
-    : null;
+  // The map's declared backend wins: a ref mapping is never shadowed by a
+  // stale/orphaned entry in the local encrypted store. Unmapped encrypted
+  // secrets (no entry at all) still resolve.
+  const preferEncrypted =
+    entry?.storage === "encrypted" || (!entry?.ref && hasLocalEncryptedSecret(key));
+  const localEncrypted = preferEncrypted ? getLocalEncryptedSecret(key) : null;
   if (localEncrypted?.trim()) {
     process.env[key] = localEncrypted.trim();
     return localEncrypted.trim();
   }
 
-  // Try 1Password vault reference
+  // Try a vault reference (1Password op:// or Dashlane dl://)
   if (!entry?.ref) return undefined;
 
-  const value = opRead(entry.ref);
+  const value = readRef(entry.ref);
   if (value) {
     process.env[key] = value; // cache for process lifetime
     return value;
@@ -261,12 +413,14 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
   const envLocal = readEnvLocalAll(); // read once for all entries
   return Object.entries(map).map(([key, entry]) => {
     const inEnv = !!(process.env[key]?.trim()) || key in envLocal;
-    const hasEncrypted = entry.storage === "encrypted" || hasLocalEncryptedSecret(key);
+    // A ref mapping reports its ref backend even if an orphaned encrypted
+    // entry lingers in the local store (cave-6iee).
+    const hasEncrypted = entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key));
 
     if (inEnv) {
       return {
         key, ref: entry.ref ?? null, description: entry.description ?? null,
-        storage: entry.storage ?? (entry.ref ? "1password" : null),
+        storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : null),
         required: entry.required ?? false,
         status: "env-only" as VaultStatus, hasValue: true,
       };
@@ -284,7 +438,7 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
     if (entry.ref) {
       return {
         key, ref: entry.ref, description: entry.description ?? null,
-        storage: "1password",
+        storage: refStorage(entry.ref),
         required: entry.required ?? false,
         status: "configured" as VaultStatus, hasValue: false,
       };
@@ -304,7 +458,9 @@ export function getVaultStatuses(): VaultMappingStatus[] {
   return Object.entries(map).map(([key, entry]) => {
     const inEnv = !!(process.env[key]?.trim());
 
-    if (entry.storage === "encrypted" || hasLocalEncryptedSecret(key)) {
+    // Same backend-priority rule as resolveSecret: an orphaned encrypted
+    // entry must not make a ref mapping report (or resolve) as "encrypted".
+    if (entry.storage === "encrypted" || (!entry.ref && hasLocalEncryptedSecret(key))) {
       try {
         const value = getLocalEncryptedSecret(key);
         if (value) {
@@ -345,7 +501,7 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     if (inEnv) {
       return {
         key, ref: entry.ref ?? null, description: entry.description ?? null,
-        storage: entry.storage ?? (entry.ref ? "1password" : null),
+        storage: entry.storage ?? (entry.ref ? refStorage(entry.ref) : null),
         required: entry.required ?? false,
         status: "env-only" as VaultStatus, hasValue: true,
       };
@@ -361,27 +517,29 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     }
 
     try {
-      const value = opRead(entry.ref);
+      const value = readRef(entry.ref);
       if (value) {
         process.env[key] = value; // cache
         return {
           key, ref: entry.ref, description: entry.description ?? null,
-          storage: "1password",
+          storage: refStorage(entry.ref),
           required: entry.required ?? false,
           status: "resolved" as VaultStatus, hasValue: true,
         };
       }
       return {
         key, ref: entry.ref, description: entry.description ?? null,
-        storage: "1password",
+        storage: refStorage(entry.ref),
         required: entry.required ?? false,
         status: "unresolved" as VaultStatus, hasValue: false,
-        error: "op read returned empty — check ref or 1Password auth",
+        error: refStorage(entry.ref) === "dashlane"
+          ? "dcli read returned empty — check ref or Dashlane auth (dcli sync)"
+          : "op read returned empty — check ref or 1Password auth",
       };
     } catch (e) {
       return {
         key, ref: entry.ref, description: entry.description ?? null,
-        storage: "1password",
+        storage: refStorage(entry.ref),
         required: entry.required ?? false,
         status: "error" as VaultStatus, hasValue: false,
         error: e instanceof Error ? e.message : "unknown error",

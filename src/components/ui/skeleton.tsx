@@ -25,7 +25,10 @@ const variantClass: Record<Variant, string> = {
 export function Skeleton({ variant = "text", width, height, className, style }: SkeletonProps) {
   const classes = ["ui-skeleton", variantClass[variant], className ?? ""].filter(Boolean).join(" ");
   return (
-    <div
+    // A <span>, not a <div>: skeletons stand in for text runs inside <p>/<span>
+    // hosts too, where a div is invalid HTML and trips React hydration
+    // (cave-m97f). `.ui-skeleton` sets display:block, so rendering is identical.
+    <span
       className={classes}
       aria-hidden
       style={{

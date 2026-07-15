@@ -15,8 +15,26 @@
 :root {
   --code-chrome-ink: oklch(0.985 0 0);                /* dark-mode --text-primary */
   --code-chrome-ink-muted: oklch(0.66 0.018 293);     /* dark-mode --text-secondary */
-  --code-chrome-ink-faint: oklch(0.985 0 0 / 40%);    /* dark-mode --text-muted */
+  /* Mirrors dark-mode --text-muted, raised 40% → 72% (CHAT-D13-02): 9-11px
+     chrome labels must clear AA 4.5:1 on the code surface — 40% composited
+     to ~3.7:1. Pinned by theme-contrast-audit.test.ts (chrome section). */
+  --code-chrome-ink-faint: oklch(0.985 0 0 / 72%);    /* dark-mode --text-muted */
   --code-chrome-accent: #9a8ecd;                      /* dark-mode --accent-presence */
+  /* Fixed chrome surfaces. The body surface is the shared --code-surface
+     (globals.css); these are its raised header/footer and control steps.
+     Theme borders flip to dark ink in light mode and vanish on this chrome,
+     so borders INSIDE the chrome use the fixed hairline below — only the
+     outer wrap border (which delimits against the themed page) stays on
+     --border-hairline. */
+  --code-chrome-surface-raised: oklch(0.16 0.015 280 / 92%);
+  --code-chrome-surface-control: oklch(0.2 0.012 280 / 92%);
+  --code-chrome-surface-control-hover: oklch(0.25 0.015 280 / 92%);
+  --code-chrome-border: oklch(0.985 0 0 / 14%);
+  /* Fixed-chrome state inks (diff gutters, copy-confirmed). The themed
+     --color-success/--color-danger retune darker for light surfaces and
+     would fall below AA on the always-dark chrome. */
+  --code-chrome-success: oklch(0.65 0.15 170);
+  --code-chrome-danger: oklch(0.7 0.17 20);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -58,8 +76,24 @@
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.cave-md > * + * { margin-top: 0.7em; }
+.cave-md > * + * { margin-top: 0.8em; }
 .cave-md > *:first-child { margin-top: 0; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   READER SCALE — the full-screen Expand view. The transcript's 14px density
+   is right in the stream; a dedicated reading surface earns a book measure
+   (72ch cap set by the modal) and a calmer, larger scale.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cave-md--reader {
+  font-size: 15.5px;
+  line-height: var(--cave-reading-leading, 1.75);
+}
+.cave-md--reader > * + * { margin-top: 0.95em; }
+.cave-md--reader h1 { font-size: 1.45em; }
+.cave-md--reader h2 { font-size: 1.22em; }
+.cave-md--reader h3 { font-size: 1.05em; }
+.cave-md--reader table { font-size: 13.5px; }
+.cave-md--reader .cave-code-wrap pre code { font-size: 13px; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    HEADINGS
@@ -109,16 +143,18 @@
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   INLINE CODE — soft lavender pill
+   INLINE CODE — quiet neutral chip. Responses are dense with identifiers, and
+   the old accent-lavender pill turned every one into decoration; accent is
+   presence, not punctuation (design language). Neutral chips read as text.
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-md :not(pre) > code {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.8em;
-  padding: 0.18em 0.48em;
+  font-size: 0.82em;
+  padding: 0.14em 0.42em;
   border-radius: 5px;
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  color: color-mix(in oklch, var(--accent-presence) 85%, var(--text-primary));
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in oklch, var(--foreground) 9%, transparent);
   /* Wrap long inline code gracefully instead of overflowing the bubble.
      break-word keeps short snippets intact but lets oversized tokens break. */
   white-space: normal;
@@ -236,7 +272,7 @@
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-elevated) 88%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
@@ -292,8 +328,10 @@
   max-width: min(96vw, 1280px);
   max-height: 90vh;
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  background: var(--bg-raised);
+  border-radius: 16px;
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   box-shadow: 0 24px 70px color-mix(in oklch, black 45%, transparent);
   overflow: hidden;
 }
@@ -314,9 +352,9 @@
   color: var(--text-muted);
 }
 .cave-table-lightbox__close {
-  padding: 3px 12px;
+  padding: 4px 14px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   font-size: 12px;
@@ -335,10 +373,10 @@
 .cave-table-lightbox__body {
   min-height: 0;
   overflow: auto;
-  padding: 14px 16px;
+  padding: 20px 24px;
 }
 .cave-table-lightbox__body table {
-  font-size: 13px;
+  font-size: 13.5px;
 }
 @media (prefers-reduced-motion: reduce) {
   .cave-table-lightbox { animation: none; }
@@ -352,15 +390,71 @@
   display: flex;
   justify-content: center;
   margin: 8px 0 16px;
-  padding: 12px;
-  background: var(--bg-raised);
+  padding: 20px 16px;
+  /* Diagram canvas: a faint dot grid on the panel layer, the same visual
+     language as node editors — diagrams read as a drawing surface, not a
+     quote box. Dots come from the hairline scale so all 19 themes hold. */
+  background:
+    radial-gradient(color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1px),
+    color-mix(in oklch, var(--bg-panel) 72%, transparent);
+  background-size: 18px 18px;
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   overflow-x: auto;
 }
 .cave-md .cm-mermaid-diagram svg {
   max-width: 100%;
   height: auto;
+}
+/* Token-theme the diagram itself. Mermaid bakes its palette into an inline
+   <style> per SVG (and initialize()-level theming has proven unreliable
+   through the preview plugin), so the surface's own tokens win here — which
+   also keeps diagrams correct across every theme, live. Scoped to the two
+   places a diagram can live: the transcript card and the fullscreen viewer. */
+.cave-md .cm-mermaid-diagram svg .node rect,
+.cave-md .cm-mermaid-diagram svg .node circle,
+.cave-md .cm-mermaid-diagram svg .node ellipse,
+.cave-md .cm-mermaid-diagram svg .node polygon,
+.cave-md .cm-mermaid-diagram svg .node path,
+.cm-mermaid-viewer__canvas svg .node rect,
+.cm-mermaid-viewer__canvas svg .node circle,
+.cm-mermaid-viewer__canvas svg .node ellipse,
+.cm-mermaid-viewer__canvas svg .node polygon,
+.cm-mermaid-viewer__canvas svg .node path {
+  fill: var(--bg-raised) !important;
+  stroke: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline)) !important;
+}
+.cave-md .cm-mermaid-diagram svg .nodeLabel,
+.cave-md .cm-mermaid-diagram svg .edgeLabel,
+.cave-md .cm-mermaid-diagram svg .label,
+.cm-mermaid-viewer__canvas svg .nodeLabel,
+.cm-mermaid-viewer__canvas svg .edgeLabel,
+.cm-mermaid-viewer__canvas svg .label {
+  color: var(--text-primary) !important;
+  fill: var(--text-primary) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgePath path,
+.cave-md .cm-mermaid-diagram svg path.flowchart-link,
+.cm-mermaid-viewer__canvas svg .edgePath path,
+.cm-mermaid-viewer__canvas svg path.flowchart-link {
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .marker,
+.cm-mermaid-viewer__canvas svg .marker {
+  fill: var(--text-muted) !important;
+  stroke: var(--text-muted) !important;
+}
+.cave-md .cm-mermaid-diagram svg .edgeLabel rect,
+.cave-md .cm-mermaid-diagram svg .labelBkg,
+.cm-mermaid-viewer__canvas svg .edgeLabel rect,
+.cm-mermaid-viewer__canvas svg .labelBkg {
+  fill: var(--bg-panel) !important;
+  background-color: var(--bg-panel) !important;
+}
+.cave-md .cm-mermaid-diagram svg .cluster rect,
+.cm-mermaid-viewer__canvas svg .cluster rect {
+  fill: color-mix(in oklch, var(--bg-panel) 60%, transparent) !important;
+  stroke: var(--border-hairline) !important;
 }
 /* Rendered diagrams are click-to-expand into the fullscreen zoom/pan viewer. */
 .cave-md .cm-mermaid-diagram--interactive {
@@ -378,7 +472,7 @@
   height: 26px;
   padding: 0;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-panel) 82%, transparent);
   color: var(--text-secondary);
   cursor: pointer;
@@ -411,6 +505,13 @@
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  /* The same dot-grid canvas as the inline frame, so expanding feels like
+     zooming into the drawing surface rather than teleporting to a void. */
+  background-image: radial-gradient(
+    color-mix(in oklch, var(--foreground) 6%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
 }
 .cm-mermaid-viewer__stage--grabbing {
   cursor: grabbing;
@@ -445,8 +546,10 @@
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--bg-panel) 92%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-panel) 78%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 .cm-mermaid-viewer__btn {
@@ -457,7 +560,7 @@
   height: 30px;
   padding: 0;
   border: none;
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -509,19 +612,24 @@
   white-space: pre;
 }
 
+/* Tables read as rows, not a spreadsheet grid: the frame + radius live on the
+   scroll wrapper (border-radius can't clip a collapsed table), separators are
+   horizontal-only, and the header pins while the wrapper scrolls. */
+.cave-md .cave-table-scroll {
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 40%, transparent);
+}
 .cave-md table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12.5px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--border-hairline);
 }
 .cave-md th,
 .cave-md td {
-  padding: 0.38em 0.75em;
+  padding: 0.52em 0.9em;
   border-bottom: 1px solid var(--border-hairline);
-  border-right: 1px solid var(--border-hairline);
   text-align: left;
   vertical-align: top;
   /* CHAT-D7-08: undo .cave-md's break-anywhere inside cells — auto table
@@ -530,21 +638,26 @@
   word-break: normal;
   overflow-wrap: normal;
 }
+.cave-md th:first-child,
+.cave-md td:first-child { padding-left: 1.1em; }
 .cave-md th:last-child,
-.cave-md td:last-child { border-right: none; }
+.cave-md td:last-child { padding-right: 1.1em; }
 .cave-md tr:last-child td { border-bottom: none; }
 
 .cave-md th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  letter-spacing: 0.06em;
+  background: var(--bg-raised);
   color: var(--text-secondary);
 }
-.cave-md tr:nth-child(even) td { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
-.cave-md tr:hover td {
-  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+.cave-md tbody tr:nth-child(even) td { background: color-mix(in oklch, var(--foreground) 2%, transparent); }
+.cave-md tbody tr:hover td {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
   transition: background 0.1s;
 }
 
@@ -620,13 +733,15 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--text-muted);
+  /* Chrome ink, not --text-*: theme ink goes dark-on-dark in light mode
+     (CHAT-D13-01). */
+  color: var(--code-chrome-ink-faint);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .cave-code-collapse-btn:hover {
-  color: var(--text-secondary);
-  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--code-chrome-ink);
+  background: color-mix(in oklch, var(--code-chrome-ink) 8%, transparent);
 }
 .cave-code-collapse-btn:focus-visible {
   outline: 2px solid var(--accent-presence);
@@ -641,7 +756,7 @@
 
 .cave-code-lines {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--code-chrome-ink-faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -667,39 +782,25 @@
   align-items: center;
   gap: 0.5em;
   padding: 0.35em 0.75em;
-  background: oklch(0.16 0.015 280 / 92%);
-  border-bottom: 1px solid var(--border-hairline);
+  background: var(--code-chrome-surface-raised);
+  border-bottom: 1px solid var(--code-chrome-border);
   min-height: 28px;
   backdrop-filter: blur(4px);
 }
 
-/* decorative traffic-light dots; BASH/lang stays first, then the dots. */
-.cave-code-header::after {
-  content: "";
-  display: block;
-  order: 1;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: color-mix(in oklch, var(--code-chrome-accent) 40%, oklch(0.4 0 0));
-  box-shadow:
-    16px 0 0 color-mix(in oklch, oklch(0.75 0.18 60) 40%, oklch(0.4 0 0)),
-    32px 0 0 color-mix(in oklch, oklch(0.65 0.18 170) 40%, oklch(0.4 0 0));
-  margin-left: 2px;
-  margin-right: 34px;
-  opacity: 0.65;
-}
-
+/* Phase-4 minimalism (cave-8bfz): the decorative mac-window traffic-light dots
+   were dropped from the code header — the language label + filename + Copy
+   button carry it, no ornamental chrome. */
 .cave-code-lang {
   order: 0;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  /* No opacity dimmer: alpha-stacking is how the old 40% ink evaded
+     automated contrast checks while reading ~3:1 (CHAT-D13-02). */
   color: color-mix(in oklch, var(--code-chrome-accent) 80%, var(--code-chrome-ink-faint));
   flex-shrink: 0;
-  opacity: 0.85;
 }
 
 .cave-code-filename {
@@ -711,7 +812,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  opacity: 0.7;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -774,7 +874,9 @@
   flex-shrink: 0;
   width: 2.6em;
   padding-right: 0.8em;
-  color: color-mix(in oklch, var(--code-chrome-accent) 28%, oklch(0.5 0 0 / 50%));
+  /* AA at 10px on the code surface (was accent-28%/50%-alpha gray ≈ 2.2:1,
+     the "ordinals" finding in CHAT-D13-02). */
+  color: color-mix(in oklch, var(--code-chrome-accent) 30%, var(--code-chrome-ink-muted));
   font-size: 10px;
   text-align: right;
   user-select: none;
@@ -785,33 +887,35 @@
    DIFF GUTTER STRIPS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 .cave-diff-add {
-  background: oklch(0.6 0.15 170 / 10%);
-  border-left: 2px solid oklch(0.6 0.15 170 / 55%);
+  background: color-mix(in oklch, var(--code-chrome-success) 10%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-success) 55%, transparent);
   padding-left: calc(1em - 2px);
 }
 .cave-diff-del {
-  background: oklch(0.55 0.2 15 / 12%);
-  border-left: 2px solid oklch(0.55 0.2 15 / 55%);
+  background: color-mix(in oklch, var(--code-chrome-danger) 12%, transparent);
+  border-left: 2px solid color-mix(in oklch, var(--code-chrome-danger) 55%, transparent);
   padding-left: calc(1em - 2px);
 }
 /* CHAT-D8-03: @@ hunk headers read as muted metadata, not content. Shiki
-   tokens carry inline colors, so the ink override needs !important. */
+   tokens carry inline colors, so the ink override needs !important. Chrome
+   ink, not --text-muted: theme ink is dark-on-dark in light mode, and an
+   extra opacity dimmer would sink it back below AA (CHAT-D13-01/02). */
 .cave-diff-meta {
-  opacity: 0.65;
+  color: var(--code-chrome-ink-faint);
 }
 .cave-diff-meta span {
-  color: var(--text-muted) !important;
+  color: var(--code-chrome-ink-faint) !important;
 }
 /* Language-highlighted diffs re-attach the leading +/- as its own span so the
    code keeps its token colors; tint the marker to match its line's strip. */
 .cave-diff-marker {
-  color: var(--text-muted);
+  color: var(--code-chrome-ink-faint);
 }
 .cave-diff-add .cave-diff-marker {
-  color: oklch(0.6 0.15 170 / 90%);
+  color: var(--code-chrome-success);
 }
 .cave-diff-del .cave-diff-marker {
-  color: oklch(0.55 0.2 15 / 90%);
+  color: var(--code-chrome-danger);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -823,9 +927,11 @@
   font-size: 10px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   padding: 0.2em 0.6em;
-  border-radius: 5px;
-  border: 1px solid var(--border-strong);
-  background: oklch(0.2 0.012 280 / 92%);
+  border-radius: var(--radius-sm);
+  /* Fixed chrome border + surface: --border-strong flips to dark ink in
+     light mode and disappeared on this dark chip (CHAT-D13-01). */
+  border: 1px solid var(--code-chrome-border);
+  background: var(--code-chrome-surface-control);
   color: var(--code-chrome-ink-faint);
   cursor: pointer;
   opacity: 0;
@@ -845,12 +951,12 @@
 
 .cave-copy-btn--confirmed {
   opacity: 1 !important;
-  color: oklch(0.65 0.15 170);
+  color: var(--code-chrome-success);
 }
 
 .cave-copy-btn:hover {
   color: var(--code-chrome-ink);
-  background: oklch(0.25 0.015 280 / 92%);
+  background: var(--code-chrome-surface-control-hover);
 }
 .cave-copy-btn:focus-visible { opacity: 1; }
 
@@ -913,7 +1019,7 @@
   .cave-bubble-actions .cave-copy-btn-bubble {
     min-width: 44px;
     min-height: 36px;
-    border-radius: 8px;
+    border-radius: var(--radius-control);
   }
 }
 
@@ -947,8 +1053,8 @@
   display: flex;
   justify-content: center;
   padding: 0.25em 0.75em;
-  background: oklch(0.16 0.015 280 / 92%);
-  border-top: 1px solid var(--border-hairline);
+  background: var(--code-chrome-surface-raised);
+  border-top: 1px solid var(--code-chrome-border);
   backdrop-filter: blur(4px);
 }
 
@@ -958,7 +1064,7 @@
   letter-spacing: 0.04em;
   padding: 0.2em 0.8em;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--code-chrome-ink-faint);
   cursor: pointer;
@@ -1062,45 +1168,98 @@
   gap: 16px;
 }
 
+/* Chat-first landing eyebrow (cave-hsa6) — a quiet time-of-day greeting above
+   the familiar identity, carrying the warmth of the retired home hero. Fades in
+   once the local clock is sampled client-side, so SSR paints nothing that could
+   mismatch. */
+.cave-chat-empty-greeting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-muted);
+  font-family: "SF Mono", "JetBrains Mono", "Roboto Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+.cave-chat-empty-greeting.is-ready {
+  opacity: 1;
+}
+.cave-chat-empty-greeting-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent-presence);
+}
+
+/* "Context" disclosure (cave-hsa6) — the project picker, open-work rail, task
+   tile and recent-thread rail live here, collapsed by default, so the landing
+   first-paints calm (greeting + suggestions + composer). One tap opens the
+   working context; everything stays reachable. */
+.cave-chat-empty-context {
+  display: grid;
+  gap: 12px;
+}
+.cave-chat-empty-context-toggle {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-panel);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.cave-chat-empty-context-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
+}
+.cave-chat-empty-context-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 42%, transparent);
+}
+.cave-chat-empty-context-body {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-empty-greeting {
+    transition: none;
+  }
+}
+
+/* Identity row without the identity: the avatar and name are retired so the
+   landing stays anonymous-calm — only the quiet role + runtime meta remain,
+   centered under the greeting. */
 .cave-chat-empty-familiar {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-}
-
-.cave-chat-empty-mark {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  color: var(--accent-presence);
-}
-/* The mark now holds the real familiar avatar/glyph (which carries its own
-   color), so the frame stays neutral — no competing accent box. */
-.cave-chat-empty-mark img,
-.cave-chat-empty-mark > * {
-  border-radius: 9px;
 }
 
 .cave-chat-empty-familiar-copy {
   min-width: 0;
-}
-
-.cave-chat-empty-title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1.15;
-  letter-spacing: 0;
+  text-align: center;
 }
 
 .cave-chat-empty-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   margin: 5px 0 0;
   color: var(--text-muted);
@@ -1193,6 +1352,12 @@
   gap: 8px;
 }
 
+/* An odd chip count strands the last chip beside an empty cell; stretching it
+ * across both columns keeps every row of the grid full. */
+.cave-chat-empty-prompts > .cave-chat-empty-prompt:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .cave-chat-empty-prompt {
   display: flex;
   align-items: center;
@@ -1243,6 +1408,28 @@
   transform: translateX(2px);
 }
 
+/* Task-resume pills: existing board work is *present*, so the pill carries a
+ * quiet accent tint (standard recipe: low-% fill, mid-% border) and a leading
+ * kanban glyph. The label takes the slack so icon/label/arrow read as one
+ * left-aligned row instead of space-between drift. */
+.cave-chat-empty-prompt--task {
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+}
+
+.cave-chat-empty-prompt--task span {
+  flex: 1;
+}
+
+.cave-chat-empty-prompt--task > svg:first-child {
+  color: var(--accent-presence);
+}
+
+/* Only the trailing arrow leans on hover — the kanban marker stays put. */
+.cave-chat-empty-prompt--task:hover > svg:first-child {
+  transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cave-chat-empty-prompt,
   .cave-chat-empty-prompt svg {
@@ -1272,9 +1459,9 @@
   text-align: center;
 }
 
-/* Familiar role — quiet secondary line between the name and the meta row. */
+/* Familiar role — quiet lead line of the identity block, above the meta row. */
 .cave-chat-empty-role {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.3;
@@ -1543,7 +1730,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   height: 22px;
   margin-left: auto;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -1632,19 +1819,6 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
     gap: 12px;
   }
 
-  .cave-chat-empty-familiar {
-    justify-content: flex-start;
-  }
-
-  .cave-chat-empty-mark {
-    width: 38px;
-    height: 38px;
-  }
-
-  .cave-chat-empty-title {
-    font-size: 16px;
-  }
-
   .cave-chat-empty-meta {
     margin-top: 3px;
   }
@@ -1723,8 +1897,8 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   background: color-mix(in oklch, var(--bg-raised) 78%, transparent);
   color: var(--text-primary);
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  padding: 10px 13px;
+  border-radius: 14px;
+  padding: 11px 15px;
   /* Full-width user turn: the message fills the chat pane (matching the
      assistant prose) instead of a right-aligned narrow bubble. The left accent
      stripe + border still mark it as the operator's turn; the action row and
@@ -1906,7 +2080,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1px solid color-mix(in oklch, var(--color-danger) 35%, transparent);
   background: transparent;
   padding: 1px 6px;
@@ -1930,7 +2104,7 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-hairline);
   background: transparent;
   padding: 1px 6px;
@@ -1957,9 +2131,9 @@ button.cave-chat-empty-task:hover:not(:disabled) .cave-chat-empty-task-action {
 .cave-progress-group,
 .cave-tool-group {
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   background: color-mix(in oklch, var(--bg-panel) 36%, transparent);
-  padding: 9px 10px;
+  padding: 10px 12px;
 }
 
 .cave-tool-summary {
@@ -2203,7 +2377,7 @@ details[open] > .cave-tool-summary::before {
   margin-top: 7px;
   padding: 2px 7px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-elevated) 60%, transparent);
   color: var(--text-muted);
   font-size: 10px;
@@ -2312,6 +2486,22 @@ details[open] > .cave-tool-summary::before {
   border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+  /* Explicit tier (user report): with no color set, the icons inherited the
+     dim muted cascade — while the runtime/host chip labels beside them are
+     --text-primary. One family, one tier. */
+  color: var(--text-primary);
+}
+
+/* Enhance split-control segments (composer-enhance.tsx) — the same tint family
+   as the icon buttons, but a dedicated class: the mobile touch-target override
+   inflates .cave-composer-icon-button into 44px circles, which blew the
+   sparkle + caret out of their shared hairline rectangle. These segments must
+   always render as two flat rectangles filling that rectangle (sparkle wider
+   than the caret) — the rectangle itself is the touch target. */
+.composer-enhance-control__segment {
+  background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--text-primary);
 }
 
 /* Base control pill — still used by the standalone ComposerHostChip. */
@@ -2413,6 +2603,25 @@ details[open] > .cave-tool-summary::before {
   padding: 4px;
 }
 
+/* Prompt-snippets action folded into the composer overflow (cave-xsq.4): a
+   full-width menu item at the top of the options panel, divided from the
+   settings sections below. */
+.composer-options__action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 6px;
+  border-radius: var(--radius-control);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.composer-options__action:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
 .composer-options__section {
   display: flex;
   flex-direction: column;
@@ -2443,7 +2652,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
@@ -2493,6 +2702,13 @@ details[open] > .cave-tool-summary::before {
 /* Dense linear session view */
 .cave-chat-linear {
   position: relative; /* anchors .cave-drop-overlay */
+  /* Centered reading column (cave-xsq.1): the conversation + composer share one
+     comfortable measure and sit in a centered column — the ChatGPT reading
+     model — instead of spanning the full pane (reverses the 2026-06-18
+     full-width choice below). ~52rem ≈ a ~81ch line at 14px. The header stays a
+     full-bleed bar (its divider spans the pane); only the reading/writing column
+     is capped + centered. */
+  --cave-chat-measure: 52rem;
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
@@ -2577,6 +2793,17 @@ details[open] > .cave-tool-summary::before {
   letter-spacing: 0.01em;
 }
 
+/* Slim header (cave-xsq.3): the settled turn's static provenance
+   (model · runtime · dir · duration · usage · meters) rides inside __meta as a
+   reveal-on-hover cluster (header is the reveal-scope), so a resting header
+   reads as just the conversation title. Inline so it flows + truncates with the
+   meta line; the reveal-on-hover utility owns the opacity + touch/keyboard
+   parity. Only added on the complete state (see MetaLine), so live streaming
+   meta stays visible. */
+.cave-chat-meta-line__provenance {
+  display: inline;
+}
+
 /* CHAT-D3-06: ticking elapsed inside the streaming meta line. Tabular digits
    keep the line from jittering as the counter advances each second. */
 .cave-chat-meta-line__elapsed {
@@ -2606,48 +2833,10 @@ details[open] > .cave-tool-summary::before {
   box-shadow: 0 0 0 2px color-mix(in oklch, currentColor 14%, transparent);
 }
 
-.cave-chat-icon-button {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  transition:
-    background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.cave-chat-icon-button:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--border-strong) 74%, transparent);
-  background: color-mix(in oklch, var(--bg-hover) 72%, transparent);
-  color: var(--text-primary);
-}
-
-.cave-chat-icon-button:disabled {
-  opacity: 0.45;
-}
-
-.cave-chat-icon-button--active {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
-  color: var(--accent-presence);
-}
-
-.cave-chat-icon-button--active:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent);
-  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
-  color: var(--accent-presence);
-}
-
 .cave-chat-back-button {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .cave-chat-meta-line--streaming {
@@ -2669,6 +2858,28 @@ details[open] > .cave-tool-summary::before {
   color: var(--color-danger);
 }
 
+/* Inline remedy inside the offline meta line — a real button (keyboard
+   focusable) styled as a quiet text action so the notice stays one line. */
+.cave-chat-meta-line__action {
+  margin-left: 6px;
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+  color: var(--text-primary);
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cave-chat-meta-line__action:hover {
+  color: var(--accent-presence);
+}
+.cave-chat-meta-line__action:disabled {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: default;
+}
+
 .cave-chat-model-wrap {
   position: relative;
   min-width: 0;
@@ -2683,7 +2894,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 5px;
   border: 1px solid var(--border-hairline);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--bg-surface) 72%, transparent);
   padding: 0 7px;
   color: var(--text-secondary);
@@ -2728,7 +2939,9 @@ details[open] > .cave-tool-summary::before {
   width: min(320px, calc(100vw - 32px));
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  background: var(--bg-elevated);
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   padding: 9px;
   box-shadow: 0 14px 34px color-mix(in oklch, var(--bg-base) 64%, transparent);
   color: var(--text-secondary);
@@ -2764,7 +2977,7 @@ details[open] > .cave-tool-summary::before {
   width: 100%;
   padding: 5px 7px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-primary);
   font-size: 11px;
@@ -2779,7 +2992,7 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-model-popover__option[aria-checked="true"] {
   border-color: var(--border-strong);
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
 }
 
 .cave-chat-model-popover__option:disabled {
@@ -2816,7 +3029,7 @@ details[open] > .cave-tool-summary::before {
   min-width: 0;
   padding: 5px 7px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -2826,7 +3039,7 @@ details[open] > .cave-tool-summary::before {
 .cave-chat-model-popover__custom-apply {
   padding: 5px 10px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--text-primary);
   font-size: 10.5px;
@@ -2894,7 +3107,7 @@ details[open] > .cave-tool-summary::before {
   min-height: 24px;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   transition:
@@ -2909,24 +3122,15 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-primary);
 }
 
-/* The header delete trigger reads as destructive on hover/open. */
-.cave-chat-session-actions > .cave-chat-delete-trigger:hover:not(:disabled),
-.cave-chat-session-actions > .cave-chat-delete-trigger[aria-expanded="true"] {
-  border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
-  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
-  color: var(--color-danger);
-}
-
 .cave-chat-session-actions .voice-call-button:disabled {
   opacity: 0.45;
 }
 
 /* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
- * find affordance show; the quick actions (thinking, debug, delete, reflect)
- * and the lone "link a task" + reveal on header hover or keyboard focus. They
- * keep their layout slot (no reflow on reveal). Touch devices — which have no
- * hover — skip this and show everything. The kebab still holds every action,
- * so nothing becomes hover-only. */
+ * find affordance show; the lone "link a task" chip reveals on header hover or
+ * keyboard focus, keeping its layout slot (no reflow on reveal). Touch devices
+ * — which have no hover — skip this and show everything. The kebab holds every
+ * secondary action, so nothing becomes hover-only. */
 @media (hover: hover) and (pointer: fine) {
   .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find),
   .cave-chat-linked-context .cave-chat-linked-chip--link-task {
@@ -2973,7 +3177,9 @@ details[open] > .cave-tool-summary::before {
   overflow: hidden;
   border: 1px solid var(--border-hairline);
   border-radius: 8px;
-  background: var(--bg-raised);
+  background: var(--glass-raised);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   color: var(--text-primary);
   box-shadow: 0 24px 80px color-mix(in oklch, var(--bg-base) 76%, transparent);
 }
@@ -3057,7 +3263,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-hairline);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   font-size: 12px;
   line-height: 1;
   transition:
@@ -3156,7 +3362,7 @@ details[open] > .cave-tool-summary::before {
   height: 16px;
   flex-shrink: 0;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
 }
@@ -3255,13 +3461,14 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear .cave-chat-thread {
   gap: 0;
-  /* Full-width chat (2026-06-18): span the whole pane so the transcript lines
-     up with the full-width header and composer instead of sitting in a
-     centered reading column. */
+  /* Centered reading column (cave-xsq.1): cap the transcript to a comfortable
+     measure and center it, so long responses read like ChatGPT instead of
+     running edge-to-edge on a wide pane. The composer shares the same measure
+     (below) so the input lines up under the conversation. */
   width: 100%;
-  max-width: 100%;
+  max-width: var(--cave-chat-measure);
   margin-block: 0;
-  margin-inline: 0;
+  margin-inline: auto;
 }
 
 /* ── Turn rows ──────────────────────────────────────────────────────────── */
@@ -3417,6 +3624,17 @@ details[open] > .cave-tool-summary::before {
   line-height: 1.4;
 }
 
+/* Lean meta (cave-xsq.2): the trailing cluster of static extras (crest, role,
+   usage, details peek) that reveals on turn hover / focus via reveal-on-hover.
+   Its own inline-flex row keeps the extras aligned with the meta line's rhythm;
+   opacity-hidden by default so the visible row is just name + time. */
+.cave-linear-turn-meta-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 /* Per-turn provenance peek: a quiet ⓘ in the turn meta row whose title tooltip
    reveals model · cwd · duration · tokens · cost for that turn. Faint by
    default so the row stays clean; brightens on hover/focus. */
@@ -3528,9 +3746,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-linear .cave-composer-shell {
-  /* Shares the thread's full-width measure so the input lines up with the
-     conversation column; base rule centers via margin auto. */
-  max-width: 100%;
+  /* Shares the thread's centered measure (cave-xsq.1) so the input sits directly
+     under the conversation column; base rule centers via margin auto. */
+  max-width: var(--cave-chat-measure);
 }
 
 .cave-chat-linear .cave-composer-panel {
@@ -3991,7 +4209,10 @@ details[open] > .cave-tool-summary::before {
     height: var(--touch-target);
     min-width: var(--touch-target);
     min-height: var(--touch-target);
-    border-radius: 9px;
+    /* Match the capsule runtime/host chips — the utility row reads as one
+       family of controls at every breakpoint. Tracks the corner radius
+       appearance setting via the shared pill token. */
+    border-radius: var(--radius-pill);
     -webkit-tap-highlight-color: transparent;
   }
 
@@ -4019,8 +4240,9 @@ details[open] > .cave-tool-summary::before {
 .cave-bubble-system {
   border-radius: 9px;
   border: 1px solid var(--border-hairline);
-  /* Fixed near-opaque dark terminal surface — see DARK-CHROME FIXED INKS. */
-  background: oklch(0.12 0.012 280 / 92%);
+  /* Fixed near-opaque dark terminal surface — see DARK-CHROME FIXED INKS.
+     Same value as code blocks, via the shared token. */
+  background: var(--code-surface);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 30%),
     inset 0 1px 0 oklch(0.985 0 0 / 4%);
@@ -4032,8 +4254,8 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 0.5em;
   padding: 0.3em 0.75em;
-  background: oklch(0.16 0.015 280 / 92%);
-  border-bottom: 1px solid var(--border-hairline);
+  background: var(--code-chrome-surface-raised);
+  border-bottom: 1px solid var(--code-chrome-border);
   min-height: 26px;
   backdrop-filter: blur(4px);
 }
@@ -4056,8 +4278,9 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-bubble-system-label--dim {
+  /* Faint chrome ink only — an opacity dimmer on top of it re-created the
+     sub-AA alpha stack from CHAT-D13-02. */
   color: var(--code-chrome-ink-faint);
-  opacity: 0.6;
 }
 
 .cave-bubble-system-body {
@@ -4349,6 +4572,33 @@ details[open] > .cave-tool-summary::before {
 /* ── Familiar inline card (avatar click → in-thread expand) ──────────────── */
 .cave-linear-turn-avatar { position: relative; }
 
+/* CHAT-D3-07's `content-visibility: auto` on .cave-linear-turn implies paint
+   containment, so the open card was clipped at its own turn's padding box and
+   the turn painted as an atomic unit UNDER the following turns — the card
+   looked "cut inside" the response. While a card is open, release containment
+   on the host turn and lift it above later siblings (below sticky chrome at
+   z-50/60). Only one card opens at a time, so virtualization still applies to
+   every other row. */
+.cave-linear-turn:has(.familiar-inline-card) {
+  content-visibility: visible;
+  position: relative;
+  z-index: 40;
+}
+
+/* The expanded card mounts INSIDE the circular avatar cell, whose
+   `overflow: hidden` (needed to crop photo avatars) was clipping the whole
+   card down to the 48px circle — only its backdrop and close × peeked
+   through. When the cell hosts the interactive button, move the photo crop
+   onto the button itself and let the cell overflow so the card can escape. */
+.cave-linear-turn-avatar:has(> .cave-linear-turn-avatar-btn) {
+  overflow: visible;
+}
+
+.cave-linear-turn-avatar.is-selected {
+  /* Lift the open card above the following turns. */
+  z-index: 40;
+}
+
 .cave-linear-turn-avatar-btn {
   display: inline-flex;
   width: 100%;
@@ -4359,16 +4609,21 @@ details[open] > .cave-tool-summary::before {
   border: 0;
   background: transparent;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: inherit;
+  overflow: hidden;
 }
 .cave-linear-turn-avatar-btn:focus-visible {
-  outline: 2px solid var(--accent, #7c93ff);
+  outline: 2px solid var(--ring-focus, #7c93ff);
   outline-offset: 2px;
 }
 
 .familiar-inline-card {
-  position: relative;
-  margin-top: 8px;
+  /* Popover below the avatar — absolute so the fixed-width avatar grid cell
+     (52/64px) neither clips nor stretches around it. */
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
   width: min(320px, 78vw);
   padding: 12px;
   border: 1px solid var(--border-hairline, #2a2a2a);
@@ -4421,19 +4676,97 @@ details[open] > .cave-tool-summary::before {
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 12px; padding: 4px 8px;
   border: 1px solid var(--border-hairline, #2a2a2a);
-  border-radius: 8px; background: var(--bg-base, #111);
+  border-radius: var(--radius-control); background: var(--bg-base, #111);
   color: var(--text-primary, #eee); cursor: pointer;
 }
 .familiar-inline-card__actions button:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__actions button:focus-visible,
+.familiar-inline-card__workload-item:focus-visible,
+.familiar-inline-card__close:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff);
+  outline-offset: var(--ring-offset, 2px);
+}
 
 .familiar-inline-card__memory-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
-.familiar-inline-card__view-all { border: 0; background: transparent; color: var(--accent, #7c93ff); cursor: pointer; font-size: 12px; }
+.familiar-inline-card__view-all {
+  border: 0; background: transparent; cursor: pointer; font-size: 12px;
+  /* Brand accent (--accent-presence), NOT --accent — that's the shadcn
+     surface token (near-black in dark themes), which rendered this link
+     almost invisible. */
+  color: var(--accent-presence, #7c93ff);
+  border-radius: var(--radius-control);
+}
+.familiar-inline-card__view-all:hover { text-decoration: underline; color: var(--text-primary, #fff); }
+.familiar-inline-card__view-all:focus-visible { outline: var(--ring-width, 2px) solid var(--ring-focus, #7c93ff); outline-offset: var(--ring-offset, 2px); }
 .familiar-inline-card__memory-muted { font-size: 12px; color: var(--text-secondary, #888); }
 .familiar-inline-card__memory-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .familiar-inline-card__memory-item { display: flex; flex-direction: column; gap: 1px; }
 .familiar-inline-card__memory-title { font-size: 12px; font-weight: 500; color: var(--text-primary, #ddd); }
 .familiar-inline-card__memory-excerpt { font-size: 11px; color: var(--text-secondary, #999); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .familiar-inline-card__memory-time { font-size: 10px; color: var(--text-secondary, #777); }
+.familiar-inline-card__memory-stale {
+  margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 1px 4px; border-radius: var(--radius-control);
+  color: var(--color-warning); border: 1px solid color-mix(in srgb, var(--color-warning) 45%, transparent);
+}
+
+/* ── Insight layer (cave-ck70) ─────────────────────────────────────────────
+   Trust/health one-liner, activity meta, live workload and state-driven
+   actions derived by familiar-card-insights from the analytics model. */
+.familiar-inline-card__insight {
+  font-size: 12px; line-height: 1.4; padding: 6px 8px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  color: var(--text-primary, #ddd); background: var(--bg-base, #111);
+}
+.familiar-inline-card__insight[data-tone="good"] {
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
+}
+.familiar-inline-card__insight[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+}
+.familiar-inline-card__insight[data-tone="bad"] {
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+}
+
+.familiar-inline-card__meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.familiar-inline-card__meta-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--text-secondary, #999);
+}
+.familiar-inline-card__signal {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; padding: 1px 6px; border-radius: var(--radius-pill, 999px);
+  color: var(--text-secondary, #999); border: 1px solid var(--border-hairline, #2a2a2a);
+}
+.familiar-inline-card__signal[data-severity="warn"] { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 45%, transparent); }
+.familiar-inline-card__signal[data-severity="crit"] { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 45%, transparent); }
+
+.familiar-inline-card__workload-head { font-size: 12px; color: var(--text-secondary, #aaa); margin-bottom: 4px; }
+.familiar-inline-card__workload-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.familiar-inline-card__workload-item {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font-size: 12px; padding: 4px 6px; text-align: left;
+  border: 1px solid var(--border-hairline, #2a2a2a);
+  border-radius: var(--radius-control); background: var(--bg-base, #111);
+  color: var(--text-primary, #ddd); cursor: pointer;
+}
+.familiar-inline-card__workload-item:hover { background: var(--bg-hover, #1c1c1c); }
+.familiar-inline-card__workload-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.familiar-inline-card__workload-time { font-size: 10px; color: var(--text-secondary, #777); flex-shrink: 0; }
+
+.familiar-inline-card__actions button.familiar-inline-card__action-contextual {
+  /* Brand accent, not the --accent surface token (see __view-all note). */
+  color: var(--accent-presence, #7c93ff);
+  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 40%, transparent);
+}
+.familiar-inline-card__actions button.familiar-inline-card__action-contextual:hover {
+  background: color-mix(in srgb, var(--accent-presence, #7c93ff) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-presence, #7c93ff) 60%, transparent);
+}
 
 /* ── New-chat launch surface ───────────────────────────────────────────────
    Shown when a chat is opened without a resolved familiar. Replaces the old
@@ -4516,6 +4849,11 @@ details[open] > .cave-tool-summary::before {
 .workspace-rail {
   display: flex;
   flex-direction: row;
+  /* Fill the hosting panel. The code-rail Panel clamps at maxSize 560px while
+     the resizable layout can hand it more — without flex-grow the rail sat at
+     its content width and left a dead band between its right edge and the
+     collapsed Inspector rail on wide windows. */
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
   min-width: 0;
@@ -4618,6 +4956,35 @@ details[open] > .cave-tool-summary::before {
   border-color: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 42%, transparent);
   background: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 12%, transparent);
 }
+
+/* Demoted Group entry (cave-xsq.5): a quiet icon on the right of the scope-tab
+   row, muted at rest, accent-tinted when Group is the active scope — so Group
+   stays one click away without competing with Sessions / Projects as a tab. */
+.chat-scope-group-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.chat-scope-group-btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.chat-scope-group-btn.is-active {
+  color: var(--accent-presence);
+  border-color: color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
 .mobile-code-rail-toggle__badge {
   position: absolute;
   top: -3px;
@@ -4710,6 +5077,28 @@ details[open] > .cave-tool-summary::before {
   font-variant-numeric: tabular-nums;
 }
 
+/* Failing-checks dot (cave-fpqx.12): a peripheral red cue on the rail's
+   Changes tab and the collapsed reopen strip when the session PR's rollup is
+   red. Sits on the opposite corner from the count badge so both can show. */
+.workspace-rail__badge--alert {
+  top: auto;
+  bottom: -3px;
+  right: -3px;
+  min-width: 9px;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  background: var(--color-danger);
+}
+
+/* On the full-height collapsed reopen strip the dot anchors to the icon area
+   instead of the strip's far corner. */
+.workspace-rail-reopen .workspace-rail__badge--alert {
+  top: 6px;
+  right: 8px;
+  bottom: auto;
+}
+
 .workspace-rail__body {
   flex: 1 1 auto;
   min-width: 0;
@@ -4746,7 +5135,7 @@ details[open] > .cave-tool-summary::before {
   place-items: center;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -5137,31 +5526,69 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Collapsed code rail — a slim clickable strip on the surface's right edge
-   that reopens the rail. Absolutely positioned so it overlays the chat gutter
-   without reserving layout width. */
+/* Full-height reopen rail on the chat surface's right edge — the reflection
+   of the left nav's collapsed rail (.chat-sidebar__rail): icon over a vertical
+   uppercase label ("Code"), reading top→bottom with the glyph face to the
+   right/outside (vertical-rl). An in-flow flex child (NOT absolutely
+   positioned): the rail reserves its own layout width so content sits beside
+   it, never underneath. Carries the same glass as the left panel. */
 .workspace-rail-reopen {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  transform: translateY(-50%);
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 72px;
-  padding: 0;
-  border: 1px solid var(--border-hairline);
-  border-right: none;
-  border-radius: 8px 0 0 8px;
-  background: var(--bg-raised);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 100%;
+  padding: 12px 0;
+  border: 0;
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   color: var(--text-muted);
   cursor: pointer;
-  z-index: 40;
   transition:
     color var(--duration-fast) var(--ease-standard),
     background var(--duration-fast) var(--ease-standard);
 }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .workspace-rail-reopen { background: var(--bg-raised); }
+  .cave-chat-model-popover { background: var(--bg-elevated); }
+  .voice-call-overlay__dialog { background: var(--bg-raised); }
+  .cave-table-lightbox__panel { background: var(--bg-panel); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .workspace-rail-reopen {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .cave-chat-model-popover {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .voice-call-overlay__dialog {
+    background: var(--bg-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .cave-table-lightbox__panel {
+    background: var(--bg-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
 .workspace-rail-reopen:hover {
   color: var(--text-primary);
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  background: color-mix(in oklch, var(--bg-hover) 60%, transparent);
+}
+.workspace-rail-reopen__label {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }

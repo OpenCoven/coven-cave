@@ -157,12 +157,20 @@ assert.match(
   /aria-current=\{section === s\.id && !showPicker \? "page" : undefined\}/,
   "the active settings section is marked aria-current",
 );
-// The custom-theme reset button is labelled with the actual theme name.
+// The custom-theme discard button is labelled with the actual theme name and
+// is two-step: first click arms, second confirms (cave-5lsj — an imported
+// theme is unrecoverable once cleared).
 assert.match(
   source,
-  /aria-label=\{`Reset \$\{customData\.name\}`\}/,
-  "the custom-theme reset button names the theme it resets",
+  /resetCustomArmed \? \([\s\S]*?aria-label=\{`Really discard \$\{customData\.name\}\? Click again to confirm`\}/,
+  "the armed custom-theme discard button names the theme and confirms via a second click",
 );
+assert.match(
+  source,
+  /<IconButton[\s\S]*?aria-label=\{`Discard \$\{customData\.name\}`\}/,
+  "the idle custom-theme discard icon button names the theme",
+);
+assert.match(source, /setResetCustomArmed\(false\), 4000\)/, "arming auto-disarms after a beat");
 
 assert.match(source, /className="max-w-none space-y-6"/, "settings pages fill the full pane width (no narrow max-w-2xl column on desktop)");
 
@@ -308,5 +316,45 @@ assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labell
 assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
 assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
 assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
+
+// (cave-rj0z) var(--danger) is NOT a defined token — only --color-danger
+// exists. Uses of the phantom variable silently resolved to nothing, so
+// error text/borders rendered unstyled. Keep it out of the settings sources.
+{
+  const profile = readFileSync(new URL("./settings-profile.tsx", import.meta.url), "utf8");
+  for (const [name, src] of [["settings-shell", source], ["settings-profile", profile]]) {
+    assert.doesNotMatch(src, /var\(--danger\)/, `${name} must use var(--color-danger), not the undefined var(--danger)`);
+  }
+}
+
+// (cave-9yll, then user-revised) The Mobile-mode On/Off switch matches the
+// shared button shape — a --radius-control rectangle (.ui-btn), not a pill.
+// The News-headlines toggle was later slimmed to a minimal track/knob switch
+// (user-requested): no On/Off text, the row label carries the meaning.
+assert.ok(
+  (source.match(/settings-mobile-switch rounded-\[var\(--radius-control\)\]/g) ?? []).length === 1,
+  "the Mobile mode On/Off switch uses the shared control radius",
+);
+assert.doesNotMatch(source, /settings-mobile-switch rounded-full/, "the pill shape stays gone from the labeled switch");
+assert.match(
+  source,
+  /aria-label="News headlines"[\s\S]{0,200}settings-switch focus-ring/,
+  "News headlines renders the minimal track/knob switch",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-switch \{[\s\S]{0,400}?border-radius: var\(--radius-pill\)/,
+  "the minimal switch track follows the selected pill radius",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-switch__knob \{[\s\S]{0,220}?border-radius: var\(--radius-pill\)/,
+  "the minimal switch knob follows the selected pill radius",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-switch::after \{[\s\S]{0,120}?inset: -12px/,
+  "the small switch keeps a generous hit area",
+);
 
 console.log("settings-shell-polish.test.ts OK");

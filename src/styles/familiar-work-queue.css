@@ -12,29 +12,8 @@
   container-type: inline-size; /* enables the narrow-surface @container rule */
 }
 
-.fwq-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--border-hairline);
-}
-
-.fwq-head-main {
-  min-width: 0;
-}
-
-.fwq-title {
-  font: 600 15px/1.2 var(--font-sans);
-  margin: 0;
-}
-
-.fwq-sub {
-  margin: 3px 0 0;
-  font-size: 12px;
-  color: var(--text-muted);
-}
+/* The head is now the shared .surface-compact-header band (globals.css) —
+   the old .fwq-head/.fwq-title/.fwq-sub chrome retired with it. */
 
 /* Per-familiar rollup: filter chips, roving via native buttons. */
 .fwq-familiars {
@@ -84,6 +63,189 @@
 
 .fwq-chip.is-active .fwq-chip-count {
   color: var(--accent-presence);
+}
+
+/* ── Attention strip (unlinked / stale PRs — repo hygiene) ───────────────── */
+.fwq-attention {
+  margin: 12px 20px 0;
+  border: 1px solid color-mix(in oklch, var(--color-warning) 34%, transparent);
+  border-radius: var(--radius-panel, 12px);
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+  overflow: hidden;
+}
+
+.fwq-attention-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-warning);
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 20%, transparent);
+}
+
+.fwq-attention-title {
+  flex-shrink: 0;
+}
+
+.fwq-attention-summary {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fwq-attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fwq-attention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--color-warning) 12%, transparent);
+}
+
+.fwq-attention-item:last-child {
+  border-bottom: 0;
+}
+
+.fwq-attention-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fwq-attention-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-attention-tags {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Asana source strip — assigned tasks pulled into the Queue when Asana is
+   connected. Presence-toned so it reads as informational, visually distinct
+   from the warning-toned "needs attention" strip above it. */
+.fwq-asana {
+  margin: 12px 20px 0;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  border-radius: var(--radius-panel, 12px);
+  background: color-mix(in oklch, var(--accent-presence) 6%, transparent);
+  overflow: hidden;
+}
+
+.fwq-asana-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-presence);
+  border-bottom: 1px solid color-mix(in oklch, var(--accent-presence) 18%, transparent);
+}
+
+.fwq-asana-title {
+  flex-shrink: 0;
+}
+
+.fwq-asana-summary {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.fwq-asana-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fwq-asana-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.fwq-asana-item:last-child {
+  border-bottom: 0;
+}
+
+.fwq-asana-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.fwq-asana-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fwq-asana-tags {
+  display: flex;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Unlinked (no bead) reads as informational, distinct from the warning stale. */
+.fwq-tag--unlinked {
+  color: var(--text-secondary);
+  border-color: var(--border-strong, var(--border-hairline));
+}
+
+@container (max-width: 560px) {
+  .fwq-attention-item {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Truthful-degradation banners (refresh failed / beads adapter down) ──── */
+.fwq-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 20px 0;
+  padding: 7px 12px;
+  border-radius: var(--radius-panel, 12px);
+  font-size: 12px;
+}
+
+.fwq-banner--danger {
+  border: 1px solid color-mix(in oklch, var(--color-danger) 34%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 7%, transparent);
+  color: var(--color-danger);
+}
+
+.fwq-banner--warn {
+  border: 1px solid color-mix(in oklch, var(--color-warning) 34%, transparent);
+  background: color-mix(in oklch, var(--color-warning) 7%, transparent);
+  color: var(--color-warning);
+}
+
+.fwq-banner-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
 }
 
 .fwq-body {
@@ -249,6 +411,16 @@
   color: var(--color-warning);
   border-color: color-mix(in oklch, var(--color-warning) 40%, transparent);
   background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+}
+
+/* Quiet per-item age ("updated 2h ago" / "merged 1h ago") — plain muted text,
+   not a pill, so it reads as metadata rather than a status. */
+.fwq-card-time {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .fwq-card-actions {

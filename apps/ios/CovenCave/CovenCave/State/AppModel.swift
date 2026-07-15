@@ -5,7 +5,7 @@ import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks, calendar, dev, settings }
+enum AppTab: String { case chats, tasks, calendar, dev, settings, search }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -31,7 +31,17 @@ final class AppModel {
     }
 
     var connection: CaveConnection?
-    var connectionState: ConnectionState = .unconfigured
+    /// Stamped the moment the state LEAVES `.connected` — the last instant the
+    /// desktop was known reachable — so the reconnect pill can say
+    /// "last seen 2 min ago" honestly during a drop.
+    private(set) var lastConnectedAt: Date?
+    var connectionState: ConnectionState = .unconfigured {
+        didSet {
+            if oldValue == .connected, connectionState != .connected {
+                lastConnectedAt = Date()
+            }
+        }
+    }
     private let connectionMonitor = NWPathMonitor()
     private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
     private var connectionMonitorStarted = false
@@ -52,6 +62,10 @@ final class AppModel {
     /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
+
+    /// A familiar selected from global Search. `ChatsHomeView` consumes this
+    /// one-shot intent and opens the existing thread-list destination.
+    var familiarToOpen: Familiar?
 
     /// A task the user asked to open from a chat. `TasksView` observes this,
     /// pushes the card, and clears it (mirrors `threadToOpen`).
@@ -84,6 +98,11 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    func requestOpenFamiliar(_ familiar: Familiar) {
+        selectedTab = .chats
+        familiarToOpen = familiar
     }
 
     /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
@@ -492,7 +511,7 @@ final class AppModel {
     /// Surface a widget tap targets. The widget body deep-links to `.reminders`
     /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
     /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
-    enum DeepLink: String { case tasks, reminders, calendar }
+    enum DeepLink: String { case tasks, reminders, calendar, search }
 
     var deepLink: DeepLink?
 
@@ -510,6 +529,7 @@ final class AppModel {
         switch target {
         case .tasks, .reminders: selectedTab = .tasks
         case .calendar: selectedTab = .calendar
+        case .search: selectedTab = .search
         }
         deepLink = target
     }
@@ -671,14 +691,22 @@ final class AppModel {
         connectionMonitor.start(queue: connectionMonitorQueue)
     }
 
+    /// Quiet: the state only changes on an outcome, so a healthy path change
+    /// (Wi-Fi ↔ LTE) doesn't blink the UI through `.checking` — which would
+    /// flash the reconnect pill over perfectly good tabs.
     func recoverConnectionInBackground() async {
         guard connection != nil else { connectionState = .unconfigured; return }
-        await refreshConnection(reloadLoadedSurfaces: true)
+        await refreshConnection(reloadLoadedSurfaces: true, quiet: true)
     }
 
-    private var shouldReloadLoadedSurfaces: Bool {
+    /// Any surface holds real data — the tab tree is worth keeping mounted
+    /// through a connection drop (RootView shows the reconnect pill over it
+    /// instead of tearing down to the Connect screen).
+    var hasLoadedSurfaces: Bool {
         !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
     }
+
+    private var shouldReloadLoadedSurfaces: Bool { hasLoadedSurfaces }
 
     private func pairingMessage() -> String {
         CaveConnection.accessToken == nil
@@ -1051,7 +1079,9 @@ final class AppModel {
     func serverOnlySessions(for familiarId: String) -> [SessionRow] {
         let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
         return serverSessions
-            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) }
+            // Generated runs (journal narratives, canvas, crons) are not
+            // conversations — parity with the web chat lists (cave-48aa).
+            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) && !$0.isGeneratedRun }
             .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
     }
 

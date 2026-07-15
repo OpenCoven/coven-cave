@@ -87,3 +87,21 @@ export function useIsTauriMobile(): boolean {
   const p = useTauriPlatform();
   return p === "ios" || p === "android";
 }
+
+/**
+ * True in the macOS *desktop* Tauri shell — the one place the main window's
+ * native title bar is an Overlay (lib.rs) with traffic lights floating over
+ * web content. Synchronous and SSR-safe, so the titlebar marker and the
+ * shell's Dia-style lights logic share one detection instead of racing.
+ *
+ * navigator.platform is deprecated and empty on newer WebKit, so prefer the
+ * modern userAgentData.platform and fall back to the UA string. iOS WebKit
+ * UAs contain "like Mac OS X", so Tauri-mobile is excluded explicitly.
+ */
+export function isMacDesktopShell(): boolean {
+  if (typeof window === "undefined" || !isTauri()) return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.userAgent || nav.platform || "";
+  if (/iPhone|iPad|iPod/i.test(platform)) return false;
+  return /Mac/i.test(platform);
+}

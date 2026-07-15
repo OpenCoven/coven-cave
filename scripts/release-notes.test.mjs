@@ -64,7 +64,7 @@ test("pre-v0.0.54 versions render the legacy single-DMG install block", () => {
   const body = render("v0.0.42");
   assert.match(
     body,
-    /download `CovenCave-v0\.0\.42\.dmg`/,
+    /download \[`CovenCave-v0\.0\.42\.dmg`\]\(https:\/\/github\.com\/OpenCoven\/coven-cave\/releases\/download\/v0\.0\.42\/CovenCave-v0\.0\.42\.dmg\)/,
     "legacy install block lists the un-suffixed DMG",
   );
   assert.doesNotMatch(

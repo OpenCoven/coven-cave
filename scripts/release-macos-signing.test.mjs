@@ -39,9 +39,11 @@ test("notary rejection stops before stapling and prints the Apple log", () => {
   assert.match(releaseScript, /print_notary_log\(\)/);
   assert.match(releaseScript, /Submission in terminal status: Invalid/);
   assert.match(releaseScript, /Notary submission did not report Accepted/);
-  assert.match(releaseScript, /run_notary_submit\n\n/);
+  // (cave-1hha) the call site is the retry wrapper now — transient submit
+  // failures retry, an Invalid verdict still stops before stapling.
+  assert.match(releaseScript, /notarize_with_retries\n\n/);
   assert(
-    releaseScript.indexOf("run_notary_submit") <
+    releaseScript.indexOf("notarize_with_retries") <
       releaseScript.indexOf('echo "==> Stapling notarization ticket"'),
   );
 });
@@ -93,15 +95,18 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
   );
 });
 
-test("Linux AppImage strips bundled GLib so host GLib is used at runtime", () => {
-  assert.match(releaseWorkflow, /name: Strip bundled GLib from AppImage/);
+test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-compatible", () => {
+  assert.match(releaseWorkflow, /name: Strip bundled GLib\/libmount from AppImage/);
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
+  assert.match(releaseWorkflow, /libmount\.so\.1\*/);
+  assert.match(releaseWorkflow, /libblkid\.so\.1\*/);
+  assert.match(releaseWorkflow, /libuuid\.so\.1\*/);
   assert.match(releaseWorkflow, /appimagetool squashfs-root/);
   assert.match(releaseWorkflow, /gh release upload "\$RELEASE_TAG" "\$APPIMAGE" --clobber/);
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
     releaseWorkflow.indexOf("name: Sign Linux/Windows updater artifact") <
-      releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage"),
+      releaseWorkflow.indexOf("name: Strip bundled GLib/libmount from AppImage"),
     "GLib strip must run after initial signing so the repacked artifact is the final signed version",
   );
   assert(
@@ -147,4 +152,17 @@ test("sidecar bundle prunes foreign native packages before release bundling", ()
       sidecarScript.indexOf('fix_node_pty_spawn_helpers "$PNPM_STAGE/node_modules"'),
     "native package pruning should run before node-pty permission repair",
   );
+});
+
+// ── Transient-failure retries (cave-1hha) ────────────────────────────────────
+// The Intel leg failed 3 of 4 cuts on network-dependent steps: the Next
+// build's Google Fonts fetch, Apple's timestamp service during codesign, and
+// a notary submit. Each retries; an Apple REJECTION (Invalid) never retries.
+test("release.sh retries its network-dependent steps", () => {
+  assert.match(releaseScript, /^retry\(\) \{/m, "a retry helper exists");
+  assert.match(releaseScript, /retry 2 30 env \\/, "the tauri build (font fetch inside) gets one retry");
+  assert.match(releaseScript, /retry 3 15 codesign --force --options runtime --timestamp/, "the envelope seal retries the timestamp service");
+  assert.match(releaseScript, /retry 3 10 codesign --force --options runtime --timestamp/, "inner-binary signs retry the timestamp service");
+  assert.match(releaseScript, /notarize_with_retries/, "notary submission goes through the retry loop");
+  assert.match(releaseScript, /2\) echo "Apple rejected the submission \(Invalid\) — not retrying\." >&2; exit 1 ;;/, "a real Invalid verdict never retries");
 });

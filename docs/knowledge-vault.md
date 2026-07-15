@@ -42,14 +42,31 @@ Routes are kebab-case. Every change ships through a PR.
 - `scope: global` (or omitted) → reaches every familiar.
 - `scope: sage echo` → only those familiars' prompts.
 - `enabled: false` → kept on disk but never injected.
+- Any **other** frontmatter keys (e.g. a knowledge pack's `type`, `status`,
+  `flags`) are preserved verbatim through every read/edit round-trip and
+  surface on the entry as `extra`.
+
+### Collections
+
+Entries can live one level deep in a **collection** —
+`~/.coven/knowledge/<collection>/<id>.md` — with an optional
+`collection.yml` beside them describing what belongs there (name, entity
+type, field schema, pack provenance, one-line `summary`). Collections are how
+[knowledge packs](knowledge-packs.md) seed structured sets (characters,
+settings, …); the Grimoire groups them in its navigator. Collection names are
+gated by the same strict slug rule as entry ids. A collection's `summary` is
+injected into the `<KNOWLEDGE_VAULT>` block as a one-line index entry, so
+harnesses know the collection exists without carrying its entries.
 
 ## Managing entries — `/api/knowledge`
 
 ```
-GET    /api/knowledge                  → { ok, entries }   (full list)
+GET    /api/knowledge                  → { ok, entries }   (full list, root + collections)
 GET    /api/knowledge?familiarId=sage  → { ok, entries }   (what sage would receive)
-POST   /api/knowledge                  body { title, body, tags?, scope?, enabled?, id? } → { ok, entry }
-DELETE /api/knowledge?id=<id>          → { ok, deleted }
+GET    /api/knowledge?collection=<c>   → { ok, entries }   (one collection)
+GET    /api/knowledge/collections      → { ok, collections: [{ id, meta, count }] }
+POST   /api/knowledge                  body { title, body, tags?, scope?, enabled?, id?, collection?, extra? } → { ok, entry }
+DELETE /api/knowledge?id=<id>&collection=<c?> → { ok, deleted }
 ```
 
 The entry `id` is the only user input that touches the filesystem and is gated on

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.0.145"
+version = "0.1.0"
 description = "Desktop control room for OpenCoven familiars, workflows, memory, and local agent sessions."
 authors = ["OpenCoven contributors"]
 license = "MIT OR AGPL-3.0-only"
@@ -25,7 +25,7 @@ log = "0.4"
 # tray-icon moved to the desktop-only target block below — mobile (iOS/
 # Android) doesn't have a tray and trying to enable the feature there
 # breaks the build.
-tauri = { version = "2.11.2", features = ["unstable"] }
+tauri = { version = "2.11.2", features = ["unstable", "macos-private-api"] }
 tauri-plugin-log = "2"
 # tauri-plugin-notification supports iOS and Android out of the box, so
 # this stays cross-platform; the JS-side `native-notify` wrapper handles
@@ -47,10 +47,28 @@ tauri-plugin-os = "2"
 # Spelling it as "not(ios) and not(android)" is equivalent to
 # `cfg(desktop)` for the platforms we care about.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
-tauri = { version = "2.11.2", features = ["tray-icon"] }
+tauri = { version = "2.11.2", features = ["tray-icon", "macos-private-api"] }
 portable-pty = "0.8"
 # Desktop auto-update: the updater plugin checks/downloads/installs signed
 # release artifacts; process gives us relaunch() after an install. Both are
 # desktop-only (mobile updates via the App Store / TestFlight).
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+
+# Windows packages the large Next.js sidecar as one archive instead of one
+# WiX component per file. The launcher verifies and extracts it on first use.
+[target.'cfg(target_os = "windows")'.dependencies]
+fs2 = "0.4.3"
+sha2 = "0.10"
+tar = "0.4"
+zstd = "0.13"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+# OS-level glass for the quick-chat tray window: NSVisualEffectView vibrancy
+# behind the transparent webview on macOS (the only platform we apply it on;
+# the crate compiles everywhere and the call sites are cfg(target_os) gated).
+[target.'cfg(target_os = "macos")'.dependencies]
+window-vibrancy = "0.6"
+# Raw msg_send access to NSWindow's standard buttons (traffic-light
+# show/hide follows the side panel); already in the tree via tauri/wry.
+objc2 = "0.6"

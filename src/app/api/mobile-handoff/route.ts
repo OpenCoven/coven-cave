@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import QRCode from "qrcode";
 import { stripAnsi } from "@/lib/ansi";
+import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
   createMobileInvite,
+  withChatFragment,
   MOBILE_INVITE_TTL_MS,
   nativeAppDiscoveryProof,
   tailnetDiscoveryProof,
@@ -129,15 +131,12 @@ function nativeAppBackendUrl(req: Request) {
   const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
-  // The packaged desktop app runs an authenticated sidecar on a random loopback
-  // port. The native SwiftUI iOS app is tokenless and trusts Tailscale instead,
-  // so publishing the packaged port makes the iPhone hit 401. In bundled mode,
-  // reconcile the native route against the tokenless app server started by
-  // `pnpm mobile:tailscale:app` instead of the packaged sidecar itself.
-  if (process.env.COVEN_CAVE_BUNDLE === "1" && process.env.COVEN_CAVE_TAILNET_TRUST !== "1") {
-    return "http://127.0.0.1:3000";
-  }
-
+  // Tokenless native-app mode (`pnpm mobile:tailscale:app` sets
+  // COVEN_CAVE_TAILNET_TRUST=1): tailnet membership is the trust boundary, so
+  // the server publishes itself bare. In every token-gated mode — the packaged
+  // bundle above all — app-start publishes THIS server and mints signed
+  // invites instead (see ensureNativeAppServe), so there is no separate
+  // backend to point at.
   return backendUrl();
 }
 
@@ -183,6 +182,16 @@ function mobileAccessSecret() {
   return process.env.COVEN_CAVE_ACCESS_TOKEN?.trim() ?? "";
 }
 
+// The native route trusts the tailnet only when something explicitly says so:
+// the dev script's tokenless server (COVEN_CAVE_TAILNET_TRUST=1) or an
+// operator-configured backend override. Everywhere else — the packaged bundle
+// first and foremost — pairing rides SIGNED invites minted from the access
+// secret, so a packaged user needs no dev checkout to pair a phone (cave-gzje).
+function nativeTokenlessMode() {
+  if (process.env.COVEN_CAVE_TAILNET_TRUST === "1") return true;
+  return Boolean(normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL));
+}
+
 function mobileAccessUnavailableResponse() {
   // Plain `next dev` never sets COVEN_CAVE_ACCESS_TOKEN, so neither signed
   // invites nor persistent native-app Serve routes are safe to create. Give
@@ -196,7 +205,7 @@ function mobileAccessUnavailableResponse() {
   return NextResponse.json({ ok: false, error }, { status: 503 });
 }
 
-async function ensureNativeAppServe(req: Request) {
+async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
@@ -270,7 +279,44 @@ async function ensureNativeAppServe(req: Request) {
     );
   }
 
-  const qrSvg = await QRCode.toString(discovery.serveUrl, {
+  // "Continue on phone" (cave-i74f): the QR target carries the chat
+  // deep-link fragment so one scan opens THIS conversation. The bare host
+  // (nativeHost/serveUrl) stays clean — the native app pairs on the host,
+  // not the fragment.
+  //
+  // Token-gated servers (the packaged bundle, or a token-gated dev session)
+  // additionally mint the signed invite the tokenless flow never needed: the
+  // QR/link carry `coven_access_token` so Safari pairs via the cookie
+  // exchange and the native scanner auto-connects via CaveInvite, and
+  // `appInviteUrl` is the covencave:// deep link with the long-lived token.
+  // Without this a packaged user's scan lands on a 401 (cave-gzje).
+  let invitePayload: {
+    inviteUrl: string;
+    appUrl: string;
+    appInviteUrl: string;
+    appTokenExpiresAt: number;
+    expiresAt: number;
+    expiresAtIso: string;
+  } | null = null;
+  let qrTarget = withChatFragment(discovery.serveUrl, chatId);
+  if (!nativeTokenlessMode()) {
+    const invite = await createMobileInvite({
+      baseUrl: discovery.serveUrl,
+      accessSecret: mobileAccessSecret(),
+      sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
+      ttlMs: MOBILE_INVITE_TTL_MS,
+    });
+    qrTarget = withChatFragment(invite.url, chatId);
+    invitePayload = {
+      inviteUrl: qrTarget,
+      appUrl: qrTarget,
+      appInviteUrl: invite.appInviteUrl,
+      appTokenExpiresAt: invite.appTokenExpiresAt,
+      expiresAt: invite.expiresAt,
+      expiresAtIso: invite.expiresAtIso,
+    };
+  }
+  const qrSvg = await QRCode.toString(qrTarget, {
     type: "svg",
     margin: 1,
     width: 256,
@@ -281,15 +327,20 @@ async function ensureNativeAppServe(req: Request) {
     ok: true,
     backendUrl: backend,
     serveUrl: discovery.serveUrl,
+    url: qrTarget,
+    ...(invitePayload ?? {}),
     nativeUrl: discovery.serveUrl,
     nativeHost: discovery.host,
     discoverySource: discovery.source,
+    // Paired signal (cave-i74f): the last token-refresh beat from a paired
+    // device — null until a phone has actually connected.
+    lastSeenAt: await readMobileLastSeen(),
     qrSvg,
     warning: fallbackWarning ?? serveWarning ?? undefined,
   });
 }
 
-async function mobileHandoff(req: Request) {
+async function mobileHandoff(req: Request, chatId?: string | null) {
   const hostPortRejection = rejectMismatchedHostPort(req);
   if (hostPortRejection) return hostPortRejection;
 
@@ -353,7 +404,10 @@ async function mobileHandoff(req: Request) {
     sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
     ttlMs: MOBILE_INVITE_TTL_MS,
   });
-  const qrSvg = await QRCode.toString(invite.url, {
+  // "Continue on phone" (cave-i74f): the QR carries the chat deep-link
+  // fragment so one scan opens THIS conversation, not just the app.
+  const inviteUrl = withChatFragment(invite.url, chatId);
+  const qrSvg = await QRCode.toString(inviteUrl, {
     type: "svg",
     margin: 1,
     width: 256,
@@ -364,9 +418,9 @@ async function mobileHandoff(req: Request) {
     ok: true,
     backendUrl: backend,
     serveUrl: discovery.serveUrl,
-    inviteUrl: invite.url,
-    url: invite.url,
-    appUrl: invite.url,
+    inviteUrl,
+    url: inviteUrl,
+    appUrl: inviteUrl,
     // Native-app pairing: covencave:// deep link with a long-lived token —
     // shown beside the QR so the iOS/iPadOS app pairs without typing.
     appInviteUrl: invite.appInviteUrl,
@@ -374,6 +428,9 @@ async function mobileHandoff(req: Request) {
     discoverySource: discovery.source,
     expiresAt: invite.expiresAt,
     expiresAtIso: invite.expiresAtIso,
+    // Paired signal (cave-i74f): the last token-refresh beat from a paired
+    // device — null until a phone has actually connected.
+    lastSeenAt: await readMobileLastSeen(),
     qrSvg,
     // Non-fatal: the link/QR are usable, but Serve couldn't be (re)started, so
     // the tunnel may need attention if the link doesn't resolve on the phone.
@@ -385,11 +442,14 @@ export async function GET(req: Request) {
   return mobileHandoff(req);
 }
 
+
 export async function POST(req: Request) {
   let action = "start";
+  let chatId: string | null = null;
   try {
-    const body = (await req.json()) as { action?: string };
+    const body = (await req.json()) as { action?: string; chatId?: string };
     action = body.action ?? "start";
+    if (typeof body.chatId === "string") chatId = body.chatId;
   } catch {
     action = "start";
   }
@@ -404,7 +464,7 @@ export async function POST(req: Request) {
   }
 
   if (action === "app-start") {
-    return ensureNativeAppServe(req);
+    return ensureNativeAppServe(req, chatId);
   }
 
   if (action === "app-stop") {
@@ -416,5 +476,5 @@ export async function POST(req: Request) {
     }, { status: reset.ok ? 200 : 500 });
   }
 
-  return mobileHandoff(req);
+  return mobileHandoff(req, chatId);
 }

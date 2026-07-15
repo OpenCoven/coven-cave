@@ -11,6 +11,7 @@ import {
   relativeTime,
   type DailyReportStats,
 } from "@/lib/daily-report";
+import { extractNextPaths } from "@/lib/next-paths";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export default async function DailyReportPage({ params }: Props) {
   if (!item) {
     return (
       <main className="dr-page">
-        <div className="dr-topbar">
+        <div className="dr-topbar" data-tauri-drag-region="deep">
           <a className="dr-back" href="/dashboard">
             <Icon name="ph:arrow-left" aria-hidden />
             Dashboard
@@ -101,7 +102,7 @@ export default async function DailyReportPage({ params }: Props) {
 
   return (
     <main className="dr-page">
-      <div className="dr-topbar">
+      <div className="dr-topbar" data-tauri-drag-region="deep">
         <nav className="dr-topbar__crumbs" aria-label="Breadcrumb">
           <a className="dr-back" href="/dashboard">
             <Icon name="ph:arrow-left" aria-hidden />
@@ -415,7 +416,9 @@ export default async function DailyReportPage({ params }: Props) {
             {item.media?.narrative?.text ? (
               <>
                 <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
-                  {item.media.narrative.text}
+                  {/* Narratives stored before the pipeline stripped the
+                      piggybacked next-paths block are cleaned at render. */}
+                  {extractNextPaths(item.media.narrative.text).visible}
                 </p>
                 <p className="dr-narrative-byline">
                   <Icon name="ph:sparkle" aria-hidden />

@@ -15,5 +15,13 @@ export type PendingChatAction =
       nonce: number;
     }
   | { kind: "open"; sessionId: string; familiarId?: string | null; findQuery?: string; nonce: number }
+  | {
+      /** Open the conversation in a split pane beside the current chat
+       *  (thread-rail ⌥↵ / alt-click). Falls back to a plain open when the
+       *  chat surface can't split (mobile). */
+      kind: "open-split";
+      sessionId: string;
+      nonce: number;
+    }
   | { kind: "list"; nonce: number }
   | null;

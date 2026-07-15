@@ -10,6 +10,7 @@
  */
 
 import React from "react";
+import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import {
@@ -20,7 +21,7 @@ import {
 } from "@/lib/page-drag";
 import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
-import { APP_VERSION } from "@/lib/app-version";
+import { SidebarFooter } from "@/components/sidebar-footer";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -45,12 +46,24 @@ export type FolderMode =
   | "journal"
   | "grimoire";
 
+export type SidebarRoleSurfaceRow = {
+  /** Generic workspace mode string (`surface:<id>`) — the sidebar never
+   *  interprets it, only round-trips it through onModeChange. */
+  mode: string;
+  label: string;
+  iconName: Parameters<typeof Icon>[0]["name"];
+  description: string;
+};
+
 export type SidebarMinimalProps = {
   mode: string;
   /** Page modes currently open as secondary split tiles (drag-to-split).
    *  Their rows get a lighter "open in split" wash instead of the active fill,
    *  so the highlight stays honest when a page renders beside the primary. */
   splitPageModes?: readonly string[];
+  /** Role Surface rooms visible for the active familiar. Registry-driven —
+   *  rendered as their own cluster; empty/omitted hides the cluster. */
+  roleSurfaces?: readonly SidebarRoleSurfaceRow[];
   sessions: SessionRow[];
   activeSessionId?: string | null;
   onNewChat: () => void;
@@ -62,11 +75,13 @@ export type SidebarMinimalProps = {
   inboxPrefs?: InboxPrefs;
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
-  onFamiliarScopeChange: (id: string | null) => void;
+  /** Multiselect scope (≥2 ids) — the header switcher checks members and
+   *  summarizes the count on its trigger. */
+  selectedFamiliarIds?: ReadonlySet<string>;
+  onFamiliarScopeChange: (id: string | null, opts?: { multi?: boolean }) => void;
   responseNeeded?: Set<string>;
   notificationBadgeCount?: number;
   onOpenInbox?: () => void;
-  onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged?: () => void;
   /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
   boardOpenCount?: number;
@@ -104,18 +119,26 @@ const FOLDER_MODES: Array<{
   // Group Chat ("coven") is no longer a standalone destination — it lives as the
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
-  { id: "grimoire", label: "Grimoire", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents" },
-  { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description: "Inbox, calendar, and scheduled jobs in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
+  // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
+  // also carries the needs-you badge). Memories joins the quiet cluster: same
+  // flat list, same reachability (rows, palette, deep links), just
+  // muted-until-hover so the conversation-first surfaces read first.
+  // Journal keeps no row of its own — it's a tab inside Memories, and a
+  // dedicated row double-listed the same surface. navHidden keeps the mode in
+  // the ⌘K palette and as a deep-link target (setMode remaps it to the
+  // Memories surface's Journal tab).
+  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your familiars' daily reflections — a tab in Memories", quiet: true, navHidden: true },
+  { id: "grimoire", label: "Memories", iconName: "ph:books", description: "Edit memory, knowledge, and journal markdown as living documents", quiet: true },
   // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
   // ⌘K palette) rather than navigated to daily, so it's kept in the list for
   // those launchers but hidden from the sidebar rows.
   { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true },
+  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' crafts and skills", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
-  { id: "familiar-work-queue", label: "Work Queue", iconName: "ph:list-checks-bold", description: "Ready beads and the PR control tower, by familiar", quiet: true },
 ];
 
 // Rows actually rendered in the sidebar — everything except on-demand surfaces
@@ -205,6 +228,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onModeChange,
     onOpenSession,
     activeSessionId,
+    familiars,
+    activeFamiliarId,
+    selectedFamiliarIds,
+    onFamiliarScopeChange,
+    sessions,
+    responseNeeded,
   } = props;
 
   // Arrow-key navigation across the flat nav rows: one tab stop, Up/Down moves
@@ -223,11 +252,21 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       {/* Static wordmark. Collapsing the sidebar is now owned by the shell's
           floating top-left toggle (and ⌘B), so the header is no longer a
           button — it just leaves room for the float. */}
-      {/* Familiar scope selection lives in the desktop top menu bar
-          (FamiliarMenuBar) and the mobile top bar. "New chat" is the left
-          panel's top CTA, so the nav flows under it. */}
-      <div className="sidebar-header sidebar-header--static">
-        <span className="sidebar-title">Coven Cave</span>
+      {/* Familiar scope lives HERE, on every page (cave-vtk9) — the sidenav
+          header carries the labeled dropdown switcher; the collapsed rail
+          keeps the avatar-only trigger. The mobile top bar keeps its own
+          (the drawer hides this one). */}
+      <div className="sidebar-familiar-switch">
+        <FamiliarQuickSwitch
+          familiars={familiars}
+          activeFamiliarId={activeFamiliarId ?? null}
+          selectedFamiliarIds={selectedFamiliarIds}
+          sessions={sessions}
+          responseNeeded={responseNeeded}
+          onSelectFamiliar={onFamiliarScopeChange}
+          placement="bottom-start"
+          labeled
+        />
       </div>
 
       <div className="sidebar-actions">
@@ -265,42 +304,38 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           />
         ))}
 
+        {/* Role Surface rooms — the active familiar's vocation workspaces.
+            Registry-driven: the sidebar renders whatever it's handed and never
+            names a role. The cluster label keeps them reading as chambers of
+            the Cave rather than more app tabs. */}
+        {(props.roleSurfaces?.length ?? 0) > 0 && (
+          <>
+            <div className="sidebar-rooms-label" aria-hidden>
+              Rooms
+            </div>
+            {props.roleSurfaces!.map((room) => (
+              <FolderRow
+                key={room.mode}
+                id={room.mode}
+                label={room.label}
+                iconName={room.iconName}
+                state={sidebarRowState(room.mode, mode, props.splitPageModes)}
+                description={room.description}
+                onClick={() => {
+                  onModeChange(room.mode);
+                }}
+              />
+            ))}
+          </>
+        )}
+
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
-      {/* Bottom: Dashboard + Settings */}
-      <div className="sidebar-foot">
-        {/* Dashboard is a standalone Next route (/dashboard), not a workspace
-            mode — navigate with a real link rather than onModeChange. */}
-        <a
-          className="sidebar-foot-btn"
-          href="/dashboard"
-          aria-label="Dashboard"
-          title="Dashboard — activity overview and daily reports"
-        >
-          <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:squares-four" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
-          </span>
-          <span className="sidebar-foot-label">Dashboard</span>
-        </a>
-        <button
-          type="button"
-          className="sidebar-foot-btn"
-          onClick={onOpenSettings}
-          aria-label="Settings"
-          title="Settings"
-        >
-          <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:gear-six" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
-          </span>
-          <span className="sidebar-foot-label">Settings</span>
-        </button>
-      </div>
-
-      {/* Bottommost: app version — one minimal-height muted line. */}
-      <div className="sidebar-version" title={`CovenCave v${APP_VERSION}`}>
-        v{APP_VERSION}
-      </div>
+      {/* Bottom: Dashboard + Settings, then the version line — shared with the
+          chat-thread nav (WorkspaceSidebar) so the footer is identical and
+          persists on every surface, including Chat. */}
+      <SidebarFooter onOpenSettings={onOpenSettings} />
     </nav>
   );
 }

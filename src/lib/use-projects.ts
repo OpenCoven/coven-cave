@@ -71,6 +71,13 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
       return;
     }
 
+    // Drop the previous scope's list before refetching so a familiarId change
+    // (or a re-enable) never leaves another familiar's projects visible — and
+    // pickable — during the in-flight request. `load` is memoized on familiarId,
+    // so this effect only re-runs when the scope or `enabled` actually changes;
+    // a manual reload() after a mutation calls load() directly and is
+    // unaffected, so an in-place refresh never blanks the list.
+    setProjects([]);
     load();
     return () => abortRef.current?.abort();
   }, [enabled, load]);

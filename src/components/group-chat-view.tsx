@@ -21,10 +21,14 @@ import {
 import { Icon } from "@/lib/icon";
 import { extractNextPaths } from "@/lib/next-paths";
 import { Button } from "@/components/ui/button";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
+import { parseHarnessFailure } from "@/lib/harness-failure";
+import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { useStickToBottom } from "@/lib/use-stick-to-bottom";
 import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -93,7 +97,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // scrolled up to review history, new streaming content must NOT yank them
   // back down — instead we surface a "jump to latest" pill.
   const [showJump, setShowJump] = useState(false);
-  const stickToBottomRef = useRef(true);
   const dtPrefs = useDateTimePrefs();
   const confirm = useConfirm();
   const { announce } = useAnnouncer();
@@ -101,6 +104,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Intent-based follow (cave-o8si): scrolling up releases the stick, and only
+  // returning to the true bottom re-attaches — the old 48px position threshold
+  // re-stuck a reader pausing near the bottom, so the next streamed token
+  // yanked them back down.
+  const { stuckRef: stickToBottomRef, schedulePin, stick } = useStickToBottom(scrollRef, {
+    onStickChange: (stuck) => {
+      if (stuck) setShowJump(false);
+    },
+  });
   const composerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Caret to restore after we programmatically rewrite the draft (mention insert).
@@ -111,6 +123,30 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // without re-creating its callback on every streaming token.
   const transcriptRef = useRef<GroupTurn[]>(transcript);
   transcriptRef.current = transcript;
+  // Per-coven composer drafts: text typed for one coven must not silently
+  // become a pending message to another on switch. Stashed by the swap
+  // effect (in-memory only — a draft is not precious enough to persist).
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const draftsByGroupRef = useRef(new Map<string, string>());
+  const draftOwnerRef = useRef<string | null>(null);
+  // Which group the in-memory transcript belongs to (set by the swap effect).
+  // The persist effect must not save until the swap has caught up, or the
+  // previous coven's turns get written under the new coven's key.
+  const transcriptOwnerRef = useRef<string | null>(null);
+  // Throttled persistence: the newest un-persisted transcript, tagged with
+  // its group id so a flush after a coven switch still targets the right key.
+  const pendingSaveRef = useRef<{ groupId: string; turns: GroupTurn[] } | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const flushPendingSave = useCallback(() => {
+    if (saveTimerRef.current != null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (pending) saveTranscript(pending.groupId, pending.turns);
+  }, []);
 
   const byId = useMemo(() => {
     const m = new Map<string, ResolvedFamiliar>();
@@ -134,56 +170,77 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- swap transcript when the active group changes ----------------------
   useEffect(() => {
+    // Switching covens abandons any in-flight broadcast on the previous one.
+    // Abort it (otherwise its streams keep running and their tokens no-op
+    // against the newly-loaded transcript — a leaked stream) and clear the
+    // busy/abort state so the new coven starts clean. The previous coven keeps
+    // its last-saved transcript; returning to it offers retry on any partial.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    // Persist the outgoing coven's tail before swapping — the pending record
+    // carries ITS group id, so this can never write under the new coven's key.
+    flushPendingSave();
+    transcriptOwnerRef.current = activeId;
+    // Swap the composer draft along with the transcript: stash the outgoing
+    // coven's draft and restore the incoming one's (or a clean slate).
+    if (draftOwnerRef.current !== activeId) {
+      if (draftOwnerRef.current) draftsByGroupRef.current.set(draftOwnerRef.current, draftRef.current);
+      draftOwnerRef.current = activeId;
+      setDraft(activeId ? draftsByGroupRef.current.get(activeId) ?? "" : "");
+      setMention(null);
+    }
     if (!activeId) {
       setTranscript([]);
       return;
     }
     setTranscript(loadTranscript(activeId));
-  }, [activeId]);
+  }, [activeId, flushPendingSave]);
 
-  // --- persist transcript on settle ---------------------------------------
+  // --- persist transcript (throttled) --------------------------------------
+  // Streaming produces a transcript state update per SSE token, from several
+  // familiars concurrently; JSON.stringifying the whole transcript into
+  // localStorage on each one is heavy synchronous main-thread work. Coalesce
+  // to at most one write per interval, with the pending record flushed on
+  // coven switch and unmount so no settled tail is lost. The owner guard
+  // skips the stale commit right after a switch, where this effect still
+  // sees the PREVIOUS coven's transcript against the new activeId (writing
+  // it would clobber the new coven's stored transcript).
   useEffect(() => {
-    if (activeId) saveTranscript(activeId, transcript);
-  }, [activeId, transcript]);
+    if (!activeId || transcriptOwnerRef.current !== activeId) return;
+    pendingSaveRef.current = { groupId: activeId, turns: transcript };
+    if (saveTimerRef.current == null) {
+      saveTimerRef.current = window.setTimeout(() => {
+        saveTimerRef.current = null;
+        flushPendingSave();
+      }, 400);
+    }
+  }, [activeId, transcript, flushPendingSave]);
+  useEffect(() => () => flushPendingSave(), [flushPendingSave]);
 
   // --- autoscroll to newest, but only when the reader is already at the bottom
   // Streaming replies grow the transcript constantly; force-scrolling on every
   // update would fight a reader who scrolled up to re-read an earlier answer.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
     if (stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+      schedulePin();
       setShowJump(false);
     } else {
       // Something new landed while scrolled up — offer a jump affordance.
       setShowJump(true);
     }
-  }, [transcript]);
+  }, [transcript, schedulePin, stickToBottomRef]);
 
   // When the active group changes, snap to the bottom of its transcript.
   useEffect(() => {
-    stickToBottomRef.current = true;
+    stick();
     setShowJump(false);
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [activeId]);
-
-  const onTranscriptScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // 48px slop so a near-bottom position still counts as "stuck to bottom".
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    stickToBottomRef.current = atBottom;
-    if (atBottom) setShowJump(false);
-  }, []);
+  }, [activeId, stick]);
 
   const jumpToLatest = useCallback(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-    stickToBottomRef.current = true;
+    stick();
     setShowJump(false);
-  }, []);
+  }, [stick]);
 
   // --- restore caret after a programmatic draft rewrite (mention insert) ---
   useEffect(() => {
@@ -224,14 +281,23 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   const recordSession = useCallback(
     (groupId: string, familiarId: string, sessionId: string) => {
-      const current = groupsRef.current.find((g) => g.id === groupId);
-      if (!current || current.sessions[familiarId] === sessionId) return;
-      persistGroups(
-        upsertGroup(groupsRef.current, setGroupSession(current, familiarId, sessionId, nowIso())),
-      );
+      // A broadcast streams every familiar concurrently, so several session/done
+      // events can land in the same tick. Reading the render-synced groupsRef
+      // let each call rebase on the SAME stale groups, and the last write dropped
+      // the others' session ids. Update functionally instead so every record
+      // composes on the latest state; persist inside the updater. onSessionStarted
+      // is fired unconditionally (idempotent list refresh) so a session is never
+      // missed — we can't reliably read "did it change" back out of the updater.
+      setGroups((prev) => {
+        const current = prev.find((g) => g.id === groupId);
+        if (!current || current.sessions[familiarId] === sessionId) return prev;
+        const next = upsertGroup(prev, setGroupSession(current, familiarId, sessionId, nowIso()));
+        saveGroups(next);
+        return next;
+      });
       onSessionStarted?.(sessionId);
     },
-    [persistGroups, onSessionStarted],
+    [onSessionStarted],
   );
 
   // --- group CRUD ----------------------------------------------------------
@@ -246,6 +312,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     (id: string) => {
       const next = removeGroup(groupsRef.current, id);
       persistGroups(next);
+      // Drop any throttled save queued for this coven — flushing it later
+      // (e.g. on the switch below) would resurrect the just-deleted transcript.
+      if (pendingSaveRef.current?.groupId === id) {
+        pendingSaveRef.current = null;
+        if (saveTimerRef.current != null) {
+          window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+      }
+      draftsByGroupRef.current.delete(id);
       if (typeof localStorage !== "undefined") {
         try {
           localStorage.removeItem(`cave:group-chat:transcript:${id}`);
@@ -434,8 +510,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           ),
         ),
       );
-      abortRef.current = null;
-      setBusy(false);
+      // Only clear the shared abort/busy wiring if this broadcast still owns it.
+      // A coven switch (or a newer broadcast) may have replaced abortRef while
+      // this one was aborting; clearing unconditionally would kill the newer
+      // stream's Stop and unlock the composer mid-response.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setBusy(false);
+      }
       // The streaming bubbles are visual-only — announce the outcome for AT.
       const failed = settled.filter((r) => r.status === "error").length;
       const total = settled.length;
@@ -501,8 +583,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         }),
         controller.signal,
       );
-      abortRef.current = null;
-      setBusy(false);
+      // Ownership-guarded (see broadcast): don't clobber a newer stream's wiring.
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setBusy(false);
+      }
       const name = byId.get(fresh.familiarId)?.display_name ?? "Familiar";
       announce(
         settled.status === "error" ? `${name} failed again.` : `${name} replied.`,
@@ -510,6 +595,32 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       );
     },
     [busy, byId, updateReply, streamOne, announce, operatorDisplayName],
+  );
+
+  // Recovery for a harness/runtime failure on one reply: rebind that familiar
+  // to the chosen adapter via /api/config, then re-run just their reply.
+  const useHarnessForReply = useCallback(
+    async (reply: GroupReply, runtime: string) => {
+      if (busy) return;
+      try {
+        const res = await fetch("/api/config", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            familiars: { [reply.familiarId]: { harness: runtime, model: defaultModelForRuntime(runtime) } },
+          }),
+        });
+        if (!res.ok) {
+          announce(`Could not switch harness (${res.status}).`, "assertive");
+          return;
+        }
+        window.dispatchEvent(new Event("cave:familiars-refresh"));
+        await retryReply(reply);
+      } catch {
+        announce("Could not switch harness.", "assertive");
+      }
+    },
+    [busy, retryReply, announce],
   );
 
   // --- @mention autocomplete ----------------------------------------------
@@ -548,14 +659,21 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- derived transcript view --------------------------------------------
   // Group replies under the user turn they answer for a clean threaded layout.
+  // Single pass: this memo recomputes on every streaming token, so the old
+  // users.map(… transcript.filter …) shape was O(userTurns × transcript).
   const threads = useMemo(() => {
-    const users = transcript.filter((t): t is GroupUserTurn => t.role === "user");
-    return users.map((u) => ({
-      user: u,
-      replies: transcript.filter(
-        (t): t is GroupReply => t.role === "assistant" && t.replyTo === u.id,
-      ),
-    }));
+    const users: GroupUserTurn[] = [];
+    const repliesByUser = new Map<string, GroupReply[]>();
+    for (const t of transcript) {
+      if (t.role === "user") {
+        users.push(t);
+        continue;
+      }
+      const bucket = repliesByUser.get(t.replyTo);
+      if (bucket) bucket.push(t);
+      else repliesByUser.set(t.replyTo, [t]);
+    }
+    return users.map((u) => ({ user: u, replies: repliesByUser.get(u.id) ?? [] }));
   }, [transcript]);
 
   const participants = activeGroup
@@ -564,7 +682,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- render --------------------------------------------------------------
   return (
-    <div className="cave-group-chat-shell flex h-full min-h-0">
+    <div className="cave-group-chat-shell flex h-full min-h-0 w-full min-w-0 flex-1">
       {/* Coven list rail */}
       <aside className="cave-group-chat-rail flex w-56 shrink-0 flex-col border-r" style={{ borderColor: "var(--border-hairline)" }}>
         <div className="flex items-center justify-between gap-2 px-3 py-2.5">
@@ -618,8 +736,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     </button>
                     <button
                       type="button"
-                      className="focus-ring absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
-                      title="Delete coven"
+                      className="focus-ring touch-always-visible absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
+                      title="Delete coven — removes this group chat only"
                       aria-label={`Delete ${g.name}`}
                       onClick={() => void requestDeleteGroup(g.id, g.name)}
                     >
@@ -657,13 +775,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   <input
                     autoFocus
                     defaultValue={activeGroup.name}
-                    className="w-full rounded bg-transparent text-[15px] font-semibold outline-none"
+                    aria-label="Coven name — Enter saves, Escape cancels"
+                    className="focus-ring-inset w-full rounded bg-transparent text-[15px] font-semibold outline-none"
                     style={{ color: "var(--text-primary)" }}
                     onBlur={(e) => {
                       renameGroup(e.target.value);
                       setRenaming(false);
                     }}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
                       if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                       if (e.key === "Escape") setRenaming(false);
                     }}
@@ -671,9 +791,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                 ) : (
                   <button
                     type="button"
-                    className="truncate text-[15px] font-semibold"
+                    className="focus-ring truncate text-[15px] font-semibold"
                     style={{ color: "var(--text-primary)" }}
                     title="Rename coven"
+                    aria-label={`Rename coven: ${activeGroup.name}`}
                     onClick={() => setRenaming(true)}
                   >
                     {activeGroup.name}
@@ -723,7 +844,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         <button
                           key={f.id}
                           type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
+                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-[var(--bg-raised)]"
                           onClick={() => toggleParticipant(f.id)}
                         >
                           <FamiliarAvatar familiar={f} size="md" className="rounded-full object-cover" />
@@ -749,7 +870,6 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             <div className="relative min-h-0 flex-1">
             <div
               ref={scrollRef}
-              onScroll={onTranscriptScroll}
               role="log"
               aria-label="Coven transcript"
               aria-live="off"
@@ -844,7 +964,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   showTimestamp={false}
                                 />
                                 {r.status === "error" ? (
-                                  <div className="mt-1.5">
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                     <Button
                                       size="xs"
                                       variant="secondary"
@@ -854,10 +974,20 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                     >
                                       Retry
                                     </Button>
+                                    {(() => {
+                                      const failure = parseHarnessFailure(r.error);
+                                      return failure ? (
+                                        <HarnessFixActions
+                                          failure={failure}
+                                          busy={busy}
+                                          onUseHarness={(runtime) => void useHarnessForReply(r, runtime)}
+                                        />
+                                      ) : null;
+                                    })()}
                                   </div>
                                 ) : null}
                                 {r.status === "done" && suggestions.length > 0 ? (
-                                  <div className="cave-next-paths mt-1.5">
+                                  <div className="cave-next-paths mt-1.5" data-count={suggestions.length}>
                                     {suggestions.map((s, i) => {
                                       // The agent lists next steps best-first, so
                                       // flag the top one as the recommendation.
@@ -922,6 +1052,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   onClick={syncMention}
                   onBlur={() => setMention(null)}
                   onKeyDown={(e) => {
+                    // `isComposing` is true for the Enter/Tab that confirms an
+                    // IME candidate (CJK input) — confirming a character must
+                    // never pick a mention or broadcast the half-composed
+                    // draft. Mirrors ChatView's composer guard.
+                    if (e.nativeEvent.isComposing) return;
                     if (mentionOpen) {
                       if (e.key === "ArrowDown") {
                         e.preventDefault();
@@ -977,7 +1112,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         <button
                           key={f.id}
                           type="button"
-                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                          className="focus-ring flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
                           style={i === mentionIndex ? { background: "var(--bg-raised)" } : undefined}
                           // Use mousedown so the textarea's onBlur doesn't fire first and close us.
                           onMouseDown={(e) => {

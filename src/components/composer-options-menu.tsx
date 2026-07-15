@@ -86,6 +86,9 @@ export function ComposerOptionsMenu({
   sections,
   indicator,
   disabled,
+  onOpenPromptSnippets,
+  onSaveAsTemplate,
+  saveAsTemplateDisabled,
 }: {
   hostValue: string;
   onHostPick: (id: string) => void;
@@ -94,11 +97,19 @@ export function ComposerOptionsMenu({
   /** Show the "non-default" dot on the trigger (host-remote is added here). */
   indicator?: boolean;
   disabled?: boolean;
+  /** When set, the menu opens with a "Prompt snippets…" action at the top — the
+   *  composer's utility row folds its dedicated snippets button in here so the
+   *  resting row is just attach · voice · this overflow (cave-xsq.4). */
+  onOpenPromptSnippets?: () => void;
+  /** When set, a "Save draft as template…" action follows the snippets one
+   *  (cave-jg6k). Callers disable it while the draft is empty. */
+  onSaveAsTemplate?: () => void;
+  saveAsTemplateDisabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement | null>(null);
-  const { options: hostOptions, load } = useComposerHosts(hostValue);
+  const { options: hostOptions, load, removeHost } = useComposerHosts(hostValue);
 
   const showDot = Boolean(indicator) || hostValue !== LOCAL_HOST_ID;
 
@@ -107,12 +118,12 @@ export function ComposerOptionsMenu({
       <button
         ref={anchorRef}
         type="button"
-        className="cave-composer-icon-button composer-options__trigger focus-ring relative grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+        className="cave-composer-icon-button composer-options__trigger focus-ring relative grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
         disabled={disabled}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label="Response settings"
-        title="Response settings"
+        aria-label="Composer options"
+        title="Composer options"
         onClick={() => {
           void load();
           setOpen((v) => !v);
@@ -127,15 +138,43 @@ export function ComposerOptionsMenu({
         anchorRef={anchorRef}
         placement="top-start"
         minWidth={288}
-        ariaLabel="Response settings"
+        ariaLabel="Composer options"
         className="composer-options__panel"
       >
-        <PopoverBody ariaLabel="Response settings">
+        <PopoverBody ariaLabel="Composer options">
+          {onOpenPromptSnippets ? (
+            <button
+              type="button"
+              className="composer-options__action focus-ring"
+              onClick={() => {
+                setOpen(false);
+                onOpenPromptSnippets();
+              }}
+            >
+              <Icon name="ph:chat-centered-text" width={14} aria-hidden />
+              Prompt snippets…
+            </button>
+          ) : null}
+          {onSaveAsTemplate ? (
+            <button
+              type="button"
+              className="composer-options__action focus-ring disabled:opacity-40"
+              disabled={saveAsTemplateDisabled}
+              onClick={() => {
+                setOpen(false);
+                onSaveAsTemplate();
+              }}
+            >
+              <Icon name="ph:floppy-disk-bold" width={14} aria-hidden />
+              Save draft as template…
+            </button>
+          ) : null}
           <div className="composer-options__section">
             <span className="composer-options__label">Host</span>
             <ComposerHostChoices
               options={hostOptions}
               value={hostValue}
+              onRemoveHost={(host) => void removeHost(host)}
               onPick={onHostPick}
               onConnectNew={() => {
                 setOpen(false);

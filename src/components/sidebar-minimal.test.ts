@@ -5,6 +5,9 @@ import { readFileSync } from "node:fs";
 const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+// The footer (Dashboard + Settings + version) now lives in a shared component so
+// it persists across every nav host, including Chat's WorkspaceSidebar.
+const footer = readFileSync(new URL("./sidebar-footer.tsx", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -108,8 +111,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /onFamiliarScopeChange: \(id: string \| null\) => void/,
-  "Sidebar exposes a nullable familiar scope change callback",
+  /onFamiliarScopeChange: \(id: string \| null, opts\?: \{ multi\?: boolean \}\) => void/,
+  "Sidebar exposes a nullable familiar scope change callback (multi-capable for the header strip)",
 );
 
 assert.doesNotMatch(
@@ -138,8 +141,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
-  "Schedules should own the old Calendar shortcut as the active schedule surface",
+  /\{ id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
+  "Rituals should own the old Calendar shortcut as the active schedule surface",
 );
 
 assert.doesNotMatch(
@@ -228,6 +231,11 @@ assert.match(
 
 assert.match(
   source,
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>/,
+  "SidebarMinimal renders the shared footer",
+);
+assert.match(
+  footer,
   /sidebar-foot-icon-cell/,
   "Footer controls should use the fixed footer icon cell",
 );
@@ -320,15 +328,28 @@ assert.match(
 // The sidebar header is a static wordmark — collapsing the panel is owned by
 // the shell's floating top-left toggle (and ⌘B), so the header is no longer a
 // button and the in-panel collapse toggle is gone.
-assert.match(
+assert.doesNotMatch(
   source,
   /className="sidebar-header sidebar-header--static"/,
-  "the sidebar header is a static wordmark, not a collapse button",
+  "the static wordmark header is gone — the familiar switcher owns the slot (collapse stays on the shell's floating toggle + ⌘B)",
+);
+// The header carries the familiar switcher on every page (cave-vtk9) — the
+// wordmark gave it the slot; the collapsed rail keeps the avatar-only trigger.
+assert.match(
+  source,
+  /<div className="sidebar-familiar-switch">[\s\S]{0,600}<FamiliarQuickSwitch/,
+  "the sidenav header mounts the familiar switcher",
 );
 assert.match(
   source,
-  /<span className="sidebar-title">Coven Cave<\/span>/,
-  "the static header keeps the Coven Cave wordmark",
+  /onSelectFamiliar=\{onFamiliarScopeChange\}/,
+  "the header switcher drives the shared familiar scope",
+);
+const sidebarCss = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta.url), "utf8");
+assert.match(
+  sidebarCss,
+  /\.shell-nav--rail \.sidebar-familiar-switch \.familiar-switcher__trigger-label \{\s*\n\s*display: none/,
+  "the rail keeps the avatar-only trigger (label drops)",
 );
 assert.doesNotMatch(
   source,
@@ -372,14 +393,19 @@ assert.match(
 // The app version renders as the bottommost sidebar element — one
 // minimal-height muted line under the footer icon row, hidden in the rail.
 assert.match(
-  source,
+  footer,
   /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
-  "SidebarMinimal should read the version from the shared app-version module",
+  "the shared footer reads the version from the shared app-version module",
+);
+assert.match(
+  footer,
+  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>/,
+  "the version line is the bottommost element of the shared footer",
 );
 assert.match(
   source,
-  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>\s*<\/nav>/,
-  "The version line should be the bottommost element of the sidebar nav",
+  /<SidebarFooter onOpenSettings=\{onOpenSettings\} \/>\s*<\/nav>/,
+  "the shared footer is the bottommost element of the sidebar nav",
 );
 assert.match(
   styles,
@@ -392,10 +418,26 @@ assert.match(
   "The 56px rail has no room for text — the version line hides there",
 );
 
-// Quiet cluster (§8): occasional destinations (Marketplace, GitHub) stay in the
-// same flat list but render muted-until-hover, with the first quiet row opening
-// a spacing gap instead of a divider. (Browser is now navHidden, so Marketplace
-// leads the quiet cluster.)
+// Quiet cluster (§8): occasional destinations stay in the same flat list but
+// render muted-until-hover, with the first quiet row opening a spacing gap.
+// Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
+// ⌘-numbered daily set (Home ⌘1 · Chat ⌘2 · Tasks ⌘3 · Schedules ⌘4); Memories
+// leads the quiet cluster, followed by Marketplace/GitHub/Work Queue.
+assert.match(
+  source,
+  /\{ id: "journal",[^}]*navHidden: true \}/,
+  "Journal keeps no sidebar row — it's a tab inside Memories (palette/deep-link reachability stays via navHidden)",
+);
+assert.match(
+  source,
+  /\{ id: "grimoire", label: "Memories",[^}]*quiet: true \}/,
+  "Memories (grimoire) is in the quiet cluster (cave-xsq.8)",
+);
+assert.match(
+  source,
+  /id: "inbox",[\s\S]*?\{ id: "grimoire"/,
+  "the ⌘-numbered prominent cluster (…Schedules) renders above the quiet cluster",
+);
 assert.match(
   source,
   /\{ id: "marketplace",[^}]*quiet: true \}/,

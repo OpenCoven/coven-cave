@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "opencoven.craft.v1",
+  "components": {
+    "required": [
+      "filesystem",
+      "research-ingestion"
+    ],
+    "optional": [
+      "pptx-generator",
+      "markitdown",
+      "memory"
+    ]
+  },
+  "bundled": {
+    "skills": [
+      {
+        "id": "ml-paper-writing",
+        "sourcePath": "craft-sources/scribes-quill/ml-paper-writing/SKILL.md",
+        "upstreamPath": "20-ml-paper-writing/ml-paper-writing/SKILL.md",
+        "contentHash": "sha256:96733e6d758642d792ed15b7c08eb90548d4775099368cd72a8312127f2fe911",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "systems-paper-writing",
+        "sourcePath": "craft-sources/scribes-quill/systems-paper-writing/SKILL.md",
+        "upstreamPath": "20-ml-paper-writing/systems-paper-writing/SKILL.md",
+        "contentHash": "sha256:ee31b50b25192efcfcbe3252d7e15d88ec27bbd94817640b0357090f94c0e297",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "academic-plotting",
+        "sourcePath": "craft-sources/scribes-quill/academic-plotting/SKILL.md",
+        "upstreamPath": "20-ml-paper-writing/academic-plotting/SKILL.md",
+        "contentHash": "sha256:6613653d8109dcae36596b37d7414d5ae394a18f81543365222286d04485fd83",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      },
+      {
+        "id": "presenting-conference-talks",
+        "sourcePath": "craft-sources/scribes-quill/presenting-conference-talks/SKILL.md",
+        "upstreamPath": "20-ml-paper-writing/presenting-conference-talks/SKILL.md",
+        "contentHash": "sha256:5fb6b8f9e5b7690dcb0d783ff1e07c6d3f6b950b8f1238e0672e1f3c53bad57f",
+        "modifications": [
+          "Pinned to Orchestra Research commit 773a52944ba4747a18bd4ae9ade53fff041adcbc and normalized for Coven Codex packaging.",
+          "Audited for local capability boundaries, provenance, and reviewable workflows."
+        ]
+      }
+    ],
+    "prompts": [
+      {
+        "id": "scribes-quill-review-install-plan",
+        "name": "Review the install plan",
+        "description": "Summarize the Craft footprint and confirm bounded use.",
+        "body": "Review the requested research task, required capabilities, optional enhancements, provenance, and declared resource bounds. State what will happen and stop for confirmation before execution."
+      }
+    ],
+    "workflows": [
+      {
+        "id": "scribes-quill-bounded-research-cycle",
+        "name": "Bounded research cycle",
+        "description": "Plan, execute, evaluate, and summarize one reviewable research cycle.",
+        "steps": [
+          "Declare scope, authority, provenance, and resource limits.",
+          "Select the smallest reproducible action and record its inputs.",
+          "Run only within the declared bounds and preserve resumable state.",
+          "Evaluate outputs against a predeclared criterion.",
+          "Summarize evidence, limitations, and the next human checkpoint."
+        ]
+      }
+    ]
+  },
+  "requiredCapabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "recommendedRoles": [
+    "Researcher",
+    "Writer"
+  ],
+  "provenance": {
+    "upstream": "Orchestra Research AI Research Skills",
+    "commit": "773a52944ba4747a18bd4ae9ade53fff041adcbc",
+    "license": "MIT",
+    "modifications": [
+      "Adapted and audited for Coven Craft packaging, local provenance, and bounded execution."
+    ],
+    "source": "https://github.com/orchestra-research/AI-Research-SKILLs",
+    "licensePath": "craft-sources/orchestra-research/LICENSE"
+  }
+}

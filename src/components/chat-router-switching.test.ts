@@ -38,14 +38,45 @@ assert.match(
 
 assert.match(
   source,
-  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatView/,
-  "ChatRouter should render the projects sidebar next to ChatView while a chat is open",
+  // The chat surface renders through ChatSplitHost (multi-pane chat); the
+  // sidebar still sits beside it while a chat is open.
+  /<ChatProjectSidebar[\s\S]*activeSessionId=\{view\.kind === "chat" \? view\.sessionId : null\}[\s\S]*<ChatSplitHost/,
+  "ChatRouter should render the projects sidebar next to the chat surface while a chat is open",
 );
 
 assert.match(
   source,
   /const chatFamiliar = selectedViewFamiliar \?\? sessionFamiliar \?\? familiar \?\? null/,
   "ChatRouter should render an opened session with its own familiar before the parent active familiar catches up",
+);
+
+// ── Chat-first IA (cave-hsa6): boot into a compose view, not the list ───────
+const bootComposeEffect =
+  source.match(/const bootComposeRef = useRef\(false\);[\s\S]*?\}, \[familiar\?\.id, fallbackFamiliar\?\.id\]\);/)?.[0] ?? "";
+assert.match(
+  bootComposeEffect,
+  /if \(bootComposeRef\.current\) return;/,
+  "the boot-compose effect fires once, so returning to the list later sticks",
+);
+assert.doesNotMatch(
+  bootComposeEffect,
+  /sessionsLoaded/,
+  "boot must not wait for the sessions fetch (cave-qvwu) — /api/sessions/list can take many seconds cold, and gating compose on it left users staring at the list skeletons; the compose landing needs only a familiar",
+);
+assert.match(
+  bootComposeEffect,
+  /window\.location\.hash\.startsWith\("#chat-"\)/,
+  "a #chat-<id> deep link is deferred to workspace restore, not overridden by the compose boot",
+);
+assert.match(
+  bootComposeEffect,
+  /matchMedia\("\(max-width: 1023px\)"\)\.matches/,
+  "compose-first boot is desktop-only — mobile keeps the thread list as the chat home",
+);
+assert.match(
+  bootComposeEffect,
+  /prev\.kind === "list" \? \{ kind: "chat", sessionId: null, familiarId: bootFamiliarId \} : prev/,
+  "booting into chat opens a zero-session compose view (ChatEmptyState + composer), no server session created",
 );
 
 // ── CHAT-D9-01: URL deep links (#chat-<sessionId>) ───────────────────────────
@@ -363,4 +394,22 @@ assert.match(
   "cave-turn-found must disable its animation under prefers-reduced-motion (static tint instead)",
 );
 
+// cave-b63 (3): Back/Forward into a #chat-<id> before sessions load shows the
+// "Opening chat…" takeover (the popstate not-loaded branch arms the pending
+// flag, matching the mount-restore path).
+assert.match(
+  workspaceSource,
+  /pendingChatDeepLinkRef\.current = sid;\s*\n\s*\/\/[\s\S]*?setChatDeepLinkPending\(true\);/,
+  "the popstate deep-link-not-loaded branch shows the Opening chat… indicator",
+);
+
 console.log("chat-router-switching.test.ts: ok");
+
+// ── roster-error state is self-healing (issue #2990) ─────────────────────────
+// Workspace auto-retries loadFamiliars while the error shows; the copy must
+// not tell the user to retry manually as if nothing else will happen.
+assert.match(
+  source,
+  /retrying automatically/,
+  "the roster-error copy states that retries happen automatically",
+);

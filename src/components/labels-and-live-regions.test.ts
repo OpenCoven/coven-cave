@@ -51,7 +51,9 @@ function read(file: string) {
 // 5. inbox-toast.tsx root has aria-live + aria-atomic.
 {
   const src = read("inbox-toast.tsx");
-  assert.match(src, /aria-live="polite"/, "inbox-toast has aria-live=polite");
+  // (cave-bj68) politeness follows urgency: reply requests are assertive
+  // alerts, everything else stays a polite status.
+  assert.match(src, /aria-live=\{urgent \? "assertive" : "polite"\}/, "inbox-toast politeness follows urgency");
   assert.match(src, /aria-atomic="true"/, "inbox-toast has aria-atomic=true");
 }
 

@@ -11,6 +11,11 @@ name: Release
 #   - Windows (MSI) — unsigned (users see SmartScreen on first run; we'll
 #     wire WINDOWS_CERTIFICATE secrets when we buy a code-signing cert).
 #
+# Once artifacts + SHA256SUMS are attached, the `homebrew` job nudges
+# OpenCoven/homebrew-tap so `brew install --cask opencoven/tap/coven-cave`
+# serves the new release (optional HOMEBREW_TAP_TOKEN secret makes the
+# bump instant; the tap's 6-hourly schedule is the no-secrets fallback).
+#
 # Trigger: push a tag matching `v*` (e.g. `git tag -s v0.0.16 && git push
 # origin v0.0.16`).
 #
@@ -139,7 +144,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
@@ -220,14 +225,8 @@ jobs:
 
       - name: Build with tauri-action
         if: >-
-          (
-            matrix.family == 'linux' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
-          ) ||
-          (
-            matrix.family == 'windows' &&
-            (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
-          )
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -246,6 +245,77 @@ jobs:
           # here would clobber the manifest with a single platform.
           includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+      # Build without release inputs so tauri-action cannot publish the MSI
+      # before its component/size budget has passed.
+      - name: Build Windows MSI without publishing
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
+        with:
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}
+
+      - name: Measure and enforce Windows MSI budget
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: powershell
+        run: |
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($msis.Count -ne 1) {
+            throw "Expected exactly one built MSI, found $($msis.Count)"
+          }
+          & .\scripts\windows-msi-budget.ps1 `
+            -MsiPath $msis[0].FullName `
+            -OutputPath "$env:RUNNER_TEMP\windows-msi-metrics.json"
+
+      - name: Retain Windows MSI diagnostics
+        if: >-
+          always() && matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-msi-diagnostics-${{ env.RELEASE_VERSION }}
+          path: ${{ runner.temp }}/windows-msi-metrics.json
+          if-no-files-found: warn
+          compression-level: 0
+
+      - name: Publish validated Windows MSI
+        if: >-
+          matrix.family == 'windows' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msis = @(Get-ChildItem -Path src-tauri/target/release/bundle/msi -Filter *.msi -File)
+          if ($msis.Count -ne 1) {
+            throw "Expected exactly one budget-approved MSI, found $($msis.Count)"
+          }
+
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG `
+              --verify-tag `
+              --title "CovenCave $env:RELEASE_TAG" `
+              --notes "Release artifacts are still being assembled by the release workflow."
+            if ($LASTEXITCODE -ne 0) {
+              # Another matrix leg may have created the release concurrently.
+              Start-Sleep -Seconds 5
+              gh release view $env:RELEASE_TAG *> $null
+              if ($LASTEXITCODE -ne 0) {
+                throw "Could not create or find release $env:RELEASE_TAG"
+              }
+            }
+          }
+
+          gh release upload $env:RELEASE_TAG $msis[0].FullName --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not publish budget-approved MSI"
+          }
 
       - name: Sign Linux/Windows updater artifact
         if: >-
@@ -275,12 +345,13 @@ jobs:
             gh release upload "$RELEASE_TAG" "${artifact}.sig" --clobber
           done
 
-      # Strip bundled GLib from the AppImage so the host system's GLib is used
-      # at runtime. The host's libayatana-appindicator3 (loaded via dlopen by
-      # Tauri's tray icon) is compiled against the host GLib, so the symbols
-      # must match. By removing GLib from the bundle, the dynamic linker falls
-      # through to the system GLib, which always matches the dlopen'd libraries.
-      - name: Strip bundled GLib from AppImage
+      # Strip bundled GLib and util-linux mount libraries from the AppImage so
+      # the host system's copies are used at runtime. The host's
+      # libayatana-appindicator3/GVFS stack (loaded via dlopen by GTK/GIO and
+      # Tauri's tray icon) is compiled against the host GLib/libmount ABI, so
+      # those symbols must match. By removing these libraries from the bundle,
+      # the dynamic linker falls through to the coherent host library set.
+      - name: Strip bundled GLib/libmount from AppImage
         if: >-
           matrix.family == 'linux' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
@@ -306,18 +377,22 @@ jobs:
           "$APPIMAGE" --appimage-extract >/dev/null 2>&1
           echo "Extracted $APPIMAGE"
 
-          # ── 2. Remove bundled GLib ──
+          # ── 2. Remove bundled GLib/libmount ──
           # The main binary was compiled against GLib 2.72 and works with any
-          # host GLib >= 2.72.  By deleting GLib from the bundle, dlopen'd
-          # host libraries (libayatana-appindicator3, GVFS) resolve against
-          # the host GLib and see matching symbols.
+          # host GLib >= 2.72. By deleting GLib and util-linux's mount stack
+          # from the bundle, dlopen'd host libraries (libayatana-appindicator3,
+          # GVFS, GIO) resolve against host GLib/libmount and see matching
+          # versioned symbols such as MOUNT_2_40.
           find squashfs-root/usr/lib \
             \( -name 'libglib-2.0*' \
                -o -name 'libgio-2.0*' \
                -o -name 'libgobject-2.0*' \
                -o -name 'libgmodule-2.0*' \
-               -o -name 'libgthread-2.0*' \) \
-            -delete -print | sed 's/^/🧹 Removed GLib: /'
+               -o -name 'libgthread-2.0*' \
+               -o -name 'libmount.so.1*' \
+               -o -name 'libblkid.so.1*' \
+               -o -name 'libuuid.so.1*' \) \
+            -delete -print | sed 's/^/🧹 Removed host-ABI library: /'
 
           # ── 3. Re-pack into AppImage ──
           # Download appimagetool (portable, no FUSE needed with
@@ -329,7 +404,7 @@ jobs:
 
           APPIMAGE_EXTRACT_AND_RUN=1 \
             /tmp/appimagetool squashfs-root "$APPIMAGE"
-          echo "✅ $APPIMAGE repacked without bundled GLib"
+          echo "✅ $APPIMAGE repacked without bundled GLib/libmount"
           rm -rf squashfs-root /tmp/appimagetool
 
           # ── 4. Re-upload and re-sign the updater artifact ──
@@ -338,7 +413,7 @@ jobs:
           # replaced with the stripped AppImage outputs.
           gh release upload "$RELEASE_TAG" "$APPIMAGE" --clobber
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "Re-signing ${APPIMAGE} after GLib strip"
+            echo "Re-signing ${APPIMAGE} after GLib/libmount strip"
             pnpm exec tauri signer sign "$APPIMAGE"
             gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber
           fi
@@ -544,7 +619,13 @@ jobs:
     name: Publish updater manifest (latest.json)
     needs: build
     runs-on: ubuntu-24.04
-    if: success()
+    # cave-ef6f: `if: success()` skipped this job whenever ANY platform leg
+    # flaked (3 of 4 cuts on 2026-07-08), publishing a release with NO
+    # latest.json — the in-app updater then 404s for every install until
+    # someone reruns the failed leg. Run whenever the build ran at all and
+    # publish entries for the platforms that DID produce signed artifacts;
+    # zero platforms stays fatal (see the verify step below).
+    if: ${{ !cancelled() && needs.build.result != 'cancelled' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -577,6 +658,7 @@ jobs:
           set -euo pipefail
           count=$(node -e "const m=require('./latest.json'); process.stdout.write(String(Object.keys(m.platforms||{}).length))")
           echo "latest.json platform count: $count"
+          echo "PLATFORM_COUNT=$count" >> "$GITHUB_ENV"
           if [ "$count" -eq 0 ]; then
             echo "::error::latest.json has 0 platforms — no signed updater artifacts were produced, so in-app auto-update would silently find nothing."
             echo "::error::Ensure the TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD) repo secrets are set so the build jobs emit signed *.sig artifacts."
@@ -591,3 +673,78 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: latest.json
+
+      # cave-ef6f: an honest release body — when the manifest ships partial,
+      # say so on the release itself (and remove the note when a rerun heals
+      # it to 4/4). Idempotent: the marker line is stripped before deciding.
+      - name: Flag partial updater coverage in the release body
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rel=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null) || {
+            echo "no release object for ${RELEASE_TAG} yet — skipping body note"
+            exit 0
+          }
+          id=$(jq -r .id <<<"$rel")
+          body=$(jq -r '.body // ""' <<<"$rel")
+          cleaned=$(printf '%s' "$body" | sed '/Partial updater coverage/d')
+          if [ "${PLATFORM_COUNT}" -lt 4 ]; then
+            note="> ⚠️ **Partial updater coverage**: latest.json carries ${PLATFORM_COUNT}/4 platforms — auto-update is unavailable on the missing ones until \`gh run rerun --failed\` heals this run."
+            new=$(printf '%s\n\n%s\n' "$cleaned" "$note")
+          else
+            new=$cleaned
+          fi
+          if [ "$new" != "$body" ]; then
+            jq -n --arg body "$new" '{body:$body}' | gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$id" --input - >/dev/null
+            echo "release body updated (${PLATFORM_COUNT}/4 platforms)"
+          else
+            echo "release body already accurate (${PLATFORM_COUNT}/4 platforms)"
+          fi
+
+  # Nudge the Homebrew tap (OpenCoven/homebrew-tap) once artifacts and
+  # SHA256SUMS are attached, so `brew install --cask opencoven/tap/coven-cave`
+  # serves the new release within minutes. Best-effort by design: without the
+  # optional HOMEBREW_TAP_TOKEN secret the tap's own scheduled update-cask
+  # workflow (every 6 hours) still picks the release up, so this job never
+  # fails the release.
+  #
+  # One-time setup for instant bumps: create a fine-grained PAT with
+  # Contents: read & write on OpenCoven/homebrew-tap and add it to this
+  # repository as the HOMEBREW_TAP_TOKEN secret.
+  homebrew:
+    name: Notify Homebrew tap
+    needs: checksums
+    runs-on: ubuntu-24.04
+    # Belt for the in-script swallow below: even an unforeseen step failure
+    # must not fail the release run — the tap's 6-hourly schedule recovers.
+    continue-on-error: true
+    if: ${{ !cancelled() && needs.checksums.result == 'success' }}
+    steps:
+      - name: Dispatch update-cask to OpenCoven/homebrew-tap
+        shell: bash
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RAW_RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="$RAW_RELEASE_TAG"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::'$TAG' is not a stable vX.Y.Z tag — the Homebrew cask only tracks stable releases; skipping tap dispatch."
+            exit 0
+          fi
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set — skipping the instant tap dispatch. OpenCoven/homebrew-tap's scheduled update-cask workflow will pick up $TAG within 6 hours. Add a fine-grained PAT (Contents: read & write on OpenCoven/homebrew-tap) as HOMEBREW_TAP_TOKEN to make cask bumps instant."
+            exit 0
+          fi
+          if curl -fsS -X POST \
+            -H "Authorization: Bearer $TAP_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/OpenCoven/homebrew-tap/dispatches \
+            -d "{\"event_type\":\"coven-cave-release\",\"client_payload\":{\"tag\":\"$TAG\"}}"; then
+            echo "dispatched coven-cave-release ($TAG) to OpenCoven/homebrew-tap"
+          else
+            echo "::notice::tap dispatch failed (network/API) — OpenCoven/homebrew-tap's scheduled update-cask workflow will pick up $TAG within 6 hours."
+          fi

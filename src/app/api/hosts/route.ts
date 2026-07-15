@@ -112,3 +112,31 @@ export async function POST(req: Request) {
   });
   return NextResponse.json({ ok: true, host: { host: candidate.host, cwd: candidate.cwd } });
 }
+
+/**
+ * DELETE /api/hosts — unregister a remote host (body: { host }). The route
+ * existed for GET/POST only, leaving no removal path anywhere (cave-4zdp).
+ * Conversations recorded on the removed host fail closed at send time with a
+ * re-pick error rather than silently running locally.
+ */
+export async function DELETE(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
+  let body: { host?: unknown };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid json body" }, { status: 400 });
+  }
+  const host = typeof body.host === "string" ? body.host.trim() : "";
+  if (!host) {
+    return NextResponse.json({ ok: false, error: "host is required" }, { status: 400 });
+  }
+  const config = await loadConfig();
+  if (!config.remoteHosts.some((entry) => entry.host === host)) {
+    return NextResponse.json({ ok: false, error: `host '${host}' is not registered` }, { status: 404 });
+  }
+  await saveConfig({ remoteHosts: config.remoteHosts.filter((entry) => entry.host !== host) });
+  return NextResponse.json({ ok: true });
+}

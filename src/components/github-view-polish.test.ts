@@ -104,8 +104,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => setSelectedItemId\(item\.id\)\}/,
-  "clicking a GitHub row selects it for inspection",
+  /onClick=\{\(\) => selectRow\(item\.id\)\}/,
+  "clicking a GitHub row selects it for inspection (and clears any deep link)",
 );
 assert.match(
   source,
@@ -271,7 +271,7 @@ assert.match(source, /case "ArrowUp": e\.preventDefault\(\); focusRow/, "ArrowUp
 assert.match(source, /data-gh-row="true"[\s\S]{0,160}?data-item-id=\{item\.id\}/, "item rows carry the roving + id hooks");
 assert.match(source, /tabIndex=\{selectedItem\?\.id === item\.id \? 0 : -1\}/, "the selected row is the roving tab stop");
 assert.match(source, /role="grid" aria-label="GitHub activity/, "the table is a labelled grid");
-assert.match(source, /setSelectedItemId\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
+assert.match(source, /selectRow\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
 assert.match(source, /openExternalUrl\(url\)/, "Enter opens the focused row through the in-app Browser handoff");
 assert.match(source, /\}, \[sorted\.length\]\);/, "row-nav listeners rebind when the table mounts after the async fetch");
 
@@ -320,6 +320,21 @@ assert.match(
   source,
   /Prefer the worktree path over switching branches in the shared checkout/,
   "safe merge prompt should prefer worktrees over branch switching",
+);
+assert.match(
+  source,
+  /let safeMergeRoot: string \| null = linkedCard\?\.cwd \?\? null;/,
+  "safe merge tracks the chat root and defaults to the linked card cwd",
+);
+assert.match(
+  source,
+  /safeMergeRoot = typeof json\.worktree === "string" && json\.worktree \? json\.worktree : linkedCard\.cwd;/,
+  "safe merge roots the chat in the provisioned worktree when available",
+);
+assert.match(
+  source,
+  /detail: \{ familiarId, projectRoot: safeMergeRoot \?\? undefined, initialPrompt \}/,
+  "safe merge opens chat with the initial prompt and worktree root",
 );
 assert.match(
   source,
@@ -511,5 +526,19 @@ assert.doesNotMatch(
   /grid-template-columns:minmax\(0,1fr\) minmax\(340px,420px\)/,
   "fixed-width detail column is gone — the split is user-resizable",
 );
+
+// ── Fetch + optimistic-state hygiene (cave-b8ba) ─────────────────────────────
+// Detail/profile/comments/checks loads carry real AbortControllers (arrowing
+// through the list cancels the left-behind request instead of burning rate
+// limit); optimistic thread-resolves survive the post-comment refetch during
+// GitHub's read-after-write lag; the PAT modal can't be dismissed mid-save.
+{
+  const aborts = (source.match(/return \(\) => ctl\.abort\(\);/g) ?? []).length;
+  if (aborts < 4) throw new Error(`expected >=4 aborted fetch effects, found ${aborts}`);
+}
+assert.match(source, /const pendingResolveRef = useRef\(new Map<string, boolean>\(\)\)/, "optimistic resolves are tracked for override");
+assert.match(source, /pending\.delete\(t\.id\); \/\/ API caught up — stop overriding/, "overrides drop once the API confirms");
+assert.match(source, /const closeUnlessSaving = \(\) => \{\s*\n\s*if \(!savingRef\.current\) onClose\(\);/, "the PAT modal defers dismissal while saving");
+assert.match(source, /onClick=\{closeUnlessSaving\}/, "the backdrop uses the saving-aware close");
 
 console.log("github-view-polish.test.ts OK");

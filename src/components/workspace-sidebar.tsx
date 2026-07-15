@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
+import { FamiliarSwitcher } from "@/components/familiar-switcher";
 import { Icon, type IconName } from "@/lib/icon";
+import { SidebarFooter } from "@/components/sidebar-footer";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
@@ -17,30 +19,45 @@ import {
   type ChatProjectGroup,
 } from "@/lib/chat-projects";
 import {
-  PINNED_SESSIONS_KEY,
   isSessionPinned,
-  readPinnedSessions,
-  togglePinnedSession,
+  toggleStoredPinnedSession,
   readChatSidebarView,
   writeChatSidebarView,
   type ChatSidebarView,
 } from "@/lib/chat-session-prefs";
+import { usePinnedSessions } from "@/lib/use-pinned-sessions";
 import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
+import {
+  CHAT_SESSION_DRAG_MIME,
+  emitChatSessionDragEnd,
+  emitChatSessionDragStart,
+} from "@/lib/chat-split";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
+import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 type Props = {
   sessions: SessionRow[];
+  /** Roster for the header switcher — familiar selection's one home. */
+  familiars: ResolvedFamiliar[];
   /** Selected familiar (null = "All familiars"). Scopes the project list, the
    *  per-project session rows, and the project grant when registering. */
   activeFamiliarId?: string | null;
   activeSessionId?: string | null;
-  onBack: () => void;
+  responseNeeded?: Set<string>;
+  /** Change the familiar scope from the header switcher (`null` = All). */
+  onSelectFamiliar: (id: string | null) => void;
   onOpenSession: (session: SessionRow) => void;
+  /** ⌥↵ / ⌥-click / drag on a thread row: open it in a split pane beside the
+   *  current chat (the chat surface falls back to a plain open on mobile). */
+  onOpenSessionInSplit?: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
   /** Badge count for the Scheduled shortcut (from code-sidebar). */
   scheduledCount?: number;
+  /** Opens Settings — powers the shared footer so Chat keeps the same
+   *  Dashboard/Settings footer as every other surface. */
+  onOpenSettings: () => void;
 };
 
 const THREADS_PREVIEW = 6;
@@ -77,6 +94,19 @@ function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
   return "ph:folder-simple-dashed";
 }
 
+// Activity meta line under the folder name: "2 running · 12m" while sessions
+// run, else "6 chats · 3h". Subsumes the old count badge, so the header keeps
+// a single right-aligned slot for the hover actions.
+function groupMeta(group: ChatProjectGroup): string {
+  const running = group.sessions.filter((s) => s.status === "running").length;
+  const count =
+    running > 0
+      ? `${running} running`
+      : `${group.sessions.length} ${group.sessions.length === 1 ? "chat" : "chats"}`;
+  const age = group.updatedAt ? bareTime(group.updatedAt) : null;
+  return age ? `${count} · ${age}` : count;
+}
+
 // Returns a context-aware leading icon for threads whose title suggests a PR
 // or branch operation (from code-sidebar). Returns null for ordinary threads.
 function threadLeadingIcon(title: string): IconName | null {
@@ -95,10 +125,12 @@ type ThreadRowProps = {
   indent: "folder" | "flat";
   /** Shown in the time-bucketed Recent view, where rows from every project
    *  interleave — the folder view already says this via the group header. */
-  project?: { root: string; name: string } | null;
+  project?: { root: string; name: string; color: string | null } | null;
   /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
   glyph?: IconName | null;
   onOpen: () => void;
+  /** ⌥↵ / ⌥-click / drag: open beside the current chat in a split pane. */
+  onOpenInSplit?: () => void;
   onTogglePin: () => void;
   onRequestDelete: () => void;
   onCancelDelete: () => void;
@@ -115,6 +147,7 @@ function ThreadRow({
   project = null,
   glyph,
   onOpen,
+  onOpenInSplit,
   onTogglePin,
   onRequestDelete,
   onCancelDelete,
@@ -126,7 +159,35 @@ function ThreadRow({
       <button
         type="button"
         aria-current={active ? "page" : undefined}
-        onClick={onOpen}
+        onClick={(e) => {
+          // ⌥-click opens beside the current chat instead of replacing it.
+          if (e.altKey && onOpenInSplit) {
+            onOpenInSplit();
+            return;
+          }
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          // ⌥↵ opens in a split pane (keyboard twin of drag-to-split); stop
+          // the native button activation so onClick doesn't also fire.
+          if (e.key === "Enter" && e.altKey && onOpenInSplit) {
+            e.preventDefault();
+            onOpenInSplit();
+          }
+        }}
+        // Dragging the row onto the chat surface snaps it into a split pane
+        // (chat-split-host's drop zone; same protocol as the project rail).
+        draggable={Boolean(onOpenInSplit)}
+        onDragStart={(e) => {
+          if (!onOpenInSplit) return;
+          e.dataTransfer.setData(CHAT_SESSION_DRAG_MIME, session.id);
+          e.dataTransfer.setData("text/plain", title);
+          e.dataTransfer.effectAllowed = "copyMove";
+          emitChatSessionDragStart({ sessionId: session.id, title });
+        }}
+        onDragEnd={() => {
+          if (onOpenInSplit) emitChatSessionDragEnd();
+        }}
         className="cnav__thread-main focus-ring"
       >
         {glyph ? (
@@ -136,7 +197,7 @@ function ThreadRow({
         )}
         {project ? (
           <span className="cnav__thread-proj" title={project.name}>
-            <ProjectAvatar name={project.name} root={project.root} size="sm" />
+            <ProjectAvatar name={project.name} root={project.root} color={project.color} size="sm" />
             <span className="sr-only">{project.name}</span>
           </span>
         ) : null}
@@ -183,13 +244,17 @@ function ThreadRow({
 
 export function WorkspaceSidebar({
   sessions,
+  familiars,
   activeFamiliarId = null,
   activeSessionId,
-  onBack,
+  responseNeeded,
+  onSelectFamiliar,
   onOpenSession,
+  onOpenSessionInSplit,
   onNewChat,
   onDeleteSession,
   scheduledCount,
+  onOpenSettings,
 }: Props) {
   const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
@@ -198,8 +263,9 @@ export function WorkspaceSidebar({
   const [query, setQuery] = useState("");
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
   const [showAllByKey, setShowAllByKey] = useState<Set<string>>(() => new Set());
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+  // Pins come from the shared cross-surface store (chat list + thread rail +
+  // this sidebar all read and write the same subscribable list).
+  const pinnedIds = usePinnedSessions();
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
@@ -213,17 +279,11 @@ export function WorkspaceSidebar({
   // the GitHub action popover, #2288). Also hydrates the organize-view preference.
   useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
 
-  // Pins and the organize-view preference load after mount so SSR and first
-  // client render agree (same idiom as the chat list). The store is shared
-  // with the chat surface's other lists.
+  // The organize-view preference loads after mount so SSR and first client
+  // render agree (same idiom as the chat list).
   useEffect(() => {
-    setPinnedIds(readPinnedSessions());
     setView(readChatSidebarView());
-    setHydrated(true);
   }, []);
-  useEffect(() => {
-    if (hydrated) window.localStorage.setItem(PINNED_SESSIONS_KEY, JSON.stringify(pinnedIds));
-  }, [hydrated, pinnedIds]);
 
   const visibleSessions = useMemo(
     () => filterVisibleChatSessions(sessions, activeFamiliarId ?? null),
@@ -239,12 +299,12 @@ export function WorkspaceSidebar({
   // override-aware grouping the folder view renders — a chat dragged into
   // another folder shows that folder's tile, not its recorded cwd's.
   const sessionProjectById = useMemo(() => {
-    const byId = new Map<string, { root: string; name: string }>();
+    const byId = new Map<string, { root: string; name: string; color: string | null }>();
     for (const group of groups) {
       if (!group.projectRoot) continue;
       const name = folderLabel(group);
       for (const session of group.sessions) {
-        byId.set(session.id, { root: group.projectRoot, name });
+        byId.set(session.id, { root: group.projectRoot, name, color: group.projectColor });
       }
     }
     return byId;
@@ -301,7 +361,7 @@ export function WorkspaceSidebar({
   };
 
   const togglePin = (sessionId: string) => {
-    setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+    toggleStoredPinnedSession(sessionId);
   };
 
   const selectView = (next: ChatSidebarView) => {
@@ -354,20 +414,32 @@ export function WorkspaceSidebar({
       </button>
 
       <div className="workspace-sidebar__full chat-sidebar__full cnav">
+        {/* Header — the labeled familiar switcher (#2747). On the CHAT page
+            this sidebar REPLACES the global sidenav (SidebarMinimal never
+            renders here), so this is the page's only familiar control —
+            cave-l3ay restored it after #2750 removed it as a supposed
+            duplicate. Every other page gets the sidenav header switcher. */}
         <header className="cnav__header">
+          <div className="cnav__switcher">
+            <FamiliarSwitcher
+              familiars={familiars}
+              activeFamiliarId={activeFamiliarId}
+              sessions={sessions}
+              responseNeeded={responseNeeded}
+              onSelectFamiliar={onSelectFamiliar}
+              placement="bottom-start"
+              labeled
+            />
+          </div>
           <button
             type="button"
-            aria-label="Back to previous surface"
-            title="Back to previous surface"
-            onClick={onBack}
-            className="cnav__back focus-ring"
+            aria-label="Go to Home"
+            title="Home"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "home" } }))}
+            className="cnav__back focus-ring ml-auto"
           >
-            <Icon name="ph:arrow-left" width={15} aria-hidden />
+            <Icon name="ph:house-bold" width={15} aria-hidden />
           </button>
-          <div className="min-w-0">
-            <div className="cnav__title">Chats</div>
-            <div className="cnav__eyebrow">{view === "recent" ? "Recent" : "By project"}</div>
-          </div>
           <button
             ref={menuAnchorRef}
             type="button"
@@ -376,7 +448,7 @@ export function WorkspaceSidebar({
             aria-expanded={menuOpen}
             title="Sidebar options"
             onClick={() => setMenuOpen((cur) => !cur)}
-            className="cnav__back focus-ring ml-auto"
+            className="cnav__back focus-ring"
           >
             <Icon name="ph:dots-three-bold" width={15} aria-hidden />
           </button>
@@ -402,33 +474,35 @@ export function WorkspaceSidebar({
           </Popover>
         </header>
 
+        {/* One-row quick actions: New chat takes the slack; the Scheduled and
+            Plugins shortcuts ride along as icon chips (labels live in
+            title/aria — the badge still shows the scheduled count). */}
         <div className="cnav__quick">
-          <button type="button" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
+          <button type="button" title="New chat (⌘N)" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
             <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
             <span className="cnav__new-label">New chat</span>
-            <span className="cnav__kbd" aria-hidden>⌘N</span>
           </button>
-          <div className="cnav__mini-row">
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
-              className="cnav__mini focus-ring"
-            >
-              <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
-              <span className="cnav__mini-label">Scheduled</span>
-              {typeof scheduledCount === "number" && scheduledCount > 0 ? (
-                <span className="cnav__mini-count">{scheduledCount}</span>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
-              className="cnav__mini focus-ring"
-            >
-              <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
-              <span className="cnav__mini-label">Plugins</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            title="Scheduled"
+            aria-label={scheduledCount ? `Scheduled (${scheduledCount})` : "Scheduled"}
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
+            {typeof scheduledCount === "number" && scheduledCount > 0 ? (
+              <span className="cnav__mini-count">{scheduledCount}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            title="Plugins"
+            aria-label="Plugins"
+            onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
+            className="cnav__mini focus-ring"
+          >
+            <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
+          </button>
         </div>
 
         <div className="cnav__search-wrap">
@@ -439,7 +513,7 @@ export function WorkspaceSidebar({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search projects or threads…"
+              placeholder="Search chats…"
               aria-label="Search projects and threads"
             />
             {query ? (
@@ -465,7 +539,10 @@ export function WorkspaceSidebar({
             <section aria-label="Pinned threads">
               <div className="cnav__label">Pinned</div>
               <ul>
-                {/* Pinned rail uses a compact read-only row; ThreadRow is the full interactive row. */}
+                {/* Pinned rail is compact; the trailing always-visible bookmark
+                    doubles as the pin marker AND a one-click unpin — otherwise
+                    the only unpin lives on the (possibly truncated/collapsed)
+                    copy of the row further down the rail. */}
                 {pinnedSessions.map((session) => {
                   const title = sessionRailTitle(session);
                   const active = activeSessionId === session.id;
@@ -478,8 +555,18 @@ export function WorkspaceSidebar({
                           onClick={() => onOpenSession(session)}
                           className="cnav__thread-main focus-ring"
                         >
-                          <Icon name="ph:bookmark-simple-fill" width={12} className="cnav__lead is-accent" aria-hidden />
+                          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
                           <span className="cnav__thread-title" title={title}>{title}</span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Unpin chat"
+                          aria-label={`Unpin ${title}`}
+                          aria-pressed
+                          onClick={() => togglePin(session.id)}
+                          className="cnav__icon-btn is-on focus-ring"
+                        >
+                          <Icon name="ph:bookmark-simple-fill" width={12} aria-hidden />
                         </button>
                       </div>
                     </li>
@@ -517,6 +604,9 @@ export function WorkspaceSidebar({
                             project={sessionProjectById.get(session.id) ?? null}
                             glyph={threadLeadingIcon(sessionRailTitle(session))}
                             onOpen={() => onOpenSession(session)}
+                            onOpenInSplit={
+                              onOpenSessionInSplit ? () => onOpenSessionInSplit(session) : undefined
+                            }
                             onTogglePin={() => togglePin(session.id)}
                             onRequestDelete={() => setConfirmingSessionId(session.id)}
                             onCancelDelete={() => setConfirmingSessionId(null)}
@@ -568,14 +658,16 @@ export function WorkspaceSidebar({
                       >
                         <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
                         {group.projectId ? (
-                          <ProjectAvatar name={label} root={group.projectRoot} size="sm" className="cnav__folder" />
+                          <ProjectAvatar name={label} root={group.projectRoot} color={group.projectColor} size="sm" className="cnav__folder" />
                         ) : (
                           <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
                         )}
-                        <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
-                          {label}
+                        <span className="cnav__group-text">
+                          <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
+                            {label}
+                          </span>
+                          <span className="cnav__group-meta">{groupMeta(group)}</span>
                         </span>
-                        <span className="cnav__count">{group.sessions.length}</span>
                       </button>
                       {unregistered ? (
                         <button
@@ -591,12 +683,10 @@ export function WorkspaceSidebar({
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => {
-                          if (group.projectRoot) {
-                            window.dispatchEvent(new CustomEvent("cave:code-select-project", { detail: { root: group.projectRoot } }));
-                          }
-                          onNewChat(group.projectRoot);
-                        }}
+                        // (cave-gg5d) A "cave:code-select-project" dispatch used
+                        // to precede this — its only listener lived in the
+                        // retired (now deleted) ComuxView; onNewChat does the work.
+                        onClick={() => onNewChat(group.projectRoot)}
                         title={`New chat in ${label}`}
                         aria-label={`New chat in ${label}`}
                         className="cnav__icon-btn focus-ring"
@@ -623,6 +713,11 @@ export function WorkspaceSidebar({
                                   indent="folder"
                                   glyph={glyph}
                                   onOpen={() => onOpenSession(session)}
+                                  onOpenInSplit={
+                                    onOpenSessionInSplit
+                                      ? () => onOpenSessionInSplit(session)
+                                      : undefined
+                                  }
                                   onTogglePin={() => togglePin(session.id)}
                                   onRequestDelete={() => setConfirmingSessionId(session.id)}
                                   onCancelDelete={() => setConfirmingSessionId(null)}
@@ -652,6 +747,10 @@ export function WorkspaceSidebar({
           )}
         </nav>
 
+        {/* Shared footer (Dashboard + Settings + version) so Chat keeps the same
+            side-panel footer as every other surface; it sits below the scrolling
+            thread list because .cnav__scroll flexes and this stays put. */}
+        <SidebarFooter onOpenSettings={onOpenSettings} />
       </div>
     </div>
   );

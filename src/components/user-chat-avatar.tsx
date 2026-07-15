@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
 import { Icon } from "@/lib/icon";
-import { runUserAvatarMigration } from "@/lib/user-avatar-migrate";
 import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profile";
 
 type Props = {
@@ -16,10 +14,6 @@ export function UserChatAvatar({ className, ariaLabel }: Props) {
   const snapshot = useUserProfile();
   const src = userAvatarUrl(snapshot);
   const name = userDisplayName(snapshot?.profile);
-
-  useEffect(() => {
-    void runUserAvatarMigration();
-  }, []);
 
   return (
     <button

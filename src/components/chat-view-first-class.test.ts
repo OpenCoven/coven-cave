@@ -7,11 +7,16 @@ const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url),
 // attachmentIcon (and fileToAttachment/isTextLike) moved to the shared lib so
 // the home composer can reuse the exact same capture + glyph logic.
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
+// The auto-grow routine moved to the shared hook (use-autogrow-textarea) so the
+// chat and home composers can't drift; the growth-behavior pins live against
+// the hook source, with call-site pins keeping both composers on it.
+const autogrowHook = readFileSync(new URL("../lib/use-autogrow-textarea.ts", import.meta.url), "utf8");
+const homeComposerSource = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 
 assert.match(
-  source,
-  /function resizeComposer\(\)[\s\S]*?Math\.min\(el\.scrollHeight,\s*maxHeight\)/,
-  "Chat composer should auto-grow up to a bounded height",
+  autogrowHook,
+  /Math\.min\(el\.scrollHeight,\s*maxHeight\)/,
+  "Composer textareas should auto-grow up to a bounded height",
 );
 
 assert.match(
@@ -21,21 +26,27 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /const computedMaxHeight = Number\.parseFloat\(window\.getComputedStyle\(el\)\.maxHeight\);[\s\S]*const maxHeight = Number\.isFinite\(computedMaxHeight\) \? computedMaxHeight : COMPOSER_MAX_HEIGHT;/,
-  "Chat composer should honor the responsive CSS max-height while resizing",
+  autogrowHook,
+  /const computedMaxHeight = Number\.parseFloat\(window\.getComputedStyle\(el\)\.maxHeight\);[\s\S]*const maxHeight = Number\.isFinite\(computedMaxHeight\) \? computedMaxHeight : fallbackMaxHeight;/,
+  "Composer auto-grow should honor the responsive CSS max-height while resizing",
 );
 
 assert.match(
-  source,
+  autogrowHook,
   /const isOverflowing = el\.scrollHeight > maxHeight;[\s\S]*el\.style\.overflowY = isOverflowing \? "auto" : "hidden";/,
-  "Chat composer should only enable internal scrolling after it reaches the height cap",
+  "Composer auto-grow should only enable internal scrolling after it reaches the height cap",
 );
 
 assert.match(
   source,
-  /useEffect\(\(\) => \{[\s\S]*resizeComposer\(\)[\s\S]*\}, \[input\]\)/,
-  "Chat composer should resize whenever input text changes",
+  /useAutogrowTextarea\(inputRef, input, \{ fallbackMaxHeight: COMPOSER_MAX_HEIGHT \}\)/,
+  "Chat composer should resize through the shared auto-grow hook whenever input changes",
+);
+
+assert.match(
+  homeComposerSource,
+  /useAutogrowTextarea\(textareaRef, text, \{\s*fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,?\s*\}\)/,
+  "Home composer should share the same auto-grow hook (parity with chat)",
 );
 
 assert.match(

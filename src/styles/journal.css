@@ -1,21 +1,4 @@
-/* Journal surface — two-tab shell + master-detail list. Scoped .journal-*. */
-
-.journal-view {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  background: var(--bg-base);
-}
-.journal-view__head { padding: 16px 18px 0; }
-.journal-view__title {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  margin: 0 0 10px;
-  color: var(--text-primary);
-}
-.journal-view__panel { flex: 1; min-height: 0; display: flex; }
+/* Journal surface — master-detail entries list. Scoped .journal-*. */
 
 /* master-detail list */
 .journal-list { flex: 1; display: flex; min-width: 0; min-height: 0; }
@@ -29,31 +12,6 @@
   gap: 8px;
   overflow-y: auto;
 }
-.journal-composer { display: flex; gap: 6px; }
-.journal-composer__input {
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  font-size: 12.5px;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-panel, var(--bg-base));
-  color: var(--text-primary);
-}
-.journal-composer__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 11px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 8px;
-  border: 1px solid var(--accent-presence);
-  background: var(--accent-presence);
-  color: var(--bg-base);
-  cursor: pointer;
-}
-.journal-composer__btn:disabled { opacity: 0.5; cursor: default; }
 .journal-list__error {
   padding: 8px 11px;
   border-radius: 8px;
@@ -86,210 +44,7 @@
   background: var(--bg-raised);
 }
 .journal-list__items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.journal-art {
-  width: 100%;
-  min-width: 0;
-  padding: 7px 8px 7px 11px;
-  border-radius: 9px;
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-panel, var(--bg-base));
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.journal-art:hover { border-color: var(--border-strong); }
-.journal-art.is-selected { border-color: var(--accent-presence); }
-.journal-art__select {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border: 0;
-  padding: 0;
-  text-align: left;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.journal-art__title { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.journal-art__meta { font-size: 10.5px; color: var(--text-muted); }
-.journal-art__rename {
-  min-width: 0;
-  flex: 1;
-  height: 28px;
-  border-radius: 7px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  font-size: 12.5px;
-  font-weight: 600;
-  padding: 0 8px;
-}
-.journal-art__rename-btn {
-  flex: 0 0 auto;
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.journal-art__rename-btn:hover,
-.journal-art__rename-btn:focus-visible {
-  border-color: var(--border-hairline);
-  background: var(--bg-base);
-  color: var(--text-primary);
-}
-.journal-kind {
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--color-info) 18%, transparent);
-  color: var(--color-info);
-}
-.journal-kind--react { background: color-mix(in srgb, var(--color-success) 18%, transparent); color: var(--color-success); }
-
 .journal-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 14px 16px; gap: 12px; overflow: hidden; }
-/* Full-screen canvas: portaled to <body>, fills the viewport. The base rule
-   already lays this out as a flex column, so the preview frame (flex:1) grows. */
-.journal-detail--fullscreen {
-  position: fixed;
-  inset: 14px;
-  z-index: 1200;
-  background: var(--bg-base);
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
-}
-.journal-detail__bar { display: flex; align-items: center; justify-content: space-between; }
-.journal-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
-.journal-seg button {
-  padding: 5px 12px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-.journal-seg button.on { background: var(--bg-panel, var(--bg-elevated)); color: var(--text-primary); }
-.journal-detail__actions { display: flex; gap: 6px; }
-.journal-act {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  font-size: 11.5px;
-  font-weight: 600;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg-base);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-.journal-act:disabled { opacity: 0.5; cursor: default; }
-.journal-act--danger { color: var(--color-danger); }
-.journal-act--on {
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-strong));
-  color: var(--text-primary);
-}
-
-/* Dedicated refine space — describe the optimization, or tap a suggestion. */
-.journal-refine {
-  display: flex; flex-direction: column; gap: 9px;
-  padding: 11px 12px; margin: 2px 0;
-  border: 1px solid var(--border-hairline); border-radius: 10px; background: var(--bg-raised);
-}
-.journal-refine__text {
-  width: 100%; min-height: 50px; resize: vertical; font: inherit; font-size: 12px; line-height: 1.5;
-  color: var(--text-primary); background: var(--bg-base);
-  border: 1px solid var(--border-hairline); border-radius: 8px; padding: 8px 10px; outline: none;
-  transition: border-color 0.12s ease;
-}
-.journal-refine__text:focus { border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline)); }
-.journal-refine__label {
-  display: flex; align-items: center; gap: 4px; margin: 0;
-  font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted);
-}
-.journal-refine__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.journal-refine__chip {
-  font-size: 12px; color: var(--text-secondary);
-  background: var(--bg-base); border: 1px solid var(--border-hairline); border-radius: 999px;
-  padding: 5px 11px; cursor: pointer; text-align: left;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-.journal-refine__chip:hover:not(:disabled) {
-  background: var(--bg-hover); color: var(--text-primary);
-  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
-}
-.journal-refine__chip:disabled { opacity: 0.5; cursor: default; }
-.journal-refine__chip--gen {
-  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 22%, var(--border-hairline));
-  color: color-mix(in oklch, var(--accent-presence) 75%, var(--text-primary));
-}
-.journal-refine__foot { display: flex; align-items: center; gap: 8px; }
-.journal-refine__hint { font-size: 10px; color: var(--text-muted); }
-.journal-refine__go {
-  flex: none; font-size: 11.5px; font-weight: 600; color: #fff;
-  background: var(--accent, #6b8fbf); border: 0; border-radius: 8px; padding: 6px 14px; cursor: pointer;
-  transition: filter 0.12s ease;
-}
-.journal-refine__go:hover:not(:disabled) { filter: brightness(1.08); }
-.journal-refine__go:disabled { opacity: 0.5; cursor: default; }
-.journal-detail__frame {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  border: 1px solid var(--border-hairline);
-  border-radius: 10px;
-  background: #fff;
-}
-.journal-detail__code {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  margin: 0;
-  box-sizing: border-box;
-  overflow: auto;
-  overflow-x: hidden;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-panel, var(--bg-base));
-  color: var(--text-primary);
-}
-/* Highlighted (read-only): the wrapper scrolls; Shiki's own <pre> drops its
-   padding/background so the box keeps the surface + spacing above. */
-.journal-detail__code--hl { padding: 0; }
-.journal-detail__code--hl pre.shiki {
-  margin: 0;
-  padding: 12px;
-  min-height: 100%;
-  box-sizing: border-box;
-  background: transparent !important;
-  font: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.journal-detail__code--hl code { font: inherit; white-space: inherit; overflow-wrap: inherit; }
-.journal-detail__code--editor {
-  resize: none;
-  outline: none;
-}
-.journal-detail__code--editor:focus {
-  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
-}
-.journal-detail__prompt { font-size: 11px; color: var(--text-muted); }
 .journal-empty {
   display: flex;
   align-items: center;
@@ -300,32 +55,6 @@
 }
 .journal-empty svg { flex: none; color: var(--accent-presence); opacity: 0.8; }
 
-/* Empty-state starter prompts — one tap seeds the generate composer. */
-.journal-starters {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  width: 100%;
-  max-width: 340px;
-  margin: 4px auto 0;
-}
-.journal-starter {
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
-  border-radius: 9px;
-  padding: 8px 12px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-.journal-starter:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
-}
-.journal-starter:disabled { opacity: 0.5; cursor: default; }
 .journal-empty--pane {
   flex: 1;
   display: flex;
@@ -405,6 +134,12 @@
     transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .journal-day:hover { border-color: var(--border-strong); transform: translateX(2px); }
+/* Keyboard parity (cave-t1ou): the rail rows and entry actions had no visible
+   focus state — hover styling alone is invisible to keyboard users. */
+.journal-day:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 2px;
+}
 .journal-day:active { transform: translateX(2px) scale(0.99); }
 .journal-day.is-selected {
   border-color: var(--accent-presence);
@@ -469,6 +204,10 @@
   cursor: pointer;
   transition: border-color 0.13s ease, color 0.13s ease, background 0.13s ease,
     transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.journal-entry__action:focus-visible {
+  outline: var(--ring-width, 2px) solid var(--ring-focus);
+  outline-offset: 1px;
 }
 .journal-entry__action:hover:not(:disabled),
 .journal-entry__action:focus-visible {
@@ -683,11 +422,29 @@
   padding: 10px 12px 10px 13px;
   font-size: 12.5px;
   color: var(--text-primary);
-  background: var(--bg-elevated, var(--bg-raised));
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 30%, var(--border-strong));
   border-radius: 12px;
   box-shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.6);
   animation: journal-notice-in 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Frosted glass needs a live blur behind it — restore the opaque surface
+   wherever backdrop-filter is unavailable or the OS asked for less
+   transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .journal-notice {
+    background: var(--bg-elevated, var(--bg-raised));
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .journal-notice {
+    background: var(--bg-elevated, var(--bg-raised));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 @keyframes journal-notice-in {
   from { opacity: 0; transform: translate(-50%, 12px); }
@@ -731,3 +488,20 @@
   color: var(--text-muted);
 }
 .journal-entry__by b { color: var(--accent-presence); }
+
+/* ── Familiar Studio host ─────────────────────────────────────────────────────
+   Inside Settings → Familiars the journal has no full-page flex parent, so the
+   master-detail shell gets an explicit bounded height: the day rail and the
+   detail pane scroll internally instead of growing the settings page. */
+.familiar-studio-journal { display: flex; min-width: 0; }
+.familiar-studio-journal .journal-list { height: min(65vh, 720px); }
+
+/* The section labels are real headings now (cave-t1ou) — inherit the label
+   styling instead of UA heading defaults. */
+.journal-entry__sec-heading {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}

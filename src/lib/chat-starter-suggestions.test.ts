@@ -69,3 +69,56 @@ test("caps at 4 and is deterministic for the same inputs", () => {
   assert.equal(a.length, 4);
   assert.deepEqual(a, b);
 });
+
+// ── taskCards → "Continue the task" pills (cave-qvwu) ───────────────────────
+
+const taskCard = (id, title, updatedAt, status = "inbox") => ({ id, title, status, updatedAt });
+
+test("task pills lead, use home's Continue-the-task copy, and cap at 2", () => {
+  const out = deriveStarterSuggestions({
+    cards: [reviewCard("r")],
+    sessions: [],
+    taskCards: [
+      taskCard("t1", "Fix login flow", "2026-07-05T10:00:00Z"),
+      taskCard("t2", "Wire the board rail", "2026-07-06T10:00:00Z"),
+      taskCard("t3", "Third open task", "2026-07-04T10:00:00Z"),
+    ],
+    projectName: "Cast Codes",
+    nowMs: NOW_MS,
+  });
+  // Newest-first, max 2 (buildHomeSuggestions heuristic), ahead of everything.
+  assert.deepEqual(out.slice(0, 2).map((s) => s.id), ["task:t2", "task:t1"]);
+  assert.equal(out[0].label, "Continue the task: Wire the board rail");
+  assert.equal(out[0].text, out[0].label);
+  assert.equal(out.length, 4);
+});
+
+test("only inbox/backlog taskCards become pills; starter padding never leaks in", () => {
+  const out = deriveStarterSuggestions({
+    cards: [],
+    sessions: [],
+    taskCards: [
+      taskCard("t1", "Running work", "2026-07-06T10:00:00Z", "running"),
+      taskCard("t2", "Backlog item", "2026-07-05T10:00:00Z", "backlog"),
+    ],
+    projectName: null,
+    nowMs: NOW_MS,
+  });
+  // The fallback pad only tops the row up to 2 entries, so one task pill
+  // gets a single fallback companion.
+  assert.deepEqual(out.map((s) => s.id), ["task:t2", "capabilities"]);
+  assert.ok(!out.some((s) => s.id.startsWith("starter:")));
+});
+
+test("absent taskCards behaves exactly as before", () => {
+  const args = {
+    cards: [reviewCard("a")],
+    sessions: [sessionAt(hoursAgoIso(1))],
+    projectName: "Cast Codes",
+    nowMs: NOW_MS,
+  };
+  assert.deepEqual(
+    deriveStarterSuggestions(args),
+    deriveStarterSuggestions({ ...args, taskCards: [] }),
+  );
+});

@@ -39,6 +39,53 @@ test("resolveActivePath defends against a parent cycle", () => {
   assert.ok(path.length >= 1);
 });
 
+test("resolveActivePath weaves chain-less system echoes into the path by createdAt (cave-7ft)", () => {
+  // /help output appended while a reply streams: no parentId, so a pure
+  // ancestor walk from the streaming leaf would hide it.
+  const turns = [
+    t("u1", null, 1),
+    t("a1", "u1", 2),
+    { id: "sys1", role: "system", createdAt: "2026-06-23T00:00:03.000Z" },
+    t("u2", "a1", 4),
+    t("a2", "u2", 5),
+    { id: "sys2", role: "system", createdAt: "2026-06-23T00:00:06.000Z" },
+  ];
+  const path = resolveActivePath(turns, "a2");
+  assert.deepEqual(path.map((x) => x.id), ["u1", "a1", "sys1", "u2", "a2", "sys2"]);
+});
+
+test("resolveActivePath keeps same-timestamp user/assistant pair order when weaving echoes", () => {
+  // sendRaw stamps the user turn and its pending assistant with the same
+  // createdAt; weaving must not re-sort the chain (id tie-breaks are random).
+  const now = "2026-06-23T00:00:02.000Z";
+  const turns = [
+    { id: "z-user", parentId: null, role: "user", createdAt: now },
+    { id: "a-assistant", parentId: "z-user", role: "assistant", createdAt: now },
+    { id: "sys", role: "system", createdAt: "2026-06-23T00:00:03.000Z" },
+  ];
+  const path = resolveActivePath(turns, "a-assistant");
+  assert.deepEqual(path.map((x) => x.id), ["z-user", "a-assistant", "sys"]);
+});
+
+test("resolveActivePath excludes system turns that ARE in the ancestor chain from weaving", () => {
+  // A parented system turn is a normal chain member — it must appear exactly
+  // once, in chain position.
+  const turns = [
+    t("u1", null, 1),
+    { id: "sys", parentId: "u1", role: "system", createdAt: "2026-06-23T00:00:02.000Z" },
+    { id: "a1", parentId: "sys", role: "assistant", createdAt: "2026-06-23T00:00:03.000Z" },
+  ];
+  const path = resolveActivePath(turns, "a1");
+  assert.deepEqual(path.map((x) => x.id), ["u1", "sys", "a1"]);
+});
+
+test("resolveActivePath does not weave parentless USER turns (root branch siblings stay hidden)", () => {
+  // A second root user turn is an alternative branch, not an echo — weaving it
+  // into the active path would render both branches at once.
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("u1b", null, 3), t("a1b", "u1b", 4)];
+  assert.deepEqual(resolveActivePath(turns, "a1").map((x) => x.id), ["u1", "a1"]);
+});
+
 test("siblingsOf returns ordered siblings and the 0-based index", () => {
   const turns = [t("u1", null, 1), t("a", "u1", 2), t("b", "u1", 3), t("c", "u1", 4)];
   const r = siblingsOf(turns, "b");

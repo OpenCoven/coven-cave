@@ -16,6 +16,7 @@ import {
   findActiveMention,
   matchMentions,
   applyMention,
+  capTranscript,
   type GroupTurn,
   type GroupReply,
   type MentionableFamiliar,
@@ -386,4 +387,47 @@ test("renderCovenContext: returns '' for empty, only-own, or unsettled transcrip
 test("renderCovenContext: falls back to the raw id when a name is unknown", () => {
   const out = renderCovenContext(roundTranscript(), "nova", []);
   assert.match(out, /charm said:/); // no name map → raw id
+});
+
+// --- capTranscript (cave-lh78: bound persisted transcript growth) ----------
+
+test("capTranscript: under the cap returns the same turns (identity preserved)", () => {
+  const turns = [user("u1", "hi"), reply("r1", "nova", "u1", "hello")];
+  assert.equal(capTranscript(turns, 10), turns);
+});
+
+test("capTranscript: keeps the trailing max turns", () => {
+  const turns: GroupTurn[] = [];
+  for (let i = 0; i < 30; i++) {
+    turns.push(user(`u${i}`, `q${i}`));
+    turns.push(reply(`r${i}`, "nova", `u${i}`, `a${i}`));
+  }
+  const capped = capTranscript(turns, 10);
+  assert.equal(capped.length, 10);
+  assert.equal(capped[0].id, "u25");
+  assert.equal(capped[capped.length - 1].id, "r29");
+});
+
+test("capTranscript: drops leading orphaned replies whose user turn fell off", () => {
+  const turns: GroupTurn[] = [
+    user("u1", "q1"),
+    reply("r1a", "nova", "u1", "a"),
+    reply("r1b", "charm", "u1", "b"),
+    user("u2", "q2"),
+    reply("r2", "nova", "u2", "c"),
+  ];
+  // Cap of 4 keeps [r1a, r1b, u2, r2]; the tail starts mid-thread (r1a/r1b
+  // have no visible user turn) so it is trimmed to the first complete thread.
+  const capped = capTranscript(turns, 4);
+  assert.equal(capped[0].id, "u2");
+  assert.deepEqual(capped.map((t) => t.id), ["u2", "r2"]);
+});
+
+test("capTranscript: an all-reply tail (no user turn survives) collapses to empty", () => {
+  const turns: GroupTurn[] = [
+    user("u1", "q1"),
+    reply("r1", "nova", "u1", "a"),
+    reply("r2", "charm", "u1", "b"),
+  ];
+  assert.deepEqual(capTranscript(turns, 2), []);
 });

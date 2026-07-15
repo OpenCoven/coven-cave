@@ -115,7 +115,9 @@
   min-width: 150px;
   padding: 4px;
   border-radius: 10px;
-  background: var(--bg-panel, var(--bg-base));
+  background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong);
   box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45);
 }
@@ -158,9 +160,45 @@
 }
 
 .settings-shell__header {
+  /* Subtle titlebar glass, matching the workspace shell's native band: a
+     translucent panel-to-base wash with blur+saturate instead of the old
+     opaque gradient, so the header reads as window chrome floating over the
+     settings canvas. Fallbacks below restore the opaque wash. */
   background:
-    linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--bg-panel) 62%, transparent),
+      color-mix(in oklch, var(--bg-base) 44%, transparent)
+    );
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   -webkit-app-region: drag;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .settings-shell__header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+  }
+  .dash-snooze__menu,
+  .spark-tip {
+    background: var(--bg-elevated);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .settings-shell__header {
+    background:
+      linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .dash-snooze__menu,
+  .spark-tip {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .settings-shell__header :is(button, a, input, select, textarea) {
@@ -282,7 +320,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--touch-target);
   line-height: 1.2;
   text-decoration: none;
   white-space: nowrap;
@@ -292,6 +329,15 @@
   height: 28px;
   min-height: 28px;
   line-height: 1;
+}
+
+/* Touch widths keep the WCAG floor; on desktop the shared action stays as
+   compact as the neighboring xs/tool-action buttons. Placed after
+   .settings-tool-action so the floor wins when both classes are present. */
+@media (max-width: 767px) {
+  .settings-touch-action {
+    min-height: var(--touch-target);
+  }
 }
 
 .settings-tool-action--primary {
@@ -313,6 +359,46 @@
 .settings-mobile-switch {
   min-width: 64px;
   min-height: var(--touch-target);
+}
+
+/* Minimal track/knob switch (News headlines) — user-requested slim replacement
+   for the 64px On/Off rectangle. The row label carries the meaning; an inset
+   negative-hit-area keeps the small control comfortably tappable. */
+.settings-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.settings-switch::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+.settings-switch__knob {
+  position: absolute;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  transition: transform 140ms var(--ease-standard, ease), background 140ms ease;
+}
+.settings-switch.is-on {
+  border-color: color-mix(in oklch, var(--accent-presence) 60%, var(--border-hairline));
+  background: var(--accent-presence);
+}
+.settings-switch.is-on .settings-switch__knob {
+  transform: translateX(14px);
+  background: var(--accent-presence-foreground);
 }
 
 @media (max-width: 767px) {
@@ -465,7 +551,9 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
   white-space: nowrap; pointer-events: none; z-index: 4;
   padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
-  color: var(--text-primary); background: var(--bg-elevated, var(--bg-raised));
+  color: var(--text-primary); background: var(--glass-elevated);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
   font-variant-numeric: tabular-nums; }
 .spark-tip b { font-weight: 700; }
@@ -591,15 +679,17 @@ a.cockpit-signal--more:hover { background: var(--bg-hover); color: var(--text-pr
 
 /* ── Coven insight banner — the plain-language "what you should know" read ── */
 .coven-insight {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 12px 15px; border-radius: 12px; font-size: 13px; line-height: 1.5;
+  display: flex; align-items: flex-start; gap: 9px;
+  /* Quiet note, not a hero banner — the headline h1 above already says the
+     same thing; this row adds the numbers (cave-m4oq). */
+  padding: 9px 13px; border-radius: 10px; font-size: 12.5px; line-height: 1.5;
   color: var(--text-secondary);
   border: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--accent-presence) 6%, var(--bg-raised));
+  background: color-mix(in oklch, var(--accent-presence) 4%, var(--bg-raised));
 }
-.coven-insight__icon { flex: 0 0 auto; margin-top: 2px; width: 18px; height: 18px; color: var(--accent-presence); }
+.coven-insight__icon { flex: 0 0 auto; margin-top: 2px; width: 15px; height: 15px; color: var(--accent-presence); }
 .coven-insight__text b { color: var(--text-primary); font-weight: 680; }
-.coven-insight--good { border-color: color-mix(in oklch, var(--color-success) 30%, transparent); background: color-mix(in oklch, var(--color-success) 7%, var(--bg-raised)); }
+.coven-insight--good { border-color: color-mix(in oklch, var(--color-success) 18%, var(--border-hairline)); background: color-mix(in oklch, var(--color-success) 4%, var(--bg-raised)); }
 .coven-insight--good .coven-insight__icon { color: var(--color-success); }
 .coven-insight--warn { border-color: color-mix(in oklch, var(--color-warning) 32%, transparent); background: color-mix(in oklch, var(--color-warning) 8%, var(--bg-raised)); }
 .coven-insight--warn .coven-insight__icon { color: var(--color-warning); }

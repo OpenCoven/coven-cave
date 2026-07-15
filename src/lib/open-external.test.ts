@@ -46,6 +46,26 @@ assert.match(
   /import \{ openExternalUrl \} from "@\/lib\/open-external"/,
   "Settings should use the shared in-app browser URL helper",
 );
+for (const [label, href] of [
+  ["GitHub", "https://github.com/OpenCoven/coven-cave"],
+  ["Docs", "https://docs.opencoven.ai"],
+  ["X", "https://x.com/OpenCvn"],
+  ["Discord", "https://discord.gg/opencoven"],
+  ["Grimoire", "https://mind.opencoven.ai"],
+  ["Podcast", "https://pod.opencoven.ai"],
+]) {
+  const escapedHref = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(
+    settings,
+    new RegExp(`label: "${label}"[\\s\\S]{0,80}href: "${escapedHref}"`),
+    `${label} routes to its exact Settings destination`,
+  );
+}
+assert.match(
+  settings,
+  /\]\.map\(\(l\) => \([\s\S]{0,220}onClick=\{\(\) => openExternalUrl\(l\.href\)\}/,
+  "every Settings link routes through the acknowledged in-app Browser handoff",
+);
 assert.doesNotMatch(
   settings,
   /target="_blank"/,

@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, chmodSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { covenHome } from "./coven-paths.ts";
+import { caveHome } from "./coven-paths.ts";
 
 type EncryptedSecret = {
   v: 1;
@@ -22,7 +22,7 @@ function normalizeSecretKey(key: string): string {
 }
 
 function localVaultDir(): string {
-  return join(covenHome(), "cave");
+  return caveHome();
 }
 
 function localVaultKeyPath(): string {

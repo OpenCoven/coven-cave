@@ -24,11 +24,21 @@ struct ConnectionView: View {
                     addressField
 
                     if case .unreachable(let message) = app.connectionState {
-                        connectionRecoveryCallout(message: message, systemImage: "exclamationmark.triangle.fill")
+                        connectionRecoveryCallout(
+                            title: "Tailscale disconnected?",
+                            message: message,
+                            guidance: "Open Tailscale on this phone and make sure it says Connected. If it is connected, check that Cave is running on the desktop.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
                     } else if case .needsAuth(let message) = app.connectionState {
                         // The desktop is alive but token-gated — say how to
                         // pair instead of the generic unreachable shrug.
-                        connectionRecoveryCallout(message: message, systemImage: "qrcode.viewfinder")
+                        connectionRecoveryCallout(
+                            title: "Pairing needed",
+                            message: message,
+                            guidance: "Open Cave on your desktop and scan the latest QR code.",
+                            systemImage: "qrcode.viewfinder"
+                        )
                     }
 
                     actions
@@ -213,21 +223,26 @@ struct ConnectionView: View {
         }
     }
 
-    private func connectionRecoveryCallout(message: String, systemImage: String) -> some View {
+    private func connectionRecoveryCallout(
+        title: String,
+        message: String,
+        guidance: String,
+        systemImage: String
+    ) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: systemImage)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.orange)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Pairing needed")
+                Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(chrome.textPrimary)
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(chrome.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Open Cave on your desktop and scan the latest QR code.")
+                Text(guidance)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.orange)
             }

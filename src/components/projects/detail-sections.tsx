@@ -31,8 +31,21 @@ export function GitSection({
    *  authoritative /api/changes response lands. */
   sessionBranch: string | null;
 }) {
+  const { announce } = useAnnouncer();
   const changes = useChangesSummary(projectRoot, true);
   const branch = changes.branch ?? sessionBranch;
+  const [copiedBranch, setCopiedBranch] = useState(false);
+  const copyBranch = async () => {
+    if (!branch) return;
+    try {
+      await navigator.clipboard.writeText(branch);
+      setCopiedBranch(true);
+      window.setTimeout(() => setCopiedBranch(false), 1600);
+      announce("Branch name copied.");
+    } catch {
+      // Clipboard blocked (insecure context / permissions) — no-op.
+    }
+  };
 
   return (
     <section className="projects-detail-section" aria-label="Git status">
@@ -44,20 +57,28 @@ export function GitSection({
       ) : (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-[var(--text-muted)]">
           {branch ? (
-            <span className="inline-flex max-w-[16rem] items-center gap-1 truncate font-mono" title={`Branch: ${branch}`}>
-              <Icon name="ph:git-branch-bold" width={11} aria-hidden />
+            <button
+              type="button"
+              onClick={() => void copyBranch()}
+              className="focus-ring inline-flex max-w-[16rem] items-center gap-1 truncate rounded-[var(--radius-control)] px-1 py-0.5 font-mono hover:text-[var(--text-secondary)]"
+              title={copiedBranch ? "Copied" : `Copy branch name: ${branch}`}
+              aria-label={`Copy branch name ${branch}`}
+            >
+              <Icon name={copiedBranch ? "ph:check" : "ph:git-branch-bold"} width={11} aria-hidden />
               <span className="truncate">{branch}</span>
-            </span>
+            </button>
           ) : null}
           {!changes.loaded ? (
             <span>Checking working tree…</span>
           ) : changes.count > 0 ? (
+            // A dirty tree is a normal state, not activity — plain chip, no
+            // pulse, with the "uncommitted, working tree" framing spelled out.
             <span
-              className="projects-session-chip projects-session-chip--running"
-              title={`${changes.count} uncommitted ${changes.count === 1 ? "file" : "files"}`}
+              className="projects-session-chip"
+              title={`${changes.count} ${changes.count === 1 ? "file" : "files"} with uncommitted changes in the working tree`}
             >
               <Icon name="ph:git-diff" width={10} aria-hidden />
-              {changes.count} changed {changes.count === 1 ? "file" : "files"}
+              {changes.count} uncommitted
             </span>
           ) : (
             <span className="inline-flex items-center gap-1">
@@ -101,7 +122,46 @@ export function TasksSection({
   cards: Card[];
   onOpenBoard?: () => void;
 }) {
-  const projectCards = useMemo(() => cardsForProject(cards, project), [cards, project]);
+  const { announce } = useAnnouncer();
+  // Quick-add: a task lands on the board without leaving the hub. The server
+  // derives cwd from projectId (never client-supplied); the created card is
+  // appended locally so it shows instantly, and cave:board:reload nudges the
+  // shell's board fetch for everyone else.
+  const [taskDraft, setTaskDraft] = useState("");
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [createdCards, setCreatedCards] = useState<Card[]>([]);
+  useEffect(() => {
+    setCreatedCards([]);
+    setTaskDraft("");
+  }, [project.id]);
+  const createTask = async () => {
+    const title = taskDraft.trim();
+    if (!title || creatingTask) return;
+    setCreatingTask(true);
+    try {
+      const res = await fetch("/api/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, projectId: project.id }),
+      });
+      const json = await res.json();
+      if (!json?.ok || !json.card) throw new Error(json?.error ?? "create failed");
+      setCreatedCards((prev) => [json.card as Card, ...prev]);
+      setTaskDraft("");
+      announce(`Task added to ${project.name}.`);
+      window.dispatchEvent(new Event("cave:board:reload"));
+    } catch {
+      announce("Couldn't add the task.", "assertive");
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  const mergedCards = useMemo(() => {
+    const seen = new Set(cards.map((c) => c.id));
+    return [...createdCards.filter((c) => !seen.has(c.id)), ...cards];
+  }, [cards, createdCards]);
+  const projectCards = useMemo(() => cardsForProject(mergedCards, project), [mergedCards, project]);
   const open = useMemo(() => projectCards.filter((c) => c.status !== "done"), [projectCards]);
   const doneCount = projectCards.length - open.length;
   const runningCount = open.filter((c) => c.status === "running").length;
@@ -133,24 +193,34 @@ export function TasksSection({
       {open.length === 0 ? (
         <div className="projects-detail-empty">
           {doneCount > 0
-            ? `All ${doneCount} task${doneCount === 1 ? "" : "s"} done — add the next one on the board.`
-            : "No tasks for this project yet."}
+            ? `All ${doneCount} task${doneCount === 1 ? "" : "s"} done — add the next one below.`
+            : "No tasks for this project yet — add one below."}
         </div>
       ) : (
         <>
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {open.slice(0, TASK_CAP).map((card) => (
-              <li key={card.id} className="flex items-center gap-2 px-1 py-1 text-[12px] text-[var(--text-secondary)]">
-                <span
-                  aria-hidden
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${CARD_STATUS_DOT[card.status] ?? "bg-[var(--text-muted)]"}`}
-                />
-                <span className="min-w-0 flex-1 truncate" title={card.title}>
-                  {card.title}
-                </span>
-                <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-                  {card.status}
-                </span>
+              <li key={card.id} className="m-0 list-none p-0">
+                {/* Deep-link: the board honors #card-<id> (same hash the
+                    notification bell and cockpit drill-throughs use). */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenBoard?.();
+                    window.location.hash = `card-${card.id}`;
+                  }}
+                  title={`Open "${card.title}" on the board`}
+                  className="focus-ring-inset flex w-full items-center gap-2 rounded-[var(--radius-control)] px-1 py-1 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                >
+                  <span
+                    aria-hidden
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${CARD_STATUS_DOT[card.status] ?? "bg-[var(--text-muted)]"}`}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{card.title}</span>
+                  <span className="shrink-0 text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                    {card.status}
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
@@ -164,6 +234,39 @@ export function TasksSection({
           ) : null}
         </>
       )}
+      <form
+        className="mt-1.5 flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void createTask();
+        }}
+      >
+        <input
+          value={taskDraft}
+          onChange={(event) => setTaskDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && taskDraft) {
+              event.stopPropagation();
+              setTaskDraft("");
+            }
+          }}
+          placeholder="Add a task…"
+          aria-label={`Add a task to ${project.name}`}
+          disabled={creatingTask}
+          className="focus-ring h-7 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-transparent px-2 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+        />
+        <Button
+          type="submit"
+          variant="ghost"
+          size="xs"
+          disabled={creatingTask || !taskDraft.trim()}
+          leadingIcon="ph:plus"
+          aria-label={`Add task to ${project.name}`}
+          className="h-7 shrink-0 rounded-[var(--radius-control)] px-2 text-[11px] font-medium text-[var(--text-muted)] enabled:hover:text-[var(--text-secondary)]"
+        >
+          {creatingTask ? "Adding…" : "Add"}
+        </Button>
+      </form>
     </section>
   );
 }
@@ -260,9 +363,14 @@ export function GrantsSection({
   return (
     <section className="projects-detail-section" aria-label={`Familiar access to ${project.name}`}>
       <div className="projects-detail-section__title">
-        <span>Grants</span>
+        <span title="Which familiars may work in this project's folder — click a chip to grant or revoke">
+          Grants
+        </span>
         {granted.size > 0 ? <span className="projects-list-row__count">{granted.size}</span> : null}
       </div>
+      <p className="mb-1.5 text-[10px] text-[var(--text-muted)]">
+        Click a familiar to let it work in this project&apos;s folder — dashed means no access yet.
+      </p>
       {error ? (
         <p role="alert" className="mb-1.5 text-[11px] text-[var(--color-danger)]">
           {error}

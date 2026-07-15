@@ -3,6 +3,7 @@ import path from "node:path";
 import { rm } from "node:fs/promises";
 import { covenHome } from "@/lib/coven-paths";
 import {
+  dedupeByRealPath,
   scanAgentSharedSkills,
   scanClaudeUserSkills,
   scanCodexUserSkills,
@@ -30,7 +31,10 @@ export async function GET() {
   skills.push(...await scanCodexUserSkills());
   skills.push(...await scanAgentSharedSkills());
 
-  return NextResponse.json({ ok: true, skills });
+  // The same physical skill often appears under several roots (~/.claude/skills
+  // symlinks into ~/.agents/skills); collapse those so id-keyed consumers don't
+  // render duplicate rows.
+  return NextResponse.json({ ok: true, skills: await dedupeByRealPath(skills) });
 }
 
 // Remove a scanned skill's directory. Destructive → local-origin gated and

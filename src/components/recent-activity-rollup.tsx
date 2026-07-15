@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { modelIcon } from "@/lib/model-label";
@@ -68,15 +69,25 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
     });
   };
 
+  // This rollup is mounted in the sidebar for the whole app lifetime and polls
+  // the heavy /api/sessions/list every 15s. Guard the poll the way every other
+  // polled surface does: a monotonic reqId drops a superseded overlapping load
+  // (mount vs poll vs visibility-return), and arrayContentEqual keeps the
+  // previous reference when an idle tick rebuilds an identical list so the row
+  // list doesn't re-render for nothing.
+  const loadReqRef = useRef(0);
   const load = useCallback(async () => {
+    const reqId = ++loadReqRef.current;
     try {
       const res = await fetch("/api/sessions/list", { cache: "no-store" });
       const json = await res.json();
+      if (reqId !== loadReqRef.current) return; // superseded by a newer load
       const rows: SessionRow[] = Array.isArray(json?.sessions) ? json.sessions : [];
-      setSessions(rows.filter((s) => !s.archived_at).slice(0, MAX_ROWS));
+      const next = rows.filter((s) => !s.archived_at).slice(0, MAX_ROWS);
+      setSessions((prev) => (arrayContentEqual(prev, next) ? prev : next));
       setLoaded(true);
     } catch {
-      setLoaded(true);
+      if (reqId === loadReqRef.current) setLoaded(true);
     }
   }, []);
   useEffect(() => {

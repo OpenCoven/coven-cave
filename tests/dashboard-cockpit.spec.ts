@@ -55,7 +55,7 @@ const GH_ASSIGNED = STALLED_PRS.map((p) => ({
 }));
 
 const SPACE_AREAS = [
-  { id: "conversations", label: "Chat transcripts", relPath: "~/.coven/cave-conversations", exists: true, bytes: 9_000_000, files: 220, lastModifiedMs: NOW - 3_600_000, truncated: false },
+  { id: "conversations", label: "Chat transcripts", relPath: "~/.coven/cave/conversations", exists: true, bytes: 9_000_000, files: 220, lastModifiedMs: NOW - 3_600_000, truncated: false },
   { id: "workspaces", label: "Familiar workspaces", relPath: "~/.coven/workspaces", exists: true, bytes: 1_400_000_000, files: 17_000, lastModifiedMs: NOW - 60_000, truncated: true },
   { id: "memory", label: "Familiar memory", relPath: "~/.coven/memory", exists: true, bytes: 7_000_000, files: 4, lastModifiedMs: NOW - 86_400_000, truncated: false },
   { id: "flows", label: "Flows", relPath: "~/.coven/flows", exists: true, bytes: 7_000, files: 2, lastModifiedMs: NOW - 2 * 86_400_000, truncated: false },

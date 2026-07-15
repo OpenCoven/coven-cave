@@ -61,6 +61,47 @@ try {
     await realpath(path.join(savedProjectRoot, "docs")),
     "saved Cave project roots are allowed for file tree browsing",
   );
+
+  // Research mission workspaces live under cave state, not a registered
+  // project; they must still be valid session roots (research runs failed
+  // with "invalid project root" without this).
+  const missionWorkspace = path.join(
+    process.env.COVEN_HOME,
+    "cave",
+    "research-missions",
+    "research-fixture",
+  );
+  await mkdir(missionWorkspace, { recursive: true });
+  assert.equal(
+    resolveAllowedProjectPath(missionWorkspace),
+    await realpath(missionWorkspace),
+    "research mission workspaces are allowed project roots",
+  );
+
+  // Allowed roots must be computed per call: a project saved after module
+  // load was invisible until restart, failing sessions with "invalid project root".
+  const lateProjectRoot = path.join(tmp, "Documents", "GitHub", "OpenCoven", "late-project");
+  await mkdir(lateProjectRoot, { recursive: true });
+  assert.equal(
+    resolveAllowedProjectPath(lateProjectRoot),
+    null,
+    "unregistered roots stay rejected",
+  );
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({
+      version: 1,
+      projects: [
+        { id: "docs", name: "Coven Docs", root: savedProjectRoot },
+        { id: "late", name: "Late Project", root: lateProjectRoot },
+      ],
+    }),
+  );
+  assert.equal(
+    resolveAllowedProjectPath(lateProjectRoot),
+    await realpath(lateProjectRoot),
+    "projects saved after startup are allowed without a server restart",
+  );
 } finally {
   restoreEnv();
   await rm(tmp, { recursive: true, force: true });

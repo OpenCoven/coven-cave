@@ -39,22 +39,24 @@ export function CollectionStrip({ collections, plugins, onOpen }: Props) {
               key={collection.id}
               type="button"
               onClick={() => onOpen(collection.id)}
-              className="focus-ring group flex flex-col gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)]"
+              className="focus-ring group flex flex-col gap-1.5 rounded-lg border border-transparent px-3 py-3 text-left transition-colors hover:border-[var(--border-hairline)] hover:bg-[color-mix(in_oklch,var(--foreground)_4%,transparent)]"
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-                  <Icon name={collection.icon} width={18} className="text-[var(--text-primary)]" />
+              <span className="flex items-center gap-2">
+                <Icon name={collection.icon} width={15} aria-hidden className="shrink-0 text-[var(--text-secondary)]" />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[var(--text-primary)]">
+                  {collection.title}
                 </span>
                 <Icon
                   name="ph:caret-right"
-                  width={14}
+                  width={13}
                   aria-hidden
-                  className="text-[var(--text-muted)] transition-transform group-hover:translate-x-0.5"
+                  className="shrink-0 text-[var(--text-muted)] opacity-0 transition-[opacity,transform] group-hover:translate-x-0.5 group-hover:opacity-100 group-focus-visible:opacity-100"
                 />
-              </div>
-              <span className="text-[14px] font-semibold text-[var(--text-primary)]">{collection.title}</span>
-              <span className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{collection.description}</span>
-              <span className="mt-1 text-[11px] text-[var(--text-muted)]">
+              </span>
+              <span className="line-clamp-2 text-[12px] leading-snug text-[var(--text-muted)]">
+                {collection.description}
+              </span>
+              <span className="text-[11px] text-[var(--text-muted)] opacity-80">
                 {members.length} {members.length === 1 ? "plugin" : "plugins"}
                 {added > 0 ? ` · ${added} added` : ""}
               </span>

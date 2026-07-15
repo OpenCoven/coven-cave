@@ -109,6 +109,30 @@ function bead(id, { priority = 2, labels = [], type = "feature", assignee = null
   assert.equal(q.total, 1, "cave-open counted once, in cleanup only");
 }
 
+// ── post-merge-cleanup skips beads with an open follow-up PR, and dedups ─────
+{
+  // cave-seq landed in PR 60 but a follow-up PR 61 is still open: Close would
+  // be premature, so the bead shows only via the open PR's lane.
+  const beads = [bead("cave-seq", { labels: ["familiar:kitty"] }), bead("cave-dup", { labels: ["familiar:nova"] })];
+  const prs = [pr(61, "needs-review", { beads: ["cave-seq"] })];
+  const merged = [
+    { number: 60, title: "landed first half", url: "u/60", beadIds: ["cave-seq"], mergedAt: "2026-07-07T00:00:00Z" },
+    // cave-dup landed across TWO merged PRs → one cleanup item, freshest first.
+    { number: 72, title: "landed part 2", url: "u/72", beadIds: ["cave-dup"], mergedAt: "2026-07-07T02:00:00Z" },
+    { number: 71, title: "landed part 1", url: "u/71", beadIds: ["cave-dup"], mergedAt: "2026-07-07T01:00:00Z" },
+  ];
+  const q = buildWorkQueue(beads, prs, merged, { nowMs: NOW });
+  const cleanup = q.lanes.find((l) => l.key === "post-merge-cleanup");
+  assert.deepEqual(
+    cleanup.items.map((i) => i.merged.number),
+    [72],
+    "open-follow-up bead skipped; duplicate merged refs collapse to the first (freshest) PR",
+  );
+  const review = q.lanes.find((l) => l.key === "needs-review");
+  assert.deepEqual(review.items.map((i) => i.bead.id), ["cave-seq"], "cave-seq stays in its open PR's lane");
+  assert.equal(q.total, 2, "each bead counted exactly once");
+}
+
 // ── Stale flag + rollup by familiar ──────────────────────────────────────────
 {
   const beads = [
@@ -163,5 +187,76 @@ assert.equal(
   false,
   "notes without a comment are not verification evidence",
 );
+
+// ── Attention: unlinked and/or stale open PRs, with the PR summary (cave-x1j) ─
+{
+  const beads = [bead("cave-a", { labels: ["familiar:kitty"] })];
+  const prs = [
+    pr(1, "needs-review", { beads: ["cave-a"], updatedAgoHours: 40 }), // stale, linked
+    pr(2, "checks-failing", { beads: [], updatedAgoHours: 40 }), // unlinked AND stale
+    pr(3, "needs-review", { beads: [] }), // unlinked only (fresh)
+    pr(4, "ready-to-merge", { beads: ["cave-a"], updatedAgoHours: 1 }), // clean → excluded
+  ];
+  const q = buildWorkQueue(beads, prs, [], { nowMs: NOW, staleAfterHours: 24 });
+  assert.deepEqual(q.attention.map((a) => a.pr.number), [1, 2, 3], "clean PRs excluded; sorted by number");
+  const byNum = Object.fromEntries(q.attention.map((a) => [a.pr.number, a]));
+  assert.deepEqual({ u: byNum[1].unlinked, s: byNum[1].stale }, { u: false, s: true }, "#1 stale only");
+  assert.deepEqual({ u: byNum[2].unlinked, s: byNum[2].stale }, { u: true, s: true }, "#2 unlinked AND stale");
+  assert.deepEqual({ u: byNum[3].unlinked, s: byNum[3].stale }, { u: true, s: false }, "#3 unlinked only");
+  assert.ok(q.attention.every((a) => a.pr.title && a.pr.url), "carries the PR summary for display");
+
+  const clean = buildWorkQueue(
+    beads,
+    [pr(9, "ready-to-merge", { beads: ["cave-a"], updatedAgoHours: 1 })],
+    [],
+    { nowMs: NOW, staleAfterHours: 24 },
+  );
+  assert.deepEqual(clean.attention, [], "no unlinked/stale PRs → empty attention");
+}
+
+
+// ── cave-oa1z: the Work Queue rides the Tasks page as a tab ──────────────────
+// (Schedules pattern: legacy mode deep-links onto the tab; one nav entry.)
+{
+  const { readFileSync } = await import("node:fs");
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8");
+
+  const workspace = read("../components/workspace.tsx");
+  if (!/mode === "board" \|\| mode === "familiar-work-queue"/.test(workspace)) {
+    throw new Error("workspace must resolve the legacy familiar-work-queue mode onto the merged Tasks surface");
+  }
+  if (!/initialTab=\{mode === "familiar-work-queue" \? "queue" : "tasks"\}/.test(workspace)) {
+    throw new Error("the legacy mode must deep-link onto the queue tab");
+  }
+  if (!/queueSlot=\{<FamiliarWorkQueueView[^>]*embedded/.test(workspace)) {
+    throw new Error("the queue rides the Tasks page as an embedded slot");
+  }
+
+  const board = read("../components/board-view.tsx");
+  if (!/idPrefix="tasks"/.test(board) || !/label: "Queue"/.test(board)) {
+    throw new Error("BoardView hosts the Tasks | Queue segment tabs");
+  }
+  if (!/activeTab === "queue" && queueSlot/.test(board)) {
+    throw new Error("the queue tabpanel renders the slot");
+  }
+
+  const sidebar = read("../components/sidebar-minimal.tsx");
+  if (/label: "Work Queue"/.test(sidebar)) {
+    throw new Error("the standalone Work Queue nav row stays retired — Tasks covers it");
+  }
+
+  const fwq = read("../components/familiar-work-queue-view.tsx");
+  if (!/embedded \? null : <h1 className="surface-compact-title">Queue<\/h1>/.test(fwq)) {
+    throw new Error("embedded queue suppresses its own h1 (the tab band names the surface)");
+  }
+  // Resilient load (user-requested "ensure it loads"): one failing source
+  // degrades with a banner; only BOTH failing rejects the load.
+  if (!/if \(!beadsOk && !prsOk\) throw new Error/.test(fwq)) {
+    throw new Error("the queue must load when either source (beads OR PR bridge) is available");
+  }
+  if (!/GitHub PR bridge unavailable — showing ready beads only/.test(fwq)) {
+    throw new Error("a PR-bridge failure surfaces as a truthful degradation banner, not a dead surface");
+  }
+}
 
 console.log("beads-work-queue.test.ts: ok");

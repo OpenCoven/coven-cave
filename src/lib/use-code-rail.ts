@@ -13,8 +13,10 @@ export function serializePinned(pinned: boolean): string {
 export type UseCodeRailArgs = {
   /** Active session's project_root (null/undefined = not repo-linked). */
   projectRoot: string | null | undefined;
-  /** Pending edit count for this session (0 = none). Caller polls /api/changes. */
-  changeCount: number;
+  /** Pending edit count for this session (0 = none, null = not yet loaded).
+   *  Caller polls /api/changes and must seed null per root so pre-existing
+   *  dirt can't fake a fresh-batch reveal (cave-xsq.7). */
+  changeCount: number | null;
   terminalActive: boolean;
   /** A "browse at root" peek is active — suppress the Changes auto-reveal so the
    *  browsed project stays on its Files tab (cave-z44). */
@@ -23,7 +25,12 @@ export type UseCodeRailArgs = {
 
 export function useCodeRail({ projectRoot, changeCount, terminalActive, browseActive }: UseCodeRailArgs) {
   const [pinned, setPinned] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  // Closed at rest (cave-xsq.7): the conversation owns the pane by default.
+  // The rail opens on demand — pin, manual reopen, an explicit focus target
+  // (openCodeRailTarget calls reopen()), or a genuinely observed fresh edit
+  // batch (resolveCodeRail's 0→N reveal, which also clears this dismissal via
+  // the effect below).
+  const [dismissed, setDismissed] = useState(true);
   const [activeTab, setActiveTab] = useState<CodeRailTab>("files");
   const prevRef = useRef<CodeRailState | null>(null);
 

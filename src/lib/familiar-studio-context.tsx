@@ -10,7 +10,12 @@ import {
   type ReactNode,
 } from "react";
 
-export type FamiliarStudioTab = "identity" | "look" | "brain" | "lifecycle" | "memory" | "projects" | "contract" | "vault";
+export type FamiliarStudioTab =
+  | "identity" | "look" | "brain" | "lifecycle" | "memory" | "projects" | "contract" | "vault" | "journal";
+
+const STUDIO_TABS: readonly FamiliarStudioTab[] = [
+  "identity", "look", "brain", "lifecycle", "memory", "projects", "contract", "vault", "journal",
+];
 
 const TAB_STORAGE_KEY = "cave:familiar-studio-tab:v1";
 const DEFAULT_TAB: FamiliarStudioTab = "identity";
@@ -23,6 +28,23 @@ const DEFAULT_TAB: FamiliarStudioTab = "identity";
  * the same familiar, then clears it.
  */
 export const BRAIN_STUDIO_FAMILIAR_KEY = "cave:brain-studio-familiar:v1";
+
+/**
+ * Hard-navigate to Settings → Familiars with an optional studio tab and
+ * familiar preselected. This is the single redirect path shared by the
+ * workspace-level provider (`redirectToSettings`) and workspace surfaces that
+ * retired their own page (e.g. the Journal, now a studio tab).
+ */
+export function openFamiliarStudioSettingsTab(tab?: FamiliarStudioTab, familiarId?: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (familiarId) window.localStorage.setItem(BRAIN_STUDIO_FAMILIAR_KEY, familiarId);
+    if (tab) window.localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    /* storage may be unavailable */
+  }
+  window.location.assign("/settings#familiars");
+}
 
 type Ctx = {
   /** `null` means closed; a string id means open for a specific familiar. */
@@ -61,17 +83,8 @@ export function FamiliarStudioProvider({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = window.localStorage.getItem(TAB_STORAGE_KEY);
-    if (
-      stored === "identity" ||
-      stored === "look" ||
-      stored === "brain" ||
-      stored === "lifecycle" ||
-      stored === "memory" ||
-      stored === "projects" ||
-      stored === "contract" ||
-      stored === "vault"
-    ) {
-      setActiveTabState(stored);
+    if ((STUDIO_TABS as readonly string[]).includes(stored ?? "")) {
+      setActiveTabState(stored as FamiliarStudioTab);
     }
   }, []);
 
@@ -85,11 +98,7 @@ export function FamiliarStudioProvider({
   const openFamiliarStudio = useCallback(
     (id: string, tab?: FamiliarStudioTab) => {
       if (redirectToSettings) {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(BRAIN_STUDIO_FAMILIAR_KEY, id);
-          if (tab) window.localStorage.setItem(TAB_STORAGE_KEY, tab);
-          window.location.assign("/settings#familiars");
-        }
+        openFamiliarStudioSettingsTab(tab, id);
         return;
       }
       setActiveFamiliarId(id);
@@ -101,10 +110,7 @@ export function FamiliarStudioProvider({
 
   const openFamiliarStudioListView = useCallback(() => {
     if (redirectToSettings) {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(TAB_STORAGE_KEY, "lifecycle");
-        window.location.assign("/settings#familiars");
-      }
+      openFamiliarStudioSettingsTab("lifecycle");
       return;
     }
     setActiveFamiliarId(null);
