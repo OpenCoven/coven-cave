@@ -51,7 +51,7 @@ console.log("globals.css.test.ts (task 3) OK");
 const otherThemes = [
   "tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate",
   "ghosty", "claymorphism", "claude", "pastel-dreams", "meatseeks", "trucker",
-  "contrast", "beacon", "solstice",
+  "snow", "contrast", "beacon", "solstice",
 ];
 for (const id of otherThemes) {
   const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
