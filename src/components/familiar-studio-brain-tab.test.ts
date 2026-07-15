@@ -131,7 +131,7 @@ assert.match(source, /if \("autoSelfReport" in patch\) setDraftAutoSelfReport/, 
 // and the Asana section's enable row.
 assert.match(
   source,
-  /settings-switch focus-ring\$\{draftAutoSelfReport \? " is-on" : ""\}/,
+  /settings-switch focus-ring[\s\S]{0,40}draftAutoSelfReport \? " is-on" : ""/,
   "auto self-report renders the shared settings-switch toggle",
 );
 assert.match(source, /settings-switch__knob/, "the toggle carries the track knob");
