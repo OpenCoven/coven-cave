@@ -40,6 +40,7 @@ const DEFAULT_CONFIG: CaveConfig = {
     defaultHostId: "",
     defaultWorkspace: "",
     hostMap: {},
+    hostWorkspaceMap: {},
     exposeHostsInComposer: true,
   },
   remoteHosts: [],
@@ -217,6 +218,8 @@ export type CaveOmnigentConfig = {
   defaultHostId: string;
   defaultWorkspace: string;
   hostMap: Record<string, string>;
+  /** host_id / name / hostMap alias → absolute workspace path on that host. */
+  hostWorkspaceMap: Record<string, string>;
   exposeHostsInComposer: boolean;
 };
 
@@ -407,6 +410,17 @@ export function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | u
   return { mode, hubUrl, executorUrls };
 }
 
+function normalizeStringRecord(input: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!input || typeof input !== "object" || Array.isArray(input)) return out;
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    const key = typeof k === "string" ? k.trim() : "";
+    const val = typeof v === "string" ? v.trim() : "";
+    if (key && val) out[key] = val;
+  }
+  return out;
+}
+
 export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | undefined): CaveOmnigentConfig {
   const rawUrl = typeof input?.baseUrl === "string" ? input.baseUrl.trim().replace(/\/+$/, "") : "";
   let baseUrl = rawUrl;
@@ -418,20 +432,13 @@ export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | und
       baseUrl = rawUrl;
     }
   }
-  const hostMap: Record<string, string> = {};
-  if (input?.hostMap && typeof input.hostMap === "object" && !Array.isArray(input.hostMap)) {
-    for (const [k, v] of Object.entries(input.hostMap)) {
-      const key = typeof k === "string" ? k.trim() : "";
-      const val = typeof v === "string" ? v.trim() : "";
-      if (key && val) hostMap[key] = val;
-    }
-  }
   return {
     baseUrl,
     defaultAgentId: typeof input?.defaultAgentId === "string" ? input.defaultAgentId.trim() : "",
     defaultHostId: typeof input?.defaultHostId === "string" ? input.defaultHostId.trim() : "",
     defaultWorkspace: typeof input?.defaultWorkspace === "string" ? input.defaultWorkspace.trim() : "",
-    hostMap,
+    hostMap: normalizeStringRecord(input?.hostMap),
+    hostWorkspaceMap: normalizeStringRecord(input?.hostWorkspaceMap),
     exposeHostsInComposer: input?.exposeHostsInComposer !== false,
   };
 }

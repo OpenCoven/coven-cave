@@ -500,11 +500,35 @@ function parseExecutorUrls(text: string): string[] {
   );
 }
 
+/** Parse "host = /abs/path" or "host=/abs/path" lines into a map. */
+function parseHostWorkspaceText(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    const val = line.slice(eq + 1).trim();
+    if (key && val) out[key] = val;
+  }
+  return out;
+}
+
+function formatHostWorkspaceText(map: Record<string, string> | undefined): string {
+  if (!map || typeof map !== "object") return "";
+  return Object.entries(map)
+    .filter(([k, v]) => k.trim() && v.trim())
+    .map(([k, v]) => `${k.trim()}=${v.trim()}`)
+    .join("\n");
+}
+
 /** Omnigent fleet connection — the config surface for the host chip and remote runs. */
 function OmnigentSettingsGroup() {
   const { announce } = useAnnouncer();
   const [baseUrl, setBaseUrl] = useState("");
   const [workspace, setWorkspace] = useState("");
+  const [hostWorkspaceText, setHostWorkspaceText] = useState("");
   const [exposeHosts, setExposeHosts] = useState(true);
   const [statusLine, setStatusLine] = useState<string>("");
   const [saving, setSaving] = useState(false);
@@ -520,6 +544,7 @@ function OmnigentSettingsGroup() {
           omnigent?: {
             baseUrl?: string;
             defaultWorkspace?: string;
+            hostWorkspaceMap?: Record<string, string>;
             exposeHostsInComposer?: boolean;
           };
         };
@@ -528,6 +553,7 @@ function OmnigentSettingsGroup() {
         const o = j.config?.omnigent;
         setBaseUrl(o?.baseUrl ?? "");
         setWorkspace(o?.defaultWorkspace ?? "");
+        setHostWorkspaceText(formatHostWorkspaceText(o?.hostWorkspaceMap));
         setExposeHosts(o?.exposeHostsInComposer !== false);
       })
       .catch(() => {});
@@ -566,6 +592,7 @@ function OmnigentSettingsGroup() {
           omnigent: {
             baseUrl: baseUrl.trim(),
             defaultWorkspace: workspace.trim(),
+            hostWorkspaceMap: parseHostWorkspaceText(hostWorkspaceText),
             exposeHostsInComposer: exposeHosts,
           },
         }),
@@ -606,7 +633,7 @@ function OmnigentSettingsGroup() {
       </SettingControlRow>
       <SettingControlRow
         label="Default workspace"
-        hint="Absolute path on the Omnigent host used when Chat/Board start a run without an override."
+        hint="Fallback absolute path when the selected host has no entry in the host workspace map."
       >
         <input
           value={workspace}
@@ -614,6 +641,20 @@ function OmnigentSettingsGroup() {
           aria-label="Default Omnigent workspace"
           placeholder="/home/you/project"
           className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
+          spellCheck={false}
+        />
+      </SettingControlRow>
+      <SettingControlRow
+        label="Host workspace map"
+        hint="One path per host so MacBook, Studio, and Linux can differ. Keys: host_id, host name, or hostMap alias. Format: host=/abs/path (one per line)."
+      >
+        <textarea
+          value={hostWorkspaceText}
+          onChange={(e) => setHostWorkspaceText(e.target.value)}
+          aria-label="Omnigent host workspace map"
+          placeholder={"Macbook-Pro-5.local=/Users/you/Developer/1_Projects/coven-cave\nAndrews-Mac-Studio.local=/Users/you/Developer/1_Projects/hydra\nubuntu-root=/root/work"}
+          rows={4}
+          className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
           spellCheck={false}
         />
       </SettingControlRow>

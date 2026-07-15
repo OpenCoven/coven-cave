@@ -70,6 +70,12 @@ export type CaveOmnigentConfig = {
    */
   hostMap: Record<string, string>;
   /**
+   * Absolute workspace path keyed by Omnigent host_id, host name, or hostMap alias.
+   * Used after the run host is resolved; falls back to defaultWorkspace.
+   * e.g. { "host_854c…": "/Users/…/coven-cave", "ubuntu-root": "/root/work" }
+   */
+  hostWorkspaceMap: Record<string, string>;
+  /**
    * When true, /api/hosts includes Omnigent fleet hosts (omnigent:<host_id>)
    * in the composer Host chip so Chat/Home can run on the fleet.
    */

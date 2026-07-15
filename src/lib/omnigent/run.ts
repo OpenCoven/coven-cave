@@ -17,8 +17,10 @@ import {
   runWardPreflight,
   WardPreflightError,
 } from "./ward-preflight.ts";
+import { resolveWorkspaceForHost } from "./workspace-resolve.ts";
 
 export { WardPreflightError };
+export { resolveWorkspaceForHost } from "./workspace-resolve.ts";
 
 export type OmnigentRunRequest = {
   prompt: string;
@@ -130,14 +132,16 @@ export async function createOmnigentRun(
     hostId = resolveHostIdFromMap(config, rawHost) || pickDefaultHostId(hosts) || undefined;
     if (!hostId) throw new Error("No online Omnigent host available");
 
+    const hostMeta = hosts.find((h) => h.host_id === hostId);
     workspace =
       (request.workspace && request.workspace.trim()) ||
       (fam.workspace && fam.workspace.trim()) ||
+      resolveWorkspaceForHost(config.omnigent, hostId, hostMeta?.name) ||
       config.omnigent.defaultWorkspace ||
       undefined;
     if (!workspace || !workspace.startsWith("/")) {
       throw new Error(
-        "workspace must be an absolute path on the host (set defaultWorkspace or pass workspace)",
+        "workspace must be an absolute path on the host (set hostWorkspaceMap or defaultWorkspace)",
       );
     }
   } else {
