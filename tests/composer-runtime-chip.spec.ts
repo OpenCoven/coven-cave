@@ -1,11 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// Verifies the composer runtime chip (cave-yq5l / cave-v25g): the chat
-// composer always shows the active runtime's mark + effective model, clicking
-// it opens a Runtime/Model picker with radio semantics, and picking a runtime
-// rebinds the familiar through /api/config — flipping the chip, re-listing
-// the Model group, refetching the familiar roster (cave:familiars-refresh),
-// and catching the empty-state identity line up without a reload.
+// Verifies the composer runtime chip (cave-yq5l / cave-v25g / cave-bfwk): the
+// chat composer always shows the active runtime's mark + effective model,
+// clicking it opens a Runtime/Model picker with radio semantics, and picking a
+// runtime rebinds the familiar through /api/config — flipping the chip,
+// re-listing the Model group in the still-open menu (the pick isn't complete
+// until a model is chosen), refetching the familiar roster
+// (cave:familiars-refresh), and catching the empty-state identity line up
+// without a reload. A model pick then closes the menu.
 //
 // Desktop only (the chip lives in the chat composer). All APIs are mocked;
 // the config mock is stateful so the roster refetch observably changes what
@@ -23,6 +25,7 @@ type Mutable = {
   harness: string;
   effectiveModel: string;
   familiarsServed: number;
+  modelStateServed: number;
   configPatches: Array<Record<string, unknown>>;
 };
 
@@ -31,6 +34,7 @@ async function seed(page: Page): Promise<Mutable> {
     harness: "codex",
     effectiveModel: "openai/gpt-5.5",
     familiarsServed: 0,
+    modelStateServed: 0,
     configPatches: [],
   };
   await page.addInitScript(() => {
@@ -47,8 +51,14 @@ async function seed(page: Page): Promise<Mutable> {
     route.fulfill({ json: { ok: true, sessions: [] } }),
   );
   await page.route("**/api/board**", (route) => route.fulfill({ json: { ok: true, cards: [] } }));
-  await page.route("**/api/chat/model-state**", (route) =>
-    route.fulfill({
+  await page.route("**/api/chat/model-state**", (route) => {
+    if (route.request().method() === "PATCH") {
+      const body = route.request().postDataJSON() as { model?: string };
+      if (body?.model) state.effectiveModel = body.model;
+    } else {
+      state.modelStateServed += 1;
+    }
+    return route.fulfill({
       json: {
         ok: true,
         state: {
@@ -61,8 +71,8 @@ async function seed(page: Page): Promise<Mutable> {
           reason: "e2e",
         },
       },
-    }),
-  );
+    });
+  });
   await page.route("**/api/config", async (route) => {
     if (route.request().method() === "PATCH") {
       const body = route.request().postDataJSON() as {
@@ -109,9 +119,17 @@ test.describe("composer runtime chip", () => {
     // The empty-state identity line reads the roster's familiar.harness.
     await expect(page.locator(".cave-chat-empty-meta")).toContainText("codex");
     const servedBefore = state.familiarsServed;
+    const modelStateGetsBefore = state.modelStateServed;
 
     await chip.click();
-    await page.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
+    const menu = page.getByRole("menu", { name: "Runtime and model" });
+    await menu.getByRole("menuitemradio", { name: "Claude Code", exact: true }).click();
+
+    // The menu stays open for the model step — the switch isn't done until a
+    // model is picked, and the Model group re-lists to the new runtime's
+    // catalog in place (cave-bfwk).
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true })).toBeVisible();
 
     // The PATCH carries the harness + that runtime's default model.
     await expect(() => {
@@ -130,9 +148,13 @@ test.describe("composer runtime chip", () => {
     // …so the identity line catches up without a reload.
     await expect(page.locator(".cave-chat-empty-meta")).toContainText("claude", { timeout: 10_000 });
 
-    // The Model group re-lists to the new runtime's catalog.
-    await chip.click();
-    const menu = page.getByRole("menu", { name: "Runtime and model" });
-    await expect(menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true })).toBeVisible();
+    // Let the runtime pick's reconciling model-state refetch land before the
+    // model pick, so a stale in-flight GET can't overwrite the model PATCH.
+    await expect(() => expect(state.modelStateServed).toBeGreaterThan(modelStateGetsBefore)).toPass({ timeout: 10_000 });
+
+    // Picking a model completes the runtime→model switch and closes the menu.
+    await menu.getByRole("menuitemradio", { name: "Claude Sonnet 5", exact: true }).click();
+    await expect(menu).not.toBeVisible();
+    await expect(chip).toHaveAttribute("aria-label", /Runtime: Claude Code · Model: Claude Sonnet 5/, { timeout: 10_000 });
   });
 });
