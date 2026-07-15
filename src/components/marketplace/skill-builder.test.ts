@@ -39,7 +39,7 @@ assert.match(builder, /announce\(msg, "assertive"\)/, "failures are announced to
 assert.match(builder, /role="alert"/, "failures render an alert banner");
 assert.match(builder, /role="group" aria-label="Skill templates"/, "an empty instructions field offers a template gallery");
 assert.match(builder, /aria-label="SKILL\.md preview"/, "the preview pane is a labelled region");
-assert.match(builder, /disabled=\{!ready\}/, "Save stays disabled until the required fields are present");
+assert.match(builder, /disabled=\{!ready \|\| cavemanning\}/, "Save stays disabled until the required fields are present");
 assert.match(builder, /Build another skill/, "the success panel offers a reset path");
 
 // ── Templating (cave-6ptj) ──────────────────────────────────────────────────
@@ -91,5 +91,18 @@ assert.match(builder, /formatSkillDraft\(\{ name, description, tags, instruction
 assert.match(builder, /disabled=\{formatIsNoop \|\| saving\}/, "Format disables when already canonical");
 assert.match(builder, /announce\("Formatted to match the saved file\.", "polite"\)/, "Format announces politely");
 assert.match(builder, /type="button"[\s\S]{0,500}>\s*Format\s*<\/Button>/, "Format button has explicit type=button to prevent form submit");
+
+// ── Caveman button (cave-d00p) ──────────────────────────────────────────────
+// One bounded-assist call rewrites the three prose fields in a consistent
+// terse register; tags never round-trip. Snapshot revert survives until any
+// field diverges from the applied rewrite.
+assert.match(builder, /fetch\("\/api\/skills\/caveman"/, "Caveman posts to the guarded rewrite endpoint");
+assert.match(builder, /"ph:bone"/, "Caveman wears the bone");
+assert.match(builder, /title="Rewrite name, description, and instructions in ultra-terse caveman speak — fewer tokens, same meaning\. Code blocks survive untouched\."/, "the hover tooltip explains the transformation");
+assert.match(builder, /Revert caveman/, "an applied rewrite offers revert");
+assert.match(builder, /cavemanRevertable/, "revert is gated on fields still matching the applied rewrite");
+
+const cavemanBlock = builder.slice(builder.indexOf("const cavemanize"), builder.indexOf("const revertCaveman"));
+assert.doesNotMatch(cavemanBlock, /setTagsText/, "cavemanize never calls setTagsText");
 
 console.log("skill-builder.test.ts OK");

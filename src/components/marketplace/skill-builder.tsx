@@ -207,6 +207,56 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
     announce("Formatted to match the saved file.", "polite");
   }, [announce, formatted, formattedTagsText]);
 
+  // ── Caveman rewrite (cave-d00p): one assist call, terse register ──────────
+  const [cavemanning, setCavemanning] = useState(false);
+  const [cavemanError, setCavemanError] = useState<string | null>(null);
+  const [cavemanApplied, setCavemanApplied] = useState<{
+    before: { name: string; description: string; instructions: string };
+    after: { name: string; description: string; instructions: string };
+  } | null>(null);
+  const cavemanRevertable =
+    cavemanApplied !== null &&
+    name === cavemanApplied.after.name &&
+    description === cavemanApplied.after.description &&
+    instructions === cavemanApplied.after.instructions;
+  const cavemanize = useCallback(async () => {
+    if (!instructions.trim() || cavemanning || saving) return;
+    setCavemanning(true);
+    setCavemanError(null);
+    try {
+      const res = await fetch("/api/skills/caveman", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, description, instructions }),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        draft?: { name: string; description: string; instructions: string };
+        error?: string;
+      } | null;
+      if (!json?.ok || !json.draft) throw new Error(json?.error ?? `caveman http ${res.status}`);
+      setCavemanApplied({ before: { name, description, instructions }, after: json.draft });
+      setName(json.draft.name);
+      setDescription(json.draft.description);
+      setInstructions(json.draft.instructions);
+      announce("Caveman rewrite applied — review, revert, or save.", "polite");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "caveman rewrite failed";
+      setCavemanError(msg);
+      announce(msg, "assertive");
+    } finally {
+      setCavemanning(false);
+    }
+  }, [announce, cavemanning, description, instructions, name, saving]);
+  const revertCaveman = useCallback(() => {
+    if (!cavemanApplied) return;
+    setName(cavemanApplied.before.name);
+    setDescription(cavemanApplied.before.description);
+    setInstructions(cavemanApplied.before.instructions);
+    setCavemanApplied(null);
+    announce("Caveman rewrite reverted.", "polite");
+  }, [announce, cavemanApplied]);
+
   const reset = useCallback(() => {
     setName("");
     setDescription("");
@@ -215,6 +265,8 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
     setDraftGoal("");
     setDraftError(null);
     setError(null);
+    setCavemanError(null);
+    setCavemanApplied(null);
     setSaved(null);
   }, []);
 
@@ -317,7 +369,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
             size="sm"
             leadingIcon="ph:sparkle"
             loading={drafting}
-            disabled={!draftGoal.trim()}
+            disabled={!draftGoal.trim() || cavemanning}
             onClick={() => void draftWithAi()}
           >
             Draft with AI
@@ -475,7 +527,36 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
             <p className="min-w-0 text-[11px] text-[var(--text-muted)]">
               Writes <span className="break-all font-mono text-[var(--text-secondary)]">{destination}</span>
             </p>
+            {cavemanError ? (
+              <p role="alert" className="w-full text-[11px] text-[var(--danger-text)]">
+                {cavemanError}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
+              {cavemanRevertable ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  leadingIcon="ph:arrow-counter-clockwise"
+                  onClick={revertCaveman}
+                >
+                  Revert caveman
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  leadingIcon="ph:bone"
+                  loading={cavemanning}
+                  disabled={!instructions.trim() || saving || drafting}
+                  onClick={() => void cavemanize()}
+                  title="Rewrite name, description, and instructions in ultra-terse caveman speak — fewer tokens, same meaning. Code blocks survive untouched."
+                >
+                  Caveman
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="secondary"
@@ -493,7 +574,7 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
                 size="sm"
                 leadingIcon="ph:hammer"
                 loading={saving}
-                disabled={!ready}
+                disabled={!ready || cavemanning}
               >
                 Save skill
               </Button>
