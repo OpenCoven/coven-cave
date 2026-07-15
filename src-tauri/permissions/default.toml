@@ -19,4 +19,8 @@ permissions = [
   "allow-sidecar-startup-status",
   "allow-retry-sidecar-startup",
   "allow-cancel-sidecar-startup",
+  "allow-speech-stt-available",
+  "allow-speech-stt-start",
+  "allow-speech-stt-finish",
+  "allow-speech-stt-stop",
 ]

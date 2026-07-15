@@ -55,6 +55,9 @@
     "iOS": {
       "developmentTeam": "9LR8Z8UQ9X"
     },
+    "macOS": {
+      "entitlements": "./Entitlements.plist"
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

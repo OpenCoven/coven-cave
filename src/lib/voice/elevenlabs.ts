@@ -20,6 +20,7 @@ import type {
 } from "./types.ts";
 import { VoiceConnectError } from "./types.ts";
 import { connectSpeechLoop, type SpeechMouth } from "./speech-loop.ts";
+import { resolvePreferredEars } from "./native-stt.ts";
 import {
   createFamiliarSpeechBrain,
   FAMILIAR_BRAIN_ERROR_HINT,
@@ -192,6 +193,7 @@ async function connect(
 
   return connectSpeechLoop({
     mic,
+    ears: await resolvePreferredEars(),
     mouth: createElevenLabsMouth({
       voiceId: connection.voiceId || DEFAULT_ELEVENLABS_VOICE_ID,
       modelId: connection.modelId || DEFAULT_ELEVENLABS_MODEL_ID,

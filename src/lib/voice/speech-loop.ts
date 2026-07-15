@@ -1,13 +1,17 @@
 // Shared client speech loop — the ears and mouth of a decomposed voice call.
 //
 // The local provider (local-loop.ts) established the shape: a voice call is
-// ears (SpeechRecognition) → brain (a swappable async turn) → mouth
-// (speechSynthesis), half-duplex so the mic never transcribes the
+// ears (a swappable SpeechEars engine) → brain (a swappable async turn) →
+// mouth (speechSynthesis), half-duplex so the mic never transcribes the
 // synthesizer. This module extracts that scaffold so any brain can plug in:
 //
 //   local     — POST /api/voice/local/chat (loopback Ollama / LM Studio)
 //   familiar  — a real chat turn through the familiar's own harness runtime
 //               (familiar-brain.ts), the "true voice" mode
+//
+// Ears default to WebSpeech (SpeechRecognition, Chromium web builds); the
+// Tauri shell swaps in the native macOS engine (native-stt.ts) because
+// WKWebView ships no recognition engine.
 //
 // The mouth is an utterance QUEUE, not a single call: a streaming brain can
 // speak sentence-chunks as they arrive (latency win — the familiar starts
@@ -128,7 +132,82 @@ export function resolveSpeechRecognition(): (new () => SpeechRecognitionLike) | 
 }
 
 export const STT_UNAVAILABLE_HINT =
-  "This window has no speech recognition engine. Native on-device recognition and the sidecar Whisper engine are on the roadmap — until then, this voice mode needs a Chromium browser, or pick a cloud voice provider in Familiar Studio → Brain.";
+  "This window has no speech recognition engine. The desktop app hears through native macOS recognition; on the web this voice mode needs a Chromium browser. The sidecar Whisper engine is on the roadmap — or pick a cloud voice provider in Familiar Studio → Brain.";
+
+/** Callbacks the loop hands to an ears implementation. */
+export type SpeechEarsHandlers = {
+  onPartial(text: string): void;
+  onFinal(text: string): void;
+  /** Non-routine engine failure; surfaced to the call as a VoiceConnectError. */
+  onError(code: string, hint?: string): void;
+};
+
+/** The ears half of the loop — a swappable capture+transcribe engine.
+ *  `listen()` and `hush()` are idempotent; the loop owns WHEN to listen
+ *  (half-duplex policy), the ears own HOW (WebSpeech today, the native
+ *  macOS SFSpeechRecognizer engine in the Tauri shell, sidecar Whisper
+ *  later). An ears implementation that stops itself (silence timeouts,
+ *  one-shot recognition tasks) must restart while it is in the listening
+ *  state, and must never restart after `hush()`/`close()`. */
+export type SpeechEars = {
+  listen(): void;
+  hush(): void;
+  close(): void;
+};
+
+export type SpeechEarsFactory = (handlers: SpeechEarsHandlers) => SpeechEars;
+
+/** WebSpeech ears — SpeechRecognition where the WebView has it (Chromium
+ *  web builds). Returns null when this window has no engine. */
+export function createWebSpeechEars(): SpeechEarsFactory | null {
+  const Recognition = resolveSpeechRecognition();
+  if (!Recognition) return null;
+  return (handlers) => {
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang =
+      typeof navigator !== "undefined" ? navigator.language || "en-US" : "en-US";
+    let wanted = false;
+
+    recognition.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0]?.transcript ?? "";
+        if (!transcript.trim()) continue;
+        if (result.isFinal) handlers.onFinal(transcript.trim());
+        else handlers.onPartial(transcript);
+      }
+    };
+    recognition.onerror = (event) => {
+      // "no-speech" and "aborted" are routine pauses, not call failures.
+      if (event.error === "no-speech" || event.error === "aborted") return;
+      handlers.onError(`stt_${event.error ?? "failed"}`);
+    };
+    // Recognition engines stop themselves after silence — keep listening.
+    recognition.onend = () => {
+      if (wanted) {
+        try { recognition.start(); } catch { /* already started */ }
+      }
+    };
+
+    return {
+      listen() {
+        wanted = true;
+        try { recognition.start(); } catch { /* already started */ }
+      },
+      hush() {
+        wanted = false;
+        try { recognition.stop(); } catch { /* already stopped */ }
+      },
+      close() {
+        wanted = false;
+        recognition.onend = null;
+        try { recognition.stop(); } catch { /* already stopped */ }
+      },
+    };
+  };
+}
 
 export type SpeechLoopOptions = {
   mic: MediaStream;
@@ -137,6 +216,8 @@ export type SpeechLoopOptions = {
   voiceName?: string;
   /** Custom mouth (e.g. ElevenLabs TTS). Defaults to the system synthesizer. */
   mouth?: SpeechMouth;
+  /** Custom ears (e.g. the native macOS engine). Defaults to WebSpeech. */
+  ears?: SpeechEarsFactory;
   callbacks: VoiceCallbacks;
   brain: SpeechBrain;
   /** Machine code reported when the brain throws a non-VoiceConnectError. */
@@ -147,11 +228,12 @@ export type SpeechLoopOptions = {
 
 /**
  * Wire ears → brain → mouth into a LiveSession. Throws VoiceConnectError
- * (`stt_unavailable`) when the WebView has no recognition engine.
+ * (`stt_unavailable`) when no ears are supplied and the WebView has no
+ * recognition engine.
  */
 export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
-  const Recognition = resolveSpeechRecognition();
-  if (!Recognition) {
+  const earsFactory = opts.ears ?? createWebSpeechEars();
+  if (!earsFactory) {
     throw new VoiceConnectError("stt_unavailable", STT_UNAVAILABLE_HINT);
   }
   const { mic, callbacks } = opts;
@@ -167,17 +249,27 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
   let speaking = false;
   let onQueueDrained: (() => void) | null = null;
 
-  const recognition = new Recognition();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = typeof navigator !== "undefined" ? navigator.language || "en-US" : "en-US";
+  const ears = earsFactory({
+    onPartial: (text) => {
+      if (!closed) callbacks.onPartialTranscript("user", text);
+    },
+    onFinal: (text) => {
+      if (closed || !text.trim()) return;
+      const trimmed = text.trim();
+      callbacks.onUserTranscriptFinal(trimmed);
+      void askBrain(trimmed);
+    },
+    onError: (code, hint) => {
+      if (!closed) callbacks.onError(new VoiceConnectError(code, hint));
+    },
+  });
 
   const listen = () => {
     if (closed || muted || speaking) return;
-    try { recognition.start(); } catch { /* already started */ }
+    ears.listen();
   };
   const hush = () => {
-    try { recognition.stop(); } catch { /* already stopped */ }
+    ears.hush();
   };
 
   const speakNext = () => {
@@ -255,36 +347,14 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
   };
 
   // ── Ears ───────────────────────────────────────────────────────────────────
-  recognition.onresult = (event) => {
-    if (closed) return;
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i];
-      const transcript = result[0]?.transcript ?? "";
-      if (!transcript.trim()) continue;
-      if (result.isFinal) {
-        const text = transcript.trim();
-        callbacks.onUserTranscriptFinal(text);
-        void askBrain(text);
-      } else {
-        callbacks.onPartialTranscript("user", transcript);
-      }
-    }
-  };
-  recognition.onerror = (event) => {
-    if (closed) return;
-    // "no-speech" and "aborted" are routine pauses, not call failures.
-    if (event.error === "no-speech" || event.error === "aborted") return;
-    callbacks.onError(new VoiceConnectError(`stt_${event.error ?? "failed"}`));
-  };
-  // Recognition engines stop themselves after silence — keep listening.
-  recognition.onend = () => { listen(); };
-
   listen();
 
   return {
     // The mouth is the system synthesizer, not a network audio track — the
-    // overlay's <audio> element gets a valid, silent stream.
-    inboundAudio: new MediaStream(),
+    // overlay's <audio> element gets a valid, silent stream. (Guarded for
+    // non-browser environments, where no element will ever play it.)
+    inboundAudio:
+      typeof MediaStream === "undefined" ? ({} as MediaStream) : new MediaStream(),
     setMuted(next: boolean) {
       muted = next;
       for (const track of mic.getAudioTracks()) track.enabled = !next;
@@ -293,8 +363,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     },
     async close() {
       closed = true;
-      recognition.onend = null;
-      hush();
+      ears.close();
       utterances.length = 0;
       mouth.cancel();
       for (const track of mic.getAudioTracks()) track.stop();

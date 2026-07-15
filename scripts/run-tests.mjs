@@ -867,6 +867,7 @@ export const SUITES = {
     "src/lib/voice/registry.test.ts",
     "src/lib/voice/local-loop.test.ts",
     "src/lib/voice/speech-loop.test.ts",
+    "src/lib/voice/native-stt.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
     "src/lib/voice/elevenlabs.test.ts",
     "src/lib/voice/hydrate-instructions.test.ts",

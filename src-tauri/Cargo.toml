@@ -72,3 +72,11 @@ window-vibrancy = "0.6"
 # Raw msg_send access to NSWindow's standard buttons (traffic-light
 # show/hide follows the side panel); already in the tree via tauri/wry.
 objc2 = "0.6"
+# Native speech-to-text for local voice calls (speech.rs): WKWebView has no
+# SpeechRecognition, so the packaged app captures the mic with AVAudioEngine
+# and transcribes with SFSpeechRecognizer. Same objc2 0.6 generation as the
+# bindings already in the tree via tauri/wry.
+objc2-foundation = "0.3"
+objc2-speech = "0.3"
+objc2-avf-audio = "0.3"
+block2 = "0.6"

@@ -29,6 +29,7 @@ import {
 } from "./speech-loop.ts";
 import { streamFamiliarText } from "../familiar-stream.ts";
 import { extractNextPaths } from "../next-paths.ts";
+import { resolvePreferredEars } from "./native-stt.ts";
 
 export const FAMILIAR_BRAIN_ERROR_HINT =
   "The familiar's runtime didn't answer — check that its harness is installed and signed in, or try the turn again.";
@@ -116,6 +117,7 @@ async function connect(
   return connectSpeechLoop({
     mic,
     voiceName: connection.voice,
+    ears: await resolvePreferredEars(),
     callbacks,
     brainErrorCode: "familiar_brain_failed",
     brainErrorHint: FAMILIAR_BRAIN_ERROR_HINT,
