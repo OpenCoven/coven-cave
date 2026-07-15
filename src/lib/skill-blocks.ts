@@ -26,7 +26,9 @@ export type SkillStageUpdate = {
 
 const STAGES: ReadonlySet<string> = new Set(["loaded", "running", "done", "error"]);
 
-const MARKER_RE = /<coven:skill\b([^>]*?)\/?>/g;
+// Attributes segment treats quoted strings as atomic so a `>` inside a quoted
+// note can't terminate the match early (review finding on #3175).
+const MARKER_RE = /<coven:skill\b((?:[^">]|"[^"]*")*?)\/?>/g;
 const ATTR_RE = /([a-zA-Z-]+)="([^"]*)"/g;
 
 function parseAttrs(raw: string): Record<string, string> {

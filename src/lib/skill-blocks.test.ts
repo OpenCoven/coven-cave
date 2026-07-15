@@ -83,3 +83,11 @@ test("AssistantFilter passes assistant-phase coven:skill marker lines through", 
   const passOut = pass.push('<coven:skill name="x" stage="done" />\n');
   assert.ok(passOut.includes("coven:skill"), "passthrough marker survives");
 });
+
+test("extract: quoted note containing '>' stays atomic (no early tag close)", () => {
+  const { visible, updates } = extractSkillMarkers(
+    'x <coven:skill name="brainstorming" stage="running" note="a > b flow" /> y',
+  );
+  assert.deepEqual(updates, [{ name: "brainstorming", stage: "running", note: "a > b flow" }]);
+  assert.equal(visible, "x  y");
+});

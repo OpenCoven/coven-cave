@@ -225,3 +225,10 @@ test("classify: tier table matches the design", () => {
   for (const k of fire) assert.equal(classifyGitHubAction(k), "fire", k);
   for (const k of confirm) assert.equal(classifyGitHubAction(k), "confirm", k);
 });
+
+test("slice: quoted title containing '>' stays atomic (no early tag close)", () => {
+  const pieces = sliceGitHubBlocks('<coven:github kind="issue" repo="a/b" number="5" title="fix a > b" />');
+  assert.deepEqual(pieces, [
+    { kind: "card", descriptor: { kind: "issue", repo: "a/b", number: 5, title: "fix a > b" } },
+  ]);
+});
