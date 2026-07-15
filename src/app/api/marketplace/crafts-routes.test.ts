@@ -13,6 +13,9 @@ const roleCraftService = readFileSync(new URL("../../../lib/server/role-crafts.t
 assert.match(plan, /export async function GET/);
 assert.match(plan, /craftInstallService\.plan\(id\)/);
 assert.doesNotMatch(plan, /rejectNonLocalRequest/, "read-only plan remains available without a local-origin gate");
+assert.match(plan, /error\.code === "unknown_craft"/, "only the catalog-miss falls through to the drafts store");
+assert.match(plan, /planCraftDraft\(id\)/, "local drafts plan through the draft-aware planner (docs/craft-ux.md F1)");
+assert.match(plan, /draftDiagnostics/, "draft plans disclose unverifiable local references");
 
 for (const [name, source, method] of [
   ["install", install, "install"],

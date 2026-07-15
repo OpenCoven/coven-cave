@@ -97,6 +97,32 @@ assert.match(view, /setCraftSeed\(seed\)/, "the hub routes the seed from detail 
   assert.match(craftDraftLib, /const id = slugify\(`\$\{cleanFamiliar\}-\$\{roleNames\.join\("-"\)\}`\)/, "renames never move the draft's derived identity");
 }
 
+// ── The describe loop closes honestly (docs/craft-ux.md CP4) ─────────────────
+// The arrival watch outlives the drawer (sessionStorage) so following the
+// chat no longer kills the loop (F2); the plan route resolves drafts with
+// named diagnostics instead of unknown_craft (F1); the draft detail shows
+// the verification state (F8); the briefs stop promising a plan shape the
+// API can't return.
+assert.match(createDrawer, /writeCraftArrivalWatch\(\{/, "dispatch persists the arrival watch beyond the drawer's lifetime");
+assert.match(createDrawer, /readCraftArrivalWatch\(\)/, "a reopened drawer resumes the persisted wait");
+assert.match(createDrawer, /clearCraftArrivalWatch\(\)/, "arrival and stop-waiting clear the persisted watch");
+assert.match(view, /findArrivedDraftId\(watch/, "the hub resumes arrival polling with the drawer closed");
+assert.match(view, /craft-arrival-banner/, "an in-flight describe-build is visible on the Crafts tab");
+assert.match(view, /Your familiar(?:'|&apos;)s Craft draft arrived/, "arrival is announced at the hub level");
+assert.match(detail, /craft-draft-plan-status/, "draft detail shows the plan verification state");
+assert.match(detail, /draftDiagnostics/, "draft detail reads the honest draft diagnostics");
+{
+  const promptLib = await readFile(new URL("../../lib/craft-agent-prompt.ts", import.meta.url), "utf8");
+  assert.match(promptLib, /draftDiagnostics/, "the briefs describe the draft plan contract the API actually returns");
+  const skillDoc = await readFile(new URL("../../../.agents/skills/craft-builder/SKILL.md", import.meta.url), "utf8");
+  assert.match(skillDoc, /draftDiagnostics/, "the companion skill documents the draft plan contract");
+}
+{
+  const arrivalLib = await readFile(new URL("../../lib/craft-arrival.ts", import.meta.url), "utf8");
+  assert.match(arrivalLib, /sessionStorage/, "the watch lives in sessionStorage, not component state");
+  assert.match(arrivalLib, /CRAFT_ARRIVAL_MAX_AGE_MS/, "stale watches drop instead of spinning forever");
+}
+
 // ── Describe-it closes its loop (cave-46wg) ──────────────────────────────────
 // The dispatched brief is no longer fire-and-forget: the drawer snapshots the
 // drafts store, polls while waiting, and hands an ARRIVED draft to the same

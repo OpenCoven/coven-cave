@@ -8,6 +8,11 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { buildCraftAgentPrompt } from "@/lib/craft-agent-prompt";
+import {
+  clearCraftArrivalWatch,
+  readCraftArrivalWatch,
+  writeCraftArrivalWatch,
+} from "@/lib/craft-arrival";
 import { buildCraftDraftFromRoles } from "@/lib/craft-draft";
 import {
   CraftDraftPreview,
@@ -108,6 +113,18 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
     }
   }, [open]);
 
+  // Resume a dispatched build (F2): the watch outlives the drawer in
+  // sessionStorage, so reopening — even after following the chat away and
+  // back — picks the wait right back up.
+  useEffect(() => {
+    if (!open) return;
+    const watch = readCraftArrivalWatch();
+    if (!watch) return;
+    baselineDraftIds.current = new Set(watch.baselineIds);
+    setGoal((current) => current || watch.goal);
+    setAwaiting(true);
+  }, [open]);
+
   // Editing an existing draft (F5): apply the seed once per open — mode
   // flips to pick-roles (without touching the remembered preference), the
   // draft's roles pre-select, and the flow lands on the preview step.
@@ -131,6 +148,11 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
     }
   }, []);
 
+  const stopWaiting = useCallback(() => {
+    clearCraftArrivalWatch();
+    setAwaiting(false);
+  }, []);
+
   const checkForArrivedDraft = useCallback(async () => {
     try {
       const res = await fetch("/api/marketplace/crafts/drafts", { cache: "no-store" });
@@ -138,6 +160,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
       if (!json.ok || !Array.isArray(json.drafts)) return;
       const arrived = json.drafts.find((d) => d.id && !baselineDraftIds.current.has(d.id));
       if (arrived?.id) {
+        clearCraftArrivalWatch();
         setAwaiting(false);
         setGoal("");
         onCreated(arrived.id);
@@ -303,6 +326,15 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
         detail: { initialPrompt: buildCraftAgentPrompt({ description, familiar: familiar || undefined }) },
       }),
     );
+    // Persist the watch (F2): following the chat unmounts this drawer, so the
+    // wait state lives in sessionStorage where the Crafts tab (and a reopened
+    // drawer) resumes it.
+    writeCraftArrivalWatch({
+      baselineIds: [...baselineDraftIds.current],
+      dispatchedAt: new Date().toISOString(),
+      goal: description,
+      ...(familiar ? { familiar } : {}),
+    });
     setAwaiting(true);
   }, [familiar, goal]);
 
@@ -396,7 +428,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
                 </span>
                 <button
                   type="button"
-                  onClick={() => setAwaiting(false)}
+                  onClick={stopWaiting}
                   className="focus-ring craft-create-drawer__awaiting-stop"
                 >
                   Stop waiting

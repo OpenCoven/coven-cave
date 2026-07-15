@@ -198,6 +198,34 @@ function DraftCraftDetail({
     return () => window.clearTimeout(t);
   }, [armedDelete]);
 
+  // Honest verification state (F8 partial): the plan route now resolves
+  // drafts, so the detail can say whether the bundle checks out and which
+  // extracted references wait on publication.
+  const [planState, setPlanState] = useState<
+    | { kind: "loading" }
+    | { kind: "ok"; diagnostics: string[] }
+    | { kind: "error" }
+  >({ kind: "loading" });
+  useEffect(() => {
+    const controller = new AbortController();
+    const id = plugin.draftId ?? plugin.id;
+    setPlanState({ kind: "loading" });
+    fetch(`/api/marketplace/crafts/plan?id=${encodeURIComponent(id)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; draftDiagnostics?: string[] }) => {
+        if (controller.signal.aborted) return;
+        if (json.ok) setPlanState({ kind: "ok", diagnostics: json.draftDiagnostics ?? [] });
+        else setPlanState({ kind: "error" });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setPlanState({ kind: "error" });
+      });
+    return () => controller.abort();
+  }, [plugin.draftId, plugin.id]);
+
   const adjustRoles = useCallback(() => {
     if (!fullDraft || !onAdjustRoles) return;
     const roleNames = fullDraft.extraction.roles.map((role) => role.name);
@@ -288,6 +316,30 @@ function DraftCraftDetail({
           <button type="button" onClick={onClose} aria-label="Close" className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
             <Icon name="ph:x" width={16} />
           </button>
+        </div>
+
+        <div role="status" className="craft-draft-plan-status" data-state={planState.kind}>
+          {planState.kind === "loading" ? (
+            <span>Checking the draft's install plan…</span>
+          ) : planState.kind === "error" ? (
+            <span>Plan check unavailable — the draft is still reviewable and editable.</span>
+          ) : planState.diagnostics.length === 0 ? (
+            <span>
+              <Icon name="ph:seal-check" width={13} aria-hidden /> Install plan resolves against the catalog.
+            </span>
+          ) : (
+            <details>
+              <summary>
+                {planState.diagnostics.length} local {planState.diagnostics.length === 1 ? "reference" : "references"} can&apos;t
+                verify until publication
+              </summary>
+              <ul>
+                {planState.diagnostics.map((diagnostic) => (
+                  <li key={diagnostic}>{diagnostic}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
 
         <CraftDraftPreview

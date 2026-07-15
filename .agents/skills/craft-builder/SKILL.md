@@ -47,10 +47,12 @@ the same routes).
    curl -s "http://127.0.0.1:3000/api/marketplace/crafts/plan?id=<draft.plugin.id>"
    ```
 
-   → `{ ok, plan }` when the draft resolves. A `{ ok: false, code, diagnostic }`
-   response means the bundle can't install as-is — read `diagnostic` (it may
-   list affected roles) and adjust the role set rather than shipping a broken
-   draft.
+   → `{ ok, draft: true, plan, draftDiagnostics }` for local drafts. Confirm
+   `ok: true`. `draftDiagnostics` names components that only exist as local
+   role references — expected until the Craft is published; report them
+   rather than trying to fix them. A `{ ok: false, code, diagnostic }`
+   response means the bundle can't resolve at all — read `diagnostic` and
+   adjust the role set rather than shipping a broken draft.
 
 5. **Report** — the draft id, the familiar and roles bundled, the ledger
    contents, and anything the plan flagged. The draft appears in

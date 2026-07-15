@@ -88,3 +88,30 @@ export async function loadCraftDefinition(
     components,
   };
 }
+
+/** Resolve component ids against the published catalog — the honest half of
+ *  a draft plan (docs/craft-ux.md F1): extracted local-role references may
+ *  legitimately not exist as catalog plugins yet. */
+export async function resolveCatalogComponents(
+  ids: readonly string[],
+  marketplaceDir = path.join(process.cwd(), "marketplace"),
+): Promise<{ resolved: CraftComponentDefinition[]; unresolved: string[] }> {
+  let plugins: CatalogPlugin[] = [];
+  try {
+    const parsed = JSON.parse(
+      await readFile(path.join(marketplaceDir, "catalog.json"), "utf8"),
+    ) as { plugins?: unknown };
+    if (Array.isArray(parsed.plugins)) plugins = parsed.plugins as CatalogPlugin[];
+  } catch {
+    // Missing catalog resolves nothing; every id reports as unresolved.
+  }
+  const resolved: CraftComponentDefinition[] = [];
+  const unresolved: string[] = [];
+  for (const id of ids) {
+    const source = plugins.find((plugin) => plugin.name === id && plugin.kind !== "craft");
+    const component = source ? componentDefinition(source) : null;
+    if (component) resolved.push(component);
+    else unresolved.push(id);
+  }
+  return { resolved, unresolved };
+}
