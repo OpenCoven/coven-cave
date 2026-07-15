@@ -71,6 +71,19 @@ test("wide-canvas layout: container-query grid, two columns >=900px, single belo
   assert.ok(cols.length >= 2, "capability sections split into two source-ordered columns");
 });
 
+test("sticky hero pins inside the Familiar tab scroll region without hiding focus", () => {
+  assert.match(
+    src,
+    /className="chat-familiar-view flex h-full min-h-0 flex-col overflow-y-auto"[\s\S]{0,120}?aria-label="Familiar profile"/,
+    "the section remains the labelled scroll container",
+  );
+  assert.match(css, /\.chat-familiar-view \{[^}]*-webkit-overflow-scrolling: touch/, "touch momentum scroll remains enabled");
+  assert.match(css, /\.chat-familiar-view \{[^}]*scroll-padding-top: 112px/, "scroll container reserves space for the pinned hero");
+  assert.match(css, /\.chat-familiar-view :is\(a, button, \[tabindex\]\):focus \{[^}]*scroll-margin-top: 112px/, "focused controls scroll clear of the hero");
+  assert.match(css, /\.familiar-tab__hero \{[^}]*position: sticky;[\s\S]*?top: 0;[\s\S]*?z-index: 2/, "hero pins at the top of the tab");
+  assert.match(css, /\.familiar-tab__hero \{[\s\S]*?background: var\(--glass-raised\);[\s\S]*?backdrop-filter/, "sticky band keeps the glass treatment over scrolled content");
+});
+
 test("the chat surface gives the tab a wide canvas and threads presence", () => {
   assert.match(
     chatSurface,
