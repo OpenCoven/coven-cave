@@ -277,12 +277,17 @@ test.describe("code rail beside chat", () => {
 
     await review.click();
 
-    // The new session fires exactly one opening send with the review prompt,
-    // anchored to the repo root and the changed-file inventory.
+    // Background work (for example, the daily journal narrative) may share the
+    // chat endpoint, so wait for the review send rather than assuming it is the
+    // first request captured by this route.
     await expect
-      .poll(() => sends.length, { timeout: 15_000 })
-      .toBeGreaterThan(0);
-    const prompt = sends[0]?.prompt ?? "";
+      .poll(
+        () => sends.find(({ prompt }) => prompt?.includes("Review the uncommitted changes in /repo/alpha"))?.prompt,
+        { timeout: 15_000 },
+      )
+      .toBeTruthy();
+    const prompt =
+      sends.find(({ prompt }) => prompt?.includes("Review the uncommitted changes in /repo/alpha"))?.prompt ?? "";
     expect(prompt).toContain("Review the uncommitted changes in /repo/alpha");
     expect(prompt).toContain("Changed files (2):");
     expect(prompt).toContain("src/file-0.ts");
