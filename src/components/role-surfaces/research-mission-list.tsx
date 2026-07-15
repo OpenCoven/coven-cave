@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Icon } from "@/lib/icon";
 import type { ResearchMission } from "@/lib/research-missions";
 import { relativeTime } from "@/lib/relative-time";
+import { nextRovingId, resolveRovingId, type RovingKey } from "@/lib/roving-list";
 
 type Props = {
   missions: ResearchMission[];
@@ -20,7 +22,30 @@ const STATUS_TONE: Partial<Record<ResearchMission["status"], string>> = {
   completed: "ok",
 };
 
+const ROVING_KEYS = new Set<string>(["ArrowDown", "ArrowUp", "Home", "End"]);
+
 export function ResearchMissionList({ missions, selectedId, loading, onSelect }: Props) {
+  const missionIds = useMemo(() => missions.map((mission) => mission.id), [missions]);
+  const [rovingId, setRovingId] = useState<string | null>(() => resolveRovingId(missionIds, selectedId, selectedId));
+  const buttonRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  useEffect(() => {
+    setRovingId((current) => resolveRovingId(missionIds, current, selectedId));
+  }, [missionIds, selectedId]);
+
+  const focusMission = (id: string | null) => {
+    if (!id) return;
+    requestAnimationFrame(() => buttonRefs.current.get(id)?.focus());
+  };
+
+  const onListKeyDown = (event: KeyboardEvent<HTMLUListElement>) => {
+    if (!ROVING_KEYS.has(event.key)) return;
+    event.preventDefault();
+    const nextId = nextRovingId(missionIds, rovingId, event.key as RovingKey);
+    setRovingId(nextId);
+    focusMission(nextId);
+  };
+
   return (
     <nav className="research-mission-nav" aria-label="Research missions">
       <div className="research-mission-nav__head">
@@ -36,7 +61,7 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect }:
           <span>Describe an investigation to start the first one.</span>
         </div>
       ) : (
-        <ul className="research-mission-nav__list">
+        <ul className="research-mission-nav__list" onKeyDown={onListKeyDown}>
           {missions.map((mission) => {
             const selected = mission.id === selectedId;
             const iteration = mission.iterations.at(-1);
@@ -44,9 +69,21 @@ export function ResearchMissionList({ missions, selectedId, loading, onSelect }:
               <li key={mission.id}>
                 <button
                   type="button"
-                  className={`research-mission-row${selected ? " is-selected" : ""}`}
+                  ref={(node) => {
+                    if (node) {
+                      buttonRefs.current.set(mission.id, node);
+                    } else {
+                      buttonRefs.current.delete(mission.id);
+                    }
+                  }}
+                  className={`research-mission-row focus-ring${selected ? " is-selected" : ""}`}
                   aria-current={selected ? "true" : undefined}
-                  onClick={() => onSelect(mission.id)}
+                  tabIndex={mission.id === rovingId ? 0 : -1}
+                  onFocus={() => setRovingId(mission.id)}
+                  onClick={() => {
+                    setRovingId(mission.id);
+                    onSelect(mission.id);
+                  }}
                 >
                   <span className="research-mission-row__top">
                     <span className={`research-status-dot research-status-dot--${STATUS_TONE[mission.status] ?? "muted"}`} aria-hidden />
