@@ -23,12 +23,9 @@ import {
   subscribeAppPreferences,
   updateAppPreferences,
 } from "./app-preferences.ts";
-import { DEFAULT_STOP_PHRASE } from "./preferences-schema.ts";
+import { DEFAULT_STOP_PHRASE, STOP_PHRASE_MAX_LENGTH } from "./preferences-schema.ts";
 
-export { DEFAULT_STOP_PHRASE };
-
-/** Longest phrase the preference stores; also bounds matcher inputs. */
-export const STOP_PHRASE_MAX_LENGTH = 64;
+export { DEFAULT_STOP_PHRASE, STOP_PHRASE_MAX_LENGTH };
 
 /**
  * Canonical form used on both sides of the comparison: lowercase, collapsed

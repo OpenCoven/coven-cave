@@ -129,7 +129,8 @@ const DEFAULT_THEME: CaveThemePreferences = {
 
 /** Default composer stop phrase; "" (after trim) turns the feature off. */
 export const DEFAULT_STOP_PHRASE = "stop";
-const STOP_PHRASE_MAX_LENGTH = 64;
+/** Longest phrase the preference stores; UI and matcher share this bound. */
+export const STOP_PHRASE_MAX_LENGTH = 64;
 
 function normalizeStopPhrase(value: unknown): string {
   if (typeof value !== "string") return DEFAULT_STOP_PHRASE;
