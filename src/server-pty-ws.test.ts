@@ -266,4 +266,29 @@ assert.match(
 assert.match(src, /server\.keepAliveTimeout = 75_000/, "server extends the idle keep-alive window past client reuse");
 assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds keepAliveTimeout");
 
+// Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a
+// server.ts security fix that skips `pnpm build:server` silently ships nothing
+// (PR #3200's sidecar-token gate initially missed the twin exactly this way).
+// Transpile server.ts with the same flags as the build:server script and
+// require the committed artifact to match byte-for-byte.
+{
+  const { buildSync } = await import("esbuild");
+  const serverTsUrl = new URL("../server.ts", import.meta.url);
+  const out = buildSync({
+    entryPoints: [serverTsUrl.pathname],
+    bundle: false,
+    platform: "node",
+    target: "node22",
+    format: "esm",
+    write: false,
+  });
+  const generated = out.outputFiles[0].text;
+  const committed = readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.equal(
+    committed,
+    generated,
+    "server.mjs must be regenerated from server.ts (run `pnpm build:server` and commit the result)",
+  );
+}
+
 console.log("server-pty-ws.test.ts OK");
