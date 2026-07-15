@@ -30,6 +30,25 @@ test("composer makes Auto routing and finite bounds reviewable", () => {
   assert.doesNotMatch(composer, /max=\{1440\}/);
 });
 
+test("plan chips are honest about interactivity", () => {
+  // The three bound chips are buttons that open Review bounds and focus the
+  // matching input…
+  assert.match(composer, /const focusBound = \(inputId: string\) => \{/);
+  assert.match(composer, /setBoundsOpen\(true\);\s*requestAnimationFrame\(\(\) => document\.getElementById\(inputId\)\?\.focus\(\)\)/);
+  for (const id of ["research-bound-minutes", "research-bound-iterations", "research-bound-sources"]) {
+    assert.match(composer, new RegExp(`focusBound\\("${id}"\\)`));
+    assert.match(composer, new RegExp(`id="${id}"`));
+  }
+  // …the disclosure stays in sync when toggled natively…
+  assert.match(composer, /open=\{boundsOpen\}/);
+  assert.match(composer, /onToggle=\{\(event\) => setBoundsOpen\(event\.currentTarget\.open\)\}/);
+  // …and the inference explanation reads as prose, not a control.
+  assert.match(composer, /research-plan-chip--note/);
+  assert.match(css, /button\.research-plan-chip \{ cursor: pointer;/);
+  assert.match(css, /button\.research-plan-chip:focus-visible/);
+  assert.match(css, /\.research-plan-chip--note \{[^}]*border-color: transparent/);
+});
+
 test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(list, /aria-current=\{selected/);
   assert.match(detail, /aria-label="Research progress"/);
@@ -91,10 +110,10 @@ test("the action bar reads decision-first with a consequence-labeled Continue", 
   const actionsIndex = detail.indexOf("research-mission-actions");
   assert.ok(bannerIndex !== -1 && actionsIndex !== -1 && bannerIndex < actionsIndex);
   // Continue says which iteration it starts (researchContinueLabel is
-  // behaviorally tested in the lib suite) and demotes itself when the runner
-  // would refuse a beyond-plan iteration.
+  // behaviorally tested in the lib suite) and demotes itself when any runner
+  // stop gate — iteration, wall-clock, cost policy, spend — already refuses.
   assert.match(detail, /researchContinueLabel\(mission\)/);
-  assert.match(detail, /continueInfo\.beyondPlan \? "ghost" : "primary"/);
+  assert.match(detail, /continueInfo\.gated \? "ghost" : "primary"/);
   assert.match(detail, /"aria-label": continueInfo\.description, title: continueInfo\.description/);
   assert.match(detail, /continueInfo\.label/);
 });

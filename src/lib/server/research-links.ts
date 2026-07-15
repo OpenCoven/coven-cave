@@ -8,7 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -65,15 +65,35 @@ function normalizeStoredLink(value: unknown): SavedLink | null {
 }
 
 async function loadFile(): Promise<ResearchLinksFile> {
+  let text: string;
   try {
-    const parsed = JSON.parse(await readFile(researchLinksPath(), "utf8")) as Partial<ResearchLinksFile>;
-    const links = Array.isArray(parsed?.links)
-      ? parsed.links.map(normalizeStoredLink).filter((link): link is SavedLink => link !== null)
-      : [];
-    return { version: 1, links };
+    text = await readFile(researchLinksPath(), "utf8");
+  } catch (error) {
+    // Only a missing file means "empty store". Transient read failures
+    // (EACCES/EMFILE/EIO) must surface — otherwise the next save would
+    // read-modify-write an empty result and silently wipe every saved link.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyFile();
+    throw error;
+  }
+  let parsed: Partial<ResearchLinksFile>;
+  try {
+    parsed = JSON.parse(text) as Partial<ResearchLinksFile>;
   } catch {
+    // Hand-edited into invalid JSON: preserve the malformed bytes beside the
+    // store (preferences-store pattern) before any rewrite can replace them.
+    await preserveMalformedFile();
     return emptyFile();
   }
+  const links = Array.isArray(parsed?.links)
+    ? parsed.links.map(normalizeStoredLink).filter((link): link is SavedLink => link !== null)
+    : [];
+  return { version: 1, links };
+}
+
+async function preserveMalformedFile(): Promise<void> {
+  const source = researchLinksPath();
+  const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
+  await copyFile(source, `${source}.corrupt-${suffix}`).catch(() => {});
 }
 
 async function saveFile(file: ResearchLinksFile): Promise<void> {

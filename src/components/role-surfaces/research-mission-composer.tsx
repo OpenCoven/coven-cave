@@ -44,6 +44,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
   const [intent, setIntent] = useState("");
   const [mode, setMode] = useState<"auto" | ResearchMissionMode>("auto");
   const [bounds, setBounds] = useState<ResearchBounds>(defaultResearchPlan("brief").bounds);
+  const [boundsOpen, setBoundsOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +58,13 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
 
   const updateBound = <K extends keyof ResearchBounds>(key: K, value: ResearchBounds[K]) => {
     setBounds((current) => ({ ...current, [key]: value }));
+  };
+
+  // A bound chip is a shortcut into the Review-bounds disclosure: open it,
+  // then focus the matching input once it is visible.
+  const focusBound = (inputId: string) => {
+    setBoundsOpen(true);
+    requestAnimationFrame(() => document.getElementById(inputId)?.focus());
   };
 
   const start = async (event: React.FormEvent) => {
@@ -131,21 +139,47 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
 
       <div id="research-plan-review" className="research-plan-review">
         <span className="research-plan-chip research-plan-chip--mode">{MODE_LABELS[effectiveMode]}</span>
-        <span className="research-plan-chip">
+        <span className="research-plan-chip research-plan-chip--note">
           {mode === "auto" ? inferred.reason : "Selected manually"}
         </span>
         <span className="research-plan-chip">{plan.deliverables.join(" + ")}</span>
-        <span className="research-plan-chip">{bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"}</span>
-        <span className="research-plan-chip">{bounds.wallClockMinutes} min</span>
-        <span className="research-plan-chip">{bounds.sourceTarget} sources</span>
+        <button
+          type="button"
+          className="research-plan-chip"
+          title="Edit in Review bounds"
+          onClick={() => focusBound("research-bound-iterations")}
+        >
+          {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"}
+        </button>
+        <button
+          type="button"
+          className="research-plan-chip"
+          title="Edit in Review bounds"
+          onClick={() => focusBound("research-bound-minutes")}
+        >
+          {bounds.wallClockMinutes} min
+        </button>
+        <button
+          type="button"
+          className="research-plan-chip"
+          title="Edit in Review bounds"
+          onClick={() => focusBound("research-bound-sources")}
+        >
+          {bounds.sourceTarget} sources
+        </button>
       </div>
 
-      <details className="research-bounds-disclosure">
+      <details
+        className="research-bounds-disclosure"
+        open={boundsOpen}
+        onToggle={(event) => setBoundsOpen(event.currentTarget.open)}
+      >
         <summary>Review bounds</summary>
         <div className="research-bounds-grid">
           <label>
             <span>Minutes</span>
             <input
+              id="research-bound-minutes"
               type="number"
               min={1}
               max={RESEARCH_BOUND_LIMITS.wallClockMinutes}
@@ -156,6 +190,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
           <label>
             <span>Iterations</span>
             <input
+              id="research-bound-iterations"
               type="number"
               min={1}
               max={RESEARCH_BOUND_LIMITS.maxIterations}
@@ -173,6 +208,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
           <label>
             <span>Source target</span>
             <input
+              id="research-bound-sources"
               type="number"
               min={1}
               max={RESEARCH_BOUND_LIMITS.sourceTarget}

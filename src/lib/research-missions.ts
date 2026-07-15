@@ -437,30 +437,62 @@ export type ResearchContinueLabel = {
   label: string;
   /** Full-sentence consequence for the button's aria-label and title. */
   description: string;
-  /** Next iteration would exceed the plan — the runner refuses it. */
-  beyondPlan: boolean;
+  /** A stop gate already refuses the next iteration — pressing starts nothing. */
+  gated: boolean;
 };
 
 /**
  * What pressing Continue will actually do.
  *
- * The runner gates every new iteration on stopBeforeNextIteration, so a
- * Continue past bounds.maxIterations does not start anything — it re-settles
- * the mission at the iteration limit. The button must say so instead of
- * offering a primary action that dead-ends (e.g. a completed 1/1 brief).
+ * The runner gates every new iteration on stopBeforeNextIteration
+ * (src/lib/server/research-mission-runner.ts): iteration count, wall-clock
+ * budget, missing-cost policy, and the reported-spend cap. A Continue past
+ * any of those starts nothing — it re-settles the mission at the limit. This
+ * mirrors those gates (same >= comparisons) so the button can say which gate
+ * refuses instead of promising an iteration; keep the two in sync. Even when
+ * no gate is known-exceeded, the description stays a request — the runner
+ * re-checks with live clocks.
  */
 export function researchContinueLabel(
-  mission: Pick<ResearchMission, "iterations" | "bounds">,
+  mission: Pick<ResearchMission, "iterations" | "bounds" | "startedAt">,
+  nowMs: number = Date.now(),
 ): ResearchContinueLabel {
   const next = mission.iterations.length + 1;
   const max = mission.bounds.maxIterations;
-  const beyondPlan = next > max;
+  const label = `Continue (i${next}/${max})`;
+  const refusal = (why: string) => ({
+    label,
+    description: `Continue would ask for iteration ${next}, but ${why}`,
+    gated: true,
+  });
+  if (next > max) {
+    return {
+      label,
+      description: `Continue would ask for iteration ${next}, past the planned ${max} — the runner stops at the iteration limit instead of starting it.`,
+      gated: true,
+    };
+  }
+  const startedAt = mission.startedAt ? Date.parse(mission.startedAt) : Number.NaN;
+  if (Number.isFinite(startedAt) && nowMs - startedAt >= mission.bounds.wallClockMinutes * 60_000) {
+    return refusal(`the ${mission.bounds.wallClockMinutes}-minute wall-clock budget is spent — the runner pauses at the limit instead of starting it.`);
+  }
+  if (
+    mission.bounds.stopWhenCostUnavailable &&
+    mission.iterations.some((iteration) => iteration.finishedAt && iteration.costUsd === undefined)
+  ) {
+    return refusal("an iteration finished without reporting cost — the runner pauses for review instead of starting it.");
+  }
+  const reportedSpend = mission.iterations
+    .map((iteration) => iteration.costUsd)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .reduce((sum, value) => sum + value, 0);
+  if (mission.bounds.maxSpendUsd !== undefined && reportedSpend >= mission.bounds.maxSpendUsd) {
+    return refusal(`reported spend has reached the $${mission.bounds.maxSpendUsd} cap — the runner pauses at the limit instead of starting it.`);
+  }
   return {
-    label: `Continue (i${next}/${max})`,
-    description: beyondPlan
-      ? `Continue would ask for iteration ${next}, past the planned ${max} — the runner stops at the iteration limit instead of starting it.`
-      : `Continue starts iteration ${next} of ${max} planned.`,
-    beyondPlan,
+    label,
+    description: `Continue asks the runner to start iteration ${next} of ${max} planned — stop gates are re-checked first.`,
+    gated: false,
   };
 }
 

@@ -25,3 +25,7 @@ OPENAI_API_KEY:
 
 GOOGLE_API_KEY:
   description: "Google AI Studio key, used to mint ephemeral tokens for Gemini Live (v1.1)"
+
+ELEVENLABS_API_KEY:
+  ref: "op://Development/ElevenLabs API Key/credential"
+  description: "ElevenLabs API key, used for voice synthesis"

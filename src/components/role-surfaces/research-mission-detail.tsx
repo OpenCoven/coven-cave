@@ -329,7 +329,7 @@ export function ResearchMissionDetail({
                   size="xs"
                   variant={
                     action === "continue"
-                      ? (continueInfo.beyondPlan ? "ghost" : "primary")
+                      ? (continueInfo.gated ? "ghost" : "primary")
                       : action === "retry" ? "primary" : action === "cancel" ? "danger-ghost" : "ghost"
                   }
                   disabled={busy}

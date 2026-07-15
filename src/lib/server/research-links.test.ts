@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -74,4 +74,36 @@ test("one save is bounded to MAX_LINKS_PER_SAVE", async () => {
   const urls = Array.from({ length: MAX_LINKS_PER_SAVE + 10 }, (_, i) => `https://bulk.example.com/item-${i}`);
   const result = await saveResearchLinks(urls, "desk");
   assert.equal(result.added.length, MAX_LINKS_PER_SAVE);
+});
+
+// ── corruption safety (review finding on 972bf1cd) ───────────────────────────
+
+test("a corrupt store file is preserved aside, never silently wiped by a save", async () => {
+  const target = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE!;
+  await saveResearchLinks(["https://example.com/pre-corruption"], "desk");
+  // Hand-edit the file into invalid JSON (trailing comma).
+  const valid = await readFile(target, "utf8");
+  await writeFile(target, valid.replace(/\}\s*$/, "},"), "utf8");
+
+  const result = await saveResearchLinks(["https://example.com/post-corruption"], "desk");
+  assert.equal(result.added.length, 1);
+
+  // The malformed bytes were snapshotted beside the store before the rewrite.
+  const siblings = await readdir(path.dirname(target));
+  const backups = siblings.filter((name) => name.includes(".corrupt-"));
+  assert.ok(backups.length >= 1, "malformed file preserved as .corrupt-<ts>");
+  const backup = await readFile(path.join(path.dirname(target), backups[0]), "utf8");
+  assert.match(backup, /pre-corruption/, "the backup holds the pre-corruption content");
+});
+
+test("unreadable stores surface errors instead of reading as empty", async () => {
+  const previous = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE;
+  // Point the store AT A DIRECTORY: reads fail with EISDIR (not ENOENT).
+  process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = tmp;
+  try {
+    await assert.rejects(() => listSavedLinks(), /EISDIR|illegal operation/i);
+    await assert.rejects(() => saveResearchLinks(["https://example.com/x"], "desk"));
+  } finally {
+    process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE = previous;
+  }
 });

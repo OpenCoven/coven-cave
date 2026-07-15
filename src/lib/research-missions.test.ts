@@ -554,22 +554,71 @@ test("source status counts drive the triage filters", () => {
 // --- researchContinueLabel: Continue must say what it will actually do ---
 
 test("Continue is labeled with its real consequence", () => {
-  const withinPlan = researchContinueLabel({
-    iterations: [{ number: 1, status: "checkpoint" }],
-    bounds: { maxIterations: 3, wallClockMinutes: 20, sourceTarget: 6, checkpointEvery: 1, stopWhenCostUnavailable: false },
-  });
+  const bounds = { maxIterations: 3, wallClockMinutes: 20, sourceTarget: 6, checkpointEvery: 1, stopWhenCostUnavailable: false };
+  const startedAt = "2026-07-15T00:00:00Z";
+  const tenMinutesIn = Date.parse("2026-07-15T00:10:00Z");
+  const withinPlan = researchContinueLabel(
+    { iterations: [{ number: 1, status: "checkpoint" }], bounds, startedAt },
+    tenMinutesIn,
+  );
   assert.equal(withinPlan.label, "Continue (i2/3)");
-  assert.equal(withinPlan.beyondPlan, false);
-  assert.match(withinPlan.description, /starts iteration 2 of 3/);
+  assert.equal(withinPlan.gated, false);
+  // Even ungated, the sentence is a request, not a promise — the runner
+  // re-checks its stop gates with live clocks.
+  assert.match(withinPlan.description, /asks the runner to start iteration 2 of 3/);
+  assert.match(withinPlan.description, /stop gates are re-checked/);
 
   // Screenshot repro: a completed 1/1 brief offered a primary Continue that
   // the runner would refuse (stopBeforeNextIteration: iteration limit).
-  const beyond = researchContinueLabel({
-    iterations: [{ number: 1, status: "completed" }],
-    bounds: { maxIterations: 1, wallClockMinutes: 20, sourceTarget: 6, checkpointEvery: 1, stopWhenCostUnavailable: false },
-  });
+  const beyond = researchContinueLabel(
+    {
+      iterations: [{ number: 1, status: "completed" }],
+      bounds: { ...bounds, maxIterations: 1 },
+      startedAt,
+    },
+    tenMinutesIn,
+  );
   assert.equal(beyond.label, "Continue (i2/1)");
-  assert.equal(beyond.beyondPlan, true);
+  assert.equal(beyond.gated, true);
   assert.match(beyond.description, /past the planned 1/);
   assert.match(beyond.description, /iteration limit/);
+});
+
+test("Continue reports every runner stop gate, not just the iteration limit", () => {
+  const bounds = { maxIterations: 3, wallClockMinutes: 20, sourceTarget: 6, checkpointEvery: 1, stopWhenCostUnavailable: false };
+  const startedAt = "2026-07-15T00:00:00Z";
+  const iterations = [{ number: 1, status: "checkpoint" as const, finishedAt: "2026-07-15T00:10:00Z", costUsd: 5 }];
+
+  // Wall-clock budget spent (>= gate, live clock): in-plan Continue is gated.
+  const wallClock = researchContinueLabel(
+    { iterations, bounds, startedAt },
+    Date.parse("2026-07-15T00:20:00Z"),
+  );
+  assert.equal(wallClock.gated, true);
+  assert.match(wallClock.description, /wall-clock budget is spent/);
+  // One millisecond under the budget stays ungated.
+  assert.equal(
+    researchContinueLabel({ iterations, bounds, startedAt }, Date.parse("2026-07-15T00:20:00Z") - 1).gated,
+    false,
+  );
+
+  // Reported spend at the cap (>= gate, exact equality refuses).
+  const spend = researchContinueLabel(
+    { iterations, bounds: { ...bounds, maxSpendUsd: 5 }, startedAt },
+    Date.parse("2026-07-15T00:10:00Z"),
+  );
+  assert.equal(spend.gated, true);
+  assert.match(spend.description, /reported spend has reached the \$5 cap/);
+
+  // Missing-cost policy: a finished iteration without costUsd pauses for review.
+  const noCost = researchContinueLabel(
+    {
+      iterations: [{ number: 1, status: "checkpoint" as const, finishedAt: "2026-07-15T00:10:00Z" }],
+      bounds: { ...bounds, stopWhenCostUnavailable: true },
+      startedAt,
+    },
+    Date.parse("2026-07-15T00:10:00Z"),
+  );
+  assert.equal(noCost.gated, true);
+  assert.match(noCost.description, /finished without reporting cost/);
 });

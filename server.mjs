@@ -19,9 +19,11 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
   }
 }
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
+const SIDECAR_QUERY_PARAM = "covenCaveToken";
 const sessions = /* @__PURE__ */ new Map();
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
 const DETACH_GRACE_MS = (() => {
@@ -57,10 +59,16 @@ function timingSafeEqualString(a, b) {
   }
   return diff === 0;
 }
-function isExpectedToken(value) {
+function isExpectedAccessToken(value) {
   if (!ACCESS_TOKEN || !value) return false;
   if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
   return isValidSignedAccessToken(value, ACCESS_TOKEN);
+}
+function isExpectedSidecarToken(value) {
+  return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
+}
+function isExpectedPtyToken(value) {
+  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
 }
 function isValidSignedAccessToken(value, secret) {
   const parts = value.split(".");
@@ -109,11 +117,18 @@ function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
   }
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
+function firstQueryValue(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+function isPtyAuthRequired() {
+  return Boolean(ACCESS_TOKEN || SIDECAR_TOKEN);
+}
 function isAuthorized(req, query) {
-  if (!ACCESS_TOKEN) return false;
-  const queryToken = Array.isArray(query[ACCESS_QUERY_PARAM]) ? query[ACCESS_QUERY_PARAM][0] : query[ACCESS_QUERY_PARAM];
-  const candidates = [bearerToken(req), queryToken, ...getTokensFromCookie(req.headers.cookie)];
-  return candidates.some(isExpectedToken);
+  if (!isPtyAuthRequired()) return false;
+  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
+  const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
+  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
+  return candidates.some(isExpectedPtyToken);
 }
 function defaultShell() {
   if (process.platform === "darwin") return "/bin/zsh";
@@ -322,13 +337,13 @@ server.on("upgrade", (req, socket, head) => {
     });
     return;
   }
-  const tokenAuthenticated = ACCESS_TOKEN ? isAuthorized(req, query) : false;
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
   }
-  if (ACCESS_TOKEN && !tokenAuthenticated) {
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
