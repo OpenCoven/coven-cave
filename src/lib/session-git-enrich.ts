@@ -22,7 +22,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
-import { branchPrCache } from "./branch-pr-context.ts";
+import { branchPrCache, type BranchPrCache } from "./branch-pr-context.ts";
 import type { SessionGitContext, SessionRow } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -155,6 +155,7 @@ type RootEnrichment = {
 export async function enrichSessionsWithGitContext(
   sessions: SessionRow[],
   git: GitRunner = defaultGitRunner,
+  prCache: BranchPrCache = branchPrCache,
 ): Promise<SessionRow[]> {
   // Collect unique roots and, per root, the branches sessions sit on — the
   // per-root git work happens once regardless of how many sessions share it.
@@ -206,12 +207,21 @@ export async function enrichSessionsWithGitContext(
     const branch = entry.gitContext?.branch;
     const diff = branch ? entry.diffByBranch.get(branch) ?? null : null;
     if (diff) enriched.diff = diff;
-    // PR context for the thread's branch — synchronous read from the
-    // stale-while-revalidate cache (never blocks the poll; see
-    // branch-pr-context.ts). Powers the chat list's PR-status signal and the
-    // merged-chat auto-archive sweep.
-    if (branch) {
-      const pr = branchPrCache.get(root, branch);
+    // PR context for the thread — synchronous read from the stale-while-
+    // revalidate cache (never blocks the poll; see branch-pr-context.ts).
+    // Powers the chat list's PR-status signal and the merged-chat auto-archive
+    // sweep, so it must be attributed PER SESSION (cave-9q24): stamping the
+    // root's currently checked-out branch's PR onto every session sharing the
+    // root let one merged PR mass-archive unrelated chats. Use the branch the
+    // chat itself recorded at its last turn; for rows without one, fall back
+    // to the root's branch only when the root is a WORKTREE — worktrees are
+    // branch-stable, so root-branch ≈ session-branch there. A shared checkout
+    // without a recorded branch gets no PR context (and is never PR-swept).
+    const attributedBranch =
+      session.workBranch ??
+      (entry.gitContext?.isWorktree ? entry.gitContext.branch ?? null : null);
+    if (attributedBranch) {
+      const pr = prCache.get(root, attributedBranch);
       if (pr) enriched.pullRequest = pr;
     }
     return enriched;

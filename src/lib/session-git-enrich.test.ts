@@ -243,4 +243,81 @@ const REPO_SCRIPT = {
   assert.equal(calls.length, 0);
 }
 
+// ── 11. PR attribution is per session, never per root-current-branch ────────
+// (cave-9q24: stamping the root's checked-out branch's PR onto every session
+// sharing the root let one merged PR mass-archive unrelated chats.)
+{
+  /** Fake BranchPrCache scripted per branch; records lookups. */
+  function fakePrCache(byBranch) {
+    const lookups = [];
+    return {
+      lookups,
+      get(root, branch) {
+        lookups.push({ root, branch });
+        return byBranch[branch] ?? null;
+      },
+    };
+  }
+  const mergedPr = (branch) => ({
+    repo: "acme/app",
+    number: 189,
+    url: "https://github.com/acme/app/pull/189",
+    state: "merged",
+    branch,
+  });
+
+  // 11a. Shared (non-worktree) checkout: rows WITHOUT a recorded workBranch
+  // get NO PR context, even though the root's current branch has a merged PR.
+  {
+    const root = makeRoot("repo-shared-checkout");
+    const { runner } = fakeGit(REPO_SCRIPT); // current branch: feat/thing, isWorktree false
+    const prCache = fakePrCache({ "feat/thing": mergedPr("feat/thing") });
+    const rows = await enrichSessionsWithGitContext(
+      [session("unrelated-1", root), session("unrelated-2", root)],
+      runner,
+      prCache,
+    );
+    assert.equal(rows[0].pullRequest, undefined, "no recorded branch → no PR attribution");
+    assert.equal(rows[1].pullRequest, undefined);
+    assert.equal(prCache.lookups.length, 0, "unattributable rows must not probe the PR cache");
+  }
+
+  // 11b. A row's recorded workBranch drives its PR lookup — not the root's
+  // current branch; rows without one still get nothing.
+  {
+    const root = makeRoot("repo-workbranch");
+    const { runner } = fakeGit(REPO_SCRIPT); // root currently on feat/thing
+    const prCache = fakePrCache({
+      "feat/mine": mergedPr("feat/mine"),
+      "feat/thing": mergedPr("feat/thing"),
+    });
+    const rows = await enrichSessionsWithGitContext(
+      [
+        { ...session("mine", root), workBranch: "feat/mine" },
+        session("bystander", root),
+      ],
+      runner,
+      prCache,
+    );
+    assert.deepEqual(rows[0].pullRequest, mergedPr("feat/mine"));
+    assert.equal(rows[1].pullRequest, undefined, "bystander in the same root stays unstamped");
+    assert.deepEqual(prCache.lookups, [{ root, branch: "feat/mine" }]);
+  }
+
+  // 11c. Worktree roots are branch-stable, so daemon-only rows (no recorded
+  // branch) may fall back to the root's branch there.
+  {
+    const root = makeRoot("repo-worktree");
+    const { runner } = fakeGit({
+      ...REPO_SCRIPT,
+      "rev-parse --git-dir": path.join(root, ".git/worktrees/feat-thing"),
+      "rev-parse --git-common-dir": path.join(root, ".git"),
+    });
+    const prCache = fakePrCache({ "feat/thing": mergedPr("feat/thing") });
+    const rows = await enrichSessionsWithGitContext([session("wt", root)], runner, prCache);
+    assert.equal(rows[0].git.isWorktree, true);
+    assert.deepEqual(rows[0].pullRequest, mergedPr("feat/thing"));
+  }
+}
+
 console.log("session-git-enrich.test.ts: all assertions passed");

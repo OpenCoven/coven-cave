@@ -74,6 +74,13 @@ export type ConversationFile = {
   title?: string;
   /** Provenance — defaults to "chat". */
   origin?: SessionOrigin;
+  /**
+   * Git branch of the conversation's cwd, snapshotted when a turn is saved
+   * (last successful capture wins). This is the only per-session branch
+   * signal, so PR attribution (badges + the merged-PR auto-archive sweep)
+   * must use it — never the project root's branch at poll time.
+   */
+  branch?: string;
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
@@ -168,6 +175,7 @@ export async function listConversations(): Promise<
     runtime?: string;
     title?: string;
     origin?: SessionOrigin;
+    branch?: string;
     status?: string;
     exitCode?: number | null;
     createdAt?: string;
@@ -189,6 +197,7 @@ export async function listConversations(): Promise<
     runtime?: string;
     title?: string;
     origin?: SessionOrigin;
+    branch?: string;
     status?: string;
     exitCode?: number | null;
     createdAt?: string;
@@ -209,6 +218,7 @@ export async function listConversations(): Promise<
           runtime: conv.runtime,
           title: conv.title,
           origin: conv.origin,
+          ...(conv.branch ? { branch: conv.branch } : {}),
           status: terminal.status,
           exitCode: terminal.exitCode,
           createdAt: conv.createdAt,

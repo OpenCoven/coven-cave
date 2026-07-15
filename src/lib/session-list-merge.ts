@@ -22,6 +22,8 @@ export type LocalConversationSummary = {
   updatedAt: string;
   initiator?: SessionInitiator;
   origin?: SessionOrigin;
+  /** Work-branch snapshot recorded from the chat's cwd at its last turn. */
+  branch?: string;
 };
 
 type MergeOptions = {
@@ -56,6 +58,7 @@ function localConversationToSession(
     updated_at: conv.updatedAt,
     familiarId,
     origin: conv.origin ?? "chat",
+    ...(conv.branch ? { workBranch: conv.branch } : {}),
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
     ...(keep ? { keep: true } : {}),
     ...(extendedUntil ? { archive_extended_until: extendedUntil } : {}),
@@ -137,6 +140,9 @@ export function mergeSessionRows({
       // A Cave conversation records real provenance at send time; harness/
       // title inference is only the fallback for daemon-only sessions.
       origin: local?.origin ?? inferOrigin(session),
+      // Per-session branch snapshot (chat's own cwd at its last saved turn).
+      // PR attribution must key off this — never the root's current branch.
+      ...(local?.branch ? { workBranch: local.branch } : {}),
       // No conversation + nothing better than the inferred-"chat" default =
       // a run some generator spawned (journal narrative, flow, automation,
       // CLI), not something a person typed into a chat surface.

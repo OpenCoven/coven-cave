@@ -6,6 +6,7 @@ import {
   DEFAULT_CHAT_AUTO_ARCHIVE_POLICY,
   extendUntilIso,
   normalizeChatAutoArchivePolicy,
+  REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS,
   sessionCreatedExternally,
   shouldAutoArchiveOnReflection,
   shouldAutoArchiveOnTaskCompletion,
@@ -259,9 +260,54 @@ assert.equal(
   true,
 );
 assert.equal(
-  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),
+  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    lastActivityAt: new Date(NOW.getTime() - REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS).toISOString(),
+    now: NOW,
+  }),
   true,
-  "auto self-reports archive too — the thread already reached a closed state",
+  "auto self-reports archive threads that were already idle — genuinely wrapped up",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    lastActivityAt: new Date(NOW.getTime() - 30_000).toISOString(),
+    now: NOW,
+  }),
+  false,
+  "auto self-reports fire seconds after a turn completes — a fresh thread must not vanish (cave-9q24)",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    lastActivityAt: null,
+    now: NOW,
+  }),
+  false,
+  "unknown last activity keeps the thread (fail safe)",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "auto", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    lastActivityAt: "not-a-date",
+    now: NOW,
+  }),
+  false,
+  "unparseable last activity keeps the thread (fail safe)",
+);
+assert.equal(
+  shouldAutoArchiveOnReflection("s-1", "manual", reflectionPolicy, {
+    keep: {},
+    archivedSessionIds: [],
+    lastActivityAt: new Date(NOW.getTime() - 30_000).toISOString(),
+    now: NOW,
+  }),
+  true,
+  "manual reflections are an explicit wrap-up gesture — no idle gate",
 );
 assert.equal(
   shouldAutoArchiveOnReflection("s-1", "periodic", reflectionPolicy, { keep: {}, archivedSessionIds: [] }),

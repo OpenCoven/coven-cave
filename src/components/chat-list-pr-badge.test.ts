@@ -65,8 +65,13 @@ const gitEnrichLib = readFileSync(
 );
 assert.match(
   gitEnrichLib,
-  /branchPrCache\.get\(root, branch\)/,
+  /prCache\.get\(root, attributedBranch\)/,
   "session enrichment reads PR context from the stale-while-revalidate cache",
+);
+assert.match(
+  gitEnrichLib,
+  /session\.workBranch \?\?\s*\n\s*\(entry\.gitContext\?\.isWorktree \? entry\.gitContext\.branch \?\? null : null\)/,
+  "PR context is attributed per session (recorded work branch, or a branch-stable worktree root) — never the shared root's current branch (cave-9q24)",
 );
 assert.match(
   listRoute,

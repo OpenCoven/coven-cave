@@ -11,6 +11,7 @@ import {
   type ReflectionTrigger,
 } from "@/lib/chat-auto-archive";
 import { resolveArchiveNudges } from "@/lib/task-archive-nudge-emit";
+import { loadConversation } from "@/lib/cave-conversations";
 import {
   appendSelfReport,
   listSelfReports,
@@ -93,9 +94,14 @@ async function maybeAutoArchiveReflectedThread(
   try {
     const [config, state] = await Promise.all([loadConfig(), loadState()]);
     const policy = normalizeChatAutoArchivePolicy(config.chatAutoArchive);
+    // Last-activity source for the auto-trigger idle gate: the stored
+    // conversation's updatedAt (bumped on every saved turn). Daemon-only
+    // sessions have no conversation — unknown activity keeps the thread.
+    const conversation = await loadConversation(sessionId).catch(() => null);
     const due = shouldAutoArchiveOnReflection(sessionId, trigger, policy, {
       keep: state.sessionKeep,
       archivedSessionIds: Object.keys(state.sessionArchived),
+      lastActivityAt: conversation?.updatedAt ?? null,
     });
     if (!due) return null;
     const archived = await autoArchiveSessionsLocal([sessionId]);

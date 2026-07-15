@@ -81,6 +81,10 @@ import {
   loadConversation,
   saveConversation,
 } from "@/lib/cave-conversations";
+import {
+  captureWorkBranch,
+  cwdFromConversationRuntime,
+} from "@/lib/server/chat-work-branch";
 import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
@@ -998,6 +1002,11 @@ function openClawChatResponse(args: {
           conv.model = responseMetadata.model;
           conv.runtime = responseMetadata.runtime;
           persistSendModelIntent(conv, args.body, args.modelState);
+          // Work-branch snapshot from the chat's own cwd — per-session PR
+          // attribution (badges + merged-PR auto-archive). Best-effort; a
+          // failed capture keeps the previous snapshot.
+          const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+          if (workBranch) conv.branch = workBranch;
           conv.turns.push(
             {
               id: userTurnId,
@@ -2177,6 +2186,11 @@ export async function POST(req: Request) {
         conv.model = responseMetadata.model;
         conv.runtime = responseMetadata.runtime;
         persistSendModelIntent(conv, body, modelState);
+        // Work-branch snapshot from the chat's own cwd — per-session PR
+        // attribution (badges + merged-PR auto-archive). Best-effort; a
+        // failed capture keeps the previous snapshot.
+        const workBranch = await captureWorkBranch(cwdFromConversationRuntime(conv.runtime));
+        if (workBranch) conv.branch = workBranch;
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
         conv.activeLeafId = assistantTurnId;

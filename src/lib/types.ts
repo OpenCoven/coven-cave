@@ -75,6 +75,14 @@ export type SessionRow = {
   generated?: boolean;
   initiator?: SessionInitiator;
   git?: SessionGitContext | null;
+  /**
+   * Branch recorded from the chat's own cwd when its last turn was saved —
+   * per-session attribution for PR context. Distinct from `git.branch`, which
+   * is whatever branch the project root happens to have checked out at poll
+   * time (a shared checkout churns branches, so that must never be treated as
+   * "this session's branch").
+   */
+  workBranch?: string | null;
   pullRequest?: SessionPullRequestContext | null;
   /** Working-tree change size vs HEAD, for the Recent Activity roll-up's `+N -N`. */
   diff?: { additions: number; deletions: number } | null;

@@ -11,7 +11,9 @@ import type { SessionOrigin, SessionRow } from "./types.ts";
  *  - `archiveOnReflection`: archive a chat as soon as a thread reflection
  *    (self-report) lands for it — a reflection marks the thread as wrapped up.
  *    Off by default; toggled from the chat page's Settings tab. Periodic
- *    (mid-flight) reports never archive, only `manual`/`auto` reflections.
+ *    (mid-flight) reports never archive; `manual` reflections archive
+ *    immediately; `auto` reflections only archive threads already idle (see
+ *    REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS).
  *  - `archiveOnPrMerge`: archive a chat when the pull request its work
  *    produced merges (see merged-chat-auto-archive.ts). On by default —
  *    a merged PR is the strongest "this thread is done" signal.
@@ -228,10 +230,23 @@ export function shouldAutoArchiveOnTaskCompletion(
 export type ReflectionTrigger = "auto" | "manual" | "periodic";
 
 /**
+ * Minimum idle time before an `auto`-triggered reflection may archive its
+ * thread. Auto reflections fire from a status heuristic that treats
+ * "completed" as thread-done — but for conversational chats "completed" just
+ * means the assistant finished replying, so without this gate a thread
+ * archives seconds after every turn while it's being used (cave-9q24). A
+ * thread idle this long when its reflection lands is genuinely wrapped up.
+ */
+export const REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS = 30 * 60 * 1000;
+
+/**
  * Whether a thread whose reflection just landed should be archived
  * automatically. `periodic` reports are mid-flight health checks — they never
- * archive. Keep-marked and already-archived sessions are left alone, same as
- * the task-completion path.
+ * archive. `auto` reports only archive threads already idle for
+ * REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS (unknown last activity = keep the
+ * thread); `manual` reflections are an explicit wrap-up gesture and archive
+ * immediately. Keep-marked and already-archived sessions are left alone, same
+ * as the task-completion path.
  */
 export function shouldAutoArchiveOnReflection(
   sessionId: string | null | undefined,
@@ -239,12 +254,21 @@ export function shouldAutoArchiveOnReflection(
   policy: ChatAutoArchivePolicy,
   context: Pick<AutoArchiveContext, "keep"> & {
     archivedSessionIds: readonly string[];
+    /** ISO timestamp of the thread's last activity; null/absent = unknown. */
+    lastActivityAt?: string | null;
+    now?: Date;
   },
 ): boolean {
   if (!sessionId) return false;
   if (trigger === "periodic") return false;
   if (!policy.enabled || !policy.archiveOnReflection) return false;
   if (context.keep[sessionId]) return false;
+  if (trigger === "auto") {
+    const last = context.lastActivityAt ? Date.parse(context.lastActivityAt) : NaN;
+    if (!Number.isFinite(last)) return false;
+    const nowMs = (context.now ?? new Date()).getTime();
+    if (nowMs - last < REFLECTION_AUTO_ARCHIVE_MIN_IDLE_MS) return false;
+  }
   return !context.archivedSessionIds.includes(sessionId);
 }
 

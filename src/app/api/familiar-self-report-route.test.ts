@@ -21,6 +21,11 @@ describe("reflection auto-archive wiring", () => {
     );
     assert.match(
       routeSource,
+      /lastActivityAt: conversation\?\.updatedAt \?\? null,/,
+      "route must feed the thread's last activity to the auto-trigger idle gate (cave-9q24)",
+    );
+    assert.match(
+      routeSource,
       /normalizeChatAutoArchivePolicy\(config\.chatAutoArchive\)/,
       "route must read the policy from cave config, tolerating partial storage",
     );

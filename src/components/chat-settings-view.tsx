@@ -201,7 +201,7 @@ export function ChatSettingsView() {
               </PolicyRow>
               <PolicyRow
                 label="After thread reflection"
-                description="Archive a thread as soon as its reflection lands — a reflection marks it wrapped up."
+                description="Archive a thread once its reflection lands. Manual reflections archive right away; automatic ones only archive threads already idle."
                 dimmed={sweepOff}
               >
                 <PolicySwitch

@@ -345,4 +345,52 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   assert.equal(byId.get("canvas-run")?.generated, undefined, "conversation-backed rows are real chats, never flagged");
 }
 
+// Work-branch passthrough (cave-9q24): the branch a conversation recorded at
+// its last turn must surface on the merged row as `workBranch` — it is the
+// only per-session PR-attribution signal. Daemon rows without a conversation
+// carry none.
+{
+  const bareState = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const rows = mergeSessionRows({
+    daemonSessions: [
+      {
+        id: "branched",
+        project_root: "/repo",
+        harness: "codex",
+        title: "Fix the flaky spec",
+        status: "completed",
+        exit_code: 0,
+        archived_at: null,
+        created_at: "2026-06-08T18:00:00.000Z",
+        updated_at: "2026-06-08T18:05:00.000Z",
+      },
+    ],
+    localConversations: [
+      {
+        sessionId: "branched",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Fix the flaky spec",
+        updatedAt: "2026-06-08T18:06:00.000Z",
+        origin: "chat",
+        branch: "feat/fix-flaky-spec",
+      },
+      {
+        sessionId: "local-branched",
+        familiarId: "nova",
+        harness: "codex",
+        title: "Local only",
+        updatedAt: "2026-06-08T18:07:00.000Z",
+        origin: "chat",
+        branch: "feat/local-work",
+      },
+    ],
+    state: bareState,
+    includeArchived: false,
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("branched")?.workBranch, "feat/fix-flaky-spec", "conversation branch surfaces on the merged daemon row");
+  assert.equal(byId.get("local-branched")?.workBranch, "feat/local-work", "local-only rows carry their recorded branch too");
+}
+
 console.log("session-list-merge.test.ts: ok");
