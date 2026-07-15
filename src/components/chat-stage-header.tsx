@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useChangesSummary } from "@/lib/use-changes-summary";
-import { resolveStageForBranch, type StageSnapshot, type StageStep } from "@/lib/stage-model";
+import { resolveStageForBranch, STAGE_CHECKS_EVENT, type StageSnapshot, type StageStep } from "@/lib/stage-model";
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
 import type { MergedPrRef, ReadyBead } from "@/lib/beads-work-queue";
 
@@ -110,6 +110,21 @@ export function ChatStageHeader({
 }) {
   const { branch } = useChangesSummary(projectRoot ?? undefined, Boolean(projectRoot));
   const snapshot = useStageSnapshot(projectRoot, branch);
+
+  // Broadcast the failing-checks signal for the code rail's badge (design §6):
+  // the header already holds the stage snapshot, so the rail never re-fetches
+  // the PR bridge. Fires on every change, including back to false and on
+  // unmount, so a stale red badge can't outlive its cause.
+  const failing = Boolean(snapshot?.pr && snapshot.pr.checkStatus === "failing");
+  useEffect(() => {
+    if (!projectRoot) return;
+    const detail = { projectRoot, failing };
+    window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail }));
+    return () => {
+      window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail: { projectRoot, failing: false } }));
+    };
+  }, [projectRoot, failing]);
+
   if (!snapshot) return null;
 
   const open = (url: string | undefined) => {

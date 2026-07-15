@@ -5077,6 +5077,28 @@ details[open] > .cave-tool-summary::before {
   font-variant-numeric: tabular-nums;
 }
 
+/* Failing-checks dot (cave-fpqx.12): a peripheral red cue on the rail's
+   Changes tab and the collapsed reopen strip when the session PR's rollup is
+   red. Sits on the opposite corner from the count badge so both can show. */
+.workspace-rail__badge--alert {
+  top: auto;
+  bottom: -3px;
+  right: -3px;
+  min-width: 9px;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  background: var(--color-warning);
+}
+
+/* On the full-height collapsed reopen strip the dot anchors to the icon area
+   instead of the strip's far corner. */
+.workspace-rail-reopen .workspace-rail__badge--alert {
+  top: 6px;
+  right: 8px;
+  bottom: auto;
+}
+
 .workspace-rail__body {
   flex: 1 1 auto;
   min-width: 0;
