@@ -23,6 +23,13 @@ import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
 import type { CraftActionError } from "@/components/marketplace/craft-detail";
 import { CraftCreateDrawer, type CraftDrawerSeed } from "@/components/marketplace/craft-create-drawer";
+import {
+  clearCraftArrivalWatch,
+  findArrivedDraftId,
+  readCraftArrivalWatch,
+  type CraftArrivalWatch,
+} from "@/lib/craft-arrival";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
@@ -147,6 +154,13 @@ export function MarketplaceViewSurface({
   const [creatingCraft, setCreatingCraft] = useState(false);
   // Editing an existing draft reopens the create drawer pre-seeded (F5).
   const [craftSeed, setCraftSeed] = useState<CraftDrawerSeed | null>(null);
+  // Tab-level arrival watch (F2): a dispatched describe-build outlives the
+  // drawer, so the hub resumes the wait, shows an in-flight row on Crafts,
+  // and opens the draft when it lands.
+  const [craftWatch, setCraftWatch] = useState<CraftArrivalWatch | null>(null);
+  useEffect(() => {
+    setCraftWatch(readCraftArrivalWatch());
+  }, [creatingCraft, section]);
   const [craftErrors, setCraftErrors] = useState<Record<string, CraftActionError | undefined>>({});
   // Ids with an install/uninstall in flight. A Set (not a scalar) so two
   // concurrent installs each keep their own busy state — with a scalar, the
@@ -212,6 +226,34 @@ export function MarketplaceViewSurface({
       if (!ctl.signal.aborted) setLoaded(true);
     }
   }, []);
+
+  // Resume the arrival wait at the hub level (F2): while a describe-build is
+  // in flight, poll the drafts store even with the drawer closed; when the
+  // familiar's draft lands, clear the watch, announce, and open it.
+  const checkCraftArrival = useCallback(async () => {
+    const watch = readCraftArrivalWatch();
+    if (!watch) {
+      setCraftWatch(null);
+      return;
+    }
+    try {
+      const res = await fetch("/api/marketplace/crafts/drafts", { cache: "no-store" });
+      const json = (await res.json()) as { ok?: boolean; drafts?: Array<{ id?: string }> };
+      if (!json.ok || !Array.isArray(json.drafts)) return;
+      const arrived = findArrivedDraftId(watch, json.drafts.map((draft) => draft.id));
+      if (arrived) {
+        clearCraftArrivalWatch();
+        setCraftWatch(null);
+        announce("Your familiar's Craft draft arrived", "polite");
+        void load().then(() => setSelected(arrived));
+      }
+    } catch {
+      // Local API — the next tick retries.
+    }
+  }, [announce, load]);
+  usePausablePoll(() => void checkCraftArrival(), 5000, {
+    enabled: craftWatch !== null && !creatingCraft,
+  });
 
   const loadSkills = useCallback(async (search = "") => {
     skillsCtl.current?.abort();
@@ -819,6 +861,30 @@ export function MarketplaceViewSurface({
               options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
             />
           </div>
+
+          {craftWatch && !creatingCraft ? (
+            <div role="status" className="craft-arrival-banner">
+              <Icon
+                name="ph:circle-notch-bold"
+                width={14}
+                aria-hidden
+                className="animate-spin motion-reduce:animate-none"
+              />
+              <span>
+                A familiar is drafting a Craft from your description — it opens here when it lands.
+              </span>
+              <button
+                type="button"
+                className="focus-ring craft-arrival-banner__stop"
+                onClick={() => {
+                  clearCraftArrivalWatch();
+                  setCraftWatch(null);
+                }}
+              >
+                Stop waiting
+              </button>
+            </div>
+          ) : null}
 
           {!loaded ? <SkeletonRows count={3} /> : craftPlugins.length === 0 ? (
             <EmptyState
