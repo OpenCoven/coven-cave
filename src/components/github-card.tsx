@@ -119,12 +119,17 @@ type ThreadState =
   | { phase: "error" };
 
 /** Review threads for a review-thread card — /api/github/comments, PR scope. */
-function useReviewThreads(repo: string, number: number | undefined, enabled: boolean): ThreadState {
+function useReviewThreads(
+  repo: string,
+  number: number | undefined,
+  enabled: boolean,
+): ThreadState & { refresh: () => void } {
   const [state, setState] = useState<ThreadState>({ phase: "loading" });
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!enabled || !number) return;
     let cancelled = false;
-    setState({ phase: "loading" });
+    setState((prev) => (tick > 0 && prev.phase === "ready" ? prev : { phase: "loading" }));
     (async () => {
       try {
         const res = await fetch(
@@ -148,16 +153,21 @@ function useReviewThreads(repo: string, number: number | undefined, enabled: boo
     return () => {
       cancelled = true;
     };
-  }, [repo, number, enabled]);
-  return state;
+  }, [repo, number, enabled, tick]);
+  return { ...state, refresh: () => setTick((t) => t + 1) };
 }
 
-function useGitHubItem(repo: string, number: number | undefined, enabled: boolean): HydrationState {
+function useGitHubItem(
+  repo: string,
+  number: number | undefined,
+  enabled: boolean,
+): HydrationState & { refresh: () => void } {
   const [state, setState] = useState<HydrationState>({ phase: "loading" });
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!enabled || !number) return;
     let cancelled = false;
-    setState({ phase: "loading" });
+    setState((prev) => (tick > 0 && prev.phase === "ready" ? prev : { phase: "loading" }));
     (async () => {
       try {
         const res = await fetch(`/api/github/item?repo=${encodeURIComponent(repo)}&number=${number}`, {
@@ -182,8 +192,8 @@ function useGitHubItem(repo: string, number: number | undefined, enabled: boolea
     return () => {
       cancelled = true;
     };
-  }, [repo, number, enabled]);
-  return state;
+  }, [repo, number, enabled, tick]);
+  return { ...state, refresh: () => setTick((t) => t + 1) };
 }
 
 /** Visual identity per state — icon + accent color for the leading glyph. */
@@ -206,6 +216,126 @@ function stateGlyph(d: GitHubBlockDescriptor, item: ItemDetail | null): { icon: 
     color: open ? "var(--color-success)" : "var(--accent-presence)",
     label: open ? "Open issue" : "Closed issue",
   };
+}
+
+type ActionPhase = "idle" | "sending" | "error";
+
+/** Tier-1 action row for hydrated issue/PR cards (design §3): comment posts
+ *  through the existing /api/github/comment; issues close/reopen through
+ *  PATCH /api/github/issue. Tier-1 fires directly on the user's tap — no
+ *  confirm card (that's tier-2, W2b). */
+function CardActions({
+  descriptor,
+  item,
+  onMutated,
+}: {
+  descriptor: GitHubBlockDescriptor;
+  item: ItemDetail;
+  onMutated: () => void;
+}) {
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [phase, setPhase] = useState<ActionPhase>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const composerId = `gh-card-composer-${descriptor.repo.replace(/[^A-Za-z0-9]/g, "-")}-${descriptor.number}`;
+
+  const run = async (fn: () => Promise<Response>) => {
+    setPhase("sending");
+    setError(null);
+    try {
+      const res = await fn();
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) {
+        setPhase("error");
+        setError(res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`));
+        return false;
+      }
+      setPhase("idle");
+      return true;
+    } catch {
+      setPhase("error");
+      setError("network error");
+      return false;
+    }
+  };
+
+  const sendComment = async () => {
+    const text = draft.trim();
+    if (!text) return;
+    const ok = await run(() =>
+      fetch("/api/github/comment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: descriptor.repo, number: descriptor.number, body: text }),
+      }),
+    );
+    if (ok) {
+      setDraft("");
+      setComposing(false);
+      onMutated();
+    }
+  };
+
+  const setIssueState = async (state: "open" | "closed") => {
+    const ok = await run(() =>
+      fetch("/api/github/issue", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: descriptor.repo, number: descriptor.number, state }),
+      }),
+    );
+    if (ok) onMutated();
+  };
+
+  const btn =
+    "focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50";
+
+  return (
+    <div className="mt-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          className={btn}
+          onClick={() => setComposing((v) => !v)}
+          disabled={phase === "sending"}
+          aria-expanded={composing}
+          aria-controls={composerId}
+        >
+          Comment
+        </button>
+        {!item.isPull ? (
+          item.state === "open" ? (
+            <button type="button" className={btn} onClick={() => setIssueState("closed")} disabled={phase === "sending"}>
+              Close issue
+            </button>
+          ) : (
+            <button type="button" className={btn} onClick={() => setIssueState("open")} disabled={phase === "sending"}>
+              Reopen issue
+            </button>
+          )
+        ) : null}
+        {phase === "sending" ? <span className="text-[10px] text-[var(--text-secondary)]" aria-live="polite">sending…</span> : null}
+        {phase === "error" && error ? (
+          <span className="text-[10px] text-[var(--color-warning)]" role="alert">{error}</span>
+        ) : null}
+      </div>
+      {composing ? (
+        <div id={composerId} className="mt-1.5 flex items-end gap-1.5">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={2}
+            placeholder={`Comment on ${descriptor.repo}#${descriptor.number}…`}
+            aria-label={`Comment on ${descriptor.repo}#${descriptor.number}`}
+            className="focus-ring min-h-[3em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[12px] text-[var(--text-primary)]"
+          />
+          <button type="button" className={btn} onClick={sendComment} disabled={phase === "sending" || !draft.trim()}>
+            Send
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** Compact `✓ n · ✕ n · ○ n` strip with a rollup-tinted leading dot. */
@@ -283,6 +413,33 @@ function ReviewThreadBody({
   onOpenUrl?: (url: string) => void;
 }) {
   const state = useReviewThreads(descriptor.repo, descriptor.number, true);
+  const [busyThread, setBusyThread] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Tier-1: resolve/unresolve fires directly through the existing GraphQL
+  // route (threadId here IS the node id the mutation wants).
+  const toggleResolve = async (threadId: string, resolved: boolean) => {
+    setBusyThread(threadId);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/github/resolve-thread", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId, resolved }),
+      });
+      const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!res.ok || !data?.ok) {
+        setActionError(res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`));
+      } else {
+        state.refresh();
+      }
+    } catch {
+      setActionError("network error");
+    } finally {
+      setBusyThread(null);
+    }
+  };
+
   if (state.phase === "loading")
     return <div className="text-[11px] text-[var(--text-secondary)]" aria-live="polite">loading threads…</div>;
   if (state.phase === "error")
@@ -305,6 +462,15 @@ function ReviewThreadBody({
           <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]">
             {t.path ? <span className="min-w-0 truncate font-mono">{t.path}</span> : null}
             <span className="ml-auto shrink-0">{t.isResolved ? "resolved" : t.isOutdated ? "outdated" : "open"}</span>
+            <button
+              type="button"
+              className="focus-ring shrink-0 rounded border border-[var(--border-strong)] px-1.5 py-px text-[10px] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
+              onClick={() => toggleResolve(t.id, !t.isResolved)}
+              disabled={busyThread != null}
+              aria-label={t.isResolved ? "Unresolve this review thread" : "Resolve this review thread"}
+            >
+              {busyThread === t.id ? "…" : t.isResolved ? "Unresolve" : "Resolve"}
+            </button>
           </div>
           {t.comments[0] ? (
             <div className="mt-1 line-clamp-3 text-[11px] text-[var(--text-primary)]">
@@ -316,6 +482,7 @@ function ReviewThreadBody({
           ) : null}
         </div>
       ))}
+      {actionError ? <div className="text-[10px] text-[var(--color-warning)]" role="alert">{actionError}</div> : null}
       <button
         type="button"
         className="focus-ring text-[11px] text-[var(--text-secondary)] hover:underline"
@@ -423,6 +590,7 @@ export function GitHubCard({
             <ReviewThreadBody descriptor={descriptor} onOpenUrl={onOpenUrl} />
           </div>
         ) : null}
+        {item ? <CardActions descriptor={descriptor} item={item} onMutated={state.refresh} /> : null}
         {expanded && checks.phase === "ready" ? (
           <div className="mt-2 border-t border-[var(--border-hairline)] pt-2">
             <CheckRunList runs={checks.data.runs} onOpenUrl={onOpenUrl} />
