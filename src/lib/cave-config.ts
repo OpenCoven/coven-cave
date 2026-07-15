@@ -34,6 +34,7 @@ const DEFAULT_CONFIG: CaveConfig = {
   },
   marketplace: { installed: {} },
   multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
+  omnigent: { baseUrl: "", defaultAgentId: "", defaultHostId: "", defaultWorkspace: "" },
   remoteHosts: [],
 };
 
@@ -66,6 +67,7 @@ function defaultConfig(): CaveConfig {
     addons: { ...DEFAULT_CONFIG.addons },
     marketplace: { installed: {} },
     multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
+    omnigent: { ...DEFAULT_CONFIG.omnigent },
     remoteHosts: [],
   };
 }
@@ -149,6 +151,7 @@ type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars" | "cha
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
   multiHost?: Partial<CaveMultiHostConfig>;
+  omnigent?: Partial<CaveOmnigentConfig>;
   remoteHosts?: CaveRemoteHost[];
   chatAutoArchive?: Partial<ChatAutoArchivePolicy>;
 };
@@ -188,6 +191,15 @@ export type CaveMultiHostConfig = {
   mode: "local" | "hub";
   hubUrl: string;
   executorUrls: string[];
+};
+
+/** Omnigent control-plane settings for Cave Fleet. Token is never stored —
+ *  server reads `~/.omnigent/auth_tokens.json` (or OMNIGENT_TOKEN). */
+export type CaveOmnigentConfig = {
+  baseUrl: string;
+  defaultAgentId: string;
+  defaultHostId: string;
+  defaultWorkspace: string;
 };
 
 /** A registered remote execution host chats can run on (over SSH). Cave never
@@ -239,6 +251,8 @@ export type CaveConfig = {
     knowledgePacks?: KnowledgePackSeedEntry[];
   };
   multiHost: CaveMultiHostConfig;
+  /** Omnigent server used by the Fleet surface (hosts / sessions / run). */
+  omnigent: CaveOmnigentConfig;
   /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
   remoteHosts: CaveRemoteHost[];
   /** Operator profile (Settings → Profile). Image lives in ~/.coven/user-avatar.*, not here. */
@@ -308,6 +322,7 @@ export async function loadConfig(): Promise<CaveConfig> {
           : [],
       },
       multiHost: normalizeMultiHostConfig(parsed.multiHost),
+      omnigent: normalizeOmnigentConfig(parsed.omnigent),
       remoteHosts: normalizeRemoteHosts(parsed.remoteHosts),
       // Must be listed — this explicit shape drops unknown keys, and a dropped
       // profile would be erased by the next saveConfig round-trip.
@@ -372,6 +387,25 @@ export function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | u
     ),
   );
   return { mode, hubUrl, executorUrls };
+}
+
+export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | undefined): CaveOmnigentConfig {
+  const rawUrl = typeof input?.baseUrl === "string" ? input.baseUrl.trim().replace(/\/+$/, "") : "";
+  let baseUrl = rawUrl;
+  if (rawUrl) {
+    try {
+      const parsed = new URL(rawUrl.includes("://") ? rawUrl : `https://${rawUrl}`);
+      baseUrl = `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      baseUrl = rawUrl;
+    }
+  }
+  return {
+    baseUrl,
+    defaultAgentId: typeof input?.defaultAgentId === "string" ? input.defaultAgentId.trim() : "",
+    defaultHostId: typeof input?.defaultHostId === "string" ? input.defaultHostId.trim() : "",
+    defaultWorkspace: typeof input?.defaultWorkspace === "string" ? input.defaultWorkspace.trim() : "",
+  };
 }
 
 export function defaultTravelState(): CaveTravelState {
@@ -498,6 +532,10 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
     multiHost: normalizeMultiHostConfig({
       ...current.multiHost,
       ...(patch.multiHost ?? {}),
+    }),
+    omnigent: normalizeOmnigentConfig({
+      ...current.omnigent,
+      ...(patch.omnigent ?? {}),
     }),
     // Deep-merge defaults
     defaults: {

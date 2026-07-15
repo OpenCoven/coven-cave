@@ -44,7 +44,8 @@ export type FolderMode =
   | "capabilities"
   | "familiar-work-queue"
   | "journal"
-  | "grimoire";
+  | "grimoire"
+  | "fleet";
 
 export type SidebarRoleSurfaceRow = {
   /** Generic workspace mode string (`surface:<id>`) — the sidebar never
@@ -119,6 +120,7 @@ const FOLDER_MODES: Array<{
   // Group Chat ("coven") is no longer a standalone destination — it lives as the
   // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
+  { id: "fleet", label: "Fleet", iconName: "ph:desktop", description: "Omnigent hosts, sessions, and remote runs", quiet: true },
   { id: "inbox", label: "Rituals", iconName: "ph:calendar-check", kbd: "⌘4", description: "Inbox, calendar, and scheduled jobs in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Chat-first hierarchy (cave-xsq.8): the prominent cluster is exactly the
   // ⌘-numbered daily destinations (Home · Chat · Tasks · Schedules — Schedules
