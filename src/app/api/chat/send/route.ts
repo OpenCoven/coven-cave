@@ -1366,19 +1366,19 @@ export async function POST(req: Request) {
   // trusted implicitly, so it's excluded. Gated on the `--add-dir` probe and
   // local runtimes only (SSH runtimes own their remote filesystem).
   const spawnRoot = familiarCwd ?? cwd;
-  const forwardAddDirs =
-    addDirForwardingEnabled && !sshRuntime
-      ? Array.from(
-          new Set(
-            [
-              ...grantedProjectRoots,
-              ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
-            ]
-              .map((root) => root.trim())
-              .filter((root) => root && root !== spawnRoot),
-          ),
-        )
-      : [];
+  const grantDirs = !sshRuntime
+    ? Array.from(
+        new Set(
+          [
+            ...grantedProjectRoots,
+            ...(resolvedFamiliarWorkspace ? [resolvedFamiliarWorkspace] : []),
+          ]
+            .map((root) => root.trim())
+            .filter((root) => root && root !== spawnRoot),
+        ),
+      )
+    : [];
+  const forwardAddDirs = addDirForwardingEnabled && !sshRuntime ? grantDirs : [];
   // Copilot tool visibility (cave-yesg): `coven run copilot --stream-json`
   // launches the CLI one-shot (`-s -p`) and pipes raw prose, so tool calls
   // never surface as structured events. When the registry manifest declares
@@ -1427,6 +1427,12 @@ export async function POST(req: Request) {
         newSessionId: resumeSessionId ? null : copilotSessionHint,
         model: cleanModelId(desiredModel),
         permissionMode: body.permissionMode === "read" ? "read" : "full",
+        // Ungated grant list (cave-n1yc): the direct spawn never goes through
+        // `coven run`, so the coven CLI's --add-dir probe must not mask it.
+        // Copilot's native repeatable --add-dir ships in every CLI version
+        // this stream path supports, same trust basis as the manifest's
+        // session/sandbox flags above.
+        addDirs: grantDirs,
       });
     }
     const a = ["run", binding.harness, "--stream-json"];

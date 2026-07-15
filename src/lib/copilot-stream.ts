@@ -39,11 +39,18 @@ export type CopilotStreamSpec = {
   resumeFlag: string | null;
   /** Native model flag (`--model`). */
   modelFlag: string | null;
+  /** Repeatable trusted-directory flag (`--add-dir`). */
+  addDirFlag: string;
   /** Full-access sandbox argv (`--allow-all`). */
   sandboxFullArgs: string[];
   /** Read-only sandbox argv (`--deny-tool write --deny-tool shell`). */
   sandboxReadOnlyArgs: string[];
 };
+
+// Copilot CLI's native repeatable trusted-directory flag. Used when the
+// registry manifest doesn't declare an `add_dir_flag` override — the flag has
+// shipped in every CLI version this stream path supports (verified 1.0.70).
+const COPILOT_ADD_DIR_FLAG = "--add-dir";
 
 function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
@@ -66,6 +73,7 @@ export function copilotStreamSpec(): CopilotStreamSpec | null {
       id?: unknown;
       executable?: unknown;
       model_flag?: unknown;
+      add_dir_flag?: unknown;
       sandbox?: { full_args?: unknown; read_only_args?: unknown };
       stream_args?: {
         prefix_args?: unknown;
@@ -90,6 +98,10 @@ export function copilotStreamSpec(): CopilotStreamSpec | null {
         ? adapter.stream_args.resume_flag
         : null,
     modelFlag: typeof adapter.model_flag === "string" ? adapter.model_flag : null,
+    addDirFlag:
+      typeof adapter.add_dir_flag === "string" && adapter.add_dir_flag
+        ? adapter.add_dir_flag
+        : COPILOT_ADD_DIR_FLAG,
     sandboxFullArgs: stringArray(adapter.sandbox?.full_args) ?? [],
     sandboxReadOnlyArgs: stringArray(adapter.sandbox?.read_only_args) ?? [],
   };
@@ -125,6 +137,14 @@ export type CopilotStreamLaunch = {
   /** Cleaned model id; a `provider/` namespace is stripped for copilot. */
   model: string | null;
   permissionMode: "full" | "read";
+  /**
+   * Granted directories to trust at the harness level (repeatable
+   * `--add-dir`). Without these the runtime-scope preamble's grants are
+   * prompt-text-only: read-only sessions deny every granted-root access, and
+   * full sessions ride `--allow-all` instead of an explicit trust list
+   * (cave-n1yc). The spawn cwd is already trusted and must not be included.
+   */
+  addDirs: string[];
 };
 
 /** Direct-spawn argv for a copilot JSONL stream turn. Options ride ahead of
@@ -144,6 +164,12 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
       ? launch.model.slice(launch.model.lastIndexOf("/") + 1)
       : launch.model;
     if (bare) args.push(spec.modelFlag, bare);
+  }
+  // Trust each granted root at the harness level; repeatable native flag.
+  // Emitted for read AND full turns so the grant list stays the declared
+  // boundary regardless of sandbox mode.
+  for (const dir of launch.addDirs) {
+    if (dir) args.push(spec.addDirFlag, dir);
   }
   // Sandbox mapping from the manifest. Full access maps to the declared
   // full_args (`--allow-all`) — without it copilot's programmatic mode

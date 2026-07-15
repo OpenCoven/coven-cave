@@ -1191,6 +1191,29 @@ assert.match(
   /\.filter\(\(root\) => root && root !== spawnRoot\)/,
   "The spawn cwd is already trusted and must not be re-forwarded",
 );
+// The grant LIST is computed ungated (local runtimes only); the coven-run
+// probe only gates the `coven run --add-dir` forwarding, never the list
+// itself — the copilot direct spawn consumes it without the coven probe.
+assert.match(
+  chatRoute,
+  /const grantDirs = !sshRuntime\s*\n?\s*\? Array\.from\(/,
+  "Granted-root list must be computed independently of the coven run probe",
+);
+assert.match(
+  chatRoute,
+  /const forwardAddDirs = addDirForwardingEnabled && !sshRuntime \? grantDirs : \[\];/,
+  "coven run forwarding stays gated on the --add-dir capability probe",
+);
+// Copilot direct-stream grant forwarding (cave-n1yc): the direct spawn never
+// goes through `coven run`, so it must receive the UNGATED grant list and
+// emit copilot's native repeatable --add-dir pairs itself. Without this,
+// read-only copilot sessions get no granted-root access at all and full
+// sessions ride --allow-all instead of the declared grant boundary.
+assert.match(
+  chatRoute,
+  /return buildCopilotStreamArgs\(\{[\s\S]*?addDirs: grantDirs,[\s\S]*?\}\);/,
+  "The copilot direct spawn must forward the ungated grant list as addDirs",
+);
 
 assert.match(
   chatRoute,
