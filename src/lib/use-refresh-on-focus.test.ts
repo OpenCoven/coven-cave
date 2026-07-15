@@ -19,6 +19,21 @@ assert.doesNotThrow(
   "swallows Tauri unregisterListener throwing on a stale listener registry (HMR/webview reload)",
 );
 
+// Tauri v2's unlisten is an async fn typed `() => void` — a stale-registry
+// TypeError arrives as a rejected promise, which must be swallowed too or it
+// becomes an unhandled rejection (Next dev overlay error).
+{
+  let unhandled;
+  const onUnhandled = (reason) => { unhandled = reason; };
+  process.on("unhandledRejection", onUnhandled);
+  safeUnlisten((async () => {
+    throw new TypeError("undefined is not an object (evaluating 'listeners[eventId].handlerId')");
+  }) as unknown as () => void);
+  await new Promise((resolve) => setImmediate(resolve));
+  process.off("unhandledRejection", onUnhandled);
+  assert.equal(unhandled, undefined, "swallows the async rejection from Tauri v2's async unlisten fn");
+}
+
 // ── source wiring: all three foreground signals + Tauri focus ──
 const src = readFileSync(new URL("./use-refresh-on-focus.ts", import.meta.url), "utf8");
 assert.match(src, /window\.addEventListener\("focus", run\)/, "wires window focus");
