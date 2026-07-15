@@ -49,7 +49,10 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // read/decision routes (/api/weaves*, /api/threads/*, /api/proposals*),
   // /weaves + /proposals pages, and the traced fixtures/phase-4 staged-write
   // mirrors put the runtime at 5,417 — raised to 5,440.
-  fileCount: 5_440,
+  // 2026-07-15 (voice models): speech-model management adds 4 API route
+  // handlers for readiness/download polling/removal, traced at 5,443 — raised
+  // to 5,450 with narrow headroom.
+  fileCount: 5_450,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
