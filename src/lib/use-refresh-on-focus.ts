@@ -14,11 +14,22 @@ export function shouldRefresh(lastMs: number, nowMs: number, minIntervalMs: numb
  * and throws a TypeError when the registry entry is already gone (HMR module
  * reload or webview navigation resets the injected event map before our
  * stored unlisten runs). Deregistering an already-gone listener is a no-op,
- * so swallow it.
+ * so swallow it. The v2 unlisten fn is `async` despite its `() => void`
+ * typing, so the throw arrives as a rejected promise — a sync try/catch
+ * alone misses it and it surfaces as an unhandled rejection.
  */
 export function safeUnlisten(un: (() => void) | undefined): void {
   try {
-    un?.();
+    const result = un?.() as unknown;
+    if (
+      result &&
+      typeof (result as PromiseLike<unknown>).then === "function" &&
+      typeof (result as Promise<unknown>).catch === "function"
+    ) {
+      void (result as Promise<unknown>).catch(() => {
+        /* listener registry already torn down — nothing left to unregister */
+      });
+    }
   } catch {
     /* listener registry already torn down — nothing left to unregister */
   }

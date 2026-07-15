@@ -1,0 +1,159 @@
+[
+  {
+    "weave": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "familiar_id": "sage",
+      "threads": [
+        {
+          "id": "aaaaaaa1-0001-4001-8001-000000000001",
+          "surface": "SOUL.md",
+          "writer": "familiar:sage",
+          "strands": [
+            { "ContentHash": { "id": "bbbbbbb1-0001-4001-8001-000000000001", "algorithm": "Blake3", "value": [171, 205, 18, 52, 86, 120, 154, 188] } },
+            { "ManifestEntry": { "id": "bbbbbbb1-0001-4001-8001-000000000002", "manifest_id": "99999999-0001-4001-8001-000000000001", "entry_hash": [1, 2, 3, 4, 5, 6, 7, 8] } },
+            { "AuditTrail": { "id": "bbbbbbb1-0001-4001-8001-000000000003", "first_seen": [2026, 195, 12, 0, 0, 0, 0, 0, 0], "event_log_ref": "3" } }
+          ],
+          "holds_under": ["Mutation", "Forced"],
+          "created_at": [2026, 195, 12, 0, 0, 0, 0, 0, 0],
+          "tension": "Holds"
+        },
+        {
+          "id": "aaaaaaa1-0001-4001-8001-000000000002",
+          "surface": "MEMORY.md",
+          "writer": "familiar:sage",
+          "strands": [
+            { "ContentHash": { "id": "bbbbbbb1-0002-4002-8002-000000000001", "algorithm": "Blake3", "value": [222, 173, 190, 239, 202, 254, 18, 52] } },
+            { "SerializationMarker": { "id": "bbbbbbb1-0002-4002-8002-000000000002", "format_version": "0.1.0", "contract_hash": [9, 10, 11, 12, 13, 14, 15, 16] } }
+          ],
+          "holds_under": ["Mutation", "Serialization"],
+          "created_at": [2026, 195, 12, 0, 0, 0, 0, 0, 0],
+          "tension": "Holds"
+        }
+      ],
+      "weave_hash": [17, 17, 34, 34, 51, 51, 68, 68],
+      "coven_ref": null,
+      "pattern_descriptor": {
+        "name": "identity-surface",
+        "protected_surfaces": ["SOUL.md", "MEMORY.md"],
+        "channels_required": ["Mutation"],
+        "strand_requirements": [
+          { "kind": "ContentHash", "required_on_channels": ["Mutation", "Forced"] }
+        ]
+      }
+    },
+    "coherence": "Coherent"
+  },
+  {
+    "weave": {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "familiar_id": "echo",
+      "threads": [
+        {
+          "id": "aaaaaaa2-0002-4002-8002-000000000001",
+          "surface": "MEMORY.md",
+          "writer": "familiar:echo",
+          "strands": [
+            { "ContentHash": { "id": "bbbbbbb2-0002-4002-8002-000000000001", "algorithm": "Blake3", "value": [190, 190, 190, 190, 190, 190, 190, 190] } },
+            { "ManifestEntry": { "id": "bbbbbbb2-0002-4002-8002-000000000002", "manifest_id": "99999999-0002-4002-8002-000000000001", "entry_hash": [33, 34, 35, 36, 37, 38, 39, 40] } }
+          ],
+          "holds_under": ["Mutation", "Forced"],
+          "created_at": [2026, 195, 12, 0, 0, 0, 0, 0, 0],
+          "tension": {
+            "Frayed": {
+              "strand": "bbbbbbb2-0002-4002-8002-000000000001",
+              "channel": "Mutation",
+              "reason": "ContentHashMismatch",
+              "detected_at": [2026, 196, 9, 0, 0, 0, 0, 0, 0]
+            }
+          }
+        }
+      ],
+      "weave_hash": [34, 34, 68, 68, 102, 102, 136, 136],
+      "coven_ref": null,
+      "pattern_descriptor": {
+        "name": "identity-surface",
+        "protected_surfaces": ["MEMORY.md"],
+        "channels_required": ["Mutation"],
+        "strand_requirements": [
+          { "kind": "ContentHash", "required_on_channels": ["Mutation"] }
+        ]
+      }
+    },
+    "coherence": {
+      "Degraded": {
+        "degraded_surfaces": ["MEMORY.md"],
+        "reason": "content hash mismatch on MEMORY.md"
+      }
+    },
+    "observed": {
+      "bbbbbbb2-0002-4002-8002-000000000001": {
+        "value": [202, 202, 202, 202, 202, 202, 202, 202],
+        "at": [2026, 196, 9, 0, 0, 0, 0, 0, 0]
+      }
+    }
+  },
+  {
+    "weave": {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "familiar_id": "nova",
+      "threads": [
+        {
+          "id": "aaaaaaa3-0003-4003-8003-000000000001",
+          "surface": "SOUL.md",
+          "writer": "familiar:nova",
+          "strands": [
+            { "Signature": { "id": "bbbbbbb3-0003-4003-8003-000000000001", "key_id": "principal:val", "kind": "PrincipalAttestation", "value": [77, 78, 79, 80, 81, 82, 83, 84] } }
+          ],
+          "holds_under": ["Mutation"],
+          "created_at": [2026, 195, 12, 0, 0, 0, 0, 0, 0],
+          "tension": {
+            "Snapped": {
+              "channel": "Mutation",
+              "reason": "Revoked",
+              "at": [2026, 196, 8, 30, 0, 0, 0, 0, 0]
+            }
+          }
+        }
+      ],
+      "weave_hash": [51, 51, 102, 102, 153, 153, 204, 204],
+      "coven_ref": null,
+      "pattern_descriptor": {
+        "name": "identity-surface",
+        "protected_surfaces": ["SOUL.md"],
+        "channels_required": ["Mutation"],
+        "strand_requirements": [
+          { "kind": "Signature", "required_on_channels": ["Mutation"] }
+        ]
+      }
+    },
+    "coherence": {
+      "Broken": { "reason": "no required surface retains an intact thread" }
+    }
+  },
+  {
+    "weave": {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "familiar_id": "cody",
+      "threads": [
+        {
+          "id": "aaaaaaa4-0004-4004-8004-000000000001",
+          "surface": "SOUL.md",
+          "writer": "familiar:cody",
+          "strands": [],
+          "holds_under": ["Mutation"],
+          "created_at": [2026, 195, 12, 0, 0, 0, 0, 0, 0],
+          "tension": { "Wobbling": { "confidence": "vibes" } }
+        }
+      ],
+      "weave_hash": [68, 68, 136, 136, 204, 204, 255, 255],
+      "coven_ref": null,
+      "pattern_descriptor": {
+        "name": "identity-surface",
+        "protected_surfaces": ["SOUL.md"],
+        "channels_required": ["Mutation"],
+        "strand_requirements": []
+      }
+    },
+    "coherence": { "Shimmering": { "aura": "?" } }
+  }
+]

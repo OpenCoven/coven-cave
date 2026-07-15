@@ -166,6 +166,9 @@ const contracts: RouteContract[] = [
   { route: "/profile/avatar", methods: ["GET", "POST", "DELETE"], kind: "stream", readsJson: true, invalidJson: "guarded" },
   { route: "/profile", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/prompts", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/proposals", methods: ["GET"], kind: "json" },
+  { route: "/proposals/[id]/approve", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/proposals/[id]/reject", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/crafts", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -205,6 +208,9 @@ const contracts: RouteContract[] = [
   { route: "/stitches/pins", methods: ["POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/stitches/sew", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/theme", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/threads/[id]", methods: ["GET"], kind: "json" },
+  { route: "/threads/[id]/audit", methods: ["GET"], kind: "json" },
+  { route: "/threads/[id]/strands", methods: ["GET"], kind: "json" },
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/elevenlabs/catalog", methods: ["GET"], kind: "json" },
@@ -221,6 +227,8 @@ const contracts: RouteContract[] = [
   { route: "/workflows/save", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/workflows", methods: ["GET"], kind: "json" },
+  { route: "/weaves", methods: ["GET"], kind: "json" },
+  { route: "/weaves/[id]", methods: ["GET"], kind: "json" },
 ];
 
 function walkRoutes(dir: string): string[] {

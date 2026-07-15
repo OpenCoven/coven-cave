@@ -45,7 +45,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // route (cave-j0dz) tipped it to 5,301 — raised to 5,320.
   // 2026-07-15 (fleet): the Omnigent fleet surface (#3216) traced the runtime
   // to 5,331–5,337 across platforms — raised to 5,360.
-  fileCount: 5_360,
+  // 2026-07-15 (threads): Phase 4 Cave surfaces (#3223) — 8 authority-gate
+  // read/decision routes (/api/weaves*, /api/threads/*, /api/proposals*),
+  // /weaves + /proposals pages, and the traced fixtures/phase-4 staged-write
+  // mirrors put the runtime at 5,417 — raised to 5,440.
+  fileCount: 5_440,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
