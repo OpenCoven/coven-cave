@@ -15,8 +15,8 @@ const railLogic = readFileSync(new URL("../lib/code-rail.ts", import.meta.url), 
 // Broadcast side: the header owns the snapshot; fires on change AND resets on
 // unmount so a stale red dot can't outlive its cause.
 assert.match(header, /snapshot\?\.pr && snapshot\.pr\.checkStatus === "failing"/, "failing signal derives from the stage snapshot's PR rollup");
-assert.match(header, /new CustomEvent\(STAGE_CHECKS_EVENT, \{ detail \}\)/, "header broadcasts the stage-checks event");
-assert.match(header, /detail: \{ projectRoot, failing: false \}/, "unmount clears the badge");
+assert.match(header, /window\.dispatchEvent\(new CustomEvent\(STAGE_CHECKS_EVENT, \{ detail: \{ projectRoot, failing \} \}\)\);\s*\n\s*\}, \[projectRoot, failing\]\);/, "header broadcasts on every signal change");
+assert.match(header, /detail: \{ projectRoot, failing: false \}[\s\S]{0,40}\}, \[projectRoot\]\);/, "the clear fires only on unmount/root change — no transient false between true states");
 
 // Listener side: filtered by project root, resets when the root changes.
 assert.match(hook, /d\?\.projectRoot === projectRoot/, "hook filters events to its project root");
@@ -30,7 +30,9 @@ assert.match(surface, /useStageChecksBadge\(effectiveRailRoot\)/, "collapsed reo
 assert.match(surface, /"Show code rail — PR checks failing"/, "reopen strip announces the failing state");
 assert.match(css, /\.workspace-rail__badge--alert \{/, "alert dot styled");
 
-// Design §6 guardrail: no new signals into the reveal resolver.
-assert.doesNotMatch(railLogic, /checks|stage/i, "resolveCodeRail's reveal inputs stay checks-free");
+// Design §6 guardrail: no coupling of the badge signal into the reveal
+// resolver — the cue must stay peripheral. Names are specific so unrelated
+// git vocabulary (staged/unstage) can't false-fail this pin.
+assert.doesNotMatch(railLogic, /STAGE_CHECKS_EVENT|useStageChecksBadge|checksFailing/, "resolveCodeRail's reveal inputs stay badge-free");
 
 console.log("rail checks badge wiring: ok");

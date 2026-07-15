@@ -113,17 +113,20 @@ export function ChatStageHeader({
 
   // Broadcast the failing-checks signal for the code rail's badge (design §6):
   // the header already holds the stage snapshot, so the rail never re-fetches
-  // the PR bridge. Fires on every change, including back to false and on
-  // unmount, so a stale red badge can't outlive its cause.
+  // the PR bridge. Dispatch fires on every signal change; the CLEAR fires only
+  // on unmount / root change (separate effect) so listeners never see a
+  // transient false between consecutive true states.
   const failing = Boolean(snapshot?.pr && snapshot.pr.checkStatus === "failing");
   useEffect(() => {
     if (!projectRoot) return;
-    const detail = { projectRoot, failing };
-    window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail }));
+    window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail: { projectRoot, failing } }));
+  }, [projectRoot, failing]);
+  useEffect(() => {
+    if (!projectRoot) return;
     return () => {
       window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail: { projectRoot, failing: false } }));
     };
-  }, [projectRoot, failing]);
+  }, [projectRoot]);
 
   if (!snapshot) return null;
 

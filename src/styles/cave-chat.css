@@ -5088,7 +5088,7 @@ details[open] > .cave-tool-summary::before {
   width: 9px;
   height: 9px;
   padding: 0;
-  background: var(--color-warning);
+  background: var(--color-danger);
 }
 
 /* On the full-height collapsed reopen strip the dot anchors to the icon area
