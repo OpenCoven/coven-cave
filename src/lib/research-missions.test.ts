@@ -9,6 +9,7 @@ import {
   describeResearchSchedule,
   normalizeResearchBounds,
   RESEARCH_BOUND_LIMITS,
+  researchBoundReadings,
   researchPhaseStatuses,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
@@ -360,4 +361,132 @@ test("acceptance: no terminal mission ever renders a running or pending phase", 
       }
     }
   }
+});
+
+// --- researchBoundReadings: over/met bound states must be legible ---
+
+function meterMission(overrides: {
+  startedAt?: string;
+  finishedAt?: string;
+  sources?: number;
+  costs?: Array<number | undefined>;
+  bounds?: Partial<{ wallClockMinutes: number; sourceTarget: number; maxSpendUsd: number; checkpointEvery: number }>;
+}) {
+  return {
+    bounds: {
+      maxIterations: 1,
+      wallClockMinutes: 20,
+      sourceTarget: 6,
+      checkpointEvery: 1,
+      stopWhenCostUnavailable: false,
+      ...overrides.bounds,
+    },
+    sources: Array.from({ length: overrides.sources ?? 0 }, (_, index) => ({
+      id: `s${index}`,
+      title: `Source ${index}`,
+      sourceType: "web",
+      status: "candidate" as const,
+    })),
+    iterations: (overrides.costs ?? [undefined]).map((costUsd, index) => ({
+      number: index + 1,
+      status: "completed" as const,
+      ...(costUsd === undefined ? {} : { costUsd }),
+    })),
+    startedAt: overrides.startedAt,
+    finishedAt: overrides.finishedAt,
+    updatedAt: overrides.finishedAt ?? "2026-07-15T01:00:00Z",
+  } as Parameters<typeof researchBoundReadings>[0];
+}
+
+function reading(mission: Parameters<typeof researchBoundReadings>[0], id: string) {
+  const found = researchBoundReadings(mission).find((item) => item.id === id);
+  assert.ok(found, `missing ${id} reading`);
+  return found;
+}
+
+test("time past the wall-clock budget reads over, in plain text not just color", () => {
+  // Screenshot repro: 49 elapsed minutes against a 20-minute brief budget.
+  const mission = meterMission({
+    startedAt: "2026-07-15T00:00:00Z",
+    finishedAt: "2026-07-15T00:49:00Z",
+    sources: 14,
+  });
+  const time = reading(mission, "time");
+  assert.equal(time.value, "49/20 min");
+  assert.equal(time.tone, "over");
+  assert.equal(time.badge, "over");
+  assert.match(time.detail, /stop gate/);
+  assert.match(time.detail, /no further iterations/i);
+});
+
+test("meeting the source target reads met — it is a goal, not a cap", () => {
+  const mission = meterMission({
+    startedAt: "2026-07-15T00:00:00Z",
+    finishedAt: "2026-07-15T00:10:00Z",
+    sources: 14,
+  });
+  const sources = reading(mission, "sources");
+  assert.equal(sources.value, "14/6");
+  assert.equal(sources.tone, "met");
+  assert.equal(sources.badge, "met");
+  assert.match(sources.detail, /goal, not a cap/);
+  // Exactly at target also counts as met.
+  assert.equal(reading(meterMission({ sources: 6 }), "sources").tone, "met");
+});
+
+test("in-budget readings stay neutral with no badges", () => {
+  const mission = meterMission({
+    startedAt: "2026-07-15T00:00:00Z",
+    finishedAt: "2026-07-15T00:12:00Z",
+    sources: 3,
+    costs: [4.2],
+    bounds: { maxSpendUsd: 10 },
+  });
+  for (const item of researchBoundReadings(mission)) {
+    assert.equal(item.tone, "neutral", `${item.id} should be neutral`);
+    assert.equal(item.badge, undefined, `${item.id} should have no badge`);
+  }
+  // At the exact wall-clock boundary the decision banner explains any stop;
+  // the meter does not claim "over".
+  assert.equal(
+    reading(meterMission({ startedAt: "2026-07-15T00:00:00Z", finishedAt: "2026-07-15T00:20:00Z" }), "time").tone,
+    "neutral",
+  );
+  // …but a sub-minute overshoot is still over, even when the rounded display
+  // reads at-bound (millisecond comparison, not rounded minutes).
+  const justOver = reading(
+    meterMission({ startedAt: "2026-07-15T00:00:00Z", finishedAt: "2026-07-15T00:20:20Z" }),
+    "time",
+  );
+  assert.equal(justOver.value, "20/20 min");
+  assert.equal(justOver.tone, "over");
+});
+
+test("spend reads over only past the cap and stays honest without one", () => {
+  const over = reading(meterMission({ costs: [8, 4.5], bounds: { maxSpendUsd: 10 } }), "spend");
+  assert.equal(over.value, "$12.50/$10.00");
+  assert.equal(over.tone, "over");
+  assert.equal(over.badge, "over");
+  const under = reading(meterMission({ costs: [5], bounds: { maxSpendUsd: 10 } }), "spend");
+  assert.equal(under.value, "$5.00/$10.00");
+  assert.equal(under.tone, "neutral");
+  const uncapped = reading(meterMission({ costs: [5] }), "spend");
+  assert.equal(uncapped.value, "$5.00 reported");
+  assert.equal(uncapped.tone, "neutral");
+  assert.match(uncapped.detail, /no spend cap/i);
+});
+
+test("missing cost renders quiet, with the honest explanation moved off-screen", () => {
+  const spend = reading(meterMission({ costs: [undefined] }), "spend");
+  assert.equal(spend.value, "—");
+  assert.equal(spend.tone, "neutral");
+  assert.match(spend.detail, /Cost unavailable/);
+});
+
+test("checkpoint cadence pluralizes correctly", () => {
+  assert.equal(reading(meterMission({}), "checkpoint").value, "every 1 iteration");
+  assert.equal(
+    reading(meterMission({ bounds: { checkpointEvery: 2 } }), "checkpoint").value,
+    "every 2 iterations",
+  );
 });

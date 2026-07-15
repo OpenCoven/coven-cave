@@ -7,6 +7,7 @@ import { Icon } from "@/lib/icon";
 import {
   allowedResearchActions,
   describeResearchSchedule,
+  researchBoundReadings,
   researchPhaseStatuses,
   type ResearchMission,
   type ResearchMissionAction,
@@ -97,14 +98,6 @@ export function ResearchMissionDetail({
     : plannedRetry.projectRoot === null
       ? (mission.projectRoot ? "Retry in workspace" : "Retry")
       : plannedRetry.projectRoot === mission.projectRoot ? "Retry" : "Retry with new root";
-  const elapsedMinutes = mission.startedAt
-    ? Math.max(0, Math.round((Date.parse(mission.finishedAt ?? mission.updatedAt) - Date.parse(mission.startedAt)) / 60_000))
-    : 0;
-  const reportedCost = mission.iterations.reduce(
-    (sum, item) => sum + (item.costUsd ?? 0),
-    0,
-  );
-  const hasReportedCost = mission.iterations.some((item) => item.costUsd !== undefined);
   const runAction = async (input: ResearchMissionActionInput) => {
     setBusy(true);
     setActionError(null);
@@ -212,17 +205,22 @@ export function ResearchMissionDetail({
           </ol>
 
           <dl className="research-bound-meter">
-            <div><dt>Time</dt><dd>{elapsedMinutes}/{mission.bounds.wallClockMinutes} min</dd></div>
-            <div><dt>Sources</dt><dd>{mission.sources.length}/{mission.bounds.sourceTarget}</dd></div>
-            <div><dt>Checkpoint</dt><dd>every {mission.bounds.checkpointEvery} iteration</dd></div>
-            <div>
-              <dt>Spend</dt>
-              <dd>
-                {hasReportedCost
-                  ? `$${reportedCost.toFixed(2)}${mission.bounds.maxSpendUsd == null ? " reported" : `/$${mission.bounds.maxSpendUsd}`}`
-                  : "Cost unavailable"}
-              </dd>
-            </div>
+            {researchBoundReadings(mission).map((reading) => (
+              <div
+                key={reading.id}
+                className={reading.tone === "neutral" ? undefined : `research-bound--${reading.tone}`}
+                title={reading.detail}
+              >
+                <dt>{reading.label}</dt>
+                <dd>
+                  {reading.value}
+                  {reading.badge ? (
+                    <em className="research-bound-badge" aria-hidden>{reading.badge}</em>
+                  ) : null}
+                  <span className="sr-only"> — {reading.detail}</span>
+                </dd>
+              </div>
+            ))}
           </dl>
 
           {mission.mode === "autoresearch" ? (
