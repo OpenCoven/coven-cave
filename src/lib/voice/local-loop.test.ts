@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildLocalBrainMessages,
@@ -61,6 +61,8 @@ globalThis.fetch = async (url, init) => {
   if (nextFetch) return nextFetch();
   return realFetch(url, init);
 };
+
+after(() => { globalThis.fetch = realFetch; });
 
 beforeEach(() => {
   nextFetch = null;

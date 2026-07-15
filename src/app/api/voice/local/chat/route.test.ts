@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { test, beforeEach } from "node:test";
+import { test, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 
 const realFetch = globalThis.fetch;
@@ -12,11 +12,14 @@ globalThis.fetch = async (url, init) => {
   return realFetch(url, init);
 };
 
+after(() => { globalThis.fetch = realFetch; });
+
 const { POST } = await import("./route.ts");
 
 function req(body: unknown) {
   return new Request("http://test/api/voice/local/chat", {
     method: "POST",
+    headers: { "content-type": "application/json" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
@@ -94,6 +97,23 @@ test("forwards system + turns to the loopback chat-completions API and returns t
   assert.equal(lastCall.body.stream, false);
   assert.equal(lastCall.body.messages[0].role, "system");
   assert.equal(lastCall.body.messages.length, 4);
+});
+
+test("a system message with empty content still counts as the persona slot", async () => {
+  nextFetch = async () => new Response(
+    JSON.stringify({ choices: [{ message: { content: "ok" } }] }),
+    { status: 200 },
+  );
+  const res = await POST(req({
+    messages: [
+      { role: "system", content: "" },
+      { role: "user", content: "hi" },
+    ],
+  }));
+  const json = await res.json();
+  assert.deepEqual(json, { ok: true, text: "ok" });
+  assert.equal(lastCall.body.messages[0].role, "system");
+  assert.equal(lastCall.body.messages.length, 2);
 });
 
 test("honors the COVEN_LOCAL_LLM_URL base override", async () => {

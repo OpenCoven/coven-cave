@@ -26,9 +26,10 @@ export async function POST(req: Request) {
   if (messages.length > MAX_MESSAGES) {
     return NextResponse.json({ ok: false, error: "too_many_messages" }, { status: 400 });
   }
-  const system = messages[0]?.role === "system" ? String(messages[0].content ?? "") : "";
+  const hasSystem = messages[0]?.role === "system";
+  const system = hasSystem ? String(messages[0].content ?? "") : "";
   const turns: Array<{ role: "user" | "assistant"; content: string }> = [];
-  for (const m of messages.slice(system ? 1 : 0)) {
+  for (const m of messages.slice(hasSystem ? 1 : 0)) {
     if (m.role !== "user" && m.role !== "assistant") {
       return NextResponse.json({ ok: false, error: "invalid_role" }, { status: 400 });
     }
