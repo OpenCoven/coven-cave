@@ -271,7 +271,6 @@ export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem):
 export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
 
 const IMPORTANCE_WEIGHT: Record<CapabilityImportance, number> = { "nice-to-have": 1, important: 2, blocking: 3 };
-const STATE_WEIGHT: Record<CapabilityState, number> = { available: 1, degraded: 2, missing: 3 };
 
 function libAvg(values: number[]): number {
   if (values.length === 0) return 0;
@@ -362,8 +361,11 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     for (const s of r.skillsNeedingClarity) if (!clarity.has(s.skillId)) clarity.set(s.skillId, s);
     for (const s of r.skillsNeedingAccess) if (!access.has(s.skillId)) access.set(s.skillId, s);
     for (const c of r.capabilitiesVital) {
-      const prev = capVital.get(c.name);
-      if (!prev || STATE_WEIGHT[c.currentState] > STATE_WEIGHT[prev.currentState]) capVital.set(c.name, c);
+      // Latest report wins: `currentState` is a *current* observation, and
+      // reports iterate newest-first. Letting an older, worse state override
+      // (the old STATE_WEIGHT behavior) pinned long-fixed capabilities at
+      // "missing" for the whole report window (cave-hdkx).
+      if (!capVital.has(c.name)) capVital.set(c.name, c);
     }
     for (const c of r.capabilitiesLacking) {
       const prev = capLacking.get(c.name);

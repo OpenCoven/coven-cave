@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   aggregateResponseConfidenceEvents,
+  aggregateThreadSignals,
   buildReflectTranscript,
   buildThreadReflectPrompt,
   buildThreadSignalResolutionPrompt,
@@ -225,5 +226,67 @@ describe("buildThreadReflectPrompt", () => {
       const p = buildThreadSignalResolutionPrompt({ kind, severity: "info", sourceId: "t", title: "t", detail: "d" });
       assert.doesNotMatch(p, /undefined/, `${kind} resolves to a label`);
     }
+  });
+});
+
+describe("aggregateThreadSignals vital capabilities", () => {
+  function reportWithVital(
+    id: string,
+    reportedAt: string,
+    vital: ThreadSelfReport["capabilitiesVital"],
+  ): ThreadSelfReport {
+    return { ...fullReport(), id, sessionId: id, reportedAt, capabilitiesVital: vital };
+  }
+
+  it("uses the latest report's currentState per capability, so recovered capabilities stop surfacing as missing", () => {
+    // Regression: a capability broken in one old session (e.g. the pre-#2985
+    // copilot permission regression) must not pin `status: missing` after
+    // newer reports observe it available (cave-hdkx).
+    const stale = reportWithVital("session-old", "2026-07-12T01:39:00.000Z", [
+      { name: "command execution for builds/tests", currentState: "missing", notes: "Denied by permission layer." },
+    ]);
+    const recovered = reportWithVital("session-new", "2026-07-14T21:30:00.000Z", [
+      { name: "command execution for builds/tests", currentState: "available", notes: "cargo/pnpm/node verified." },
+    ]);
+    // Order of the input array must not matter — only reportedAt recency.
+    for (const reports of [
+      [stale, recovered],
+      [recovered, stale],
+    ]) {
+      const aggregate = aggregateThreadSignals(reports);
+      assert.deepEqual(aggregate.capabilitiesVital, [
+        { name: "command execution for builds/tests", currentState: "available", notes: "cargo/pnpm/node verified." },
+      ]);
+    }
+  });
+
+  it("keeps a newest-report degradation visible", () => {
+    const wasFine = reportWithVital("session-old", "2026-07-10T08:00:00.000Z", [
+      { name: "GitHub CLI", currentState: "available", notes: "Authenticated." },
+    ]);
+    const nowBroken = reportWithVital("session-new", "2026-07-14T09:00:00.000Z", [
+      { name: "GitHub CLI", currentState: "missing", notes: "Token expired." },
+    ]);
+    const aggregate = aggregateThreadSignals([wasFine, nowBroken]);
+    assert.deepEqual(aggregate.capabilitiesVital, [
+      { name: "GitHub CLI", currentState: "missing", notes: "Token expired." },
+    ]);
+  });
+
+  it("tracks distinct capability names independently", () => {
+    const a = reportWithVital("session-a", "2026-07-13T10:00:00.000Z", [
+      { name: "shell command execution", currentState: "available" },
+    ]);
+    const b = reportWithVital("session-b", "2026-07-14T10:00:00.000Z", [
+      { name: "artifact capture", currentState: "degraded", notes: "Flaky screenshots." },
+    ]);
+    const aggregate = aggregateThreadSignals([b, a]);
+    assert.deepEqual(
+      new Map(aggregate.capabilitiesVital.map((c) => [c.name, c.currentState])),
+      new Map([
+        ["shell command execution", "available"],
+        ["artifact capture", "degraded"],
+      ]),
+    );
   });
 });
