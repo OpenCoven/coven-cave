@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Features
+- **Theme: Snow** — a frost-blue palette ported from tweakcn's "Frosty" (powder-sky accents on midnight-navy ice in dark mode; near-white slate surfaces in light), joining the preset roster across desktop and iOS with soft 1rem-radius chrome. Light-mode primary/presence pairs, the destructive red, and the dark accent text are retuned to hold WCAG 2.1 AA per the theme contrast audit.
+
 ## [0.1.1] - 2026-07-15
 
 ### Features

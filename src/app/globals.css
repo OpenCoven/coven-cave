@@ -4326,6 +4326,98 @@ html[data-backdrop-on] .glass-overlay {
   --chart-5: #a8f0cc;
 }
 
+/* ---- Snow (tweakcn "Frosty") — powder-blue light over midnight ice ----
+   Ported from https://tweakcn.com/themes/cmrm843zo000304jm0x7la5rk with
+   AA fixes: light primary/presence text pairs flipped to navy-on-sky or
+   deepened to #1b6ca8, destructive darkened, dark accent-foreground
+   brightened a step — see theme-contrast-audit.test.ts. */
+[data-theme="snow"] {
+  --font-sans: var(--font-manrope), "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --radius: 1rem;
+  --radius-control: 12px;
+  --radius-card: 16px;
+  --radius-panel: 20px;
+  --shadow-color: #000000;
+  --shadow-popover: 0 8px 20px 0 #00000066;
+  --cave-reading-leading: 1.6;
+  --cave-reading-tracking: 0;
+  --cave-reading-weight: 400;
+  --background: #03152d;
+  --foreground: #f8fafc;
+  --card: #0a1e36;
+  --card-foreground: #f8fafc;
+  --popover: #0a1e36;
+  --popover-foreground: #f8fafc;
+  --primary: #2f658e;
+  --primary-foreground: #ffffff;
+  --secondary: #162e4a;
+  --secondary-foreground: #f8fafc;
+  --muted: #0d2542;
+  --muted-foreground: #94a3b8;
+  --accent: #1e3a5f;
+  --accent-foreground: #5eb8ea;
+  --destructive: #991b1b;
+  --destructive-foreground: #ffffff;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #4aade5;
+  --accent-presence: #4aade5;
+  --accent-presence-foreground: #03152d;
+  --accent-presence-soft: color-mix(in oklch, #4aade5 78%, transparent);
+  --accent-faint: color-mix(in oklch, #4aade5 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #020d1c;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #4a7099;
+  --ring-focus: color-mix(in oklch, #4aade5 55%, var(--foreground) 45%);
+  --chart-1: #4aade5;
+  --chart-2: #38bdf8;
+  --chart-3: #0ea5e9;
+  --chart-4: #f8fafc;
+  --chart-5: #475569;
+}
+[data-theme="snow"][data-mode="light"] {
+  --shadow-color: #03152d;
+  --shadow-popover: 0 4px 16px 0 #03152d0a;
+  --background: #f8fafc;
+  --foreground: #03152d;
+  --card: #ffffff;
+  --card-foreground: #03152d;
+  --popover: #ffffff;
+  --popover-foreground: #03152d;
+  --primary: #4aade5;
+  --primary-foreground: #03152d;
+  --secondary: #e0f2fe;
+  --secondary-foreground: #03152d;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --accent: #f0f9ff;
+  --accent-foreground: #1b6ca8;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #f1f5f9;
+  --ring: #1b6ca8;
+  --accent-presence: #1b6ca8;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #4aade5 78%, transparent);
+  --accent-faint: color-mix(in oklch, #4aade5 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #ffffff;
+  --bg-raised: var(--card);
+  --bg-elevated: var(--secondary);
+  --bg-hover: var(--accent);
+  --border-strong: #64748b;
+  --ring-focus: color-mix(in oklch, #1b6ca8 55%, var(--foreground) 45%);
+  --chart-1: #4aade5;
+  --chart-2: #03152d;
+  --chart-3: #0ea5e9;
+  --chart-4: #7dd3fc;
+  --chart-5: #cbd5e1;
+}
+
 /* ---- Slate (ink-and-bone 270) — no color, no mercy ---- */
 [data-theme="slate"] {
   --background: oklch(0.05 0.000 0);
