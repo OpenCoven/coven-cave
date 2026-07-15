@@ -125,13 +125,35 @@ bodies; the contract is asserted in `src/app/api/api-contracts.test.ts` and
 
 ### Draft Crafts
 
-The Crafts tab can extract a **reversible local draft Craft** from a
-familiar's selected Roles (`POST /api/marketplace/crafts/drafts`, drawer in
-`src/components/marketplace/craft-create-drawer.tsx`): direct and effective
-skills, tools, MCP servers, plugins, prompts, and workflows are collected with
-origin labels and a review ledger before anything is saved. Drafts are local
-authoring state — publishing one into the catalog still goes through the
-human-reviewed update process below.
+The Crafts tab authors **reversible local draft Crafts** through one
+progressive drawer (`src/components/marketplace/craft-create-drawer.tsx`;
+flow spec in [`craft-ux.md`](craft-ux.md)):
+
+- **Describe it** (default): the operator states a goal; a chat brief carrying
+  the full drafts-API contract dispatches to a familiar
+  (`src/lib/craft-agent-prompt.ts`, mirrored by the `craft-builder` skill).
+  The in-flight build persists as a sessionStorage watch
+  (`src/lib/craft-arrival.ts`) that the drawer *and* the Crafts tab resume —
+  arrival is announced and opens the draft wherever the operator is.
+- **Pick roles** (remembered once chosen): select one familiar's roles —
+  switching familiars retains each familiar's picks — then **preview the real
+  extraction ledger before anything is written** (client-side synthesis via
+  the pure `buildCraftDraftFromRoles`), optionally rename (bounded
+  `displayName`; the id stays derived), and save
+  (`POST /api/marketplace/crafts/drafts`).
+
+Direct and effective skills, tools, MCP servers, plugins, prompts, and
+workflows are collected with origin labels into a review ledger
+(`src/lib/craft-draft.ts`). The draft detail renders that attributed ledger
+(shared `CraftDraftPreview`), shows a lifecycle strip
+(Draft → Published → Installed → Equipped), verifies the draft through the
+**draft-aware plan** — `GET /api/marketplace/crafts/plan` falls back to the
+drafts store and returns `ok: true` plus `draftDiagnostics` naming extracted
+local references that can't verify until publication — and offers Adjust
+roles (seeded re-edit, recreate-and-replace), Refine in chat, Prepare for
+catalog, and guarded delete. Drafts are local authoring state — publishing
+one into the catalog still goes through the human-reviewed update process
+below.
 
 ### Human-Reviewed Upstream Updates
 

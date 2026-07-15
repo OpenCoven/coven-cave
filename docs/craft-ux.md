@@ -278,6 +278,42 @@ CI rules); final usability pass against the success condition.
 multi-familiar Crafts, no redesign of the published-Craft dossier beyond
 F10's inline reasons, no new server state stores.
 
+## Status ledger
+
+All six checkpoints shipped (2026-07-15):
+
+| Checkpoint | PR | Landed |
+|---|---|---|
+| CP1 · Audit + this spec | #3188 | Friction inventory F1–F12; `authoring-assist.md` §6 corrected |
+| CP2 · Unified progressive flow | #3189 | Describe-first + mode memory (F6); preview-before-save on real ledger (F3); shared `CraftDraftPreview`; drafts/published grid grouping (F11) |
+| CP3 · Power layer in-flow | #3193 | Ledger origin/role attribution on screen (F4); seeded Adjust-roles editing (F5); per-familiar selection retention (F9); bounded rename, id stays derived (F12) |
+| CP4 · Close the loop honestly | #3195 | Draft-aware plan + `draftDiagnostics` (F1); sessionStorage arrival watch resumed by drawer + hub, in-flight row, announced arrival (F2); plan-status chip (F8); truthful briefs + `craft-builder` SKILL |
+| CP5 · Dead ends, recovery, a11y | #3202 | Studio-linked teaching empty states + zero-roles dispatch guard (F7); roles-load retry; one-familiar hint (F9); inline install-first reasons (F10); lifecycle strip (F8); announced step transitions |
+| CP6 · Docs + e2e | this PR | `marketplace.md` § Draft Crafts rewritten; e2e specs for the progressive flow + persisted arrival; this ledger |
+
+**Acceptance criteria check** (from the goal):
+
+- *Basic path — describe → preview → save with zero required advanced
+  inputs*: describe is the default tab; one textarea and one button dispatch
+  the build; the arrival opens the draft with its attributed preview. The
+  manual path is select → preview → save with no required extras. ✓
+- *Power path in the same flow*: role composition (per-familiar retention),
+  ledger inspection (origin badges), rename, and draft editing (seeded
+  Adjust roles) all live inside the one drawer/detail pair. ✓
+- *Draft lifecycle visible end-to-end*: in-flight row → arrival announcement
+  → attributed preview → plan-verification chip → lifecycle strip naming the
+  publication road. ✓
+- *Verification honest for drafts*: `GET /crafts/plan` resolves drafts with
+  named `draftDiagnostics`; briefs and skill describe the real contract. ✓
+- *Tests*: unit (`craft-draft`, `craft-arrival`, `craft-draft-plan`), pins
+  (`crafts-marketplace`, `crafts-routes`), e2e
+  (`tests/marketplace-crafts.spec.ts` — daemon-less, `page.route` mocks). ✓
+- *Docs match code*: `marketplace.md`, `authoring-assist.md` §6, this file. ✓
+
+Remaining friction accepted for now: F8's "publish" remains a chat-brief +
+human PR (by design); F11 sorting within groups only; no draft description
+editing (rename only).
+
 *Written 2026-07-15 from the shipped code (Checkpoint 1, bead `cave-lepz`).
 When this map and the code disagree, the code is right — then update this
 map.*

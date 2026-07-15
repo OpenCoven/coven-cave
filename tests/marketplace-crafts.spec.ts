@@ -215,3 +215,129 @@ test.describe("Craft Marketplace transactions", () => {
     await expect(dialog.locator(":focus")).toHaveCount(1);
   });
 });
+
+test.describe("Craft authoring: one progressive flow", () => {
+  const roles = [
+    {
+      id: "researcher",
+      name: "Researcher",
+      description: "Deep research and citation",
+      familiar: "nova",
+      skills: ["deep-research"],
+      tools: ["network.http"],
+      mcpServers: ["fetch"],
+      plugins: [],
+      workflows: [],
+      crafts: [],
+      effective: {
+        ...directEffective,
+        skills: [{ id: "deep-research", origin: "direct", originLabel: "Direct" }],
+        mcpServers: [{ id: "fetch", origin: "direct", originLabel: "Direct" }],
+        capabilities: [{ id: "network.http", origin: "direct", originLabel: "Direct" }],
+      },
+    },
+    {
+      id: "scribe",
+      name: "Scribe",
+      description: "Writing and summaries",
+      familiar: "nova",
+      skills: ["summarize"],
+      tools: [],
+      mcpServers: [],
+      plugins: [],
+      workflows: [],
+      crafts: [],
+      effective: {
+        ...directEffective,
+        skills: [{ id: "summarize", origin: "direct", originLabel: "Direct" }],
+        tools: [],
+      },
+    },
+  ];
+
+  test("describe-first default, pick-roles previews the real ledger before saving", async ({ page }) => {
+    const draftPosts: Array<Record<string, unknown>> = [];
+    await page.route(/\/api\/roles(?:\?.*)?$/, (route) => route.fulfill({ json: { ok: true, roles } }));
+    await page.route("**/api/marketplace/crafts/drafts**", async (route) => {
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        draftPosts.push(body);
+        await route.fulfill({ json: { ok: true, draft: { id: "nova-researcher" } } });
+        return;
+      }
+      await route.fulfill({ json: { ok: true, drafts: [] } });
+    });
+
+    await openCrafts(page);
+    await page.getByRole("button", { name: "Create Craft" }).click();
+    const drawer = page.getByRole("dialog", { name: "Create Craft" });
+    await expect(drawer).toBeVisible();
+
+    // Describe leads for first-time users.
+    await expect(drawer.getByRole("tab", { name: "Describe it" })).toHaveAttribute("aria-selected", "true");
+    await expect(drawer.getByRole("button", { name: "Draft with familiar" })).toBeDisabled();
+
+    // Power path: pick roles → preview the REAL extraction ledger → save.
+    await drawer.getByRole("tab", { name: "Pick roles" }).click();
+    await expect(drawer.getByText("A Craft bundles roles from one familiar", { exact: false })).toBeVisible();
+    await drawer.getByRole("checkbox").first().check();
+    const previewButton = drawer.getByRole("button", { name: "Preview draft" });
+    await expect(previewButton).toBeEnabled();
+    await previewButton.click();
+
+    await expect(drawer.getByText("Nova Researcher", { exact: false }).first()).toBeVisible();
+    const ledger = drawer.locator(".craft-draft-ledger");
+    await expect(ledger.getByText("deep-research")).toBeVisible();
+    await expect(ledger.getByText("fetch")).toBeVisible();
+
+    // Adjust roles returns to selection with state intact.
+    await drawer.getByRole("button", { name: "Adjust roles" }).click();
+    await expect(drawer.getByRole("checkbox").first()).toBeChecked();
+    await drawer.getByRole("button", { name: "Preview draft" }).click();
+
+    // Optional rename rides the save; identity stays derived.
+    await drawer.getByLabel("Name (optional)").fill("Research Loadout");
+    await drawer.getByRole("button", { name: "Save draft" }).click();
+    await expect.poll(() => draftPosts.length).toBe(1);
+    expect(draftPosts[0]).toMatchObject({
+      familiar: "nova",
+      roleIds: ["researcher"],
+      displayName: "Research Loadout",
+    });
+  });
+
+  test("a dispatched describe-build survives the drawer and lands on the Crafts tab", async ({ page }) => {
+    let draftsCalls = 0;
+    await page.route(/\/api\/roles(?:\?.*)?$/, (route) => route.fulfill({ json: { ok: true, roles } }));
+    await page.route("**/api/marketplace/crafts/drafts**", async (route) => {
+      draftsCalls += 1;
+      // The familiar's draft "lands" on a later poll tick — the hub only
+      // reads ids from this endpoint to detect arrival.
+      await route.fulfill({ json: { ok: true, drafts: draftsCalls >= 2 ? [{ id: "nova-research-kit" }] : [] } });
+    });
+    // The persisted watch from a dispatch that happened before this page load
+    // (docs/craft-ux.md F2): baseline snapshot is empty, so any draft id is an
+    // arrival.
+    await page.addInitScript(() => {
+      window.sessionStorage.setItem(
+        "cave:craft-create:awaiting",
+        JSON.stringify({ baselineIds: [], dispatchedAt: new Date().toISOString(), goal: "research kit" }),
+      );
+    });
+
+    await openCrafts(page);
+    await expect(page.getByText("A familiar is drafting a Craft from your description", { exact: false })).toBeVisible();
+
+    const arrived = await page.evaluate(async () => {
+      // The 5s poll cadence is real time — nudge it by waiting for the watch
+      // to clear, which is the arrival side-effect.
+      const started = Date.now();
+      while (Date.now() - started < 15_000) {
+        if (window.sessionStorage.getItem("cave:craft-create:awaiting") === null) return true;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return false;
+    });
+    expect(arrived).toBe(true);
+  });
+});
