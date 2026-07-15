@@ -99,6 +99,23 @@ assert.match(
   "the model group only renders for runtimes with a curated catalog (hermes/openclaw run their own adapters)",
 );
 
+// ── Two-step pick: a runtime pick keeps the menu open for the model pick ─────
+// Collapsing on the runtime click stranded the switch halfway — the user had
+// to reopen the menu to choose a model. The menu now stays up (the Model group
+// re-lists from the optimistic state flip) and only a model pick, or picking a
+// menu-less runtime with no model step, completes the visit.
+assert.match(
+  chip,
+  /onPickRuntime\(catalog\.runtime\);[\s\S]{0,400}?if \(catalog\.models\.length === 0\) setOpen\(false\);/,
+  "a runtime pick closes the menu only for menu-less runtimes (hermes/openclaw); curated runtimes keep it open until a model is picked",
+);
+const modelRowBlock = chip.match(/\{modelOptions\.map\(\(m\) =>[\s\S]*?\)\)\}/)?.[0] ?? "";
+assert.match(
+  modelRowBlock,
+  /onSelect=\{\(\) => \{\s*\n\s*if \(m\.id !== modelValue\) onPickModel\(m\.id\);\s*\n\s*setOpen\(false\);/,
+  "a model pick completes the runtime→model switch and closes the menu",
+);
+
 // ── Brand marks: real logos for provider runtimes, glyphs for the rest ──────
 assert.match(logo, /codex: OPENAI_PATH,\s*\n\s*claude: ANTHROPIC_PATH,/, "codex and claude carry their providers' brand marks");
 assert.match(logo, /hermes: "ph:plug-bold",\s*\n\s*openclaw: "ph:paw-print-bold",/, "brand-less runtimes reuse the glyph language skill-card established");

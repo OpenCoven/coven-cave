@@ -88,7 +88,11 @@ export function ComposerRuntimeChip({
               checked={catalog.runtime === runtime}
               onSelect={() => {
                 if (catalog.runtime !== runtime) onPickRuntime(catalog.runtime);
-                setOpen(false);
+                // Keep the menu open so the model pick completes the switch in
+                // one visit — the Model group re-renders for the new runtime.
+                // Menu-less runtimes (hermes/openclaw) have no model step, so
+                // the pick is complete and the menu closes.
+                if (catalog.models.length === 0) setOpen(false);
               }}
             >
               {runtimeDisplayName(catalog.runtime)}
