@@ -418,6 +418,20 @@ export function researchIntentAddsContext(
   return normalize(mission.intent) !== normalize(mission.title);
 }
 
+/** Per-status source tallies for the evidence ledger's triage filters. */
+export function researchSourceStatusCounts(
+  sources: ReadonlyArray<Pick<ResearchSourceRef, "status">>,
+): Record<ResearchSourceRef["status"], number> {
+  const counts: Record<ResearchSourceRef["status"], number> = {
+    candidate: 0,
+    used: 0,
+    conflicting: 0,
+    rejected: 0,
+  };
+  for (const source of sources) counts[source.status] += 1;
+  return counts;
+}
+
 export type ResearchBoundReading = {
   id: "time" | "sources" | "checkpoint" | "spend";
   label: string;
