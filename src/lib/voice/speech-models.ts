@@ -254,6 +254,7 @@ export async function runSpeechModelDownload(
     if (!res.ok) throw new Error(`download_http_${res.status}`);
     const headerSize = Number(res.headers.get("content-length"));
     if (Number.isFinite(headerSize) && headerSize > 0) {
+      if (headerSize !== model.sizeBytes) throw new Error("size_mismatch");
       job.totalBytes = headerSize;
       putJob(job);
     }
