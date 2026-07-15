@@ -90,12 +90,14 @@ const proposals: ConsoleProposal[] = [
   { id: "1", proposedBy: SUPREME, targetFamiliarId: "zelda", projectId: "p-web", status: "pending", createdAt: "2026-01-02T00:00:00Z" },
   { id: "2", proposedBy: SUPREME, targetFamiliarId: "atlas", projectId: "p-api", status: "accepted", createdAt: "2026-01-01T00:00:00Z" },
   { id: "3", proposedBy: SUPREME, targetFamiliarId: "atlas", projectId: "p-web", status: "pending", createdAt: "2026-01-01T00:00:00Z" },
+  { id: "4", proposedBy: SUPREME, targetFamiliarId: "zelda", projectId: "p-api", status: "accepting", createdAt: "2026-01-03T00:00:00Z", finalizesAt: "2026-01-03T00:00:30Z" },
 ];
 const split = splitProposals(proposals);
-assert.deepEqual(split.pending.map((p) => p.id), ["3", "1"], "pending is oldest-first (FIFO queue)");
-assert.deepEqual(split.resolved.map((p) => p.id), ["2"], "resolved excludes pending");
-assert.equal(pendingProposalCount(proposals), 2);
+assert.deepEqual(split.pending.map((p) => p.id), ["3", "1", "4"], "actionable inbox keeps accepting rows (undo) FIFO");
+assert.deepEqual(split.resolved.map((p) => p.id), ["2"], "resolved excludes pending/accepting");
+assert.equal(pendingProposalCount(proposals), 2, "accepting rows don't count as awaiting a decision");
 assert.equal(proposalStatusMeta("pending").tone, "pending");
+assert.equal(proposalStatusMeta("accepting").tone, "pending");
 assert.equal(proposalStatusMeta("accepted").tone, "positive");
 assert.equal(proposalStatusMeta("rejected").tone, "negative");
 

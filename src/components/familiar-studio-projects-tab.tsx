@@ -186,7 +186,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
   );
 
   const resolveProposal = useCallback(
-    async (id: string, decision: "accepted" | "rejected") => {
+    async (id: string, decision: "accepted" | "rejected" | "undo") => {
       setResolving((s) => new Set(s).add(id));
       try {
         const res = await fetch(`/api/grant-proposals/${id}`, {
@@ -469,6 +469,32 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         <SettingsGroup label={`Access requests (${pendingProposals.length})`}>
           {pendingProposals.map((p) => {
             const busy = resolving.has(p.id);
+            if (p.status === "accepting") {
+              return (
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-[var(--text-primary)]">
+                      Granting <span className="font-medium">{projectName(p.projectId)}</span> to
+                      this familiar
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
+                      <FinalizeCountdown finalizesAt={p.finalizesAt} onElapsed={load} />
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => resolveProposal(p.id, "undo")}
+                      disabled={busy}
+                      aria-label={`Undo granting ${projectName(p.projectId)} to ${familiar.display_name}`}
+                    >
+                      <Icon name="ph:arrow-counter-clockwise" width={14} height={14} aria-hidden />
+                      Undo
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0">
@@ -567,5 +593,42 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
         </SettingsGroup>
       )}
     </div>
+  );
+}
+
+// Live undo-window countdown for an `accepting` proposal (cave-6mdg). Ticks
+// once a second; when the deadline passes it fires `onElapsed` exactly once so
+// the parent reloads — the proposal now reads `accepted` and the grant shows
+// up in the matrix.
+function FinalizeCountdown({
+  finalizesAt,
+  onElapsed,
+}: {
+  finalizesAt?: string;
+  onElapsed: () => void | Promise<void>;
+}) {
+  const deadline = finalizesAt ? Date.parse(finalizesAt) : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  const remainingMs = Number.isFinite(deadline) ? deadline - now : 0;
+  const elapsed = remainingMs <= 0;
+
+  useEffect(() => {
+    if (elapsed) {
+      void onElapsed();
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+    // onElapsed is a stable useCallback in the parent; re-arming on `elapsed`
+    // keeps exactly one interval alive and fires the reload once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elapsed]);
+
+  if (elapsed) return <>Grant finalized</>;
+  const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+  return (
+    <>
+      Accepted — takes effect in {seconds}s. Undo to keep it pending.
+    </>
   );
 }

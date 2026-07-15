@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -23,7 +23,10 @@ try {
     listAccessibleProjects,
     loadProjectPermissions,
     requiredAccessLevel,
+    resolveGrantProposal,
+    undoGrantProposal,
     updateAccessGroup,
+    GRANT_ACCEPT_UNDO_WINDOW_MS,
     ProjectAccessDeniedError,
   } = await import("./project-permissions.ts");
 
@@ -262,6 +265,64 @@ try {
     "deleting the group drops its grants (direct read remains, not write)",
   );
   await assertProjectAccess({ familiarId: "quill" }, "docs", "chat");
+
+  // ── Delayed acceptance: accept → undo window → finalize (cave-6mdg) ────────
+  const undoable = await createGrantProposal({
+    proposedBy: "supreme",
+    targetFamiliarId: "ember",
+    projectId: "docs",
+  });
+  const accepting = await resolveGrantProposal({ proposalId: undoable.id, decision: "accepted" });
+  assert.equal(accepting.status, "accepting", "accepting parks the proposal in the undo window");
+  assert.ok(accepting.finalizesAt, "the undo window records its deadline");
+  const windowMs = Date.parse(accepting.finalizesAt) - Date.parse(accepting.acceptedAt);
+  assert.equal(windowMs, GRANT_ACCEPT_UNDO_WINDOW_MS, "window spans GRANT_ACCEPT_UNDO_WINDOW_MS");
+  assert.equal(
+    canAccessProject(await loadProjectPermissions(), { familiarId: "ember" }, "docs", "supreme"),
+    false,
+    "no grant materializes while the undo window is open",
+  );
+  await assert.rejects(
+    () => resolveGrantProposal({ proposalId: undoable.id, decision: "accepted" }),
+    ProjectAccessDeniedError,
+    "an accepting proposal cannot be re-resolved",
+  );
+
+  const undone = await undoGrantProposal({ proposalId: undoable.id });
+  assert.equal(undone.status, "pending", "undo returns the proposal to the human's queue");
+  assert.equal(undone.finalizesAt, undefined, "undo clears the window deadline");
+  assert.equal(
+    canAccessProject(await loadProjectPermissions(), { familiarId: "ember" }, "docs", "supreme"),
+    false,
+    "undone acceptance leaves no grant behind",
+  );
+  await assert.rejects(
+    () => undoGrantProposal({ proposalId: undoable.id }),
+    ProjectAccessDeniedError,
+    "undo only applies inside an open window",
+  );
+
+  // Re-accept, then age the window out on disk: the next load materializes it.
+  await resolveGrantProposal({ proposalId: undoable.id, decision: "accepted" });
+  const permissionsPath = process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE;
+  const raw = JSON.parse(await readFile(permissionsPath, "utf8"));
+  const stored = raw.grantProposals.find((p) => p.id === undoable.id);
+  stored.finalizesAt = new Date(Date.now() - 1_000).toISOString();
+  await writeFile(permissionsPath, JSON.stringify(raw, null, 2), "utf8");
+
+  const finalized = await loadProjectPermissions();
+  const finalizedProposal = finalized.grantProposals.find((p) => p.id === undoable.id);
+  assert.equal(finalizedProposal.status, "accepted", "an elapsed window finalizes on load");
+  assert.equal(
+    canAccessProject(finalized, { familiarId: "ember" }, "docs", "supreme"),
+    true,
+    "the grant materializes once the window elapses",
+  );
+  await assert.rejects(
+    () => undoGrantProposal({ proposalId: undoable.id }),
+    ProjectAccessDeniedError,
+    "a finalized grant can no longer be undone via the proposal",
+  );
 
   console.log("project-permissions.test.ts: ok");
 } finally {

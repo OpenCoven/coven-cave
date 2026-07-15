@@ -63,9 +63,20 @@ export type GrantProposal = {
   projectId: string;
   /** Level the grant will carry when accepted; legacy proposals imply "write". */
   access?: ProjectAccessLevel;
-  status: "pending" | "accepted" | "rejected";
+  status: "pending" | "accepting" | "accepted" | "rejected";
   createdAt: string;
+  /** Set when the human accepts; the grant only materializes at `finalizesAt`. */
+  acceptedAt?: string;
+  /** End of the undo window. Absent on legacy/pending/rejected proposals. */
+  finalizesAt?: string;
 };
+
+/**
+ * Delayed acceptance (cave-6mdg): accepting a proposal opens a short undo
+ * window instead of granting instantly. The grant materializes lazily once
+ * the window elapses; until then the human can undo back to `pending`.
+ */
+export const GRANT_ACCEPT_UNDO_WINDOW_MS = 30_000;
 
 export type PermissionAuditReason =
   | "grant"
@@ -204,7 +215,7 @@ export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> 
     Partial<ProjectPermissionsFile> & { version?: number }
   >(permissionsFilePath());
   if (!parsed) return emptyFile();
-  return {
+  const file: ProjectPermissionsFile = {
     version: 2,
     projectGrants: Array.isArray(parsed.projectGrants)
       ? parsed.projectGrants
@@ -219,6 +230,37 @@ export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> 
     grantProposals: Array.isArray(parsed.grantProposals) ? parsed.grantProposals : [],
     permissionAudit: Array.isArray(parsed.permissionAudit) ? parsed.permissionAudit : [],
   };
+  materializeDueGrantProposals(file, new Date());
+  return file;
+}
+
+/**
+ * Flip `accepting` proposals whose undo window has elapsed to `accepted` and
+ * materialize their grants. Runs in-memory on every load — reads converge on
+ * the finalized state even if nothing writes; the next save persists it.
+ * Returns true when anything changed.
+ */
+export function materializeDueGrantProposals(
+  file: ProjectPermissionsFile,
+  now: Date,
+): boolean {
+  let changed = false;
+  for (const proposal of file.grantProposals) {
+    if (proposal.status !== "accepting") continue;
+    const finalizesAt = proposal.finalizesAt ? Date.parse(proposal.finalizesAt) : NaN;
+    // Malformed/missing deadline: fail safe by finalizing (the human already
+    // accepted; losing the undo window beats losing the decision).
+    if (Number.isFinite(finalizesAt) && finalizesAt > now.getTime()) continue;
+    proposal.status = "accepted";
+    ensureProjectGrant(file, {
+      familiarId: proposal.targetFamiliarId,
+      projectId: proposal.projectId,
+      source: "human",
+      access: normalizeAccessLevel(proposal.access),
+    });
+    changed = true;
+  }
+  return changed;
 }
 
 async function saveProjectPermissions(file: ProjectPermissionsFile): Promise<void> {
@@ -503,16 +545,48 @@ export async function resolveGrantProposal(input: {
     if (grantProposal.status !== "pending") {
       throw new ProjectAccessDeniedError("grant proposal is already resolved");
     }
-    grantProposal.status = input.decision === "accepted" ? "accepted" : "rejected";
     if (input.decision === "accepted") {
-      ensureProjectGrant(file, {
-        familiarId: grantProposal.targetFamiliarId,
-        projectId: grantProposal.projectId,
-        source: "human",
-        // Legacy pending proposals predate levels — they meant full access.
-        access: normalizeAccessLevel(grantProposal.access),
-      });
+      // Delayed acceptance: no grant yet — the proposal parks in `accepting`
+      // until the undo window elapses (materialized on the next load), so the
+      // human can undo before it takes effect.
+      const now = new Date();
+      grantProposal.status = "accepting";
+      grantProposal.acceptedAt = now.toISOString();
+      grantProposal.finalizesAt = new Date(
+        now.getTime() + GRANT_ACCEPT_UNDO_WINDOW_MS,
+      ).toISOString();
+    } else {
+      grantProposal.status = "rejected";
     }
+    await saveProjectPermissions(file);
+    return grantProposal;
+  });
+}
+
+/**
+ * Revert an accepted-but-not-yet-finalized proposal back to `pending`. Only
+ * possible during the undo window — once `finalizesAt` passes, loads have
+ * already materialized the grant and the proposal reads as `accepted`.
+ */
+export async function undoGrantProposal(input: { proposalId: string }): Promise<GrantProposal> {
+  return withWriteMutex(async () => {
+    const file = await loadProjectPermissions();
+    const grantProposal = file.grantProposals.find((proposal) => proposal.id === input.proposalId);
+    if (!grantProposal) {
+      throw new ProjectAccessDeniedError("grant proposal not found");
+    }
+    // Load already finalized due proposals, so `accepting` here is guaranteed
+    // to still be inside its window.
+    if (grantProposal.status !== "accepting") {
+      throw new ProjectAccessDeniedError(
+        grantProposal.status === "accepted"
+          ? "grant already finalized — revoke the grant instead"
+          : "grant proposal is not awaiting finalization",
+      );
+    }
+    grantProposal.status = "pending";
+    delete grantProposal.acceptedAt;
+    delete grantProposal.finalizesAt;
     await saveProjectPermissions(file);
     return grantProposal;
   });

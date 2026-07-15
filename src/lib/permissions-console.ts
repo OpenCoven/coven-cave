@@ -37,7 +37,7 @@ export type ConsoleAccessGroup = {
   updatedAt?: string;
 };
 
-export type ProposalStatus = "pending" | "accepted" | "rejected";
+export type ProposalStatus = "pending" | "accepting" | "accepted" | "rejected";
 export type ConsoleProposal = {
   id: string;
   proposedBy: string;
@@ -46,6 +46,8 @@ export type ConsoleProposal = {
   access?: ProjectAccessLevel;
   status: ProposalStatus;
   createdAt: string;
+  /** End of the undo window while `accepting`; the grant lands when it passes. */
+  finalizesAt?: string;
 };
 
 export type AuditDecision = "allow" | "deny";
@@ -162,18 +164,20 @@ export function isSupreme(
 }
 
 /**
- * Split proposals into the actionable inbox (pending, oldest first so the human
- * works the queue FIFO) and the resolved history (newest first).
+ * Split proposals into the actionable inbox (pending awaiting a decision plus
+ * accepting inside their undo window, oldest first so the human works the
+ * queue FIFO) and the resolved history (newest first).
  */
 export function splitProposals(proposals: ConsoleProposal[]): {
   pending: ConsoleProposal[];
   resolved: ConsoleProposal[];
 } {
+  const actionable = (p: ConsoleProposal) => p.status === "pending" || p.status === "accepting";
   const pending = proposals
-    .filter((p) => p.status === "pending")
+    .filter(actionable)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const resolved = proposals
-    .filter((p) => p.status !== "pending")
+    .filter((p) => !actionable(p))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return { pending, resolved };
 }
@@ -192,6 +196,8 @@ export function proposalStatusMeta(status: ProposalStatus): {
   switch (status) {
     case "accepted":
       return { label: "Accepted", icon: "ph:check-circle-fill", tone: "positive" };
+    case "accepting":
+      return { label: "Granting…", icon: "ph:hourglass", tone: "pending" };
     case "rejected":
       return { label: "Rejected", icon: "ph:x-circle-fill", tone: "negative" };
     default:
