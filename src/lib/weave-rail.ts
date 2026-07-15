@@ -159,7 +159,8 @@ export function surfaceStateFromPayload<T>(payload: unknown, now: Date = new Dat
     typeof meta.observedAt !== "string" ||
     typeof meta.staleAfter !== "string" ||
     typeof meta.sourceCursor !== "string" ||
-    typeof meta.verified !== "boolean"
+    typeof meta.verified !== "boolean" ||
+    (meta.adapter !== "daemon" && meta.adapter !== "fixtures")
   ) {
     return { kind: "blocked", why: "meta-missing", message: blockedMessage("meta-missing"), meta: null };
   }

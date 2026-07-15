@@ -112,6 +112,19 @@ assert.match(
   /\^npm_/,
   "sanitizer strips the npm_* lifecycle/config namespace",
 );
+// cave-o01k: terminals must not inherit the sidecar's internal namespaces —
+// the serialized Next standalone config breaks builds run from the shell,
+// and the sidecar auth tokens are secrets that would 401-gate a dev server.
+assert.match(
+  src,
+  /PTY_ENV_DROPPED_PREFIXES = \["COVEN_CAVE_", "__NEXT_PRIVATE_"\]/,
+  "sanitizer drops the sidecar-internal env namespaces (cave-o01k)",
+);
+assert.match(
+  src,
+  /PTY_ENV_DROPPED_PREFIXES\.some\(\(prefix\) => key\.startsWith\(prefix\)\)/,
+  "the prefix drop is applied per key in sanitizedEnv",
+);
 assert.match(src, /frame\[0\]\s*=\s*0x01/, "server sends output tag 0x01");
 assert.match(src, /frame\[0\]\s*=\s*0x02/, "server sends exit tag 0x02");
 assert.match(src, /tag === 0x03/, "server receives input tag 0x03");

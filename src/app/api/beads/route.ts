@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
+import { scrubSidecarInternalEnv } from "@/lib/coven-bin";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
 import { resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
@@ -57,7 +58,7 @@ async function runBd(repoRoot: string, beadsDir: string, args: string[]) {
   try {
     const { stdout, stderr } = await execFileAsync("bd", args, {
       cwd: repoRoot,
-      env: { ...process.env, BEADS_DIR: beadsDir, BD_NON_INTERACTIVE: "1" },
+      env: scrubSidecarInternalEnv({ ...process.env, BEADS_DIR: beadsDir, BD_NON_INTERACTIVE: "1" }),
       timeout: BD_TIMEOUT_MS,
       maxBuffer: MAX_BD_BUFFER,
     });

@@ -42,6 +42,32 @@ export type CovenLaunchCommand = {
 
 const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"] as const;
 
+// Sidecar-internal env namespaces that must never reach child processes
+// (cave-o01k). The packaged app's Next standalone config override breaks any
+// `next build`/dev server a session runs (JSON config has no generateBuildId
+// function, and its baked CI paths are wrong for the user's machine), and the
+// sidecar's own auth/bundle state 401-gates a dev server that inherits it —
+// the tokens are secrets that arbitrary child processes (npx postinstalls,
+// harness sessions, user shells) have no business seeing.
+const SIDECAR_INTERNAL_ENV_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"] as const;
+
+/**
+ * Remove Cave/sidecar-internal variables (and forbidden token keys) from a
+ * spawn env, in place. Every path that hands the server's env to a child —
+ * agents, CLI probes, installers, terminals — must pass through this.
+ */
+export function scrubSidecarInternalEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  for (const key of Object.keys(env)) {
+    if (SIDECAR_INTERNAL_ENV_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      delete env[key];
+    }
+  }
+  for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
+    delete env[key];
+  }
+  return env;
+}
+
 const HOME = os.homedir();
 
 function nodeNvmBinDirs(): string[] {
@@ -380,10 +406,7 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
   if (env.NPM_CONFIG_LOGLEVEL === undefined && env.npm_config_loglevel === undefined) {
     env.NPM_CONFIG_LOGLEVEL = "error";
   }
-  for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
-    delete env[key];
-  }
-  return env;
+  return scrubSidecarInternalEnv(env);
 }
 
 export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {

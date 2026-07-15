@@ -24,6 +24,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { scrubSidecarInternalEnv } from "./coven-bin.ts";
 import { caveHome } from "./coven-paths.ts";
 import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
@@ -242,7 +243,7 @@ function resolverEnv(): NodeJS.ProcessEnv {
   ];
   const current = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
   const merged = [...current, ...candidates.filter((dir) => !current.includes(dir))];
-  return { ...process.env, PATH: merged.join(delimiter) };
+  return scrubSidecarInternalEnv({ ...process.env, PATH: merged.join(delimiter) });
 }
 
 /** Base timeout for a `<cli> read` call, and the longer allowance for the

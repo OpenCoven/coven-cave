@@ -288,6 +288,12 @@ function validateCwd(raw: string | undefined): string | undefined {
 // the user had set them. Strip the package-manager lifecycle namespace —
 // and the server's own NODE_ENV — before handing the env to a user shell.
 const PTY_ENV_DROPPED = new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+// Sidecar-internal namespaces (cave-o01k): the packaged app's serialized Next
+// config breaks builds run from the terminal, and the sidecar auth tokens are
+// secrets that would 401-gate a dev server inheriting them. Mirrors
+// scrubSidecarInternalEnv in src/lib/coven-bin.ts (this file stays
+// import-free of src/ so the packaged sidecar can run it standalone).
+const PTY_ENV_DROPPED_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"];
 
 function sanitizedEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -295,6 +301,7 @@ function sanitizedEnv(): Record<string, string> {
     if (value === undefined) continue;
     if (/^npm_/i.test(key)) continue;
     if (PTY_ENV_DROPPED.has(key)) continue;
+    if (PTY_ENV_DROPPED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
     env[key] = value;
   }
   return env;

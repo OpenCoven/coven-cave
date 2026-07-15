@@ -69,10 +69,18 @@ function pendingDirCursor(dir: string): string {
   return `pending:${createHash("sha256").update(listing.join("\n")).digest("hex").slice(0, 16)}`;
 }
 
-function readPendingDir(dir: string): ProposalView[] {
-  const files = readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
-    .sort();
+function readPendingDir(dir: string): ProposalView[] | null {
+  // null = the listing itself could not be verified (unreadable dir, not a
+  // dir, permissions). Callers fail closed — a throw here would 500 the route
+  // instead of rendering blocked.
+  let files: string[];
+  try {
+    files = readdirSync(dir)
+      .filter((f) => f.endsWith(".json"))
+      .sort();
+  } catch {
+    return null;
+  }
   return files.map((file) => {
     try {
       const raw: unknown = JSON.parse(readFileSync(path.join(dir, file), "utf8"));
@@ -245,7 +253,11 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     if (!existsSync(this.pendingDir)) {
       return blockedEnvelope("no-fixture", this.meta("pending:absent", false));
     }
-    return okEnvelope(readPendingDir(this.pendingDir), this.meta(pendingDirCursor(this.pendingDir), true));
+    const listed = readPendingDir(this.pendingDir);
+    if (listed === null) {
+      return blockedEnvelope("no-fixture", this.meta("pending:unreadable", false));
+    }
+    return okEnvelope(listed, this.meta(pendingDirCursor(this.pendingDir), true));
   }
 
   // §3.7 / R5: in fixtures mode there is no daemon to forward to — the action
@@ -414,7 +426,13 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
       if (existsSync(this.home)) return okEnvelope([], this.meta("pending:empty", true));
       return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
     }
-    return okEnvelope(readPendingDir(pendingDir), this.meta(pendingDirCursor(pendingDir), true));
+    const listed = readPendingDir(pendingDir);
+    if (listed === null) {
+      // The staging area exists but its listing cannot be verified: blocked,
+      // never a throw and never an empty-healthy answer.
+      return blockedEnvelope("unparseable", this.meta("pending:unreadable", false));
+    }
+    return okEnvelope(listed, this.meta(pendingDirCursor(pendingDir), true));
   }
 
   private async decide(

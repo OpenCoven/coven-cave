@@ -188,6 +188,18 @@ describe("fixtures adapter — proposals", () => {
     assert.equal(res.meta.verified, true);
   });
 
+  it("an unreadable pending listing fails closed, never throws", async () => {
+    // A regular file where the dir should be: existsSync passes, readdir throws.
+    const notADir = path.join(tempDir("phase4-pending-unreadable-"), "pending");
+    writeFileSync(notADir, "not a directory");
+    const broken = new FixturesThreadsAdapter({ pendingDir: notADir });
+    const res = await broken.proposals();
+    assert.equal(res.blocked, true);
+    assert.equal(res.why, "no-fixture");
+    assert.equal(res.meta.verified, false);
+    assert.equal(res.data, null);
+  });
+
   it("R5: approve and reject refuse in fixtures mode — no daemon, no decision", async () => {
     for (const envelope of [await adapter.approve(), await adapter.reject()]) {
       assert.equal(envelope.blocked, true);
@@ -363,6 +375,20 @@ describe("daemon adapter — proposals and decisions", () => {
     const blocked = await gone.proposals();
     assert.equal(blocked.blocked, true);
     assert.equal(blocked.why, "daemon-unavailable");
+  });
+
+  it("an unreadable pending listing fails closed in daemon mode too, never throws", async () => {
+    const home = tempDir("phase4-home-unreadable-");
+    writeFileSync(path.join(home, "pending"), "not a directory");
+    const adapter = new DaemonThreadsAdapter({
+      call: async () => ({ ok: false, status: 0, data: null }),
+      covenHomeDir: home,
+    });
+    const res = await adapter.proposals();
+    assert.equal(res.blocked, true);
+    assert.equal(res.why, "unparseable");
+    assert.equal(res.meta.verified, false);
+    assert.equal(res.data, null);
   });
 
   it("approve forwards to the daemon and never touches the pending file itself", async () => {

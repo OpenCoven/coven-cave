@@ -217,6 +217,7 @@ export const SUITES = {
     "src/lib/coven-analytics.test.ts",
     "src/app/dashboard-page.test.ts",
     "src/components/dashboard/dashboard-cockpit-polish.test.ts",
+    "src/components/profile-card-view.test.ts",
     "src/app/prod-hardening.test.ts",
     "src/app/dashboard-runtime-smoke.test.ts",
     "src/lib/daily-summary-notifications.test.ts",

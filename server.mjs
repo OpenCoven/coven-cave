@@ -177,12 +177,14 @@ function validateCwd(raw) {
   return raw;
 }
 const PTY_ENV_DROPPED = /* @__PURE__ */ new Set(["NODE_ENV", "INIT_CWD", "PNPM_SCRIPT_SRC_DIR"]);
+const PTY_ENV_DROPPED_PREFIXES = ["COVEN_CAVE_", "__NEXT_PRIVATE_"];
 function sanitizedEnv() {
   const env = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === void 0) continue;
     if (/^npm_/i.test(key)) continue;
     if (PTY_ENV_DROPPED.has(key)) continue;
+    if (PTY_ENV_DROPPED_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
     env[key] = value;
   }
   return env;
