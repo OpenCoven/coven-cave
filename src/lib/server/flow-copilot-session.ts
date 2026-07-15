@@ -115,10 +115,14 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
   timeout.unref?.();
 
   const done = new Promise<void>((resolve) => {
-    child.on("error", (err) => {
-      stderrTail = `${stderrTail}\n${err.message}`.slice(-2_000);
-    });
-    child.on("close", (code) => {
+    // "close" is the normal finalizer; a failed spawn emits "error" and, on
+    // some platforms, never "close" — finalize from whichever fires first so
+    // ACTIVE_RUNS can't leak a phantom "running" session and `done` always
+    // resolves.
+    let finalized = false;
+    const finalize = (code: number | null) => {
+      if (finalized) return;
+      finalized = true;
       clearTimeout(timeout);
       ACTIVE_RUNS.delete(sessionId);
       assistantText = [...deltaByMessage.values()].join("\n").trim();
@@ -160,7 +164,14 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
         }
         resolve();
       })();
+    };
+    child.on("error", (err) => {
+      stderrTail = `${stderrTail}\n${err.message}`.slice(-2_000);
+      // Give a same-tick "close" the chance to carry the real exit code;
+      // finalize from here only if it never arrives.
+      setImmediate(() => finalize(null));
     });
+    child.on("close", (code) => finalize(code));
   });
 
   return { sessionId, done };

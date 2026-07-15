@@ -224,7 +224,10 @@ export function withinStartupGrace(startedAt: string | undefined, now: Date): bo
   if (!startedAt) return false;
   const started = Date.parse(startedAt);
   if (Number.isNaN(started)) return false;
-  return now.getTime() - started < SESSION_STARTUP_GRACE_MS;
+  // Symmetric window: a slightly-future startedAt (clock skew) still gets
+  // grace, but a far-future one (bad data) can't suppress dead-session
+  // detection indefinitely.
+  return Math.abs(now.getTime() - started) < SESSION_STARTUP_GRACE_MS;
 }
 
 function conversationTranscript(conversation: ConversationFile | null): string {
@@ -343,7 +346,11 @@ async function reconcileCompletedRun(
   transcriptOverride?: string,
 ): Promise<ResearchMission> {
   const iteration = mission.iterations[iterationIndex];
-  const conversation = transcriptOverride === undefined && iteration.sessionId
+  // The conversation is loaded even when a transcript override is supplied:
+  // the override only replaces the transcript TEXT — reported cost still
+  // lives on the conversation turns and must keep feeding costUsd (and with
+  // it stopWhenCostUnavailable / maxSpendUsd policy).
+  const conversation = iteration.sessionId
     ? await deps.loadConversation(iteration.sessionId)
     : null;
   const control = parseResearchControl(transcriptOverride ?? conversationTranscript(conversation));
