@@ -93,6 +93,18 @@ describe("streamFamiliarText", () => {
     );
   });
 
+  it("forwards read-only permission mode when provided", async () => {
+    let body = "";
+    globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+      body = init.body ?? "";
+      return sseResponse([frame({ kind: "done" })]);
+    }) as typeof fetch;
+
+    await streamFamiliarText({ familiarId: "nova", prompt: "p", permissionMode: "read" });
+
+    assert.equal(JSON.parse(body).permissionMode, "read");
+  });
+
   it("returns the created session id from stream frames", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "session", sessionId: "sess-created" }),

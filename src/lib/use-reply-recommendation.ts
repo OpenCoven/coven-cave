@@ -122,6 +122,10 @@ export function useReplyRecommendation({
       origin: "enhance",
       reasoningEffort: "low",
       responseSpeed: "fast",
+      // Recommendations are hidden, automatic meta-runs over untrusted
+      // transcript text. Force read-only so prompt injection cannot escalate
+      // into privileged harness actions before explicit user intent.
+      permissionMode: "read",
       signal: controller.signal,
       onText: (text) => {
         if (gen !== generationRef.current) return;

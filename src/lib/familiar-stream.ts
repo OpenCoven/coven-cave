@@ -23,6 +23,10 @@ export async function streamFamiliarText(opts: {
   projectRoot?: string;
   reasoningEffort?: string;
   responseSpeed?: string;
+  /** Advisory permission mode forwarded to the chat bridge. Use "read" for
+   *  hidden/meta generations so prompt-injected transcript text cannot trigger
+   *  privileged tool execution. */
+  permissionMode?: "read" | "full";
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
   /** Session provenance — set by generator surfaces (e.g. "journal") so the
@@ -50,6 +54,7 @@ export async function streamFamiliarText(opts: {
         ...(opts.projectRoot ? { projectRoot: opts.projectRoot } : {}),
         ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
+        ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),
         ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
         ...(opts.modelOverrideScope ? { modelOverrideScope: opts.modelOverrideScope } : {}),
         // Provenance for generated runs (journal narratives, …) so the chat
