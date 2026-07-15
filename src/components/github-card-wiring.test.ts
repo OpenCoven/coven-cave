@@ -72,4 +72,16 @@ assert.match(card, /fetch\("\/api\/github\/resolve-thread"/, "thread resolve/unr
 assert.match(card, /onMutated=\{state\.refresh\}/, "successful actions re-hydrate the card");
 assert.match(card, /role="alert"/, "action failures surface as alerts, never silently");
 
+// W2b (cave-fpqx.9): tier-2 confirm strip + agent proposal cards.
+const actionCard = readFileSync(new URL("./github-action-card.tsx", import.meta.url), "utf8");
+assert.match(card, /setPending\(\{ kind: "merge", method: "squash" \}\)/, "PR cards expose Merge behind the tier-2 confirm step");
+assert.match(card, /setPending\(\{ kind: "review", event: "APPROVE" \}\)/, "PR cards expose Approve behind the tier-2 confirm step");
+assert.match(card, /needsBody && !reviewBody\.trim\(\)/, "request-changes requires a body before Confirm enables");
+assert.match(card, /fetch\("\/api\/github\/merge"/, "merge confirm fires through the merge route");
+assert.match(card, /fetch\("\/api\/github\/review"/, "review confirm fires through the review route");
+assert.match(actionCard, /const tier = classifyGitHubAction\(action\.kind\);/, "proposal cards read the shared tier table");
+assert.match(actionCard, /agents propose, humans dispose/i, "proposal cards document the no-auto-fire rule");
+assert.doesNotMatch(actionCard, /useEffect\([^)]*fireGitHubAction/s, "no effect ever auto-fires a proposal — taps only");
+assert.match(chatView, /<GitHubActionCard action=\{p\.action\} \/>/, "assistant turns render proposal cards from action pieces");
+
 console.log("github chat-card wiring: ok");
