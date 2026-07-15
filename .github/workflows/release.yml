@@ -351,7 +351,7 @@ jobs:
           set -euo pipefail
 
           cd src-tauri/target/release/bundle
-          APPIMAGE="$(find . -name '*.AppImage' -type f | head -1)"
+          APPIMAGE="$(find . -name '*.AppImage' -type f | sort | head -1)"
           [ -n "$APPIMAGE" ] || { echo "::error::No AppImage found"; exit 1; }
 
           # tauri-action and the sign step above signed the original AppImage.
