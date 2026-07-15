@@ -19,6 +19,9 @@ const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
 const DEFAULTS: Record<string, { model: string; voice: string }> = {
   openai: { model: "gpt-realtime", voice: "alloy" },
   gemini: { model: "gemini-2.0-flash-exp", voice: "Puck" },
+  // Model = the loopback LLM (Ollama/LM Studio) model name; voice = a system
+  // synthesizer voice name, empty for the platform default.
+  local: { model: "llama3.2", voice: "" },
 };
 
 type FamiliarRecord = {
@@ -82,18 +85,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "unknown_provider" }, { status: 400 });
   }
 
-  const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
-  if (!vaultKey) {
-    return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
-  }
-  const apiKey = resolveSecret(vaultKey);
-  if (!apiKey) {
-    return NextResponse.json({
-      ok: false,
-      error: "vault_key_unresolved",
-      missingKey: vaultKey,
-      hint: `Set ${vaultKey} in Vault settings.`,
-    }, { status: 400 });
+  // The local provider has no secret — its brain is a loopback server on this
+  // machine, reached through our own proxy. Everything else needs a vault key.
+  let apiKey = "";
+  if (provider.id !== "local") {
+    const vaultKey = VAULT_KEY_BY_PROVIDER[provider.id];
+    if (!vaultKey) {
+      return NextResponse.json({ ok: false, error: "provider_missing_vault_key" }, { status: 500 });
+    }
+    const resolved = resolveSecret(vaultKey);
+    if (!resolved) {
+      return NextResponse.json({
+        ok: false,
+        error: "vault_key_unresolved",
+        missingKey: vaultKey,
+        hint: `Set ${vaultKey} in Vault settings.`,
+      }, { status: 400 });
+    }
+    apiKey = resolved;
   }
 
   const { instructions, conversationSeed } = await hydrateForVoiceCall(
