@@ -65,7 +65,8 @@ test.describe("prompt enhance", () => {
     await seed(page);
     const sends: Array<Record<string, unknown>> = [];
     await page.route("**/api/chat/send", (route) => {
-      sends.push(route.request().postDataJSON() as Record<string, unknown>);
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      if (request.origin === "enhance") sends.push(request);
       return fulfillSse(route, ENHANCED);
     });
 
@@ -124,7 +125,8 @@ test.describe("prompt enhance", () => {
     await seed(page);
     const sends: Array<Record<string, unknown>> = [];
     await page.route("**/api/chat/send", (route) => {
-      sends.push(route.request().postDataJSON() as Record<string, unknown>);
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      if (request.origin === "enhance") sends.push(request);
       return fulfillSse(route, "Shorter.");
     });
 
