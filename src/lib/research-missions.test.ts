@@ -12,6 +12,7 @@ import {
   researchBoundReadings,
   researchIntentAddsContext,
   researchPhaseStatuses,
+  researchSourceStatusCounts,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
 
@@ -528,5 +529,23 @@ test("truncated and customized titles keep the informative intent line", () => {
       intent: "Compare approaches to automated self-performance evaluation for agents",
     }),
     true,
+  );
+});
+
+test("source status counts drive the triage filters", () => {
+  assert.deepEqual(researchSourceStatusCounts([]), {
+    candidate: 0,
+    used: 0,
+    conflicting: 0,
+    rejected: 0,
+  });
+  assert.deepEqual(
+    researchSourceStatusCounts([
+      { status: "candidate" },
+      { status: "candidate" },
+      { status: "used" },
+      { status: "rejected" },
+    ]),
+    { candidate: 2, used: 1, conflicting: 0, rejected: 1 },
   );
 });

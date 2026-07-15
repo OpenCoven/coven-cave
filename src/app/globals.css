@@ -15851,6 +15851,19 @@ details[open] > .cave-edit-card__summary::before {
 .research-artifact-reject input, .research-source-attach input { width: 100%; min-width: 0; padding: 5px 6px; font-size: 16px; color: var(--text-primary); border: 1px solid var(--input); border-radius: var(--radius-sm); background: var(--bg-base); }
 .research-artifact-reject input { margin: 6px 0; }
 .research-source-attach { display: grid; gap: 5px; margin-bottom: 8px; }
+.research-source-attach-disclosure { margin-bottom: 8px; font-size: 10px; color: var(--text-muted); }
+.research-source-attach-disclosure summary { width: fit-content; cursor: pointer; }
+.research-source-attach-disclosure[open] summary { margin-bottom: 7px; }
+.research-source-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.research-source-filters button { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; font-family: var(--font-mono); font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); border: 1px solid var(--border); border-radius: 999px; background: transparent; cursor: pointer; }
+.research-source-filters button span { color: var(--text-secondary); }
+.research-source-filters button[aria-pressed="true"] { color: var(--research-accent); border-color: color-mix(in oklch, var(--research-accent) 45%, transparent); background: var(--research-accent-soft); }
+.research-source-filters button[aria-pressed="true"] span { color: inherit; }
+.research-source-filters button:disabled { opacity: 0.45; cursor: default; }
+.research-source-filters button:focus-visible { outline: var(--ring-width) solid var(--ring-focus); outline-offset: 1px; }
+.research-source-card button.research-source-card__title { gap: 5px; font-size: 11px; color: var(--text-primary); text-align: left; }
+.research-source-card button.research-source-card__title:hover { color: var(--research-accent); }
+.research-source-card button.research-source-card__title svg { color: var(--research-accent); flex-shrink: 0; }
 .research-source-revise { display: flex; align-items: center; gap: 6px; font-size: 9.5px; color: var(--text-muted); }
 .research-source-revise select { min-width: 0; padding: 2px 4px; font-size: 16px; color: var(--text-secondary); border: 1px solid var(--input); border-radius: var(--radius-sm); background: var(--bg-base); }
 .research-source-status { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: 8.5px !important; text-transform: uppercase; }
