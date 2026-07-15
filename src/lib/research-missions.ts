@@ -427,10 +427,11 @@ export function researchBoundReadings(
   mission: Pick<ResearchMission, "bounds" | "sources" | "iterations" | "startedAt" | "finishedAt" | "updatedAt">,
 ): ResearchBoundReading[] {
   const { bounds } = mission;
-  const elapsedMinutes = mission.startedAt
-    ? Math.max(0, Math.round((Date.parse(mission.finishedAt ?? mission.updatedAt) - Date.parse(mission.startedAt)) / 60_000))
+  const elapsedMs = mission.startedAt
+    ? Math.max(0, Date.parse(mission.finishedAt ?? mission.updatedAt) - Date.parse(mission.startedAt))
     : 0;
-  const timeOver = elapsedMinutes > bounds.wallClockMinutes;
+  const elapsedMinutes = Math.round(elapsedMs / 60_000);
+  const timeOver = elapsedMs > bounds.wallClockMinutes * 60_000;
   const sourcesMet = mission.sources.length >= bounds.sourceTarget;
   const reportedCost = mission.iterations.reduce((sum, item) => sum + (item.costUsd ?? 0), 0);
   const hasReportedCost = mission.iterations.some((item) => item.costUsd !== undefined);
