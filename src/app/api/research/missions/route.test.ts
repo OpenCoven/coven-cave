@@ -12,6 +12,14 @@ test("create route is local-only, bounded, and guarded", () => {
   assert.match(route, /createAndStart/);
 });
 
+test("an explicit project root is resolved before the mission exists", () => {
+  // A mission must never be created pointing at a root its sessions can't
+  // run in — that used to surface later as an opaque "invalid project root".
+  assert.match(route, /normalizeProjectRoot\(validated\.value\.projectRoot\)/);
+  assert.match(route, /is not an allowed project path/);
+  assert.match(route, /validated\.value\.projectRoot = resolved/);
+});
+
 test("list requires a familiar and reconciles persisted missions", () => {
   assert.match(route, /familiarId required/);
   assert.match(route, /listAndReconcileResearchMissions/);

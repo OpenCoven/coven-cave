@@ -90,6 +90,8 @@ export type ResearchMissionRunnerDeps = {
   readAutomationCheckpoint(id: string): Promise<{ transcript: string; token: string; at: string }>;
   fingerprintMission(id: string): Promise<string>;
   missionWorkspacePath(id: string): string;
+  /** Resolve a candidate project root to a normalized allowed path, or null. */
+  resolveProjectRoot(root: string): Promise<string | null>;
   now(): Date;
   randomId(): string;
 };
@@ -416,6 +418,51 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
     return updated;
   };
 
+  /**
+   * Resolve the project root an iteration will run in before any session is
+   * spawned. A configured-but-unallowed root fails fast with an actionable
+   * message (the flow executor would only say "invalid project root"); the
+   * default mission workspace always resolves.
+   */
+  const missionStartTarget = async (
+    mission: ResearchMission,
+  ): Promise<{ ok: true; projectRoot: string } | { ok: false; error: string }> => {
+    if (mission.projectRoot) {
+      const resolved = await deps.resolveProjectRoot(mission.projectRoot);
+      if (resolved) return { ok: true, projectRoot: resolved };
+      return {
+        ok: false,
+        error: `Project root "${mission.projectRoot}" is not an allowed project path. Retry in the mission workspace, or set a valid root (an existing Cave project or workspace folder).`,
+      };
+    }
+    const workspace = deps.missionWorkspacePath(mission.id);
+    const resolved = await deps.resolveProjectRoot(workspace);
+    return { ok: true, projectRoot: resolved ?? workspace };
+  };
+
+  /**
+   * Apply a retry-time project root override: a string is validated and
+   * persisted, null/empty clears the configured root so the mission falls
+   * back to its own workspace.
+   */
+  const applyProjectRootOverride = async (
+    mission: ResearchMission,
+    override: string | null,
+  ): Promise<ResearchMission> => {
+    const trimmed = override?.trim() ?? "";
+    if (!trimmed) return { ...mission, projectRoot: undefined };
+    if (trimmed.length > 2_000 || trimmed.includes("\0")) {
+      throw new Error("invalid project root override");
+    }
+    const resolved = await deps.resolveProjectRoot(trimmed);
+    if (!resolved) {
+      throw new Error(
+        `Project root "${trimmed}" is not an allowed project path. Add it as a Cave project first, or leave it empty to use the mission workspace.`,
+      );
+    }
+    return { ...mission, projectRoot: resolved };
+  };
+
   const startNextIteration = async (mission: ResearchMission): Promise<ResearchMission> => {
     const stopReason = stopBeforeNextIteration(mission, deps.now());
     if (stopReason) {
@@ -447,10 +494,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       artifacts: workingArtifact ? [workingArtifact, ...mission.artifacts] : mission.artifacts,
     };
     await deps.saveMission(next);
-    const flow = buildResearchMissionFlow(next, number);
-    const result = await deps.startFlow(flow, {
-      projectRoot: next.projectRoot ?? researchMissionWorkspacePath(next.id),
-    });
+    const target = await missionStartTarget(next);
+    const result = target.ok
+      ? await deps.startFlow(buildResearchMissionFlow(next, number), { projectRoot: target.projectRoot })
+      : { ok: false, error: target.error };
     next = applyStartResult(next, result, deps.now());
     await deps.saveMission(next);
     return next;
@@ -489,9 +536,12 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       } : iteration),
     };
     await deps.saveMission(retried);
-    const result = await deps.startFlow(buildResearchMissionFlow(retried, current.number), {
-      projectRoot: retried.projectRoot ?? deps.missionWorkspacePath(retried.id),
-    });
+    const target = await missionStartTarget(retried);
+    const result = target.ok
+      ? await deps.startFlow(buildResearchMissionFlow(retried, current.number), {
+        projectRoot: target.projectRoot,
+      })
+      : { ok: false, error: target.error };
     retried = applyStartResult(retried, result, deps.now());
     await deps.saveMission(retried);
     return retried;
@@ -541,6 +591,9 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
         return startNextIteration(mission);
       }
       if (input.action === "retry") {
+        if (input.projectRoot !== undefined) {
+          mission = await applyProjectRootOverride(mission, input.projectRoot);
+        }
         return retryCurrentIteration(mission);
       }
       if (input.action === "continue") {
@@ -812,10 +865,10 @@ export function makeResearchMissionRunner(deps: ResearchMissionRunnerDeps) {
       let mission = createMissionRecord(input, deps.randomId(), deps.now());
       mission = await deps.createWorkspace(mission);
       await deps.saveMission(mission);
-      const flow = buildResearchMissionFlow(mission, 1);
-      const result = await deps.startFlow(flow, {
-        projectRoot: mission.projectRoot ?? researchMissionWorkspacePath(mission.id),
-      });
+      const target = await missionStartTarget(mission);
+      const result = target.ok
+        ? await deps.startFlow(buildResearchMissionFlow(mission, 1), { projectRoot: target.projectRoot })
+        : { ok: false, error: target.error };
       mission = applyStartResult(mission, result, deps.now());
       await deps.saveMission(mission);
       return mission;
@@ -1014,6 +1067,10 @@ export function makeProductionResearchMissionRunner() {
       return hash.digest("hex");
     },
     missionWorkspacePath: researchMissionWorkspacePath,
+    resolveProjectRoot: async (root) => {
+      const { normalizeProjectRoot } = await import("./session-security.ts");
+      return normalizeProjectRoot(root);
+    },
     now: () => new Date(),
     randomId: () => `research-${crypto.randomUUID()}`,
   };
