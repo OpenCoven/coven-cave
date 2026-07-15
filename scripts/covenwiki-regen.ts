@@ -13,7 +13,9 @@
 // Incremental stages (S6 groundwork; content-hash based):
 //   scan   hash every file under the source roots -> manifest JSON
 //   diff   compare a fresh scan against the saved state; --check for hooks
-//   plan   print the regeneration actions the diff implies
+//   plan   print the regeneration actions the diff implies. With --citations
+//          (a generated wiki's _citations.json) page actions come from the
+//          source⇄page reverse lookup; otherwise legacy path-stemming applies
 //   run    execute the plan (optional --generator), then persist new state
 //
 // Wikis resolve as <wikis-dir>/<slug>/manifest.json (default ~/.coven/wikis),
@@ -40,6 +42,7 @@ import {
   diffManifests,
   formatWikiStatus,
   nextState,
+  parseCitationsIndex,
   parseState,
   parseWikiManifest,
   planRegeneration,
@@ -49,6 +52,7 @@ import {
   type Manifest,
   type SourceEntry,
   type WikiManifest,
+  type CitationsBySource,
 } from "../src/lib/covenwiki-regen.ts";
 
 const STAGES = ["scan", "diff", "plan", "run"] as const;
@@ -65,6 +69,7 @@ type Options = {
   sources: string[];
   state: string;
   fullRebuild: string[];
+  citations: string | null;
   generator: string | null;
   json: boolean;
   check: boolean;
@@ -96,6 +101,10 @@ Options:
                          run: shell command; receives the plan JSON on stdin
   --source <path>        (stages) source root to scan (repeatable; default: docs)
   --state <file>         (stages) state file (default: .covenwiki/state.json)
+  --citations <file>     (stages) _citations.json from a generated wiki; page
+                         actions come from its bySource reverse lookup instead
+                         of path-stemming. Run from the repo root (or match the
+                         citation paths) so scanned paths line up
   --full-rebuild <path>  (stages) path or dir/ prefix that forces a full rebuild (repeatable)
   --json                 emit machine-readable JSON instead of text
   --check                (diff/plan) exit 1 when regeneration is needed
@@ -120,6 +129,7 @@ function parseArgs(argv: string[]): Options {
     sources: [],
     state: ".covenwiki/state.json",
     fullRebuild: [],
+    citations: null,
     generator: null,
     json: false,
     check: false,
@@ -139,6 +149,9 @@ function parseArgs(argv: string[]): Options {
         break;
       case "--state":
         opts.state = requireValue(argv, ++i, arg);
+        break;
+      case "--citations":
+        opts.citations = requireValue(argv, ++i, arg);
         break;
       case "--full-rebuild":
         opts.fullRebuild.push(requireValue(argv, ++i, arg));
@@ -200,6 +213,13 @@ function scan(opts: Options): Manifest {
 function loadPreviousManifest(stateFile: string): Manifest | null {
   if (!existsSync(stateFile)) return null;
   return parseState(readFileSync(stateFile, "utf8")).manifest;
+}
+
+/** Load the wiki's _citations.json for reverse-lookup planning (null = stemming fallback). */
+function loadCitations(opts: Options): CitationsBySource | null {
+  if (!opts.citations) return null;
+  if (!existsSync(opts.citations)) throw new Error(`citations file not found: ${opts.citations}`);
+  return parseCitationsIndex(readFileSync(opts.citations, "utf8"));
 }
 
 // ─── Wiki commands (plan S1–S4) ─────────────────────────────────────────────
@@ -368,7 +388,11 @@ function main() {
 
   const previous = loadPreviousManifest(opts.state);
   const diff = diffManifests(previous, manifest);
-  const plan = planRegeneration(diff, { sourceRoots: opts.sources, fullRebuildPaths: opts.fullRebuild });
+  const plan = planRegeneration(diff, {
+    sourceRoots: opts.sources,
+    fullRebuildPaths: opts.fullRebuild,
+    citationsBySource: loadCitations(opts),
+  });
 
   if (opts.command === "diff" || opts.command === "plan") {
     if (opts.json) {

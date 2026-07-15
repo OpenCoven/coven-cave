@@ -1,11 +1,13 @@
 // End-to-end coverage for the plan-semantics wiki commands (S1–S4) of
-// scripts/covenwiki-regen.ts: status freshness reporting, regenerate no-op on
-// fresh, the fail-closed validate-then-swap, and the non-local refusal.
+// scripts/covenwiki-regen.ts — status freshness reporting, regenerate no-op on
+// fresh, the fail-closed validate-then-swap, the non-local refusal — plus the
+// incremental stages' citations reverse-lookup mode (--citations).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const dir = mkdtempSync(path.join(tmpdir(), "covenwiki-regen-cli-"));
 const repoDir = path.join(dir, "repo");
@@ -173,6 +175,91 @@ try {
   result = run(["status", "../escape"]);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /invalid slug/);
+
+  // ── incremental stages: citations reverse-lookup mode (--citations) ──
+  // An outline-driven source repo: pages do NOT mirror file paths, and a
+  // non-markdown source (src/util.ts) is cited by a page — both impossible
+  // to plan correctly under path-stemming.
+  const stagesRepo = path.join(dir, "stages-repo");
+  mkdirSync(path.join(stagesRepo, "docs"), { recursive: true });
+  mkdirSync(path.join(stagesRepo, "src"), { recursive: true });
+  writeFileSync(path.join(stagesRepo, "docs", "a.md"), "alpha v1\n");
+  writeFileSync(path.join(stagesRepo, "src", "util.ts"), "export const u = 1;\n");
+  const citationsFile = path.join(stagesRepo, "_citations.json");
+  writeFileSync(
+    citationsFile,
+    JSON.stringify({
+      schemaVersion: "1.0",
+      generatedAt: "2026-07-14T00:00:00.000Z",
+      bySource: { "docs/a.md": ["getting-started", "overview"], "src/util.ts": ["api-surface"] },
+      byPage: {},
+    }),
+  );
+  const scriptPath = path.join(fileURLToPath(new URL("..", import.meta.url)), "scripts", "covenwiki-regen.ts");
+  const stageArgs = ["--source", "docs", "--source", "src", "--state", ".cw/state.json"];
+  const runStages = (args) =>
+    spawnSync(process.execPath, ["--experimental-strip-types", scriptPath, ...args, ...stageArgs], {
+      cwd: stagesRepo,
+      encoding: "utf8",
+    });
+
+  // Baseline state, then edit one cited markdown source.
+  result = runStages(["run"]);
+  assert.equal(result.status, 0, result.stderr);
+  writeFileSync(path.join(stagesRepo, "docs", "a.md"), "alpha v2\n");
+
+  // With --citations: actions target the citing outline slugs, not the "a" stem.
+  result = runStages(["plan", "--citations", citationsFile, "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  let planOut = JSON.parse(result.stdout).plan;
+  assert.deepEqual(
+    planOut.actions.map((a) => [a.kind, a.page]),
+    [
+      ["regenerate-page", "getting-started"],
+      ["regenerate-page", "overview"],
+      ["rebuild-index", null],
+    ],
+  );
+
+  // Without --citations the legacy stemming still maps docs/a.md -> "a".
+  result = runStages(["plan", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  planOut = JSON.parse(result.stdout).plan;
+  assert.deepEqual(
+    planOut.actions.map((a) => [a.kind, a.page]),
+    [
+      ["regenerate-page", "a"],
+      ["rebuild-index", null],
+    ],
+  );
+
+  // Cited non-markdown source maps to its page; removed source regenerates
+  // (never remove-page) — the two semantic fixes over stemming.
+  result = runStages(["run"]);
+  assert.equal(result.status, 0, result.stderr);
+  writeFileSync(path.join(stagesRepo, "src", "util.ts"), "export const u = 2;\n");
+  rmSync(path.join(stagesRepo, "docs", "a.md"));
+  result = runStages(["plan", "--citations", citationsFile, "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  planOut = JSON.parse(result.stdout).plan;
+  assert.deepEqual(
+    planOut.actions.map((a) => [a.kind, a.page, a.reason]),
+    [
+      ["regenerate-page", "api-surface", "changed"],
+      ["regenerate-page", "getting-started", "source removed"],
+      ["regenerate-page", "overview", "source removed"],
+      ["rebuild-index", null, "cited sources changed"],
+    ],
+  );
+
+  // Fail-closed: a malformed citations file aborts instead of degrading to stemming.
+  writeFileSync(citationsFile, JSON.stringify({ schemaVersion: "2.0", bySource: {} }));
+  result = runStages(["plan", "--citations", citationsFile]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /schemaVersion/);
+  result = runStages(["plan", "--citations", path.join(stagesRepo, "nope.json")]);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /citations file not found/);
 
   console.log("covenwiki-regen CLI: all assertions passed");
 } finally {

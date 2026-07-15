@@ -13,7 +13,12 @@
 // Incremental layer (S6 groundwork; predates the step plan):
 //   scan — buildManifest: content hashes for every wiki source file
 //   diff — diffManifests: compare a scan against the last persisted state
-//   plan — planRegeneration: turn a diff into concrete regeneration actions
+//   plan — planRegeneration: turn a diff into concrete regeneration actions.
+//         Two mapping modes: when a generated wiki's _citations.json is
+//         provided (parseCitationsIndex -> PlanOptions.citationsBySource),
+//         page actions come from the source⇄page reverse lookup — the correct
+//         mapping for outline-driven wikis, where sources never map 1:1 to
+//         pages. Without it, the legacy path-stemming fallback applies.
 //   run  — nextState/summarizePlan: state handoff + report for the executor
 
 import { createHash } from "node:crypto";
@@ -103,8 +108,11 @@ export function diffManifests(previous: Manifest | null, next: Manifest): Manife
 }
 
 /**
- * Map a source path to a wiki page id: strip the matching source root and the
- * markdown extension. Non-markdown sources return null (index-only impact).
+ * Fallback mapping (no citations index): map a source path to a wiki page id
+ * by stripping the matching source root and the markdown extension.
+ * Non-markdown sources return null (index-only impact). Only valid for wikis
+ * whose pages mirror source files 1:1 — outline-driven CovenWiki output does
+ * not; use the _citations.json reverse lookup for those.
  */
 export function pageIdForSource(path: string, sourceRoots: string[]): string | null {
   const ext = PAGE_EXTENSIONS.find((e) => path.toLowerCase().endsWith(e));
@@ -125,6 +133,36 @@ export function pageIdForSource(path: string, sourceRoots: string[]): string | n
   return id || null;
 }
 
+/** Source path -> page slugs citing it (the bySource half of _citations.json). */
+export type CitationsBySource = Record<string, string[]>;
+
+/**
+ * Parse the _citations.json a generated wiki ships (CitationsIndex in
+ * src/lib/covenwiki-generate.ts) down to its bySource reverse lookup.
+ * Fail-closed: a malformed index must not silently degrade to path-stemming.
+ */
+export function parseCitationsIndex(raw: string): CitationsBySource {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error("_citations.json is not valid JSON");
+  }
+  if (!isRecord(data)) throw new Error("_citations.json must be a JSON object");
+  if (data.schemaVersion !== "1.0") {
+    throw new Error(`unsupported _citations.json schemaVersion (expected "1.0")`);
+  }
+  if (!isRecord(data.bySource)) throw new Error("_citations.json is missing the bySource mapping");
+  const out: CitationsBySource = {};
+  for (const [path, slugs] of Object.entries(data.bySource)) {
+    if (!Array.isArray(slugs) || !slugs.every((s) => typeof s === "string")) {
+      throw new Error(`_citations.json bySource["${path}"] must be an array of page slugs`);
+    }
+    out[path] = [...slugs];
+  }
+  return out;
+}
+
 export type PlanOptions = {
   sourceRoots: string[];
   /**
@@ -132,6 +170,13 @@ export type PlanOptions = {
    * full rebuild — e.g. templates or wiki config shared by every page.
    */
   fullRebuildPaths?: string[];
+  /**
+   * The bySource mapping from a generated wiki's _citations.json
+   * (source path -> page slugs citing it). When present, page actions come
+   * from this reverse lookup instead of path-stemming. Source paths in the
+   * diff must use the same base as the citation paths (repo-relative).
+   */
+  citationsBySource?: CitationsBySource | null;
 };
 
 function matchesFullRebuild(path: string, patterns: string[]): boolean {
@@ -160,6 +205,65 @@ export function planRegeneration(diff: ManifestDiff, opts: PlanOptions): RegenPl
     };
   }
 
+  return opts.citationsBySource
+    ? planWithCitations(diff, opts.citationsBySource)
+    : planWithPathStemming(diff, opts);
+}
+
+/**
+ * Citations mode: derive page actions from the source⇄page reverse lookup.
+ * Semantics differ from stemming on purpose:
+ * - a changed/added/removed source regenerates *every* page citing it;
+ * - removed sources never emit remove-page — pages are outline units, so only
+ *   an outline change (full generate) removes a page. Regenerating the citing
+ *   pages lets them repair or drop the dead citation;
+ * - sources cited by no page (and genuinely new files) only affect the index;
+ *   the rebuild-index reason flags that an outline refresh may be due.
+ */
+function planWithCitations(diff: ManifestDiff, bySource: CitationsBySource): RegenPlan {
+  const pages = new Map<string, { sources: string[]; reasons: Set<string> }>();
+  let uncited = 0;
+  const record = (path: string, reason: string) => {
+    const slugs = bySource[path] ?? [];
+    if (slugs.length === 0) {
+      uncited += 1;
+      return;
+    }
+    for (const slug of slugs) {
+      const slot = pages.get(slug) ?? { sources: [], reasons: new Set<string>() };
+      slot.sources.push(path);
+      slot.reasons.add(reason);
+      pages.set(slug, slot);
+    }
+  };
+  for (const path of diff.added) record(path, "added");
+  for (const path of diff.changed) record(path, "changed");
+  for (const path of diff.removed) record(path, "source removed");
+
+  const actions: RegenAction[] = [];
+  for (const page of [...pages.keys()].sort()) {
+    const slot = pages.get(page)!;
+    actions.push({
+      kind: "regenerate-page",
+      page,
+      sources: [...new Set(slot.sources)].sort(),
+      reason: [...slot.reasons].sort().join(", "),
+    });
+  }
+  actions.push({
+    kind: "rebuild-index",
+    page: null,
+    sources: [],
+    reason:
+      uncited > 0
+        ? "uncited sources changed — outline refresh may be needed"
+        : "cited sources changed",
+  });
+  return { dirty: true, actions };
+}
+
+/** Legacy fallback: 1:1 path-stemming for wikis whose pages mirror source files. */
+function planWithPathStemming(diff: ManifestDiff, opts: PlanOptions): RegenPlan {
   const actions: RegenAction[] = [];
   const pages = new Map<string, { sources: string[]; reasons: Set<string> }>();
   const record = (path: string, reason: string) => {

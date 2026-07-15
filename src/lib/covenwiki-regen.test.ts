@@ -10,6 +10,7 @@ import {
   isStale,
   nextState,
   pageIdForSource,
+  parseCitationsIndex,
   parseState,
   parseWikiManifest,
   planRegeneration,
@@ -156,6 +157,108 @@ test("planRegeneration routes non-page sources to the index rebuild", () => {
   assert.deepEqual(
     plan.actions.map((a) => a.kind),
     ["rebuild-index"],
+  );
+});
+
+// S3 — plan, citations reverse-lookup mode (_citations.json bySource)
+
+const BY_SOURCE = {
+  "README.md": ["overview"],
+  "src/session.ts": ["overview", "session-model"],
+  "docs/guide.md": ["guide"],
+};
+
+test("citations mode: a changed source regenerates every page citing it", () => {
+  const plan = planRegeneration(
+    { added: [], changed: ["src/session.ts"], removed: [], unchangedCount: 2, dirty: true },
+    { sourceRoots: ROOTS, citationsBySource: BY_SOURCE },
+  );
+  assert.deepEqual(
+    plan.actions.map((a) => [a.kind, a.page]),
+    [
+      ["regenerate-page", "overview"],
+      ["regenerate-page", "session-model"],
+      ["rebuild-index", null],
+    ],
+  );
+  // The point of the mode: page ids are outline slugs, never path stems.
+  assert.ok(!plan.actions.some((a) => a.page === "session"));
+});
+
+test("citations mode: non-markdown cited sources map to pages (stemming never could)", () => {
+  const plan = planRegeneration(
+    { added: [], changed: ["src/session.ts"], removed: [], unchangedCount: 0, dirty: true },
+    { sourceRoots: ROOTS, citationsBySource: { "src/session.ts": ["api-surface"] } },
+  );
+  assert.deepEqual(plan.actions[0], {
+    kind: "regenerate-page",
+    page: "api-surface",
+    sources: ["src/session.ts"],
+    reason: "changed",
+  });
+});
+
+test("citations mode: removed sources regenerate citing pages, never remove-page", () => {
+  const plan = planRegeneration(
+    { added: [], changed: [], removed: ["docs/guide.md"], unchangedCount: 2, dirty: true },
+    { sourceRoots: ROOTS, citationsBySource: BY_SOURCE },
+  );
+  assert.deepEqual(
+    plan.actions.map((a) => [a.kind, a.page, a.reason]),
+    [
+      ["regenerate-page", "guide", "source removed"],
+      ["rebuild-index", null, "cited sources changed"],
+    ],
+  );
+});
+
+test("citations mode: uncited changes are index-only and flag an outline refresh", () => {
+  const plan = planRegeneration(
+    { added: ["docs/brand-new.md"], changed: ["assets/logo.png"], removed: [], unchangedCount: 3, dirty: true },
+    { sourceRoots: ROOTS, citationsBySource: BY_SOURCE },
+  );
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0].kind, "rebuild-index");
+  assert.match(plan.actions[0].reason, /outline refresh/);
+});
+
+test("citations mode: multiple triggers for one page merge into one action", () => {
+  const plan = planRegeneration(
+    { added: [], changed: ["README.md"], removed: ["src/session.ts"], unchangedCount: 0, dirty: true },
+    { sourceRoots: ROOTS, citationsBySource: BY_SOURCE },
+  );
+  const overview = plan.actions.find((a) => a.page === "overview");
+  assert.deepEqual(overview.sources, ["README.md", "src/session.ts"]);
+  assert.equal(overview.reason, "changed, source removed");
+  assert.equal(plan.actions.filter((a) => a.page === "overview").length, 1);
+});
+
+test("citations mode: fullRebuildPaths still wins over the reverse lookup", () => {
+  const plan = planRegeneration(
+    { added: [], changed: ["templates/wiki.hbs", "README.md"], removed: [], unchangedCount: 0, dirty: true },
+    { sourceRoots: ROOTS, fullRebuildPaths: ["templates/"], citationsBySource: BY_SOURCE },
+  );
+  assert.equal(plan.actions.length, 1);
+  assert.equal(plan.actions[0].kind, "full-rebuild");
+});
+
+test("parseCitationsIndex accepts the generated shape and strips it to bySource", () => {
+  const raw = JSON.stringify({
+    schemaVersion: "1.0",
+    generatedAt: "2026-07-14T00:00:00.000Z",
+    bySource: { "README.md": ["overview"] },
+    byPage: { overview: [{ path: "README.md", startLine: null, endLine: null }] },
+  });
+  assert.deepEqual(parseCitationsIndex(raw), { "README.md": ["overview"] });
+});
+
+test("parseCitationsIndex fails closed on malformed input", () => {
+  assert.throws(() => parseCitationsIndex("not json"), /not valid JSON/);
+  assert.throws(() => parseCitationsIndex('{"schemaVersion":"2.0","bySource":{}}'), /schemaVersion/);
+  assert.throws(() => parseCitationsIndex('{"schemaVersion":"1.0"}'), /bySource/);
+  assert.throws(
+    () => parseCitationsIndex('{"schemaVersion":"1.0","bySource":{"a.md":"overview"}}'),
+    /array of page slugs/,
   );
 });
 

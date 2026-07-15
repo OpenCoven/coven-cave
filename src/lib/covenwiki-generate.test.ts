@@ -16,7 +16,7 @@ import {
   PAGE_BUDGETS,
   WORD_TARGETS,
 } from "./covenwiki-generate.ts";
-import { parseWikiManifest, validateWikiManifest } from "./covenwiki-regen.ts";
+import { parseCitationsIndex, parseWikiManifest, validateWikiManifest } from "./covenwiki-regen.ts";
 
 const INVENTORY = [
   "README.md",
@@ -336,6 +336,13 @@ test("buildCitationsIndex builds the source⇄page reverse lookup", () => {
       assert.ok(index.bySource[citation.path].includes(slug));
     }
   }
+});
+
+test("parseCitationsIndex round-trips buildCitationsIndex output (producer⇄consumer parity)", () => {
+  const { pages, manifest } = assembled();
+  const index = buildCitationsIndex(pages, manifest.generation.generatedAt);
+  const bySource = parseCitationsIndex(`${JSON.stringify(index, null, 2)}\n`);
+  assert.deepEqual(bySource, index.bySource);
 });
 
 test("buildIndexMarkdown renders the nav tree with group headers", () => {
