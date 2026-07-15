@@ -10,7 +10,7 @@
  */
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildProfileCardViewModel,
   loadProfileCardData,
@@ -19,11 +19,13 @@ import {
 } from "@/components/profile-card-data";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Sparkline } from "@/components/ui/sparkline";
 import { Icon } from "@/lib/icon";
 import type { ProfileHeatmap, ProfileKind, ProfileSeriesPoint } from "@/lib/profile-card";
 import { humanHandle } from "@/lib/profile-card";
+import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useUserProfile } from "@/lib/user-profile";
 import { userDisplayName } from "@/lib/user-profile-shared";
@@ -35,26 +37,70 @@ const SPARK_COLOR = "#e8e8ec";
 export function ProfileCardView({ kind, familiarId }: { kind: ProfileKind; familiarId?: string }) {
   const [data, setData] = useState<ProfileCardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setData(await loadProfileCardData(kind, familiarId));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "profile data unavailable");
-    } finally {
-      setLoading(false);
-    }
-  }, [kind, familiarId]);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const dataRef = useRef<ProfileCardData | null>(null);
+  const generationRef = useRef(0);
+  const { announce } = useAnnouncer();
 
   useEffect(() => {
-    void load();
+    dataRef.current = data;
+  }, [data]);
+
+  const load = useCallback(async (mode: "reset" | "refresh" = "refresh") => {
+    const generation = ++generationRef.current;
+    if (mode === "reset") {
+      setData(null);
+      setLastUpdatedAt(null);
+      setLoading(true);
+      setError(null);
+    } else {
+      setRefreshing(true);
+    }
+    try {
+      const next = await loadProfileCardData(kind, familiarId);
+      if (generation !== generationRef.current) return;
+      const nextError = next.errors.length > 0 ? next.errors.join(" · ") : null;
+      if (mode === "refresh" && dataRef.current && nextError) {
+        setError(`Refresh failed: ${nextError}`);
+        announce("Profile refresh failed; keeping the previous profile data.");
+        return;
+      }
+      setData(next);
+      setLastUpdatedAt(new Date().toISOString());
+      setError(nextError);
+      if (nextError) {
+        announce("Profile loaded with warnings.");
+      } else if (mode === "reset") {
+        announce("Profile loaded.");
+      }
+    } catch (err) {
+      if (generation !== generationRef.current) return;
+      setError(err instanceof Error ? err.message : "profile data unavailable");
+      announce(
+        mode === "refresh"
+          ? "Profile refresh failed; keeping the previous profile data."
+          : "Profile data unavailable.",
+      );
+    } finally {
+      if (generation === generationRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, [announce, kind, familiarId]);
+
+  useEffect(() => {
+    void load("reset");
+    return () => {
+      generationRef.current += 1;
+    };
   }, [load]);
 
   // Activity drifts while familiars work — keep the card live like the
   // analytics page does. Pauses in hidden tabs.
-  usePausablePoll(() => void load(), 60_000);
+  usePausablePoll(() => void load("refresh"), 60_000);
 
   const vm = useMemo(() => (data ? buildProfileCardViewModel(data) : null), [data]);
 
@@ -69,12 +115,12 @@ export function ProfileCardView({ kind, familiarId }: { kind: ProfileKind; famil
   }
   if (error && !vm) {
     return (
-      <main className="pfc-page">
+      <main className="pfc-page" aria-busy={loading ? "true" : undefined}>
         <EmptyState
           icon="ph:warning-circle"
           headline="Profile unavailable"
           subtitle={error}
-          actions={<button type="button" className="focus-ring pfc-retry" onClick={() => void load()}>Retry</button>}
+          actions={<button type="button" className="focus-ring pfc-retry" onClick={() => void load("reset")}>Retry</button>}
         />
       </main>
     );
@@ -98,10 +144,20 @@ export function ProfileCardView({ kind, familiarId }: { kind: ProfileKind; famil
     );
   }
 
-  return <ProfileCard vm={vm} />;
+  return <ProfileCard vm={vm} error={error} lastUpdatedAt={lastUpdatedAt} refreshing={refreshing} />;
 }
 
-export function ProfileCard({ vm }: { vm: ProfileCardViewModel }) {
+export function ProfileCard({
+  vm,
+  error,
+  lastUpdatedAt,
+  refreshing = false,
+}: {
+  vm: ProfileCardViewModel;
+  error?: string | null;
+  lastUpdatedAt?: string | null;
+  refreshing?: boolean;
+}) {
   const snapshot = useUserProfile();
   const isHuman = vm.kind === "human";
   const profile = isHuman ? vm.userProfile ?? snapshot?.profile ?? null : null;
@@ -113,7 +169,7 @@ export function ProfileCard({ vm }: { vm: ProfileCardViewModel }) {
     : [vm.familiar?.role, vm.familiar?.description].filter(Boolean).join(" · ");
 
   return (
-    <main className="pfc-page">
+    <main className="pfc-page" aria-busy={refreshing ? "true" : undefined}>
       <nav className="pfc-topnav" aria-label="Profile">
         <Link className="focus-ring pfc-topnav-link" href="/?mode=familiars">
           ← Familiars
@@ -132,9 +188,9 @@ export function ProfileCard({ vm }: { vm: ProfileCardViewModel }) {
         )}
       </nav>
 
-      {vm.errors.length > 0 ? (
+      {error || vm.errors.length > 0 ? (
         <p className="pfc-callout" role="alert">
-          <Icon name="ph:warning-circle" aria-hidden /> {vm.errors.join(" · ")}
+          <Icon name="ph:warning-circle" aria-hidden /> {error ?? vm.errors.join(" · ")}
         </p>
       ) : null}
 
@@ -188,6 +244,7 @@ export function ProfileCard({ vm }: { vm: ProfileCardViewModel }) {
               sideLabel="busiest day"
               sideBig={vm.model.sessionsPanel.busiestDay ? String(vm.model.sessionsPanel.busiestDay.count) : "—"}
               sideSub={vm.model.sessionsPanel.busiestDay?.key ?? "no sessions yet"}
+              sideSubDateTime={vm.model.sessionsPanel.busiestDay?.key}
               bottomLabel="top"
               bottomBig={`${vm.model.sessionsPanel.sharePct}%`}
               bottomSub="of coven sessions"
@@ -210,7 +267,15 @@ export function ProfileCard({ vm }: { vm: ProfileCardViewModel }) {
         </div>
 
         <footer className="pfc-foot">
-          <span>COVEN CAVE (based on l12m session data)</span>
+          <span>
+            COVEN CAVE (based on l12m session data)
+            {lastUpdatedAt ? (
+              <>
+                {" · Updated "}
+                <time dateTime={lastUpdatedAt}>{relativeTime(lastUpdatedAt)}</time>
+              </>
+            ) : null}
+          </span>
           <span className="pfc-foot-brand">
             <Icon name="ph:sparkle-bold" aria-hidden /> coven
           </span>
@@ -287,6 +352,7 @@ function MetricPanel(props: {
   sideLabel: string;
   sideBig: string;
   sideSub: string;
+  sideSubDateTime?: string;
   bottomLabel: string;
   bottomBig: string;
   bottomSub: string;
@@ -305,7 +371,13 @@ function MetricPanel(props: {
       <div className="pfc-panel-right">
         <span className="pfc-panel-label">{props.sideLabel}</span>
         <strong className="pfc-panel-mid">{props.sideBig}</strong>
-        <span className="pfc-panel-sub">{props.sideSub}</span>
+        {props.sideSubDateTime ? (
+          <time className="pfc-panel-sub" dateTime={props.sideSubDateTime}>
+            {props.sideSub}
+          </time>
+        ) : (
+          <span className="pfc-panel-sub">{props.sideSub}</span>
+        )}
         <hr className="pfc-panel-rule" />
         <span className="pfc-panel-label">{props.bottomLabel}</span>
         <strong className="pfc-panel-mid">{props.bottomBig}</strong>
