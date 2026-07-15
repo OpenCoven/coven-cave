@@ -36,4 +36,10 @@ assert.match(
   "first non-local executable node should start as running until live markers arrive",
 );
 
+assert.match(
+  source,
+  /const hubAuthority = config\.multiHost\?\.mode === "hub";[\s\S]*binding\.harness === "copilot" && !sshBound && !hubAuthority/,
+  "direct copilot flow spawn must not bypass configured hub authority",
+);
+
 console.log("flow-executor.test.ts: ok");

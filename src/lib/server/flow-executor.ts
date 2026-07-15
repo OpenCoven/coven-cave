@@ -187,12 +187,15 @@ export async function startFlowSession(
   // was not quoted"), which broke every copilot flow session, including
   // research-mission iterations. Chat answers the same daemon deficiency by
   // spawning the CLI directly with a real argv (cave-yesg); do the same here.
-  // Local runtimes only — SSH runtimes stay on the daemon path to the remote
-  // host. The run persists its transcript as a Cave conversation under the
+  // Local daemon authority only — hub mode must keep routing through
+  // callDaemon(), where daemonTargetForConfig/loadDaemonTarget preserve the
+  // configured hub execution boundary. SSH runtimes also stay on the daemon path
+  // to the remote host. The run persists its transcript as a Cave conversation under the
   // session id, which is where the flow transcript endpoint and the
   // research-mission reconcile already look first.
   const sshBound = "runtime" in binding && isSshRuntime(binding.runtime);
-  if (binding.harness === "copilot" && !sshBound) {
+  const hubAuthority = config.multiHost?.mode === "hub";
+  if (binding.harness === "copilot" && !sshBound && !hubAuthority) {
     const spec = copilotStreamSpec();
     if (spec) {
       const { sessionId } = startCopilotFlowRun({
