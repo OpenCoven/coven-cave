@@ -98,10 +98,13 @@ test("Linux release job forces AppImage extract-and-run mode", () => {
 test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-compatible", () => {
   assert.match(releaseWorkflow, /name: Strip bundled GLib\/libmount from AppImage/);
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
+  assert.match(releaseWorkflow, /APPIMAGETOOL_SHA256: \$\{\{ vars\.APPIMAGETOOL_SHA256 \}\}/);
+  assert.match(releaseWorkflow, /sha256sum --check --status/);
   assert.match(releaseWorkflow, /libmount\.so\.1\*/);
   assert.match(releaseWorkflow, /libblkid\.so\.1\*/);
   assert.match(releaseWorkflow, /libuuid\.so\.1\*/);
   assert.match(releaseWorkflow, /appimagetool squashfs-root/);
+  assert.match(releaseWorkflow, /name: Upload and re-sign stripped AppImage/);
   assert.match(releaseWorkflow, /gh release upload "\$RELEASE_TAG" "\$APPIMAGE" --clobber/);
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
@@ -114,6 +117,12 @@ test("Linux AppImage strips bundled GLib/libmount so host libraries stay ABI-com
       releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
     "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
+  const stripStep = releaseWorkflow.slice(
+    releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage"),
+    releaseWorkflow.indexOf("name: Upload and re-sign stripped AppImage"),
+  );
+  assert.doesNotMatch(stripStep, /GH_TOKEN/);
+  assert.doesNotMatch(stripStep, /TAURI_SIGNING_PRIVATE_KEY/);
 });
 
 test("manual release retries can build from a source ref while attaching to the tag", () => {

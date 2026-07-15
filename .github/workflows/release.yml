@@ -357,14 +357,12 @@ jobs:
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPIMAGETOOL_SHA256: ${{ vars.APPIMAGETOOL_SHA256 }}
         run: |
           set -euo pipefail
 
           cd src-tauri/target/release/bundle
-          APPIMAGE="$(find . -name '*.AppImage' -type f | head -1)"
+          APPIMAGE="$(find . -name '*.AppImage' -type f | sort | head -1)"
           [ -n "$APPIMAGE" ] || { echo "::error::No AppImage found"; exit 1; }
 
           # Install squashfs-tools for AppImage extraction/repacking
@@ -396,10 +394,18 @@ jobs:
 
           # ── 3. Re-pack into AppImage ──
           # Download appimagetool (portable, no FUSE needed with
-          # APPIMAGE_EXTRACT_AND_RUN).
+          # APPIMAGE_EXTRACT_AND_RUN), but fail closed unless the release
+          # environment pins the exact binary digest. This prevents the mutable
+          # upstream continuous asset from silently changing the code that
+          # repacks artifacts later signed by our updater key.
+          [ -n "${APPIMAGETOOL_SHA256:-}" ] || {
+            echo "::error::APPIMAGETOOL_SHA256 release variable must pin the appimagetool binary"
+            exit 1
+          }
           curl -fsSL \
             "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
             -o /tmp/appimagetool
+          printf '%s  %s\n' "$APPIMAGETOOL_SHA256" /tmp/appimagetool | sha256sum --check --status || { echo "::error::appimagetool checksum mismatch (APPIMAGETOOL_SHA256)"; exit 1; }
           chmod +x /tmp/appimagetool
 
           APPIMAGE_EXTRACT_AND_RUN=1 \
@@ -407,7 +413,22 @@ jobs:
           echo "✅ $APPIMAGE repacked without bundled GLib/libmount"
           rm -rf squashfs-root /tmp/appimagetool
 
-          # ── 4. Re-upload and re-sign the updater artifact ──
+      - name: Upload and re-sign stripped AppImage
+        if: >-
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          cd src-tauri/target/release/bundle
+          APPIMAGE="$(find . -name '*.AppImage' -type f | sort | head -1)"
+          [ -n "$APPIMAGE" ] || { echo "::error::No AppImage found"; exit 1; }
+
           # tauri-action and the sign step above signed the original AppImage.
           # After repacking, the release asset and signature must both be
           # replaced with the stripped AppImage outputs.
