@@ -43,6 +43,21 @@ describe("Familiar growth view", () => {
     assert.match(view, /announce\("Growth data refreshed\."\)/);
   });
 
+  it("drops stale load settles — only the latest issued load writes state (cave-5p5m)", () => {
+    // Mount, manual refresh, 60s poll, and on-focus refresh interleave; an
+    // older slower response must not overwrite fresher data or raise a stale
+    // error over it.
+    assert.match(view, /const gen = \+\+generation\.current/);
+    assert.match(view, /if \(generation\.current !== gen\) return;/);
+    assert.match(view, /if \(generation\.current === gen\) \{\s*setLoading\(false\);/);
+  });
+
+  it("carries a truthful freshness stamp, set when data lands (cave-5p5m)", () => {
+    assert.match(view, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "stamped on load settle, not render");
+    assert.match(view, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "renders as a semantic relative time");
+    assert.match(globals, /\.growth-hero__updated/, "the stamp has its own class");
+  });
+
   it("marks the selected roster row for assistive tech", () => {
     assert.match(view, /aria-pressed=\{selectedItem\}/);
   });

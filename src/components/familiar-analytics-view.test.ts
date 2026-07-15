@@ -336,6 +336,19 @@ function mockFetchFor(score: "low" | "trusted") {
 }
 
 describe("FamiliarAnalyticsView", () => {
+  it("drops stale load settles and resets to skeleton on a familiar switch (cave-5p5m)", () => {
+    // Loads interleave (mount, familiar switch, manual refresh, 60s poll,
+    // on-focus refresh); App Router client nav can reuse the component
+    // instance across /familiars/A/analytics → /B/analytics, so a slow A
+    // response must never land its data — or error, or freshness stamp —
+    // under B's URL, and B must open on a skeleton, not A's numbers.
+    assert.match(source, /const gen = \+\+generation\.current/);
+    assert.match(source, /if \(generation\.current !== gen\) return;/);
+    assert.match(source, /if \(generation\.current === gen\) \{\s*setLoading\(false\);/);
+    assert.match(source, /setData\(null\);\s*setUpdatedAt\(null\);\s*void load\(\);/, "familiar switch drops the previous model + stamp");
+    assert.match(source, /aria-busy=\{loading \|\| refreshing\}/, "busy covers full loads, not just quiet refreshes");
+  });
+
   it("builds a renderable model; with no thread reports confidence is unmeasured, not Low", async () => {
     mockFetchFor("low");
     const data = await loadFamiliarAnalyticsData("cody");

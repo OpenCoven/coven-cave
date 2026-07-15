@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PulseBars } from "@/components/ui/pulse-bars";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { AuthedImage } from "@/components/ui/authed-image";
+import { RelativeTime } from "@/components/ui/relative-time";
 import {
   buildFamiliarCardStats,
   type CovenMemoryEntry,
@@ -121,10 +122,19 @@ export function FamiliarGrowthView({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // Truthful freshness stamp — set when a load actually lands (server-provided
+  // initial data is stamped at mount), never faked at render time.
+  const [updatedAt, setUpdatedAt] = useState<string | null>(() => (initialData ? new Date().toISOString() : null));
   const { announce } = useAnnouncer();
+
+  // Loads interleave (mount, manual refresh, 60s poll, on-focus refresh):
+  // only the latest issued load may write state, so a slower stale response
+  // can't overwrite fresher data — or raise a stale error over it.
+  const generation = useRef(0);
 
   // `silent` marks the recurring background poll — refresh without announcing.
   const load = useCallback(async ({ quiet = false, silent = false } = {}) => {
+    const gen = ++generation.current;
     if (quiet) setRefreshing(true);
     else setLoading(true);
     try {
@@ -134,6 +144,7 @@ export function FamiliarGrowthView({
         getJson<CovenMemoryResponse>("/api/coven-memory"),
         getJson<RetroApiResponse>("/api/retro-runs"),
       ]);
+      if (generation.current !== gen) return;
 
       const nextData: FamiliarGrowthInitialData = {
         familiars: familiarsJson.familiars ?? [],
@@ -150,15 +161,19 @@ export function FamiliarGrowthView({
 
       setData(nextData);
       setNow(Date.now());
+      setUpdatedAt(new Date().toISOString());
       setError(errors.length > 0 ? errors.join(" · ") : null);
       // Selection is reconciled against the attention-sorted roster below, so
       // a fresh load lands on the familiar that most needs attention.
       if (quiet && !silent) announce("Growth data refreshed.");
     } catch (err) {
+      if (generation.current !== gen) return;
       setError(err instanceof Error ? err.message : "growth data unavailable");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (generation.current === gen) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [announce]);
 
@@ -249,6 +264,11 @@ export function FamiliarGrowthView({
           ) : null}
         </div>
         <div className="retro-hero__actions">
+          {updatedAt ? (
+            <span className="growth-hero__updated">
+              Updated <RelativeTime iso={updatedAt} />
+            </span>
+          ) : null}
           <button
             type="button"
             className="retro-icon-btn"

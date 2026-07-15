@@ -10039,6 +10039,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   background: transparent;
 }
 .growth-hero { margin-bottom: 18px; }
+/* Truthful freshness stamp beside the refresh action (fa-topbar__updated kin). */
+.growth-hero__updated {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  align-self: center;
+}
 /* Roster health triage — how many familiars need attention, at a glance. */
 .growth-triage {
   display: flex;
