@@ -73,7 +73,11 @@ export function resolveStageForBranch(args: {
   if (!branch) return null;
 
   const pr = args.open.find((p) => p.headRefName === branch) ?? null;
-  const mergedByBranch = args.merged.find((m) => m.headRefName === branch) ?? null;
+  // A reused branch can carry BOTH an open PR and a recently-merged one; when
+  // an open PR anchors the stage the old merged ref must not leak in, or the
+  // pipeline reads "merged ✓" beside active checks/review (review finding,
+  // cave-a3cl). Merged refs only matter for post-merge stages.
+  const mergedByBranch = pr ? null : (args.merged.find((m) => m.headRefName === branch) ?? null);
   const beadIds = new Set<string>(
     [...(pr?.beadIds ?? []), ...beadIdsInBranch(branch), ...(mergedByBranch?.beadIds ?? [])].map((s) =>
       s.toLowerCase(),

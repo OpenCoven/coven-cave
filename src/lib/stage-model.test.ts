@@ -130,3 +130,25 @@ test("changes-requested review reads failed", () => {
   assert.ok(snap);
   assert.equal(step(snap, "review").state, "failed");
 });
+
+test("reused branch: an open PR suppresses the old merged ref (no contradictory pipeline)", () => {
+  const merged: MergedPrRef = {
+    number: 100,
+    title: "old shipped thing",
+    url: "https://github.com/o/r/pull/100",
+    beadIds: [],
+    mergedAt: "2026-07-14T12:00:00Z",
+    headRefName: "feat/x",
+  };
+  const snap = resolveStageForBranch({
+    branch: "feat/x",
+    open: [pr({ number: 105, headRefName: "feat/x", lane: "needs-review", checkStatus: "pending" })],
+    merged: [merged],
+    beads: [],
+  });
+  assert.ok(snap);
+  assert.equal(snap.lane, "needs-review");
+  assert.equal(snap.mergedRef, null, "old merged PR must not leak into an open-PR stage");
+  assert.equal(step(snap, "merged").state, "pending");
+  assert.ok(!step(snap, "merged").detail.startsWith("Merged"), "no 'Merged <date>' beside active checks");
+});

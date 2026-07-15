@@ -5231,7 +5231,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         {hasLinkedChips ? linkedContextRow : null}
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
-      <ChatStageHeader projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
+      {/* Stage header keys on the SESSION's root — the same source the rail
+          badge listeners use (chat-surface railProjectRoot) — so publisher
+          and listener can't drift onto different derivations (cave-r0gt). */}
+      <ChatStageHeader projectRoot={session?.project_root ?? projectRoot ?? null} onOpenUrl={onOpenUrl} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">

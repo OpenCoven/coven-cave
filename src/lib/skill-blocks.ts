@@ -16,6 +16,8 @@
  * src/components/skill-stage-card.tsx.
  */
 
+import { fencedRanges } from "./github-blocks.ts";
+
 export type SkillStage = "loaded" | "running" | "done" | "error";
 
 export type SkillStageUpdate = {
@@ -53,8 +55,12 @@ export function extractSkillMarkers(text: string): { visible: string; updates: S
   let visible = text;
 
   if (text.includes("<coven:skill")) {
+    // Fenced markers are example text — stay literal, no updates
+    // (review finding, cave-m0r6; same contract as coven:github).
+    const fences = fencedRanges(text);
     MARKER_RE.lastIndex = 0;
-    visible = text.replace(MARKER_RE, (_m, rawAttrs: string) => {
+    visible = text.replace(MARKER_RE, (m, rawAttrs: string, index: number) => {
+      if (fences.some(([start, end]) => index >= start && index < end)) return m;
       const attrs = parseAttrs(rawAttrs ?? "");
       const name = attrs.name?.trim();
       const stage = attrs.stage?.trim();
@@ -72,9 +78,15 @@ export function extractSkillMarkers(text: string): { visible: string; updates: S
   }
 
   // Partial tail: an unterminated `<coven:skill…` (or any prefix of the tag
-  // name) with no closing `>` hides from the visible stream.
+  // name) with no UNQUOTED closing `>` hides from the visible stream — a `>`
+  // inside a still-open quoted note must not read as the tag close (review
+  // finding, cave-m0r6). Fenced tails are example text and stay literal.
   const tail = visible.lastIndexOf("<coven:s");
-  if (tail !== -1 && visible.indexOf(">", tail) === -1) {
+  if (
+    tail !== -1 &&
+    !hasUnquotedGtAfter(visible, tail) &&
+    !fencedRanges(visible).some(([start, end]) => tail >= start && tail < end)
+  ) {
     const frag = visible.slice(tail);
     if ("<coven:skill".startsWith(frag.slice(0, "<coven:skill".length))) {
       visible = visible.slice(0, tail);
@@ -82,6 +94,16 @@ export function extractSkillMarkers(text: string): { visible: string; updates: S
   }
 
   return { visible, updates: [...byName.values()] };
+}
+
+function hasUnquotedGtAfter(s: string, from: number): boolean {
+  let inQuote = false;
+  for (let i = from; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') inQuote = !inQuote;
+    else if (c === ">" && !inQuote) return true;
+  }
+  return false;
 }
 
 // buildSkillPrompt (src/lib/slash-skill.ts) shapes — anchored so ordinary

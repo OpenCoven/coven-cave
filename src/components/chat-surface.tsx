@@ -171,9 +171,10 @@ export function ChatSurface({
   // manual collapse (see below) so the rail snaps back to the session.
   const [browseRootOverride, setBrowseRootOverride] = useState<string | null>(null);
   const effectiveRailRoot = browseRootOverride ?? railProjectRoot;
-  // Failing-checks cue for the COLLAPSED reopen strip (cave-fpqx.12) — same
-  // stage-header broadcast the mounted rail's badge listens to.
-  const reopenChecksFailing = useStageChecksBadge(effectiveRailRoot);
+  // Failing-checks cue for the COLLAPSED reopen strip (cave-fpqx.12) — keyed
+  // on the SESSION root (the stage header's key, cave-r0gt); the badge is
+  // about the session's PR, not a browsed root.
+  const reopenChecksFailing = useStageChecksBadge(railProjectRoot);
 
   // changeCount = number of pending working-tree files for the rail's effective
   // project root. Mirrors session-changes-panel's /api/changes fetch (files

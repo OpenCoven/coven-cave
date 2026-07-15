@@ -31,7 +31,9 @@ export function describeGitHubAction(a: GitHubActionDescriptor): string {
     case "issue-create":
       return `Create issue “${a.title ?? ""}” in ${a.repo}`;
     case "issue-state":
-      return `Close or reopen ${target}`;
+      // state is parse-required (actionFromAttrs) — the card says exactly
+      // which direction fires (review finding, cave-jqke).
+      return a.state === "open" ? `Reopen ${target}` : `Close ${target}`;
     case "review":
       return a.event === "APPROVE"
         ? `Approve ${target}`
@@ -70,20 +72,23 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<strin
       return post("/api/github/comment", { repo: a.repo, number: a.number, body: a.body });
     case "resolve":
     case "unresolve": {
-      // The marker carries the PR number; resolving needs the thread node id —
-      // look it up through the comments route (threads ride PR scope).
+      // The marker must name the target comment (databaseId) — resolving "the
+      // first unresolved thread" on a multi-thread PR marks the wrong thread
+      // (review finding, cave-jqke).
+      if (!a.threadId) return "no thread specified — the proposal must carry a thread id";
       try {
         const res = await fetch(
           `/api/github/comments?repo=${encodeURIComponent(a.repo)}&number=${a.number}&isPull=1`,
           { cache: "no-store" },
         );
         const data = (await res.json().catch(() => null)) as
-          | { ok: true; reviewThreads: { id: string; isResolved: boolean }[] }
+          | { ok: true; reviewThreads: { id: string; isResolved: boolean; comments?: { id: string }[] }[] }
           | null;
         if (!data || data.ok !== true) return "could not load review threads";
         const want = a.kind === "resolve";
-        const thread = data.reviewThreads.find((t) => t.isResolved !== want);
-        if (!thread) return want ? "no unresolved threads" : "no resolved threads";
+        const thread = data.reviewThreads.find((t) => t.comments?.some((c) => c.id === a.threadId));
+        if (!thread) return "target thread not found on this PR";
+        if (thread.isResolved === want) return want ? "thread already resolved" : "thread already unresolved";
         return post("/api/github/resolve-thread", { threadId: thread.id, resolved: want });
       } catch {
         return "network error";
@@ -92,11 +97,9 @@ export async function fireGitHubAction(a: GitHubActionDescriptor): Promise<strin
     case "issue-create":
       return post("/api/github/issue", { repo: a.repo, title: a.title, body: a.body ?? "" });
     case "issue-state":
-      // The proposal's note carries intent; the state itself rides `body` as
-      // "open"/"closed" per the marker contract — default to closing.
       return post(
         "/api/github/issue",
-        { repo: a.repo, number: a.number, state: a.body === "open" ? "open" : "closed" },
+        { repo: a.repo, number: a.number, state: a.state === "open" ? "open" : "closed" },
         "PATCH",
       );
     case "review":

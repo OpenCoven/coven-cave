@@ -79,6 +79,13 @@ export type GitHubActionDescriptor = {
   method?: "squash" | "merge" | "rebase";
   /** Review verdict (review). */
   event?: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+  /** Explicit issue state (issue-state) — required so the proposal card can
+   *  say exactly which direction fires (review finding, cave-jqke). */
+  state?: "open" | "closed";
+  /** Target review-comment databaseId (resolve/unresolve) — the same id
+   *  `#discussion_r<id>` URLs carry; without it the card refuses to fire
+   *  rather than picking an arbitrary thread (review finding, cave-jqke). */
+  threadId?: string;
   /** Comment/review/issue body text. */
   body?: string;
   /** Issue title (issue-create). */
@@ -118,12 +125,20 @@ function actionFromAttrs(attrs: Record<string, string>): GitHubActionDescriptor 
   switch (kind as GitHubActionKind) {
     case "comment":
     case "reply":
-    case "resolve":
-    case "unresolve":
       return number ? { kind: kind as GitHubActionKind, ...base, number } : null;
+    case "resolve":
+    case "unresolve": {
+      if (!number) return null;
+      const threadRaw = attrs.thread?.trim();
+      const threadId = threadRaw && /^\d+$/.test(threadRaw) ? threadRaw : undefined;
+      return { kind: kind as GitHubActionKind, ...base, number, threadId };
+    }
     case "issue-state": {
       if (!number) return null;
-      return { kind: "issue-state", ...base, number };
+      // Direction must be explicit — a proposal that doesn't say which way it
+      // flips the issue is malformed, not "default to close".
+      const state = attrs.state === "open" ? "open" : attrs.state === "closed" ? "closed" : null;
+      return state ? { kind: "issue-state", ...base, number, state } : null;
     }
     case "issue-create": {
       const title = attrs.title?.trim();
@@ -260,19 +275,63 @@ export function parseGitHubUrl(url: string): GitHubBlockDescriptor | null {
   return runId ? { kind: "run", repo, runId } : null;
 }
 
+/** True when an UNQUOTED `>` exists at/after `from` — quote-aware so a `>`
+ *  inside a still-open attribute value (`title="a -> b`) doesn't read as the
+ *  tag's close while the marker is mid-stream (review finding, cave-m0r6). */
+function hasUnquotedGt(s: string, from: number): boolean {
+  let inQuote = false;
+  for (let i = from; i < s.length; i++) {
+    const c = s[i];
+    if (c === '"') inQuote = !inQuote;
+    else if (c === ">" && !inQuote) return true;
+  }
+  return false;
+}
+
+/** Character ranges covered by ```/~~~ fences (delimiters included). Fenced
+ *  marker syntax is example text, never live cards (review finding,
+ *  cave-m0r6); an unclosed trailing fence protects through the text end. */
+export function fencedRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let offset = 0;
+  let fenceStart = -1;
+  for (const line of text.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) {
+      if (fenceStart === -1) fenceStart = offset;
+      else {
+        ranges.push([fenceStart, offset + line.length]);
+        fenceStart = -1;
+      }
+    }
+    offset += line.length + 1;
+  }
+  if (fenceStart !== -1) ranges.push([fenceStart, text.length]);
+  return ranges;
+}
+
+function inRanges(ranges: Array<[number, number]>, index: number): boolean {
+  return ranges.some(([start, end]) => index >= start && index < end);
+}
+
 /**
  * Streaming-safe strip: remove complete `<coven:github…>` markers and hide a
  * PARTIAL marker at the very end of the text (the stream may cut mid-tag —
- * raw tag fragments must never flash). Cards are not mounted while streaming;
- * they appear when the turn settles (same contract as canvas artifacts).
+ * raw tag fragments must never flash). Fenced markers are example text and
+ * stay literal. Cards are not mounted while streaming; they appear when the
+ * turn settles (same contract as canvas artifacts).
  */
 export function stripGitHubMarkers(text: string): string {
   if (!text || !text.includes("<coven:g")) return text;
-  let out = text.replace(MARKER_RE, "");
+  const fences = fencedRanges(text);
+  MARKER_RE.lastIndex = 0;
+  let out = text.replace(MARKER_RE, (m, _action, _attrs, index: number) =>
+    inRanges(fences, index) ? m : "",
+  );
   // Partial tail: an unterminated `<coven:github…` (or any prefix of the tag
-  // name) with no closing `>` after it hides from the visible stream.
+  // name) with no UNQUOTED closing `>` after it hides from the visible
+  // stream — unless it sits inside a fence, where it's example text.
   const tail = out.lastIndexOf("<coven:g");
-  if (tail !== -1 && out.indexOf(">", tail) === -1) {
+  if (tail !== -1 && !hasUnquotedGt(out, tail) && !inRanges(fencedRanges(out), tail)) {
     const frag = out.slice(tail);
     if ("<coven:github-action".startsWith(frag.slice(0, "<coven:github-action".length)) || frag.startsWith("<coven:github")) {
       out = out.slice(0, tail);
@@ -306,9 +365,14 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
   };
 
   if (text.includes("<coven:github")) {
+    // Fenced markers are example text — leave them literal instead of
+    // splitting the fence and mounting a live (possibly armed action) card
+    // (review finding, cave-m0r6).
+    const fences = fencedRanges(text);
     MARKER_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = MARKER_RE.exec(text)) !== null) {
+      if (inRanges(fences, m.index)) continue;
       pushText(text.slice(cursor, m.index));
       cursor = m.index + m[0].length;
       const isAction = Boolean(m[1]);

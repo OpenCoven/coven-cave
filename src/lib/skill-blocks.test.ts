@@ -91,3 +91,17 @@ test("extract: quoted note containing '>' stays atomic (no early tag close)", ()
   assert.deepEqual(updates, [{ name: "brainstorming", stage: "running", note: "a > b flow" }]);
   assert.equal(visible, "x  y");
 });
+
+// ── Review-fix pins (cave-m0r6) ──────────────────────────────────────────────
+
+test("extract: partial tail with '>' inside an open quoted note stays hidden", () => {
+  const { visible } = extractSkillMarkers('text <coven:skill name="x" stage="running" note="step 2 -> 3');
+  assert.equal(visible, "text ");
+});
+
+test("extract: fenced skill markers are example text — literal, no updates", () => {
+  const text = 'Docs:\n```\n<coven:skill name="brainstorming" stage="running" />\n```\nend';
+  const { visible, updates } = extractSkillMarkers(text);
+  assert.deepEqual(updates, []);
+  assert.equal(visible, text);
+});

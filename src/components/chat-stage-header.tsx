@@ -16,7 +16,8 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useChangesSummary } from "@/lib/use-changes-summary";
-import { resolveStageForBranch, STAGE_CHECKS_EVENT, type StageSnapshot, type StageStep } from "@/lib/stage-model";
+import { resolveStageForBranch, type StageSnapshot, type StageStep } from "@/lib/stage-model";
+import { publishStageChecks } from "@/lib/use-stage-checks-badge";
 import type { PullRequestSummary } from "@/lib/beads-pr-management";
 import type { MergedPrRef, ReadyBead } from "@/lib/beads-work-queue";
 
@@ -111,20 +112,22 @@ export function ChatStageHeader({
   const { branch } = useChangesSummary(projectRoot ?? undefined, Boolean(projectRoot));
   const snapshot = useStageSnapshot(projectRoot, branch);
 
-  // Broadcast the failing-checks signal for the code rail's badge (design §6):
+  // Publish the failing-checks signal for the code rail's badge (design §6):
   // the header already holds the stage snapshot, so the rail never re-fetches
-  // the PR bridge. Dispatch fires on every signal change; the CLEAR fires only
-  // on unmount / root change (separate effect) so listeners never see a
-  // transient false between consecutive true states.
+  // the PR bridge. publishStageChecks records state for LATE-MOUNTING
+  // listeners (a rail opened after checks went red — cave-r0gt) and
+  // broadcasts for live ones; the CLEAR fires only on unmount / root change
+  // (separate effect) so listeners never see a transient false between
+  // consecutive true states.
   const failing = Boolean(snapshot?.pr && snapshot.pr.checkStatus === "failing");
   useEffect(() => {
     if (!projectRoot) return;
-    window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail: { projectRoot, failing } }));
+    publishStageChecks(projectRoot, failing);
   }, [projectRoot, failing]);
   useEffect(() => {
     if (!projectRoot) return;
     return () => {
-      window.dispatchEvent(new CustomEvent(STAGE_CHECKS_EVENT, { detail: { projectRoot, failing: false } }));
+      publishStageChecks(projectRoot, false);
     };
   }, [projectRoot]);
 

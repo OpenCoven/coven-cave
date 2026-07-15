@@ -12,21 +12,26 @@ const hook = readFileSync(new URL("../lib/use-stage-checks-badge.ts", import.met
 const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const railLogic = readFileSync(new URL("../lib/code-rail.ts", import.meta.url), "utf8");
 
-// Broadcast side: the header owns the snapshot; fires on change AND resets on
-// unmount so a stale red dot can't outlive its cause.
+// Publish side: the header owns the snapshot; publishStageChecks records the
+// state for late-mounting listeners AND broadcasts; the clear fires only on
+// unmount/root change (no transient false between true states).
 assert.match(header, /snapshot\?\.pr && snapshot\.pr\.checkStatus === "failing"/, "failing signal derives from the stage snapshot's PR rollup");
-assert.match(header, /window\.dispatchEvent\(new CustomEvent\(STAGE_CHECKS_EVENT, \{ detail: \{ projectRoot, failing \} \}\)\);\s*\n\s*\}, \[projectRoot, failing\]\);/, "header broadcasts on every signal change");
-assert.match(header, /detail: \{ projectRoot, failing: false \}[\s\S]{0,40}\}, \[projectRoot\]\);/, "the clear fires only on unmount/root change — no transient false between true states");
+assert.match(header, /publishStageChecks\(projectRoot, failing\);\s*\n\s*\}, \[projectRoot, failing\]\);/, "header publishes on every signal change");
+assert.match(header, /publishStageChecks\(projectRoot, false\);[\s\S]{0,40}\}, \[projectRoot\]\);/, "the clear fires only on unmount/root change");
 
-// Listener side: filtered by project root, resets when the root changes.
-assert.match(hook, /d\?\.projectRoot === projectRoot/, "hook filters events to its project root");
-assert.match(hook, /setFailing\(false\);\s*\n\s*if \(!projectRoot\) return;/, "hook resets on root change");
+// Listener side: store replay at mount (a rail opened AFTER checks went red
+// still shows the dot — cave-r0gt), root-filtered, normalized roots.
+assert.match(hook, /export function publishStageChecks/, "publish records state + broadcasts");
+assert.match(hook, /stageChecksState\.set\(root, failing\)/, "module store is the replay source");
+assert.match(hook, /useState\(\(\) => \(root \? \(stageChecksState\.get\(root\) \?\? false\) : false\)\)/, "listeners initialize from the store, not false");
+assert.match(hook, /d\?\.projectRoot === root/, "hook filters events to its project root");
+assert.match(hook, /function normalizeRoot/, "roots normalize on both sides so derivations can't drift on slashes");
 
 // Rail strip badge + a11y label; collapsed reopen strip too.
 assert.match(rail, /useStageChecksBadge\(projectRoot\)/, "rail reads the badge signal");
 assert.match(rail, /workspace-rail__badge--alert/, "rail renders the alert dot");
 assert.match(rail, /"Changes — PR checks failing"/, "changes tab announces the failing state");
-assert.match(surface, /useStageChecksBadge\(effectiveRailRoot\)/, "collapsed reopen strip reads the same signal");
+assert.match(surface, /useStageChecksBadge\(railProjectRoot\)/, "collapsed reopen strip keys on the session root (cave-r0gt)");
 assert.match(surface, /"Show code rail — PR checks failing"/, "reopen strip announces the failing state");
 assert.match(css, /\.workspace-rail__badge--alert \{/, "alert dot styled");
 

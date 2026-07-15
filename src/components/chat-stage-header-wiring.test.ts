@@ -22,7 +22,11 @@ assert.match(header, /if \(!snapshot\) return null;/, "renders nothing without a
 assert.match(header, /usePausablePoll\(.*\{\s*\n?\s*enabled: Boolean\(projectRoot && branch && snapshot\?\.pr\),/s, "re-polls only while an open PR anchors the stage");
 
 // Mounted between the top bar and the transcript.
-assert.match(chatView, /<RunActivityStrip[^>]*\/>\s*\n\s*<ChatStageHeader projectRoot=\{activeProjectRoot\} onOpenUrl=\{onOpenUrl\} \/>/, "header mounts after the activity strip, before the transcript");
+assert.match(
+  chatView,
+  /<ChatStageHeader projectRoot=\{session\?\.project_root \?\? projectRoot \?\? null\} onOpenUrl=\{onOpenUrl\} \/>/,
+  "header keys on the SESSION root — the same derivation the rail badge listeners use (cave-r0gt)",
+);
 
 // Review follow-up (#3173): no cross-project stale bleed.
 assert.match(header, /keyRef\.current !== key/, "bridge state resets when (projectRoot, branch) changes");

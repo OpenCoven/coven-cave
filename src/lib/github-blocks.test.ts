@@ -264,3 +264,37 @@ test("slice: quoted title containing '>' stays atomic (no early tag close)", () 
     { kind: "card", descriptor: { kind: "issue", repo: "a/b", number: 5, title: "fix a > b" } },
   ]);
 });
+
+// ── Review-fix pins (cave-m0r6, cave-jqke) ───────────────────────────────────
+
+test("strip: partial tail with '>' inside an open quoted attr stays hidden", () => {
+  assert.equal(
+    stripGitHubMarkers('Working on <coven:github kind="pr" repo="o/r" number="7" title="fix: a -> b'),
+    "Working on ",
+  );
+});
+
+test("slice/strip: fenced markers are example text — literal, no cards, fence intact", () => {
+  const text = 'Example:\n```xml\n<coven:github-action kind="merge" repo="o/r" number="7" />\n```\ndone';
+  const pieces = sliceGitHubBlocks(text);
+  assert.ok(pieces.every((p) => p.kind === "text"), "no card/action pieces from fenced markers");
+  const joined = pieces.map((p) => (p.kind === "text" ? p.text : "")).join("");
+  assert.ok(joined.includes('<coven:github-action kind="merge"'), "fenced marker stays literal");
+  assert.equal(stripGitHubMarkers(text), text, "strip leaves fenced markers alone");
+  // Unclosed trailing fence protects through the text end (streaming).
+  const streaming = 'look:\n```\n<coven:github kind="pr" repo="o/r" number="7" />';
+  assert.equal(stripGitHubMarkers(streaming), streaming);
+});
+
+test("action attrs: issue-state requires an explicit state; resolve accepts a thread id", () => {
+  // No state → malformed, dropped (never 'default to close').
+  const noState = sliceGitHubBlocks('<coven:github-action kind="issue-state" repo="a/b" number="7" />');
+  assert.ok(noState.every((p) => p.kind === "text"));
+  const open = sliceGitHubBlocks('<coven:github-action kind="issue-state" repo="a/b" number="7" state="open" />');
+  assert.equal((open[0] as { action: { state?: string } }).action.state, "open");
+  const resolve = sliceGitHubBlocks('<coven:github-action kind="resolve" repo="a/b" number="7" thread="5551" />');
+  assert.equal((resolve[0] as { action: { threadId?: string } }).action.threadId, "5551");
+  // Non-numeric thread ids drop to undefined (the card then refuses to fire).
+  const badThread = sliceGitHubBlocks('<coven:github-action kind="resolve" repo="a/b" number="7" thread="abc" />');
+  assert.equal((badThread[0] as { action: { threadId?: string } }).action.threadId, undefined);
+});
