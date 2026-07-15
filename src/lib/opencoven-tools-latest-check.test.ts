@@ -35,7 +35,7 @@ test("local readiness completes without waiting for a blocked registry probe", a
   // dependency on that operation and must still settle.
   void blockedRegistryProbe();
   const readiness = openCovenToolReadinessStatuses({
-    env: { PATH: "/test" },
+    env: { NODE_ENV: "test", PATH: "/test" },
     discover: async () => verifiedProbe("0.1.1"),
   });
   const result = await Promise.race([
