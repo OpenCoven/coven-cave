@@ -55,6 +55,7 @@ import {
   BrowserPane,
   CalendarView,
   FamiliarWorkQueueView,
+  FleetView,
   GitHubView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
@@ -171,6 +172,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   "familiar-work-queue": "Queue",
   journal: "Journal",
   grimoire: "Memories",
+  fleet: "Fleet",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -2063,6 +2065,9 @@ export function Workspace() {
       case "/board":
         setMode("board");
         return true;
+      case "/fleet":
+        setMode("fleet");
+        return true;
       case "/journal":
         setMode("journal"); // opens the Grimoire on its Journal tab (see setMode)
         return true;
@@ -2555,6 +2560,8 @@ export function Workspace() {
         navigationRequest={browserNavigationQueue[0] ?? null}
         onNavigationConsumed={acknowledgeBrowserNavigation}
       />
+    ) : mode === "fleet" ? (
+      <FleetView familiars={resolvedFamiliars} activeFamiliarId={activeId} />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}

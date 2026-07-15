@@ -622,6 +622,8 @@ export const SUITES = {
     "src/lib/font-settings.test.ts",
     "src/lib/font-wiring.test.ts",
     "src/lib/cave-config.test.ts",
+    "src/lib/omnigent/client.test.ts",
+    "src/lib/omnigent/ward-preflight.test.ts",
     "src/lib/cave-config-state-race.test.ts",
     "src/lib/cave-config-write-race.test.ts",
     "src/lib/hub-access-token.test.ts",
@@ -1035,6 +1037,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/omnigent/ward-preflight.test.ts",
   "src/lib/cave-inbox-bulk.test.ts",
   "src/app/api/prompts/route.test.ts",
   "src/app/api/marketplace/pack-prompts-route.test.ts",

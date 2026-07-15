@@ -52,6 +52,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // Custom). Non-empty unlisted ids still force custom mode via render logic.
   const [modelCustomMode, setModelCustomMode] = useState(false);
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
+  const [draftOmnigentAgentId, setDraftOmnigentAgentId] = useState(familiar.omnigent?.agentId ?? "");
+  const [draftOmnigentHostId, setDraftOmnigentHostId] = useState(familiar.omnigent?.hostId ?? "");
+  const [draftOmnigentWorkspace, setDraftOmnigentWorkspace] = useState(
+    familiar.omnigent?.workspace ?? "",
+  );
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
   const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
@@ -81,12 +86,27 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setDraftModel(familiar.model ?? "");
     setModelCustomMode(false);
     setDraftNote(familiar.note ?? "");
+    setDraftOmnigentAgentId(familiar.omnigent?.agentId ?? "");
+    setDraftOmnigentHostId(familiar.omnigent?.hostId ?? "");
+    setDraftOmnigentWorkspace(familiar.omnigent?.workspace ?? "");
     setDraftVoiceProvider(familiar.voiceProvider ?? "");
     setDraftVoiceModel(familiar.voiceModel ?? "");
     setDraftVoiceName(familiar.voiceName ?? "");
     setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
     setToast(null);
-  }, [familiar.id, familiar.harnessOverride, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName, familiar.autoSelfReport]);
+  }, [
+    familiar.id,
+    familiar.harnessOverride,
+    familiar.model,
+    familiar.note,
+    familiar.omnigent?.agentId,
+    familiar.omnigent?.hostId,
+    familiar.omnigent?.workspace,
+    familiar.voiceProvider,
+    familiar.voiceModel,
+    familiar.voiceName,
+    familiar.autoSelfReport,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,6 +195,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           setModelCustomMode(false);
         }
         if ("note" in patch) setDraftNote(familiar.note ?? "");
+        if ("omnigent" in patch) {
+          setDraftOmnigentAgentId(familiar.omnigent?.agentId ?? "");
+          setDraftOmnigentHostId(familiar.omnigent?.hostId ?? "");
+          setDraftOmnigentWorkspace(familiar.omnigent?.workspace ?? "");
+        }
         if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
         if ("voiceModel" in patch) setDraftVoiceModel(familiar.voiceModel ?? "");
         if ("voiceName" in patch) setDraftVoiceName(familiar.voiceName ?? "");
@@ -489,6 +514,97 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 />
               </div>
             </label>
+          </section>
+
+          <section className="familiar-studio-brain__card">
+            <h3 className="familiar-studio-brain__card-title">Omnigent fleet</h3>
+            <p className="familiar-studio-brain__hint">
+              Defaults when this familiar runs on Omnigent hosts (Fleet, chat host chip, board).
+              Empty fields fall back to Settings → Omnigent, then the live catalog.
+              Bound runs also inject SOUL/IDENTITY and fail Ward preflight on contract violations.
+            </p>
+            <div className="familiar-studio-brain__field-grid">
+              <label className="familiar-studio-brain__row">
+                <span className="familiar-studio-brain__label">Agent id</span>
+                <div className="familiar-studio-brain__control">
+                  <input
+                    type="text"
+                    value={draftOmnigentAgentId}
+                    onChange={(e) => setDraftOmnigentAgentId(e.target.value)}
+                    onBlur={() => {
+                      void save({
+                        omnigent: {
+                          agentId: draftOmnigentAgentId.trim() || undefined,
+                          hostId: draftOmnigentHostId.trim() || undefined,
+                          workspace: draftOmnigentWorkspace.trim() || undefined,
+                        },
+                      });
+                    }}
+                    placeholder="catalog agent id (optional)"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="familiar-studio-brain__input"
+                  />
+                </div>
+              </label>
+              <label className="familiar-studio-brain__row">
+                <span className="familiar-studio-brain__label">Host id</span>
+                <div className="familiar-studio-brain__control">
+                  <input
+                    type="text"
+                    value={draftOmnigentHostId}
+                    onChange={(e) => setDraftOmnigentHostId(e.target.value)}
+                    onBlur={() => {
+                      void save({
+                        omnigent: {
+                          agentId: draftOmnigentAgentId.trim() || undefined,
+                          hostId: draftOmnigentHostId.trim() || undefined,
+                          workspace: draftOmnigentWorkspace.trim() || undefined,
+                        },
+                      });
+                    }}
+                    placeholder="omnigent host_id (optional)"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="familiar-studio-brain__input"
+                  />
+                </div>
+              </label>
+              <label className="familiar-studio-brain__row">
+                <span className="familiar-studio-brain__label">Workspace</span>
+                <div className="familiar-studio-brain__control">
+                  <input
+                    type="text"
+                    value={draftOmnigentWorkspace}
+                    onChange={(e) => setDraftOmnigentWorkspace(e.target.value)}
+                    onBlur={() => {
+                      const agentId = draftOmnigentAgentId.trim();
+                      const hostId = draftOmnigentHostId.trim();
+                      const workspace = draftOmnigentWorkspace.trim();
+                      // All empty → clear binding; otherwise persist the three fields.
+                      if (!agentId && !hostId && !workspace) {
+                        void save({ omnigent: null });
+                        return;
+                      }
+                      void save({
+                        omnigent: {
+                          agentId: agentId || undefined,
+                          hostId: hostId || undefined,
+                          workspace: workspace || undefined,
+                        },
+                      });
+                    }}
+                    placeholder="/absolute/path/on/host"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="familiar-studio-brain__input"
+                  />
+                </div>
+              </label>
+            </div>
           </section>
 
           {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}

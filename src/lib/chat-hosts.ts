@@ -21,9 +21,9 @@ import {
 export const LOCAL_HOST_ID = "local";
 
 export type ChatHostOption = {
-  /** LOCAL_HOST_ID or the ssh host string. */
+  /** LOCAL_HOST_ID, ssh host string, or omnigent:<host_id>. */
   id: string;
-  kind: "local" | "ssh";
+  kind: "local" | "ssh" | "omnigent";
   label: string;
   cwd?: string;
   /** true/false from a live probe; null = not probed. */

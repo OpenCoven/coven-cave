@@ -138,6 +138,7 @@ export async function GET() {
         autoSelfReport: configEntry.autoSelfReport ?? false,
         asanaEnabled: configEntry.asanaEnabled,
         asanaWorkspaceGid: configEntry.asanaWorkspaceGid,
+        ...(binding.omnigent ? { omnigent: binding.omnigent } : {}),
         avatarUrl: avatar
           ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
           : undefined,

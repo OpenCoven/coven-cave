@@ -20,8 +20,10 @@ import { LOCAL_HOST_ID, type ChatHostOption } from "@/lib/chat-hosts";
 import "@/styles/composer-host-chip.css";
 
 export function hostStatusKind(option: ChatHostOption): "online" | "offline" | "unknown" {
-  if (option.kind === "local" || option.online === true) return "online";
-  return option.online === false ? "offline" : "unknown";
+  if (option.kind === "local") return "online";
+  if (option.online === true) return "online";
+  if (option.online === false) return "offline";
+  return "unknown";
 }
 
 /** Register a new SSH host for chat execution: probe (BatchMode, key auth)
@@ -158,9 +160,10 @@ export function useComposerHosts(value: string): {
     const base: ChatHostOption[] = hosts ?? [
       { id: LOCAL_HOST_ID, kind: "local", label: "This machine", online: true },
     ];
-    return base.some((option) => option.id === value)
-      ? base
-      : [...base, { id: value, kind: "ssh", label: value, online: null }];
+    if (base.some((option) => option.id === value)) return base;
+    const kind = value.startsWith("omnigent:") ? ("omnigent" as const) : ("ssh" as const);
+    const label = kind === "omnigent" ? value.replace(/^omnigent:/, "Omnigent · ") : value;
+    return [...base, { id: value, kind, label, online: null }];
   }, [hosts, value]);
 
   return { options, load, removeHost };

@@ -60,6 +60,8 @@ import {
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat-hosts";
+import { isOmnigentHostOptionId } from "@/lib/omnigent/ids";
+import { startOmnigentRunFromBrowser } from "@/lib/omnigent/browser-run";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -4056,6 +4058,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
     if ((!trimmed && outgoingAttachments.length === 0) || busy) return;
+
+    // Omnigent fleet host chip: create a session on the control plane and open
+    // it in Omnigent (does not stream into Cave chat transcript).
+    const fleetHost = controlsOverride?.runtimeHost ?? runtimeHost;
+    if (isOmnigentHostOptionId(fleetHost) && submitPrompt) {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await startOmnigentRunFromBrowser({
+          prompt: submitPrompt,
+          runtimeHost: fleetHost,
+          familiarId: familiar.id,
+          title: submitPrompt.slice(0, 80),
+          source: "cave-chat",
+        });
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setInput("");
+        appendSystem(
+          `Started Omnigent session ${result.sessionId}. Open: ${result.webUrl}`,
+        );
+        void openExternalUrl(result.webUrl);
+        announce("Omnigent session started");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Omnigent run failed");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const request: FailedSend = {
       text: trimmed,
       attachments: outgoingAttachments,

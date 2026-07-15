@@ -77,6 +77,11 @@ export const FamiliarWorkQueueView = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
+export const FleetView = dynamic(
+  timed("fleet", () => import("@/components/fleet-view").then((m) => m.FleetView)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
 // BrowserPane's imperative handle crosses this boundary as the regular
 // `handleRef` prop — next/dynamic does not forward element refs (cave-masj).
 export const BrowserPane = dynamic(

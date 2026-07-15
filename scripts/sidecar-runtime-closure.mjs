@@ -43,7 +43,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // cave-fpqx.9) traced the runtime to 5,258 — raised to 5,300.
   // 2026-07-15 (later): main reached 5,300 and the familiars/[id]/backdrop
   // route (cave-j0dz) tipped it to 5,301 — raised to 5,320.
-  fileCount: 5_320,
+  // 2026-07-15 (fleet): the Omnigent fleet surface (#3216) traced the runtime
+  // to 5,331–5,337 across platforms — raised to 5,360.
+  fileCount: 5_360,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
