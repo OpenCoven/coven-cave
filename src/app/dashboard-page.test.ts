@@ -13,7 +13,14 @@ assert.match(page, /dr-page/, "dashboard should use the shared surface styling")
 
 const cockpitUrl = new URL("../components/dashboard/dashboard-cockpit.tsx", import.meta.url);
 assert.equal(existsSync(cockpitUrl), true, "DashboardCockpit component should exist");
-const cockpit = readFileSync(cockpitUrl, "utf8");
+// The cockpit is split across the data/layout root, the presentational panel
+// layer, and the pure label helpers (cave-tsoz) — this contract covers the
+// whole surface, so read the split as one source.
+const cockpit = [
+  readFileSync(cockpitUrl, "utf8"),
+  readFileSync(new URL("../components/dashboard/cockpit-panels.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/dashboard-cockpit-format.ts", import.meta.url), "utf8"),
+].join("\n");
 
 // The cockpit folds the original triage/summary zones in…
 assert.match(cockpit, /ActionInbox/, "cockpit keeps the action inbox (triage) panel");
