@@ -955,17 +955,21 @@ export function parseResearchSourcesFile(raw: string): ResearchSourceRef[] {
 }
 
 /**
- * True when a failed kill response means the session is already not running —
- * the daemon no longer knows it (4xx: dead, pruned, or a Cave-direct session
- * that never existed on the daemon) or there is no daemon to be running it
- * (status 0). Cancel's goal state is "nothing running", which is already true
- * in every one of those cases; only a live daemon actively erroring (5xx)
- * keeps a cancel blocked. Without this, a mission whose session died out from
- * under it was uncancellable — cancel threw forever (cave-malz).
+ * True when a failed kill response means the session is already not running.
+ * Verified against the live daemon: killing an already-exited session returns
+ * 409; a session the daemon never knew (pruned, or a Cave-direct session that
+ * never existed daemon-side) is 404/410; status 0 means there is no daemon to
+ * be running it at all. Cancel's goal state is "nothing running", which is
+ * already true in each of those cases. Auth/rate-limit rejections (401/403/
+ * 429) and daemon errors (5xx) stay blocking — the daemon or hub is alive and
+ * the session may genuinely still be running (cave-malz).
  */
 export function sessionAlreadyGone(response: { ok: boolean; status: number }): boolean {
   if (response.ok) return false;
-  return response.status === 0 || (response.status >= 400 && response.status < 500);
+  return response.status === 0
+    || response.status === 404
+    || response.status === 409
+    || response.status === 410;
 }
 
 export function makeProductionResearchMissionRunner() {

@@ -906,11 +906,17 @@ test("malformed sources checkpoint the mission instead of publishing", async () 
 });
 
 test("cancel treats an already-gone session as stopped (cave-malz)", () => {
-  // 4xx: the daemon no longer knows the session (dead, pruned, or a
-  // Cave-direct session that never existed daemon-side); 0: no daemon at all.
+  // Verified against the live daemon: an already-exited session kills as 409;
+  // unknown/pruned (and Cave-direct) sessions are 404/410; 0 = no daemon.
   assert.equal(sessionAlreadyGone({ ok: false, status: 404 }), true);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 409 }), true);
   assert.equal(sessionAlreadyGone({ ok: false, status: 410 }), true);
   assert.equal(sessionAlreadyGone({ ok: false, status: 0 }), true);
+  // Auth/rate-limit rejections: the daemon or hub is alive and the session
+  // may still be running — cancel stays blocked.
+  assert.equal(sessionAlreadyGone({ ok: false, status: 401 }), false);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 403 }), false);
+  assert.equal(sessionAlreadyGone({ ok: false, status: 429 }), false);
   // A live daemon actively erroring may still be running the session.
   assert.equal(sessionAlreadyGone({ ok: false, status: 500 }), false);
   assert.equal(sessionAlreadyGone({ ok: false, status: 502 }), false);
