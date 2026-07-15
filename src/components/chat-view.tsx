@@ -97,7 +97,9 @@ import {
 import type { StreamEvent } from "@/lib/stream-events";
 import { extractNextPaths } from "@/lib/next-paths";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
 import { GitHubCard } from "@/components/github-card";
+import { SkillStageCard } from "@/components/skill-stage-card";
 import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
   NO_PROJECT_ID,
@@ -6282,8 +6284,16 @@ function TurnRowImpl({
                   PR link" gesture (design §1). User turns only, never system. */}
               {(() => {
                 const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
-                return ghRefs.length ? (
+                const skillInvocation = turn.role === "user" ? parseSkillInvocation(turn.text) : null;
+                return ghRefs.length || skillInvocation ? (
                   <div className="mt-2 space-y-2">
+                    {skillInvocation ? (
+                      // Deterministic /skill card (design §5): the app built
+                      // this prompt itself, so no marker is needed to know a
+                      // skill was invoked. Live stage arrives via the
+                      // assistant turn's own <coven:skill> cards.
+                      <SkillStageCard name={skillInvocation.name} stage="invoked" note={skillInvocation.args} />
+                    ) : null}
                     {ghRefs.map((d) => (
                       <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} />
                     ))}
@@ -6306,7 +6316,11 @@ function TurnRowImpl({
   // tags so they never flash as raw text (cards mount on settle); settled
   // turns keep them for splitSegmentsForGitHub below to replace with cards.
   const ghSafeVisible = turn.pending ? stripGitHubMarkers(reasoningSplit.visible) : reasoningSplit.visible;
-  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(ghSafeVisible);
+  // Skill markers extract on BOTH paths — the whole point is live "which
+  // skill, what stage" visibility while the agent works (design §5). The
+  // extraction also strips partial tails so raw tags never flash.
+  const skillSplit = extractSkillMarkers(ghSafeVisible);
+  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(skillSplit.visible);
   const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
@@ -6498,6 +6512,16 @@ function TurnRowImpl({
             ) : null}
             {/* Agent-produced inline attachments (file chips → lightbox). */}
             {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+            {/* Skill stage cards (design §5): one per skill name per turn,
+                updated in place by repeated <coven:skill> markers — live
+                while streaming, settled state after. */}
+            {skillSplit.updates.length ? (
+              <div className="mt-2 space-y-1.5">
+                {skillSplit.updates.map((u) => (
+                  <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
+                ))}
+              </div>
+            ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
             {/* Designated "Tool activity" section on settled turns. Codex
