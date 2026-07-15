@@ -39,7 +39,7 @@ assert.match(builder, /announce\(msg, "assertive"\)/, "failures are announced to
 assert.match(builder, /role="alert"/, "failures render an alert banner");
 assert.match(builder, /role="group" aria-label="Skill templates"/, "an empty instructions field offers a template gallery");
 assert.match(builder, /aria-label="SKILL\.md preview"/, "the preview pane is a labelled region");
-assert.match(builder, /disabled=\{!ready\}/, "Save stays disabled until the required fields are present");
+assert.match(builder, /disabled=\{!ready \|\| cavemanning\}/, "Save stays disabled until the required fields are present");
 assert.match(builder, /Build another skill/, "the success panel offers a reset path");
 
 // ── Templating (cave-6ptj) ──────────────────────────────────────────────────
@@ -82,5 +82,29 @@ assert.match(builder, /aria-live="polite"/, "verdicts are announced politely");
 // shared formatter (client-safe module), never a server-only copy.
 assert.match(builder, /from "@\/lib\/skill-build-format"/, "the builder imports the shared client-safe formatter");
 assert.doesNotMatch(format, /node:fs|node:os|node:path|@\/lib\/server/, "the shared formatter stays client-safe");
+
+// ── Format button (cave-d00p) ───────────────────────────────────────────────
+// Applies the shared save-time canonicalization to the fields in place —
+// WYSIWYG alignment only; the composed artifact is proven unchanged by the
+// formatSkillDraft invariant test.
+assert.match(builder, /formatSkillDraft\(\{ name, description, tags, instructions \}\)/, "Format derives from the shared canonicalizer");
+assert.match(builder, /disabled=\{formatIsNoop \|\| saving \|\| cavemanning\}/, "Format disables when already canonical");
+assert.match(builder, /announce\("Formatted to match the saved file\.", "polite"\)/, "Format announces politely");
+assert.match(builder, /type="button"[\s\S]{0,500}>\s*Format\s*<\/Button>/, "Format button has explicit type=button to prevent form submit");
+
+// ── Caveman button (cave-d00p) ──────────────────────────────────────────────
+// One bounded-assist call rewrites the three prose fields in a consistent
+// terse register; tags never round-trip. Snapshot revert survives until any
+// field diverges from the applied rewrite.
+assert.match(builder, /fetch\("\/api\/skills\/caveman"/, "Caveman posts to the guarded rewrite endpoint");
+assert.match(builder, /"ph:bone"/, "Caveman wears the bone");
+assert.match(builder, /title="Rewrite name, description, and instructions in ultra-terse caveman speak — fewer tokens, same meaning\. Code blocks survive untouched\."/, "the hover tooltip explains the transformation");
+assert.match(builder, /Revert caveman/, "an applied rewrite offers revert");
+assert.match(builder, /cavemanRevertable/, "revert is gated on fields still matching the applied rewrite");
+
+const cavemanBlock = builder.slice(builder.indexOf("const cavemanize"), builder.indexOf("const revertCaveman"));
+assert.doesNotMatch(cavemanBlock, /setTagsText/, "cavemanize never calls setTagsText");
+assert.match(builder, /fields changed while rewriting/, "a stale caveman completion is discarded, never applied over newer text");
+assert.match(builder, /proseFieldsRef\.current/, "completion reads the latest fields through a ref (enhance race rule)");
 
 console.log("skill-builder.test.ts OK");

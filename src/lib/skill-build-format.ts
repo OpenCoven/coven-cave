@@ -51,6 +51,12 @@ function frontmatterValue(value: string): string {
   return value.replace(/\s+/g, " ").replace(/"/g, "'").trim();
 }
 
+// Body handling shared by the composer and the Format helper — one source of
+// truth so the Format button can never drift from the written body.
+function normalizedBody(instructions: string): string {
+  return instructions.replace(/\r\n/g, "\n").trim();
+}
+
 export function normalizedSkillTags(tags: readonly string[] | undefined): string[] {
   if (!tags) return [];
   const out: string[] = [];
@@ -77,6 +83,29 @@ export function composeSkillMd(draft: SkillBuildDraft): string {
     for (const tag of tags) lines.push(`  - ${tag}`);
   }
   lines.push("---", "");
-  const body = draft.instructions.replace(/\r\n/g, "\n").trim();
+  const body = normalizedBody(draft.instructions);
   return `${lines.join("\n")}\n${body}\n`;
+}
+
+export type SkillDraftFields = {
+  name: string;
+  description: string;
+  tags: string[];
+  instructions: string;
+};
+
+/**
+ * The Format button: apply exactly the canonicalization `composeSkillMd`
+ * performs at save/preview time (quote swap, whitespace collapse, tag
+ * normalization, body CRLF/trim), so the form fields become the same text
+ * the written file will contain. Never changes the composed artifact:
+ * composeSkillMd(formatSkillDraft(f)) === composeSkillMd(f). Idempotent.
+ */
+export function formatSkillDraft(fields: SkillDraftFields): SkillDraftFields {
+  return {
+    name: frontmatterValue(fields.name),
+    description: frontmatterValue(fields.description),
+    tags: normalizedSkillTags(fields.tags),
+    instructions: normalizedBody(fields.instructions),
+  };
 }
