@@ -98,6 +98,7 @@ import type { StreamEvent } from "@/lib/stream-events";
 import { extractNextPaths } from "@/lib/next-paths";
 import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
 import { GitHubCard } from "@/components/github-card";
+import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
   NO_PROJECT_ID,
   chatProjectById,
@@ -5217,6 +5218,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         {hasLinkedChips ? linkedContextRow : null}
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
+      <ChatStageHeader projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">

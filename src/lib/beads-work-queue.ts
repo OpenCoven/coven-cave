@@ -4,6 +4,7 @@
 // (src/lib/beads-pr-management.ts); this module only groups and labels — it
 // never re-derives lane/check/review state itself.
 import { isStalePr } from "./beads-pr-patrol.ts";
+import { resolveQueueLane } from "./stage-model.ts";
 import type { PullRequestSummary } from "./beads-pr-management.ts";
 
 /** Subset of a `bd ready --json` row the queue reads. */
@@ -42,6 +43,9 @@ export type MergedPrRef = {
   url: string;
   beadIds: string[];
   mergedAt: string | null;
+  /** Head branch, when the bridge captured it — lets the chat stage header
+   *  resolve a session branch's merged PR without a bead link. */
+  headRefName?: string | null;
 };
 
 // The named lanes the epic's acceptance requires the surface to be able to
@@ -133,21 +137,10 @@ const ACTIONABLE_LANES: ReadonlySet<WorkQueueLaneKey> = new Set(
   LANE_ORDER.filter((lane) => lane !== "waiting"),
 );
 
-function prLaneToQueueLane(prLane: PullRequestSummary["lane"]): WorkQueueLaneKey {
-  switch (prLane) {
-    case "checks-failing":
-      return "checks-failing";
-    case "changes-requested":
-      return "changes-requested";
-    case "needs-review":
-      return "needs-review";
-    case "ready-to-merge":
-      return "ready-to-merge";
-    // draft, checks-pending, blocked
-    default:
-      return "waiting";
-  }
-}
+// Lane mapping now lives in stage-model.ts (cave-fpqx.10) so the queue and
+// the chat stage header resolve lanes identically; this alias keeps existing
+// call sites untouched.
+const prLaneToQueueLane = resolveQueueLane;
 
 function labelValue(labels: string[] | null | undefined, prefix: string): string | null {
   for (const label of labels ?? []) {
