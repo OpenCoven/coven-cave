@@ -330,7 +330,7 @@ jobs:
           curl -fsSL \
             "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
             -o /tmp/appimagetool
-          printf '%s  %s\n' "$APPIMAGETOOL_SHA256" /tmp/appimagetool | sha256sum --check --status
+          printf '%s  %s\n' "$APPIMAGETOOL_SHA256" /tmp/appimagetool | sha256sum --check --status || { echo "::error::appimagetool checksum mismatch (APPIMAGETOOL_SHA256)"; exit 1; }
           chmod +x /tmp/appimagetool
 
           APPIMAGE_EXTRACT_AND_RUN=1 \
