@@ -30,6 +30,7 @@ import { handlePlaceholderTab, placeholderSpans } from "@/lib/prompt-placeholder
 import { buildSkillAgentPrompt } from "@/lib/skill-agent-prompt";
 import {
   composeSkillMd,
+  formatSkillDraft,
   MAX_SKILL_DESCRIPTION_CHARS,
   MAX_SKILL_NAME_CHARS,
   SKILL_BUILD_ROOTS,
@@ -186,6 +187,25 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
     [name, description, tags, instructions],
   );
   const ready = Boolean(slug && name.trim() && description.trim() && instructions.trim());
+
+  // ── Format (cave-d00p): align the fields with the exact saved artifact ────
+  const formatted = useMemo(
+    () => formatSkillDraft({ name, description, tags, instructions }),
+    [name, description, tags, instructions],
+  );
+  const formattedTagsText = formatted.tags.join(", ");
+  const formatIsNoop =
+    formatted.name === name &&
+    formatted.description === description &&
+    formattedTagsText === tagsText &&
+    formatted.instructions === instructions;
+  const applyFormat = useCallback(() => {
+    setName(formatted.name);
+    setDescription(formatted.description);
+    setTagsText(formattedTagsText);
+    setInstructions(formatted.instructions);
+    announce("Formatted to match the saved file.", "polite");
+  }, [announce, formatted, formattedTagsText]);
 
   const reset = useCallback(() => {
     setName("");
@@ -455,16 +475,29 @@ export function SkillBuilder({ onSaved, onViewSkills, familiars = [] }: Props) {
             <p className="min-w-0 text-[11px] text-[var(--text-muted)]">
               Writes <span className="break-all font-mono text-[var(--text-secondary)]">{destination}</span>
             </p>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              leadingIcon="ph:hammer"
-              loading={saving}
-              disabled={!ready}
-            >
-              Save skill
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                leadingIcon="ph:paint-brush"
+                disabled={formatIsNoop || saving}
+                onClick={applyFormat}
+                title="Normalize fields to exactly what will be written — quotes, whitespace, tags."
+              >
+                Format
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                leadingIcon="ph:hammer"
+                loading={saving}
+                disabled={!ready}
+              >
+                Save skill
+              </Button>
+            </div>
           </div>
         </form>
 

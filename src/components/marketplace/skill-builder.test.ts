@@ -83,4 +83,13 @@ assert.match(builder, /aria-live="polite"/, "verdicts are announced politely");
 assert.match(builder, /from "@\/lib\/skill-build-format"/, "the builder imports the shared client-safe formatter");
 assert.doesNotMatch(format, /node:fs|node:os|node:path|@\/lib\/server/, "the shared formatter stays client-safe");
 
+// ── Format button (cave-d00p) ───────────────────────────────────────────────
+// Applies the shared save-time canonicalization to the fields in place —
+// WYSIWYG alignment only; the composed artifact is proven unchanged by the
+// formatSkillDraft invariant test.
+assert.match(builder, /formatSkillDraft\(\{ name, description, tags, instructions \}\)/, "Format derives from the shared canonicalizer");
+assert.match(builder, /disabled=\{formatIsNoop \|\| saving\}/, "Format disables when already canonical");
+assert.match(builder, /announce\("Formatted to match the saved file\.", "polite"\)/, "Format announces politely");
+assert.match(builder, /type="button"[\s\S]{0,500}>\s*Format\s*<\/Button>/, "Format button has explicit type=button to prevent form submit");
+
 console.log("skill-builder.test.ts OK");
