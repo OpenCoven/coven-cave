@@ -63,4 +63,13 @@ assert.match(
 );
 assert.match(card, /isFailConclusion\(run\.conclusion\)/, "run glyphs share the fail-conclusion source of truth");
 
+// W2a (cave-fpqx.8): tier-1 actions fire directly from cards.
+assert.match(card, /fetch\("\/api\/github\/comment"/, "comment action posts through the existing comment route");
+assert.match(card, /fetch\("\/api\/github\/issue"/, "close/reopen goes through PATCH /api/github/issue");
+assert.match(card, /setIssueState\("closed"\)/, "issues expose a close action");
+assert.match(card, /\{!item\.isPull \?/, "close/reopen renders for issues, not pull requests");
+assert.match(card, /fetch\("\/api\/github\/resolve-thread"/, "thread resolve/unresolve fires through the existing GraphQL route");
+assert.match(card, /onMutated=\{state\.refresh\}/, "successful actions re-hydrate the card");
+assert.match(card, /role="alert"/, "action failures surface as alerts, never silently");
+
 console.log("github chat-card wiring: ok");
