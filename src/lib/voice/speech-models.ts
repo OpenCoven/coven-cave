@@ -180,8 +180,14 @@ function cloneJob(job: SpeechModelDownloadJob): SpeechModelDownloadJob {
 }
 
 function putJob(job: SpeechModelDownloadJob): SpeechModelDownloadJob {
+  const MAX_JOBS = 200;
   job.updatedAt = new Date().toISOString();
   jobs.set(job.id, job);
+  while (jobs.size > MAX_JOBS) {
+    const oldest = jobs.keys().next().value as string | undefined;
+    if (!oldest) break;
+    jobs.delete(oldest);
+  }
   return job;
 }
 
@@ -211,6 +217,7 @@ async function writeResponseToFile(
   try {
     if (!res.body) {
       const bytes = new Uint8Array(await res.arrayBuffer());
+      if (job.totalBytes > 0 && bytes.byteLength > job.totalBytes) throw new Error("size_mismatch");
       hash.update(bytes);
       await handle.writeFile(bytes);
       job.receivedBytes = bytes.byteLength;
@@ -222,8 +229,13 @@ async function writeResponseToFile(
       const { done, value } = await reader.read();
       if (done) break;
       hash.update(value);
-      await handle.write(value);
-      job.receivedBytes += value.byteLength;
+      const { bytesWritten } = await handle.write(value);
+      if (bytesWritten !== value.byteLength) throw new Error("partial_write");
+      job.receivedBytes += bytesWritten;
+      if (job.totalBytes > 0 && job.receivedBytes > job.totalBytes) {
+        await reader.cancel();
+        throw new Error("size_mismatch");
+      }
       putJob(job);
     }
     return hash.digest("hex");
@@ -248,6 +260,7 @@ export async function runSpeechModelDownload(
     if (!res.ok) throw new Error(`download_http_${res.status}`);
     const headerSize = Number(res.headers.get("content-length"));
     if (Number.isFinite(headerSize) && headerSize > 0) {
+      if (headerSize !== model.sizeBytes) throw new Error("size_mismatch");
       job.totalBytes = headerSize;
       putJob(job);
     }
@@ -312,7 +325,7 @@ export async function removeSpeechModel(modelId: string, root = speechModelsRoot
   const modelPath = speechModelPath(model, root);
   const modelDir = path.dirname(modelPath);
   try {
-    await rm(modelDir, { recursive: true, force: true });
+    await rm(modelDir, { recursive: true, force: false });
     return "removed";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
