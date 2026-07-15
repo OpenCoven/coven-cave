@@ -23,7 +23,5 @@ assert.match(
 assert.doesNotMatch(source, /:\s*token\b/, "merge route must not return token material");
 
 console.log("github-merge-route.test.ts OK");
-const src2 = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-import assert2 from "node:assert/strict";
-assert2.match(src2, /new Set\(\["squash", "merge", "rebase"\]\)/, "merge methods are allow-listed");
-assert2.match(src2, /data\.merged !== true/, "merge success requires GitHub's merged:true");
+assert.match(source, /new Set\(\["squash", "merge", "rebase"\]\)/, "merge methods are allow-listed");
+assert.match(source, /data\.merged !== true/, "merge success requires GitHub's merged:true");

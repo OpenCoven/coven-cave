@@ -23,8 +23,6 @@ assert.match(
 assert.doesNotMatch(source, /:\s*token\b/, "dispatch route must not return token material");
 
 console.log("github-dispatch-route.test.ts OK");
-const src2 = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-import assert2 from "node:assert/strict";
-assert2.match(src2, /const WORKFLOW_RE = /, "workflow name/id validated before path interpolation");
-assert2.match(src2, /const REF_RE = /, "ref validated");
-assert2.match(src2, /res\.status !== 204/, "dispatch success is 204 No Content");
+assert.match(source, /const WORKFLOW_RE = /, "workflow name/id validated before path interpolation");
+assert.match(source, /const REF_RE = /, "ref validated");
+assert.match(source, /res\.status !== 204/, "dispatch success is 204 No Content");

@@ -23,6 +23,4 @@ assert.match(
 assert.doesNotMatch(source, /:\s*token\b/, "rerun route must not return token material");
 
 console.log("github-rerun-route.test.ts OK");
-const src2 = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-import assert2 from "node:assert/strict";
-assert2.match(src2, /rerun-failed-jobs/, "failedOnly (default) re-runs failed jobs only");
+assert.match(source, /rerun-failed-jobs/, "failedOnly (default) re-runs failed jobs only");

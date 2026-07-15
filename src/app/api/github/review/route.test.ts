@@ -23,7 +23,5 @@ assert.match(
 assert.doesNotMatch(source, /:\s*token\b/, "review route must not return token material");
 
 console.log("github-review-route.test.ts OK");
-const src2 = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
-import assert2 from "node:assert/strict";
-assert2.match(src2, /new Set\(\["APPROVE", "REQUEST_CHANGES", "COMMENT"\]\)/, "review events are allow-listed");
-assert2.match(src2, /event !== "APPROVE" && !text/, "non-approve reviews require a body");
+assert.match(source, /new Set\(\["APPROVE", "REQUEST_CHANGES", "COMMENT"\]\)/, "review events are allow-listed");
+assert.match(source, /event !== "APPROVE" && !text/, "non-approve reviews require a body");
