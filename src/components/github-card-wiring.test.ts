@@ -40,4 +40,27 @@ assert.match(card, /connect GitHub to hydrate/, "unauth state degrades with a co
 assert.match(card, /descriptorUrl\(descriptor\)/, "card links out via the canonical descriptor URL");
 assert.match(card, /res\.status === 401 \|\| res\.status === 403/, "auth failures map to the unauth state");
 
+// W1b (cave-fpqx.7): checks strip + expansion + review threads.
+assert.match(card, /\/api\/github\/checks\?repo=/, "PR cards fetch the checks breakdown");
+assert.match(
+  card,
+  /usePausablePoll\(\(\) => setTick\(\(t\) => t \+ 1\), 30_000, \{ enabled: enabled && pending \}\)/,
+  "checks re-poll every 30s only while the rollup is pending (hidden tabs pause)",
+);
+assert.match(
+  card,
+  /item\.isPull && item\.state === "open" && !item\.merged/,
+  "checks fetch is gated to open, unmerged pull requests",
+);
+assert.match(card, /countChecks\(data\.runs\)/, "strip buckets come from the shared countChecks helper");
+assert.match(card, /aria-expanded=\{expanded\}/, "check details expand in place with an accessible toggle");
+assert.match(card, /\/api\/github\/comments\?repo=.*isPull=1/, "review-thread cards hydrate from /api/github/comments");
+assert.match(card, /connect GitHub to see review threads/, "unauthenticated review threads degrade legibly");
+assert.match(
+  card,
+  /t\.comments\.some\(\(c\) => c\.id === descriptor\.threadId\)/,
+  "thread matching uses comment databaseIds (what #discussion_r ids name), not GraphQL node ids",
+);
+assert.match(card, /isFailConclusion\(run\.conclusion\)/, "run glyphs share the fail-conclusion source of truth");
+
 console.log("github chat-card wiring: ok");
