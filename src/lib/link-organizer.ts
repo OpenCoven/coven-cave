@@ -8,6 +8,8 @@
  * chat `/save` (alias `/link`) command and the Research desk's Links shelf.
  */
 
+import type { IconName } from "./icon.tsx";
+
 export type LinkCategory =
   | "github"
   | "docs"
@@ -28,7 +30,7 @@ export const LINK_CATEGORY_ORDER: LinkCategory[] = [
   "other",
 ];
 
-export const LINK_CATEGORY_META: Record<LinkCategory, { label: string; icon: string }> = {
+export const LINK_CATEGORY_META: Record<LinkCategory, { label: string; icon: IconName }> = {
   github: { label: "GitHub", icon: "ph:github-logo" },
   docs: { label: "Docs", icon: "ph:book-open" },
   paper: { label: "Papers", icon: "ph:graduation-cap" },
@@ -208,7 +210,7 @@ export function normalizeLinkUrl(rawUrl: string): string {
 /** Group saved links into ordered category shelves (empty groups omitted). */
 export function groupSavedLinks(
   links: SavedLink[],
-): { category: LinkCategory; label: string; icon: string; links: SavedLink[] }[] {
+): { category: LinkCategory; label: string; icon: IconName; links: SavedLink[] }[] {
   const byCategory = new Map<LinkCategory, SavedLink[]>();
   for (const link of links) {
     const bucket = byCategory.get(link.category) ?? [];

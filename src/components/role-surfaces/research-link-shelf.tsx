@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { extractLinks } from "@/lib/link-extractor";
 import { groupSavedLinks, type SavedLink } from "@/lib/link-organizer";
@@ -154,7 +154,7 @@ export function ResearchLinkShelf({ onOpenUrl }: Props) {
           {groups.map((group) => (
             <div key={group.category} className="research-links__group">
               <h4 className="research-links__group-title">
-                <Icon name={group.icon as IconName} width={13} height={13} aria-hidden />
+                <Icon name={group.icon} width={13} height={13} aria-hidden />
                 {group.label}
                 <span className="research-links__count">{group.links.length}</span>
               </h4>

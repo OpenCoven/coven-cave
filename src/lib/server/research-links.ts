@@ -14,7 +14,9 @@ import path from "node:path";
 import {
   categorizeLink,
   deriveLinkTitle,
+  LINK_CATEGORY_ORDER,
   normalizeLinkUrl,
+  type LinkCategory,
   type SavedLink,
 } from "../link-organizer.ts";
 import { caveHome } from "../coven-paths.ts";
@@ -41,12 +43,23 @@ function normalizeStoredLink(value: unknown): SavedLink | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<SavedLink>;
   if (typeof raw.url !== "string" || !raw.url) return null;
+  // Disk contents are user-editable: unknown categories would silently drop
+  // out of the grouped shelves, and unparsable timestamps would scramble the
+  // newest-first sort — re-derive both instead of trusting them.
+  const category =
+    typeof raw.category === "string" && LINK_CATEGORY_ORDER.includes(raw.category as LinkCategory)
+      ? (raw.category as LinkCategory)
+      : categorizeLink(raw.url);
+  const addedAt =
+    typeof raw.addedAt === "string" && Number.isFinite(Date.parse(raw.addedAt))
+      ? raw.addedAt
+      : new Date().toISOString();
   return {
     id: typeof raw.id === "string" && raw.id ? raw.id : randomUUID(),
     url: raw.url,
-    category: typeof raw.category === "string" ? (raw.category as SavedLink["category"]) : categorizeLink(raw.url),
+    category,
     title: typeof raw.title === "string" && raw.title ? raw.title : deriveLinkTitle(raw.url),
-    addedAt: typeof raw.addedAt === "string" ? raw.addedAt : new Date().toISOString(),
+    addedAt,
     source: raw.source === "desk" ? "desk" : "chat",
   };
 }
