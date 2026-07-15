@@ -94,6 +94,15 @@ assert.match(
   /\.cave-chat-linear \{[^}]*--cave-chat-measure:\s*[\d.]+rem/,
   "the chat surface defines a shared reading measure token",
 );
+// Widened measure (cave-973a): 52rem read as cramped on desktop panes — the
+// column must stay at least 64rem so wide viewports aren't mostly empty flank.
+{
+  const measure = /--cave-chat-measure:\s*([\d.]+)rem/.exec(css);
+  assert.ok(
+    measure && Number(measure[1]) >= 64,
+    `the reading measure stays ≥ 64rem (got ${measure?.[1] ?? "none"})`,
+  );
+}
 const linearThread = /\.cave-chat-linear \.cave-chat-thread \{[^}]*\}/.exec(css)?.[0] ?? "";
 assert.match(
   linearThread,

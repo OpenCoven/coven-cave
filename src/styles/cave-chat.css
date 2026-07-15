@@ -2705,10 +2705,11 @@ details[open] > .cave-tool-summary::before {
   /* Centered reading column (cave-xsq.1): the conversation + composer share one
      comfortable measure and sit in a centered column — the ChatGPT reading
      model — instead of spanning the full pane (reverses the 2026-06-18
-     full-width choice below). ~52rem ≈ a ~81ch line at 14px. The header stays a
-     full-bleed bar (its divider spans the pane); only the reading/writing column
-     is capped + centered. */
-  --cave-chat-measure: 52rem;
+     full-width choice below). Widened 52rem → 64rem (cave-973a): ~1024px,
+     ~100ch at 14px — wide panes waste less flank while the column still reads
+     as a column. The header stays a full-bleed bar (its divider spans the
+     pane); only the reading/writing column is capped + centered. */
+  --cave-chat-measure: 64rem;
   background:
     linear-gradient(to bottom, color-mix(in oklch, var(--bg-raised) 18%, transparent), transparent 150px),
     var(--bg-base);
