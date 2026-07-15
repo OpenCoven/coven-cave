@@ -29,9 +29,11 @@ if (process.env.COVEN_CAVE_BUNDLE === "1" && !process.env.__NEXT_PRIVATE_STANDAL
 }
 
 const ACCESS_TOKEN = process.env.COVEN_CAVE_ACCESS_TOKEN ?? "";
+const SIDECAR_TOKEN = process.env.COVEN_CAVE_AUTH_TOKEN ?? "";
 const ACCESS_COOKIE = "coven_cave_access";
 const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
+const SIDECAR_QUERY_PARAM = "covenCaveToken";
 
 type PtySession = {
   pty: import("node-pty").IPty;
@@ -101,10 +103,18 @@ function timingSafeEqualString(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function isExpectedToken(value: string | undefined | null): boolean {
+function isExpectedAccessToken(value: string | undefined | null): boolean {
   if (!ACCESS_TOKEN || !value) return false;
   if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
   return isValidSignedAccessToken(value, ACCESS_TOKEN);
+}
+
+function isExpectedSidecarToken(value: string | undefined | null): boolean {
+  return Boolean(SIDECAR_TOKEN && value && timingSafeEqualString(value, SIDECAR_TOKEN));
+}
+
+function isExpectedPtyToken(value: string | undefined | null): boolean {
+  return isExpectedAccessToken(value) || isExpectedSidecarToken(value);
 }
 
 // Mirrors src/lib/mobile-access-token.ts (server.mjs is transpiled standalone,
@@ -200,14 +210,21 @@ function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
 
-function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
-  if (!ACCESS_TOKEN) return false;
+function firstQueryValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
-  const queryToken = Array.isArray(query[ACCESS_QUERY_PARAM])
-    ? query[ACCESS_QUERY_PARAM][0]
-    : query[ACCESS_QUERY_PARAM];
-  const candidates = [bearerToken(req), queryToken, ...getTokensFromCookie(req.headers.cookie)];
-  return candidates.some(isExpectedToken);
+function isPtyAuthRequired(): boolean {
+  return Boolean(ACCESS_TOKEN || SIDECAR_TOKEN);
+}
+
+function isAuthorized(req: IncomingMessage, query: Record<string, string | string[] | undefined>): boolean {
+  if (!isPtyAuthRequired()) return false;
+
+  const queryToken = firstQueryValue(query[ACCESS_QUERY_PARAM]);
+  const sidecarQueryToken = firstQueryValue(query[SIDECAR_QUERY_PARAM]);
+  const candidates = [bearerToken(req), queryToken, sidecarQueryToken, ...getTokensFromCookie(req.headers.cookie)];
+  return candidates.some(isExpectedPtyToken);
 }
 
 function defaultShell(): string {
@@ -489,7 +506,7 @@ server.on("upgrade", (req, socket, head) => {
   // forwards the `<host>.ts.net` Host) legitimately arrives with a
   // non-loopback Host and must pass the source gate on the strength of its
   // token — mirroring proxy.ts's isAllowedApiHost relaxation on REST.
-  const tokenAuthenticated = ACCESS_TOKEN ? isAuthorized(req, query) : false;
+  const tokenAuthenticated = isPtyAuthRequired() ? isAuthorized(req, query) : false;
 
   if (!isAllowedUpgradeSource(req, tokenAuthenticated)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
@@ -497,13 +514,15 @@ server.on("upgrade", (req, socket, head) => {
     return;
   }
 
-  // Only enforce token auth when a token is actually configured (remote/mobile
-  // access mode). With no token set — the local desktop app and dev server —
-  // the loopback host+origin gate above is the protection, and credential-less
-  // connections are the local app itself. #714 dropped this and 401'd every
-  // local terminal (reintroducing the v0.0.72 "Terminal connection failed"
-  // regression that server-pty-ws.test.ts warns about).
-  if (ACCESS_TOKEN && !tokenAuthenticated) {
+  // Enforce token auth whenever the server has a remote/mobile credential.
+  // With no token set — the local desktop app and dev server — the loopback
+  // host+origin gate above is the protection, and credential-less connections
+  // are the local app itself. #714 dropped this and 401'd every local terminal
+  // (reintroducing the v0.0.72 "Terminal connection failed" regression that
+  // server-pty-ws.test.ts warns about). Native mobile mode configures only
+  // COVEN_CAVE_AUTH_TOKEN; require that sidecar token here too so
+  // Tailscale-forwarded PTY upgrades cannot become credential-less shells.
+  if (isPtyAuthRequired() && !tokenAuthenticated) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
