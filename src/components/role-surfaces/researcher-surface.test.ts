@@ -37,6 +37,12 @@ test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(ledger, /Open in Grimoire/);
 });
 
+test("the mission header does not print the intent twice", () => {
+  // Short intents become the title verbatim (missionTitle), so the intent
+  // paragraph only renders when it adds information beyond the title.
+  assert.match(detail, /\{researchIntentAddsContext\(mission\) \? <p>\{mission\.intent\}<\/p> : null\}/);
+});
+
 test("evidence trajectory statuses come from the shared terminal-truthful reconciler", () => {
   // The old local heuristic trusted stale step snapshots over terminal mission
   // status (completed missions rendered "Scope running / rest pending") and

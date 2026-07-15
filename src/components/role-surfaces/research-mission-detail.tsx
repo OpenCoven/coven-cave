@@ -8,6 +8,7 @@ import {
   allowedResearchActions,
   describeResearchSchedule,
   researchBoundReadings,
+  researchIntentAddsContext,
   researchPhaseStatuses,
   type ResearchMission,
   type ResearchMissionAction,
@@ -160,7 +161,7 @@ export function ResearchMissionDetail({
             <time dateTime={mission.updatedAt}>updated {relativeTime(mission.updatedAt) || "just now"}</time>
           </span>
           <h2 id="research-mission-title">{mission.title}</h2>
-          <p>{mission.intent}</p>
+          {researchIntentAddsContext(mission) ? <p>{mission.intent}</p> : null}
         </div>
         {sessionId ? (
           <Button

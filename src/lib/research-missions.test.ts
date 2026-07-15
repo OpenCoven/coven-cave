@@ -10,6 +10,7 @@ import {
   normalizeResearchBounds,
   RESEARCH_BOUND_LIMITS,
   researchBoundReadings,
+  researchIntentAddsContext,
   researchPhaseStatuses,
   validateCreateResearchMissionInput,
 } from "./research-missions.ts";
@@ -488,5 +489,44 @@ test("checkpoint cadence pluralizes correctly", () => {
   assert.equal(
     reading(meterMission({ bounds: { checkpointEvery: 2 } }), "checkpoint").value,
     "every 2 iterations",
+  );
+});
+
+// --- researchIntentAddsContext: the header must not repeat itself ---
+
+test("intent identical to the title adds nothing — the header shows it once", () => {
+  // Screenshot repro: short intents become the title verbatim.
+  assert.equal(
+    researchIntentAddsContext({
+      title: "Optimizing Agents via Automated Self-Performance Evaluations",
+      intent: "Optimizing Agents via Automated Self-Performance Evaluations",
+    }),
+    false,
+  );
+  // Whitespace and case differences are still the same sentence.
+  assert.equal(
+    researchIntentAddsContext({
+      title: "Compare local-first note apps",
+      intent: "  compare   Local-first note APPS ",
+    }),
+    false,
+  );
+});
+
+test("truncated and customized titles keep the informative intent line", () => {
+  const longIntent = `Compare ${"very ".repeat(20)}long approaches to agent evaluation across benchmarks`;
+  assert.equal(
+    researchIntentAddsContext({
+      title: `${longIntent.replace(/\s+/g, " ").slice(0, 77)}…`,
+      intent: longIntent,
+    }),
+    true,
+  );
+  assert.equal(
+    researchIntentAddsContext({
+      title: "Agent self-evaluation brief",
+      intent: "Compare approaches to automated self-performance evaluation for agents",
+    }),
+    true,
   );
 });

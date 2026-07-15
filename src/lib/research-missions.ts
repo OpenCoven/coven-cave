@@ -402,6 +402,22 @@ export function researchPhaseStatuses(
   });
 }
 
+/**
+ * Whether the mission intent says anything the title does not.
+ *
+ * missionTitle copies a short intent verbatim (and truncates a long one with
+ * an ellipsis), so most detail headers would otherwise print the same
+ * sentence twice. Comparison normalizes whitespace and case; truncated and
+ * explicitly customized titles keep the intent line because the full
+ * sentence still carries information.
+ */
+export function researchIntentAddsContext(
+  mission: Pick<ResearchMission, "title" | "intent">,
+): boolean {
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+  return normalize(mission.intent) !== normalize(mission.title);
+}
+
 export type ResearchBoundReading = {
   id: "time" | "sources" | "checkpoint" | "spend";
   label: string;
