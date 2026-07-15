@@ -188,6 +188,12 @@ export type CreateResearchMissionResult =
 
 const FAMILIAR_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
+/** Minimum meaningful research intent — blocks accidental one-word launches
+ *  that would still spend a real familiar session. Enforced by the create
+ *  validator (server) and the desk composer (client). */
+export const RESEARCH_INTENT_MIN_LENGTH = 8;
+export const RESEARCH_INTENT_MAX_LENGTH = 10_000;
+
 export function validateCreateResearchMissionInput(
   input: unknown,
 ): CreateResearchMissionResult {
@@ -200,8 +206,11 @@ export function validateCreateResearchMissionInput(
     return { ok: false, error: "invalid familiar id" };
   }
   const intent = typeof value.intent === "string" ? value.intent.trim() : "";
-  if (!intent || intent.length > 10_000) {
-    return { ok: false, error: "intent must be between 1 and 10000 characters" };
+  if (intent.length < RESEARCH_INTENT_MIN_LENGTH || intent.length > RESEARCH_INTENT_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `intent must be between ${RESEARCH_INTENT_MIN_LENGTH} and ${RESEARCH_INTENT_MAX_LENGTH} characters`,
+    };
   }
   if (!(RESEARCH_MISSION_MODES as readonly unknown[]).includes(value.mode)) {
     return { ok: false, error: "invalid research mode" };
