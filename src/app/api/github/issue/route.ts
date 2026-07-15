@@ -52,7 +52,10 @@ export async function POST(req: Request) {
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const text = typeof body.body === "string" ? body.body : "";
   const labels = Array.isArray(body.labels)
-    ? body.labels.filter((l): l is string => typeof l === "string" && l.trim().length > 0).slice(0, 20)
+    ? body.labels
+        .filter((l): l is string => typeof l === "string" && l.trim().length > 0)
+        .map((l) => l.trim())
+        .slice(0, 20)
     : [];
 
   if (!REPO_RE.test(repo)) {

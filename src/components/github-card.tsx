@@ -237,6 +237,7 @@ function CardActions({
   const [draft, setDraft] = useState("");
   const [phase, setPhase] = useState<ActionPhase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const composerId = `gh-card-composer-${descriptor.repo.replace(/[^A-Za-z0-9]/g, "-")}-${descriptor.number}`;
 
   const run = async (fn: () => Promise<Response>) => {
     setPhase("sending");
@@ -292,7 +293,14 @@ function CardActions({
   return (
     <div className="mt-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        <button type="button" className={btn} onClick={() => setComposing((v) => !v)} disabled={phase === "sending"}>
+        <button
+          type="button"
+          className={btn}
+          onClick={() => setComposing((v) => !v)}
+          disabled={phase === "sending"}
+          aria-expanded={composing}
+          aria-controls={composerId}
+        >
           Comment
         </button>
         {!item.isPull ? (
@@ -312,7 +320,7 @@ function CardActions({
         ) : null}
       </div>
       {composing ? (
-        <div className="mt-1.5 flex items-end gap-1.5">
+        <div id={composerId} className="mt-1.5 flex items-end gap-1.5">
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -421,7 +429,7 @@ function ReviewThreadBody({
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
       if (!res.ok || !data?.ok) {
-        setActionError(data?.error ?? `failed (${res.status})`);
+        setActionError(res.status === 401 ? "connect GitHub first" : (data?.error ?? `failed (${res.status})`));
       } else {
         state.refresh();
       }
@@ -458,7 +466,7 @@ function ReviewThreadBody({
               type="button"
               className="focus-ring shrink-0 rounded border border-[var(--border-strong)] px-1.5 py-px text-[10px] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50"
               onClick={() => toggleResolve(t.id, !t.isResolved)}
-              disabled={busyThread === t.id}
+              disabled={busyThread != null}
               aria-label={t.isResolved ? "Unresolve this review thread" : "Resolve this review thread"}
             >
               {busyThread === t.id ? "…" : t.isResolved ? "Unresolve" : "Resolve"}
