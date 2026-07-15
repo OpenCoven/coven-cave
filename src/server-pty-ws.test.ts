@@ -11,12 +11,14 @@ assert.match(src, /app\.getUpgradeHandler\(\)/, "server forwards non-PTY upgrade
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
 assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");
-assert.match(src, /if \(!ACCESS_TOKEN\) return false/, "PTY WebSocket auth fails closed when no access token is configured");
-// The 401 only applies when a token is actually configured (remote/mobile). With
-// no token (the local desktop app / dev server) the loopback host+origin gate is
-// the protection — guarding the 401 on ACCESS_TOKEN keeps credential-less local
-// connections working. #714 dropped this guard and 401'd every local terminal.
-assert.match(src, /if \(ACCESS_TOKEN && !isAuthorized\(req, query\)\)/, "PTY upgrade only 401s on missing credentials when a token is configured (credential-less loopback is the local app)");
+assert.match(src, /if \(!ACCESS_TOKEN \|\| !value\) return false/, "PTY WebSocket access-token auth fails closed when no access token is configured");
+// The 401 applies when a remote/mobile credential is configured. With neither
+// token (the local desktop app / dev server) the loopback host+origin gate is
+// the protection, preserving credential-less local connections. Native mobile
+// mode configures only COVEN_CAVE_AUTH_TOKEN, so it must also trigger auth.
+assert.match(src, /function isPtyAuthRequired\(\): boolean \{\s*return Boolean\(ACCESS_TOKEN \|\| SIDECAR_TOKEN\);\s*\}/, "PTY auth is required when either the mobile access token or sidecar token is configured");
+assert.match(src, /if \(isPtyAuthRequired\(\) && !isAuthorized\(req, query\)\)/, "PTY upgrade 401s on missing credentials when any PTY auth token is configured");
+assert.match(src, /SIDECAR_QUERY_PARAM = "covenCaveToken"/, "PTY WebSocket auth accepts the sidecar token query param used by native WebSockets");
 assert.match(src, /Bearer /, "server accepts bearer auth for non-cookie clients");
 // Paired devices hold SIGNED tokens (v1.<expiresAt>.<nonce>.<sig> — see
 // src/lib/mobile-access-token.ts), not the raw secret: the QR/deep-link
@@ -30,7 +32,7 @@ assert.match(
 assert.match(
   src,
   /if \(timingSafeEqualString\(value, ACCESS_TOKEN\)\) return true;\s*\n\s*return isValidSignedAccessToken\(value, ACCESS_TOKEN\);/,
-  "isExpectedToken accepts the raw secret OR a valid signed token",
+  "isExpectedAccessToken accepts the raw secret OR a valid signed token",
 );
 assert.match(
   src,

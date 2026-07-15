@@ -31,6 +31,21 @@ export const SIDECAR_AUTH_BRIDGE = `
     window.history.replaceState(window.history.state, "", nextUrl);
   }
 
+  const NativeWebSocket = window.WebSocket;
+  window.WebSocket = function CovenCaveWebSocket(url, protocols) {
+    try {
+      const nextUrl = new URL(url.toString(), window.location.href);
+      if (nextUrl.origin === window.location.origin && nextUrl.pathname === "/api/pty-ws") {
+        nextUrl.searchParams.set(tokenParam, token);
+        return new NativeWebSocket(nextUrl, protocols);
+      }
+    } catch {
+      // Fall back to the native WebSocket path below.
+    }
+    return new NativeWebSocket(url, protocols);
+  };
+  window.WebSocket.prototype = NativeWebSocket.prototype;
+
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {
     try {

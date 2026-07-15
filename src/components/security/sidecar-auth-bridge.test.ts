@@ -19,6 +19,12 @@ const TOKEN_HEADER = "x-coven-cave-token";
 function makeWindow({ search = "", hash = "", origin = "http://localhost:3210" }) {
   const store = new Map();
   const fetchCalls = [];
+  const webSocketCalls = [];
+  function NativeWebSocket(url, protocols) {
+    this.url = url.toString();
+    this.protocols = protocols;
+    webSocketCalls.push({ url: this.url, protocols });
+  }
   const win = {
     location: { search, hash, pathname: "/", origin, href: origin + "/" + search + hash },
     sessionStorage: {
@@ -28,9 +34,11 @@ function makeWindow({ search = "", hash = "", origin = "http://localhost:3210" }
     history: { state: { a: 1 }, replaceState(_s, _t, url) { win.__replacedUrl = url; } },
     fetch: (input, init) => { fetchCalls.push({ input, init }); return Promise.resolve("ok"); },
     EventSource: function NativeES() {},
+    WebSocket: NativeWebSocket,
   };
   win.__store = store;
   win.__fetchCalls = fetchCalls;
+  win.__webSocketCalls = webSocketCalls;
   return win;
 }
 
@@ -67,6 +75,17 @@ test("attaches the token header to same-origin /api/ fetches", async () => {
   const last = win.__fetchCalls.at(-1);
   const headers = last.init.headers;
   assert.equal(headers.get(TOKEN_HEADER), "tok_api", "/api/ requests carry the sidecar token header");
+});
+
+test("attaches the token query param to same-origin PTY WebSockets", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_ws" });
+  run(win);
+  const ws = new win.WebSocket("/api/pty-ws?threadId=t1&cols=80&rows=24");
+  assert.equal(
+    ws.url,
+    "http://localhost:3210/api/pty-ws?threadId=t1&cols=80&rows=24&covenCaveToken=tok_ws",
+    "PTY WebSockets carry the sidecar token because browsers cannot set custom WS headers",
+  );
 });
 
 test("does not touch non-/api/ or cross-origin fetches", async () => {
