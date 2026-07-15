@@ -46,11 +46,11 @@ function harness() {
 
 {
   const h = harness();
-  h.setLane({ npmBusy: true, npmBusyTarget: "coven-code", npmBusyLabel: "Coven Code" });
-  h.jobs.set("coven-code", { status: "done", elapsedMs: 20, tail: "", ok: true });
+  h.setLane({ npmBusy: true, npmBusyTarget: "coven-cli", npmBusyLabel: "Coven CLI" });
+  h.jobs.set("coven-cli", { status: "done", elapsedMs: 20, tail: "", ok: true });
   h.observer.start();
   await flush();
-  assert.deepEqual(h.terminals, [["coven-code", true]], "a job completing before the attachment fetch is still processed");
+  assert.deepEqual(h.terminals, [["coven-cli", true]], "a job completing before the attachment fetch is still processed");
 }
 
 {
@@ -68,12 +68,12 @@ function harness() {
   h.jobs.set("coven-cli", { status: "running", elapsedMs: 10, tail: "" });
   h.observer.start();
   await flush();
-  h.setLane({ npmBusy: true, npmBusyTarget: "coven-code", npmBusyLabel: "Coven Code" });
+  // coven-cli completes; the lane stays busy (another npm target takes over).
   h.jobs.set("coven-cli", { status: "done", elapsedMs: 20, tail: "", ok: true });
-  h.jobs.set("coven-code", { status: "running", elapsedMs: 5, tail: "" });
+  h.setLane({ npmBusy: true, npmBusyTarget: "codex", npmBusyLabel: "Codex" });
   await h.tick();
   assert.deepEqual(h.terminals, [["coven-cli", true]], "the prior owner completes while the new owner is attached");
-  assert.ok(h.seen.some((event) => event.join(":") === "job:coven-code:running"));
+  assert.ok(h.seen.some((event) => event.join(":") === "job:coven-cli:running"));
   h.setLane({ npmBusy: false, npmBusyTarget: null, npmBusyLabel: null });
   await h.tick();
   await h.tick();

@@ -291,16 +291,16 @@ assert.match(
   "npm-kind targets share a busy lock (mirrors the server's 409)",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /type InstallTarget =[\s\S]*"coven-cli"[\s\S]*"coven-code"/,
-  "startup one-click installs keep coven-code as an install target (optional runtime)",
+  /type InstallTarget =[\s\S]*"coven-code"/,
+  "coven-code is no longer an install target after unification",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /"coven-code": "npm"/,
-  "coven-code uses the npm install lane",
+  "coven-code npm lane entry removed after unification",
 );
 
 assert.match(
@@ -354,10 +354,10 @@ assert.match(
   "server complete is the wizard's single source of truth for setup",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /"coven-code": \{\s*target: "coven-code"/,
-  "the runtime grid offers Coven Code as a one-click optional install",
+  "coven-code is no longer offered as a one-click install target after unification",
 );
 
 assert.match(

@@ -24,24 +24,16 @@ if (process.platform !== "win32") {
   try {
     await mkdir(npmDir, { recursive: true });
     const cliTarget = path.join(npmDir, "node_modules", "@opencoven", "cli", "bin", "coven.js");
-    const codeTarget = path.join(npmDir, "node_modules", "@opencoven", "coven-code", "bin", "coven-code");
     await mkdir(path.dirname(cliTarget), { recursive: true });
-    await mkdir(path.dirname(codeTarget), { recursive: true });
-    await writeFile(cliTarget, 'console.log("coven 0.0.60");\n');
-    await writeFile(codeTarget, 'console.log("coven-code 0.6.1");\n');
+    await writeFile(cliTarget, 'console.log("coven 0.1.1");\n');
 
     // npm creates an extensionless launcher as well as the .cmd shim. Its
     // content deliberately advertises the wrong versions, proving the status
     // probe does not run the first `where` result merely because it is first.
     await writeFile(path.join(npmDir, "coven"), 'console.log("coven 9.9.9");\n');
-    await writeFile(path.join(npmDir, "coven-code"), 'console.log("coven-code 9.9.9");\n');
     await writeFile(
       path.join(npmDir, "coven.cmd"),
       'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\cli\\bin\\coven.js" %*\r\n',
-    );
-    await writeFile(
-      path.join(npmDir, "coven-code.cmd"),
-      'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@opencoven\\coven-code\\bin\\coven-code" %*\r\n',
     );
 
     // In the packaged-server process `npm` is not directly spawnable on
@@ -54,31 +46,21 @@ if (process.platform !== "win32") {
     // `where` sees npm's extensionless shadow and the .cmd launcher. The
     // status probe must display the latter because it is the spawnable path
     // that covenLaunchCommandForBinary then resolves without shell mode.
-    for (const [binary, shadow, launcher] of [
-      ["coven", path.join(npmDir, "coven"), path.join(npmDir, "coven.cmd")],
-      ["coven-code", path.join(npmDir, "coven-code"), path.join(npmDir, "coven-code.cmd")],
-    ]) {
-      const matches = execFileSync("where", [binary], { encoding: "utf8", env: process.env })
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .map((entry) => path.normalize(entry).toLowerCase());
-      assert.ok(matches.includes(shadow.toLowerCase()), `${binary} has its npm extensionless PATH shadow`);
-      assert.ok(matches.includes(launcher.toLowerCase()), `${binary} has its npm .cmd PATH launcher`);
-    }
+    const matches = execFileSync("where", ["coven"], { encoding: "utf8", env: process.env })
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((entry) => path.normalize(entry).toLowerCase());
+    assert.ok(matches.includes(path.join(npmDir, "coven").toLowerCase()), "coven has its npm extensionless PATH shadow");
+    assert.ok(matches.includes(path.join(npmDir, "coven.cmd").toLowerCase()), "coven has its npm .cmd PATH launcher");
 
     const tools = await openCovenToolStatuses();
+    assert.equal(tools.length, 1, "only coven-cli is a tracked tool after unification");
     const cli = tools.find((tool) => tool.id === "coven-cli");
-    const code = tools.find((tool) => tool.id === "coven-code");
 
     assert.deepEqual(
       { binary: cli?.binary, path: cli?.path, current: cli?.current, installed: cli?.installed },
-      { binary: "coven", path: path.join(npmDir, "coven.cmd"), current: "0.0.60", installed: true },
+      { binary: "coven", path: path.join(npmDir, "coven.cmd"), current: "0.1.1", installed: true },
       "Coven CLI status displays the .cmd path selected by where and its own JavaScript target version",
-    );
-    assert.deepEqual(
-      { binary: code?.binary, path: code?.path, current: code?.current, installed: code?.installed },
-      { binary: "coven-code", path: path.join(npmDir, "coven-code.cmd"), current: "0.6.1", installed: true },
-      "Coven Code status displays the .cmd path selected by where and its extensionless package target version",
     );
   } finally {
     if (original.APPDATA === undefined) delete process.env.APPDATA;

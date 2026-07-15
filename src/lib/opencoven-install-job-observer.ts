@@ -1,4 +1,4 @@
-export type OpenCovenInstallTarget = "coven-cli" | "coven-code";
+export type OpenCovenInstallTarget = "coven-cli";
 
 export type OpenCovenInstallJob = {
   status: "running" | "done";
@@ -17,7 +17,6 @@ export type OpenCovenNpmLane = {
 
 const NPM_LANE_TARGET_LABELS: Readonly<Record<string, string>> = {
   "coven-cli": "Coven CLI",
-  "coven-code": "Coven Code",
   codex: "Codex",
   claude: "Claude Code",
   copilot: "Copilot",
@@ -25,7 +24,7 @@ const NPM_LANE_TARGET_LABELS: Readonly<Record<string, string>> = {
 };
 
 function isOpenCovenTarget(target: string): target is OpenCovenInstallTarget {
-  return target === "coven-cli" || target === "coven-code";
+  return target === "coven-cli";
 }
 
 export function createOpenCovenInstallJobObserver({

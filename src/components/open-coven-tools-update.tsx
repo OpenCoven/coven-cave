@@ -21,7 +21,7 @@ import {
 import { relativeTime } from "@/lib/relative-time";
 import { createOpenCovenInstallJobObserver } from "@/lib/opencoven-install-job-observer";
 
-type InstallTarget = "coven-cli" | "coven-code";
+type InstallTarget = "coven-cli";
 
 type ToolStatus = {
   id: InstallTarget;
@@ -145,7 +145,7 @@ function successfulInstallDetail(
 }
 
 function isInstallTarget(id: string): id is InstallTarget {
-  return id === "coven-cli" || id === "coven-code";
+  return id === "coven-cli";
 }
 
 function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {

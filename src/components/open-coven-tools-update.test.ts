@@ -62,7 +62,7 @@ assert.match(
 assert.match(src, /Post-install recheck could not verify npm latest/, "a registry recheck failure is not misdiagnosed as a different executable");
 assert.match(src, /Verified \$\{verification\.current\}/, "green success includes the verified version");
 assert.doesNotMatch(src, /Verified \$\{verification\.current\} at \$\{verification\.path\}/, "green success does not retain a local executable path");
-assert.match(src, /coven-code/, "coven-code is included in the client install target type");
+assert.doesNotMatch(src, /coven-code/, "coven-code is no longer a separate install target after unification");
 assert.match(src, /function buildDiagnosticsText/, "tool diagnostics text is centralized");
 assert.match(src, /navigator\.clipboard\.writeText/, "component can copy tool diagnostics for debugging");
 assert.match(src, /Copy diagnostics/, "About tools exposes a copy diagnostics action");
@@ -115,11 +115,11 @@ assert.match(
   /\.settings-tool-action--primary\s*\{[\s\S]*?border:[\s\S]*?box-shadow:/,
   "Primary Settings tool action should have a visible border and elevation",
 );
-assert.match(status, /minimumVersion: "0\.0\.54"/, "Coven CLI compatibility floor includes the Windows Codex connection fixes");
-assert.match(status, /minimumVersion: "0\.6\.0"/, "coven-code compatibility floor is 0.6.0 — older (including the deprecated bare package, stuck at 0.0.22) reads as incompatible");
+assert.match(status, /minimumVersion: "0\.1\.1"/, "Coven CLI compatibility floor unified to v0.1.1 (CLI self-manages the engine)");
+assert.doesNotMatch(status, /minimumVersion: "0\.6\.0"/, "coven-code compatibility floor removed after unification");
 assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "Coven CLI exposes the exact update command");
-assert.match(status, /installCommand: "npm i -g @opencoven\/coven-code@latest"/, "coven-code exposes the exact update command, scoped package only");
-assert.match(status, /packageName: "@opencoven\/coven-code"/, "coven-code status probes the SCOPED registry package for latest");
+assert.doesNotMatch(status, /installCommand: "npm i -g @opencoven\/coven-code@latest"/, "coven-code install command removed after unification");
+assert.doesNotMatch(status, /packageName: "@opencoven\/coven-code"/, "coven-code status entry removed after unification");
 assert.doesNotMatch(status, /packageName: "coven-code"/, "bare coven-code is a different, deprecated npm package — status must never probe it");
 assert.match(status, /const compatible =[\s\S]*packageVerified[\s\S]*!!probe\.version[\s\S]*compareSemver\(probe\.version, tool\.minimumVersion\) >= 0/, "compatibility requires both the expected executable package and the Cave minimum");
 assert.match(status, /const state = openCovenToolState/, "server status derives a truthful explicit state");
