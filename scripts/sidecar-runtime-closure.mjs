@@ -52,7 +52,9 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // 2026-07-15 (voice models): speech-model management adds 4 API route
   // handlers for readiness/download polling/removal, traced at 5,443 — raised
   // to 5,450 with narrow headroom.
-  fileCount: 5_450,
+  // 2026-07-15 (onboarding updates): split readiness/update routes and their
+  // shared SWR cache trace at 5,459–5,463 — raised to 5,470.
+  fileCount: 5_470,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
