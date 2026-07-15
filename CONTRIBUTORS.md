@@ -6,6 +6,14 @@ improvements.
 
 ## Community Contributors
 
+### Jiachen LIU ([@AmberLJC](https://github.com/AmberLJC))
+
+Jiachen authored the two MIT-licensed research-ideation skills adapted for the
+Seeker's Lens reference Craft: structured research brainstorming and
+cognitive-science-based creative thinking. The Craft pins the original content
+and provenance at Orchestra Research commit
+[`773a529`](https://github.com/orchestra-research/AI-Research-SKILLs/commit/773a52944ba4747a18bd4ae9ade53fff041adcbc).
+
 ### CodeDoes ([@CodeDoes](https://github.com/CodeDoes))
 
 CodeDoes contributed the single-build Linux AppImage GLib-strip release flow,

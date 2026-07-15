@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Button } from "@/components/ui/button";
 
 type DirEntry = { name: string; path: string };
@@ -65,16 +67,12 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     }
   }, [open, load]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // This is a true modal (aria-modal, covers the page). Trap focus inside it,
+  // close on Escape, and restore focus to the trigger on close — the hook does
+  // all three, replacing the old window-level Escape listener (which left focus
+  // free to Tab out to the page behind the scrim).
+  useFocusTrap(open, dialogRef, { onEscape: onClose });
   if (!open) return null;
 
   // Display the current path with $HOME collapsed to `~`.
@@ -83,7 +81,13 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
       ? "~" + cwd.slice(home.length)
       : cwd ?? "…";
 
-  return (
+  // Portal to <body>: this modal mounts inside arbitrary hosts (the home
+  // composer card, the projects form), and a transformed/backdrop-filtered
+  // ancestor there becomes the containing block for position:fixed — trapping
+  // the scrim in that ancestor's stacking context, where sibling composer
+  // chrome paints on top of the "open" modal. Rendering from <body> restores
+  // true-viewport fixed positioning regardless of the host's styling.
+  return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
@@ -93,7 +97,8 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     >
       <div
         ref={dialogRef}
-        className="flex max-h-[80vh] w-[520px] max-w-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl"
+        tabIndex={-1}
+        className="flex max-h-[80vh] w-[520px] max-w-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl focus:outline-none"
         style={{ background: "var(--bg-panel)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -178,6 +183,7 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

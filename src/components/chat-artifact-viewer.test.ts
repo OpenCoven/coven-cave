@@ -15,7 +15,8 @@ assert.match(src, /sandbox-error/, "listens for sandbox runtime errors");
 assert.match(src, /generateArtifactCode/, "refine calls the generator");
 assert.match(src, /buildRefinePrompt/, "refine wraps with the refine prompt");
 assert.match(src, /\/api\/canvas/, "save posts to the canvas store");
-assert.match(src, /cave:navigate-mode/, "open-in-canvas navigates to the canvas page");
+assert.doesNotMatch(src, /cave:navigate-mode/, "artifact viewer no longer deep-links the retired Canvas page");
+assert.match(src, /Saved to Canvas/, "after save, confirms inline instead of navigating");
 
 // Expand-to-fullscreen: a toggle action enters a fullscreen overlay, Escape
 // exits, and — critically — the overlay is PORTALED to document.body so it
@@ -35,5 +36,18 @@ assert.match(src, /createPortal\(shell, document\.body\)/, "fullscreen overlay i
 assert.match(src, /useFocusTrap\(fullscreen, shellRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/, "fullscreen traps focus + closes on Escape + returns focus via the shared hook");
 assert.match(src, /role: "dialog" as const, "aria-modal": true/, "fullscreen overlay is a labelled modal dialog");
 assert.doesNotMatch(src, /addEventListener\("keydown"/, "the hand-rolled Escape listener is gone (the focus trap owns it)");
+
+// ── Sandbox postMessage validation invariant (cave-mnz1) ────────────────────
+// The iframe is sandboxed WITHOUT allow-same-origin, so its origin is opaque
+// and its messages arrive with e.origin === "null". The e.source identity
+// check is the correct (and stronger) validation; adding an e.origin
+// equality check would silently break the error overlay. Audits keep
+// flagging this — it is deliberate.
+assert.match(src, /if \(e\.source !== frameRef\.current\?\.contentWindow\) return;/, "sandbox messages are authenticated by frame identity");
+assert.doesNotMatch(src, /e\.origin !== window\.location\.origin/, "no origin-equality check (opaque-origin messages carry origin 'null')");
+{
+  const runtime = readFileSync(new URL("../sandbox/runtime-entry.ts", import.meta.url), "utf8");
+  assert.match(runtime, /targetOrigin "\*" is correct here \(cave-mnz1\)/, "the runtime documents why it posts to '*'");
+}
 
 console.log("chat-artifact-viewer source contract: ok");

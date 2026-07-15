@@ -32,6 +32,8 @@ export function normalizeReadingLeading(value: unknown): ReadingLeading {
 }
 
 export function readReadingLeading(): ReadingLeading {
+  const central = normalizeReadingLeading(readAppPreferences().appearance.reading.leading);
+  if (central !== DEFAULT_READING_LEADING || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_READING_LEADING;
   try {
     return normalizeReadingLeading(window.localStorage.getItem(READING_LEADING_KEY));
@@ -44,9 +46,12 @@ export function readReadingLeading(): ReadingLeading {
  * Apply the level: set `--cave-reading-leading` on <html> (or remove it for the
  * default so the stylesheet fallback wins) and persist the choice.
  */
-export function applyReadingLeading(level: ReadingLeading) {
+export function applyReadingLeading(level: ReadingLeading, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeReadingLeading(level);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { reading: { leading: normalized } } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_READING_LEADING) {
     root.style.removeProperty("--cave-reading-leading");
@@ -60,3 +65,4 @@ export function applyReadingLeading(level: ReadingLeading) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

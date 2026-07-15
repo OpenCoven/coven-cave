@@ -3,17 +3,25 @@
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
+import type { FeedbackContext } from "@/lib/message-feedback";
+import { matchesStopPhrase, readStopPhrase } from "@/lib/stop-phrase";
 import { RichText } from "@/components/rich-text";
-import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { FileLinkResolverContext, MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
+import { resolveFileRefTarget, type FileRef } from "@/lib/file-ref";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { invalidateConversation, readCachedConversation, storeConversation } from "@/lib/conversation-cache";
 import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
+import { stampFirstReplyOnce } from "@/lib/first-run-stamps";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
-import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { canonicalize, formatHelp } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
+import { parseHarnessFailure, parseHarnessAuthFailure, type HarnessAuthFailure } from "@/lib/harness-failure";
+import { HarnessFixActions } from "@/components/harness-fix-actions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
@@ -30,17 +38,16 @@ import {
   shouldShowChatArchiveNudge,
 } from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
+import type { ChatHandoffContext } from "@/lib/chat-task-handoff";
+import { createSmartTaskFromChat } from "@/lib/chat-task-autofill";
 import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   attachmentIcon,
   extractAgentAttachmentMarkers,
-  fileToAttachment,
-  hasDraggedFiles,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
-  type ComposerAttachment,
 } from "@/lib/chat-attachments";
 import {
   FILE_MENTION_RESULT_LIMIT,
@@ -55,25 +62,21 @@ import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/co
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
-import { modelSlashOptions, resolveModelArg, formatModelList } from "@/lib/slash-model";
+import { resolveModelArg, formatModelList } from "@/lib/slash-model";
 import {
-  skillSlashOptions,
   resolveSkillInvocation,
   formatSkillList,
   buildSkillPrompt,
-  skillCommandMatches,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
-  promptSlashOptions,
   resolvePromptArg,
   formatPromptList,
   promptInsertion,
   type PromptOption,
 } from "@/lib/slash-prompt";
-import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
-import { catalogForRuntime } from "@/lib/runtime-models";
+import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
@@ -94,6 +97,12 @@ import {
 } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
 import { extractNextPaths } from "@/lib/next-paths";
+import { sliceGitHubBlocks, stripGitHubMarkers, unfurlUserMessage, descriptorUrl } from "@/lib/github-blocks";
+import { extractSkillMarkers, parseSkillInvocation } from "@/lib/skill-blocks";
+import { GitHubCard } from "@/components/github-card";
+import { GitHubActionCard } from "@/components/github-action-card";
+import { SkillStageCard } from "@/components/skill-stage-card";
+import { ChatStageHeader } from "@/components/chat-stage-header";
 import {
   NO_PROJECT_ID,
   chatProjectById,
@@ -115,7 +124,12 @@ import {
 } from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
-import { ProjectPicker, useAddProjectFlow } from "@/components/project-picker";
+import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
+import { recordPromptRecent } from "@/lib/prompt-prefs";
+import { SaveTemplateModal } from "@/components/save-template-modal";
+import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
+import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
@@ -124,9 +138,14 @@ import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-inpu
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
-import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
+import { useComposerHistory } from "@/lib/use-composer-history";
+import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
+import { ComposerGitChip } from "@/components/composer-git-chip";
 import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
 import { appendCollapsingNewlines } from "@/lib/stream-text";
+import { createChunkCoalescer } from "@/lib/chunk-coalescer";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
@@ -134,7 +153,8 @@ import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
-import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 
 type ToolEvent = {
   id: string;
@@ -202,6 +222,64 @@ type Turn = {
 const replyableTurnCache = new WeakMap<Turn, boolean>();
 
 type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn>;
+
+// Raw turn shape returned by GET /api/chat/conversation/:id.
+type ConversationHistoryTurn = {
+  id: string;
+  parentId?: string | null;
+  role: string;
+  text: string;
+  attachments?: ChatAttachment[];
+  reasoning?: string;
+  tools?: ToolEvent[];
+  durationMs?: number;
+  isError?: boolean;
+  usage?: TurnUsage;
+  costUsd?: number;
+  responseMetadata?: ChatResponseMetadata;
+  cancelled?: boolean;
+  createdAt?: string;
+  origin?: "chat" | "voice";
+  voiceCallId?: string;
+};
+
+// Parsed payload of GET /api/chat/conversation/:id — also what the
+// conversation cache stores, so a hover-prefetched payload and a fresh fetch
+// go through the same apply path in the history-load effect.
+type ConversationHistoryPayload = {
+  ok?: boolean;
+  context?: ChatLinkedContext | null;
+  conversation?: {
+    activeLeafId?: string;
+    turns?: ConversationHistoryTurn[];
+  };
+};
+
+function mapConversationHistoryTurns(rawTurns: ConversationHistoryTurn[]): Turn[] {
+  return rawTurns
+    .filter(
+      (t): t is ConversationHistoryTurn & { role: "user" | "assistant" } =>
+        t.role === "user" || t.role === "assistant",
+    )
+    .map((t) => ({
+      id: t.id,
+      parentId: t.parentId,
+      role: t.role,
+      text: t.text,
+      attachments: t.attachments,
+      reasoning: t.reasoning,
+      tools: t.tools,
+      durationMs: t.durationMs,
+      usage: t.usage,
+      costUsd: t.costUsd,
+      responseMetadata: t.responseMetadata,
+      error: t.isError,
+      lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
+      createdAt: t.createdAt ?? new Date().toISOString(),
+      origin: t.origin,
+      voiceCallId: t.voiceCallId,
+    }));
+}
 
 function cloneLiveTurn(turn: Turn): Turn {
   return {
@@ -334,6 +412,12 @@ const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
 // the find effect — the full transcript renders, so seeking, find, and deep
 // scroll are never limited by the cap.
 const TRANSCRIPT_RENDER_CAP = 60;
+// Streaming text flush window (cave-w50e): assistant_chunk frames arrive
+// ~one per token; buffering them for this long collapses dozens of React
+// commits (each a full turns map + registry advance) into one, while staying
+// well under perception threshold (~2-3 frames). Non-chunk events and stream
+// end flush immediately, so ordering and final text are exact.
+const CHUNK_FLUSH_MS = 40;
 const THINKING_OPTIONS = COMMAND_THINKING_OPTIONS;
 const SPEED_OPTIONS = COMMAND_RESPONSE_SPEED_OPTIONS;
 const CHAT_ATTACHMENT_ACCEPT = [
@@ -409,24 +493,6 @@ function writeComposerPrefs(prefs: {
   }
 }
 
-function readComposerDraft(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    return window.localStorage.getItem(COMPOSER_DRAFT_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function writeComposerDraft(text: string) {
-  if (typeof window === "undefined") return;
-  try {
-    if (text) window.localStorage.setItem(COMPOSER_DRAFT_KEY, text);
-    else window.localStorage.removeItem(COMPOSER_DRAFT_KEY);
-  } catch {
-    /* best effort */
-  }
-}
 
 function shouldKeepLiveNewChatState({
   sessionId,
@@ -518,10 +584,14 @@ function ChatErrorStrip({
   busy,
   onRetry,
   onOpenDebug,
+  onOpenSetup,
   onDismiss,
   addProjectLabel,
   addingProject,
   onAddProject,
+  onOpenProjects,
+  onUseHarness,
+  harnessId,
 }: {
   message: string;
   code?: string;
@@ -537,6 +607,17 @@ function ChatErrorStrip({
   addProjectLabel?: string;
   addingProject?: boolean;
   onAddProject?: () => void;
+  /** When set, the chat's project folder is gone (project_root_unavailable):
+   *  render a primary action that opens the Projects tab to re-point it (cave-ivcc). */
+  onOpenProjects?: () => void;
+  /** Switch the familiar to this harness and retry (harness-failure fix row). */
+  onUseHarness?: (harnessId: string) => void | Promise<void>;
+  /** Open the Setup wizard overlay (soft, not a route change) when the coven
+   *  CLI is unresolvable — the composer message is preserved for retry (#2618). */
+  onOpenSetup?: () => void;
+  /** The runtime the failing send used — lets the auth-failure fix row name
+   *  it and offer its exact login command (cave-f6ol). */
+  harnessId?: string | null;
 }) {
   const { copied, copy } = useCopy();
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
@@ -563,6 +644,25 @@ function ChatErrorStrip({
     }
     return lines.join("\n");
   }, [message, code, erroredTools, erroredSteps]);
+
+  // Harness/runtime failures get an inline fix row (switch adapter / copy the
+  // quoted `coven adapter …` commands) instead of ending at the message.
+  const harnessFailure = useMemo(() => parseHarnessFailure(detailText), [detailText]);
+  // Sign-in failures land here at the FIRST message (the wizard greens on
+  // install, never auth) — surface the runtime's login command instead of
+  // ending at raw stderr (cave-f6ol).
+  const authFailure = useMemo(
+    () => parseHarnessAuthFailure(detailText, harnessId),
+    [detailText, harnessId],
+  );
+  // The Coven CLI couldn't be resolved from the app's spawn environment
+  // (the #2610 class of failure). Rather than a bare error + generic Retry,
+  // offer a soft "Open Setup" link (overlay, not a hard nav) — the message
+  // stays in the composer for retry (#2618).
+  const covenMissing = useMemo(
+    () => /Coven CLI not found on PATH/i.test(message) || code === "ENOENT",
+    [message, code],
+  );
 
   const btn =
     "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
@@ -608,6 +708,16 @@ function ChatErrorStrip({
               {addingProject ? "Adding…" : (addProjectLabel ?? "Add project")}
             </button>
           ) : null}
+          {onOpenProjects ? (
+            <button
+              type="button"
+              onClick={onOpenProjects}
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)]"
+            >
+              <Icon name="ph:folders-bold" width={11} aria-hidden />
+              Open projects
+            </button>
+          ) : null}
           {canRetry ? (
             <button type="button" onClick={onRetry} disabled={busy} className={btn}>
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
@@ -619,6 +729,30 @@ function ChatErrorStrip({
           </button>
         </div>
       </div>
+      {harnessFailure ? (
+        <HarnessFixActions
+          failure={harnessFailure}
+          busy={busy}
+          onUseHarness={onUseHarness}
+          buttonClassName={btn}
+          className="px-5 pb-2"
+        />
+      ) : null}
+      {!harnessFailure && authFailure ? (
+        <AuthFixRow failure={authFailure} buttonClassName={btn} />
+      ) : null}
+      {!harnessFailure && !authFailure && covenMissing ? (
+        <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
+          <span className="min-w-0">
+            The Coven CLI isn&apos;t resolvable from this app&apos;s environment. Open Setup to install
+            or repair it, then retry — your message is kept.
+          </span>
+          <button type="button" onClick={onOpenSetup} className={btn}>
+            <Icon name="ph:wrench" width={11} aria-hidden />
+            Open Setup
+          </button>
+        </div>
+      ) : null}
       {hasDetail && open ? (
         <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
           {erroredTools.map((t) => (
@@ -642,6 +776,44 @@ function ChatErrorStrip({
             </div>
           ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Runtime sign-in fix row (cave-f6ol): names the runtime, gives the exact
+ *  login command to run in a terminal, and copies it — the predictable
+ *  first-message failure for a user who skipped the wizard's login prose. */
+function AuthFixRow({
+  failure,
+  buttonClassName,
+}: {
+  failure: HarnessAuthFailure;
+  buttonClassName: string;
+}) {
+  const { copied, copy } = useCopy();
+  const runtime = failure.harnessLabel ?? "The runtime";
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-5 pb-2 text-[11px]">
+      <span className="min-w-0">
+        {runtime} isn&apos;t signed in.
+        {failure.loginCommand ? (
+          <>
+            {" "}Run{" "}
+            <code className="rounded bg-[var(--bg-base)]/40 px-1 py-0.5 font-mono text-[10px]">
+              {failure.loginCommand}
+            </code>{" "}
+            in a terminal, then retry.
+          </>
+        ) : (
+          " Sign in from a terminal, then retry."
+        )}
+      </span>
+      {failure.loginCommand ? (
+        <button type="button" onClick={() => copy(failure.loginCommand!)} className={buttonClassName}>
+          <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={11} aria-hidden />
+          {copied ? "Copied" : "Copy command"}
+        </button>
       ) : null}
     </div>
   );
@@ -785,20 +957,32 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
 // view arms/executes its "Start a task" card-follows-chat flow (see
 // handleEvent's "session" case).
 
-/** Codex/ChatGPT-style overflow menu. Collapses the session's secondary
- *  controls — project switch, voice call, debug — into a single kebab so the
- *  header reads as title + quiet metadata instead of a row of competing icons.
- *  Find and Delete stay inline (one-click); everything else lives one click away
- *  here. */
+/** Codex/ChatGPT-style overflow menu. Collapses ALL of the session's secondary
+ *  controls — project selection, thinking toggle, reflect, voice call, debug,
+ *  delete — into a single kebab so the header reads as title + quiet metadata
+ *  plus Find, instead of a row of competing icons. Project selection is one
+ *  compact "Project: <name>" row that opens the shared searchable picker
+ *  (anchored to the same kebab trigger), not an inline list of every project.
+ *  Delete keeps its two-step guard: the danger item swaps the menu body to a
+ *  confirm view before anything commits. */
 function SessionOverflowMenu({
   projects,
   projectId,
   onProjectChange,
   onAddProject,
   familiar,
+  sessionId,
+  hasTurns,
   voiceActive,
   onOpenVoice,
   onOpenDebug,
+  reflecting,
+  onReflect,
+  deleting,
+  onDelete,
+  archived,
+  archiving,
+  onSetArchived,
 }: {
   projects: CaveProject[];
   projectId: string | null;
@@ -806,11 +990,27 @@ function SessionOverflowMenu({
   /** Opens the shared add-project flow (register + grant) — proactive, not 403-recovery-only. */
   onAddProject?: () => void;
   familiar: Familiar;
+  /** Active conversation id — powers "Continue on phone" (cave-i74f). */
+  sessionId?: string | null;
+  /** Gates the Show-thinking toggle — pointless on an empty transcript. */
+  hasTurns: boolean;
   voiceActive: boolean;
   onOpenVoice: () => void;
   onOpenDebug: () => void;
+  /** Reflect-on-thread (absent when the familiar has no id). */
+  reflecting: boolean;
+  onReflect?: () => void;
+  deleting: boolean;
+  onDelete: () => void;
+  /** Whether this session is archived — flips the menu item to Unarchive. */
+  archived: boolean;
+  archiving: boolean;
+  onSetArchived: (archived: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showThinking, setShowThinking] = useShowThinking();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject =
     projectId === NO_PROJECT_ID
@@ -818,7 +1018,10 @@ function SessionOverflowMenu({
       : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
   const voiceConfigured = Boolean(familiar.voiceProvider);
 
-  const close = () => setOpen(false);
+  const close = () => {
+    setOpen(false);
+    setConfirmingDelete(false);
+  };
 
   return (
     <>
@@ -830,7 +1033,13 @@ function SessionOverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         title="Session options"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // The picker shares this anchor, so its outside-click handler skips
+          // clicks here — close it explicitly or both popovers stack open.
+          setProjectPickerOpen(false);
+          if (open) close();
+          else setOpen(true);
+        }}
       >
         <Icon name="ph:dots-three-vertical" width={15} aria-hidden />
       </button>
@@ -842,190 +1051,138 @@ function SessionOverflowMenu({
         minWidth={216}
         ariaLabel="Chat options"
       >
-        <PopoverBody>
-          <PopoverItem
-            icon="ph:pencil-simple"
-            onSelect={() => {
-              window.dispatchEvent(new Event("cave:chat-rename"));
-              close();
-            }}
-          >
-            Rename chat
-          </PopoverItem>
-          <PopoverSeparator />
-          {projects.length > 0 || onAddProject ? (
-            <>
-              <PopoverLabel>Project</PopoverLabel>
-              {projects.length > 0 ? (
-                <>
-                  <PopoverItem
-                    icon={activeProject ? "ph:folder" : "ph:check"}
-                    active={!activeProject}
-                    onSelect={() => {
-                      onProjectChange(NO_PROJECT_ID);
-                      close();
-                    }}
-                  >
-                    No project
-                  </PopoverItem>
-                  {projects.map((entry) => (
-                    <PopoverItem
-                      key={entry.id}
-                      icon={entry.id === activeProject?.id ? "ph:check" : "ph:folder"}
-                      active={entry.id === activeProject?.id}
-                      onSelect={() => {
-                        onProjectChange(entry.id);
-                        close();
-                      }}
-                    >
-                      {entry.name}
-                    </PopoverItem>
-                  ))}
-                </>
-              ) : null}
-              {onAddProject ? (
-                <PopoverItem
-                  icon="ph:plus"
-                  onSelect={() => {
-                    onAddProject();
-                    close();
-                  }}
-                >
-                  Add project…
-                </PopoverItem>
-              ) : null}
-              <PopoverSeparator />
-            </>
-          ) : null}
-          <PopoverItem
-            icon="ph:phone"
-            disabled={!voiceConfigured || voiceActive}
-            onSelect={() => {
-              onOpenVoice();
-              close();
-            }}
-          >
-            {voiceConfigured ? `Call ${familiar.display_name}` : "Voice — set up in Studio"}
-          </PopoverItem>
-          <PopoverItem
-            icon="ph:bug-bold"
-            onSelect={() => {
-              onOpenDebug();
-              close();
-            }}
-          >
-            Debug session
-          </PopoverItem>
-        </PopoverBody>
+        {confirmingDelete ? (
+          <PopoverBody>
+            <PopoverLabel>Delete this chat permanently?</PopoverLabel>
+            <PopoverItem icon="ph:x" onSelect={() => setConfirmingDelete(false)}>
+              Cancel
+            </PopoverItem>
+            <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
+              {deleting ? "Deleting…" : "Delete chat"}
+            </PopoverItem>
+          </PopoverBody>
+        ) : (
+          <PopoverBody>
+            {sessionId ? (
+              <PopoverItem
+                icon="ph:device-mobile"
+                onSelect={() => {
+                  close();
+                  // Golden path 5: hand off the MOMENT — the pairing modal's QR
+                  // carries #chat-<id> so one scan opens this conversation.
+                  window.dispatchEvent(
+                    new CustomEvent("cave:continue-on-phone", { detail: { chatId: sessionId } }),
+                  );
+                }}
+              >
+                Continue on phone
+              </PopoverItem>
+            ) : null}
+            <PopoverItem
+              icon="ph:pencil-simple"
+              onSelect={() => {
+                window.dispatchEvent(new Event("cave:chat-rename"));
+                close();
+              }}
+            >
+              Rename chat
+            </PopoverItem>
+            {projects.length > 0 || onAddProject ? (
+              <PopoverItem
+                icon="ph:folder"
+                title={activeProject?.root ?? "No project"}
+                onSelect={() => {
+                  // Chain popovers: the kebab closes on this click; the picker
+                  // mounts after it, so its outside-click listener misses the
+                  // same mousedown and it stays open on the shared anchor.
+                  close();
+                  setProjectPickerOpen(true);
+                }}
+              >
+                Project: {activeProject ? activeProject.name : "No project"}
+              </PopoverItem>
+            ) : null}
+            <PopoverSeparator />
+            {hasTurns ? (
+              <PopoverItem
+                icon={showThinking ? "ph:brain-bold" : "ph:brain"}
+                checked={showThinking}
+                title={showThinking ? "Hide reasoning blocks" : "Show reasoning blocks"}
+                onSelect={() => {
+                  setShowThinking(!showThinking);
+                  close();
+                }}
+              >
+                {showThinking ? "Hide thinking" : "Show thinking"}
+              </PopoverItem>
+            ) : null}
+            {onReflect ? (
+              <PopoverItem
+                icon={reflecting ? "ph:circle-notch-bold" : "ph:sparkle-bold"}
+                disabled={reflecting}
+                onSelect={() => {
+                  close();
+                  onReflect();
+                }}
+              >
+                {reflecting ? "Reflecting…" : "Reflect on this thread"}
+              </PopoverItem>
+            ) : null}
+            <PopoverItem
+              icon="ph:phone"
+              disabled={!voiceConfigured || voiceActive}
+              onSelect={() => {
+                onOpenVoice();
+                close();
+              }}
+            >
+              {voiceConfigured ? `Call ${familiar.display_name}` : "Voice — set up in Studio"}
+            </PopoverItem>
+            <PopoverItem
+              icon="ph:bug-bold"
+              onSelect={() => {
+                onOpenDebug();
+                close();
+              }}
+            >
+              Debug session
+            </PopoverItem>
+            <PopoverSeparator />
+            {sessionId ? (
+              // Reversible, so no confirm step (unlike Delete below): an
+              // archived chat leaves every rail but stays reachable from the
+              // chat list's "Show archived" toggle, where this same item
+              // reads Unarchive.
+              <PopoverItem
+                icon="ph:archive"
+                disabled={archiving}
+                title={archived ? "Restore this chat to the rail" : "Archive this chat — it leaves the rail but is never deleted"}
+                onSelect={() => {
+                  onSetArchived(!archived);
+                  close();
+                }}
+              >
+                {archiving ? (archived ? "Unarchiving…" : "Archiving…") : archived ? "Unarchive chat" : "Archive chat"}
+              </PopoverItem>
+            ) : null}
+            <PopoverItem icon="ph:trash" danger onSelect={() => setConfirmingDelete(true)}>
+              Delete chat…
+            </PopoverItem>
+          </PopoverBody>
+        )}
       </Popover>
-    </>
-  );
-}
-
-/** Header toggle for the global "Show thinking" preference — flips every
- *  reasoning disclosure in the transcript open/closed at once. */
-function HeaderThinkingToggle() {
-  const [showThinking, setShowThinking] = useShowThinking();
-  return (
-    <button
-      type="button"
-      className={`focus-ring cave-chat-icon-button${showThinking ? " cave-chat-icon-button--active" : ""}`}
-      aria-label={showThinking ? "Hide thinking" : "Show thinking"}
-      aria-pressed={showThinking}
-      title={showThinking ? "Hide reasoning blocks" : "Show reasoning blocks"}
-      onClick={() => setShowThinking(!showThinking)}
-    >
-      <Icon name={showThinking ? "ph:brain-bold" : "ph:brain"} width={15} aria-hidden />
-    </button>
-  );
-}
-
-function HeaderDebugButton({ onOpenDebug }: { onOpenDebug: () => void }) {
-  return (
-    <button
-      type="button"
-      className="focus-ring cave-chat-icon-button"
-      aria-label="Debug chat"
-      title="Debug chat"
-      onClick={onOpenDebug}
-    >
-      <Icon name="ph:bug-bold" width={15} aria-hidden />
-    </button>
-  );
-}
-
-function HeaderReflectButton({
-  reflecting,
-  onReflect,
-}: {
-  reflecting: boolean;
-  onReflect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="focus-ring cave-chat-icon-button"
-      aria-label="Reflect on this thread"
-      title="Reflect on this thread"
-      disabled={reflecting}
-      onClick={onReflect}
-    >
-      <Icon
-        name={reflecting ? "ph:circle-notch-bold" : "ph:brain-bold"}
-        width={15}
-        className={reflecting ? "animate-spin" : undefined}
-        aria-hidden
-      />
-    </button>
-  );
-}
-
-/** Standalone delete control for the chat header — a one-click trash button that
- *  opens a small confirm popover before committing. Mirrors the overflow menu's
- *  two-step guard, but surfaced at the top of the session for quick access. Uses
- *  its own open state so it never collides with the kebab's armed state; the
- *  in-flight `deleting` flag and the actual delete are shared via props. */
-function HeaderDeleteButton({
-  onDelete,
-  deleting,
-}: {
-  onDelete: () => void;
-  deleting: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="focus-ring cave-chat-delete-trigger"
-        aria-label="Delete chat"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="Delete chat"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Icon name="ph:trash" width={15} aria-hidden />
-      </button>
-      <Popover
-        open={open}
-        onOpenChange={setOpen}
+      <ProjectPickerPopover
+        open={projectPickerOpen}
+        onOpenChange={setProjectPickerOpen}
         anchorRef={triggerRef}
+        projects={projects}
+        value={projectId}
+        onChange={onProjectChange}
+        allowNoProject
+        onAddProject={onAddProject}
         placement="bottom-end"
-        minWidth={216}
-        ariaLabel="Delete chat"
-      >
-        <PopoverBody>
-          <PopoverLabel>Delete this chat permanently?</PopoverLabel>
-          <PopoverItem icon="ph:x" onSelect={() => setOpen(false)}>
-            Cancel
-          </PopoverItem>
-          <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
-            {deleting ? "Deleting…" : "Delete chat"}
-          </PopoverItem>
-        </PopoverBody>
-      </Popover>
+        ariaLabel="Project for this chat"
+      />
     </>
   );
 }
@@ -1182,9 +1339,9 @@ function ChatTitleEditable({
     inputRef.current?.select();
   }, [editing]);
 
-  // The rename affordance now lives in the session overflow menu (Codex/ChatGPT
-  // idiom — a clean title, secondary actions one click away). The menu fires
-  // this event; clicking the title itself still enters edit mode directly.
+  // Rename has three entry points into the same edit mode: the pencil button
+  // beside the title, clicking the title text, and the session overflow menu —
+  // which lives outside this component and reaches it via this window event.
   useEffect(() => {
     const onRename = () => setEditing(true);
     window.addEventListener("cave:chat-rename", onRename);
@@ -1222,9 +1379,12 @@ function ChatTitleEditable({
     ? "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] outline-none"
     : "cave-chat-title-input min-w-0 flex-1 rounded-sm bg-transparent text-[14px] font-semibold leading-tight text-[var(--text-primary)] outline-none";
 
+  // No flex-1 on the title button itself — the wrapper carries the stretch so
+  // the pencil sits flush against the title text instead of drifting to the
+  // far edge of the free space.
   const buttonClassName = headline
-    ? "block w-full truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
-    : "min-w-0 flex-1 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
+    ? "min-w-0 flex-1 truncate text-left text-[13px] font-semibold uppercase tracking-[0.12em] leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]"
+    : "min-w-0 truncate text-left text-[14px] font-semibold leading-tight text-[var(--text-primary)] transition-colors hover:text-[color-mix(in_oklch,var(--accent-presence)_70%,var(--text-primary))]";
 
   if (editing) {
     return (
@@ -1253,17 +1413,34 @@ function ChatTitleEditable({
   }
 
   return (
-    <button
-      type="button"
-      className={buttonClassName}
-      title={`${display} — click to rename`}
-      onClick={(e) => {
-        e.stopPropagation();
-        setEditing(true);
-      }}
-    >
-      {display}
-    </button>
+    <span className={headline ? "flex w-full min-w-0 items-center gap-1.5" : "flex min-w-0 flex-1 items-center gap-1"}>
+      <button
+        type="button"
+        className={buttonClassName}
+        title={`${display} — click to rename`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+      >
+        {display}
+      </button>
+      {/* Explicit rename affordance — click-to-rename on the title alone is
+          invisible; the pencil makes renaming discoverable without opening
+          the overflow menu. */}
+      <button
+        type="button"
+        title="Rename chat"
+        aria-label="Rename chat"
+        onClick={(e) => {
+          e.stopPropagation();
+          setEditing(true);
+        }}
+        className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-60 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] hover:opacity-100"
+      >
+        <Icon name="ph:pencil-simple" width={11} aria-hidden />
+      </button>
+    </span>
   );
 }
 
@@ -1328,7 +1505,10 @@ function metaLineSegments(args: {
   // reads as a folder.
   const runtime = formatRuntime(args.runtime) ?? formatRuntime(args.projectRoot ? `local:${args.projectRoot}` : null);
   if (args.state === "offline") {
-    segs.push("daemon offline · check Coven");
+    // The remedy renders inline: MetaLine appends its own Start-daemon action
+    // after the segments, so the notice never points at chrome that may not be
+    // visible (the banner can be dismissed or scrolled away) (cave-5qmm).
+    segs.push("daemon offline");
   } else if (args.state === "failed") {
     if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
@@ -1498,6 +1678,35 @@ function ChatFindBar({
  *  the role="status" live region, so the per-second rewrite is excluded from
  *  the accessibility tree and never announced (the rewrites-per-second
  *  problem from CHAT-D12-04). */
+/** Inline remedy for the offline meta line: the old copy said "start it from
+ *  the banner above", but the banner can be dismissed or off-screen — a broken
+ *  reference. The action lives in the notice itself, self-contained like the
+ *  settings/onboarding start buttons; the workspace's 5s status poll picks up
+ *  the flip and clears the offline state (cave-5qmm). */
+function MetaLineStartDaemon() {
+  const [starting, setStarting] = useState(false);
+  return (
+    <button
+      type="button"
+      className="cave-chat-meta-line__action focus-ring"
+      disabled={starting}
+      onClick={async () => {
+        setStarting(true);
+        try {
+          await fetch("/api/daemon/start", { method: "POST" });
+        } catch {
+          // The meta line keeps reading "daemon offline" and the button
+          // re-arms — the workspace banner surfaces start errors in detail.
+        } finally {
+          setStarting(false);
+        }
+      }}
+    >
+      {starting ? "starting…" : "Start daemon"}
+    </button>
+  );
+}
+
 function MetaLineElapsed({ since }: { since: string }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -1638,23 +1847,34 @@ function MetaLine({
         />
       ) : null}
       <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
-        {segments.map((seg, i) => (
-          <Fragment key={i}>
-            {i > 0 ? " · " : null}
-            {typeof seg === "string" ? (
-              seg
-            ) : (
-              <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
-                <Icon name="ph:folder" width={11} aria-hidden />
-                {seg.dir.label}
-              </span>
-            )}
-          </Fragment>
-        ))}
+        {/* Slim header (cave-xsq.3): when the turn has settled, the static
+            provenance (model · runtime · dir · duration · usage · meters) is a
+            quiet reveal-on-hover cluster so the settled header reads as just the
+            conversation title — like ChatGPT. Live streaming state (elapsed,
+            "esc to cancel") stays visible; provenance shows inline while
+            streaming (no reveal class) so nothing is hidden mid-response. */}
+        <span
+          className={`cave-chat-meta-line__provenance${state === "complete" ? " reveal-on-hover" : ""}`}
+        >
+          {segments.map((seg, i) => (
+            <Fragment key={i}>
+              {i > 0 ? " · " : null}
+              {typeof seg === "string" ? (
+                seg
+              ) : (
+                <span className="cave-chat-meta-line__dir" title={seg.dir.title}>
+                  <Icon name="ph:folder" width={11} aria-hidden />
+                  {seg.dir.label}
+                </span>
+              )}
+            </Fragment>
+          ))}
+          {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
+          {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
+        </span>
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
         {state === "streaming" ? " · esc to cancel" : null}
-        {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
-        {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
+        {state === "offline" ? <MetaLineStartDaemon /> : null}
       </span>
       {children}
     </div>
@@ -1700,13 +1920,25 @@ function LinkedContextRow({
   onOpenTask,
   sessionId,
   onLinkedContextChange,
+  handoff,
+  sessionSettled = false,
 }: {
   linkedContext: ChatLinkedContext | null;
   onOpenTask?: (cardId: string) => void;
   sessionId?: string | null;
   onLinkedContextChange?: (updater: (prev: ChatLinkedContext | null) => ChatLinkedContext | null) => void;
+  /** Recent turns + familiar/project for the picker's "New task from this chat"
+   *  handoff (cave-px7). Absent → the picker only links existing tasks. */
+  handoff?: ChatHandoffContext | null;
+  /** True once the latest assistant turn settled cleanly — gates the
+   *  one-click "Mark done" on linked tasks (cave-32ks phase 3): finished
+   *  familiar work is the moment the card can flip without leaving chat. */
+  sessionSettled?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [markingId, setMarkingId] = useState<string | null>(null);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const { announce } = useAnnouncer();
   const task = linkedContext?.task ?? null;
   const tasks = linkedContext?.tasks ?? (task ? [task] : []);
   const github = linkedContext?.github ?? [];
@@ -1714,6 +1946,39 @@ function LinkedContextRow({
   if (!task && github.length === 0 && !canLink) return null;
 
   const linkedIds = new Set(tasks.map((t) => t.id));
+
+  // cave-32ks phase 3: flip the card through its lifecycle machine —
+  // "completed" derives status "done" server-side, and lifecycleReason is the
+  // card's audit note for where the flip came from.
+  const markDone = async (t: (typeof tasks)[number]) => {
+    setMarkingId(t.id);
+    try {
+      const res = await fetch(`/api/board/${encodeURIComponent(t.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          lifecycle: "completed",
+          lifecycleReason: sessionId
+            ? `Marked done from chat (session ${sessionId})`
+            : "Marked done from chat",
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(String(json.error ?? res.status));
+      const done = (x: NonNullable<ChatLinkedContext["task"]>) =>
+        x.id === t.id ? { ...x, status: "done" as const, lifecycle: "completed" as const } : x;
+      onLinkedContextChange?.((prev) =>
+        prev
+          ? { ...prev, task: prev.task ? done(prev.task) : prev.task, tasks: prev.tasks?.map(done) ?? prev.tasks }
+          : prev,
+      );
+      announce(`Task "${t.title}" marked done.`);
+    } catch {
+      announce(`Couldn't mark "${t.title}" done — check your connection.`, "assertive");
+    } finally {
+      setMarkingId(null);
+    }
+  };
 
   const onAssigned = (card: Card) => {
     const linked = {
@@ -1736,11 +2001,70 @@ function LinkedContextRow({
     });
   };
 
+  // One-click smart chat → task handoff: creates a board card auto-filled from
+  // the conversation (title, priority, due date, subtasks, links, GitHub links
+  // — see chat-task-autofill.ts) and links it to this chat via onAssigned, the
+  // same path the picker uses, so the task chip appears immediately.
+  const createTaskFromConversation = async () => {
+    if (!handoff || !sessionId || creatingTask) return;
+    setCreatingTask(true);
+    try {
+      const result = await createSmartTaskFromChat({ sessionId, context: handoff });
+      if (!result.ok || !result.card) throw new Error(result.error ?? "Failed to create task");
+      onAssigned(result.card);
+      const filled = [
+        result.card.steps?.length ? `${result.card.steps.length} subtasks` : null,
+        result.card.priority !== "medium" ? `priority ${result.card.priority}` : null,
+        result.card.endDate ? `due ${result.card.endDate}` : null,
+        result.card.github?.length ? `${result.card.github.length} GitHub links` : null,
+      ].filter(Boolean);
+      announce(
+        `Task "${result.card.title}" created from this chat${filled.length ? ` with ${filled.join(", ")}` : ""}.`,
+      );
+    } catch (err) {
+      // Surface the server's specific reason (validation message, HTTP status)
+      // instead of always blaming the connection (cave-t7uz).
+      const reason =
+        err instanceof Error && err.message ? err.message.replace(/\.$/, "") : "check your connection";
+      announce(`Couldn't create a task from this chat — ${reason}.`, "assertive");
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
   return (
     <div className="cave-chat-linked-context">
       {tasks.map((t) => (
-        <TaskChip key={t.id} task={t} onOpenTask={onOpenTask} />
+        <span key={t.id} className="inline-flex min-w-0 items-center gap-1">
+          <TaskChip task={t} onOpenTask={onOpenTask} />
+          {sessionSettled && t.status !== "done" && onLinkedContextChange ? (
+            <button
+              type="button"
+              onClick={() => void markDone(t)}
+              disabled={markingId === t.id}
+              title={`Mark task done: ${t.title}`}
+              aria-label={`Mark task done: ${t.title}`}
+              className="cave-chat-linked-chip cave-chat-linked-chip--mark-done focus-ring inline-flex items-center gap-1 border border-[color-mix(in_oklch,var(--color-success)_32%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_9%,transparent)] text-[var(--color-success)] transition-colors hover:bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] disabled:opacity-60"
+            >
+              <Icon name="ph:check-bold" width={10} className="shrink-0" />
+              {markingId === t.id ? "Marking…" : "Mark done"}
+            </button>
+          ) : null}
+        </span>
       ))}
+      {canLink && handoff ? (
+        <button
+          type="button"
+          onClick={() => void createTaskFromConversation()}
+          disabled={creatingTask}
+          title="Create a task from this conversation — auto-fills title, subtasks, priority, due date, and links"
+          aria-label="Create a task from this conversation"
+          className="cave-chat-linked-chip cave-chat-linked-chip--create-task focus-ring inline-flex items-center gap-1 border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_45%,transparent)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] hover:text-[var(--text-primary)] disabled:opacity-60"
+        >
+          <Icon name="ph:kanban" width={11} className="shrink-0 text-[var(--accent-presence)]" />
+          {creatingTask ? "Creating…" : "Create task"}
+        </button>
+      ) : null}
       {canLink ? (
         <span className="relative inline-flex">
           <button
@@ -1758,6 +2082,7 @@ function LinkedContextRow({
               linkedIds={linkedIds}
               onAssigned={onAssigned}
               onClose={() => setPickerOpen(false)}
+              handoff={handoff}
             />
           ) : null}
         </span>
@@ -2004,8 +2329,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     eligible: false,
   });
 
-  // Publish live chat state for the session debug pane (right panel / modal).
-  // Per-instance token: a second ChatView (right-panel Chat tab) unmounting
+  // Publish live chat state for the session debug pane (modal) and the code
+  // rail. Per-instance token: a second ChatView instance unmounting
   // must not clear state this instance published after it.
   const debugToken = useMemo(() => Symbol("chat-debug-publisher"), []);
   useEffect(() => {
@@ -2013,13 +2338,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [debugToken, sessionId, session, familiar, turns]);
   useEffect(() => () => clearChatDebugState(debugToken), [debugToken]);
 
+  // The right-panel debug pane is retired — the modal is the single debug
+  // surface at every breakpoint.
   const openDebug = useCallback(() => {
-    // lg+ has the right panel; below that, fall back to a modal.
-    if (window.matchMedia("(min-width: 1024px)").matches) {
-      window.dispatchEvent(new CustomEvent("cave:debug-open"));
-    } else {
-      setDebugModalOpen(true);
-    }
+    setDebugModalOpen(true);
+  }, []);
+
+  // Other surfaces (chat-list row actions, the thread rail's Debug launcher)
+  // still reach debug through the cave:debug-open window-event bridge.
+  useEffect(() => {
+    const onDebugOpen = () => setDebugModalOpen(true);
+    window.addEventListener("cave:debug-open", onDebugOpen);
+    return () => window.removeEventListener("cave:debug-open", onDebugOpen);
   }, []);
 
   const reflectOnThread = useCallback(async () => {
@@ -2043,15 +2373,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           payload: text,
         }),
       });
-      const json = await res.json() as { ok: true; report: ThreadSelfReport } | { ok: false; error?: string };
+      const json = await res.json() as
+        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
+        | { ok: false; error?: string };
       if (!json.ok) throw new Error(json.error ?? "reflection failed");
       setThreadSignalReport(json.report);
+      // Chat settings can auto-archive a thread once its reflection lands
+      // (archiveOnReflection); refresh the list so the row moves immediately.
+      if (json.archivedAt) onSessionsChanged?.();
     } catch (err) {
       setReflectError(err instanceof Error ? err.message : "reflection failed");
     } finally {
       setReflecting(false);
     }
-  }, [familiar.display_name, familiar.id, reflecting, session?.title, sessionId, turns]);
+  }, [familiar.display_name, familiar.id, onSessionsChanged, reflecting, session?.title, sessionId, turns]);
 
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
     if (!familiar.autoSelfReport) return;
@@ -2070,14 +2405,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
       });
       const json = await res.json().catch(() => null) as
-        | { ok: true; report: ThreadSelfReport }
+        | { ok: true; report: ThreadSelfReport; archivedAt?: string }
         | { ok: false; error?: string }
         | null;
-      if (json?.ok) setThreadSignalReport(json.report);
+      if (json?.ok) {
+        setThreadSignalReport(json.report);
+        if (json.archivedAt) onSessionsChanged?.();
+      }
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
-  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, session?.title, turns]);
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, onSessionsChanged, session?.title, turns]);
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();
@@ -2152,11 +2490,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const [input, setInput] = useState(() => readComposerDraft());
-  // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
-  const [inputHistory, setInputHistory] = useState<string[]>(() => readComposerHistory(COMPOSER_HISTORY_KEY));
-  const [inputHistoryIdx, setInputHistoryIdx] = useState<number>(-1);
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [input, setInput] = useState(() => readComposerDraft(COMPOSER_DRAFT_KEY));
+  // Persist the composer draft so a reload restores a half-written message.
+  // Cleared (key removed) when the input empties — e.g. after a send. Shared
+  // hook — debounce + remove-on-empty semantics live in use-composer-draft.
+  const { clearNow: clearDraft } = useDraftPersistence(COMPOSER_DRAFT_KEY, input, COMPOSER_DRAFT_WRITE_DELAY_MS);
+  // CHAT-D11-04: Input history navigation (↑↓) — shared hook (use-composer-history);
+  // chat deliberately never records slash commands (send() returns before the push).
+  const { push: pushHistory, handleArrowKey } = useComposerHistory(COMPOSER_HISTORY_KEY);
   // Reply to Chat: the turn the next message quotes, shown as a composer chip
   // and prepended as a markdown blockquote to the outgoing prompt at send time.
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
@@ -2176,6 +2517,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // a chat whose cwd sits outside every registered project the familiar can
   // reach. Drives the error strip's "Add project" recovery action.
   const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
+  // The chat's project folder no longer exists on disk (moved/deleted): the
+  // send 400s with code project_root_unavailable and Retry can never succeed —
+  // the recovery is re-pointing the project, not retrying (cave-ivcc).
+  const [projectRootMissing, setProjectRootMissing] = useState(false);
   const [addingProject, setAddingProject] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
@@ -2184,7 +2529,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Two-step delete via the header trash button: it opens a confirm popover and
   // only the explicit Delete commits (HeaderDeleteButton owns the armed state).
   const [deleting, setDeleting] = useState(false);
-  const { projects, createProject, reload: reloadProjects } = useProjects();
+  const [archiving, setArchiving] = useState(false);
+  // Scope the picker to the projects THIS familiar has been granted access to —
+  // the chat-send route enforces the same grant (assertProjectAccess → 403), so
+  // an unscoped list would offer projects that fail on send.
+  const { projects, createProject, reload: reloadProjects } = useProjects({ familiarId: familiar.id });
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
   // A session whose recorded cwd maps to no registered project resolves to
@@ -2233,17 +2582,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
-  // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
-  // dragenter/dragleave pairs so transitions across child elements don't
-  // flicker the overlay; only file drags (dataTransfer.types includes
-  // "Files") arm it, so dragging a text selection never hijacks the surface.
-  const [dropActive, setDropActive] = useState(false);
-  const dragDepthRef = useRef(0);
   const currentSessionRef = useRef<string | null>(sessionId);
   const liveSessionIdRef = useRef<string | null>(null);
   const turnsRef = useRef<Turn[]>([]);
   const tailRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
   // Scroll-pin state (CHAT-D10-01). `following` means "keep the transcript
   // pinned to the newest content". It releases on user INTENT (wheel up /
   // touch drag toward earlier content), never on mere scroll position — the
@@ -2263,21 +2607,75 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Distance-from-bottom captured at the instant of expansion so the prepended
   // older rows don't visually shove the viewport (restored in a layout effect).
   const expandAnchorRef = useRef<number | null>(null);
+  const releasedScrollAnchorRef = useRef<{ turnId: string | null; node: HTMLElement | null; top: number } | null>(null);
+  const releasedAnchorFrameRef = useRef<number | null>(null);
+  const captureReleasedScrollAnchor = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) {
+      releasedScrollAnchorRef.current = null;
+      return;
+    }
+    const viewport = scroller.getBoundingClientRect();
+    let candidate: HTMLElement | null = null;
+    for (const node of scroller.querySelectorAll<HTMLElement>("[data-turn-id]")) {
+      const rect = node.getBoundingClientRect();
+      if (rect.bottom > viewport.top + 1 && rect.top < viewport.bottom - 1) {
+        candidate = node;
+        break;
+      }
+    }
+    releasedScrollAnchorRef.current = candidate
+      ? { turnId: candidate.dataset.turnId ?? null, node: candidate, top: candidate.getBoundingClientRect().top }
+      : null;
+  }, []);
+  const restoreReleasedScrollAnchor = useCallback(() => {
+    if (followingRef.current) return;
+    if (releasedAnchorFrameRef.current !== null) return;
+    releasedAnchorFrameRef.current = requestAnimationFrame(() => {
+      releasedAnchorFrameRef.current = null;
+      if (followingRef.current) return;
+      const scroller = scrollRef.current;
+      const anchor = releasedScrollAnchorRef.current;
+      if (!scroller || !anchor) {
+        captureReleasedScrollAnchor();
+        return;
+      }
+      const anchoredNode =
+        anchor.node?.isConnected
+          ? anchor.node
+          : Array.from(scroller.querySelectorAll<HTMLElement>("[data-turn-id]")).find(
+              (node) => node.dataset.turnId === anchor.turnId,
+            ) ?? null;
+      if (!anchoredNode) {
+        captureReleasedScrollAnchor();
+        return;
+      }
+      const delta = anchoredNode.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(delta) >= 0.5) scroller.scrollTop += delta;
+      captureReleasedScrollAnchor();
+    });
+  }, [captureReleasedScrollAnchor]);
   const updateFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
     setFollowing(next);
     if (next) {
       // Reset count when returning to the bottom
       setNewTurnsCount(0);
+      releasedScrollAnchorRef.current = null;
+      if (releasedAnchorFrameRef.current !== null) {
+        cancelAnimationFrame(releasedAnchorFrameRef.current);
+        releasedAnchorFrameRef.current = null;
+      }
     } else if (!historyExpandedRef.current) {
       // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
       // the full transcript and anchor the scroll so older rows slide in above
       // the current view instead of jumping it.
       const el = scrollRef.current;
       expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+      captureReleasedScrollAnchor();
       setHistoryExpanded(true);
     }
-  }, []);
+  }, [captureReleasedScrollAnchor]);
 
   // Restore the pre-expansion distance-from-bottom once the full transcript has
   // mounted, so revealing the older rows doesn't jump the reader's viewport.
@@ -2287,26 +2685,32 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     expandAnchorRef.current = null;
     if (anchor == null) return;
     const el = scrollRef.current;
-    if (el) el.scrollTop = Math.max(0, el.scrollHeight - anchor);
-  }, [historyExpanded]);
+    if (el) {
+      el.scrollTop = Math.max(0, el.scrollHeight - anchor);
+      captureReleasedScrollAnchor();
+    }
+  }, [captureReleasedScrollAnchor, historyExpanded]);
 
-  const refreshModelState = useCallback(async (): Promise<ChatModelState | null> => {
+  // `shouldApply` lets a caller (the effect below) veto the setState after the
+  // await — a fetch that resolves after a thread switch must not overwrite the
+  // new thread's model. Non-effect callers omit it and always apply.
+  const refreshModelState = useCallback(async (shouldApply: () => boolean = () => true): Promise<ChatModelState | null> => {
     const params = new URLSearchParams({ familiarId: familiar.id });
     if (sessionId) params.set("sessionId", sessionId);
     try {
       const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
       const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
       const next = json.ok && json.state ? json.state : null;
-      setModelState(next);
+      if (shouldApply()) setModelState(next);
       return next;
     } catch {
-      setModelState(null);
+      if (shouldApply()) setModelState(null);
       return null;
     }
   }, [familiar.id, sessionId]);
 
   const refreshUsagePlan = useCallback(
-    async (modelOverride?: string | null): Promise<ChatUsagePlanSnapshot | null> => {
+    async (modelOverride?: string | null, shouldApply: () => boolean = () => true): Promise<ChatUsagePlanSnapshot | null> => {
       const params = new URLSearchParams({ familiarId: familiar.id });
       if (sessionId) params.set("sessionId", sessionId);
       const model =
@@ -2319,10 +2723,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const res = await fetch(`/api/chat/usage?${params.toString()}`, { cache: "no-store" });
         const json = (await res.json()) as { ok?: boolean; snapshot?: ChatUsagePlanSnapshot };
         const next = json.ok && json.snapshot ? json.snapshot : null;
-        setUsagePlan(next);
+        if (shouldApply()) setUsagePlan(next);
         return next;
       } catch {
-        setUsagePlan(null);
+        if (shouldApply()) setUsagePlan(null);
         return null;
       }
     },
@@ -2331,12 +2735,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const next = await refreshModelState();
-      // refreshModelState already set state; guard only against a stale familiar
-      // swap landing after unmount/re-fetch.
-      if (cancelled && next) return;
-    })();
+    // Gate the setState on !cancelled so a fetch resolving after a thread switch
+    // (refreshModelState is memoized on [familiar.id, sessionId]) can't overwrite
+    // the new thread's model with the previous one's.
+    void refreshModelState(() => !cancelled);
     return () => {
       cancelled = true;
     };
@@ -2344,10 +2746,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const next = await refreshUsagePlan();
-      if (cancelled && next) return;
-    })();
+    void refreshUsagePlan(undefined, () => !cancelled);
     return () => {
       cancelled = true;
     };
@@ -2384,8 +2783,56 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     },
     [familiar.id, sessionId, refreshModelState],
   );
+  // Switch the runtime from the composer chip. Familiar-level, like the home
+  // composer's selectRuntime (/api/config is the only channel that rebinds a
+  // harness) — and it applies from the next send, because the send route
+  // re-resolves the familiar's binding from current config on every turn.
+  const handleSelectRuntime = useCallback(
+    (runtime: string) => {
+      const nextModel = defaultModelForRuntime(runtime);
+      // Optimistic: the chip flips immediately; the refetch reconciles.
+      setModelState((current) =>
+        current
+          ? { ...current, harness: runtime, effectiveModel: nextModel, source: "familiar-default", reason: "Selected from the chat composer." }
+          : current,
+      );
+      void (async () => {
+        try {
+          const res = await fetch("/api/config", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+            }),
+          });
+          // The roster's familiar.harness feeds the empty-state identity line
+          // (and anything else reading the familiars list) — refresh it now
+          // rather than waiting out the next natural reload.
+          if (res.ok) window.dispatchEvent(new Event("cave:familiars-refresh"));
+        } finally {
+          await refreshModelState();
+        }
+      })();
+    },
+    [familiar.id, refreshModelState],
+  );
   const pinFrameRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Attachments staged in the composer (cap 10) with drag-and-drop
+  // (CHAT-D1-03: enter/leave-counted so child transitions don't flicker the
+  // overlay; only file drags arm it) and paste-to-attach (CHAT-D1-02).
+  // Shared hook — chat stays silent on cap/add, unlike home's toast+announce.
+  const {
+    attachments,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
+    handlePaste,
+    dropActive,
+    dropHandlers,
+  } = useAttachmentStaging({
+    focus: () => inputRef.current?.focus(),
+  });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -2695,60 +3142,47 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
       : 0;
 
-  // Slash suggestions
-  const slashMatches: SlashCommand[] = useMemo(() => {
-    const firstWord = input.trimStart().split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || input.trimStart().includes(" ")) return [];
-    return matchSlash(firstWord);
-  }, [input]);
-  const [slashIdx, setSlashIdx] = useState(0);
-  // Esc hides the menu for the current input; any edit brings it back.
-  const [slashDismissed, setSlashDismissed] = useState(false);
-  const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
-  // Skills for the inline `/skill` / `/skills` picker — fetched once from the
-  // local skill scan (Coven skills + ~/.claude/skills).
-  const [skills, setSkills] = useState<SkillOption[]>([]);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/skills/local", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
-      })
-      .catch(() => {
-        /* offline → no inline skill picker (the command menu still works) */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  // Prompt templates for the `/prompt` / `/prompts` picker and the Prompt
-  // snippets modal. Seeded with the built-ins so the picker works instantly
-  // (and offline); the fetch layers in ~/.coven/prompts files and installed
-  // marketplace prompt packs.
-  const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
-  const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/prompts", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
-      })
-      .catch(() => {
-        /* offline → built-in templates only */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  // While typing "/model <partial>", the menu shows model options instead of
-  // commands (an inline picker). null ⇒ not in /model arg position.
+  // Inline slash menus (/command listbox + Skills group, /model, /skill,
+  // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
+  // stays chat's: model picks append a system line + clear, skill picks send
+  // in-thread (invokeSkillOption), prompts insert-for-editing, and Enter on a
+  // command runs the highlighted suggestion's intent — never the partially
+  // typed text, and never recorded in ↑ history (send() owns that push).
   const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
-  const modelOptions = useMemo(
-    () => (slashDismissed ? null : modelSlashOptions(input, modelHarness)),
-    [input, modelHarness, slashDismissed],
-  );
+  const {
+    skills,
+    prompts,
+    slashSuggestions,
+    skillCommandRows,
+    modelOptions,
+    skillOptions,
+    promptOptions,
+    modelMenuActive,
+    skillMenuActive,
+    promptMenuActive,
+    menuOpen,
+    slashIdx,
+    setSlashIdx,
+    slashListboxId,
+    handleKeyDown: handleMenuKey,
+  } = useInlineSlashMenus({
+    text: input,
+    setText: setInput,
+    modelHarness,
+    onPickModel: (id) => {
+      handleSelectModel(id);
+      appendSystem(`Model set to ${id}.`);
+      setInput("");
+    },
+    onPickSkill: (s) => invokeSkillOption(s),
+    onInsertPrompt: (p) => insertPrompt(p),
+    onRunCommand: (cmd) => {
+      intentFromSlash(cmd.name);
+    },
+  });
+  const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
+  // Save-as-template (cave-jg6k): snapshots the draft for the modal form.
+  const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
   // Stable model menu for the composer chip (independent of the /model
   // autocomplete above, which is null outside `/model <arg>` position).
   const composerModelOptions = useMemo(
@@ -2759,36 +3193,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
       ? modelState.effectiveModel
       : composerModelOptions[0]?.id ?? "";
-  const modelMenuActive = (modelOptions?.length ?? 0) > 0;
-  // Inline `/skill` / `/skills` picker — null ⇒ not in a skill-picker position.
-  const skillOptions = useMemo(
-    () => (slashDismissed ? null : skillSlashOptions(input, skills)),
-    [input, skills, slashDismissed],
+
+  // Thumbs votes are stamped with what produced the response (user-requested)
+  // so the familiar analytics can aggregate per-model / per-runtime quality —
+  // see /api/feedback/message GET + message-feedback-rollup.ts.
+  const feedbackContext = useMemo<FeedbackContext>(
+    () => ({
+      familiarId: familiar.id,
+      model:
+        modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : visibleModelId(session?.model ?? familiar.model ?? undefined, familiar.harness ?? undefined) ?? undefined,
+      runtime: modelHarness,
+    }),
+    [familiar.harness, familiar.id, familiar.model, modelHarness, modelState?.effectiveModel, session?.model],
   );
-  const skillMenuActive = (skillOptions?.length ?? 0) > 0;
-  // Inline `/prompt` / `/prompts` picker — null ⇒ not in a prompt-picker position.
-  const promptOptions = useMemo(
-    () => (slashDismissed ? null : promptSlashOptions(input, prompts)),
-    [input, prompts, slashDismissed],
-  );
-  const promptMenuActive = (promptOptions?.length ?? 0) > 0;
-  // Skills surfaced directly in the command menu — typing `/revi` finds the
-  // code-review skill without the /skill prefix. Same first-token-only rule as
-  // slashMatches so arg positions never double-render.
-  const skillCommandRows: SkillOption[] = useMemo(() => {
-    if (slashDismissed) return [];
-    const t = input.trimStart();
-    const firstWord = t.split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || t.includes(" ")) return [];
-    return skillCommandMatches(firstWord, skills);
-  }, [input, skills, slashDismissed]);
-  // The slash-command, /model, /skill and /prompt pickers are mutually
-  // exclusive inline listboxes sharing one listbox id, so the composer's
-  // combobox ARIA tracks whichever is open.
-  const menuOpen = modelMenuActive || skillMenuActive || promptMenuActive || slashSuggestions.length > 0 || skillCommandRows.length > 0;
-  // Stable per-mount listbox id — the home composer mounts its own slash menu,
-  // so ids must be unique across simultaneously mounted composers.
-  const slashListboxId = useId();
 
   // @-file mentions (CHAT-D1-04). Typing `@` opens a workspace-file picker
   // for the selected predetermined project. The file index is fetched once
@@ -2802,8 +3221,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Paths the user picked this draft — sent alongside the prompt so the
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
-  const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [enhanceOriginal, setEnhanceOriginal] = useState<string | null>(null);
+  // Prompt enhancement (cave-b6c2): shared model-backed hook — streams a real
+  // rewrite from this thread's familiar (rule engine as offline fallback) and
+  // owns the race-safe apply/suggest/revert lifecycle.
+  const promptEnhance = usePromptEnhance({
+    draft: input,
+    setDraft: setInput,
+    familiarId: familiar.id,
+    mode: activeProjectRoot ? "code" : "chat",
+    context: {
+      activeProject: activeProjectRoot
+        ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
+        : null,
+      selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
+      recentThreadTitle: session?.title ?? null,
+    },
+    disabled: busy,
+  });
   const [mentionIndex, setMentionIndex] = useState<{ root: string; repo: boolean; files: string[] } | null>(null);
   const mentionListboxId = useId();
   const activeMentionOptionRef = useRef<HTMLButtonElement | null>(null);
@@ -2857,6 +3291,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelled = true;
     };
   }, [mentionToken, mentionRoot, mentionIndex, familiar.id]);
+
+  // Transcript file-ref links: prose refs (`src/foo.ts:42`) only render as
+  // clickable when they resolve to a real file under the session's project
+  // root — a rendered link is a promise the click opens it in the code rail,
+  // so no root or an unindexed path keeps the ref as plain text. The index is
+  // fetched once per root (same /api/project/files the @-mention picker uses;
+  // the API's short-lived cache absorbs re-opens).
+  const transcriptFileRoot = session?.project_root ?? projectRoot ?? null;
+  const [fileRefIndex, setFileRefIndex] = useState<{ root: string; files: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!transcriptFileRoot || fileRefIndex?.root === transcriptFileRoot) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ root: transcriptFileRoot, familiarId: familiar.id });
+        const res = await fetch(`/api/project/files?${params.toString()}`, { cache: "no-store" });
+        const json = await res.json() as { ok?: boolean; repo?: boolean; files?: string[] };
+        if (cancelled) return;
+        setFileRefIndex({
+          root: transcriptFileRoot,
+          files: new Set(json.ok === true && json.repo === true && Array.isArray(json.files) ? json.files : []),
+        });
+      } catch {
+        if (!cancelled) setFileRefIndex({ root: transcriptFileRoot, files: new Set<string>() });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [transcriptFileRoot, fileRefIndex, familiar.id]);
+  const fileLinkResolver = useCallback(
+    (ref: FileRef) =>
+      fileRefIndex?.root === transcriptFileRoot &&
+      resolveFileRefTarget(ref, transcriptFileRoot, fileRefIndex.files) != null,
+    [fileRefIndex, transcriptFileRoot],
+  );
 
   // Insert the picked path inline, replacing the `@query` token (Claude Code
   // convention: `@src/foo.ts`), and record it for the send body.
@@ -2928,9 +3398,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
   // per render).
   const { groupedTurns, turnIndexMap } = useMemo(() => {
-    type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
-    type SingleItem = { kind: "single"; turn: Turn };
-    const grouped: Array<VoiceGroup | SingleItem> = [];
+    const grouped: TranscriptGroup[] = [];
     for (const turn of activePath) {
       if (turn.voiceCallId) {
         const last = grouped[grouped.length - 1];
@@ -2951,9 +3419,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return { groupedTurns: grouped, turnIndexMap };
   }, [activePath]);
 
+  // The slash-menu index/dismissal resets live in useInlineSlashMenus; the
+  // @-mention picker re-arms here (same any-edit-brings-it-back contract).
   useEffect(() => {
-    setSlashIdx(0);
-    setSlashDismissed(false);
     setMentionIdx(0);
     setMentionDismissed(false);
   }, [input]);
@@ -2996,6 +3464,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setHistoryState("loaded");
       return;
     }
+    const isThreadSwitch = currentSessionRef.current !== sessionId;
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
     // Reset the settle-refetch marker on every (re)load; the live-snapshot
@@ -3049,9 +3518,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearLiveChatGeneration(sessionId);
       if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
     }
+    const applyConversationPayload = (json: ConversationHistoryPayload) => {
+      const mapped = mapConversationHistoryTurns(json.conversation?.turns ?? []);
+      setFlowTranscriptFallback(null);
+      setTurns(mapped);
+      turnsRef.current = mapped;
+      setActiveLeafId(
+        typeof json.conversation?.activeLeafId === "string" ? json.conversation.activeLeafId : "",
+      );
+      setHistoryState("loaded");
+    };
+    // A prefetched (hover) or previously loaded transcript paints immediately
+    // instead of blanking to the history skeleton. The fetch below still runs
+    // as revalidation, so a stale cache entry is corrected as soon as the
+    // network answers — the cache is never the source of truth.
+    const cachedPayload = readCachedConversation(sessionId) as ConversationHistoryPayload | null;
+    const cachedConversation =
+      cachedPayload?.ok && cachedPayload.conversation ? cachedPayload : null;
+    if (cachedConversation) {
+      setLinkedContext(cachedConversation.context ?? null);
+      applyConversationPayload(cachedConversation);
+    } else if (isThreadSwitch) {
+      // Thread switch: blank the PREVIOUS thread's transcript synchronously so
+      // the history skeleton renders while this thread's history loads —
+      // otherwise the old thread's messages stay visible until the fetch
+      // lands (the skeleton only shows when turns.length === 0). Same-session
+      // reloads (settle refetch / retry) keep the visible transcript in place
+      // while revalidating. Clearing turnsRef also keeps keepLiveSession()
+      // from counting the old thread's turns if this fetch fails.
+      setTurns([]);
+      turnsRef.current = [];
+      setActiveLeafId("");
+    }
     let cancelled = false;
     void (async () => {
-      setHistoryState("loading");
+      if (!cachedConversation) setHistoryState("loading");
       try {
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
@@ -3084,79 +3585,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           }
           return;
         }
-        const json = await res.json() as {
-          ok?: boolean;
-          context?: ChatLinkedContext | null;
-          conversation?: {
-            activeLeafId?: string;
-            turns?: Array<{
-              id: string;
-              parentId?: string | null;
-              role: string;
-              text: string;
-              attachments?: ChatAttachment[];
-              reasoning?: string;
-              tools?: ToolEvent[];
-              durationMs?: number;
-              isError?: boolean;
-              usage?: TurnUsage;
-              costUsd?: number;
-              responseMetadata?: ChatResponseMetadata;
-              createdAt?: string;
-              origin?: "chat" | "voice";
-              voiceCallId?: string;
-            }>;
-          };
-        };
+        const json = await res.json() as ConversationHistoryPayload;
         if (cancelled) return;
         setLinkedContext(json.context ?? null);
         if (json.ok && json.conversation) {
-          setFlowTranscriptFallback(null);
-          setTurns(
-            (json.conversation.turns ?? [])
-              .filter(
-                (t): t is {
-                  id: string;
-                  parentId?: string | null;
-                  role: "user" | "assistant";
-                  text: string;
-                  attachments?: ChatAttachment[];
-                  reasoning?: string;
-                  tools?: ToolEvent[];
-                  durationMs?: number;
-                  isError?: boolean;
-                  usage?: TurnUsage;
-                  costUsd?: number;
-                  responseMetadata?: ChatResponseMetadata;
-                  cancelled?: boolean;
-                  createdAt?: string;
-                  origin?: "chat" | "voice";
-                  voiceCallId?: string;
-                } => t.role === "user" || t.role === "assistant",
-              )
-              .map((t) => ({
-                  id: t.id,
-                  parentId: t.parentId,
-                  role: t.role,
-                  text: t.text,
-                  attachments: t.attachments,
-                  reasoning: t.reasoning,
-                  tools: t.tools,
-                  durationMs: t.durationMs,
-                  usage: t.usage,
-                  costUsd: t.costUsd,
-                  responseMetadata: t.responseMetadata,
-                  error: t.isError,
-                  lifecycle: t.cancelled ? ("cancelled" as const) : undefined,
-                  createdAt: t.createdAt ?? new Date().toISOString(),
-                  origin: t.origin,
-                  voiceCallId: t.voiceCallId,
-                })),
-          );
-          setActiveLeafId(
-            typeof json.conversation.activeLeafId === "string" ? json.conversation.activeLeafId : "",
-          );
-          setHistoryState("loaded");
+          storeConversation(sessionId, json);
+          applyConversationPayload(json);
         } else if (json.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
           if (keepLiveSession()) {
@@ -3195,12 +3629,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
   }, [sessionId, historyRetryKey, flowBackedSession]);
 
-  // Pin: while following, every turns mutation snaps the scroller to the
-  // bottom INSTANTLY (scrollTop assignment inside a rAF, coalescing multiple
-  // SSE chunks per frame). Never a queued smooth animation per chunk — that
-  // is the CHAT-D10-01 bug, and instant pinning also satisfies
+  // Pin: while following, snap the scroller to the bottom INSTANTLY
+  // (scrollTop assignment inside a rAF, coalescing multiple triggers per
+  // frame). Never a queued smooth animation per chunk — that is the
+  // CHAT-D10-01 bug, and instant pinning also satisfies
   // prefers-reduced-motion during streaming (CHAT-D13-03).
-  useEffect(() => {
+  const schedulePin = useCallback(() => {
     if (!followingRef.current) return;
     if (pinFrameRef.current !== null) return;
     pinFrameRef.current = requestAnimationFrame(() => {
@@ -3209,10 +3643,51 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (!el || !followingRef.current) return;
       el.scrollTop = el.scrollHeight;
     });
-  }, [turns]);
+  }, []);
+
+  useEffect(() => {
+    schedulePin();
+  }, [turns, schedulePin]);
+
+  // CHAT-D10-04: turns mutations are not the only thing that moves the tail.
+  // MarkdownBlock (async mdToHtml), SyntaxBlock (async shiki swap), mermaid,
+  // and images all change transcript height AFTER the final turns-driven pin
+  // lands — without this observer the viewport is left sitting above the
+  // bottom while `following` is still true ("the chat scrolled up by
+  // itself"). While following, ANY size change of the thread (content
+  // growth) or the scroller (composer/window resize) re-pins through the
+  // same coalesced rAF. While released, late async layout above the viewport
+  // preserves the first visible turn's screen position, which stands in for
+  // native scroll anchoring in WKWebView.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (followingRef.current) {
+        schedulePin();
+        return;
+      }
+      restoreReleasedScrollAnchor();
+    });
+    ro.observe(scroller);
+    const thread = threadRef.current;
+    if (thread) ro.observe(thread);
+    return () => ro.disconnect();
+  }, [restoreReleasedScrollAnchor, schedulePin]);
 
   useEffect(() => () => {
-    if (pinFrameRef.current !== null) cancelAnimationFrame(pinFrameRef.current);
+    if (pinFrameRef.current !== null) {
+      cancelAnimationFrame(pinFrameRef.current);
+      // MUST null: StrictMode (dev) and Suspense reveals re-run effects while
+      // refs persist. Leaving the cancelled id in place wedges the coalescing
+      // guard in schedulePin, and no pin ever runs again for the lifetime of
+      // the component — the "chat opens at the top and never follows" bug.
+      pinFrameRef.current = null;
+    }
+    if (releasedAnchorFrameRef.current !== null) {
+      cancelAnimationFrame(releasedAnchorFrameRef.current);
+      releasedAnchorFrameRef.current = null;
+    }
   }, []);
 
   // A freshly opened chat (or session switch) follows by default; the pin
@@ -3223,18 +3698,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     updateFollowing(true);
     setHistoryExpanded(false);
     expandAnchorRef.current = null;
+    releasedScrollAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
 
   // Release on intent: only USER input events detach following. Programmatic
   // pins (scrollTop assignment, FAB scrollTo) emit scroll events but never
-  // wheel/touch/key events, so they are structurally excluded from intent
-  // detection here.
+  // wheel/touch/key/scrollbar-grab events, so they are structurally excluded
+  // from intent detection here.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let lastTouchY: number | null = null;
+    // A transcript that doesn't overflow can't be scrolled away from the
+    // bottom — releasing there would only strand the FAB with nothing to
+    // re-pin it (re-pin needs a scroll event that will never come).
+    const scrollable = () => el.scrollHeight - el.clientHeight > 1;
     const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0 && followingRef.current) updateFollowing(false);
+      if (e.deltaY < 0 && followingRef.current && scrollable()) updateFollowing(false);
     };
     const onTouchStart = (e: TouchEvent) => {
       lastTouchY = e.touches[0]?.clientY ?? null;
@@ -3243,7 +3723,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       const y = e.touches[0]?.clientY;
       if (y === undefined) return;
       // Finger moving down the screen drags content down = scrolling up.
-      if (lastTouchY !== null && y > lastTouchY && followingRef.current) updateFollowing(false);
+      if (lastTouchY !== null && y > lastTouchY && followingRef.current && scrollable()) {
+        updateFollowing(false);
+      }
       lastTouchY = y;
     };
     const onKeyDown = (e: KeyboardEvent) => {
@@ -3251,15 +3733,38 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         updateFollowing(false);
       }
     };
+    // Scrollbar drags emit no wheel/touch/key events, so without this a
+    // scrollbar scroll-up left `following` armed and the next SSE chunk
+    // yanked the reader straight back to the bottom. A grab lands on the
+    // scroller itself with its X past the content box (the gutter, LTR);
+    // only an actual upward move during the grab releases, so clicking the
+    // padding or grabbing without moving changes nothing.
+    let scrollbarGrab = false;
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.target === el && e.offsetX >= el.clientWidth) scrollbarGrab = true;
+    };
+    const onMouseUp = () => {
+      scrollbarGrab = false;
+    };
+    const onScroll = () => {
+      if (!scrollbarGrab || !followingRef.current) return;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight > 4) updateFollowing(false);
+    };
     el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: true });
     el.addEventListener("keydown", onKeyDown);
+    el.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+      el.removeEventListener("scroll", onScroll);
     };
   }, [updateFollowing]);
 
@@ -3271,31 +3776,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!el) return;
     const onScroll = () => {
       if (followingRef.current) return;
+      captureReleasedScrollAnchor();
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       if (gap <= 4) updateFollowing(true);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [updateFollowing]);
+  }, [captureReleasedScrollAnchor, updateFollowing]);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, [sessionId]);
 
-  function resizeComposer() {
-    const el = inputRef.current;
-    if (!el) return;
-    const computedMaxHeight = Number.parseFloat(window.getComputedStyle(el).maxHeight);
-    const maxHeight = Number.isFinite(computedMaxHeight) ? computedMaxHeight : COMPOSER_MAX_HEIGHT;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-    const isOverflowing = el.scrollHeight > maxHeight;
-    el.style.overflowY = isOverflowing ? "auto" : "hidden";
-  }
-
-  useEffect(() => {
-    resizeComposer();
-  }, [input]);
+  // Auto-grow the composer with its content (shared with the home composer).
+  useAutogrowTextarea(inputRef, input, { fallbackMaxHeight: COMPOSER_MAX_HEIGHT });
 
   // CHAT-D10-03: Track new turns arriving while not following
   const appendTurn = (newTurn: Turn | Turn[]) => {
@@ -3312,7 +3806,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       createdAt: new Date().toISOString(),
     };
     appendTurn(newTurn);
-    setTurns((prev) => [...prev, newTurn]);
+    // Route through the live registry (cave-7ft): while a response streams the
+    // registry is the source of truth — a raw setTurns append would be
+    // discarded when the next assistant_chunk mirrors the registry snapshot
+    // back. updateLiveTurns also keeps turnsRef in sync. Preserve the current
+    // leaf: mid-stream the registry's activeLeafId is the streaming assistant
+    // turn, and overwriting it with this view's (possibly stale) state would
+    // re-point the rendered branch.
+    const live = currentSessionRef.current ? liveChatRegistry.read(currentSessionRef.current) : null;
+    updateLiveTurns((prev) => [...prev, newTurn], live?.activeLeafId ?? activeLeafId);
   };
 
   const runCovenExec = async (subcommand: "doctor" | "daemon") => {
@@ -3342,6 +3844,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // replaces it; otherwise park the caret at the end.
   const insertPrompt = (p: PromptOption) => {
     const ins = promptInsertion(p);
+    recordPromptRecent(p.id);
     setInput(ins.text);
     setSlashIdx(0);
     announce("Prompt inserted — edit and send.");
@@ -3384,6 +3887,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const command = canonicalize(token) ?? token;
 
     if (command === "/clear") {
+      // Tear down any in-flight stream first (no-op when idle). Otherwise the
+      // live registry stays the source of truth and the next assistant_chunk
+      // mirrors the just-cleared turns back, while busy stays set.
+      cancelSend();
       liveSessionIdRef.current = null;
       setTurns([]);
       setActiveLeafId("");
@@ -3467,8 +3974,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (command === "/canvas") {
       if (!args.trim()) {
-        // No prompt → open the full Canvas page via the workspace.
-        if (onSlashCommand?.("/canvas", "")) { setInput(""); return true; }
+        // The Canvas page retired — /canvas generates inline; saved sketches live in the Canvas tab.
+        appendSystem("Describe what to sketch — e.g. /canvas a pricing page with three tiers. Saved sketches live in the Canvas tab.");
+        setInput("");
         return true;
       }
       setInput("");
@@ -3515,6 +4023,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setDebugError(null);
     setLastFailedSend(null);
     setProjectAccessRoot(null);
+    setProjectRootMissing(false);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
     setHistoryState("loaded");
@@ -3548,7 +4057,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ],
     };
     const controller = new AbortController();
-    const liveGeneration = { sessionId: initialLiveSessionId, controller };
+    // `sessionId` mutates to the server-assigned id as events arrive;
+    // `originSessionId` stays the thread this generation started on, so a
+    // background generation (user switched threads mid-stream) can tell it no
+    // longer owns the displayed view and must not adopt its late session id.
+    const liveGeneration = { sessionId: initialLiveSessionId, originSessionId: initialLiveSessionId, controller };
+    // Coalesce assistant_chunk frames (~one per token → one React commit per
+    // token) into one applyAssistantChunk per CHUNK_FLUSH_MS window. Declared
+    // outside the try so the catch (abort/error) can flush buffered text
+    // before it derives labels from t.text (cave-w50e).
+    const chunkCoalescer = createChunkCoalescer({
+      flushMs: CHUNK_FLUSH_MS,
+      apply: (text) => applyAssistantChunk(text, assistantId, liveGeneration),
+    });
     const runId = crypto.randomUUID();
     abortRef.current = controller;
     stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
@@ -3570,6 +4091,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     try {
       setAssistantLifecycle(assistantId, "connecting", liveGeneration.sessionId);
+      // The on-disk conversation is about to change; a cached pre-send payload
+      // must not be painted on a later revisit of this thread.
+      if (liveGeneration.sessionId) invalidateConversation(liveGeneration.sessionId);
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3630,6 +4154,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
           setProjectAccessRoot(failingRoot || null);
         }
+        // A 400 with project_root_unavailable means the folder itself is gone
+        // (moved/deleted). The server's internal phrasing ("refusing to start a
+        // homedir-scoped fallback session") is jargon, and Retry can never
+        // succeed — swap in actionable copy + an Open-projects fix (cave-ivcc).
+        if (res.status === 400 && /project_root_unavailable|projectRoot does not exist/i.test(message)) {
+          const missingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+          setProjectRootMissing(true);
+          setError(
+            missingRoot
+              ? `This chat's project folder is missing (${missingRoot}) — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.`
+              : "This chat's project folder is missing — it may have been moved or deleted. Open Projects to fix its path, or pick a different project for this chat.",
+          );
+        }
         upsertTurnProgress(assistantId, {
           id: "connect",
           label: `Chat bridge rejected the request: ${message}`,
@@ -3674,13 +4211,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (!payload) continue;
           try {
             const ev = JSON.parse(payload) as StreamEvent;
-            handleEvent(ev, assistantId, request, liveGeneration);
+            if (ev.kind === "assistant_chunk") {
+              // Hot path: buffer instead of committing per token.
+              chunkCoalescer.push(ev.text);
+            } else {
+              // Ordering: buffered text must land before any progress /
+              // attachment / done record derived from later frames.
+              chunkCoalescer.flush();
+              handleEvent(ev, assistantId, request, liveGeneration);
+            }
           } catch {
             /* skip malformed */
           }
         }
       }
+      chunkCoalescer.flush();
     } catch (err) {
+      // Apply any buffered streamed text FIRST — the handlers below read
+      // t.text (e.g. the cancelled fallback label) and must see all of it.
+      chunkCoalescer.flush();
       if ((err as Error)?.name === "AbortError") {
         updateLiveTurns((prev) =>
           prev.map((t) =>
@@ -3712,11 +4261,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         raiseDebugError({ turnId: assistantId });
       }
     } finally {
-      streamOwnerRef.current = false;
+      // Always retire THIS generation's registry entry (keyed by session).
       clearLiveChatGeneration(liveGeneration.sessionId);
-      abortRef.current = null;
-      stopKeysRef.current = { runId: null, sessionId: null };
-      setBusy(false);
+      // But only tear down the SHARED stream wiring if we still own it. After a
+      // thread switch + a second send, a settling *background* stream must not
+      // null the newer stream's abort controller / stop keys or re-enable the
+      // composer — otherwise the newer response's Stop button goes dead and the
+      // composer falsely unlocks mid-stream. `controller` is this send's own
+      // AbortController (assigned to abortRef.current when the stream started).
+      if (abortRef.current === controller) {
+        streamOwnerRef.current = false;
+        abortRef.current = null;
+        stopKeysRef.current = { runId: null, sessionId: null };
+        setBusy(false);
+      }
     }
   };
 
@@ -3752,6 +4310,36 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     );
   }
 
+  // Recovery for a harness/runtime failure: rebind the familiar to the chosen
+  // adapter via /api/config (the only channel that rebinds a harness — the
+  // send route re-resolves the binding on every turn), then retry the send.
+  const switchingHarnessRef = useRef(false);
+  async function handleUseHarnessFix(runtime: string) {
+    if (busy || switchingHarnessRef.current) return;
+    switchingHarnessRef.current = true;
+    try {
+      const nextModel = defaultModelForRuntime(runtime);
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          familiars: { [familiar.id]: { harness: runtime, model: nextModel } },
+        }),
+      });
+      if (!res.ok) {
+        setError(`Could not switch harness (${res.status}). Try again from the composer's runtime picker.`);
+        return;
+      }
+      window.dispatchEvent(new Event("cave:familiars-refresh"));
+      void refreshModelState();
+      retryLastSend();
+    } catch {
+      setError("Could not switch harness. Try again from the composer's runtime picker.");
+    } finally {
+      switchingHarnessRef.current = false;
+    }
+  }
+
   // Recovery for a 403 project-access failure: register the chat's cwd as a
   // Cave project and grant it to this familiar (both user-initiated writes the
   // server accepts), then retry the send. The daemon re-reads projects/grants
@@ -3778,31 +4366,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setAddingProject(false);
     }
-  }
-
-  function enhancePrompt() {
-    const draft = input.trim();
-    if (!draft || busy || enhanceStatus === "loading") return;
-    setEnhanceOriginal(input);
-    setEnhanceStatus("loading");
-    const result = buildPromptEnhancement({
-      draft: input,
-      mode: activeProjectRoot ? "code" : "chat",
-      context: {
-        activeProject: activeProjectRoot
-          ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
-          : null,
-        selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
-        recentThreadTitle: session?.title ?? null,
-      },
-    });
-    if (!result.ok || !result.enhanced.trim()) {
-      setEnhanceStatus("error");
-      return;
-    }
-    setInput(result.enhanced);
-    setEnhanceStatus("success");
-    window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
@@ -3893,6 +4456,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const leaf = childLeaf(turns, next.id);
     setActiveLeafId(leaf);
     if (!sessionId) return;
+    invalidateConversation(sessionId);
     try {
       await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
@@ -3908,6 +4472,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const text = (override ?? input).trim();
     if (!text && attachments.length === 0) return;
     if (attachments.length === 0 && intentFromSlash(text)) return;
+    // Global stop phrase (cave-uf2x): while a task is running, typing the
+    // configured phrase is a command — halt the turn (same path as the Stop
+    // button) instead of leaving the draft stranded behind the busy bail.
+    if (busy && matchesStopPhrase(text, readStopPhrase())) {
+      cancelSend();
+      setInput("");
+      clearDraft();
+      return;
+    }
     // CHAT-D5-01: sendRaw early-returns while a response is streaming, so
     // clearing the composer first would silently destroy the typed message
     // (and staged attachments). Bail before touching state — slash intents
@@ -3921,20 +4494,42 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       .slice(0, MAX_FILE_MENTIONS);
     // CHAT-D11-04: Add to input history (the raw draft, without the quote
     // prefix — ↑ recall should restore what the user typed, not the blockquote).
-    setInputHistory((prev) => [...prev, text]);
-    setInputHistoryIdx(-1);
+    pushHistory(text);
     // Reply to Chat: fold the quoted target into the outgoing prompt so the
     // model sees it and it persists in the transcript; pass-through when unset.
     const outgoingText = buildQuotedPrompt(replyTarget, text);
     setReplyTarget(null);
     setInput("");
-    setAttachments([]);
+    // Clear the persisted draft synchronously. The debounced writer (250ms) is
+    // cancelled if ChatView unmounts right after a send (navigating to another
+    // surface), which would leave the pre-send text in storage to reappear as an
+    // unsent draft on return.
+    clearDraft();
+    clearAttachments();
     setMentionedFiles([]);
+    // The enhance strip belongs to the draft just sent — reset it so it
+    // doesn't linger over the now-empty composer and let Revert repopulate
+    // the composer with the message the user already sent.
+    promptEnhance.reset();
     // Branching: consume a pending branch parent set by editTurnInComposer.
     // Read-and-clear atomically so it only applies to THIS send.
     const branchParent = pendingBranchParent;
     setPendingBranchParent(undefined);
     await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, branchParent !== undefined ? { parentTurnId: branchParent } : undefined);
+  };
+
+  // Latest-ref for the memoized transcript's per-row actions (cave-likl).
+  // Reassigned every render so TranscriptRows — which deliberately does NOT
+  // re-render on composer keystrokes — always invokes closures that read the
+  // CURRENT busy/turns/attachments state at call time. See TranscriptHandlers.
+  const transcriptHandlersRef = useRef<TranscriptHandlers>(null as unknown as TranscriptHandlers);
+  transcriptHandlersRef.current = {
+    siblingsFor,
+    switchBranch,
+    editTurnInComposer,
+    regenerateFor,
+    replyFor,
+    send,
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -3976,15 +4571,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt, sessionId]);
-
-  const attachFiles = async (files: FileList | File[] | null) => {
-    if (!files?.length) return;
-    const selected = Array.from(files).slice(0, Math.max(0, 10 - attachments.length));
-    if (selected.length === 0) return;
-    const next = await Promise.all(selected.map(fileToAttachment));
-    setAttachments((prev) => [...prev, ...next]);
-    inputRef.current?.focus();
-  };
 
   // "Start a task" tail end: the first send's "session" event hands over the
   // session id, and the card follows the chat. Fire-and-forget — a failed card
@@ -4029,19 +4615,69 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
+  /**
+   * Apply streamed assistant text to the live turn in ONE state update.
+   * Extracted from handleEvent's assistant_chunk case (cave-w50e) so the
+   * stream loop's coalescer can flush a whole buffered window — dozens of
+   * tokens — as a single turns map + registry advance instead of one per
+   * SSE frame. appendCollapsingNewlines is chunking-invariant (see
+   * stream-text.test.ts), so buffering never changes the final text.
+   */
+  const applyAssistantChunk = (
+    text: string,
+    assistantId: string,
+    liveGeneration: { sessionId: string | null },
+  ) => {
+    setAssistantLifecycle(assistantId, "streaming", liveGeneration.sessionId);
+    updateLiveTurns((prev) =>
+      prev.map((t) =>
+        t.id === assistantId
+          ? {
+              ...t,
+              text: appendCollapsingNewlines(t.text, text),
+              pending: true,
+              lifecycle: "streaming",
+              // CHAT-D12-01: settle the synthetic row the moment text is
+              // flowing — the streamed text IS the live signal from here
+              // on. Leaving it "running" kept the auto-open ProgressGroup
+              // pulsing for the entire stream.
+              progress: upsertProgressEvent(t.progress, {
+                id: "stream",
+                label: "Receiving response",
+                status: "done",
+              }),
+            }
+          : t,
+      ),
+      assistantId,
+      undefined,
+      liveGeneration.sessionId,
+    );
+  };
+
   const handleEvent = (
     ev: StreamEvent,
     assistantId: string,
     request: FailedSend,
-    liveGeneration: { sessionId: string | null; controller: AbortController },
+    liveGeneration: { sessionId: string | null; originSessionId: string | null; controller: AbortController },
   ) => {
     switch (ev.kind) {
       case "session": {
         liveGeneration.sessionId = ev.sessionId;
         if (ev.sessionId !== currentSessionRef.current) {
-          liveSessionIdRef.current = ev.sessionId;
-          currentSessionRef.current = ev.sessionId;
-          setHistoryState("loaded");
+          // Only adopt the new session id into THIS view's refs when the view is
+          // still on the thread this generation started from. If the user
+          // switched to another conversation before the id arrived (a new chat's
+          // first-token latency), this is a *background* generation: adopting its
+          // id would splice its chunks into the displayed thread and mis-address
+          // the next send (sendRaw reads currentSessionRef as initialLiveSessionId).
+          // Still notify onSessionStarted — the router promotes a still-open new
+          // chat but leaves an already-switched view alone (chat-router.tsx).
+          if (currentSessionRef.current === liveGeneration.originSessionId) {
+            liveSessionIdRef.current = ev.sessionId;
+            currentSessionRef.current = ev.sessionId;
+            setHistoryState("loaded");
+          }
           onSessionStarted?.(ev.sessionId);
         }
         if (taskArmedRef.current) {
@@ -4055,31 +4691,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
       case "assistant_chunk": {
-        setAssistantLifecycle(assistantId, "streaming", liveGeneration.sessionId);
-        updateLiveTurns((prev) =>
-          prev.map((t) =>
-            t.id === assistantId
-              ? {
-                  ...t,
-                  text: appendCollapsingNewlines(t.text, ev.text),
-                  pending: true,
-                  lifecycle: "streaming",
-                  // CHAT-D12-01: settle the synthetic row the moment text is
-                  // flowing — the streamed text IS the live signal from here
-                  // on. Leaving it "running" kept the auto-open ProgressGroup
-                  // pulsing for the entire stream.
-                  progress: upsertProgressEvent(t.progress, {
-                    id: "stream",
-                    label: "Receiving response",
-                    status: "done",
-                  }),
-                }
-              : t,
-          ),
-          assistantId,
-          undefined,
-          liveGeneration.sessionId,
-        );
+        // Direct (non-coalesced) path — the stream loop routes chunks through
+        // chunkCoalescer and never reaches this case; it stays for any other
+        // handleEvent caller so a chunk is never silently dropped.
+        applyAssistantChunk(ev.text, assistantId, liveGeneration);
         return;
       }
       case "attachment": {
@@ -4191,13 +4806,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // message from the turn's errored step when the stream gave none.
           setError((prev) => prev ?? "The agent run ended with an error.");
           raiseDebugError({ turnId: assistantId });
+        } else {
+          // cave-fy1q phase 3: first completed reply ever — no-op unless the
+          // first-open anchor exists (fresh installs only).
+          stampFirstReplyOnce();
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveGeneration.sessionId = ev.sessionId;
-          liveSessionIdRef.current = ev.sessionId;
-          currentSessionRef.current = ev.sessionId;
-          setHistoryState("loaded");
+          // Same ownership guard as the "session" event: a background generation
+          // (user switched threads before this settled) must not overwrite the
+          // displayed thread's currentSessionRef. Still let the router register it.
+          if (currentSessionRef.current === liveGeneration.originSessionId) {
+            liveSessionIdRef.current = ev.sessionId;
+            currentSessionRef.current = ev.sessionId;
+            setHistoryState("loaded");
+          }
           onSessionStarted?.(ev.sessionId);
         }
         persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
@@ -4286,155 +4910,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
-    if (modelMenuActive && modelOptions) {
-      const opts = modelOptions;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const m = opts[slashIdx];
-        if (m) setInput(`/model ${m.id}`);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const m = opts[slashIdx];
-        if (m) {
-          handleSelectModel(m.id);
-          appendSystem(`Model set to ${m.id}.`);
-          setInput("");
-        }
-        return;
-      }
-    }
-    if (skillMenuActive && skillOptions) {
-      const opts = skillOptions;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const s = opts[slashIdx];
-        if (s) setInput(`/skill ${s.id}`);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const s = opts[slashIdx];
-        if (s) invokeSkillOption(s);
-        return;
-      }
-    }
-    if (promptMenuActive && promptOptions) {
-      const opts = promptOptions;
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const p = opts[slashIdx];
-        if (p) setInput(`/prompt ${p.id}`);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const p = opts[slashIdx];
-        if (p) insertPrompt(p);
-        return;
-      }
-    }
-    if (slashSuggestions.length > 0 || skillCommandRows.length > 0) {
-      // One roving index across commands, then the Skills group beneath them.
-      const total = slashSuggestions.length + skillCommandRows.length;
-      const skillAt = (i: number): SkillOption | undefined =>
-        skillCommandRows[i - slashSuggestions.length];
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, total - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashIdx((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (e.key === "Tab") {
-        e.preventDefault();
-        const cmd = slashSuggestions[slashIdx];
-        const s = skillAt(slashIdx);
-        if (cmd) setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
-        else if (s) setInput(`/skill ${s.id} `);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        const cmd = slashSuggestions[slashIdx];
-        const s = skillAt(slashIdx);
-        // If the highlighted command takes an argument and the input isn't
-        // the exact command yet, autocomplete first (like Tab) so the user
-        // can fill in args; otherwise run the highlighted suggestion — not
-        // the partially typed text. Mirrors home-composer.
-        if (cmd && cmd.argPlaceholder && canonicalize(input.trim()) !== cmd.name) {
-          setInput(cmd.name + " ");
-        } else if (cmd) {
-          intentFromSlash(cmd.name);
-        } else if (s) {
-          invokeSkillOption(s);
-        }
-        return;
-      }
-      // Esc precedence: an open slash menu consumes Esc (dismiss) before
-      // the busy branch below gets a chance to cancel the stream.
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-    }
+    // The inline slash menus (Esc-dismiss, ↑↓/Tab/Enter across all four
+    // pickers) — shared hook. Ordering is load-bearing: the @-mention branch
+    // above consumes Esc first (#402), and the busy-cancel branch below only
+    // sees Esc once no menu is open, so a dismissed menu never costs a
+    // live stream.
+    if (handleMenuKey(e)) return;
+    // Tab cycles {{placeholder}} tokens left in the draft (Shift+Tab
+    // reverses; Tab on a selected {{name|default}} accepts the default).
+    // After the menus — they own Tab-complete while open — and only when a
+    // token exists, so native focus-move survives (a11y).
+    if (handlePlaceholderTab(e, inputRef.current, setInput)) return;
     // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer
-    if (e.key === "ArrowUp" && input === "" && inputHistory.length > 0) {
-      e.preventDefault();
-      const idx = inputHistoryIdx < inputHistory.length - 1 ? inputHistoryIdx + 1 : inputHistoryIdx;
-      setInputHistoryIdx(idx);
-      setInput(inputHistory[inputHistory.length - 1 - idx] ?? "");
-      return;
-    }
-    if (e.key === "ArrowDown" && inputHistoryIdx > 0) {
-      e.preventDefault();
-      const idx = inputHistoryIdx - 1;
-      setInputHistoryIdx(idx);
-      setInput(inputHistory[inputHistory.length - 1 - idx] ?? "");
-      return;
-    }
-    if (e.key === "ArrowDown" && inputHistoryIdx === 0) {
-      e.preventDefault();
-      setInputHistoryIdx(-1);
-      setInput("");
-      return;
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (handleArrowKey(e, input, setInput)) return;
+    // `isComposing` is true for the Enter that confirms an IME candidate
+    // (CJK/pinyin/kana). Treating that Enter as "send" fires a half-composed,
+    // garbled message and destroys the candidate selection, so let the IME keep it.
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       void send();
       return;
@@ -4444,20 +4936,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelSend();
     }
   };
-
-  // Persist the composer draft so a reload restores a half-written message.
-  // Cleared (key removed) when the input empties — e.g. after a send.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      writeComposerDraft(input);
-    }, COMPOSER_DRAFT_WRITE_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [input]);
-
-  // Persist the ↑/↓ prompt-history so past prompts survive a reload.
-  useEffect(() => {
-    writeComposerHistory(COMPOSER_HISTORY_KEY, inputHistory);
-  }, [inputHistory]);
 
   // Sync the selected project when switching sessions. Also initialise the draft
   // the first time projects load (when it is still null). Do NOT overwrite a
@@ -4489,6 +4967,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
     setMentionedFiles([]);
     setRuntimeHost(null);
+    // ChatView is a single instance reused across threads (not keyed by
+    // sessionId in ChatRouter), so per-thread composer context must be cleared
+    // on switch or it bleeds into the next conversation's next send: a
+    // reply-quote and staged attachments would be injected into the wrong
+    // thread, a pending branch parent would mis-parent the turn onto a node
+    // that doesn't exist in the new tree, and the "Prompt improved / Revert"
+    // strip would resurrect the previous thread's pre-enhancement draft.
+    setReplyTarget(null);
+    clearAttachments();
+    setPendingBranchParent(undefined);
+    promptEnhance.reset();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
@@ -4541,12 +5030,43 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setError(json.error ?? "delete failed");
         return;
       }
+      invalidateConversation(sessionId);
       onSessionsChanged?.();
       onBack?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // Archive is delete's reversible sibling: the chat leaves every rail (rails
+  // are archive-free by default — chat-siderail-hide-archived) but the
+  // transcript survives, reachable via the chat list's "Show archived" toggle
+  // where the same menu item unarchives it back onto the rail.
+  const setChatArchived = async (archived: boolean) => {
+    if (!sessionId || archiving) return;
+    setArchiving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ archived }),
+      });
+      const json = await res.json().catch(() => ({ ok: false }));
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? (archived ? "archive failed" : "unarchive failed"));
+        return;
+      }
+      announce(archived ? "Chat archived — it won't appear in the rail." : "Chat restored to the rail.");
+      onSessionsChanged?.();
+      // Leaving mirrors delete only for archive; unarchive keeps you in place.
+      if (archived) onBack?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : archived ? "archive failed" : "unarchive failed");
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -4578,32 +5098,33 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // Slim header: the linked-context strip only earns its own header row when
+  // there are actual task/GitHub chips to show. A bare "link a task" affordance
+  // rides inline with the session actions instead, so an unlinked session's
+  // header is one row (title + meta), not title + a mostly-empty second band.
+  const hasLinkedChips =
+    Boolean(linkedContext?.task) ||
+    (linkedContext?.tasks?.length ?? 0) > 0 ||
+    (linkedContext?.github?.length ?? 0) > 0;
+  const linkedContextRow = (
+    <LinkedContextRow
+      linkedContext={linkedContext}
+      onOpenTask={onOpenTask}
+      sessionId={sessionId}
+      onLinkedContextChange={setLinkedContext}
+      // Handoff carries the ACTIVE branch only: `turns` holds every branch of
+      // an edited/retried conversation, so deriving a task from it would pull
+      // titles, subtasks, links, and deadlines from turns the user abandoned.
+      handoff={{ turns: activePath, familiarId: familiar.id ?? null, projectId: projectIdDraft }}
+      sessionSettled={!activePendingTurn && Boolean(lastSettledAssistantTurn) && !lastSettledAssistantTurn?.error}
+    />
+  );
+
   return (
     <section
       className="cave-chat-linear flex h-full flex-col bg-[var(--bg-base)] text-[var(--text-primary)]"
       onKeyDown={onChatSectionKeyDown}
-      onDragEnter={(e) => {
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        e.preventDefault();
-        dragDepthRef.current += 1;
-        setDropActive(true);
-      }}
-      onDragOver={(e) => {
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        e.preventDefault();
-      }}
-      onDragLeave={(e) => {
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-        if (dragDepthRef.current === 0) setDropActive(false);
-      }}
-      onDrop={(e) => {
-        dragDepthRef.current = 0;
-        setDropActive(false);
-        if (!hasDraggedFiles(e.dataTransfer.types)) return;
-        e.preventDefault();
-        void attachFiles(e.dataTransfer.files);
-      }}
+      {...dropHandlers}
     >
       {dropActive ? (
         <div className="cave-drop-overlay" aria-hidden="true">
@@ -4613,7 +5134,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </div>
       ) : null}
-      <header className="cave-chat-linear-header">
+      <header className="cave-chat-linear-header reveal-scope">
         <div className="cave-mobile-header-identity">
           <div className="cave-mobile-header-familiar">
                   <FamiliarIcon familiar={familiar} size="sm" />
@@ -4681,42 +5202,44 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPrev={findPrev}
               />
             ) : null}
-            {turns.length > 0 ? <HeaderThinkingToggle /> : null}
-            {sessionId && (
-              <HeaderDebugButton onOpenDebug={openDebug} />
-            )}
-            {sessionId && (
-              <HeaderDeleteButton key={sessionId} onDelete={() => void deleteChat()} deleting={deleting} />
-            )}
             {sessionId && (
               <SessionOverflowMenu
+                key={sessionId}
                 projects={projects}
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
                 onAddProject={overflowAddProject.beginAddProject}
                 familiar={familiar}
+                sessionId={sessionId}
+                hasTurns={turns.length > 0}
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
                 onOpenDebug={openDebug}
+                reflecting={reflecting}
+                onReflect={familiar.id ? () => void reflectOnThread() : undefined}
+                deleting={deleting}
+                onDelete={() => void deleteChat()}
+                archived={Boolean(session?.archived_at)}
+                archiving={archiving}
+                onSetArchived={(next) => void setChatArchived(next)}
               />
             )}
             {overflowAddProject.addProjectModal}
-            {sessionId && familiar.id ? (
-              <HeaderReflectButton reflecting={reflecting} onReflect={() => void reflectOnThread()} />
-            ) : null}
+            {!hasLinkedChips ? linkedContextRow : null}
           </div>
         </MetaLine>
-        <LinkedContextRow
-          linkedContext={linkedContext}
-          onOpenTask={onOpenTask}
-          sessionId={sessionId}
-          onLinkedContextChange={setLinkedContext}
-        />
+        {hasLinkedChips ? linkedContextRow : null}
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
+      {/* Stage header keys on the SESSION's root — the same source the rail
+          badge listeners use (chat-surface railProjectRoot) — so publisher
+          and listener can't drift onto different derivations (cave-r0gt). */}
+      <ChatStageHeader projectRoot={session?.project_root ?? projectRoot ?? null} onOpenUrl={onOpenUrl} />
       <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
+      <FileLinkResolverContext.Provider value={fileLinkResolver}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
+          ref={threadRef}
           className="cave-chat-thread"
           role="log"
           aria-label="Conversation"
@@ -4775,113 +5298,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             )
           ) : null}
-          {(() => {
-            // `groupedTurns` + `turnIndexMap` are memoized above (rebuilt only
-            // when `activePath` changes, not on every keystroke). `allTurns`
-            // feeds the per-row prev-turn timestamp-gap lookup and must match
-            // the same sequence used for grouping.
-            const allTurns = activePath;
-            // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
-            // mount the newest groups. The per-row prev-turn lookup still reads
-            // the full `allTurns`/`turnIndexMap`, so the first visible row's
-            // timestamp gap stays correct. Expands to the whole transcript the
-            // moment the reader scrolls up or opens find (see historyExpanded).
-            const renderGroups =
-              historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
-                ? groupedTurns
-                : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
-            return renderGroups.map((g) => {
-              if (g.kind === "single") {
-                const t = g.turn;
-                const i = turnIndexMap.get(t.id) ?? -1;
-                const prev = allTurns[i - 1];
-                const showTimestamp = (() => {
-                  if (!t.createdAt) return false;
-                  if (!prev?.createdAt) return true;
-                  const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
-                  if (!Number.isFinite(gap)) return true;
-                  if (gap >= 10 * 60 * 1000) return true;
-                  return prev.role !== t.role;
-                })();
-                const singleBranchNav = (() => {
-                  const { siblings, index } = siblingsFor(t.id);
-                  if (siblings.length <= 1) return undefined;
-                  return {
-                    index,
-                    total: siblings.length,
-                    onPrev: () => void switchBranch(t.id, -1),
-                    onNext: () => void switchBranch(t.id, 1),
-                  };
-                })();
-                return (
-                  <TurnRow
-                    key={t.id}
-                    turn={t}
-                    familiar={familiar}
-                    showTimestamp={showTimestamp}
-                    found={foundTurnId === t.id}
-                    onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
-                    onRegenerate={regenerateFor(t)}
-                    onReply={replyFor(t)}
-                    onOpenUrl={onOpenUrl}
-                    onSuggestion={(sug) => void send(sug)}
-                    expanded={expandedAvatarTurnId === t.id}
-                    onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
-                    branchNav={singleBranchNav}
-                  />
-                );
-              }
-              const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
-              const ss = String(g.durationSec % 60).padStart(2, "0");
-              return (
-                <div key={g.callId} className="cave-chat-voice-call-group">
-                  <div className="cave-chat-voice-call-header">
-                    <span aria-hidden>📞</span>
-                    Voice call · {mm}:{ss}
-                  </div>
-                  {g.turns.map((t) => {
-                    const i = turnIndexMap.get(t.id) ?? -1;
-                    const prev = allTurns[i - 1];
-                    const showTimestamp = (() => {
-                      if (!t.createdAt) return false;
-                      if (!prev?.createdAt) return true;
-                      const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
-                      if (!Number.isFinite(gap)) return true;
-                      if (gap >= 10 * 60 * 1000) return true;
-                      return prev.role !== t.role;
-                    })();
-                    const groupBranchNav = (() => {
-                      const { siblings, index } = siblingsFor(t.id);
-                      if (siblings.length <= 1) return undefined;
-                      return {
-                        index,
-                        total: siblings.length,
-                        onPrev: () => void switchBranch(t.id, -1),
-                        onNext: () => void switchBranch(t.id, 1),
-                      };
-                    })();
-                    return (
-                      <TurnRow
-                        key={t.id}
-                        turn={t}
-                        familiar={familiar}
-                        showTimestamp={showTimestamp}
-                        found={foundTurnId === t.id}
-                        onEdit={t.role === "user" && t.text.trim() ? () => editTurnInComposer(t) : undefined}
-                        onRegenerate={regenerateFor(t)}
-                        onReply={replyFor(t)}
-                        onOpenUrl={onOpenUrl}
-                        onSuggestion={(sug) => void send(sug)}
-                        expanded={expandedAvatarTurnId === t.id}
-                        onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
-                        branchNav={groupBranchNav}
-                      />
-                    );
-                  })}
-                </div>
-              );
-            });
-          })()}
+          {/* Transcript rows: memoized subtree (cave-likl) — the row loop no
+              longer re-runs on composer keystrokes / caret moves / menu
+              toggles. Data props are all referentially stable between
+              transcript changes; per-row actions route through
+              transcriptHandlersRef (read at call time, never stale). */}
+          <TranscriptRows
+            groupedTurns={groupedTurns}
+            turnIndexMap={turnIndexMap}
+            allTurns={activePath}
+            historyExpanded={historyExpanded}
+            familiar={familiar}
+            busy={busy}
+            foundTurnId={foundTurnId}
+            feedbackContext={feedbackContext}
+            expandedAvatarTurnId={expandedAvatarTurnId}
+            setExpandedAvatarTurnId={setExpandedAvatarTurnId}
+            onOpenUrl={onOpenUrl}
+            handlersRef={transcriptHandlersRef}
+          />
           {shouldShowChatArchiveNudge({
             taskLifecycle: linkedContext?.task?.lifecycle ?? null,
             sessionArchived: Boolean(session?.archived_at),
@@ -4932,6 +5367,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </button>
         )}
       </div>
+      </FileLinkResolverContext.Provider>
       </ToolProjectRootContext.Provider>
 
       {reflectError ? (
@@ -4966,15 +5402,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           busy={busy}
           onRetry={retryLastSend}
           onOpenDebug={openDebug}
+          onUseHarness={lastFailedSend ? handleUseHarnessFix : undefined}
+          onOpenSetup={() => window.dispatchEvent(new CustomEvent("cave:onboarding-open"))}
+          harnessId={familiar.harness ?? null}
           addProjectLabel={
             projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
           }
           addingProject={addingProject}
           onAddProject={projectAccessRoot ? handleAddProject : undefined}
+          onOpenProjects={
+            projectRootMissing
+              ? () => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT))
+              : undefined
+          }
           onDismiss={() => {
             setError(null);
             setDebugError(null);
             setProjectAccessRoot(null);
+            setProjectRootMissing(false);
           }}
         />
       ) : null}
@@ -4985,8 +5430,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       >
         <div className="cave-composer-shell">
           {mentionOpen ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={mentionListboxId} role="listbox" aria-label="Workspace files">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={mentionListboxId} role="listbox" aria-label="Workspace files">
                 {mentionMatches.map((file, i) => {
                   const active = i === mentionActiveIdx;
                   const base = file.split("/").pop() ?? file;
@@ -5003,13 +5448,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeMentionOptionRef : null}
                         onMouseEnter={() => setMentionIdx(i)}
                         onClick={() => selectMention(file)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name="ph:file-code" width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="font-mono text-[var(--text-primary)]">{base}</span>
-                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">{file}</span>
+                        <Icon name="ph:file-code" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-mono font-medium text-[var(--text-primary)]">{base}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">{file}</span>
                       </button>
                     </li>
                   );
@@ -5021,8 +5466,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </div>
           ) : null}
           {modelMenuActive && modelOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Models">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Models">
                 {modelOptions.map((m, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5038,11 +5483,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           setInput("");
                           inputRef.current?.focus();
                         }}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <span className="text-[var(--text-primary)]">{m.label}</span>
+                        <span className="font-medium text-[var(--text-primary)]">{m.label}</span>
                         <span className="flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">{m.id}</span>
                       </button>
                     </li>
@@ -5054,9 +5499,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : skillMenuActive && skillOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
               <div className="flex">
-              <ul className="max-h-64 flex-1 min-w-0 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Skills">
+              <ul className="max-h-72 flex-1 min-w-0 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Skills">
                 {skillOptions.map((s, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5067,13 +5512,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
+                        <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                        <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
                         {s.argumentHint ? (
@@ -5093,8 +5538,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : promptMenuActive && promptOptions ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Prompts">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Prompts">
                 {promptOptions.map((p, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5105,13 +5550,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
                         onClick={() => insertPrompt(p)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name={promptIconName(p.icon)} width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="text-[var(--text-primary)]">{p.name}</span>
-                        <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
+                        <Icon name={promptIconName(p.icon)} width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-medium text-[var(--text-primary)]">{p.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {p.description || p.id}
                         </span>
                       </button>
@@ -5124,8 +5569,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
-            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl">
+              <ul className="max-h-72 overflow-y-auto p-1.5" id={slashListboxId} role="listbox" aria-label="Slash commands">
+                {slashSuggestions.length > 0 ? (
+                  <li role="presentation" className="px-3 pb-1 pt-1.5 text-[12px] font-medium text-[var(--text-muted)]">
+                    Commands
+                  </li>
+                ) : null}
                 {slashSuggestions.map((cmd, i) => {
                   const active = i === slashIdx;
                   return (
@@ -5144,12 +5594,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                           setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
                           inputRef.current?.focus();
                         }}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <span className="font-mono text-[var(--text-primary)]">{cmd.name}</span>
-                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">
+                        <Icon name="ph:terminal-window" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="font-mono font-medium text-[var(--text-primary)]">{cmd.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {cmd.description}
                         </span>
                         {cmd.argPlaceholder ? (
@@ -5162,7 +5613,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
                 {skillCommandRows.length > 0 ? (
-                  <li role="presentation" className="mt-1 border-t border-[var(--border-hairline)] px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                  <li role="presentation" className="px-3 pb-1 pt-2.5 text-[12px] font-medium text-[var(--text-muted)]">
                     Skills
                   </li>
                 ) : null}
@@ -5177,13 +5628,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(idx)}
                         onClick={() => invokeSkillOption(s)}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${
+                          active ? "bg-[var(--bg-hover)]" : "hover:bg-[var(--bg-hover)]/60"
                         }`}
                       >
-                        <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="text-[var(--text-primary)]">{s.name}</span>
-                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">
+                        <Icon name="ph:sparkle" width={15} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                        <span className="font-medium text-[var(--text-primary)]">{s.name}</span>
+                        <span className="flex-1 truncate text-[12px] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
                         {s.argumentHint ? (
@@ -5230,7 +5681,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
                     <button
                       type="button"
-                      onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== attachment.id))}
+                      onClick={() => removeAttachment(attachment.id)}
                       className="focus-ring grid h-4 w-4 shrink-0 place-items-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                       title={`Remove ${attachment.name}`}
                       aria-label={`Remove ${attachment.name}`}
@@ -5270,26 +5721,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               onKeyUp={syncComposerCaret}
               onClick={syncComposerCaret}
               onSelect={syncComposerCaret}
-              onPaste={(e) => {
-                // Paste-to-attach (CHAT-D1-02): clipboard files (screenshots,
-                // copied images/files) win over any text payload riding along.
-                // Only preventDefault when files were actually consumed so
-                // plain-text paste — including the CSV sniff — is untouched.
-                const pastedFiles = Array.from(e.clipboardData.items)
-                  .filter((item) => item.kind === "file")
-                  .map((item) => item.getAsFile())
-                  .filter((file): file is File => file !== null);
-                if (pastedFiles.length > 0) {
-                  e.preventDefault();
-                  void attachFiles(pastedFiles);
-                  return;
-                }
-              }}
+              onPaste={handlePaste}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
               inputMode="text"
               enterKeyHint="send"
-              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
+              className="cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
               aria-label="Message"
               aria-autocomplete="list"
               aria-haspopup="listbox"
@@ -5300,39 +5737,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
-            {enhanceStatus !== "idle" ? (
-              <div className="flex items-center gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-1.5 text-[11px] text-[var(--text-muted)]" role="status">
-                <Icon
-                  name={enhanceStatus === "loading" ? "ph:arrow-clockwise" : enhanceStatus === "success" ? "ph:check" : "ph:warning-circle"}
-                  width={12}
-                  className={enhanceStatus === "loading" ? "animate-spin" : ""}
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  {enhanceStatus === "loading"
-                    ? "Enhancing prompt..."
-                    : enhanceStatus === "success"
-                      ? "Prompt improved"
-                      : "Prompt enhancement failed"}
-                </span>
-                {enhanceStatus === "success" && enhanceOriginal !== null ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInput(enhanceOriginal);
-                      setEnhanceOriginal(null);
-                      setEnhanceStatus("idle");
-                      inputRef.current?.focus();
-                    }}
-                    className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-                    aria-label="Revert prompt enhancement"
-                    title="Revert prompt enhancement"
-                  >
-                    Revert
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+            {/* Enhance status strip (shared): streaming preview, apply/dismiss
+                for late arrivals, one-tap revert after an in-place apply. */}
+            <EnhanceStrip
+              state={promptEnhance.state}
+              onApply={promptEnhance.apply}
+              onDismiss={promptEnhance.dismiss}
+              onRevert={promptEnhance.revert}
+              onCancel={promptEnhance.cancel}
+            />
             <div className="cave-composer-controls">
               <input
                 ref={fileInputRef}
@@ -5343,17 +5756,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onChange={(e) => {
                   // Snapshot the files and clear the input synchronously so picking the
                   // SAME file again still fires onChange (e.g. re-attach after the CSV
-                  // or 10-attachment-cap early returns in attachFiles).
+                  // or 10-attachment-cap early returns in addFiles).
                   const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
                   e.currentTarget.value = "";
-                  void attachFiles(files);
+                  void addFiles(files);
                 }}
               />
               <div className="cave-composer-control-row">
                 <div className="cave-composer-utility-row">
                   <button
                     type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                    className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
                     title="Attach images, videos, or files"
                     aria-label="Attach images, videos, or files"
                     disabled={busy || attachments.length >= 10}
@@ -5361,29 +5774,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   >
                     <Icon name="ph:paperclip" width={14} aria-hidden />
                   </button>
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                    title="Voice"
-                    aria-label="Voice"
-                    disabled={!sessionId}
-                    onClick={() => setVoiceCallOpen(true)}
-                  >
-                    <Icon name="ph:microphone" width={15} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                    title="Prompt snippets"
-                    aria-label="Prompt snippets"
-                    onClick={() => setPromptSnippetsOpen(true)}
-                  >
-                    <Icon name="ph:chat-centered-text" width={14} aria-hidden />
-                  </button>
+                  {/* Voice needs a live session (the overlay attaches to it), so
+                      pre-session the button is hidden, not disabled-forever —
+                      it appears once the first send creates the session. */}
+                  {sessionId ? (
+                    <button
+                      type="button"
+                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                      title="Voice"
+                      aria-label="Voice"
+                      onClick={() => setVoiceCallOpen(true)}
+                    >
+                      <Icon name="ph:microphone" width={15} aria-hidden />
+                    </button>
+                  ) : null}
                   <ComposerOptionsMenu
                     hostValue={composerHostValue}
                     onHostPick={setRuntimeHost}
                     disabled={busy}
+                    onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
+                    onSaveAsTemplate={() => setSaveTemplateSeed(input)}
+                    saveAsTemplateDisabled={!input.trim()}
                     indicator={
                       permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
@@ -5422,23 +5833,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       } satisfies ComposerOptionSection,
                     ]}
                   />
+                  <ComposerRuntimeChip
+                    runtime={modelHarness}
+                    modelValue={composerModelValue}
+                    modelOptions={composerModelOptions}
+                    onPickRuntime={handleSelectRuntime}
+                    onPickModel={handleSelectModel}
+                    disabled={busy}
+                  />
+                  {/* Git context — branch · dirty count · worktree · PR — for
+                      chats rooted in a git repo (hidden otherwise). */}
+                  <ComposerGitChip projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
                 </div>
                 <div className="cave-composer-submit-row">
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                    title="Enhance prompt"
-                    aria-label="Enhance prompt"
-                    disabled={busy || enhanceStatus === "loading" || !input.trim()}
-                    onClick={() => void enhancePrompt()}
-                  >
-                    <Icon name="ph:sparkle" width={13} aria-hidden />
-                  </button>
+                  <EnhanceControl
+                    state={promptEnhance.state}
+                    onEnhance={promptEnhance.enhance}
+                    onCancel={promptEnhance.cancel}
+                    disabled={busy || !input.trim()}
+                  />
                   {busy ? (
                     <button
                       type="button"
                       onClick={cancelSend}
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
+                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
                       title="Cancel (esc)"
                       aria-label="Cancel response"
                     >
@@ -5449,7 +5867,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       type="button"
                       onClick={() => void send()}
                       disabled={!input.trim() && attachments.length === 0}
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                      className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
@@ -5477,6 +5895,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setPromptSnippetsOpen(false);
           insertPrompt(p);
         }}
+      />
+      <SaveTemplateModal
+        open={saveTemplateSeed !== null}
+        onClose={() => setSaveTemplateSeed(null)}
+        initialBody={saveTemplateSeed ?? ""}
       />
       <Modal
         open={debugModalOpen}
@@ -5511,7 +5934,10 @@ function splitTextForArtifacts(
       const pre = text.slice(cursor, b.index);
       if (pre.trim()) out.push({ kind: "text", text: pre });
     }
-    const preceding = text.slice(0, b.index).trim();
+    // Title from the prose since the PREVIOUS block (cursor), not the whole
+    // message — otherwise every artifact in a multi-artifact turn inherits
+    // the message's first line as its title.
+    const preceding = text.slice(cursor, b.index).trim();
     const title = preceding ? titleFromPrompt(preceding) : "Canvas artifact";
     out.push({
       kind: "block",
@@ -5532,6 +5958,223 @@ function splitTextForArtifacts(
   return out;
 }
 
+// GitHub cards (design §1-2, cave-fpqx.6): further split the artifact-split
+// text spans on `<coven:github …>` markers and bare-line github.com URLs,
+// mounting an inline GitHubCard at each reference's position. Settled turns
+// only — streaming strips markers (stripGitHubMarkers) and mounts cards on
+// settle, the same contract canvas artifacts follow.
+function splitSegmentsForGitHub(
+  segments: MessageBubbleSegment[],
+  onOpenUrl?: (url: string) => void,
+): MessageBubbleSegment[] {
+  const out: MessageBubbleSegment[] = [];
+  segments.forEach((seg, si) => {
+    if (seg.kind !== "text") {
+      out.push(seg);
+      return;
+    }
+    const pieces = sliceGitHubBlocks(seg.text);
+    if (pieces.length === 1 && pieces[0].kind === "text") {
+      out.push(seg);
+      return;
+    }
+    pieces.forEach((p, pi) => {
+      if (p.kind === "text") {
+        if (p.text.trim()) out.push({ kind: "text", text: p.text });
+      } else if (p.kind === "action") {
+        // Agent-proposed write (design §3): always a proposal card — never
+        // auto-fired — regardless of the action kind's tier.
+        out.push({
+          kind: "block",
+          key: `gh-action-${si}-${pi}-${p.action.kind}`,
+          node: <GitHubActionCard action={p.action} />,
+        });
+      } else {
+        out.push({
+          kind: "block",
+          key: `gh-${si}-${pi}-${descriptorUrl(p.descriptor)}`,
+          node: <GitHubCard descriptor={p.descriptor} onOpenUrl={onOpenUrl} />,
+        });
+      }
+    });
+  });
+  return out;
+}
+
+// ── Transcript rows (cave-likl perf) ─────────────────────────────────────────
+// The grouped-turn shapes built by ChatView's `groupedTurns` memo.
+type TranscriptVoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
+type TranscriptSingleItem = { kind: "single"; turn: Turn };
+type TranscriptGroup = TranscriptVoiceGroup | TranscriptSingleItem;
+
+/**
+ * Per-row actions the transcript needs from ChatView. Routed through a
+ * "latest ref" (`transcriptHandlersRef`, reassigned every ChatView render)
+ * instead of props: the closures read live component state (busy, turns,
+ * attachments, …), so prop-passing them would either defeat the memo (fresh
+ * identity every keystroke) or go stale behind a comparator that skips
+ * function props. Reading `handlersRef.current` at CALL time always hits the
+ * newest closure while keeping every prop of TranscriptRows referentially
+ * stable across keystroke/caret/hover re-renders.
+ */
+type TranscriptHandlers = {
+  siblingsFor: (turnId: string) => { siblings: Turn[]; index: number };
+  switchBranch: (turnId: string, dir: -1 | 1) => Promise<void>;
+  editTurnInComposer: (turn: Turn) => void;
+  regenerateFor: (turn: Turn) => (() => void) | undefined;
+  replyFor: (turn: Turn) => (() => void) | undefined;
+  send: (override?: string) => Promise<void>;
+};
+
+/**
+ * The transcript row loop, extracted from ChatView's JSX and memoized
+ * (cave-likl). ChatView keeps 60+ pieces of state whose updates have nothing
+ * to do with the transcript — every composer keystroke, caret move, menu
+ * toggle and poll tick re-ran this 60-row mapping loop (per-row closures,
+ * sibling lookups, presence recomputation, TurnRow comparator × rows). All
+ * props below are referentially stable across those renders, so React.memo
+ * skips the whole subtree; the rows re-render only when the transcript data
+ * itself changes (activePath/groupedTurns identity), an action's presence
+ * input flips (`busy`), or row-affecting UI state moves (find highlight,
+ * avatar expansion).
+ *
+ * NOTE for presence semantics: `regenerateFor` hides the Regenerate action
+ * while `busy` — `busy` must stay a prop so the flip re-renders the rows even
+ * though the handler itself is read through the ref.
+ */
+const TranscriptRows = memo(function TranscriptRows({
+  groupedTurns,
+  turnIndexMap,
+  allTurns,
+  historyExpanded,
+  familiar,
+  // Presence input for regenerateFor (see doc comment); unused directly.
+  busy: _busy,
+  foundTurnId,
+  feedbackContext,
+  expandedAvatarTurnId,
+  setExpandedAvatarTurnId,
+  onOpenUrl,
+  handlersRef,
+}: {
+  groupedTurns: TranscriptGroup[];
+  turnIndexMap: Map<string, number>;
+  allTurns: Turn[];
+  historyExpanded: boolean;
+  familiar: Familiar;
+  busy: boolean;
+  foundTurnId: string | null;
+  feedbackContext: FeedbackContext;
+  expandedAvatarTurnId: string | null;
+  setExpandedAvatarTurnId: React.Dispatch<React.SetStateAction<string | null>>;
+  onOpenUrl?: (url: string) => void;
+  handlersRef: React.RefObject<TranscriptHandlers>;
+}) {
+  const handlers = () => handlersRef.current;
+  // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
+  // mount the newest groups. The per-row prev-turn lookup still reads
+  // the full `allTurns`/`turnIndexMap`, so the first visible row's
+  // timestamp gap stays correct. Expands to the whole transcript the
+  // moment the reader scrolls up or opens find (see historyExpanded).
+  const renderGroups =
+    historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
+      ? groupedTurns
+      : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
+  return renderGroups.map((g) => {
+    if (g.kind === "single") {
+      const t = g.turn;
+      const i = turnIndexMap.get(t.id) ?? -1;
+      const prev = allTurns[i - 1];
+      const showTimestamp = (() => {
+        if (!t.createdAt) return false;
+        if (!prev?.createdAt) return true;
+        const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+        if (!Number.isFinite(gap)) return true;
+        if (gap >= 10 * 60 * 1000) return true;
+        return prev.role !== t.role;
+      })();
+      const singleBranchNav = (() => {
+        const { siblings, index } = handlers().siblingsFor(t.id);
+        if (siblings.length <= 1) return undefined;
+        return {
+          index,
+          total: siblings.length,
+          onPrev: () => void handlers().switchBranch(t.id, -1),
+          onNext: () => void handlers().switchBranch(t.id, 1),
+        };
+      })();
+      return (
+        <TurnRow
+          key={t.id}
+          turn={t}
+          familiar={familiar}
+          showTimestamp={showTimestamp}
+          found={foundTurnId === t.id}
+          onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+          onRegenerate={handlers().regenerateFor(t)}
+          onReply={handlers().replyFor(t)}
+          onOpenUrl={onOpenUrl}
+          onSuggestion={(sug) => void handlers().send(sug)}
+          feedbackContext={feedbackContext}
+          expanded={expandedAvatarTurnId === t.id}
+          onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
+          branchNav={singleBranchNav}
+        />
+      );
+    }
+    const mm = String(Math.floor(g.durationSec / 60)).padStart(2, "0");
+    const ss = String(g.durationSec % 60).padStart(2, "0");
+    return (
+      <div key={g.callId} className="cave-chat-voice-call-group">
+        <div className="cave-chat-voice-call-header">
+          <span aria-hidden>📞</span>
+          Voice call · {mm}:{ss}
+        </div>
+        {g.turns.map((t) => {
+          const i = turnIndexMap.get(t.id) ?? -1;
+          const prev = allTurns[i - 1];
+          const showTimestamp = (() => {
+            if (!t.createdAt) return false;
+            if (!prev?.createdAt) return true;
+            const gap = new Date(t.createdAt).getTime() - new Date(prev.createdAt).getTime();
+            if (!Number.isFinite(gap)) return true;
+            if (gap >= 10 * 60 * 1000) return true;
+            return prev.role !== t.role;
+          })();
+          const groupBranchNav = (() => {
+            const { siblings, index } = handlers().siblingsFor(t.id);
+            if (siblings.length <= 1) return undefined;
+            return {
+              index,
+              total: siblings.length,
+              onPrev: () => void handlers().switchBranch(t.id, -1),
+              onNext: () => void handlers().switchBranch(t.id, 1),
+            };
+          })();
+          return (
+            <TurnRow
+              key={t.id}
+              turn={t}
+              familiar={familiar}
+              showTimestamp={showTimestamp}
+              found={foundTurnId === t.id}
+              onEdit={t.role === "user" && t.text.trim() ? () => handlers().editTurnInComposer(t) : undefined}
+              onRegenerate={handlers().regenerateFor(t)}
+              onReply={handlers().replyFor(t)}
+              onOpenUrl={onOpenUrl}
+              onSuggestion={(sug) => void handlers().send(sug)}
+              feedbackContext={feedbackContext}
+              expanded={expandedAvatarTurnId === t.id}
+              onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
+              branchNav={groupBranchNav}
+            />
+          );
+        })}
+      </div>
+    );
+  });
+});
+
 // CHAT-D3-07 perf: the implementation is memoized as `TurnRow` below, so a
 // streamed token re-renders only the streaming row rather than every settled
 // row in the thread (settled turns keep a stable `turn` reference because
@@ -5548,6 +6191,7 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onSuggestion,
+  feedbackContext,
   branchNav,
 }: {
   turn: Turn;
@@ -5567,6 +6211,8 @@ function TurnRowImpl({
   onOpenUrl?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
+  /** Model/runtime stamp for thumbs votes (per-model analytics). */
+  feedbackContext?: FeedbackContext;
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
 }) {
@@ -5655,6 +6301,27 @@ function TurnRowImpl({
                 branchNav={branchNav}
               />
               {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+              {/* Bare-line GitHub URLs in a user message unfurl into cards
+                  beneath the bubble (attachment idiom) — the headline "paste a
+                  PR link" gesture (design §1). User turns only, never system. */}
+              {(() => {
+                const ghRefs = turn.role === "user" ? unfurlUserMessage(turn.text) : [];
+                const skillInvocation = turn.role === "user" ? parseSkillInvocation(turn.text) : null;
+                return ghRefs.length || skillInvocation ? (
+                  <div className="mt-2 space-y-2">
+                    {skillInvocation ? (
+                      // Deterministic /skill card (design §5): the app built
+                      // this prompt itself, so no marker is needed to know a
+                      // skill was invoked. Live stage arrives via the
+                      // assistant turn's own <coven:skill> cards.
+                      <SkillStageCard name={skillInvocation.name} stage="invoked" note={skillInvocation.args} />
+                    ) : null}
+                    {ghRefs.map((d) => (
+                      <GitHubCard key={descriptorUrl(d)} descriptor={d} onOpenUrl={onOpenUrl} />
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </div>
           </div>
         </div>
@@ -5667,7 +6334,16 @@ function TurnRowImpl({
   // `attachment` events; this keeps the in-flight turn clean before reload.
   const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
   const inlineReasoning = reasoningSplit.reasoning;
-  const { visible, suggestions: nextPaths } = extractNextPaths(reasoningSplit.visible);
+  // GitHub markers: while streaming, strip complete + partial `<coven:github…>`
+  // tags so they never flash as raw text (cards mount on settle); settled
+  // turns keep them for splitSegmentsForGitHub below to replace with cards.
+  const ghSafeVisible = turn.pending ? stripGitHubMarkers(reasoningSplit.visible) : reasoningSplit.visible;
+  // Skill markers extract on BOTH paths — the whole point is live "which
+  // skill, what stage" visibility while the agent works (design §5). The
+  // extraction also strips partial tails so raw tags never flash.
+  const skillSplit = extractSkillMarkers(ghSafeVisible);
+  const { visible: visibleWithGh, suggestions: nextPaths } = extractNextPaths(skillSplit.visible);
+  const visible = turn.pending ? visibleWithGh : stripGitHubMarkers(visibleWithGh);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
   const turnStatus = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "streaming" : "complete");
   // CHAT-D12-01: while this turn's own live indicator is showing (pending, no
@@ -5714,9 +6390,12 @@ function TurnRowImpl({
     // you can watch them run as live feedback.
     renderSegments = bubbleSegments;
   } else {
-    // Settled: prose only (+ artifact viewers). Tools are NOT woven into the
-    // text — they render in the designated ToolGroup section below.
-    const split = splitTextForArtifacts(visible, artifactCtx);
+    // Settled: prose only (+ artifact viewers + GitHub cards). Tools are NOT
+    // woven into the text — they render in the designated ToolGroup section
+    // below. GitHub splitting runs on visibleWithGh (markers intact) so cards
+    // mount at the markers' positions; the `visible` fallback/content path is
+    // marker-free either way.
+    const split = splitSegmentsForGitHub(splitTextForArtifacts(visibleWithGh, artifactCtx), onOpenUrl);
     renderSegments = split.some((s) => s.kind === "block") ? split : undefined;
   }
 
@@ -5734,7 +6413,7 @@ function TurnRowImpl({
       data-turn-id={turn.id}
       className={`cave-linear-turn cave-linear-turn--assistant${found ? " cave-turn-found" : ""}`}
     >
-      <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn">
+      <div className="cave-linear-turn-content text-[14px] leading-relaxed text-[var(--text-primary)] group/turn reveal-scope">
         {/* Avatar (interactive) + right column */}
         <div className={`cave-linear-turn-avatar${expanded ? " is-selected" : ""}`} ref={avatarWrapRef}>
           <button
@@ -5757,14 +6436,14 @@ function TurnRowImpl({
           ) : null}
         </div>
         <div className="cave-linear-turn-right">
+          {/* Lean meta (cave-xsq.2): name + time (and transient live status /
+              error retry) stay visible; the static identity/usage extras —
+              crest, role, token usage, and the details peek — collapse into a
+              trailing cluster that reveals on turn hover / keyboard focus
+              (reveal-scope on the turn content above). Nothing is removed; the
+              default view just reads "Name · 2h ago" like ChatGPT. */}
           <div className="cave-linear-turn-meta">
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
-            <span className="cave-linear-turn-crest" aria-hidden="true">
-              <Icon name="ph:sparkle" width={13} height={13} />
-            </span>
-            {familiar.role ? (
-              <span className="cave-linear-turn-badge">{familiar.role}</span>
-            ) : null}
             {turnStatus !== "complete" && !indicatorVisible && (
               <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
                 {lifecycleLabel(turnStatus)}
@@ -5791,18 +6470,26 @@ function TurnRowImpl({
                 {recency}
               </time>
             ) : null}
-            <UsageText usage={turn.usage} costUsd={turn.costUsd} />
-            {metaPeek ? (
-              <span
-                className="cave-turn-peek focus-ring"
-                title={metaPeek}
-                tabIndex={0}
-                role="note"
-                aria-label={`Turn details — ${metaPeek}`}
-              >
-                <Icon name="ph:info" width={11} aria-hidden />
+            <span className="cave-linear-turn-meta-extra reveal-on-hover">
+              <span className="cave-linear-turn-crest" aria-hidden="true">
+                <Icon name="ph:sparkle" width={13} height={13} />
               </span>
-            ) : null}
+              {familiar.role ? (
+                <span className="cave-linear-turn-badge">{familiar.role}</span>
+              ) : null}
+              <UsageText usage={turn.usage} costUsd={turn.costUsd} />
+              {metaPeek ? (
+                <span
+                  className="cave-turn-peek focus-ring"
+                  title={metaPeek}
+                  tabIndex={0}
+                  role="note"
+                  aria-label={`Turn details — ${metaPeek}`}
+                >
+                  <Icon name="ph:info" width={11} aria-hidden />
+                </span>
+              ) : null}
+            </span>
           </div>
 
           <div className="cave-linear-turn-body">
@@ -5821,7 +6508,7 @@ function TurnRowImpl({
                   isError={turn.error}
                   label={familiar.display_name}
                   messageId={turn.id}
-                  feedbackContext={{ familiarId: familiar.id }}
+                  feedbackContext={feedbackContext ?? { familiarId: familiar.id }}
                   onRegenerate={onRegenerate}
                   onReply={onReply}
                   onOpenUrl={onOpenUrl}
@@ -5847,6 +6534,16 @@ function TurnRowImpl({
             ) : null}
             {/* Agent-produced inline attachments (file chips → lightbox). */}
             {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+            {/* Skill stage cards (design §5): one per skill name per turn,
+                updated in place by repeated <coven:skill> markers — live
+                while streaming, settled state after. */}
+            {skillSplit.updates.length ? (
+              <div className="mt-2 space-y-1.5">
+                {skillSplit.updates.map((u) => (
+                  <SkillStageCard key={u.name} name={u.name} stage={u.stage} note={u.note} />
+                ))}
+              </div>
+            ) : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
             {/* Designated "Tool activity" section on settled turns. Codex
@@ -5862,10 +6559,43 @@ function TurnRowImpl({
                     toolInputAsDiff(t.name, t.input) != null;
                   const editCards = turn.tools.filter(isEditCard);
                   const otherTools = turn.tools.filter((t) => !isEditCard(t));
+                  // Golden path 4 (cave-qva4): a multi-file turn gets ONE
+                  // aggregate entry into the working-tree review — the
+                  // per-card Review buttons remain, but "which of these five
+                  // cards do I click" shouldn't be the first question. The
+                  // chip rides the cards' existing cave:open-file-diff
+                  // contract (the Changes panel suffix-matches the path and
+                  // shows every changed file once open).
+                  const editedFiles = Array.from(
+                    new Set(
+                      editCards
+                        .map((t) => toolTargetFile(t.name, t.input))
+                        .filter((p): p is string => Boolean(p)),
+                    ),
+                  );
                   return (
                     <>
                       {editCards.length ? (
                         <div className="cave-edit-cards mt-3 space-y-2">
+                          {editedFiles.length > 1 ? (
+                            <div className="cave-turn-changes flex items-center justify-between gap-3 rounded-md border border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-raised)_78%,transparent)] px-3 py-1.5">
+                              <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                                {editedFiles.length} files changed
+                              </span>
+                              <button
+                                type="button"
+                                className="focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+                                aria-label={`Review all ${editedFiles.length} changed files in the Changes tab`}
+                                onClick={() =>
+                                  window.dispatchEvent(
+                                    new CustomEvent("cave:open-file-diff", { detail: { path: editedFiles[0] } }),
+                                  )
+                                }
+                              >
+                                Review all
+                              </button>
+                            </div>
+                          ) : null}
                           {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
                         </div>
                       ) : null}
@@ -5878,7 +6608,9 @@ function TurnRowImpl({
                 element (click to send), so they sit closest to the composer and
                 aren't pushed up the turn by the tool-activity section. */}
             {nextPaths.length > 0 && !turn.pending ? (
-              <div className="cave-next-paths">
+              // data-count keys the row layout: pills lay out 1, 2, or 3 per
+              // row — 4 pills pair into a 2×2, never a 3+1 orphan wrap.
+              <div className="cave-next-paths" data-count={nextPaths.length}>
                 {nextPaths.map((s, i) => {
                   // The agent lists next steps best-first, so flag the top one as
                   // the recommendation (green pulsing border + leading dot).
@@ -6192,6 +6924,11 @@ function EditCardActions({
 }
 
 function ToolBlock({ tool }: { tool: ToolEvent }) {
+  // The file chip's click opens the code rail, which needs a project root —
+  // without one the rail never shows, so the chip renders as plain text
+  // instead of a dead button (the edit card's Review has its own modal
+  // fallback and stays clickable regardless).
+  const railRoot = useContext(ToolProjectRootContext);
   const argSummary = toolArgSummary(tool.name, tool.input);
   // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
   // structured before/after diff instead of the raw JSON payload; null for
@@ -6268,7 +7005,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
         <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
-          targetFile ? (
+          targetFile && railRoot ? (
             <button
               type="button"
               onClick={openTargetFile}
@@ -6389,7 +7126,12 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     // branches are added); skip closure identity — callbacks are recreated on
     // every parent render and would defeat memoization.
     prev.branchNav?.index === next.branchNav?.index &&
-    prev.branchNav?.total === next.branchNav?.total
+    prev.branchNav?.total === next.branchNav?.total &&
+    // Feedback stamp: compare by value — the memoized context object gets a
+    // fresh identity when the model/runtime actually changes.
+    prev.feedbackContext?.familiarId === next.feedbackContext?.familiarId &&
+    prev.feedbackContext?.model === next.feedbackContext?.model &&
+    prev.feedbackContext?.runtime === next.feedbackContext?.runtime
   );
 }
 

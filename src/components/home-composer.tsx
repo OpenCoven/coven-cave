@@ -12,55 +12,52 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
-import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
+import { resolveModelArg } from "@/lib/slash-model";
+import { requestSummonFamiliar } from "@/lib/summon-events";
 import {
-  skillSlashOptions,
   resolveSkillInvocation,
   buildSkillPrompt,
-  skillCommandMatches,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
-  promptSlashOptions,
   resolvePromptArg,
   promptInsertion,
   type PromptOption,
 } from "@/lib/slash-prompt";
-import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
-import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
-import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { useAutogrowTextarea } from "@/lib/use-autogrow-textarea";
+import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
+import { recordPromptRecent } from "@/lib/prompt-prefs";
+import { SaveTemplateModal } from "@/components/save-template-modal";
+import { HOME_DRAFT_KEY, readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
+import { useComposerHistory } from "@/lib/use-composer-history";
+import { useAttachmentStaging } from "@/lib/use-attachment-staging";
+import { useInlineSlashMenus } from "@/lib/use-inline-slash-menus";
+import { canonicalize } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
+import type { InboxItem } from "@/lib/cave-inbox";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { ProjectPicker } from "@/components/project-picker";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
+import { ComposerRuntimeChip } from "@/components/composer-runtime-chip";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { HomeContinueColumn } from "@/components/home/home-continue-column";
-import { HomeNewsColumn } from "@/components/home/home-news-column";
-import { HomeSuggestions } from "@/components/home/home-suggestions";
-import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
+import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
-  fileToAttachment,
-  hasDraggedFiles,
   type ChatAttachment,
-  type ComposerAttachment,
 } from "@/lib/chat-attachments";
 import {
   COMMAND_CONTROL_DEFAULTS,
@@ -69,7 +66,8 @@ import {
   type CommandResponseSpeed,
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
-import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
+import { usePromptEnhance } from "@/lib/use-prompt-enhance";
+import { EnhanceControl, EnhanceStrip } from "@/components/composer-enhance";
 import { greetingForHour } from "@/lib/home-greeting";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -90,7 +88,6 @@ type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
   sessions: SessionRow[];
-  onSetActiveFamiliar: (id: string) => void;
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
    *  aborts the request, which kills the harness before the transcript saves. */
@@ -111,35 +108,22 @@ type Props = {
   onSlash?: (command: string, args: string) => void;
   /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
+  /** "Needs you" attention tier (fired + response-needed) — the SAME
+   *  groupInboxFeed slice the Schedules nav badge counts (cave-925w). */
+  needsYou: InboxItem[];
+  /** Open one needs-you item's target — same handler the bell popover uses. */
+  onOpenInboxItem: (item: InboxItem) => void;
+  /** Jump to the Schedules surface for the full feed. */
+  onOpenSchedules: () => void;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
 // typing on the home screen (mirrors the chat composer's draft persistence).
-const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
 const HOME_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the home composer.
 const HOME_HISTORY_KEY = "cave:home-composer-history:v1";
 // Composer textarea growth cap — mirrors the chat composer (13 lines + padding).
 const HOME_COMPOSER_MAX_HEIGHT = 332;
-
-function readHomeDraft(): string {
-  if (typeof window === "undefined") return "";
-  try {
-    return window.localStorage.getItem(HOME_DRAFT_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function writeHomeDraft(text: string) {
-  if (typeof window === "undefined") return;
-  try {
-    if (text) window.localStorage.setItem(HOME_DRAFT_KEY, text);
-    else window.localStorage.removeItem(HOME_DRAFT_KEY);
-  } catch {
-    /* best effort */
-  }
-}
 
 // ─── HomeComposer ─────────────────────────────────────────────────────────────
 
@@ -147,23 +131,24 @@ export function HomeComposer({
   familiars,
   activeFamiliarId,
   sessions,
-  onSetActiveFamiliar,
   onStartChat,
   onNavigateToBoard,
   onToast,
   onSlash,
   onOpenSession,
+  needsYou,
+  onOpenInboxItem,
+  onOpenSchedules,
 }: Props) {
-  const [text, setText] = useState(() => readHomeDraft());
+  const [text, setText] = useState(() => readComposerDraft(HOME_DRAFT_KEY));
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
-  const [history, setHistory] = useState<string[]>(() => readComposerHistory(HOME_HISTORY_KEY));
-  const [historyIdx, setHistoryIdx] = useState<number>(-1);
-  const [slashIdx, setSlashIdx] = useState(0);
-  // Escape dismisses the inline slash/model/skill menus (they otherwise stay
-  // open purely as a function of the text). Reset whenever the text changes so
-  // typing a fresh command token re-opens them.
-  const [slashDismissed, setSlashDismissed] = useState(false);
+  // Save-as-template (cave-jg6k): the Options menu action snapshots the draft
+  // into the modal so edits while it is open don't mutate the form seed.
+  const [saveTemplateSeed, setSaveTemplateSeed] = useState<string | null>(null);
+  // Persisted ↑/↓ prompt-history recall — shared hook (use-composer-history);
+  // home records slash commands in history too, so pushes stay at call sites.
+  const { push: pushHistory, handleArrowKey } = useComposerHistory(HOME_HISTORY_KEY);
   // Time-of-day greeting for the hero eyebrow. Sampled after mount (client
   // clock) so SSR markup stays deterministic — the eyebrow fades in once set.
   const [greeting, setGreeting] = useState<string | null>(null);
@@ -171,21 +156,24 @@ export function HomeComposer({
     setGreeting(greetingForHour(new Date().getHours()));
   }, []);
   const { announce } = useAnnouncer();
-  // Stable per-mount listbox id — the chat composer mounts its own slash menu,
-  // so ids must be unique across simultaneously mounted composers.
-  const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Attachments staged in the composer; handed to the opened chat on submit.
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  // Attachments staged in the composer (cap 10, mirroring the chat composer);
+  // handed to the opened chat on submit. Shared hook — home adds the limit
+  // toast + SR announce and defers refocus a tick (the chat composer is silent).
+  const {
+    attachments,
+    addFiles,
+    removeAttachment,
+    clearAttachments,
+    handlePaste,
+    dropActive,
+    dropHandlers,
+  } = useAttachmentStaging({
+    onLimit: () => onToast("Attachment limit reached (10)."),
+    onAdded: (count) => announce(`Attached ${count} file${count === 1 ? "" : "s"}`, "polite"),
+    focus: () => setTimeout(() => textareaRef.current?.focus(), 0),
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Drag-and-drop onto the composer card. dragDepthRef counts enter/leave pairs
-  // so moving across child elements doesn't flicker the overlay.
-  const [dropActive, setDropActive] = useState(false);
-  const dragDepthRef = useRef(0);
-  // Prompt enhancement (mirrors the chat composer's Enhance): the pre-enhance
-  // text is kept so the user can revert in one tap.
-  const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [enhanceOriginal, setEnhanceOriginal] = useState<string | null>(null);
   const archivedFamiliars = useArchivedFamiliars();
   // Hide archived familiars from the "new session" picker. Starting a new
   // chat against an archived agent is a footgun — the user can't tell from
@@ -209,13 +197,6 @@ export function HomeComposer({
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
     [familiars, selectedFamiliarId],
-  );
-  // Resolve avatars so the selector chip shows the selected familiar's actual
-  // avatar image (falling back to its glyph) instead of a static sparkle icon.
-  const resolvedFamiliars = useResolvedFamiliars(familiars);
-  const resolvedFamiliarById = useMemo(
-    () => new Map(resolvedFamiliars.map((familiar) => [familiar.id, familiar])),
-    [resolvedFamiliars],
   );
   const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
     useHomeModelState(selectedFamiliarId);
@@ -251,32 +232,6 @@ export function HomeComposer({
         ? modelState!.effectiveModel
         : runtimeModelOptions[0]?.id ?? "";
   const keys = useKeySymbols();
-  const familiarSelectGroups = useMemo<HomeSelectGroup[]>(
-    () => [
-      {
-        options:
-          visibleFamiliars.length === 0
-            ? [{ value: "", label: "No agents", icon: "ph:sparkle", disabled: true }]
-            : visibleFamiliars.map((familiar) => {
-                const resolved = resolvedFamiliarById.get(familiar.id);
-                return {
-                  value: familiar.id,
-                  label: familiar.display_name,
-                  leading: resolved ? (
-                    <FamiliarAvatar
-                      familiar={resolved}
-                      size="sm"
-                      className="hc-familiar-glyph hc-familiar-avatar"
-                    />
-                  ) : (
-                    <Icon name="ph:sparkle" width={13} aria-hidden />
-                  ),
-                };
-              }),
-      },
-    ],
-    [resolvedFamiliarById, visibleFamiliars],
-  );
   const runtimeSectionOptions = useMemo(
     () =>
       COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => ({
@@ -292,71 +247,40 @@ export function HomeComposer({
     setSelectedProjectId(projects[0]?.id ?? "");
   }, [projects, selectedProjectId]);
 
-  // Mirror the chat composer's matching rule: surface only while the user is
-  // still typing the command token (no whitespace yet).
-  const slashSuggestions: SlashCommand[] = useMemo(() => {
-    const firstWord = text.trimStart().split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || text.trimStart().includes(" ")) return [];
-    return matchSlash(firstWord);
-  }, [text]);
-
-  // Inline model picker: typing "/model <partial>" shows model options.
+  // Inline slash menus (/command listbox + Skills group, /model, /skill,
+  // /prompt pickers) — shared hook (use-inline-slash-menus). What a pick DOES
+  // stays home's: model picks toast + clear, skill picks start a new chat
+  // (invokeSkill), prompts insert-for-editing, and Enter on a command (or
+  // nothing highlighted) falls through to handleSubmit — home dispatches the
+  // typed text, so slash commands also land in the ↑ history.
   const modelHarness =
     modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
-  const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
-  const modelMenuActive = !slashDismissed && (modelOptions?.length ?? 0) > 0;
-  // Inline skill picker: "/skill <partial>" / "/skills" shows skill options.
-  const [skills, setSkills] = useState<SkillOption[]>([]);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/skills/local", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
-      })
-      .catch(() => {
-        /* offline → no inline skill picker */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const skillOptions = useMemo(() => skillSlashOptions(text, skills), [text, skills]);
-  const skillMenuActive = !slashDismissed && (skillOptions?.length ?? 0) > 0;
-  // Prompt templates for the "/prompt <partial>" / "/prompts" picker. Seeded
-  // with the built-ins so it works instantly (and offline); the fetch layers
-  // in ~/.coven/prompts files and installed marketplace prompt packs.
-  const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/prompts", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
-      })
-      .catch(() => {
-        /* offline → built-in templates only */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const promptOptions = useMemo(() => promptSlashOptions(text, prompts), [text, prompts]);
-  const promptMenuActive = !slashDismissed && (promptOptions?.length ?? 0) > 0;
-  // Skills surfaced directly in the command menu — typing `/revi` finds the
-  // code-review skill without the /skill prefix. Same first-token-only rule
-  // as slashSuggestions; mirrors chat-view.
-  const skillCommandRows: SkillOption[] = useMemo(() => {
-    const t = text.trimStart();
-    const firstWord = t.split(/\s/)[0] ?? "";
-    if (!firstWord.startsWith("/") || t.includes(" ")) return [];
-    return skillCommandMatches(firstWord, skills);
-  }, [text, skills]);
-  // The inline listboxes (slash commands, /model, /skill, /prompt) share the
-  // same listbox id, so the textarea's combobox ARIA tracks whichever is open.
-  const menuOpen =
-    modelMenuActive || skillMenuActive || promptMenuActive ||
-    (!slashDismissed && (slashSuggestions.length > 0 || skillCommandRows.length > 0));
+  const {
+    skills,
+    prompts,
+    slashSuggestions,
+    skillCommandRows,
+    modelOptions,
+    skillOptions,
+    promptOptions,
+    modelMenuActive,
+    skillMenuActive,
+    promptMenuActive,
+    menuOpen,
+    slashIdx,
+    setSlashIdx,
+    slashListboxId,
+    handleKeyDown: handleMenuKey,
+  } = useInlineSlashMenus({
+    text,
+    setText,
+    modelHarness,
+    onPickModel: (id) => { handleSelectModel(id); onToast(`Model set to ${id}.`); setText(""); },
+    onPickSkill: (s) => invokeSkill(s),
+    onInsertPrompt: (p) => insertPromptTemplate(p),
+    onRunCommand: () => { void handleSubmit(); },
+    onNoMatchEnter: () => { void handleSubmit(); },
+  });
 
   // Invoke a skill from home = open a new chat that asks the familiar to run
   // it. A skill with an argument-hint autofills `/skill <id> ` for argument
@@ -391,6 +315,7 @@ export function HomeComposer({
   const insertPromptTemplate = useCallback(
     (p: PromptOption) => {
       const ins = promptInsertion(p);
+      recordPromptRecent(p.id);
       setText(ins.text);
       setSlashIdx(0);
       announce("Prompt inserted — edit and send.");
@@ -408,24 +333,11 @@ export function HomeComposer({
     [announce],
   );
 
-  useEffect(() => {
-    setSlashIdx(0);
-    setSlashDismissed(false);
-  }, [text]);
-
   // Persist the draft so a reload restores it; cleared when the input empties
-  // (e.g. after a send), so sent prompts don't reappear.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      writeHomeDraft(text);
-    }, HOME_DRAFT_WRITE_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [text]);
+  // (e.g. after a send), so sent prompts don't reappear. Shared hook —
+  // debounce + remove-on-empty semantics live in use-composer-draft.
+  const { clearNow: clearDraft } = useDraftPersistence(HOME_DRAFT_KEY, text, HOME_DRAFT_WRITE_DELAY_MS);
 
-  // Persist the ↑/↓ prompt-history so past prompts survive a reload.
-  useEffect(() => {
-    writeComposerHistory(HOME_HISTORY_KEY, history);
-  }, [history]);
 
   // Focus on mount — unless a modal dialog (e.g. the onboarding wizard) is
   // open. The 80ms delay means this fires AFTER a dialog's focus trap has
@@ -445,87 +357,36 @@ export function HomeComposer({
     return m;
   }, [familiars]);
 
-  // Auto-grow textarea — chat-composer sizing: start at one line, grow with
-  // content, and hand overflow to a scrollbar past the max-height cap.
-  const autoGrow = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const computedMaxHeight = Number.parseFloat(window.getComputedStyle(el).maxHeight);
-    const maxHeight = Number.isFinite(computedMaxHeight) ? computedMaxHeight : HOME_COMPOSER_MAX_HEIGHT;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, []);
+  // Auto-grow textarea — chat-composer sizing, shared hook (use-autogrow-textarea).
+  const { resize: autoGrow } = useAutogrowTextarea(textareaRef, text, {
+    fallbackMaxHeight: HOME_COMPOSER_MAX_HEIGHT,
+  });
 
-  useEffect(() => {
-    autoGrow();
-  }, [text, autoGrow]);
 
-  // ── Attachments ──────────────────────────────────────────────────────────
-  // Paperclip stages picked files (cap 10, mirroring the chat composer); they
-  // ride along to the opened chat on submit. Slash commands still open by
-  // typing "/" in the composer, so the retired "+" launcher loses nothing.
-  const addFiles = useCallback(async (files: FileList | File[] | null) => {
-    if (!files?.length) return;
-    const room = Math.max(0, 10 - attachments.length);
-    const selected = Array.from(files).slice(0, room);
-    if (selected.length === 0) {
-      onToast("Attachment limit reached (10).");
-      return;
-    }
-    const next = await Promise.all(selected.map(fileToAttachment));
-    setAttachments((prev) => [...prev, ...next]);
-    announce(`Attached ${next.length} file${next.length === 1 ? "" : "s"}`, "polite");
-    setTimeout(() => textareaRef.current?.focus(), 0);
-  }, [attachments.length, onToast, announce]);
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
-  }, []);
-
-  // ── Enhance ──────────────────────────────────────────────────────────────
-  // Rewrite the draft through the shared pure enhancer (mirrors the chat
-  // composer), stashing the original for a one-tap revert.
-  const enhancePrompt = useCallback(() => {
-    const draft = text.trim();
-    if (!draft || sending || enhanceStatus === "loading") return;
-    setEnhanceStatus("loading");
-    const result = buildPromptEnhancement({
-      draft,
-      mode: destination === "board" ? "task" : "chat",
-      context: {
-        activeProject: selectedProject
-          ? { name: selectedProject.name, root: selectedProject.root }
-          : null,
-        selectedFiles: attachments.map((attachment) => attachment.name),
-      },
-    });
-    if (!result.ok || !result.enhanced.trim()) {
-      setEnhanceStatus("error");
-      onToast("Couldn't enhance the prompt.");
-      return;
-    }
-    setEnhanceOriginal(text);
-    setText(result.enhanced);
-    announce("Prompt enhanced", "polite");
-    setEnhanceStatus("idle");
-    setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
-  }, [text, destination, selectedProject, attachments, sending, enhanceStatus, onToast, autoGrow, announce]);
-  const revertEnhance = useCallback(() => {
-    setEnhanceOriginal((original) => {
-      if (original == null) return null;
-      setText(original);
-      setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
-      return null;
-    });
-  }, [autoGrow]);
+  // Prompt enhancement (cave-b6c2): the shared model-backed hook — streaming
+  // rewrite via the selected familiar with the rule engine as fallback, plus
+  // the race-safe apply/suggest/revert state machine.
+  const promptEnhance = usePromptEnhance({
+    draft: text,
+    setDraft: setText,
+    familiarId: selectedFamiliarId || null,
+    mode: destination === "board" ? "task" : "chat",
+    context: {
+      activeProject: selectedProject
+        ? { name: selectedProject.name, root: selectedProject.root }
+        : null,
+      selectedFiles: attachments.map((attachment) => attachment.name),
+    },
+    disabled: sending,
+  });
 
   // A suggestion pill inserts its prompt (never auto-sends) and returns focus
   // so the user can edit before sending.
   const insertPrompt = useCallback((prompt: string) => {
     setText(prompt);
-    setEnhanceOriginal(null);
+    promptEnhance.reset();
     setTimeout(() => textareaRef.current?.focus(), 0);
-  }, []);
+  }, [promptEnhance.reset]);
 
   // Destination pills behave as a single-select radiogroup: arrow/Home/End
   // move the selection and the roving focus, matching the ARIA radio pattern.
@@ -552,6 +413,7 @@ export function HomeComposer({
     [destination],
   );
 
+
   const handleSubmit = useCallback(async () => {
     const prompt = text.trim();
     // Allow an attachments-only send (chat can carry files with no text); every
@@ -565,8 +427,7 @@ export function HomeComposer({
       const command = canonicalize(rawCmd) ?? rawCmd;
       const args = rest.join(" ");
       if (command === "/model") {
-        setHistory((prev) => [...prev, prompt]);
-        setHistoryIdx(-1);
+        pushHistory(prompt);
         setText("");
         if (!args.trim()) {
           const current =
@@ -586,8 +447,7 @@ export function HomeComposer({
         return;
       }
       if (command === "/skill" || command === "/skills") {
-        setHistory((prev) => [...prev, prompt]);
-        setHistoryIdx(-1);
+        pushHistory(prompt);
         if (!args.trim()) {
           setText("");
           onToast("Type /skill <name>, or pick one from the menu.");
@@ -603,8 +463,7 @@ export function HomeComposer({
         return;
       }
       if (command === "/prompt" || command === "/prompts") {
-        setHistory((prev) => [...prev, prompt]);
-        setHistoryIdx(-1);
+        pushHistory(prompt);
         if (!args.trim()) {
           setText("");
           onToast("Type /prompt <name>, or pick one from the menu.");
@@ -620,8 +479,7 @@ export function HomeComposer({
         return;
       }
       if (onSlash) {
-        setHistory((prev) => [...prev, prompt]);
-        setHistoryIdx(-1);
+        pushHistory(prompt);
         setText("");
         onSlash(command, args);
       } else {
@@ -630,13 +488,18 @@ export function HomeComposer({
       return;
     }
 
-    setHistory((prev) => [...prev, prompt]);
-    setHistoryIdx(-1);
+    pushHistory(prompt);
     setSending(true);
     try {
       switch (destination) {
         case "chat": {
-          if (!selectedFamiliarId) { onToast("No familiar selected — add one in Settings."); break; }
+          if (!selectedFamiliarId) {
+            // Walk them to the Summoning Circle instead of naming a two-hop
+            // Settings destination; the draft persists for their return (cave-3em5).
+            onToast("No familiar yet — summon one to send this. Your draft is saved.");
+            requestSummonFamiliar();
+            break;
+          }
           // Hand the prompt to ChatView, which owns the streaming send. Doing
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the
@@ -649,9 +512,9 @@ export function HomeComposer({
           // composer, which cancels the debounced draft-write effect before it
           // can flush the empty text — otherwise the sent prompt resurrects on
           // the next Home visit.
-          writeHomeDraft("");
-          setAttachments([]);
-          setEnhanceOriginal(null);
+          clearDraft();
+          clearAttachments();
+          promptEnhance.reset();
           onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
             initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
             initialAttachments: outgoing,
@@ -678,7 +541,7 @@ export function HomeComposer({
             }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
-          if (json.ok) { setText(""); writeHomeDraft(""); setAttachments([]); setEnhanceOriginal(null); onNavigateToBoard(); }
+          if (json.ok) { setText(""); clearDraft(); clearAttachments(); promptEnhance.reset(); onNavigateToBoard(); }
           else onToast("Board card creation failed.");
           break;
         }
@@ -698,6 +561,8 @@ export function HomeComposer({
     responseSpeed,
     sending,
     attachments,
+    clearDraft,
+    pushHistory,
     handleSelectModel,
     onSlash,
     onStartChat,
@@ -707,144 +572,31 @@ export function HomeComposer({
     invokeSkill,
     prompts,
     insertPromptTemplate,
+    promptEnhance.reset,
   ]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      // Escape closes any open inline menu — the menu footers advertise
-      // "Esc cancel", and typing re-opens it (slashDismissed resets on text).
-      if (e.key === "Escape" && menuOpen) {
-        e.preventDefault();
-        setSlashDismissed(true);
-        return;
-      }
-      // Inline model picker takes priority when "/model <partial>" is open.
-      if (modelMenuActive && modelOptions) {
-        const opts = modelOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) setText(`/model ${m.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const m = opts[slashIdx];
-          if (m) { handleSelectModel(m.id); onToast(`Model set to ${m.id}.`); setText(""); }
-          return;
-        }
-      }
-      // Inline skill picker ("/skill <partial>" or "/skills").
-      if (skillMenuActive && skillOptions) {
-        const opts = skillOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const s = opts[slashIdx]; if (s) setText(`/skill ${s.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const s = opts[slashIdx];
-          if (s) invokeSkill(s);
-          return;
-        }
-      }
-      // Inline prompt picker ("/prompt <partial>" or "/prompts") — Enter
-      // INSERTS the template into the composer for editing, never a start.
-      if (promptMenuActive && promptOptions) {
-        const opts = promptOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const p = opts[slashIdx]; if (p) setText(`/prompt ${p.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const p = opts[slashIdx];
-          if (p) insertPromptTemplate(p);
-          return;
-        }
-      }
-      // Slash menu hotkeys take priority over history/submit when it's open.
-      // One roving index across commands, then the Skills group beneath them.
-      if (!slashDismissed && (slashSuggestions.length > 0 || skillCommandRows.length > 0)) {
-        const total = slashSuggestions.length + skillCommandRows.length;
-        const skillAt = (i: number): SkillOption | undefined =>
-          skillCommandRows[i - slashSuggestions.length];
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSlashIdx((i) => Math.min(i + 1, total - 1));
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSlashIdx((i) => Math.max(i - 1, 0));
-          return;
-        }
-        if (e.key === "Tab") {
-          e.preventDefault();
-          const cmd = slashSuggestions[slashIdx];
-          const s = skillAt(slashIdx);
-          if (cmd) setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
-          else if (s) setText(`/skill ${s.id} `);
-          return;
-        }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const cmd = slashSuggestions[slashIdx];
-          const s = skillAt(slashIdx);
-          // If the input is an exact command (no args yet), run it directly;
-          // otherwise autocomplete first so the user can fill in args.
-          if (cmd && cmd.argPlaceholder && canonicalize(text.trim()) !== cmd.name) {
-            setText(cmd.name + " ");
-          } else if (s) {
-            invokeSkill(s);
-          } else {
-            void handleSubmit();
-          }
-          return;
-        }
-      }
-      // plain Enter sends; Shift+Enter inserts newline
-      if (e.key === "Enter" && !e.shiftKey) {
+      // The inline menus (Esc-dismiss, ↑↓/Tab/Enter across all four pickers)
+      // take priority over history/submit while one is open — shared hook.
+      if (handleMenuKey(e)) return;
+      // Tab cycles {{placeholder}} tokens left in the draft (Shift+Tab
+      // reverses; Tab on a selected {{name|default}} accepts the default).
+      // After the menus — they own Tab-complete while open — and only when a
+      // token exists, so native focus-move survives (a11y).
+      if (handlePlaceholderTab(e, textareaRef.current, setText)) return;
+      // plain Enter sends; Shift+Enter inserts newline. `isComposing` is true
+      // for the Enter that confirms an IME candidate (CJK/pinyin/kana) —
+      // treating it as "send" would fire a half-composed prompt and destroy
+      // the candidate selection, so let the IME keep it (mirrors chat-view).
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         void handleSubmit();
         return;
       }
-      if (e.key === "ArrowUp" && text === "" && history.length > 0) {
-        e.preventDefault();
-        const idx = historyIdx < history.length - 1 ? historyIdx + 1 : historyIdx;
-        setHistoryIdx(idx);
-        setText(history[history.length - 1 - idx] ?? "");
-        return;
-      }
-      if (e.key === "ArrowDown" && historyIdx > 0) {
-        e.preventDefault();
-        const idx = historyIdx - 1;
-        setHistoryIdx(idx);
-        setText(history[history.length - 1 - idx] ?? "");
-        return;
-      }
-      if (e.key === "ArrowDown" && historyIdx === 0) {
-        e.preventDefault();
-        setHistoryIdx(-1);
-        setText("");
-      }
+      if (handleArrowKey(e, text, setText)) return;
     },
-    [
-      handleSubmit,
-      handleSelectModel,
-      history,
-      historyIdx,
-      modelMenuActive,
-      modelOptions,
-      skillMenuActive,
-      skillOptions,
-      invokeSkill,
-      promptMenuActive,
-      promptOptions,
-      insertPromptTemplate,
-      onToast,
-      menuOpen,
-      slashDismissed,
-      slashIdx,
-      slashSuggestions,
-      skillCommandRows,
-      text,
-    ],
+    [handleMenuKey, handleSubmit, handleArrowKey, text],
   );
 
   return (
@@ -861,7 +613,7 @@ export function HomeComposer({
         <h1 className="home-composer-headline">
           {"What should we build in "}
           <span className="home-composer-headline-project">
-            {selectedProject?.name ?? "Coven Cave"}
+            {selectedProject?.name ?? "CovenCave"}
           </span>
           ?
         </h1>
@@ -922,7 +674,7 @@ export function HomeComposer({
               if (p) insertPromptTemplate(p);
             }}
           />
-        ) : !slashDismissed && (slashSuggestions.length > 0 || skillCommandRows.length > 0) ? (
+        ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
           <HomeSlashMenu
             listboxId={slashListboxId}
             ariaLabel="Slash commands"
@@ -957,30 +709,12 @@ export function HomeComposer({
           />
         ) : null}
 
+        {/* Composer card — reference layout: the input leads; the mode pills,
+            attach, model chip, and mic all live INSIDE the card's control row,
+            with a darker attached footer band beneath for context pickers. */}
         <div
           className={`home-composer-card cave-composer-panel${dropActive ? " is-drop-active" : ""}`}
-          onDragEnter={(e) => {
-            if (!hasDraggedFiles(e.dataTransfer.types)) return;
-            e.preventDefault();
-            dragDepthRef.current += 1;
-            setDropActive(true);
-          }}
-          onDragOver={(e) => {
-            if (!hasDraggedFiles(e.dataTransfer.types)) return;
-            e.preventDefault();
-          }}
-          onDragLeave={(e) => {
-            if (!hasDraggedFiles(e.dataTransfer.types)) return;
-            dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-            if (dragDepthRef.current === 0) setDropActive(false);
-          }}
-          onDrop={(e) => {
-            dragDepthRef.current = 0;
-            setDropActive(false);
-            if (!hasDraggedFiles(e.dataTransfer.types)) return;
-            e.preventDefault();
-            void addFiles(e.dataTransfer.files);
-          }}
+          {...dropHandlers}
         >
           {dropActive ? (
             <div className="hc-drop-overlay" aria-hidden="true">
@@ -1000,7 +734,7 @@ export function HomeComposer({
               <button
                 type="button"
                 className="hc-attachments-clear"
-                onClick={() => setAttachments([])}
+                onClick={clearAttachments}
                 disabled={sending}
               >
                 Clear all
@@ -1037,24 +771,12 @@ export function HomeComposer({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
-          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
+          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[color-mix(in_oklch,var(--foreground)_45%,transparent)] md:text-sm"
           placeholder={PLACEHOLDERS[destination]}
           rows={1}
           value={text}
-          onChange={(e) => { setText(e.target.value); if (enhanceOriginal != null) setEnhanceOriginal(null); }}
-          onPaste={(e) => {
-            // Paste-to-attach: clipboard files (screenshots, copied files) stage
-            // as attachments. Only preventDefault when files were consumed so a
-            // plain-text paste is untouched.
-            const pastedFiles = Array.from(e.clipboardData.items)
-              .filter((item) => item.kind === "file")
-              .map((item) => item.getAsFile())
-              .filter((file): file is File => file !== null);
-            if (pastedFiles.length > 0) {
-              e.preventDefault();
-              void addFiles(pastedFiles);
-            }
-          }}
+          onChange={(e) => setText(e.target.value)}
+          onPaste={handlePaste}
           onKeyDown={handleKeyDown}
           disabled={sending}
           aria-label="Ask anything"
@@ -1069,27 +791,19 @@ export function HomeComposer({
           enterKeyHint="send"
         />
 
-        {/* Enhance revert strip — mirrors the chat composer's post-enhance
-            status row: confirms the swap and offers a one-tap revert. */}
-        {enhanceOriginal !== null ? (
-          <div className="flex items-center gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-1.5 text-[11px] text-[var(--text-muted)]" role="status">
-            <Icon name="ph:check" width={12} aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Prompt improved</span>
-            <button
-              type="button"
-              onClick={revertEnhance}
-              className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
-              aria-label="Revert prompt enhancement"
-              title="Revert prompt enhancement"
-            >
-              Revert
-            </button>
-          </div>
-        ) : null}
+        {/* Enhance status strip (shared): streaming preview, apply/dismiss
+            for late arrivals, one-tap revert after an in-place apply. */}
+        <EnhanceStrip
+          state={promptEnhance.state}
+          onApply={promptEnhance.apply}
+          onDismiss={promptEnhance.dismiss}
+          onRevert={promptEnhance.revert}
+          onCancel={promptEnhance.cancel}
+        />
 
-        {/* Controls — chat-composer footer: utility cluster (attach · voice ·
-            Options) plus the home-only destination pills and agent picker on
-            the left; enhance · send hug the right. */}
+        {/* Controls — reference layout: `+` attach and the Chat/Task pills sit
+            bottom-left inside the card; the model chip, voice, enhance, and
+            send hug the right. Context pickers move to the footer band. */}
         <div className="cave-composer-controls">
           <input
             ref={fileInputRef}
@@ -1104,67 +818,16 @@ export function HomeComposer({
             <div className="cave-composer-utility-row">
               <button
                 type="button"
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
                 title="Attach images, videos, or files"
                 aria-label="Attach images, videos, or files"
                 disabled={sending || attachments.length >= 10}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <Icon name="ph:paperclip" width={14} aria-hidden />
+                <Icon name="ph:plus" width={15} aria-hidden />
               </button>
-              <button
-                type="button"
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                title="Voice input (coming soon)"
-                aria-label="Voice input"
-                disabled
-              >
-                <Icon name="ph:microphone" width={15} aria-hidden />
-              </button>
-              <ComposerOptionsMenu
-                hostValue={runtimeHost ?? LOCAL_HOST_ID}
-                onHostPick={setRuntimeHost}
-                disabled={sending}
-                indicator={
-                  thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
-                  responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
-                }
-                sections={[
-                  {
-                    id: "runtime",
-                    label: "Runtime",
-                    value: selectedRuntime,
-                    options: runtimeSectionOptions,
-                    onChange: (id: string) => handleSelectRuntime(id),
-                  } satisfies ComposerOptionSection,
-                  ...(runtimeModelOptions.length > 0
-                    ? [{
-                        id: "model",
-                        label: "Model",
-                        value: selectedModelId,
-                        options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
-                        onChange: (id: string) => handleSelectModel(id),
-                      } satisfies ComposerOptionSection]
-                    : []),
-                  {
-                    id: "thinking",
-                    label: "Thinking",
-                    value: thinkingEffort,
-                    options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                    onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
-                  } satisfies ComposerOptionSection,
-                  {
-                    id: "speed",
-                    label: "Speed",
-                    value: responseSpeed,
-                    options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
-                    onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
-                  } satisfies ComposerOptionSection,
-                ]}
-              />
-
               <div
-                className="hc-dest-pills"
+                className="hc-dest-pills hc-dest-pills--inline"
                 role="radiogroup"
                 aria-label="Send to"
                 ref={destGroupRef}
@@ -1186,49 +849,21 @@ export function HomeComposer({
                   </button>
                 ))}
               </div>
-
-              <HomeSelect
-                icon="ph:warning-circle"
-                value={selectedFamiliarId}
-                onChange={(value) => {
-                  if (value) onSetActiveFamiliar(value);
-                }}
-                groups={familiarSelectGroups}
-                ariaLabel="Choose chat agent"
-                disabled={visibleFamiliars.length === 0 || sending}
-                className="hc-access-chip"
-              />
-              {/* Project selector — picks which project the new chat runs in
-                  (mirrors the chat composer). Its own search popover, so it sits
-                  alongside the familiar select rather than inside the ⚙ menu. */}
-              <ProjectPicker
-                projects={projects}
-                value={selectedProjectId || null}
-                onChange={setSelectedProjectId}
-                allowNoProject
-                familiarId={selectedFamiliarId || null}
-                createProject={createProject}
-                disabled={sending}
-                ariaLabel="Choose project"
-                className="hc-project-selector"
-              />
             </div>
             <div className="cave-composer-submit-row">
-              <button
-                type="button"
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                title="Enhance prompt"
-                aria-label="Enhance prompt"
-                disabled={sending || enhanceStatus === "loading" || !text.trim()}
-                onClick={() => enhancePrompt()}
-              >
-                <Icon name="ph:sparkle" width={13} aria-hidden />
-              </button>
+              {/* Voice input is hidden until it actually works — a permanently
+                  disabled mic reads as broken, not "coming soon". */}
+              <EnhanceControl
+                state={promptEnhance.state}
+                onEnhance={promptEnhance.enhance}
+                onCancel={promptEnhance.cancel}
+                disabled={sending || !text.trim()}
+              />
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={(!text.trim() && attachments.length === 0) || sending}
-                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                className="cave-composer-icon-button focus-ring grid h-[30px] w-[30px] place-items-center rounded-[var(--radius-pill)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                 title={`Send message (${keys.enter})`}
                 aria-label="Send"
               >
@@ -1241,24 +876,106 @@ export function HomeComposer({
             </div>
           </div>
         </div>
+
+        {/* Footer band — the darker strip attached to the card's underside
+            (reference layout): where the message runs (project) and what runs
+            it (runtime + model) on the left, run settings (Options) on the
+            right. The familiar is chosen in the side panel — home no longer
+            duplicates that selector here. */}
+        <div className="hc-footer-band">
+          <div className="hc-footer-band-left">
+            {/* Project selector — picks which project the new chat runs in
+                (mirrors the chat composer). */}
+            <ProjectPicker
+              projects={projects}
+              value={selectedProjectId || null}
+              onChange={setSelectedProjectId}
+              allowNoProject
+              familiarId={selectedFamiliarId || null}
+              createProject={createProject}
+              disabled={sending}
+              ariaLabel="Choose project"
+              className="hc-project-selector"
+            />
+            {/* Always-visible runtime mark + model, one click to switch —
+                parity with the chat composer's chip (cave-yq5l). */}
+            <ComposerRuntimeChip
+              runtime={selectedRuntime}
+              modelValue={selectedModelId}
+              modelOptions={runtimeModelOptions}
+              onPickRuntime={handleSelectRuntime}
+              onPickModel={handleSelectModel}
+              disabled={sending}
+            />
+          </div>
+          <ComposerOptionsMenu
+            hostValue={runtimeHost ?? LOCAL_HOST_ID}
+            onHostPick={setRuntimeHost}
+            disabled={sending}
+            onSaveAsTemplate={() => setSaveTemplateSeed(text)}
+            saveAsTemplateDisabled={!text.trim()}
+            indicator={
+              thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+              responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
+            }
+            sections={[
+              {
+                id: "runtime",
+                label: "Runtime",
+                value: selectedRuntime,
+                options: runtimeSectionOptions,
+                onChange: (id: string) => handleSelectRuntime(id),
+              } satisfies ComposerOptionSection,
+              ...(runtimeModelOptions.length > 0
+                ? [{
+                    id: "model",
+                    label: "Model",
+                    value: selectedModelId,
+                    options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
+                    onChange: (id: string) => handleSelectModel(id),
+                  } satisfies ComposerOptionSection]
+                : []),
+              {
+                id: "thinking",
+                label: "Thinking",
+                value: thinkingEffort,
+                options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
+              } satisfies ComposerOptionSection,
+              {
+                id: "speed",
+                label: "Speed",
+                value: responseSpeed,
+                options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
+              } satisfies ComposerOptionSection,
+            ]}
+          />
+        </div>
         </div>
       </div>
 
-      <HomeSuggestions
+      {/* Continue + News as an auto-scrolling digest carousel: two horizontal
+          tracks only — the chats row folds in the "needs you" attention tier
+          (warning-tinted, leading) and the suggested-prompt quick actions
+          (accent-tinted, trailing) around today's recent chats; the media row
+          keeps the freshest headlines. Both pause on hover and fall back to a
+          manual scroll under prefers-reduced-motion. */}
+      <HomeDigestCarousel
+        sessions={sessions}
+        familiarNameById={familiarNameById}
+        onOpenSession={onOpenSession}
+        needsYou={needsYou}
+        onOpenInboxItem={onOpenInboxItem}
+        onOpenSchedules={onOpenSchedules}
         projectName={selectedProject?.name ?? null}
-        onPick={insertPrompt}
+        onPickSuggestion={insertPrompt}
       />
-
-      {/* Two-column footer — resume-first recent chats + freshest headlines.
-          Static lists (no marquee): scannable, unclipped, keyboard-friendly. */}
-      <div className="home-columns">
-        <HomeContinueColumn
-          sessions={sessions}
-          familiarNameById={familiarNameById}
-          onOpenSession={onOpenSession}
-        />
-        <HomeNewsColumn />
-      </div>
+      <SaveTemplateModal
+        open={saveTemplateSeed !== null}
+        onClose={() => setSaveTemplateSeed(null)}
+        initialBody={saveTemplateSeed ?? ""}
+      />
     </div>
   );
 }

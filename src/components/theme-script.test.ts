@@ -1,74 +1,182 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
-const source = readFileSync(new URL("./theme-script.tsx", import.meta.url), "utf8");
+import { createDefaultPreferences } from "../lib/preferences-schema.ts";
+
+const component = readFileSync(new URL("./theme-script.tsx", import.meta.url), "utf8");
+const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const bootScript = readFileSync(new URL("../../public/scripts/theme-init.js", import.meta.url), "utf8");
 
 assert.doesNotMatch(
-  source,
+  component,
   /import Script from "next\/script"/,
-  "ThemeScript must render a plain server script, not next/script",
+  "the pre-paint scripts must be plain server-rendered script elements",
 );
 assert.match(
-  source,
-  /<script id="theme-init" src="\/scripts\/theme-init.js" \/>/,
-  "ThemeScript renders a server document script that loads the external theme init file",
+  component,
+  /export function ThemeScript\(\{ preferences \}: \{ preferences: CavePreferences \}\)/,
+  "ThemeScript should require the canonical server preference snapshot",
+);
+assert.match(
+  component,
+  /id="cave-preferences-bootstrap"[\s\S]*type="application\/json"[\s\S]*serializePreferencesBootstrap\(preferences\)[\s\S]*id="theme-init"/,
+  "the inert canonical bootstrap must precede the synchronous appearance script",
+);
+assert.match(
+  component,
+  /JSON\.stringify\(preferences\)[\s\S]*replace\(\/<\/g, "\\\\u003c"\)[\s\S]*replace\(\/\\u2028\/g, "\\\\u2028"\)[\s\S]*replace\(\/\\u2029\/g, "\\\\u2029"\)/,
+  "bootstrap JSON must escape script-breaking characters",
+);
+assert.match(
+  component,
+  /<script id="theme-init" src="\/scripts\/theme-init\.js" \/>/,
+  "ThemeScript should load the external parser-blocking initializer",
 );
 
-// 1. Script defaults theme to "coven" and mode to "dark".
-assert.match(bootScript, /\|\|\s*"coven"/, "theme defaults to coven");
-assert.match(bootScript, /\|\|\s*"dark"/, "mode defaults to dark");
+assert.match(
+  layout,
+  /export default async function RootLayout/,
+  "the root layout should load canonical preferences on the server",
+);
+assert.match(
+  layout,
+  /const preferences = await loadPreferences\(\)\.catch\(\(\) => createDefaultPreferences\(false\)\)/,
+  "a store failure should degrade to an uninitialized safe snapshot",
+);
+assert.match(
+  layout,
+  /<head>\s*<ThemeScript preferences=\{preferences\} \/>\s*<\/head>/,
+  "the canonical snapshot should be embedded in <head> before first paint",
+);
+assert.match(
+  layout,
+  /<PreferencesBootstrapController \/>/,
+  "post-hydration migration and write flushing should be mounted app-wide",
+);
 
-// 2. Script writes BOTH data-theme and data-mode.
-assert.match(bootScript, /setAttribute\(\s*"data-theme"/, "sets data-theme");
-assert.match(bootScript, /setAttribute\(\s*"data-mode"/, "sets data-mode");
+assert.match(
+  bootScript,
+  /getElementById\("cave-preferences-bootstrap"\)[\s\S]*JSON\.parse\(node\.textContent\)/,
+  "the initializer should consume the server bootstrap instead of treating origin storage as authoritative",
+);
+assert.match(
+  bootScript,
+  /bootstrap\.version !== 1[\s\S]*window\.__COVEN_CAVE_PREFERENCES__ = bootstrap/,
+  "only the supported preference schema should be exposed to the client store",
+);
+assert.match(
+  bootScript,
+  /function stored\(key, fallback\) \{\s*if \(initialized\) return fallback;/,
+  "an initialized canonical snapshot must win over stale localStorage from any loopback origin",
+);
+assert.match(
+  bootScript,
+  /if \(initialized\) \{[\s\S]*safeSet\("coven-theme"[\s\S]*safeSet\("cave:mobile-mode-enabled"/,
+  "legacy origin keys may be mirrored only as a compatibility cache",
+);
+assert.match(
+  bootScript,
+  /var theme = String\(stored\("coven-theme", themePrefs\.id \|\| "coven"\)\)/,
+  "an uninitialized store may still seed the one-time current-origin migration path",
+);
 
-// 3. Rename map covers all 4 legacy ids and writes through localStorage.
+assert.match(bootScript, /setAttribute\("data-theme", theme\)/, "bootstrap applies data-theme");
+assert.match(bootScript, /setAttribute\("data-mode", mode\)/, "bootstrap applies data-mode");
+assert.match(bootScript, /appearance\.screenScale[\s\S]*data-screen-scale/, "bootstrap applies screen scale");
+assert.match(bootScript, /reading\.leading[\s\S]*--cave-reading-leading/, "bootstrap applies reading settings");
+assert.match(bootScript, /appearance\.cornerRadius[\s\S]*--radius-control/, "bootstrap applies corner radius");
+assert.match(bootScript, /appearance\.backdrop[\s\S]*data-backdrop/, "bootstrap applies backdrop settings");
+
 for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
-  assert.ok(bootScript.includes(`"${legacy}"`), `rename map contains ${legacy}`);
+  assert.ok(bootScript.includes(`"${legacy}"`), `legacy theme migration contains ${legacy}`);
 }
-assert.ok(bootScript.includes("setItem"), "writes renamed id back to localStorage");
-
-// 4. The pre-hydration allowlist accepts every preset theme plus custom.
 for (const id of [
-  "coven",
-  "tide",
-  "grove",
-  "ember",
-  "bloom",
-  "dusk",
-  "mist",
-  "hex",
-  "bane",
-  "slate",
-  "ghosty",
-  "claymorphism",
-  "claude",
-  "pastel-dreams",
-  "meatseeks",
-  "trucker",
-  "custom",
+  "coven", "tide", "grove", "ember", "bloom", "dusk", "mist", "hex",
+  "bane", "slate", "ghosty", "claymorphism", "claude", "pastel-dreams",
+  "meatseeks", "trucker", "contrast", "beacon", "solstice", "custom",
 ]) {
-  assert.ok(bootScript.includes(`"${id}"`), `valid theme allowlist contains ${id}`);
+  assert.ok(bootScript.includes(`"${id}"`), `pre-paint theme allowlist contains ${id}`);
 }
 
-// 5. Custom theme path applies the mode-matching group.
-assert.match(
-  bootScript,
-  /cssVars\.light|cssVars\[\s*["']light["']\s*\]/,
-  "custom path references light group",
-);
-assert.match(
-  bootScript,
-  /cssVars\.dark|cssVars\[\s*["']dark["']\s*\]/,
-  "custom path references dark group",
-);
+function executeBootstrap(preferences) {
+  const inline = new Map();
+  const attributes = new Map();
+  const storage = new Map();
+  const html = {
+    style: {
+      setProperty(name, value) { inline.set(name, String(value)); },
+      removeProperty(name) { inline.delete(name); },
+    },
+    setAttribute(name, value) { attributes.set(name, String(value)); },
+    removeAttribute(name) { attributes.delete(name); },
+  };
+  const localStorage = {
+    getItem(key) { return storage.has(key) ? storage.get(key) : null; },
+    setItem(key, value) { storage.set(key, String(value)); },
+    removeItem(key) { storage.delete(key); },
+  };
+  const window = { matchMedia: () => ({ matches: true }) };
+  vm.runInNewContext(bootScript, {
+    document: {
+      documentElement: html,
+      getElementById: (id) => id === "cave-preferences-bootstrap"
+        ? { textContent: JSON.stringify(preferences) }
+        : null,
+    },
+    localStorage,
+    window,
+  });
+  return { inline, attributes };
+}
 
-// 6. Reads keys via the COVEN_*_KEY constants (or matches their values).
-assert.ok(
-  bootScript.includes("coven-theme") && bootScript.includes("coven-mode"),
-  "references both storage keys",
+const defaultBoot = executeBootstrap(createDefaultPreferences(true));
+for (const property of [
+  "--font-serif", "--font-sans", "--font-mono",
+  "--cave-reading-leading", "--cave-reading-tracking", "--cave-reading-align",
+  "--cave-reading-width", "--cave-reading-weight", "--cave-reading-hyphens",
+  "--radius", "--radius-control", "--radius-card", "--radius-pill",
+]) {
+  assert.equal(
+    defaultBoot.inline.has(property),
+    false,
+    `default ${property} should reveal the preset/custom stylesheet instead of becoming an inline override`,
+  );
+}
+
+const explicitPreferences = createDefaultPreferences(true);
+explicitPreferences.appearance.fonts = {
+  serif: "eb-garamond",
+  sans: "source-sans-3",
+  mono: "source-code-pro",
+};
+explicitPreferences.appearance.reading = {
+  leading: "relaxed",
+  tracking: "wider",
+  align: "justify",
+  width: "narrow",
+  weight: "medium",
+  hyphens: "on",
+};
+explicitPreferences.appearance.cornerRadius = "round";
+const explicitBoot = executeBootstrap(explicitPreferences);
+for (const property of [
+  "--font-sans", "--font-mono",
+  "--cave-reading-leading", "--cave-reading-tracking", "--cave-reading-align",
+  "--cave-reading-width", "--cave-reading-weight", "--cave-reading-hyphens",
+  "--radius", "--radius-control", "--radius-card", "--radius-pill",
+]) {
+  assert.equal(
+    explicitBoot.inline.has(property),
+    true,
+    `explicit non-default ${property} should be restored before paint`,
+  );
+}
+assert.equal(
+  explicitBoot.inline.has("--font-serif"),
+  false,
+  "a default slot in an otherwise non-default approved font pair should still reveal theme CSS",
 );
 
 console.log("theme-script.test.ts OK");

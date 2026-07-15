@@ -2,12 +2,18 @@
 // Onboarding is a guided, numbered, step-by-step flow: the first incomplete
 // required step auto-expands with everything needed inline — one-click
 // actions, exact manual commands, and troubleshooting — across macOS,
-// Windows, and Linux, with optional SSH runtimes and editable familiars.
+// Windows, and Linux. The wizard stops at INFRASTRUCTURE (tools, home,
+// runtime, daemon): familiar creation lives exclusively in the app's
+// Familiar Summoning Circle (see familiar-summoning-circle.test.ts).
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(
   new URL("./onboarding-overlay.tsx", import.meta.url),
+  "utf8",
+);
+const statusDisplay = await readFile(
+  new URL("../lib/opencoven-tools-status-display.ts", import.meta.url),
   "utf8",
 );
 
@@ -27,7 +33,7 @@ assert.match(
 
 assert.match(
   source,
-  /const openStepKey = expandedStep \?\? activeStepKey \?\? "familiars"/,
+  /const openStepKey = expandedStep \?\? activeStepKey \?\? "daemon"/,
   "users can expand any step manually; default follows the active step",
 );
 
@@ -37,14 +43,49 @@ assert.match(
   "step headers expose their expanded state",
 );
 
-// Step order: CLI -> home -> runtime -> daemon -> familiar -> meet, then optional git.
-const stepOrder = ["covenCli", "covenHome", "adapters", "daemon", "binding", "familiars", "git"];
+// Step order: CLI -> home -> runtime -> daemon, then optional git. The wizard
+// ends at infrastructure — no familiar-creation or meet-your-familiars steps.
+const stepOrder = ["covenCli", "covenHome", "adapters", "daemon", "git"];
 let cursor = 0;
 for (const key of stepOrder) {
   const at = source.indexOf(`key: "${key}",`, cursor);
   assert.ok(at > -1, `guided step ${key} present and in order`);
   cursor = at;
 }
+for (const gone of ['key: "binding",', 'key: "familiars",']) {
+  assert.ok(
+    !source.includes(gone),
+    `retired wizard step ${gone} must not return — creation lives in the summoning circle`,
+  );
+}
+
+// ── Familiar creation is fully out of the wizard ────────────────────────────
+
+assert.doesNotMatch(
+  source,
+  /StepFamiliar|StepMeetFamiliars/,
+  "the familiar-creation step components are retired",
+);
+assert.doesNotMatch(
+  source,
+  /onboarding\/ssh-check|openclaw-agents/,
+  "SSH checks and OpenClaw agent discovery moved into the summoning circle",
+);
+assert.doesNotMatch(
+  source,
+  /familiar:\s*\{/,
+  "the wizard never posts a familiar draft to /api/onboarding/setup",
+);
+assert.match(
+  source,
+  /Open Cave — summon your familiar/,
+  "the completion CTA hands off to the in-app summoning circle",
+);
+assert.match(
+  source,
+  /once you're inside Cave \(Familiars → Summon familiar\)/,
+  "the OpenClaw install card points at the in-app summoning path",
+);
 
 // ── One-click installs ──────────────────────────────────────────────────────
 
@@ -94,10 +135,10 @@ assert.match(
   "every platform carries Node.js fallback instructions",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /sshSetup: \[/,
-  "every platform carries SSH key setup instructions",
+  /sshSetup/,
+  "SSH key setup copy left with the familiar step — the circle owns SSH now",
 );
 
 assert.doesNotMatch(
@@ -118,65 +159,7 @@ assert.match(
   "startup still uses detected platform copy for install commands",
 );
 
-// ── SSH runtime ─────────────────────────────────────────────────────────────
-
-assert.match(
-  source,
-  /fetch\("\/api\/onboarding\/ssh-check"/,
-  "SSH connections are testable before creating the familiar",
-);
-
-assert.match(
-  source,
-  /remote machine over SSH/,
-  "the familiar form offers a remote SSH runtime",
-);
-
-assert.match(
-  source,
-  /Optional remote runtime \(SSH\)/,
-  "SSH runtime copy should make clear it is optional",
-);
-
-assert.match(
-  source,
-  /Skip this unless you want this familiar to run on another machine/,
-  "SSH runtime copy should tell users local setup can ignore it",
-);
-
-assert.match(
-  source,
-  /runtime: \{\s*\n\s*kind: "ssh",\s*\n\s*host: sshHost\.trim\(\),\s*\n\s*cwd: sshCwd\.trim\(\),/,
-  "creating a remote familiar sends the ssh runtime to setup",
-);
-assert.match(
-  source,
-  /defaultModelForRuntime\(selectedHarness\.id\)/,
-  "creating a local familiar should seed the model from the runtime catalog/default",
-);
-assert.doesNotMatch(
-  source,
-  /model: `\$\{selectedHarness\.id\}-local`/,
-  "creating a local familiar must not write synthetic runtime-local model ids like openclaw-local",
-);
-
-assert.match(
-  source,
-  /never stores passwords or key material/,
-  "SSH copy is explicit that Cave holds no secrets",
-);
-
-assert.doesNotMatch(
-  source,
-  /selectedHarnessId \? \([\s\S]*Create new Coven familiar[\s\S]*\) : selectedAgentId \? \([\s\S]*Connect OpenClaw agent[\s\S]*\) : null/,
-  "choosing an OpenClaw agent must not hide the Option A create-new-familiar CTA",
-);
-
-assert.match(
-  source,
-  /Create new Coven familiar[\s\S]*Connect OpenClaw agent/,
-  "the familiar binding step keeps both Option A and Option B actions available",
-);
+// ── OpenClaw bridge (runtime step) ──────────────────────────────────────────
 
 assert.match(
   source,
@@ -188,30 +171,6 @@ assert.match(
   source,
   /Bridge existing OpenClaw agents into Cave/,
   "the OpenClaw install card explains the bridge startup path",
-);
-
-assert.match(
-  source,
-  /Use an existing OpenClaw agent as a Cave familiar/,
-  "the familiar startup step promotes the existing-agent path",
-);
-
-assert.match(
-  source,
-  /Connect OpenClaw agent/,
-  "the OpenClaw startup path has a dedicated connect CTA",
-);
-
-assert.match(
-  source,
-  /key: "daemon",[\s\S]*key: "binding",/,
-  "the daemon step comes before familiar creation",
-);
-
-assert.match(
-  source,
-  /daemonReady=\{!!status\?\.steps\.daemon\.ok\}/,
-  "the familiar step receives daemon readiness",
 );
 
 assert.match(
@@ -230,12 +189,6 @@ assert.match(
   source,
   /Server hub URL/,
   "onboarding daemon step should expose the server hub URL field",
-);
-
-assert.match(
-  source,
-  /Start the daemon first\. Familiar creation unlocks once Cave can reach it\./,
-  "the familiar step explains why creation is unavailable while the daemon is offline",
 );
 
 assert.match(
@@ -262,36 +215,16 @@ assert.match(
   "daemon start errors keep CLI stderr/stdout diagnostics visible",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /disabled=\{!daemonReady \|\| !selectedHarnessId \|\| picking !== null\}/,
-  "familiar creation confirmation is blocked until the daemon is ready",
+  /useFamiliarStudio|openFamiliarStudio/,
+  "familiar editing left the wizard with the meet-your-familiars step — the Studio and the circle own it",
 );
 
-assert.match(
-  source,
-  /disabled=\{\s*\n\s*!daemonReady \|\|\s*\n\s*picking !== null \|\|[\s\S]*Create new Coven familiar/,
-  "new familiar creation is disabled until the daemon is ready",
-);
-
-// ── Editable familiars ──────────────────────────────────────────────────────
-
-assert.match(
-  source,
-  /useFamiliarStudio/,
-  "the overlay can open the Familiar Studio",
-);
-
-assert.match(
-  source,
-  /const editFamiliar = \(id: string\) => \{\s*\n[\s\S]{0,200}openFamiliarStudio\(id\)/,
-  "each familiar gets an Edit action that opens the studio",
-);
-
-assert.match(
+assert.doesNotMatch(
   source,
   /fetch\("\/api\/familiars"/,
-  "the final step lists the actual familiars",
+  "the wizard no longer lists familiars — the roster lives on the Familiars surface",
 );
 
 // ── Never stuck ─────────────────────────────────────────────────────────────
@@ -361,7 +294,7 @@ assert.match(
 assert.match(
   source,
   /type InstallTarget =[\s\S]*"coven-cli"[\s\S]*"coven-code"/,
-  "startup one-click installs include coven-code as an OpenCoven tool target",
+  "startup one-click installs keep coven-code as an install target (optional runtime)",
 );
 
 assert.match(
@@ -372,20 +305,65 @@ assert.match(
 
 assert.match(
   source,
-  /tools=\{status\?\.tools \?\? \[\]\}/,
-  "the startup CLI step receives OpenCoven tool status from onboarding status",
+  /tools=\{\(status\?\.tools \?\? \[\]\)\.filter\(\s*\(tool\) => tool\.id === "coven-cli",?\s*\)\}/,
+  "the startup CLI step receives only the Coven CLI status — Coven Code never gates the tools step",
 );
 
 assert.match(
   source,
-  /const covenCodeReady =[\s\S]{0,180}installed[\s\S]{0,80}!.*outdated/,
-  "startup should require the latest Coven Code version before treating it as ready",
+  /openCovenToolActionTargets\(tools\)/,
+  "the startup tools step derives one-click targets from the reported tool status",
 );
 
 assert.match(
   source,
-  /OpenCoven tools/,
-  "the startup CLI step renders both OpenCoven tool statuses",
+  /const needsAction = !tool\.installed \|\| tool\.outdated \|\| !tool\.compatible/,
+  "the startup tools step treats below-floor tools as actionable updates",
+);
+
+assert.match(
+  statusDisplay,
+  /if \(!tool\.compatible\) return "Needs update"/,
+  "the startup tools step warns when an installed tool is below the Cave compatibility floor",
+);
+
+assert.match(
+  source,
+  /<CommandRow command=\{manualInstallCommand\}/,
+  "the startup tools step shows a manual command matching the needed OpenCoven tools",
+);
+
+assert.match(
+  source,
+  /for \(const target of actionTargets\) onInstall\(target\)/,
+  "the startup tools CTA installs or updates only the OpenCoven tools that need action",
+);
+
+// Coven Code is an optional runtime adapter, not a setup requirement: the
+// wizard must not AND any client-side tool check into server `complete`
+// (cave-219's divergence class), and the runtime grid offers it one-click.
+assert.doesNotMatch(
+  source,
+  /covenCodeSatisfied|covenCodeSkipped|COVEN_CODE_SKIP_KEY/,
+  "no client-side Coven Code requirement machinery remains in the wizard",
+);
+
+assert.match(
+  source,
+  /const setupComplete = status\?\.complete \?\? false/,
+  "server complete is the wizard's single source of truth for setup",
+);
+
+assert.match(
+  source,
+  /"coven-code": \{\s*target: "coven-code"/,
+  "the runtime grid offers Coven Code as a one-click optional install",
+);
+
+assert.match(
+  source,
+  /Coven CLI/,
+  "the startup CLI step renders the Coven CLI status",
 );
 
 assert.match(
@@ -398,6 +376,18 @@ assert.match(
   source,
   /function openCovenToolStatusText\(tool: OpenCovenToolStatus\): string/,
   "startup formats tool status explicitly instead of treating unknown versions as up to date",
+);
+
+assert.match(
+  source,
+  /hasVerifiedLatestVersion\(tool\)/,
+  "startup only shows a current-success badge after npm latest was verified",
+);
+
+assert.match(
+  source,
+  /latestCheckText\(tool\)/,
+  "startup exposes each tool's npm check result and freshness time",
 );
 
 assert.match(
@@ -421,7 +411,25 @@ assert.match(
 assert.match(
   source,
   /disabled=\{busy \|\|/,
-  "the disable rule is per-target (own busy state), not a global lock",
+  "runtime controls stay disabled for their own in-progress install",
+);
+
+assert.match(
+  source,
+  /const refreshNpmLane = useCallback/,
+  "onboarding polls the server-owned global npm lane across client surfaces",
+);
+
+assert.match(
+  source,
+  /Other npm updates are disabled until it finishes/,
+  "onboarding clearly explains the shared npm lock",
+);
+
+assert.match(
+  source,
+  /disabled=\{toolBusy \|\| toolBlockedByNpm\}/,
+  "onboarding disables other OpenCoven npm actions while a global update runs",
 );
 
 assert.match(
@@ -434,6 +442,36 @@ assert.match(
   source,
   /Show full output/,
   "failed installs expose the full installer output tail",
+);
+
+
+// ── cave-fy1q phase 1: the daemon step auto-starts once ─────────────────────
+
+assert.match(
+  source,
+  /const daemonAutoStartRef = useRef\(false\)/,
+  "one-shot latch is a ref (survives re-renders, StrictMode re-runs)",
+);
+assert.match(
+  source,
+  /if \(s\.daemon\.ok\) \{\s*daemonAutoStartRef\.current = true;\s*return;\s*\}/,
+  "a daemon that's already up latches — a later crash never triggers a surprise auto-start",
+);
+assert.match(
+  source,
+  /if \(!s\.covenCli\.ok \|\| !s\.covenHome\.ok \|\| !s\.adapters\.ok\) return;\s*daemonAutoStartRef\.current = true;\s*void startDaemon\(\);/,
+  "auto-start fires only once the wizard has reached the daemon step (all prior infra healthy)",
+);
+assert.match(
+  source,
+  /\{startingDaemon \? "Starting…" : "Start local daemon"\}/,
+  "the manual button remains — it is the retry affordance when auto-start fails",
+);
+
+assert.match(
+  source,
+  /if \(!open \|\| daemonAutoStartRef\.current\) return;/,
+  "auto-start is gated on the overlay being OPEN — hooks run even while it renders null, and a closed wizard must never start the daemon",
 );
 
 console.log("onboarding-guided-steps.test.ts: ok");

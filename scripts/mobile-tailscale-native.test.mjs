@@ -35,8 +35,13 @@ assert.match(libRs, /WebviewUrl::App\("index\.html"\.into\(\)\)/);
 const swiftRootView = read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 assert.match(
   swiftRootView,
-  /case \.unreachable, \.needsAuth:\s*\n\s*ConnectionView\(\)/,
-  "native SwiftUI app should return unreachable AND pairing-required hosts to the connection screen",
+  /case \.unconfigured, \.needsAuth:\s*\n[\s\S]*?ConnectionView\(\)/,
+  "native SwiftUI app should return pairing-required hosts to the connection screen",
+);
+assert.match(
+  swiftRootView,
+  /case \.unreachable where !app\.hasLoadedSurfaces:\s*\n[\s\S]*?ConnectionView\(\)/,
+  "unreachable returns to the connection screen only before surfaces load — after that the reconnect pill covers it (see ios-reconnect-pill.test.mjs)",
 );
 
 const swiftChatThread = read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");

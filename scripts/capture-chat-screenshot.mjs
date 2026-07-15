@@ -87,7 +87,7 @@ const CONVERSATION = {
 const SESSION_LIST = [
   {
     id: SESSION_ID,
-    project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven",
+    project_root: "/Users/dev/Projects/OpenCoven/coven",
     harness: "claude-code",
     title: CONVERSATION.title,
     status: "running",
@@ -100,7 +100,7 @@ const SESSION_LIST = [
   },
   {
     id: "demo-builder-vault-mutex",
-    project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven",
+    project_root: "/Users/dev/Projects/OpenCoven/coven",
     harness: "claude-code",
     title: "Vault write-chain — confirm mutex shape",
     status: "complete",
@@ -113,7 +113,7 @@ const SESSION_LIST = [
   },
   {
     id: "demo-builder-board-search",
-    project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
+    project_root: "/Users/dev/Projects/OpenCoven/coven-cave",
     harness: "claude-code",
     title: "board: refactor search to honor `is:open` + `cwd:` filters",
     status: "complete",

@@ -169,9 +169,18 @@ function describeParams(node: FlowNode): string {
   if (!def || def.params.length === 0) return "";
   const fixedParts: string[] = [];
   const expressionParts: string[] = [];
+  const instructionParts: string[] = [];
   for (const field of def.params) {
     const value = node.params[field.key];
     if (value === undefined || value === "" || value === null) continue;
+    if (node.type === "familiar" && field.key === "prompt" && typeof value === "string") {
+      // Familiar prompts are executable instructions, not card summaries. A
+      // 120-character preview silently changes the requested work and can drop
+      // required output contracts. Keep the complete bounded instruction block
+      // while preserving line breaks used by exact marker protocols.
+      instructionParts.push(`${field.label}:\n${value.trim().slice(0, 32_000)}`);
+      continue;
+    }
     const text = typeof value === "string" ? value.replace(/\s+/g, " ").slice(0, 120) : String(value);
     if (isExpressionParam(value)) expressionParts.push(`${field.label}: ${text}`);
     else fixedParts.push(`${field.label}: ${text}`);
@@ -184,6 +193,7 @@ function describeParams(node: FlowNode): string {
       "Evaluate these n8n-style expressions against the incoming item data before running this node.",
     ].join("\n    "));
   }
+  sections.push(...instructionParts);
   return sections.join("\n    ");
 }
 

@@ -51,10 +51,11 @@ assert.match(
   "toggle button opens the sheet",
 );
 // The change-count badge rides the toggle when there are pending edits.
+// (changeCount is number|null since cave-xsq.7 — null coerces before compare.)
 assert.match(
   source,
-  /changeCount > 0[\s\S]{0,120}mobile-code-rail-toggle__badge/,
-  "toggle button shows the change-count badge when changeCount > 0",
+  /\(changeCount \?\? 0\) > 0[\s\S]{0,120}mobile-code-rail-toggle__badge/,
+  "toggle button shows the change-count badge when the loaded count is > 0",
 );
 
 // ── The sheet: cloned from chat-right-sheet ─────────────────────────────────
@@ -91,11 +92,11 @@ assert.match(
 
 // ── WorkspaceRail hosted in the sheet with onCollapse → close ───────────────
 // The sheet mounts WorkspaceRail with the same feed as desktop, but onCollapse
-// closes the overlay (mobile "collapse" == dismiss) and the pin control is
-// hidden (meaningless in a sheet).
+// closes the overlay (mobile "collapse" == dismiss; it also ends a browse peek)
+// and the pin control is hidden (meaningless in a sheet).
 assert.match(
   source,
-  /<WorkspaceRail[\s\S]*?hidePin[\s\S]*?onCollapse=\{\(\)\s*=>\s*setMobileRailOpen\(false\)\}[\s\S]*?\/>/,
+  /<WorkspaceRail[\s\S]*?hidePin[\s\S]*?onCollapse=\{\(\)\s*=>\s*\{[\s\S]*?setMobileRailOpen\(false\)[\s\S]*?\}\}[\s\S]*?\/>/,
   "sheet WorkspaceRail hides the pin and maps onCollapse to closing the sheet",
 );
 

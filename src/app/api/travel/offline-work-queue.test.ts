@@ -9,8 +9,6 @@ const automationRunRoute = await readFile(
 );
 const travelHelper = await readFile(new URL("../../../lib/travel-offline-queue.ts", import.meta.url), "utf8");
 const flows = await readFile(new URL("../../../lib/flows.ts", import.meta.url), "utf8");
-const flowExecutions = await readFile(new URL("../../../components/flow/flow-executions.tsx", import.meta.url), "utf8");
-const flowRunSteps = await readFile(new URL("../../../components/flow/flow-run-steps.tsx", import.meta.url), "utf8");
 const flowFilters = await readFile(new URL("../../../lib/flow/flow-execution-filters.ts", import.meta.url), "utf8");
 const automationRuns = await readFile(new URL("../../../lib/automation-runs.ts", import.meta.url), "utf8");
 const automationsView = await readFile(new URL("../../../components/automations-view.tsx", import.meta.url), "utf8");
@@ -58,9 +56,6 @@ assert.ok(
 );
 
 assert.match(flows, /FlowRunStatus = "preview" \| "queued" \| "running"/, "Flow run type should include queued");
-assert.match(flowExecutions, /queued: "Queued"/, "Flow executions list should label queued runs");
-assert.match(flowExecutions, /queued: 0/, "Flow executions list should count queued runs");
-assert.match(flowRunSteps, /queued: "Queued"/, "Flow run detail should label queued runs");
 assert.match(flowFilters, /\{ value: "queued", label: "Queued" \}/, "Flow execution filters should expose queued runs");
 assert.match(automationRuns, /AutomationRunStatus = "queued" \| "running"/, "Automation run type should include queued");
 assert.match(automationsView, /runStatusColor\(r\.status\)/, "Automation run rows should tint runs via the shared runStatusColor helper");

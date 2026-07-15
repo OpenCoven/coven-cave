@@ -111,18 +111,31 @@ const ALIGN_LABEL: Record<ReadingAlign, string> = {
 };
 
 const PREVIEW: Record<FontSlot, string> = {
+  serif: "The coven remembers what the machine forgets.",
   sans: "The quick brown fox jumps over 0123",
   mono: "const x = 42; // 0123",
 };
 
+// Every row control in Settings shares one standard height (h-7 = 28px):
+// segmented groups reach it via 22px xs buttons + 2px wrapper padding + 1px
+// border, and select triggers pin it explicitly via `selectTrigger`.
+
 // Shared segmented-control styling, hoisted so each option group stays terse.
 const segWrap =
-  "flex w-fit shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+  "flex h-7 w-fit shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+
+// Shared select-trigger styling — same chrome and height as the segmented
+// groups so a row with a dropdown lines up with a row of segment buttons. The
+// border uses the strong token so the selection control reads clearly.
+const selectTrigger =
+  "h-7 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2.5 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
 function segBtn(active: boolean, extra = ""): string {
+  // The selected option gets a visible border on top of the accent fill (the
+  // .ui-btn base already carries a 1px transparent border, so no layout shift).
   return `focus-ring ${extra} rounded-[var(--radius-control)] px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
     active
-      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+      ? "border-[color-mix(in_oklch,var(--accent-presence)_65%,var(--accent-presence-foreground))] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
   }`;
 }
@@ -137,8 +150,16 @@ function SegmentButton({
   extra?: string;
   children: ReactNode;
 }) {
+  // The `settings-segment` class exists for the pressed-state CSS in
+  // globals.css: .ui-btn--ghost is UNLAYERED (background: transparent + its
+  // own :hover) and unlayered rules beat Tailwind's layered utilities
+  // unconditionally — so the Tailwind accent classes below never painted and
+  // the selected option was indistinguishable (Corner radius, on the shared
+  // Segmented's plain button element, never had this fight). Same cure as
+  // .mode-toggle__option[aria-pressed="true"]: scoped unlayered CSS wins back
+  // the pressed state.
   return (
-    <Button variant="ghost" size="xs" className={segBtn(active, extra)} {...props}>
+    <Button variant="ghost" size="xs" className={`settings-segment ${segBtn(active, extra)}`} {...props}>
       {children}
     </Button>
   );
@@ -213,7 +234,6 @@ export function FontSettings() {
   useEffect(() => {
     const pair = readFontPairPref();
     setPairId(pair.id);
-    writeFontPairPref(pair.id);
     applyFontPair(pair.id);
     // The mounted Screen/Reading controllers already applied these on load;
     // we only mirror them into local UI state.
@@ -312,7 +332,7 @@ export function FontSettings() {
         <ReadingRow label="Typography pair" hint="Approved interface + code pairing.">
           <StandardSelect
             label="Typography pair"
-            className="gh-select"
+            className={selectTrigger}
             style={{ width: "min(100%, 300px)", maxWidth: "100%" }}
             value={pairId}
             onChange={selectPair}
@@ -323,6 +343,7 @@ export function FontSettings() {
         {/* Live specimen — one inset panel, both samples, no center gutter. */}
         <div className="px-4 py-3">
           <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] divide-y divide-[var(--border-hairline)]">
+            <FontSpecimen slot="serif" label="Display" fontId={selectedPair.serifId} />
             <FontSpecimen slot="sans" label="Interface" fontId={selectedPair.sansId} />
             <FontSpecimen slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
           </div>

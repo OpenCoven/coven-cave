@@ -1,0 +1,147 @@
+/* ── Notch quick chat: centered pill + expanding panel ──────────────────────
+   The Rust shell parks the notch window flush with the top-center of the
+   screen (see show_notch_window / set_notch_geometry in src-tauri/src/lib.rs)
+   and resizes it between two fixed states on the page's notch:expand /
+   notch:collapse events. This sheet animates the content inside those
+   states: the pill hugs the top edge like a hardware notch, and the panel
+   drops out of it — visually connected, same background, shared radius.
+
+   Glass follows quick-chat-glass.css's handshake: html[data-glass] is only
+   set when the shell opened the window transparent over macOS vibrancy. */
+
+.notch-quick-chat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* The pill IS the whole window while collapsed; expanded it stays the same
+   size, centered, and merges into the panel below. The shell passes the pill
+   size through --notch-pill-w/h (set inline from URL params) so a menu-bar-
+   fitted pill and the window shrink together; the defaults mirror the
+   shell's 190×38. Square top corners keep it flush against the screen edge,
+   like a hardware notch. */
+.notch-quick-chat__pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: var(--notch-pill-w, 190px);
+  height: var(--notch-pill-h, 38px);
+  flex: none;
+  border: 1px solid var(--border-hairline);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 11px;
+  transition: border-radius 180ms ease;
+}
+
+html[data-glass] .notch-quick-chat__pill {
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 58%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+}
+
+.notch-quick-chat__pill-label {
+  max-width: calc(var(--notch-pill-w, 190px) - 60px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Expanded: the pill's bottom corners square off so it reads as one shape
+   with the panel it feeds into. */
+.notch-quick-chat[data-expanded] .notch-quick-chat__pill {
+  border-radius: 0;
+  border-bottom-color: transparent;
+  color: var(--text-primary);
+}
+
+/* The panel drops out of the pill — full window width, connected at the
+   top-center seam. It stays mounted for the exit transition; the shell only
+   shrinks the window after COLLAPSE_ANIMATION_MS. */
+.notch-quick-chat__panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  transform-origin: top center;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+html[data-glass] .notch-quick-chat__panel {
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 58%, transparent);
+}
+
+.notch-quick-chat[data-expanded] .notch-quick-chat__panel {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.notch-quick-chat__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+html[data-glass] .notch-quick-chat__toolbar {
+  background: color-mix(in oklch, var(--bg-panel) 35%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+}
+
+/* The pane borrows the tray window's layout: thread fills, composer pins. */
+.notch-quick-chat__panel .tray-quick-chat__pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.notch-quick-chat__panel .tray-quick-chat__pane[hidden] {
+  display: none;
+}
+
+.notch-quick-chat__panel .quick-chat-thread {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* ── Accessibility fallbacks ── */
+@media (prefers-reduced-transparency: reduce) {
+  html[data-glass] .notch-quick-chat__pill,
+  html[data-glass] .notch-quick-chat__panel,
+  html[data-glass] .notch-quick-chat__toolbar {
+    background: var(--bg-panel);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notch-quick-chat__pill,
+  .notch-quick-chat__panel {
+    transition: none;
+  }
+}

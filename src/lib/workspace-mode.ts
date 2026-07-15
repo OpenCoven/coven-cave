@@ -13,4 +13,6 @@ export type WorkspaceMode =
   | "flow"
   | "submissions"
   | "capabilities"
-  | "journal";
+  | "familiar-work-queue"
+  | "journal"
+  | "grimoire";

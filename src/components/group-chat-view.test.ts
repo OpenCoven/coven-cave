@@ -35,7 +35,11 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
     "strips the next-paths block and parses suggestions from coven replies",
   );
   // Parsed suggestions render as click-to-send chips that broadcast the line.
-  assert.match(view, /className="cave-next-paths/, "renders the next-paths chip row");
+  assert.match(
+    view,
+    /className="cave-next-paths mt-1\.5" data-count=\{suggestions\.length\}/,
+    "renders the next-paths chip row, stamping its count for the uniform-rows layout",
+  );
   assert.match(view, /onClick=\{\(\) => void broadcast\(s\)\}/, "clicking a chip broadcasts the suggestion");
 });
 
@@ -117,8 +121,8 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   );
   assert.match(
     chatSurface,
-    /\{\s*id:\s*"coven",\s*label:\s*"Group"/,
-    "ChatSurface exposes a Group tab",
+    /chat-scope-group-btn[\s\S]*onClick=\{\(\) => setScope\("coven"\)\}/,
+    "ChatSurface exposes Group as a demoted icon-button (not a co-equal tab) that opens the coven scope (cave-xsq.5)",
   );
   assert.match(
     chatSurface,
@@ -133,9 +137,12 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
 });
 
 test("Group chat is a world-class chat surface (a11y + resilience)", () => {
-  // Smart autoscroll: never yank a reader who scrolled up; offer a jump pill.
-  assert.match(view, /stickToBottomRef/, "tracks whether the transcript is pinned to the bottom");
-  assert.match(view, /onTranscriptScroll/, "recomputes stickiness on scroll");
+  // Smart autoscroll (cave-o8si): intent-based release via the shared hook —
+  // scrolling up detaches, only the true bottom re-attaches. No position
+  // threshold (the old `< 48` re-stick yanked readers hovering near bottom).
+  assert.match(view, /useStickToBottom\(scrollRef, \{/, "follow behavior comes from the shared intent-release hook");
+  assert.match(view, /stuckRef: stickToBottomRef/, "tracks whether the transcript is pinned to the bottom");
+  assert.doesNotMatch(view, /clientHeight < 48/, "the position-threshold re-stick stays gone");
   assert.match(view, /jumpToLatest/, "offers a jump-to-latest affordance");
   // Transcript is an accessible log region.
   assert.match(view, /role="log"/, "transcript is exposed as a log region");
@@ -148,4 +155,120 @@ test("Group chat is a world-class chat surface (a11y + resilience)", () => {
   // A failed familiar reply can be retried in place.
   assert.match(view, /const retryReply = useCallback/, "failed replies can be retried");
   assert.match(view, /onClick=\{\(\) => void retryReply\(r\)\}/, "the Retry control re-runs a single familiar");
+
+  // cave-z4s (1): a broadcast streams every familiar concurrently, so recordSession
+  // must compose on the LATEST groups via a functional setGroups (persisting
+  // inside the updater) rather than reading the render-synced groupsRef — else
+  // concurrent session events dropped each other's session ids (last write wins).
+  assert.match(
+    view,
+    /const recordSession = useCallback\([\s\S]*?setGroups\(\(prev\) => \{[\s\S]*?const next = upsertGroup\(prev, setGroupSession\([\s\S]*?saveGroups\(next\);[\s\S]*?return next;[\s\S]*?\}\);[\s\S]*?onSessionStarted\?\.\(sessionId\);\s*\n\s*\},\s*\n?\s*\[onSessionStarted\]/,
+    "recordSession updates groups functionally + persists inside the updater and no longer reads the stale groupsRef (race-safe)",
+  );
+
+  // cave-z4s (2): switching covens aborts the in-flight broadcast (no leaked
+  // stream / stuck bubbles), and both stream-cleanup paths only clear the shared
+  // abort/busy wiring when they still own the active controller.
+  assert.match(
+    view,
+    /swap transcript when the active group changes[\s\S]*?abortRef\.current\?\.abort\(\);\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);/,
+    "changing the active coven aborts any in-flight broadcast before loading the new transcript",
+  );
+  {
+    const guarded = view.match(
+      /if \(abortRef\.current === controller\) \{\s*\n\s*abortRef\.current = null;\s*\n\s*setBusy\(false\);\s*\n\s*\}/g,
+    );
+    assert.ok(
+      guarded && guarded.length === 2,
+      "both broadcast and retryReply guard their abort/busy cleanup on still owning the controller",
+    );
+  }
+
+  // cave-lh78: persistence is throttled (one localStorage write per interval,
+  // not one per streaming token), owner-guarded (the stale commit right after
+  // a coven switch must not write the old transcript under the new key), and
+  // flushed on switch/unmount so no settled tail is lost.
+  assert.match(
+    view,
+    /if \(!activeId \|\| transcriptOwnerRef\.current !== activeId\) return;/,
+    "the persist effect skips saves until the swap effect has loaded the active coven's transcript",
+  );
+  assert.match(
+    view,
+    /pendingSaveRef\.current = \{ groupId: activeId, turns: transcript \};[\s\S]{0,240}?window\.setTimeout\(/,
+    "persistence coalesces streaming updates behind a timer instead of writing per token",
+  );
+  assert.match(
+    view,
+    /flushPendingSave\(\);\s*\n\s*transcriptOwnerRef\.current = activeId;/,
+    "switching covens flushes the outgoing coven's pending save, then adopts ownership",
+  );
+  assert.match(
+    view,
+    /useEffect\(\(\) => \(\) => flushPendingSave\(\), \[flushPendingSave\]\);/,
+    "unmount flushes the pending transcript save",
+  );
+  assert.match(
+    view,
+    /if \(pendingSaveRef\.current\?\.groupId === id\) \{/,
+    "deleting a coven drops its queued save so a later flush cannot resurrect the transcript",
+  );
+  // Thread grouping is a single pass (a Map keyed by replyTo), not a nested
+  // filter per user turn — it recomputes on every streaming token.
+  assert.match(
+    view,
+    /const repliesByUser = new Map<string, GroupReply\[\]>\(\);/,
+    "threads are grouped in one pass over the transcript",
+  );
+  assert.doesNotMatch(
+    view,
+    /replies: transcript\.filter\(/,
+    "the O(userTurns × transcript) per-token grouping shape must not return",
+  );
+
+  // cave-hkls: the Enter that confirms an IME candidate (CJK input) must never
+  // broadcast the draft, pick a mention, or commit a rename — ChatView has the
+  // same guard on its composer.
+  assert.match(
+    view,
+    /if \(e\.nativeEvent\.isComposing\) return;[\s\S]{0,220}?if \(mentionOpen\) \{/,
+    "the composer ignores keydowns while an IME composition is in progress",
+  );
+  assert.match(
+    view,
+    /if \(e\.nativeEvent\.isComposing\) return;\s*\n\s*if \(e\.key === "Enter"\) \(e\.target as HTMLInputElement\)\.blur\(\);/,
+    "the coven rename input ignores the IME-confirm Enter",
+  );
+
+  // cave-mpk4: labeling + keyboard-visible focus + per-coven drafts.
+  assert.match(
+    view,
+    /aria-label="Coven name — Enter saves, Escape cancels"/,
+    "the rename input is a labeled text field with discoverable save/cancel",
+  );
+  assert.match(
+    view,
+    /aria-label=\{`Rename coven: \$\{activeGroup\.name\}`\}/,
+    "the rename affordance names its action for AT, not just via title=",
+  );
+  {
+    // Every button inside the familiar picker and @mention popovers must carry
+    // the shared focus-ring class so keyboard focus is visible.
+    const options = view.match(/className="(?:focus-ring )?flex w-full items-center gap-2 rounded px-2 py-1\.5 text-left[^"]*"/g) ?? [];
+    assert.ok(options.length >= 2, "found the picker and mention option buttons");
+    assert.ok(
+      options.every((c) => c.includes("focus-ring")),
+      "picker and @mention options use the global focus-ring class",
+    );
+  }
+  assert.match(
+    view,
+    /if \(draftOwnerRef\.current\) draftsByGroupRef\.current\.set\(draftOwnerRef\.current, draftRef\.current\);[\s\S]{0,220}?setDraft\(activeId \? draftsByGroupRef\.current\.get\(activeId\) \?\? "" : ""\);/,
+    "switching covens stashes the outgoing draft and restores the incoming one (no cross-coven bleed)",
+  );
+  assert.match(
+    view,
+    /draftsByGroupRef\.current\.delete\(id\);/,
+    "deleting a coven drops its stashed draft",
+  );
 });

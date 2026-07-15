@@ -60,4 +60,53 @@ assert.doesNotMatch(
   "navigateTo must not call React hooks when invoked through the imperative ref",
 );
 
+// ── Lazy-loading (cave-masj) ─────────────────────────────────────────────────
+// BrowserPane was the last surface shipping in the boot bundle. It now loads
+// through lazy-surfaces, and its imperative handle rides the regular
+// `handleRef` prop because next/dynamic does not forward element refs.
+assert.match(
+  source,
+  /useImperativeHandle\(handleRef, \(\) => \(\{ navigateTo \}\)/,
+  "the imperative handle registers on the handleRef prop",
+);
+assert.doesNotMatch(source, /forwardRef/, "BrowserPane no longer uses forwardRef (handleRef prop instead)");
+{
+  const lazy = await readFile(new URL("./lazy-surfaces.tsx", import.meta.url), "utf8");
+  assert.match(
+    lazy,
+    /timed\("browser", \(\) => import\("@\/components\/browser-pane"\)\.then\(\(m\) => m\.BrowserPane\)\)/,
+    "lazy-surfaces exports a code-split BrowserPane",
+  );
+  const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(
+    workspace,
+    /import \{[^}]*BrowserPane[^}]*\} from "@\/components\/browser-pane"/,
+    "workspace must not statically import the BrowserPane component (type-only imports are fine)",
+  );
+  assert.match(workspace, /handleRef=\{browserPaneRef\}/, "workspace passes the handle through the handleRef prop");
+}
+
+// ── Closing the active tab fully activates the replacement (cave-5hnh) ──────
+// Setting activeTabId alone left the address bar, loading flag, and history
+// pointing at the closed tab; removeTab must route through switchTab (which
+// syncs all three) and drop the closed tab's history entry.
+{
+  const removeTabBody = extractFunctionBody("removeTab");
+  assert.match(
+    removeTabBody,
+    /if \(activeTabId === id\) switchTab\(/,
+    "removeTab activates the replacement tab through switchTab, not bare setActiveTabId",
+  );
+  assert.doesNotMatch(
+    removeTabBody,
+    /setActiveTabId\(/,
+    "removeTab must not set the active id directly — switchTab owns activation sync",
+  );
+  assert.match(
+    removeTabBody,
+    /delete historyRef\.current\[id\]/,
+    "removeTab drops the closed tab's navigation history",
+  );
+}
+
 console.log("browser-pane-hooks.test.ts: ok");

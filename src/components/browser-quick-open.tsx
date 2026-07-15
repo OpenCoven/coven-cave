@@ -11,7 +11,7 @@ import type { BrowserTab } from "@/components/browser-pane";
 // minimal, keyboard-first, no chrome.
 //
 // Props:
-//   tabs        — all tabs from BrowserPane (pinned + localhost)
+//   tabs        — all pinned tabs from BrowserPane
 //   activeId    — currently active tab id (shown with a dot indicator)
 //   onSelect    — called with the chosen tab id
 //   onClose     — called when the palette should close (Escape / outside click)
@@ -34,7 +34,6 @@ function tabHint(tab: BrowserTab): string {
 }
 
 function favicon(tab: BrowserTab): string {
-  if (tab.kind === "localhost") return "/window.svg";
   try {
     const u = new URL(tab.url);
     return `https://www.google.com/s2/favicons?domain=${u.hostname}&sz=16`;
@@ -111,6 +110,7 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-label="Jump to tab"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl"
       >

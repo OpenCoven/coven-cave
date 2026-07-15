@@ -27,6 +27,22 @@ export type SkillOption = {
 const SKILLS_RE = /^\/skills\s*(.*)$/i;
 const SKILL_ARG_RE = /^\/skill\s+(.*)$/i;
 
+/** One row per skill id, first scope wins. /api/skills/local concatenates
+ *  several scan roots and the Skills CLI installs the same skill under both
+ *  ~/.claude/skills and ~/.agents/skills, so raw lists carry duplicates —
+ *  rendering them keys React children by a now-non-unique `s.id` and shows
+ *  every such skill twice. Scan order already encodes scope precedence. */
+export function dedupeSkillsById(skills: SkillOption[]): SkillOption[] {
+  const seen = new Set<string>();
+  const out: SkillOption[] = [];
+  for (const s of skills) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    out.push(s);
+  }
+  return out;
+}
+
 function filterSkills(skills: SkillOption[], partial: string): SkillOption[] {
   const q = partial.trim().toLowerCase();
   if (!q) return skills;
@@ -45,7 +61,7 @@ export function skillSlashOptions(text: string, skills: SkillOption[]): SkillOpt
   const t = text.trimStart();
   const m = t.match(SKILLS_RE) ?? t.match(SKILL_ARG_RE);
   if (!m) return null;
-  return filterSkills(skills, m[1]);
+  return filterSkills(dedupeSkillsById(skills), m[1]);
 }
 
 /** Resolve a typed /skill argument to a concrete skill: exact id/name match
@@ -90,19 +106,15 @@ export function buildSkillPrompt(skill: SkillOption, args?: string): string {
 /** Skills surfaced directly in the top-level slash menu — typing `/revi`
  *  matches the code-review skill without the /skill prefix. Gated to 3+ typed
  *  characters so `/` and two-letter prefixes keep the command menu clean, and
- *  capped so skills complement rather than crowd the commands. The scan can
- *  return the same skill from several roots (user + agents copies) — one row
- *  per id, first scope wins, so dupes don't eat the five slots. */
+ *  capped so skills complement rather than crowd the commands. Deduped so
+ *  multi-root copies don't eat the five slots. */
 export function skillCommandMatches(prefix: string, skills: SkillOption[]): SkillOption[] {
   if (!prefix.startsWith("/")) return [];
   const q = prefix.slice(1).toLowerCase();
   if (q.length < 3) return [];
-  const seen = new Set<string>();
   const out: SkillOption[] = [];
-  for (const s of skills) {
+  for (const s of dedupeSkillsById(skills)) {
     if (!(s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))) continue;
-    if (seen.has(s.id)) continue;
-    seen.add(s.id);
     out.push(s);
     if (out.length === 5) break;
   }
@@ -111,10 +123,11 @@ export function skillCommandMatches(prefix: string, skills: SkillOption[]): Skil
 
 /** One-line-per-skill list for the bare `/skill` / `/skills` system message. */
 export function formatSkillList(skills: SkillOption[]): string {
-  if (skills.length === 0) {
+  const unique = dedupeSkillsById(skills);
+  if (unique.length === 0) {
     return "No skills found. Add skills under your Coven skills directory or ~/.claude/skills, then try `/skill` again.";
   }
-  const lines = skills.map(
+  const lines = unique.map(
     (s) => `  ○ ${s.name} — \`${s.id}\`${s.description ? ` — ${s.description}` : ""}`,
   );
   return `Available skills (type \`/skill <name>\` or pick from the menu):\n${lines.join("\n")}`;

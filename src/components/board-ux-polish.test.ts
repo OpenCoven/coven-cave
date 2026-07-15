@@ -8,7 +8,7 @@ const styles = await readFile(new URL("../styles/board.css", import.meta.url), "
 
 // ───────── Loading state (no empty-CTA flash on open) ─────────
 assert.match(view, /const \[hasLoaded, setHasLoaded\] = useState\(false\)/, "BoardView must track a hasLoaded flag");
-assert.match(view, /finally\s*\{\s*setHasLoaded\(true\);/, "load() must set hasLoaded in finally");
+assert.match(view, /finally\s*\{\s*if \(!ctl\.signal\.aborted\) setHasLoaded\(true\);/, "load() must set hasLoaded in finally (skipping a superseded/aborted load)");
 assert.match(view, /!hasLoaded && !error \?/, "A loading branch must precede the empty-state branch");
 assert.match(view, /role="status" aria-label="Loading tasks"/, "Loading state must be announced");
 
@@ -171,6 +171,15 @@ assert.match(
   "the board poll guards setCards with arrayContentEqual",
 );
 
+// 2b. load() is sequence-guarded: five overlapping callers (mount, focus,
+//    reload event, 15s poll, failure-revert paths) mean an older GET can
+//    resolve last and clobber a fresher optimistic move. Abort the prior load
+//    and drop a superseded response so only the latest load touches state.
+assert.match(view, /const loadCtlRef = useRef<AbortController \| null>\(null\)/, "the board load has an abort controller");
+assert.match(view, /loadCtlRef\.current\?\.abort\(\);\s*\n\s*const ctl = new AbortController\(\)/, "each load aborts the prior in-flight one");
+assert.match(view, /if \(ctl\.signal\.aborted\) return; \/\/ superseded/, "a superseded load response is dropped before touching state");
+assert.match(view, /useEffect\(\(\) => \(\) => loadCtlRef\.current\?\.abort\(\), \[\]\)/, "the in-flight load aborts on unmount");
+
 // 3. A second reschedule inside the undo window must not clobber the snapshot —
 //    Undo restores the ORIGINAL dates, not the intermediate position.
 assert.match(
@@ -224,5 +233,61 @@ assert.match(kanban, /rootRef\.current\?\.contains\(target\)/, "grab keydown han
 assert.match(kanban, /if \(grabbedCardId && !inBoard\)/, "a grab releases when focus leaves the board");
 assert.match(kanban, /document\.querySelector<HTMLElement>\(`\[data-card-id="\$\{movedId\}"\]`\)\?\.focus\(\)/, "keyboard drop refocuses the moved card");
 assert.match(gantt, /announce\(`Rescheduled '\$\{row\.label\}':/, "gantt step reschedules announce the committed range");
+
+// ── Selection survives a view-mode switch AND stays visible (P1-6, 2026-07-03
+// heuristic audit): the new view mounts at scroll 0, so BoardView scrolls the
+// still-selected card back into view. Scroll only — no focus steal.
+assert.match(view, /prevViewModeRef\.current !== viewMode/, "view switches are detected against the previous mode, not selection changes");
+assert.match(view, /\[data-card-id="\$\{selectedCardId\}"\]/, "the selected card is located by its data-card-id in the mounted view");
+assert.match(view, /scrollIntoView\(\{ block: "nearest", inline: "nearest" \}\)/, "the selected card scrolls into view without recentering the whole board");
+assert.match(view, /return \(\) => cancelAnimationFrame\(frame\);/, "the scroll rAF is a fresh closure cancelled on cleanup (no persistent ref guard to wedge)");
+assert.doesNotMatch(view, /querySelector<HTMLElement>\(`\[data-card-id="\$\{selectedCardId\}"\]`\)\s*\?\.focus\(\)/, "view switches must not steal focus from the toggle the user clicked");
+assert.match(gantt, /data-card-id=\{row\.cardId\}/, "gantt rows carry data-card-id so the view-switch scroll finds them");
+
+// ── …and the table never mounts with the selection hidden (cave-iote, the
+// P1-6 remainder): "done" collapses by default, so switching to table with a
+// done card selected used to leave no row for the anchor scroll to find — the
+// inspector described an invisible card. The collapse initializer must be
+// selection-aware, and a later selection must expand its own collapsed group
+// without un-sticking manual collapses.
+assert.match(table, /selectedGroupKey === "done" \? new Set<string>\(\) : new Set\(\["done"\]\)/, "the default 'done' collapse yields when the selection lives there (lazy init — no flash, nothing to race the view-switch scroll)");
+assert.match(table, /sel \? cardGroupKey\(sel, groupBy\) : null/, "the selection's group is derived through the same cardGroupKey the grouper uses");
+assert.match(table, /const key = cardGroupKey\(c, by\);/, "groupCards shares cardGroupKey — the two can never disagree on a card's group");
+assert.match(table, /\}, \[selectedGroupKey\]\);/, "the expand effect keys on the selection's group only — a manual collapse sticks until the selection moves");
+// ── cave-iote remainder: the view-switch scroll no-ops when the selection's
+// node doesn't exist in the freshly mounted view — reveal it, then retry once.
+assert.match(view, /if \(attempts\+\+ === 0\) frame = requestAnimationFrame\(locate\);/, "a missing card node gets exactly one more frame (a reveal effect may still be mounting it)");
+assert.match(table, /groups\.find\(\(g\) => g\.cards\.some\(\(c\) => c\.id === selectedCardId\)\)/, "the table locates the group holding the selection");
+assert.match(table, /next\.delete\(holder\.key\);/, "the table un-collapses the selection's group at mount (done is collapsed by default)");
+assert.match(gantt, /if \(selectedUnscheduled\) setShowUnscheduled\(true\);/, "the gantt reveals the unscheduled tray when the selection has no dates");
+assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tray items carry data-card-id so the scroll pass can reach them");
+
+// ── cave-iote remainder: the view-switch scroll no-ops when the selection's
+// node doesn't exist in the freshly mounted view — reveal it, then retry once.
+assert.match(view, /if \(attempts\+\+ === 0\) frame = requestAnimationFrame\(locate\);/, "a missing card node gets exactly one more frame (a reveal effect may still be mounting it)");
+assert.match(table, /groups\.find\(\(g\) => g\.cards\.some\(\(c\) => c\.id === selectedCardId\)\)/, "the table locates the group holding the selection");
+assert.match(table, /next\.delete\(holder\.key\);/, "the table un-collapses the selection's group at mount (done is collapsed by default)");
+assert.match(gantt, /if \(selectedUnscheduled\) setShowUnscheduled\(true\);/, "the gantt reveals the unscheduled tray when the selection has no dates");
+assert.match(gantt, /<li key=\{c\.id\} data-card-id=\{c\.id\}/, "unscheduled tray items carry data-card-id so the scroll pass can reach them");
+
+// ── Bulk-op patch failures reconcile ONCE, after the batch settles (cave-381s):
+// a failed patchCard used to `await load()` immediately, reverting the
+// optimistic state of sibling patches still in flight.
+assert.match(view, /inFlightPatchesRef\.current \+= 1/, "every patch enters the in-flight counter");
+assert.match(
+  view,
+  /inFlightPatchesRef\.current -= 1;\s*\n\s*if \(inFlightPatchesRef\.current === 0 && reloadWhenPatchesSettleRef\.current\) \{\s*\n\s*reloadWhenPatchesSettleRef\.current = false;\s*\n\s*await load\(\);/,
+  "the reconciling reload waits for the whole batch and runs once",
+);
+assert.doesNotMatch(
+  view,
+  /setActionError\([^)]*Couldn't save changes[^)]*\);\s*\n\s*await load\(\);/,
+  "a patch failure must NOT reload immediately (it reverts in-flight siblings)",
+);
+assert.match(
+  view,
+  /return patchCard\(id, patch\);\s*\n\s*\};\s*\n\s*const create/,
+  "moveCardToStatus returns the patch promise so bulkMove's busy state waits for the batch",
+);
 
 console.log("board-ux-polish.test.ts: ok");

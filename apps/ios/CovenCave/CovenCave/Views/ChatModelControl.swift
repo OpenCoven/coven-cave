@@ -123,12 +123,38 @@ struct ModelPickerSheet: View {
     let options: [ChatModelOption]
     let current: String
     let onSelect: (String) -> Void
+    /// Optional deeper-configuration hop: shown as a chevron row that hands
+    /// off to the familiar picker (the "agent" half of the model/agent pill).
+    var onSwitchFamiliar: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+
+    private var currentOption: ChatModelOption? {
+        options.first(where: { $0.id == current }) ?? (current.isEmpty ? nil : ChatModelOption(id: current, label: current))
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                // The active choice leads the sheet so "what am I talking to"
+                // is answered before any option scanning.
+                if let currentOption {
+                    Section("Current") {
+                        HStack(spacing: 12) {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                                .frame(width: 32, height: 32)
+                                .background(Color.accentColor.opacity(0.14), in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(currentOption.label).font(.body.weight(.semibold))
+                                Text(currentOption.id).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Current model: \(currentOption.label)")
+                    }
+                }
                 Section {
                     ForEach(options) { option in
                         Button {
@@ -149,8 +175,29 @@ struct ModelPickerSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
+                } header: {
+                    Text("Models")
                 } footer: {
                     Text("Applies to this chat. The familiar uses the chosen model for its next replies.")
+                }
+                if let onSwitchFamiliar {
+                    Section("Agent") {
+                        Button {
+                            dismiss()
+                            onSwitchFamiliar()
+                        } label: {
+                            HStack {
+                                Text("Chat with another familiar").foregroundStyle(.primary)
+                                Spacer(minLength: 8)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the familiar picker")
+                    }
                 }
             }
             .themedListBackground()

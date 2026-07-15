@@ -39,18 +39,14 @@ function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
   };
 }
 
-export const ComuxView = dynamic(
-  timed("comux", () => import("@/components/comux-view").then((m) => m.ComuxView)),
-  { ssr: false, loading: SurfaceFallback },
-);
+// (cave-c3yt) The retired ComuxView and FlowView surfaces are fully deleted —
+// the standalone Code surface is gone (the chat code rail is the file/terminal
+// host; it owns PTY teardown on session switch in chat-surface.tsx) and the
+// Flow experience lives on feature/automations-flow (its /api/flows engine +
+// webhooks remain live under src/lib/flow + src/lib/server).
 
 export const GitHubView = dynamic(
   timed("github", () => import("@/components/github-view").then((m) => m.GitHubView)),
-  { ssr: false, loading: SurfaceFallback },
-);
-
-export const FlowView = dynamic(
-  timed("flow", () => import("@/components/flow/flow-view").then((m) => m.FlowView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
@@ -71,5 +67,19 @@ export const MarketplaceView = dynamic(
 
 export const AutomationsView = dynamic(
   timed("automations", () => import("@/components/automations-view").then((m) => m.AutomationsView)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const FamiliarWorkQueueView = dynamic(
+  timed("familiar-work-queue", () =>
+    import("@/components/familiar-work-queue-view").then((m) => m.FamiliarWorkQueueView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// BrowserPane's imperative handle crosses this boundary as the regular
+// `handleRef` prop — next/dynamic does not forward element refs (cave-masj).
+export const BrowserPane = dynamic(
+  timed("browser", () => import("@/components/browser-pane").then((m) => m.BrowserPane)),
   { ssr: false, loading: SurfaceFallback },
 );

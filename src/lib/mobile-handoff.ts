@@ -64,6 +64,9 @@ function executableExists(candidate: string) {
 }
 
 function loginShellPath(): string | null {
+  // Windows has no POSIX login shell to source — skip the `-ilc` probe (which
+  // would try /bin/zsh and always fail) and fall back to the system PATH.
+  if (process.platform === "win32") return null;
   const env = process.env as Record<string, string | undefined>;
   const shell = env["SHELL"] ?? ["/bin", "zsh"].join("/");
   try {
@@ -307,6 +310,20 @@ export function buildInviteUrl({
   url.searchParams.set("coven_access_token", mobileAccessToken);
   if (sidecarToken) url.searchParams.set("covenCaveToken", sidecarToken);
   return url.toString();
+}
+
+/** Golden path 5 (cave-i74f): "Continue on phone" hands off the MOMENT, not
+ *  just the app. Appending `#chat-<id>` to the invite URL rides the existing
+ *  web deep-link (the chat router already resolves the fragment on boot), so
+ *  the scanned QR opens the same conversation — no new API surface. Session
+ *  ids are validated against the shapes the daemon mints; anything else
+ *  returns the URL untouched (a malformed id must never break pairing). */
+export function withChatFragment(url: string, chatId: string | null | undefined): string {
+  if (!chatId) return url;
+  const id = chatId.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id)) return url;
+  const base = url.split("#")[0];
+  return `${base}#chat-${id}`;
 }
 
 /** Deep link the native app registers (`covencave://connect`) — tapping it on

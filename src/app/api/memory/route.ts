@@ -10,10 +10,10 @@ export async function GET(req: Request) {
   const entries = await listMemoryFileEntries();
 
   // When a chat session asks for a specific familiar's memory, scope at the
-  // source so another familiar's file metadata never crosses the wire: keep the
-  // familiar's own files plus ownerless/global pools, drop every other
-  // familiar's. With no `familiarId` (e.g. the cross-familiar management view)
-  // the full inventory is returned unchanged.
+  // source so nothing beyond that familiar's own files crosses the wire: other
+  // familiars' files AND ownerless/global pools are dropped. With no
+  // `familiarId` (e.g. the cross-familiar management view) the full inventory
+  // is returned unchanged.
   const familiarId = new URL(req.url).searchParams.get("familiarId");
   if (familiarId) {
     const scoped = scopeMemoryFilesToFamiliar(entries, familiarId);

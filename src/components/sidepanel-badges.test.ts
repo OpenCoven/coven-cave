@@ -17,7 +17,10 @@ assert.match(sidebar, /badge: \(p\) => badgeText\(p\.githubAssignedCount\)/, "Gi
 assert.match(workspace, /boardOpenCount=\{boardTaskCount\}/, "board count passed to sidebar");
 assert.match(workspace, /scheduleNeedsCount=\{scheduleNeedsCount\}/, "schedules count passed");
 assert.match(workspace, /githubAssignedCount=\{githubAssignedCount\}/, "github count passed");
-assert.match(workspace, /groupInboxFeed\(inboxItemsWithEphemeral\)\.needsYou\.length/, "schedules badge = needs-you group");
+// cave-925w: the badge and Home's "Needs you" strip read ONE memo — the badge
+// is that shared group's length, not a separately computed count.
+assert.match(workspace, /const inboxNeedsYou = useMemo\(\s*\(\) => groupInboxFeed\(inboxItemsWithEphemeral\)\.needsYou,/, "schedules badge = needs-you group (shared memo)");
+assert.match(workspace, /const scheduleNeedsCount = inboxNeedsYou\.length;/, "badge count derives from the shared group");
 
 // Per-familiar rail-tab persistence was dropped with the right companion rail
 // (drag-to-split replaces it) — the workspace no longer stores cave:rail.tab.

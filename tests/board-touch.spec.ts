@@ -17,7 +17,9 @@ test("touch long-press drag moves a card between columns", async ({ page }) => {
     window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
   await page.goto("/"); await page.waitForSelector(".shell-frame", { timeout: 60000 });
-  await page.locator(".sidebar-nav-scroll").getByRole("button", { name: /^Tasks\b/ }).click();
+  // The app boots into Chat (cave-hsa6), where the sidebar is the thread list —
+  // reach Tasks via its ⌘3 shortcut instead of a mode-list row.
+  await page.keyboard.press("Meta+3");
   await page.waitForSelector(".board-kanban-card", { timeout: 60000 });
 
   const card = page.locator(".board-kanban-card").first();

@@ -36,6 +36,9 @@ type Props = {
   nativeHost?: string | null;
   mobileModeError?: string | null;
   onMobileModeChange?: (enabled: boolean) => void;
+  /** Continue-on-phone (cave-i74f): when set, the QR carries `#chat-<id>` so
+   *  one scan opens THIS conversation on the phone, not just the app. */
+  chatId?: string | null;
 };
 
 function expiryLabel(expiresAtIso: string) {
@@ -58,6 +61,7 @@ export function MobileHandoffModal({
   nativeHost = null,
   mobileModeError = null,
   onMobileModeChange,
+  chatId = null,
 }: Props) {
   const [handoff, setHandoff] = useState<HandoffReady | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +90,7 @@ export function MobileHandoffModal({
       const res = await fetch("/api/mobile-handoff", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "app-start" }),
+        body: JSON.stringify(chatId ? { action: "app-start", chatId } : { action: "app-start" }),
       });
       const json = (await res.json()) as HandoffResponse;
       if (!json.ok) {
@@ -105,7 +109,7 @@ export function MobileHandoffModal({
     } finally {
       setLoading(false);
     }
-  }, [copyHandoffUrl]);
+  }, [chatId, copyHandoffUrl]);
 
   useEffect(() => {
     if (open) void start(autoCopyRequest);
@@ -149,7 +153,7 @@ export function MobileHandoffModal({
     <Modal
       open={open}
       onClose={onClose}
-      breadcrumb={["CovenCave", "Open on phone"]}
+      breadcrumb={["CovenCave", chatId ? "Continue this chat on phone" : "Open on phone"]}
       footerActions={
         <>
           <Button variant="ghost" onClick={resetServe} disabled={loading}>
@@ -192,7 +196,11 @@ export function MobileHandoffModal({
         </div>
 
         <div className="mobile-handoff__body">
-          <p className="mobile-handoff__title">Connect CovenCave on your phone.</p>
+          <p className="mobile-handoff__title">
+            {chatId
+              ? "Scan to continue this conversation on your phone."
+              : "Connect CovenCave on your phone."}
+          </p>
           {handoff ? (
             <>
               {handoff.nativeHost ? (

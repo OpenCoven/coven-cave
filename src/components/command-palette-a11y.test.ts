@@ -37,4 +37,13 @@ assert.match(
   "the scroll-into-view effect tracks the active index",
 );
 
+// cave-wka1: the Enter/arrows that drive an IME candidate picker must not fire
+// the active row or move the highlight (ChatView and group-chat have the same
+// composer guard).
+assert.match(
+  src,
+  /const onComposerKey = \(e: React\.KeyboardEvent\) => \{[\s\S]{0,320}?if \(e\.nativeEvent\.isComposing\) return;/,
+  "palette keyboard handler ignores keydowns while an IME composition is in progress",
+);
+
 console.log("command-palette-a11y.test.ts: ok");

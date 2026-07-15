@@ -29,7 +29,7 @@ export async function validateGithubToken(value: string, fetchImpl: FetchLike): 
 }
 
 const VALIDATORS: Record<string, Validator> = {
-  GITHUB_PERSONAL_ACCESS_TOKEN: validateGithubToken,
+  GITHUB_PAT: validateGithubToken,
 };
 
 export function hasValidator(env: string): boolean {

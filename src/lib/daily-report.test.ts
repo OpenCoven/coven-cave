@@ -69,7 +69,8 @@ function item(overrides) {
   assert.equal(itemHref(item({ link: { kind: "session", ref: "s1" } })), "/#chat-s1");
   assert.equal(
     itemHref(item({ link: { kind: "memory", ref: "a/b c" } })),
-    "/#memory:a%2Fb%20c",
+    // Memory rides the Grimoire hash — `#memory:` never had a consumer (cave-aka2).
+    "/#grimoire:memory:a%2Fb%20c",
   );
   assert.equal(itemHref(item({ link: { kind: "url", ref: "https://x" } })), "https://x");
   assert.equal(itemHref(item({ sessionId: "sess9", link: null })), "/#chat-sess9");

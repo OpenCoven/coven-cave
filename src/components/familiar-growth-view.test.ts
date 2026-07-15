@@ -55,4 +55,25 @@ describe("Familiar growth view", () => {
   it("tints signal cards by severity with a left border (not color alone)", () => {
     assert.match(globals, /\.growth-signal--crit \{ border-left-color: var\(--color-danger\); \}/);
   });
+
+  it("keeps the triage surface live with a silent pausable poll", () => {
+    assert.match(view, /usePausablePoll\(\(\) => void load\(\{ quiet: true, silent: true \}\), 60_000\)/);
+    assert.match(view, /if \(quiet && !silent\) announce\("Growth data refreshed\."\)/, "polls refresh without announcing; manual refresh still announces");
+  });
+
+  it("gives every non-healthy growth signal a next-step action link", () => {
+    assert.match(report, /function signalAction/, "signal kinds map to the surface where the fix happens");
+    assert.match(report, /case "session-gap":/);
+    assert.match(report, /Resume latest session/, "activity gaps resume the newest thread when one exists");
+    assert.match(report, /case "no-memory":/);
+    assert.match(report, /case "low-accept-rate":/);
+    assert.match(report, /analytics#fa-confidence/, "retro signals drill into the confidence impact");
+    assert.match(report, /className="growth-signal__action focus-ring"/, "actions render as styled links");
+    assert.match(globals, /\.growth-signal__action\s*\{/);
+  });
+
+  it("turns the 14d session count into a drill-through to the analytics sessions list", () => {
+    assert.match(report, /analytics#fa-sessions/, "activity head links to the recent-sessions section");
+    assert.match(report, /className="growth-section__link focus-ring"/);
+  });
 });

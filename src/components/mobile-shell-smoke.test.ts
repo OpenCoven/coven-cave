@@ -9,7 +9,6 @@ const topBar = await readFile(new URL("./top-bar.tsx", import.meta.url), "utf8")
 const notificationBell = await readFile(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const bottomTerminal = await readFile(new URL("./bottom-terminal.tsx", import.meta.url), "utf8");
 const browserPane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
-const comuxView = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const automationsView = await readFile(new URL("./automations-view.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -33,8 +32,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-check" }/,
-  "Mobile bottom tabs should keep the Schedules label short while preserving the full accessible name",
+  /{ id: "inbox", label: "Rites", ariaLabel: "Rituals", iconName: "ph:calendar-check" }/,
+  "Mobile bottom tabs should keep the Rituals label short while preserving the full accessible name",
 );
 
 assert.match(
@@ -67,7 +66,7 @@ assert.match(
 // desktop the left panel must stay open when an option is selected.
 assert.match(
   workspace,
-  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as WorkspaceMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
+  /onModeChange=\{\(m\) => \{[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*setMode\(m as CaveMode\);[\s\S]*shellRef\.current\?\.dismissNavMobile\(\);[\s\S]*\}\}/,
   "Mobile sidebar destination taps should dismiss the nav drawer (mobile-only) without collapsing the desktop nav",
 );
 assert.match(
@@ -104,6 +103,12 @@ assert.match(
 
 assert.match(
   globals,
+  /\.top-bar\s*\{(?=[^}]*display:\s*none;)[^}]*width:\s*100%;/,
+  "Adaptive top bar should fill its flex host so search can expand and actions stay pinned to the trailing edge",
+);
+
+assert.match(
+  globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__search\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Mobile search button should meet the 44px touch target",
 );
@@ -135,6 +140,18 @@ assert.match(
   globals,
   /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.notification-bell__trigger,[\s\S]*\.top-bar__account\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
   "Mobile top-bar notification and account buttons should meet the 44px touch target",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 1023px\) \{[\s\S]*\.top-bar__actions \.top-bar__tasks > \.ui-icon-btn\s*\{[^}]*width:\s*var\(--touch-target\);[^}]*height:\s*var\(--touch-target\);/,
+  "Mobile top-bar task overflow should meet the same 44px touch target as adjacent actions",
+);
+
+assert.match(
+  globals,
+  /@media \(max-width: 455px\) \{[\s\S]*\.top-bar__actions \[data-quick-chat-trigger\],[\s\S]*\.top-bar__actions \.top-bar__tasks\s*\{[^}]*display:\s*none;/,
+  "Compact phones should demote Quick Chat and task shortcuts so primary header controls preserve a usable search field",
 );
 
 assert.match(
@@ -201,8 +218,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /browserPaneRef\.current\?\.navigateTo\(url\)/,
-  "Link opens should navigate the embedded Browser pane",
+  /setBrowserNavigationQueue\(\(queue\) => enqueueBrowserNavigation\(queue, request\)\)/,
+  "Link opens should survive lazy Browser mounting in the durable navigation queue",
+);
+assert.match(
+  workspace,
+  /navigationRequest=\{browserNavigationQueue\[0\] \?\? null\}[\s\S]{0,120}onNavigationConsumed=\{acknowledgeBrowserNavigation\}/,
+  "BrowserPane should acknowledge queued links only after accepting the navigation",
 );
 assert.match(
   workspace,
@@ -241,14 +263,4 @@ assert.doesNotMatch(
   "The old persistent standalone terminal detail should not render on mobile surfaces",
 );
 
-assert.match(
-  comuxView,
-  /comux-terminal-toolbar-button[\s\S]*Split right[\s\S]*comux-terminal-toolbar-button[\s\S]*Split down[\s\S]*comux-terminal-add-button/,
-  "Terminal toolbar actions should expose stable mobile hit-area hooks",
-);
-
-assert.match(
-  globals,
-  /@media \(max-width: 767px\) \{[\s\S]*\.comux-terminal-toolbar-button,[\s\S]*\.comux-terminal-empty-add\s*\{[\s\S]*min-height:\s*var\(--touch-target\)[\s\S]*\.comux-terminal-add-button,[\s\S]*\.comux-terminal-tab-close,[\s\S]*\.comux-terminal-pane-action\s*\{[\s\S]*width:\s*var\(--touch-target\)[\s\S]*height:\s*var\(--touch-target\)/,
-  "Terminal mobile toolbar and close controls should meet the shared touch target",
-);
+// (ComuxView terminal-toolbar touch pins left with the component, cave-c3yt.)

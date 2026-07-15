@@ -2,13 +2,23 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useAnnouncer } from "@/components/ui/live-region";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
-import { groupInboxFeed, inboxKindLabel } from "@/lib/inbox-feed";
+import {
+  buildInboxGroups,
+  groupInboxFeed,
+  INBOX_GROUP_BY_OPTIONS,
+  inboxKindLabel,
+  type InboxFeedGroup,
+  type InboxGroupBy,
+} from "@/lib/inbox-feed";
+import { repoFromGithubSubTag } from "@/lib/github-sub-tags";
+import { GithubSubscriptionsModal } from "@/components/github-subscriptions-modal";
 import type {
   AutomationStatus,
   CodexAutomation,
@@ -19,6 +29,7 @@ import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { formatTimestamp, formatClock, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTimeSigned } from "@/lib/relative-time";
+import { parseGitHubItemUrl } from "@/lib/github-item-url";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
@@ -49,7 +60,7 @@ import {
   type AutomationEntry,
 } from "@/lib/automations/automation-entry";
 import { listInput, commaInput, parseListInput } from "@/lib/automations/list-input";
-import { runStatusColor } from "@/lib/automations/run-status";
+import { runStatusColor, runStatusIcon } from "@/lib/automations/run-status";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -73,15 +84,22 @@ type Props = {
 };
 
 function linkLabel(link: LinkRef): string {
-  if (link.kind === "url") return link.ref;
+  if (link.kind === "url") {
+    // GitHub items open natively (cave-qcsv) — say where the button goes
+    // instead of printing the raw URL.
+    const gh = parseGitHubItemUrl(link.ref);
+    if (gh) return `Open in GitHub · ${gh.repo} #${gh.number}`;
+    return link.ref;
+  }
   if (link.kind === "card") return "Card";
   if (link.kind === "session") return "Session";
   return "Memory";
 }
 
-// The active Schedules surface is intentionally narrow: Calendar plus Crons.
-// The broader Automations/Flow experience lives on feature/automations-flow.
-type AutomationTab = "calendar" | "crons";
+// The active Rituals surface: Inbox (the full feed, mostly reminders) plus
+// Calendar and Crons. The broader Automations/Flow experience lives on
+// feature/automations-flow.
+type AutomationTab = "inbox" | "calendar" | "crons";
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -109,40 +127,24 @@ function scheduleTime(hour: number, minute: number): string {
 const humanSchedule = (rec: Recurrence | undefined | null): string =>
   humanRecurrence(rec, scheduleTime);
 
-function isScheduleInboxItem(item: InboxItem): boolean {
-  return item.kind === "reminder" || item.kind === "daily-summary";
-}
-
-// A one-shot reminder still pending after its fire time never fired (e.g. the
-// daemon was offline) — worth surfacing instead of a quiet "3h ago".
-function isReminderOverdue(item: InboxItem): boolean {
-  return (
-    item.kind !== "daily-summary" &&
-    (item.recurrence?.type ?? "none") === "none" &&
-    item.status === "pending" &&
-    !!item.fireAt &&
-    new Date(item.fireAt).getTime() < Date.now()
-  );
-}
-
 function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
   return relativeTimeSigned(iso);
 }
 
 
-function FieldLabel({ children }: { children: ReactNode }) {
+function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: ReactNode }) {
   return (
-    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
+    <label htmlFor={htmlFor} className="mb-1 block text-[10px] font-semibold uppercase tracking-widest"
       style={{ color: "var(--text-muted)" }}>
       {children}
     </label>
   );
 }
 
-function CronDetailSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+function CronDetailSection({ title, description, className, children }: { title: string; description?: string; className?: string; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-[var(--radius-control)] border p-3"
+    <section className={`space-y-3 rounded-[var(--radius-control)] border p-3${className ? ` ${className}` : ""}`}
       style={{ borderColor: "var(--border-hairline)", background: "color-mix(in oklch, var(--bg-base) 72%, transparent)" }}>
       <div>
         <h3 className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h3>
@@ -152,6 +154,14 @@ function CronDetailSection({ title, description, children }: { title: string; de
     </section>
   );
 }
+
+// Beginner-facing names for the schedule cadence modes: the presets read as
+// plain cadences, and the raw-RRULE escape hatch is labeled for what it is.
+const SCHEDULE_MODE_LABEL: Record<"weekly" | "daily" | "raw", string> = {
+  weekly: "Weekly",
+  daily: "Daily",
+  raw: "Advanced",
+};
 
 function CronSummaryTile({ label, value, tone = "default" }: { label: string; value: ReactNode; tone?: "default" | "active" | "paused" | "danger" }) {
   const valueColor =
@@ -247,13 +257,22 @@ function DetailPanel({
   const isReminder = item.kind === "reminder";
   const busy = busyId === item.id;
 
+  // The detail panel is a dialog: trap focus, close on Escape, and restore focus
+  // to the row that opened it (useFocusTrap does the return-focus). aria-modal is
+  // deliberately omitted — on desktop the list stays an interactive sibling, and
+  // on mobile it's display:none, so claiming the rest is inert would be a lie.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(true, panelRef, { onEscape: onClose });
+
   return (
-    <div className="flex h-full flex-col"
+    <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
+      className="flex h-full flex-col focus:outline-none"
       style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b px-5 py-3"
         style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+        <h2 id={titleId} className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
           {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
         </h2>
         <Button
@@ -425,8 +444,6 @@ function DetailPanel({
 // row instead of buried in the detail panel. Avoids threading callbacks through
 // the list/section components.
 type ScheduleActions = {
-  runReminder: (id: string) => void;
-  togglePauseReminder: (item: InboxItem) => void;
   runAutomation: (auto: CodexAutomation) => void;
   togglePauseAutomation: (auto: CodexAutomation) => void;
 };
@@ -435,18 +452,21 @@ const ScheduleActionsContext = createContext<ScheduleActions | null>(null);
 // Always-visible labeled row action — the same affordance the All/Flows rows
 // use, so every tab exposes identical controls. Rendered as a sibling of the
 // row's own button (never nested), so a click can't also open the detail panel.
-function RowActionButton({ icon, label, text, onClick }: { icon: IconName; label: string; text: string; onClick: () => void }) {
+function RowActionButton({ icon, label, text, onClick, disabled }: { icon: IconName; label: string; text: string; onClick: () => void; disabled?: boolean }) {
   return (
     <Button
       variant="ghost"
       size="xs"
       aria-label={label}
       onClick={onClick}
+      disabled={disabled}
       className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
       style={{ color: "var(--text-secondary)" }}
       leadingIcon={icon}
     >
-      {text}
+      {/* Icon-only when the hosting pane runs narrow (e.g. the md split while a
+          detail rail is open) — the aria-label keeps the full action name. */}
+      <span className="@max-[520px]:hidden">{text}</span>
     </Button>
   );
 }
@@ -455,205 +475,12 @@ function RowActions({ children }: { children: ReactNode }) {
   return <span className="flex shrink-0 items-center gap-0.5 pl-1">{children}</span>;
 }
 
-function ReminderTaskRow({
-  item,
-  selected,
-  selectMode,
-  checked,
-  familiarLabel,
-  onSelect,
-  onToggle,
-}: {
-  item: InboxItem;
-  selected: boolean;
-  selectMode: boolean;
-  checked: boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onToggle: (id: string) => void;
-}) {
-  const workspace = familiarLabel(item.familiarId);
-  const isOverdue = isReminderOverdue(item);
-  const schedule = item.kind === "daily-summary"
-    ? "Daily summary"
-    : item.recurrence?.type !== "none"
-    ? humanSchedule(item.recurrence)
-    : isOverdue
-    ? "Overdue"
-    : item.fireAt
-    ? relTime(item.fireAt)
-    : "Paused";
-
-  // In select mode the row IS a checkbox (click/Enter/Space toggle); otherwise
-  // it opens the detail panel. The active-row highlight tracks `checked` while
-  // selecting, and the detail-panel `selected` highlight otherwise.
-  const active = selectMode ? checked : selected;
-  const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
-  const actions = useContext(ScheduleActionsContext);
-  const paused = item.status === "dismissed";
-  // Run-now / pause make sense for actual reminders, not daily summaries, and
-  // never while picking rows in select mode.
-  const showActions = !selectMode && item.kind !== "daily-summary" && !!actions;
-
-  return (
-    <li className="flex items-center">
-      <button
-        type="button"
-        role={selectMode ? "checkbox" : undefined}
-        aria-checked={selectMode ? checked : undefined}
-        onClick={activate}
-        className="focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{
-          background: active ? "rgba(255,255,255,0.05)" : "transparent",
-        }}
-        onMouseEnter={(e) => {
-          if (!active) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
-        }}
-        onMouseLeave={(e) => {
-          if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-        }}
-      >
-        {selectMode ? (
-          <span
-            aria-hidden
-            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
-            style={{
-              borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)",
-              background: checked ? "var(--accent-presence)" : "transparent",
-            }}
-          >
-            {checked && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
-          </span>
-        ) : (
-          <StatusIcon item={item} />
-        )}
-        <span className="flex-1 min-w-0 flex items-baseline gap-2">
-          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
-            {item.title}
-          </span>
-          {workspace && (
-            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {workspace}
-            </span>
-          )}
-        </span>
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: isOverdue ? "var(--color-warning)" : "var(--text-muted)" }}>
-          {schedule}
-        </span>
-      </button>
-      {showActions && actions && (
-        <RowActions>
-          {!paused && (
-            <RowActionButton icon="ph:play" label={`Run ${item.title} now`} text="Run" onClick={() => actions.runReminder(item.id)} />
-          )}
-          <RowActionButton
-            icon={paused ? "ph:play" : "ph:pause"}
-            label={`${paused ? "Resume" : "Pause"} ${item.title}`}
-            text={paused ? "Resume" : "Pause"}
-            onClick={() => actions.togglePauseReminder(item)}
-          />
-        </RowActions>
-      )}
-    </li>
-  );
-}
-
-function ReminderTaskSection({
-  title,
-  items,
-  selectedId,
-  selectMode,
-  isSelected,
-  familiarLabel,
-  onSelect,
-  onToggle,
-}: {
-  title: string;
-  items: InboxItem[];
-  selectedId: string | null;
-  selectMode: boolean;
-  isSelected: (id: string) => boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onToggle: (id: string) => void;
-}) {
-  if (items.length === 0) return null;
-  const overdueCount = items.filter(isReminderOverdue).length;
-  const headingId = `reminder-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  return (
-    <section aria-labelledby={headingId} className="mb-6">
-      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
-        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
-        </h3>
-        {overdueCount > 0 && (
-          <span
-            className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-            style={{ background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }}
-          >
-            {overdueCount} overdue
-          </span>
-        )}
-      </div>
-      <ul>
-        {items.map((item) => (
-          <ReminderTaskRow
-            key={item.id}
-            item={item}
-            selected={selectedId === item.id}
-            selectMode={selectMode}
-            checked={isSelected(item.id)}
-            familiarLabel={familiarLabel}
-            onSelect={onSelect}
-            onToggle={onToggle}
-          />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function ReminderTaskList({
-  current,
-  paused,
-  oneShots,
-  history,
-  selectedId,
-  selectMode,
-  isSelected,
-  familiarLabel,
-  onSelect,
-  onToggle,
-}: {
-  current: InboxItem[];
-  paused: InboxItem[];
-  oneShots: InboxItem[];
-  history: InboxItem[];
-  selectedId: string | null;
-  selectMode: boolean;
-  isSelected: (id: string) => boolean;
-  familiarLabel: (fid?: string | null) => string | null;
-  onSelect: (item: InboxItem) => void;
-  onToggle: (id: string) => void;
-}) {
-  const shared = { selectedId, selectMode, isSelected, familiarLabel, onSelect, onToggle };
-  return (
-    <>
-      <ReminderTaskSection title="Repeating" items={current} {...shared} />
-      <ReminderTaskSection title="Paused" items={paused} {...shared} />
-      <ReminderTaskSection title="One-time" items={oneShots} {...shared} />
-      {history.length > 0 && (
-        <ReminderTaskSection title="History" items={history} {...shared} />
-      )}
-    </>
-  );
-}
-
 // ── Codex automation detail panel ────────────────────────────────────────────
 function CodexDetailPanel({
   auto,
   busy,
+  expanded,
+  onToggleExpanded,
   onClose,
   onToggle,
   onSave,
@@ -663,6 +490,10 @@ function CodexDetailPanel({
 }: {
   auto: CodexAutomation;
   busy: boolean;
+  /** Full-page-width mode: the rail grows to fill the surface and the form
+   *  reflows into a two-column canvas (list hidden until collapsed). */
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onClose: () => void;
   onToggle: (auto: CodexAutomation) => void;
   onSave: (auto: CodexAutomation, patch: CodexAutomationPatch) => void;
@@ -671,24 +502,41 @@ function CodexDetailPanel({
   runs: AutomationRunRecord[];
 }) {
   const isActive = auto.status === "ACTIVE";
+  // Dialog semantics for the cron detail panel — trap focus, Escape closes, focus
+  // returns to the opening row. aria-modal omitted (see DetailPanel's note).
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(true, panelRef, { onEscape: onClose });
   const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
   const promptParts = splitAutomationPrompt(auto.prompt);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [runLog, setRunLog] = useState<string>("");
   const [runLogLoading, setRunLogLoading] = useState(false);
+  // Rapid run switches: only the latest log request may write state, or a
+  // slow earlier response renders the WRONG log under the newer run's header
+  // (same stale-response guard as runsReqRef for the runs list).
+  const runLogReqRef = useRef(0);
   const toggleRunLog = async (runId: string) => {
-    if (openRunId === runId) { setOpenRunId(null); return; }
+    if (openRunId === runId) {
+      // Closing also invalidates any in-flight fetch for this run's log.
+      runLogReqRef.current += 1;
+      setOpenRunId(null);
+      return;
+    }
+    const req = ++runLogReqRef.current;
     setOpenRunId(runId);
     setRunLog("");
     setRunLogLoading(true);
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/runs/${encodeURIComponent(runId)}/log`, { cache: "no-store" });
       const json = await res.json().catch(() => null);
+      if (req !== runLogReqRef.current) return;
       setRunLog(json?.ok ? (json.truncated ? "…(truncated)…\n" : "") + (json.log ?? "") : (json?.error ?? "no log"));
     } catch {
+      if (req !== runLogReqRef.current) return;
       setRunLog("failed to load log");
     } finally {
-      setRunLogLoading(false);
+      if (req === runLogReqRef.current) setRunLogLoading(false);
     }
   };
   const [name, setName] = useState(auto.name);
@@ -781,8 +629,258 @@ function CodexDetailPanel({
     ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
     : "No runs yet";
 
+
+  // Each section is built once; the layout arranges them per mode. The rail
+  // stacks them in priority order (identity, instructions, schedule, runtime),
+  // while the expanded canvas pairs them into two independent column stacks so
+  // a short section never leaves a row-aligned hole beside a tall one.
+  const identitySection = (
+    <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Rituals.">
+      <div>
+        <FieldLabel htmlFor={`cron-name-${auto.id}`}>Name</FieldLabel>
+        <input
+          id={`cron-name-${auto.id}`}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          className={automationInputClass}
+          style={fieldStyle}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
+        <div>
+          <FieldLabel htmlFor={`cron-tags-${auto.id}`}>Tags</FieldLabel>
+          <input
+            id={`cron-tags-${auto.id}`}
+            value={tagsText}
+            onChange={(event) => setTagsText(event.target.value)}
+            className={automationInputClass}
+            style={fieldStyle}
+          />
+        </div>
+        <div>
+          <FieldLabel>Skill</FieldLabel>
+          <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+        </div>
+      </div>
+    </CronDetailSection>
+  );
+  const instructionsSection = (
+    <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
+      <div>
+        <FieldLabel htmlFor={`cron-goals-${auto.id}`}>Goals</FieldLabel>
+        <textarea
+          id={`cron-goals-${auto.id}`}
+          value={goals}
+          onChange={(event) => setGoals(event.target.value)}
+          rows={5}
+          className={automationTextareaClass}
+          style={fieldStyle}
+        />
+      </div>
+      <div>
+        <FieldLabel htmlFor={`cron-deliverables-${auto.id}`}>Deliverables</FieldLabel>
+        <textarea
+          id={`cron-deliverables-${auto.id}`}
+          value={deliverables}
+          onChange={(event) => setDeliverables(event.target.value)}
+          rows={4}
+          className={automationTextareaClass}
+          style={fieldStyle}
+        />
+      </div>
+    </CronDetailSection>
+  );
+  const scheduleSection = (
+    <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
+      <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
+        style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
+        role="group"
+        aria-label="Schedule mode"
+      >
+        {(["weekly", "daily", "raw"] as const).map((mode) => (
+          <Button
+            key={mode}
+            variant="ghost"
+            size="xs"
+            onClick={() => setScheduleMode(mode)}
+            aria-pressed={scheduleMode === mode}
+            className="rounded-[var(--radius-control)] px-2 py-1 text-[11px]"
+            style={{
+              background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
+              color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
+            }}
+          >
+            {SCHEDULE_MODE_LABEL[mode]}
+          </Button>
+        ))}
+      </div>
+
+      {scheduleMode === "raw" ? (
+        <textarea
+          aria-label="Raw RRULE"
+          value={rawRrule}
+          onChange={(event) => setRawRrule(event.target.value)}
+          rows={3}
+          className={automationMonoTextareaClass}
+          style={fieldStyle}
+        />
+      ) : (
+        <div className="space-y-3">
+          {scheduleMode === "weekly" && (
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days of week">
+              {RRULE_DAY_ORDER.map((day) => {
+                const selected = scheduleDays.includes(day);
+                return (
+                  <Button
+                    key={day}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => toggleDay(day)}
+                    aria-pressed={selected}
+                    className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
+                    style={{
+                      background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
+                      borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
+                      color: selected ? "var(--text-primary)" : "var(--text-muted)",
+                    }}
+                  >
+                    {RRULE_DAY_LABEL[day]}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+          <input
+            type="time"
+            aria-label="Schedule time"
+            value={scheduleTime}
+            onChange={(event) => setScheduleTime(event.target.value)}
+            className={automationInputClass}
+            style={fieldStyle}
+          />
+        </div>
+      )}
+      {/* Plain-language echo of the chosen cadence for preset modes; the
+          cryptic RRULE line only surfaces in Advanced mode or when the
+          schedule is invalid — beginners never have to read iCalendar. */}
+      {scheduleMode !== "raw" && !invalidSchedule ? (
+        <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {scheduleMode === "daily"
+            ? `Runs every day at ${scheduleTime}`
+            : `Runs weekly on ${scheduleDays.map((d) => RRULE_DAY_LABEL[d]).join(", ")} at ${scheduleTime}`}
+        </p>
+      ) : (
+        <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
+          {nextRrule || "RRULE required"}
+        </p>
+      )}
+    </CronDetailSection>
+  );
+  const runtimeSection = (
+    <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
+      <div className="grid grid-cols-1 gap-3 @min-[640px]:grid-cols-2">
+        <div>
+          <FieldLabel htmlFor={`cron-model-${auto.id}`}>Model</FieldLabel>
+          <input
+            id={`cron-model-${auto.id}`}
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            className={automationInputClass}
+            style={fieldStyle}
+          />
+        </div>
+        <div>
+          <FieldLabel>Reasoning</FieldLabel>
+          <StandardSelect
+            label="Reasoning"
+            value={reasoningEffort}
+            onChange={setReasoningEffort}
+            className={automationSelectClass}
+            style={fieldStyle}
+            options={[
+              ...(!["low", "medium", "high"].includes(reasoningEffort)
+                ? [{ value: reasoningEffort, label: reasoningEffort }]
+                : []),
+              { value: "low", label: "low" },
+              { value: "medium", label: "medium" },
+              { value: "high", label: "high" },
+            ]}
+          />
+        </div>
+        <div>
+          <FieldLabel>Environment</FieldLabel>
+          <StandardSelect
+            label="Environment"
+            value={executionEnvironment}
+            onChange={setExecutionEnvironment}
+            className={automationSelectClass}
+            style={fieldStyle}
+            options={[
+              ...(!["worktree", "repo"].includes(executionEnvironment)
+                ? [{ value: executionEnvironment, label: executionEnvironment }]
+                : []),
+              { value: "worktree", label: "worktree" },
+              { value: "repo", label: "repo" },
+            ]}
+          />
+        </div>
+      </div>
+      <div>
+        <FieldLabel>Working directories</FieldLabel>
+        <CwdPickerField
+          value={cwdsText}
+          onChange={setCwdsText}
+          familiarId={auto.familiars[0] ?? ""}
+          textareaClass={automationMonoTextareaClass}
+          fieldStyle={fieldStyle}
+        />
+      </div>
+    </CronDetailSection>
+  );
+  const runsSection = runs.length > 0 ? (
+    <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
+      <ul className="mt-1 space-y-1">
+        {runs.slice(0, 10).map((r) => (
+          <li key={r.id}>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => void toggleRunLog(r.id)}
+              aria-expanded={openRunId === r.id}
+              aria-controls={`automation-run-log-${r.id}`}
+              aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
+              className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
+            >
+              {/* Shape + color (WCAG 1.4.1): the icon form carries the
+                  status for color-blind users; AT reads it from the
+                  button's aria-label. */}
+              <span aria-hidden className="shrink-0" style={{ color: runStatusColor(r.status), lineHeight: 0 }}>
+                <Icon name={runStatusIcon(r.status)} width={12} />
+              </span>
+              <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
+              {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
+              <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
+                <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
+              </span>
+            </Button>
+            {openRunId === r.id && (
+              <pre
+                id={`automation-run-log-${r.id}`}
+                className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
+                style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+              >
+                {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
+              </pre>
+            )}
+          </li>
+        ))}
+      </ul>
+    </CronDetailSection>
+  ) : null;
+
   return (
-    <div className="flex h-full flex-col"
+    <div ref={panelRef} role="dialog" aria-labelledby={titleId} tabIndex={-1}
+      className="flex h-full flex-col focus:outline-none"
       style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
       <div className="border-b px-5 py-4"
         style={{ borderColor: "var(--border-hairline)" }}>
@@ -791,7 +889,7 @@ function CodexDetailPanel({
             <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
               Cron details
             </p>
-            <h2 className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+            <h2 id={titleId} className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
               {name.trim() || auto.name}
             </h2>
           </div>
@@ -810,6 +908,16 @@ function CodexDetailPanel({
             <Button
               variant="ghost"
               size="xs"
+              onClick={onToggleExpanded}
+              aria-pressed={expanded}
+              aria-label={expanded ? "Collapse to side panel" : "Expand to full width"}
+              title={expanded ? "Collapse to side panel" : "Expand to full width"}
+              className="cron-detail-expand-toggle rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
+              leadingIcon={expanded ? "ph:arrows-in-simple" : "ph:arrows-out-simple"}
+            />
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={onClose}
               aria-label="Close"
               className="rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
@@ -819,234 +927,44 @@ function CodexDetailPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-        <div className="cron-detail-summary-grid grid grid-cols-2 gap-2">
+      {/* Merge of main's expanded variant with the split-fit container: columns
+          key off the pane, not the viewport (cave-hivd). */}
+      <div className={`@container flex-1 overflow-y-auto py-5 ${expanded ? "px-6 md:px-8" : "px-5"}`}>
+        <div className={`space-y-5${expanded ? " mx-auto w-full max-w-6xl" : ""}`}>
+        <div className={`cron-detail-summary-grid grid grid-cols-2 gap-2${expanded ? " @min-[900px]:grid-cols-4" : ""}`}>
           <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
           <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
           <CronSummaryTile label="Model" value={model.trim() || "Default"} />
           <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
         </div>
 
-        <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
-          <div>
-            <FieldLabel>Name</FieldLabel>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <FieldLabel>Tags</FieldLabel>
-              <input
-                value={tagsText}
-                onChange={(event) => setTagsText(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
+        {expanded ? (
+          <div className="grid items-start gap-5 lg:grid-cols-2">
+            <div className="min-w-0 space-y-5">
+              {identitySection}
+              {scheduleSection}
             </div>
-            <div>
-              <FieldLabel>Skill</FieldLabel>
-              <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+            <div className="min-w-0 space-y-5">
+              {instructionsSection}
+              {runtimeSection}
             </div>
+            {runsSection && <div className="min-w-0 lg:col-span-2">{runsSection}</div>}
           </div>
-        </CronDetailSection>
-
-        <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
-          <div>
-            <FieldLabel>Goals</FieldLabel>
-            <textarea
-              value={goals}
-              onChange={(event) => setGoals(event.target.value)}
-              rows={5}
-              className={automationTextareaClass}
-              style={fieldStyle}
-            />
+        ) : (
+          <div className="space-y-5">
+            {identitySection}
+            {instructionsSection}
+            {scheduleSection}
+            {runtimeSection}
+            {runsSection}
           </div>
-          <div>
-            <FieldLabel>Deliverables</FieldLabel>
-            <textarea
-              value={deliverables}
-              onChange={(event) => setDeliverables(event.target.value)}
-              rows={4}
-              className={automationTextareaClass}
-              style={fieldStyle}
-            />
-          </div>
-        </CronDetailSection>
-
-        <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
-          <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
-            role="group"
-            aria-label="Schedule mode"
-          >
-            {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <Button
-                key={mode}
-                variant="ghost"
-                size="xs"
-                onClick={() => setScheduleMode(mode)}
-                aria-pressed={scheduleMode === mode}
-                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] capitalize"
-                style={{
-                  background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
-                }}
-              >
-                {mode}
-              </Button>
-            ))}
-          </div>
-
-          {scheduleMode === "raw" ? (
-            <textarea
-              value={rawRrule}
-              onChange={(event) => setRawRrule(event.target.value)}
-              rows={3}
-              className={automationMonoTextareaClass}
-              style={fieldStyle}
-            />
-          ) : (
-            <div className="space-y-3">
-              {scheduleMode === "weekly" && (
-                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days of week">
-                  {RRULE_DAY_ORDER.map((day) => {
-                    const selected = scheduleDays.includes(day);
-                    return (
-                      <Button
-                        key={day}
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => toggleDay(day)}
-                        aria-pressed={selected}
-                        className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
-                        style={{
-                          background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
-                          borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
-                          color: selected ? "var(--text-primary)" : "var(--text-muted)",
-                        }}
-                      >
-                        {RRULE_DAY_LABEL[day]}
-                      </Button>
-                    );
-                  })}
-                </div>
-              )}
-              <input
-                type="time"
-                value={scheduleTime}
-                onChange={(event) => setScheduleTime(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
-            </div>
-          )}
-          <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
-            {nextRrule || "RRULE required"}
-          </p>
-        </CronDetailSection>
-
-        <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <FieldLabel>Model</FieldLabel>
-              <input
-                value={model}
-                onChange={(event) => setModel(event.target.value)}
-                className={automationInputClass}
-                style={fieldStyle}
-              />
-            </div>
-            <div>
-              <FieldLabel>Reasoning</FieldLabel>
-              <StandardSelect
-                label="Reasoning"
-                value={reasoningEffort}
-                onChange={setReasoningEffort}
-                className={automationSelectClass}
-                style={fieldStyle}
-                options={[
-                  ...(!["low", "medium", "high"].includes(reasoningEffort)
-                    ? [{ value: reasoningEffort, label: reasoningEffort }]
-                    : []),
-                  { value: "low", label: "low" },
-                  { value: "medium", label: "medium" },
-                  { value: "high", label: "high" },
-                ]}
-              />
-            </div>
-            <div>
-              <FieldLabel>Environment</FieldLabel>
-              <StandardSelect
-                label="Environment"
-                value={executionEnvironment}
-                onChange={setExecutionEnvironment}
-                className={automationSelectClass}
-                style={fieldStyle}
-                options={[
-                  ...(!["worktree", "repo"].includes(executionEnvironment)
-                    ? [{ value: executionEnvironment, label: executionEnvironment }]
-                    : []),
-                  { value: "worktree", label: "worktree" },
-                  { value: "repo", label: "repo" },
-                ]}
-              />
-            </div>
-          </div>
-          <div>
-            <FieldLabel>Working directories</FieldLabel>
-            <CwdPickerField
-              value={cwdsText}
-              onChange={setCwdsText}
-              familiarId={auto.familiars[0] ?? ""}
-              textareaClass={automationMonoTextareaClass}
-              fieldStyle={fieldStyle}
-            />
-          </div>
-        </CronDetailSection>
-
-        {runs.length > 0 && (
-          <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
-            <ul className="mt-1 space-y-1">
-              {runs.slice(0, 10).map((r) => (
-                <li key={r.id}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => void toggleRunLog(r.id)}
-                    aria-expanded={openRunId === r.id}
-                    aria-controls={`automation-run-log-${r.id}`}
-                    aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
-                    className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
-                  >
-                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: runStatusColor(r.status) }} />
-                    <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
-                    {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
-                    <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
-                      <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
-                    </span>
-                  </Button>
-                  {openRunId === r.id && (
-                    <pre
-                      id={`automation-run-log-${r.id}`}
-                      className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
-                      style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                    >
-                      {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
-                    </pre>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </CronDetailSection>
         )}
+        </div>
       </div>
 
-      <div className="cron-detail-actions border-t px-5 py-4 space-y-3"
+      <div className="cron-detail-actions border-t px-5 py-4"
         style={{ borderColor: "var(--border-hairline)" }}>
+        <div className={`space-y-3${expanded ? " mx-auto w-full max-w-xl" : ""}`}>
         {saveBlockedReason ? (
           <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
             {saveBlockedReason}
@@ -1092,6 +1010,7 @@ function CodexDetailPanel({
           >
             Delete
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -1155,12 +1074,13 @@ function AutomationScheduleRow({
           </span>
         )}
         {lastRun && (
-          <span className="shrink-0 text-[11px]" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
+          <span className="shrink-0 text-[11px] @max-[600px]:hidden" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
             Run {relTime(lastRun.startedAt)}
           </span>
         )}
-        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
-          {auto.scheduleHuman}
+        <span className="cron-schedule-chip shrink-0 @max-[440px]:hidden" title={`Runs ${auto.scheduleHuman}`}>
+          <Icon name="ph:clock" width={11} aria-hidden className="cron-schedule-chip__icon" />
+          <span className="tabular-nums">{auto.scheduleHuman}</span>
         </span>
       </button>
       {actions && (
@@ -1269,13 +1189,28 @@ function InboxKindBadge({ kind }: { kind: InboxItem["kind"] }) {
 function InboxFeedRow({
   item,
   selected,
+  selectMode,
+  checked,
   familiarLabel,
   onSelect,
+  onToggle,
+  onDone,
+  onSnooze,
+  onDismiss,
+  onUnwatch,
 }: {
   item: InboxItem;
   selected: boolean;
+  selectMode: boolean;
+  checked: boolean;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onToggle: (id: string) => void;
+  onDone?: (item: InboxItem) => void;
+  onSnooze?: (item: InboxItem) => void;
+  onDismiss?: (item: InboxItem) => void;
+  /** One-click "stop these" for GitHub-event notifications (cave-hlxn). */
+  onUnwatch?: (item: InboxItem, repo: string) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
   const when = item.firedAt
@@ -1283,16 +1218,39 @@ function InboxFeedRow({
     : item.fireAt
     ? relTime(item.fireAt)
     : relTime(item.updatedAt);
+  // Done/snooze/dismiss only make sense while the item is still live; snooze
+  // additionally only for something that already fired (re-surface later).
+  const resolved = item.status === "done" || item.status === "dismissed";
+  // In select mode the row IS a checkbox (click/Enter/Space toggle); otherwise
+  // it opens the detail panel — the shared list select-mode pattern.
+  const active = selectMode ? checked : selected;
+  const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
+  const watchedRepo = repoFromGithubSubTag(item.auto);
 
   return (
-    <li>
+    <li className="flex items-center">
       <button
         type="button"
-        onClick={() => onSelect(item)}
-        aria-current={selected ? "true" : undefined}
-        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
+        role={selectMode ? "checkbox" : undefined}
+        aria-checked={selectMode ? checked : undefined}
+        onClick={activate}
+        aria-current={!selectMode && selected ? "true" : undefined}
+        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${active ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
       >
-        <StatusIcon item={item} />
+        {selectMode ? (
+          <span
+            aria-hidden
+            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
+            style={{
+              borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)",
+              background: checked ? "var(--accent-presence)" : "transparent",
+            }}
+          >
+            {checked && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
+          </span>
+        ) : (
+          <StatusIcon item={item} />
+        )}
         <span className="flex-1 min-w-0 flex items-center gap-2">
           <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
             {item.title}
@@ -1308,53 +1266,114 @@ function InboxFeedRow({
           {when}
         </span>
       </button>
+      {!selectMode && !resolved && (onDone || onSnooze || onDismiss || onUnwatch) && (
+        <RowActions>
+          {onDone && (
+            <RowActionButton icon="ph:check-bold" label={`Mark ${item.title} done`} text="Done" onClick={() => onDone(item)} />
+          )}
+          {onSnooze && item.status === "fired" && (
+            <RowActionButton icon="ph:clock-countdown" label={`Snooze ${item.title} for 1 hour`} text="Snooze 1h" onClick={() => onSnooze(item)} />
+          )}
+          {onUnwatch && watchedRepo && (
+            <RowActionButton
+              icon="ph:bell-slash"
+              label={`Unwatch ${watchedRepo} — stop GitHub notifications from it`}
+              text="Unwatch"
+              onClick={() => onUnwatch(item, watchedRepo)}
+            />
+          )}
+          {onDismiss && (
+            <RowActionButton icon="ph:x" label={`Dismiss ${item.title}`} text="Dismiss" onClick={() => onDismiss(item)} />
+          )}
+        </RowActions>
+      )}
     </li>
   );
 }
 
 function InboxFeedSection({
-  title,
-  accent,
-  items,
+  group,
   selectedId,
+  selectMode,
+  groupChecked,
+  onToggleGroup,
+  isSelected,
+  onToggle,
   familiarLabel,
   onSelect,
+  onDone,
+  onSnooze,
+  onDismiss,
+  onUnwatch,
 }: {
-  title: string;
-  accent?: boolean;
-  items: InboxItem[];
+  group: InboxFeedGroup;
   selectedId: string | null;
+  selectMode: boolean;
+  groupChecked: boolean;
+  onToggleGroup: (group: InboxFeedGroup) => void;
+  isSelected: (id: string) => boolean;
+  onToggle: (id: string) => void;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onDone?: (item: InboxItem) => void;
+  onSnooze?: (item: InboxItem) => void;
+  onDismiss?: (item: InboxItem) => void;
+  onUnwatch?: (item: InboxItem, repo: string) => void;
 }) {
   const headingId = useId();
-  if (items.length === 0) return null;
+  if (group.items.length === 0) return null;
   return (
     <section className="mb-6" aria-labelledby={headingId}>
       <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
         style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
+        {/* Select a whole group at once — the header grows a checkbox in
+            select mode so a tier/kind/familiar bucket is one click to act on. */}
+        {selectMode ? (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={groupChecked}
+            aria-label={`Select every item in ${group.title}`}
+            title={`Select all ${group.items.length} in ${group.title}`}
+            onClick={() => onToggleGroup(group)}
+            className="focus-ring flex h-[16px] w-[16px] shrink-0 items-center justify-center rounded-[4px] border transition-colors"
+            style={{
+              borderColor: groupChecked ? "var(--accent-presence)" : "var(--border-strong)",
+              background: groupChecked ? "var(--accent-presence)" : "transparent",
+            }}
+          >
+            {groupChecked && <Icon name="ph:check-bold" width={11} className="text-[var(--accent-presence-foreground)]" aria-hidden />}
+          </button>
+        ) : null}
         <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
-          {title}
+          {group.title}
         </h3>
         <span
           className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
           style={
-            accent
+            group.accent
               ? { background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }
               : { background: "var(--bg-raised)", color: "var(--text-muted)" }
           }
         >
-          {items.length}
+          {group.items.length}
         </span>
       </div>
       <ul aria-labelledby={headingId}>
-        {items.map((item) => (
+        {group.items.map((item) => (
           <InboxFeedRow
             key={item.id}
             item={item}
             selected={selectedId === item.id}
+            selectMode={selectMode}
+            checked={isSelected(item.id)}
             familiarLabel={familiarLabel}
             onSelect={onSelect}
+            onToggle={onToggle}
+            onDone={onDone}
+            onSnooze={onSnooze}
+            onDismiss={onDismiss}
+            onUnwatch={onUnwatch}
           />
         ))}
       </ul>
@@ -1363,28 +1382,54 @@ function InboxFeedSection({
 }
 
 function InboxFeedList({
-  needsYou,
-  active,
-  resolved,
+  groups,
   selectedId,
+  selectMode,
+  isSelected,
+  groupSelected,
+  onToggleGroup,
+  onToggle,
   familiarLabel,
   onSelect,
+  onDone,
+  onSnooze,
+  onDismiss,
+  onUnwatch,
 }: {
-  needsYou: InboxItem[];
-  active: InboxItem[];
-  resolved: InboxItem[];
+  groups: InboxFeedGroup[];
   selectedId: string | null;
+  selectMode: boolean;
+  isSelected: (id: string) => boolean;
+  groupSelected: (group: InboxFeedGroup) => boolean;
+  onToggleGroup: (group: InboxFeedGroup) => void;
+  onToggle: (id: string) => void;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onDone?: (item: InboxItem) => void;
+  onSnooze?: (item: InboxItem) => void;
+  onDismiss?: (item: InboxItem) => void;
+  onUnwatch?: (item: InboxItem, repo: string) => void;
 }) {
   return (
     <>
-      <InboxFeedSection title="Needs you" accent items={needsYou} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <InboxFeedSection title="Active" items={active} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <InboxFeedSection title="Resolved" items={resolved} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
+      {groups.map((group) => (
+        <InboxFeedSection
+          key={group.id}
+          group={group}
+          selectedId={selectedId}
+          selectMode={selectMode}
+          groupChecked={groupSelected(group)}
+          onToggleGroup={onToggleGroup}
+          isSelected={isSelected}
+          onToggle={onToggle}
+          familiarLabel={familiarLabel}
+          onSelect={onSelect}
+          onDone={onDone}
+          onSnooze={onSnooze}
+          onDismiss={onDismiss}
+          onUnwatch={onUnwatch}
+        />
+      ))}
     </>
   );
 }
@@ -1510,29 +1555,21 @@ function AutomationEntryRow({
           </span>
         </button>
         <span className="mt-1.5 flex items-center gap-1">
-          <button
-            type="button"
-            disabled={busy}
+          <RowActionButton
+            icon="ph:play"
+            label={`Run ${entry.name} now`}
+            text={busy ? "…" : "Run"}
             onClick={() => onRun(entry)}
-            aria-label={`Run ${entry.name} now`}
-            className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            <Icon name="ph:play" width={11} aria-hidden />
-            {busy ? "…" : "Run"}
-          </button>
+            disabled={busy}
+          />
           {onTogglePause && (
-            <button
-              type="button"
-              disabled={busy}
+            <RowActionButton
+              icon={entryPaused ? "ph:play" : "ph:pause"}
+              label={`${entryPaused ? "Resume" : "Pause"} ${entry.name}`}
+              text={entryPaused ? "Resume" : "Pause"}
               onClick={() => onTogglePause(entry)}
-              aria-label={`${entryPaused ? "Resume" : "Pause"} ${entry.name}`}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <Icon name={entryPaused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
-              {entryPaused ? "Resume" : "Pause"}
-            </button>
+              disabled={busy}
+            />
           )}
         </span>
       </span>
@@ -1605,39 +1642,28 @@ function ManagedAutomationRow({
         <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
         <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--text-muted)" }}>{meta}</span>
         <span className="mt-1.5 flex items-center gap-1">
-          <button
-            type="button"
-            disabled={busy}
+          <RowActionButton
+            icon="ph:play"
+            label={`Run ${name} now`}
+            text={busy ? "…" : "Run"}
             onClick={onRun}
-            aria-label={`Run ${name} now`}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            <Icon name="ph:play" width={11} aria-hidden />
-            {busy ? "…" : "Run"}
-          </button>
+            disabled={busy}
+          />
           {onTogglePause && (
-            <button
-              type="button"
-              disabled={busy}
+            <RowActionButton
+              icon={paused ? "ph:play" : "ph:pause"}
+              label={`${paused ? "Resume" : "Pause"} ${name}`}
+              text={paused ? "Resume" : "Pause"}
               onClick={onTogglePause}
-              aria-label={`${paused ? "Resume" : "Pause"} ${name}`}
-              className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              <Icon name={paused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
-              {paused ? "Resume" : "Pause"}
-            </button>
+              disabled={busy}
+            />
           )}
-          <button
-            type="button"
+          <RowActionButton
+            icon="ph:arrow-square-out"
+            label={`Open ${name}`}
+            text="Open"
             onClick={onOpen}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            <Icon name="ph:arrow-square-out" width={11} aria-hidden />
-            Open
-          </button>
+          />
         </span>
       </span>
     </div>
@@ -1773,13 +1799,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // otherwise it falls to <body> and keyboard users lose their place.
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
   const [activeTab, setActiveTab] = useState<AutomationTab>(
-    initialTab === "calendar" && calendarSlot ? "calendar" : calendarSlot ? "calendar" : "crons",
+    initialTab === "calendar" && calendarSlot ? "calendar" : initialTab === "crons" ? "crons" : "inbox",
   );
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // GitHub subscriptions manager, reachable from the Inbox tab (cave-hlxn).
+  const [subsOpen, setSubsOpen] = useState(false);
+  const [subsHasPat, setSubsHasPat] = useState(false);
   const [templateInitialValues, setTemplateInitialValues] = useState<AutomationCreateInitialValues | undefined>();
   const [templatesQuery, setTemplatesQuery] = useState("");
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
@@ -1788,19 +1817,29 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // runs fetch when a faster, later selection won.
   const mountedRef = useRef(true);
   const runsReqRef = useRef(0);
+  // Sequence guard for load(), mirroring runsReqRef: load() runs from mount, the
+  // 15s poll, AND after every mutation (toggle/save/delete all await load()), so
+  // an in-flight poll can resolve *after* a mutation's reload and reapply its
+  // pre-mutation data — a just-paused cron would flip back to Active for up to
+  // 15s. Dropping a superseded load's writes closes that revert-flash.
+  const loadReqRef = useRef(0);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
   const load = useCallback(async () => {
+    const reqId = ++loadReqRef.current;
+    // Live only while this is still the newest load AND the view is mounted; a
+    // superseded (or unmounted) load drops all its writes.
+    const live = () => reqId === loadReqRef.current && mountedRef.current;
     try {
       const [inboxRes, codexRes] = await Promise.all([
         fetch("/api/inbox", { cache: "no-store" }),
         fetch("/api/codex-automations", { cache: "no-store" }),
       ]);
       const inboxJson = await inboxRes.json();
-      if (!mountedRef.current) return;
+      if (!live()) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
       // Content-equality guards (codebase convention — see board-view/workspace):
       // an unchanged poll keeps the previous references, so derived memos,
@@ -1809,16 +1848,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const nextItems = inboxJson.items ?? [];
       setItems((prev) => (arrayContentEqual(prev, nextItems) ? prev : nextItems));
       const codexJson = await codexRes.json();
-      if (!mountedRef.current) return;
+      if (!live()) return;
       if (codexJson.ok) {
         const nextAutos = codexJson.automations ?? [];
         setCodexAutos((prev) => (arrayContentEqual(prev, nextAutos) ? prev : nextAutos));
       }
       setError(null);
     } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : "fetch failed");
+      if (live()) setError(err instanceof Error ? err.message : "fetch failed");
     } finally {
-      if (mountedRef.current) setInitialLoadDone(true);
+      if (live()) setInitialLoadDone(true);
     }
   }, []);
 
@@ -1829,7 +1868,26 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const json = await res.json().catch(() => null);
       // Drop a stale runs response: a later selection (or poll) superseded it.
       if (reqId !== runsReqRef.current || !mountedRef.current) return;
-      if (json?.ok && Array.isArray(json.runs)) setAutomationRuns(json.runs);
+      if (json?.ok && Array.isArray(json.runs)) {
+        // Content-guard: an unchanged poll keeps the array identity, so the
+        // in-flight poll effect below stops tearing down its interval every
+        // 2.5s tick (cave-1e6k).
+        const runs = json.runs as AutomationRunRecord[];
+        setAutomationRuns((prev) => (arrayContentEqual(prev, runs) ? prev : runs));
+        // This response already carries the newest run — update the row badge
+        // map here instead of re-fetching the same endpoint via the
+        // every-automation fan-out.
+        const newest = runs[0];
+        if (newest) {
+          setLastRunById((prev) => {
+            const current = prev.get(id);
+            if (current && JSON.stringify(current) === JSON.stringify(newest)) return prev;
+            const next = new Map(prev);
+            next.set(id, newest);
+            return next;
+          });
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -1898,17 +1956,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   }, [selectedCodex?.id, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // While a run is in flight, poll so its status + log fill in without a manual refresh.
+  // Depends on a derived boolean (not the runs array) so the interval survives
+  // poll ticks; refreshRuns also maintains this automation's last-run badge,
+  // so the every-automation refreshLastRuns fan-out stays out of the hot loop
+  // (cave-1e6k).
+  const hasRunningRun = automationRuns.some((r) => r.status === "running");
   useEffect(() => {
-    if (!selectedCodex?.id) return;
-    if (!automationRuns.some((r) => r.status === "running")) return;
+    if (!selectedCodex?.id || !hasRunningRun) return;
     const id = selectedCodex.id;
     const t = setInterval(() => {
       if (document.hidden) return; // don't poll a backgrounded tab
       void refreshRuns(id);
-      void refreshLastRuns();
     }, 2500);
     return () => clearInterval(t);
-  }, [selectedCodex?.id, automationRuns, refreshRuns, refreshLastRuns]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCodex?.id, hasRunningRun, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh last-run map whenever the automation list changes
   useEffect(() => {
@@ -1999,6 +2060,59 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
+
+  // ── Inbox feed row actions (Done / Snooze / Dismiss) ──────────────────────
+  const completeInboxItem = (item: InboxItem) => {
+    announce(`Marked '${item.title}' done.`);
+    return actItem(item.id, "done");
+  };
+  const snoozeInboxItem = (item: InboxItem) => {
+    announce(`Snoozed '${item.title}' for 1 hour.`);
+    return actItem(item.id, "snooze", { minutes: 60 });
+  };
+  const dismissInboxItem = (item: InboxItem) => {
+    announce(`Dismissed '${item.title}'.`);
+    return actItem(item.id, "dismiss");
+  };
+
+  const openSubscriptions = useCallback(async () => {
+    // The modal renders a connect hint without a PAT — resolve the live
+    // status on open instead of polling it alongside the feed.
+    try {
+      const res = await fetch("/api/github/pat", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      setSubsHasPat(Boolean(data?.hasPat));
+    } catch {
+      setSubsHasPat(false);
+    }
+    setSubsOpen(true);
+  }, []);
+
+  // One-click "stop these": drop the repo behind a GitHub-event notification
+  // from the watch list. Reversible from the Subscriptions manager.
+  const unwatchRepo = useCallback(async (item: InboxItem, repo: string) => {
+    setBusyId(item.id);
+    try {
+      const res = await fetch("/api/github/subscriptions", { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (!data?.ok) throw new Error(data?.error ?? "could not load subscriptions");
+      const repos: string[] = Array.isArray(data.prefs?.repos) ? data.prefs.repos : [];
+      if (repos.includes(repo)) {
+        const patch = await fetch("/api/github/subscriptions", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ repos: repos.filter((r) => r !== repo) }),
+        });
+        const patched = await patch.json().catch(() => null);
+        if (!patch.ok || !patched?.ok) throw new Error(patched?.error ?? `http ${patch.status}`);
+      }
+      announce(`Unwatched ${repo} — no new GitHub notifications from it.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "unwatch failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [announce]);
 
   // ── Codex toggle ──────────────────────────────────────────────────────────
   const toggleCodex = useCallback(async (auto: CodexAutomation) => {
@@ -2136,90 +2250,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Normalized text filter applied to whichever tab is active (title/name).
   const q = query.trim().toLowerCase();
 
-  // ── Sections ──────────────────────────────────────────────────────────────
-  const reminderItems = useMemo(() =>
-    items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q))),
-    [items, hiddenIds, q]);
-
-  const current = useMemo(() =>
-    reminderItems.filter((it) =>
-      (it.status === "pending" || it.status === "fired") &&
-      it.recurrence && it.recurrence.type !== "none"
-    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [reminderItems]);
-
-  const paused = useMemo(() =>
-    reminderItems.filter((it) =>
-      it.status === "dismissed" && it.recurrence && it.recurrence.type !== "none"
-    ).sort((a, b) => (a.title).localeCompare(b.title)),
-    [reminderItems]);
-
-  const oneShots = useMemo(() =>
-    reminderItems.filter((it) =>
-      (!it.recurrence || it.recurrence.type === "none") &&
-      (it.status === "pending" || it.status === "snoozed")
-    ).sort((a, b) => (a.fireAt ?? "").localeCompare(b.fireAt ?? "")),
-    [reminderItems]);
-
-  const history = useMemo(() =>
-    reminderItems.filter((it) =>
-      it.status === "fired" || it.status === "done" ||
-      (it.status === "dismissed" && (!it.recurrence || it.recurrence.type === "none"))
-    ).sort((a, b) => (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt))
-      .slice(0, 20),
-    [reminderItems]);
-
-  // Multi-select over exactly the reminders rendered across the four sections,
-  // so "Select all" and the count match what's on screen.
-  const reminderVisible = useMemo(
-    () => [...current, ...paused, ...oneShots, ...history],
-    [current, paused, oneShots, history],
-  );
-  const reminderSelect = useMultiSelect(reminderVisible, (it) => it.id);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const selectedRealIds = () =>
-    reminderSelect
-      .selectedFrom(reminderVisible)
-      .map((it) => it.id)
-      .filter((id) => !id.startsWith("eph:"));
-
-  const bulkPatchReminders = async (body: object) => {
-    const ids = selectedRealIds();
-    if (ids.length === 0) { reminderSelect.exit(); return; }
-    setBulkBusy(true);
-    try {
-      await Promise.all(ids.map((id) =>
-        fetch(`/api/inbox/${id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }).then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "bulk action failed");
-    } finally {
-      setBulkBusy(false);
-      reminderSelect.exit();
-    }
-  };
-
-  const bulkDeleteReminders = () => {
-    const ids = selectedRealIds();
-    if (ids.length === 0) { reminderSelect.exit(); return; }
-    reminderSelect.exit();
-    scheduleDelete(ids, `${ids.length} reminder${ids.length === 1 ? "" : "s"}`, async () => {
-      const idSet = new Set(ids);
-      setItems((prev) => prev.filter((i) => !idSet.has(i.id)));
-      try {
-        await Promise.all(ids.map((id) =>
-          fetch(`/api/inbox/${id}`, { method: "DELETE" })
-            .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "bulk delete failed");
-      } finally { await load(); }
-    });
-  };
-
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const familiarsById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -2255,14 +2285,98 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     [codexAutos, familiarFilter, hiddenIds, q],
   );
 
-  // Inbox tab: the FULL feed (every kind), grouped by attention tier.
-  const inboxFeed = useMemo(() => groupInboxFeed(items.filter((it) => !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q)))), [items, hiddenIds, q]);
-  const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
+  // Inbox tab: the FULL feed (every kind). `inboxVisible` is the search-filtered
+  // flat list — the selection universe, so "select all" always means "all
+  // matches" while a filter is active. Groups re-shape per the group-by control.
+  const inboxVisible = useMemo(
+    () => items.filter((it) => !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q))),
+    [items, hiddenIds, q],
+  );
+  const inboxFeed = useMemo(() => groupInboxFeed(inboxVisible), [inboxVisible]);
+  const [inboxGroupBy, setInboxGroupBy] = useState<InboxGroupBy>(() => {
+    if (typeof window === "undefined") return "attention";
+    const raw = window.localStorage.getItem("cave:inbox:group-by");
+    return raw === "kind" || raw === "familiar" ? raw : "attention";
+  });
+  const updateInboxGroupBy = useCallback((next: InboxGroupBy) => {
+    setInboxGroupBy(next);
+    try {
+      window.localStorage.setItem("cave:inbox:group-by", next);
+    } catch {
+      /* ignore storage errors */
+    }
+  }, []);
+  const inboxGroups = useMemo(
+    () => buildInboxGroups(inboxVisible, inboxGroupBy, familiarLabel),
+    [inboxVisible, inboxGroupBy, familiarLabel],
+  );
+
+  // Multi-select over exactly the visible (search-filtered) feed, so "Select
+  // all" and per-group selection act on what's on screen — a live search term
+  // makes the selection universe "every match".
+  const inboxSelect = useMultiSelect(inboxVisible, (it) => it.id);
+  const [inboxBulkBusy, setInboxBulkBusy] = useState(false);
+  // Ephemeral (client-synthesized "eph:*") items have no server row — the
+  // single-item PATCH/DELETE paths skip them, and bulk must too.
+  const selectedInboxIds = () =>
+    inboxSelect
+      .selectedFrom(inboxVisible)
+      .map((it) => it.id)
+      .filter((id) => !id.startsWith("eph:"));
+
+  /** One-write collective action over the current selection (POST /api/inbox/bulk). */
+  const inboxBulkAct = async (action: "read" | "done" | "dismiss", pastTense: string) => {
+    const ids = selectedInboxIds();
+    if (ids.length === 0) { inboxSelect.exit(); return; }
+    setInboxBulkBusy(true);
+    try {
+      const res = await fetch("/api/inbox/bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(`${pastTense} ${ids.length} item${ids.length === 1 ? "" : "s"}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "bulk action failed");
+    } finally {
+      setInboxBulkBusy(false);
+      inboxSelect.exit();
+    }
+  };
+
+  /** Collective delete rides the shared undo toast, then ONE bulk request. */
+  const inboxBulkDelete = () => {
+    const ids = selectedInboxIds();
+    if (ids.length === 0) { inboxSelect.exit(); return; }
+    inboxSelect.exit();
+    scheduleDelete(ids, `${ids.length} inbox item${ids.length === 1 ? "" : "s"}`, async () => {
+      const idSet = new Set(ids);
+      setItems((prev) => prev.filter((i) => !idSet.has(i.id)));
+      try {
+        const res = await fetch("/api/inbox/bulk", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "delete", ids }),
+        });
+        if (!res.ok) throw new Error(`http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "bulk delete failed");
+      } finally { await load(); }
+    });
+  };
   const automationsEmpty = codexAutos.length === 0;
   const inboxEmpty = items.length === 0;
   const selectedReminderId = selectedItem?.id ?? null;
   const selectedAutomationId = selectedCodex?.id ?? null;
   const detailOpen = Boolean(selectedItem || selectedCodex);
+  // The cron detail can grow from its side rail into the full page width —
+  // the compact rail stays the default; expanding gives the form room to
+  // breathe (summary tiles go 4-up, sections flow into two columns) and
+  // hides the list until collapsed again. Reminder details keep the rail.
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const cronDetailExpanded = detailExpanded && Boolean(selectedCodex);
 
   // At-a-glance operational summary for the header: how many automations are
   // live vs paused. Crons fire server-side, so they don't contribute a next-fire
@@ -2278,6 +2392,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
     setQuery(""); // the filter is scoped to one tab at a time
+    inboxSelect.exit(); // selection is an inbox-tab mode, never carried across
     // Clear any open detail on switch — the new tab may not host that type.
     setSelectedItem(null);
     setSelectedCodex(null);
@@ -2286,82 +2401,125 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   return (
     <ScheduleActionsContext.Provider
       value={{
-        runReminder: runNow,
-        togglePauseReminder: togglePaused,
         runAutomation: runCodexNow,
         togglePauseAutomation: toggleCodex,
       }}
     >
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
-      <div className={`${detailOpen ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col`}>
-        {/* Page header */}
-        <div className="flex items-center justify-between px-8 pt-8 pb-5">
-          <div>
-            <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
-              Schedules
-            </h1>
-            <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              {activeTab === "calendar"
-                ? "Calendar deadlines and cron schedules in one place."
-                : "Recurring cron schedules that run your familiar workflows."}
+      <div className={`${detailOpen ? (cronDetailExpanded ? "hidden" : "hidden md:flex") : "flex"} flex-1 min-w-0 flex-col`}>
+        {/* Compact header: title, tabs, live summary, filter, and actions in
+            ONE slim topmost band — mirrors the GitHub surface's
+            gh-compact-header so operational surfaces share the same
+            minimalist chrome. */}
+        <div className="surface-compact-header">
+          <h1 className="surface-compact-title">Rituals</h1>
+          <Tabs
+            className="surface-compact-tabs"
+            variant="segment"
+            size="sm"
+            ariaLabel="Rituals tabs"
+            idPrefix="automations"
+            value={activeTab}
+            onChange={selectTab}
+            items={[
+              { id: "inbox" as const, label: "Inbox", count: inboxFeed.needsYou.length },
+              ...(calendarSlot ? [{ id: "calendar" as const, label: "Calendar" }] : []),
+              { id: "crons", label: "Crons", count: codexAutos.length },
+            ] satisfies TabItem<AutomationTab>[]}
+          />
+          {activeTab === "crons" && initialLoadDone && summary.active + summary.paused > 0 && (
+            <p className="surface-compact-summary">
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
+                {summary.active} active
+              </span>
+              {summary.paused > 0 && <span>· {summary.paused} paused</span>}
+              {summary.soonest && (
+                <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
+              )}
             </p>
-            {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
-              <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          )}
+          {activeTab === "inbox" && initialLoadDone && inboxFeed.needsYou.length + inboxFeed.active.length > 0 && (
+            <p className="surface-compact-summary">
+              {inboxFeed.needsYou.length > 0 && (
                 <span className="inline-flex items-center gap-1.5">
-                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
-                  {summary.active} active
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--color-warning)" }} />
+                  {inboxFeed.needsYou.length} need{inboxFeed.needsYou.length === 1 ? "s" : ""} you
                 </span>
-                {summary.paused > 0 && <span>· {summary.paused} paused</span>}
-                {summary.soonest && (
-                  <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
-                )}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
+              )}
+              {inboxFeed.active.length > 0 && <span>{inboxFeed.needsYou.length > 0 ? "· " : ""}{inboxFeed.active.length} active</span>}
+            </p>
+          )}
+          <div className="surface-compact-actions">
+            {/* Text filter, scoped per tab. Gated on the UNfiltered presence
+                of rows so filtering to zero never hides the box (you can still
+                clear) — and it stays up in inbox select mode, so "search →
+                select all matches → act" is one flow. */}
+            {activeTab !== "calendar" && initialLoadDone &&
+              (activeTab === "inbox" ? items.length > 0 : codexAutos.length > 0) ? (
+              <div className="surface-compact-search">
+                <SearchInput
+                  value={query}
+                  onValueChange={setQuery}
+                  onClear={() => setQuery("")}
+                  placeholder={activeTab === "inbox" ? "Filter inbox…" : "Filter crons…"}
+                  aria-label={activeTab === "inbox" ? "Filter inbox" : "Filter crons"}
+                />
+              </div>
+            ) : null}
+            {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 ? (
+              // Group-by reads as three visible choices (marketplace kind-filter
+              // precedent), not a dropdown — one glance shows the active dimension.
+              <Tabs
+                variant="segment"
+                size="sm"
+                bordered={false}
+                ariaLabel="Group inbox by"
+                value={inboxGroupBy}
+                onChange={updateInboxGroupBy}
+                items={INBOX_GROUP_BY_OPTIONS.map((option) => ({ id: option.value, label: option.label }))}
+              />
+            ) : null}
+            {activeTab === "inbox" && initialLoadDone && inboxVisible.length > 0 && !inboxSelect.selectMode ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                leadingIcon="ph:check-square"
+                onClick={() => inboxSelect.setSelectMode(true)}
+                title="Pick inbox items (or whole groups) for a collective action"
+              >
+                Select
+              </Button>
+            ) : null}
+            {activeTab === "inbox" && !inboxSelect.selectMode ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                leadingIcon="ph:github-logo"
+                onClick={() => void openSubscriptions()}
+                title="Choose which GitHub repos and events land in this Inbox"
+              >
+                Subscriptions
+              </Button>
+            ) : null}
+            {activeTab === "inbox" && onNewReminder ? (
+              <Button size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={onNewReminder}>
+                New reminder
+              </Button>
+            ) : null}
             {activeTab === "crons" ? (
-              <Button ref={newBtnRef} className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+              <Button ref={newBtnRef} size="sm" className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
                 New cron
               </Button>
             ) : null}
           </div>
         </div>
 
-        <div className="px-8 pb-4">
-          <Tabs
-            variant="segment"
-            ariaLabel="Schedules tabs"
-            idPrefix="automations"
-            value={activeTab}
-            onChange={selectTab}
-            items={[
-              ...(calendarSlot ? [{ id: "calendar" as const, label: "Calendar" }] : []),
-              { id: "crons", label: "Crons", count: codexAutos.length },
-            ] satisfies TabItem<AutomationTab>[]}
-          />
-        </div>
-
-        {/* Text filter for the active tab. Gated on the UNfiltered presence of
-            rows so filtering to zero never hides the box (you can still clear). */}
-        {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && (
-          codexAutos.length > 0
-        ) ? (
-          <div className="px-8 pb-4">
-            <SearchInput
-              value={query}
-              onValueChange={setQuery}
-              onClear={() => setQuery("")}
-              placeholder="Filter crons…"
-              aria-label="Filter crons"
-            />
-          </div>
-        ) : null}
-
         {error && (
           <div
             role="alert"
-            className="mx-8 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
+            className="mx-8 mt-3 mb-3 flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-4 py-2 text-[11px] text-[var(--color-warning)]"
           >
             <Icon name="ph:warning-circle" width={13} className="shrink-0" />
             <span className="min-w-0 flex-1 truncate">{error}</span>
@@ -2380,7 +2538,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           role="tabpanel"
           id={`automations-panel-${activeTab}`}
           aria-labelledby={`automations-tab-${activeTab}`}
-          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "@container flex-1 overflow-y-auto px-4 pt-4 pb-8 @min-[640px]:px-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
           ) : !initialLoadDone ? (
@@ -2388,10 +2546,78 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
                   key={index}
-                  className="h-14 animate-pulse rounded-lg bg-[var(--bg-raised)]"
+                  className="ui-skeleton ui-skeleton--row"
+                  style={{ height: 56 }}
                 />
               ))}
             </div>
+          ) : activeTab === "inbox" ? (
+            inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0 ? (
+              q ? (
+                <EmptyState
+                  className="mt-12"
+                  icon="ph:magnifying-glass"
+                  headline={`No matches for “${query.trim()}”`}
+                  subtitle="Try a different search term."
+                />
+              ) : (
+                <EmptyState
+                  className="mt-12"
+                  icon="ph:tray"
+                  headline="Inbox zero"
+                  subtitle="Reminders and notifications land here as they fire — enjoy the quiet."
+                  actions={onNewReminder ? <Button leadingIcon="ph:plus" onClick={onNewReminder}>New reminder</Button> : undefined}
+                />
+              )
+            ) : (
+              <>
+                {inboxSelect.selectMode ? (
+                  <SelectionToolbar
+                    allSelected={inboxSelect.allSelected(inboxVisible)}
+                    count={inboxSelect.selectedCount}
+                    onToggleSelectAll={() => inboxSelect.toggleSelectAll(inboxVisible)}
+                    onCancel={() => inboxSelect.exit()}
+                    selectAllLabel={
+                      q
+                        ? `Select all ${inboxVisible.length} match${inboxVisible.length === 1 ? "" : "es"}`
+                        : "Select all"
+                    }
+                  >
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("read", "Marked read")} title="Stamp the selected items as read">
+                      Read
+                    </Button>
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("done", "Marked done")} title="Mark the selected items done">
+                      Done
+                    </Button>
+                    <Button size="xs" variant="ghost" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={() => void inboxBulkAct("dismiss", "Dismissed")} title="Dismiss the selected items">
+                      Dismiss
+                    </Button>
+                    <Button size="xs" variant="danger" disabled={inboxBulkBusy || inboxSelect.selectedCount === 0}
+                      onClick={inboxBulkDelete} title="Delete the selected items (undo window applies)">
+                      Delete
+                    </Button>
+                  </SelectionToolbar>
+                ) : null}
+                <InboxFeedList
+                  groups={inboxGroups}
+                  selectedId={selectedItem?.id ?? null}
+                  selectMode={inboxSelect.selectMode}
+                  isSelected={inboxSelect.isSelected}
+                  groupSelected={(group) => inboxSelect.allSelected(group.items)}
+                  onToggleGroup={(group) => inboxSelect.toggleSelectAll(group.items)}
+                  onToggle={inboxSelect.toggle}
+                  familiarLabel={familiarLabel}
+                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                  onDone={(item) => void completeInboxItem(item)}
+                  onSnooze={(item) => void snoozeInboxItem(item)}
+                  onDismiss={(item) => void dismissInboxItem(item)}
+                  onUnwatch={(item, repo) => void unwatchRepo(item, repo)}
+                />
+              </>
+            )
           ) : q && codexActive.length + codexPaused.length === 0 ? (
             <EmptyState
               className="mt-12"
@@ -2436,7 +2662,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
       {detailOpen && (
-        <div className="w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+        <div
+          className={
+            cronDetailExpanded
+              ? "w-full min-w-0 flex-1 overflow-hidden"
+              : "w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]"
+          }
+          style={{ borderLeft: "1px solid var(--border-hairline)" }}
+        >
           {selectedItem && (
             <DetailPanel
               item={selectedItem}
@@ -2455,7 +2688,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <CodexDetailPanel
               auto={selectedCodex}
               busy={busyId === selectedCodex.id}
-              onClose={() => setSelectedCodex(null)}
+              expanded={cronDetailExpanded}
+              onToggleExpanded={() => setDetailExpanded((v) => !v)}
+              onClose={() => { setSelectedCodex(null); setDetailExpanded(false); }}
               onToggle={toggleCodex}
               onSave={saveCodex}
               onDelete={deleteCodex}
@@ -2474,6 +2709,18 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           initialValues={templateInitialValues}
           onClose={() => { setCreateOpen(false); setTemplateInitialValues(undefined); }}
           onCreate={(i) => void createCodex(i)}
+        />
+      )}
+
+      {/* ── GitHub subscriptions manager (Inbox tab) ───────────────────────── */}
+      {subsOpen && (
+        <GithubSubscriptionsModal
+          hasPat={subsHasPat}
+          onConnectPat={() => {
+            setSubsOpen(false);
+            navigateToMode("github");
+          }}
+          onClose={() => setSubsOpen(false)}
         />
       )}
 

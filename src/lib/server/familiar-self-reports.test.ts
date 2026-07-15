@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
@@ -9,6 +9,7 @@ import {
   appendResponseConfidenceEvent,
   appendSelfReport,
   findSelfReport,
+  listMetricSnapshots,
   listResponseConfidenceEvents,
   listSelfReports,
 } from "./familiar-self-reports.ts";
@@ -181,5 +182,75 @@ describe("familiar self-report storage", () => {
 
   it("listResponseConfidenceEvents returns an empty result for a missing directory", async () => {
     assert.deepEqual(await listResponseConfidenceEvents("cody", {}), { events: [], total: 0 });
+  });
+
+  it("appendSelfReport persists a compact metric snapshot alongside the report", async () => {
+    await appendSelfReport("cody", report({
+      id: "r1",
+      sessionId: "s1",
+      reportedAt: "2026-06-25T10:00:00.000Z",
+      overallConfidence: 82,
+      memoryRecallNotes: "token=sk-proj-abcdefghijklmnopqrstuvwxyz",
+    }));
+
+    const raw = await readFile(
+      path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports", "metric-snapshots", "2026-06-25.jsonl"),
+      "utf8",
+    );
+    const line = JSON.parse(raw.trim());
+    assert.equal(line.id, "r1");
+    assert.equal(line.confidence, 82);
+    // Snapshots are score-only — no free-text fields ride along.
+    assert.equal("memoryRecallNotes" in line, false);
+
+    const listed = await listMetricSnapshots("cody");
+    assert.equal(listed.total, 1);
+    assert.equal(listed.snapshots[0].id, "r1");
+    assert.equal(listed.snapshots[0].toolReliability, 75);
+  });
+
+  it("listMetricSnapshots backfills legacy reports that predate snapshot persistence", async () => {
+    // Simulate a pre-snapshot install: a report file exists, no snapshot dir.
+    const legacyDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports");
+    await mkdir(legacyDir, { recursive: true });
+    const legacy = report({ id: "legacy", sessionId: "s0", reportedAt: "2026-06-20T09:00:00.000Z", overallConfidence: 55 });
+    await writeFile(path.join(legacyDir, "2026-06-20.jsonl"), `${JSON.stringify(legacy)}\n`, "utf8");
+
+    await appendSelfReport("cody", report({ id: "fresh", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z" }));
+
+    const listed = await listMetricSnapshots("cody");
+    assert.equal(listed.total, 2);
+    // Oldest → newest: the trend x-axis.
+    assert.deepEqual(listed.snapshots.map((snapshot) => snapshot.id), ["legacy", "fresh"]);
+    assert.equal(listed.snapshots[0].confidence, 55);
+  });
+
+  it("listMetricSnapshots dedupes by report id (newest persisted line wins) and skips malformed lines", async () => {
+    await appendSelfReport("cody", report({ id: "r1", sessionId: "s1", reportedAt: "2026-06-25T10:00:00.000Z", overallConfidence: 60 }));
+    const snapshotDir = path.join(tmpRoot, "workspaces", "familiars", "cody", "self-reports", "metric-snapshots");
+    // A replayed/repaired line for the same report id, appended later: it wins.
+    await appendFile(
+      path.join(snapshotDir, "2026-06-25.jsonl"),
+      `not-json\n{"id":"half"}\n${JSON.stringify({
+        id: "r1",
+        sessionId: "s1",
+        reportedAt: "2026-06-25T10:00:00.000Z",
+        confidence: 72,
+        toolReliability: 75,
+        memoryRecall: 70,
+        fileLocatability: 65,
+        contextPressure: "adequate",
+      })}\n`,
+      "utf8",
+    );
+
+    const listed = await listMetricSnapshots("cody");
+    assert.equal(listed.total, 1);
+    assert.equal(listed.snapshots[0].id, "r1");
+    assert.equal(listed.snapshots[0].confidence, 72, "the newest persisted line replaces the stale one");
+  });
+
+  it("listMetricSnapshots returns an empty result for a missing directory", async () => {
+    assert.deepEqual(await listMetricSnapshots("cody"), { snapshots: [], total: 0 });
   });
 });

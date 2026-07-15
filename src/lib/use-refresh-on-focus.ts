@@ -9,6 +9,22 @@ export function shouldRefresh(lastMs: number, nowMs: number, minIntervalMs: numb
 }
 
 /**
+ * Call a Tauri unlisten fn without letting it throw — exported for testing.
+ * Tauri's internal `unregisterListener` reads `listeners[eventId].handlerId`
+ * and throws a TypeError when the registry entry is already gone (HMR module
+ * reload or webview navigation resets the injected event map before our
+ * stored unlisten runs). Deregistering an already-gone listener is a no-op,
+ * so swallow it.
+ */
+export function safeUnlisten(un: (() => void) | undefined): void {
+  try {
+    un?.();
+  } catch {
+    /* listener registry already torn down — nothing left to unregister */
+  }
+}
+
+/**
  * Re-run `refresh` whenever the app regains the foreground, so a surface that
  * only fetches on mount doesn't sit on stale data after the user switches away
  * and back — or after the daemon changes data while the window was unfocused.
@@ -61,7 +77,7 @@ export function useRefreshOnFocus(
           const un = await getCurrentWindow().onFocusChanged((e: { payload: boolean }) => {
             if (e.payload) run();
           });
-          if (disposed) un();
+          if (disposed) safeUnlisten(un);
           else unlisten = un;
         } catch {
           /* Tauri window API unavailable — the web listeners still cover most cases. */
@@ -73,7 +89,7 @@ export function useRefreshOnFocus(
       disposed = true;
       window.removeEventListener("focus", run);
       document.removeEventListener("visibilitychange", onVisible);
-      unlisten?.();
+      safeUnlisten(unlisten);
     };
   }, [enabled, minIntervalMs]);
 }

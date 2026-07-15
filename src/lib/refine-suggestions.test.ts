@@ -5,15 +5,25 @@ import {
   generateRefineSuggestions,
 } from "./refine-suggestions.ts";
 
-test("defaults are a small, stable trio", () => {
-  assert.equal(DEFAULT_REFINE_SUGGESTIONS.length, 3);
+test("defaults are a small, stable quartet — 2-or-4 policy, never 3", () => {
+  assert.equal(DEFAULT_REFINE_SUGGESTIONS.length, 4);
   assert.ok(DEFAULT_REFINE_SUGGESTIONS.every((s) => typeof s === "string" && s.length > 0));
 });
 
 test("always returns at least one suggestion, capped at the limit", () => {
   assert.ok(generateRefineSuggestions("", "html").length >= 1);
-  assert.ok(generateRefineSuggestions("", "html").length <= 3);
+  assert.ok(generateRefineSuggestions("", "html").length <= 4);
   assert.equal(generateRefineSuggestions("<button>hi</button>", "html", 2).length, 2);
+});
+
+test("generated row comes as a pair or a spread — never exactly 3", () => {
+  // A polished artifact that trips no rule (has @media, transitions, no
+  // form/button/svg) would pool exactly the 3 fallbacks — trimmed to 2.
+  const polished =
+    "<style>@media (min-width:600px){.a{color:red}} .b{transition:opacity .2s}</style><div>hi</div>";
+  assert.equal(generateRefineSuggestions(polished, "html").length, 2);
+  assert.notEqual(generateRefineSuggestions("", "html").length, 3);
+  assert.notEqual(generateRefineSuggestions("<button>hi</button>", "html").length, 3);
 });
 
 test("generated suggestions never duplicate the defaults", () => {

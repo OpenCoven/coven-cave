@@ -6,7 +6,13 @@ const KEY = "cave:msg-feedback:v1";
 export type Feedback = "up" | "down";
 
 /** Extra, non-identifying context stamped alongside an analytics vote. */
-export type FeedbackContext = { familiarId?: string };
+export type FeedbackContext = {
+  familiarId?: string;
+  /** Effective model id that produced the response (per-model analytics). */
+  model?: string;
+  /** Runtime/harness id that produced the response (per-runtime analytics). */
+  runtime?: string;
+};
 
 function read(): Record<string, Feedback> {
   if (typeof window === "undefined") return {};
@@ -44,7 +50,14 @@ export function recordFeedbackAnalytics(
     void fetch("/api/feedback/message", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messageId, vote, cleared, familiarId: ctx?.familiarId }),
+      body: JSON.stringify({
+        messageId,
+        vote,
+        cleared,
+        familiarId: ctx?.familiarId,
+        model: ctx?.model,
+        runtime: ctx?.runtime,
+      }),
       keepalive: true,
     }).catch(() => { /* best-effort analytics */ });
   } catch { /* fetch unavailable */ }

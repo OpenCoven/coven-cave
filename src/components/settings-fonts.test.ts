@@ -31,19 +31,70 @@ assert.match(
   /label="Typography pair"[\s\S]*?style=\{\{ width: "min\(100%, 300px\)", maxWidth: "100%" \}\}/,
   "typography pair selector uses a responsive width that fits curated pair labels",
 );
+// Row controls share one standard 28px height: the select trigger pins h-7
+// explicitly and the segmented wrappers pin the same h-7.
+assert.doesNotMatch(src, /gh-select/, "settings does not borrow the board view's 26px control chrome");
+assert.match(
+  src,
+  /const segWrap =\s*\n?\s*"flex h-7 /,
+  "segmented control wrappers pin the standard settings control height",
+);
+assert.match(
+  src,
+  /const selectTrigger =\s*\n?\s*"h-7 /,
+  "select triggers pin the standard settings control height",
+);
+assert.match(
+  src,
+  /className=\{selectTrigger\}/,
+  "typography pair selector uses the shared standard-height trigger styling",
+);
+assert.match(src, /Display/, "renders a display (serif) preview specimen");
 assert.match(src, /Interface/, "keeps the interface preview");
 assert.match(src, /Code &amp; terminal/, "keeps the code and terminal preview");
 
 assert.match(shell, /import \{ FontSettings \} from "\.\/settings-fonts"/, "shell imports FontSettings");
 assert.match(shell, /<FontSettings\s*\/>/, "AppearanceSection renders <FontSettings />");
 
-// The component must apply the saved fonts on mount (the boot script that would
-// otherwise do it pre-paint is not mounted), so the rendered font matches the
-// persisted selection after a reload — not just after a user change.
+// ── The selected segment must actually LOOK selected (cave-q42g) ─────────────
+// SegmentButton renders through Button variant="ghost"; .ui-btn--ghost is
+// UNLAYERED CSS (background: transparent + its own :hover), and unlayered rules
+// beat Tailwind's layered utilities unconditionally — so the active accent
+// classes never painted and Reading text / Date & time selections were
+// invisible (Corner radius, on the shared Segmented's plain <button>, was
+// fine). The cure is the mode-toggle precedent: a scoped unlayered pressed-
+// state rule that wins the background back.
 assert.match(
   src,
-  /useEffect\(\(\) => \{[\s\S]*?readFontPairPref\([\s\S]*?writeFontPairPref\([\s\S]*?applyFontPair\([\s\S]*?\}, \[\]\)/,
-  "mount effect normalizes and applies the saved font pair",
+  /className=\{`settings-segment \$\{segBtn\(active, extra\)\}`\}/,
+  "SegmentButton carries the settings-segment class the pressed-state CSS keys on",
+);
+{
+  const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(
+    globals,
+    /\.settings-segment\[aria-pressed="true"\] \{\s*\n\s*background: var\(--accent-presence\) !important;\s*\n\s*color: var\(--accent-presence-foreground\) !important;/,
+    "the pressed segment's accent fill is unlayered CSS — Button/ghost's unlayered transparent background beats Tailwind utilities, so utilities alone cannot express the selected state",
+  );
+  assert.match(
+    globals,
+    /\.settings-segment\[aria-pressed="true"\]:hover \{/,
+    "hover on the selected segment keeps the accent fill (ghost's own hover would repaint it)",
+  );
+}
+
+// The component applies the bootstrapped pair on mount but does not write an
+// unchanged value back and create a redundant canonical revision, so the
+// mounted UI simply reflects the already-persisted selection.
+assert.match(
+  src,
+  /useEffect\(\(\) => \{[\s\S]*?const pair = readFontPairPref\(\)[\s\S]*?setPairId\(pair\.id\)[\s\S]*?applyFontPair\(pair\.id\)[\s\S]*?\}, \[\]\)/,
+  "mount effect reads and applies the saved font pair",
+);
+assert.doesNotMatch(
+  src.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[\]\)/)?.[0] ?? "",
+  /writeFontPairPref/,
+  "mounting Typography must not rewrite an unchanged preference",
 );
 
 // Text size control (reframed Screen magnification) lives in Typography.

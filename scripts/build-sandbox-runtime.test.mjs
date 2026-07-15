@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import { buildSandboxRuntime, OUTFILE, TAILWIND_OUTFILE } from "./build-sandbox-runtime.mjs";
 
 // Build the sandbox runtime and assert it produced a self-contained browser
 // bundle with React + sucrase inlined and the runtime's public surface intact.
 // (Functional render is covered by a Playwright check run outside CI.)
+
+const scriptPath = fileURLToPath(new URL("./build-sandbox-runtime.mjs", import.meta.url));
+const cli = spawnSync(process.execPath, [scriptPath], { encoding: "utf8" });
+assert.equal(cli.status, 0, `direct sandbox build failed: ${cli.stderr || cli.error}`);
+assert.match(
+  cli.stdout,
+  /sandbox assets/,
+  "direct execution must work when process.argv[1] is a native Windows path",
+);
 
 await buildSandboxRuntime();
 

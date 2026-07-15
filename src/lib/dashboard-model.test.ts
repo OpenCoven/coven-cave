@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildDashboardModel, dashboardLayout } from "./dashboard-model.ts";
+import { buildDashboardModel } from "./dashboard-model.ts";
 import { nextItemsAfterAction } from "./dashboard-model.ts";
 
 const ISO = "2026-06-20T09:00:00.000Z";
@@ -36,7 +36,6 @@ function summary(slug) {
   const model = buildDashboardModel([summary("2026-06-19")], now);
   assert.equal(model.caughtUp, true, "no open items => caught up");
   assert.equal(model.needsAttention.length, 0);
-  assert.deepEqual(dashboardLayout(model), ["caughtUpStrip", "metrics", "todaySummary", "familiarUpdates", "launcher", "recentReports"]);
 }
 
 // busy when a response is pending today
@@ -47,7 +46,6 @@ function summary(slug) {
   );
   assert.equal(model.caughtUp, false, "open item => busy");
   assert.equal(model.needsAttention.length, 1);
-  assert.deepEqual(dashboardLayout(model), ["actionInbox", "metrics", "todaySummary", "launcher", "recentReports"]);
 }
 
 // needsAttention is capped at 8
@@ -63,12 +61,11 @@ function summary(slug) {
 // today's report becomes featuredReport and is excluded from recentReports
 {
   const model = buildDashboardModel([summary("2026-06-20"), summary("2026-06-19")], now);
-  assert.equal(model.todaysReport?.slug, "2026-06-20");
   assert.equal(model.featuredReport?.slug, "2026-06-20");
   assert.deepEqual(model.recentReports.map((r) => r.slug), ["2026-06-19"]);
 }
 
-// today's summary is folded in: narrative + frozen metrics from today's report
+// today's summary is folded in from today's report
 {
   const today = item({
     id: "s-2026-06-20",
@@ -82,8 +79,6 @@ function summary(slug) {
   assert.ok(model.todaySummary, "today summary present when today's report exists");
   assert.equal(model.todaySummary.imageUrl, "img.png");
   assert.deepEqual(model.todaySummary.recentSessions, ["alpha", "beta"], "recovers session names from body");
-  assert.equal(model.metricsLive, false, "metrics are frozen when today's report exists");
-  assert.deepEqual(model.metrics, { reminders: 1, responses: 2, familiars: 4, sessions: 3 });
 }
 
 // before today's report exists, metrics fall back to the live snapshot
@@ -93,14 +88,11 @@ function summary(slug) {
     now,
   );
   assert.equal(model.todaySummary, null, "no today summary before a report generates");
-  assert.equal(model.metricsLive, true, "metrics are the live snapshot");
-  assert.equal(model.metrics.reminders, 1, "live snapshot counts today's fired reminder");
 }
 
 // with no today report, latest is featured
 {
   const model = buildDashboardModel([summary("2026-06-19"), summary("2026-06-18")], now);
-  assert.equal(model.todaysReport, null);
   assert.equal(model.featuredReport?.slug, "2026-06-19");
   assert.deepEqual(model.recentReports.map((r) => r.slug), ["2026-06-18"]);
 }

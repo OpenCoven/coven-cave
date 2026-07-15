@@ -32,8 +32,25 @@ struct ChatsHomeView: View {
     @State private var editMode: EditMode = .inactive
     /// Reveal archived group chats in the list.
     @State private var showArchived = false
+    /// Left slide-out drawer (menu button in the header).
+    @State private var drawerOpen = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        ZStack(alignment: .leading) {
+            splitView
+                // The list stays visible behind the drawer — dimmed by the
+                // drawer's scrim and nudged right for depth (unless the user
+                // prefers reduced motion).
+                .offset(x: drawerOpen && !reduceMotion ? 16 : 0)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: drawerOpen)
+            ChatDrawer(isOpen: $drawerOpen,
+                       openThread: { open(.thread($0)) },
+                       newChat: { showNewChat = true })
+        }
+    }
+
+    private var splitView: some View {
         NavigationSplitView {
             Group {
                 if app.familiars.isEmpty && app.threads.isEmpty {
@@ -63,7 +80,10 @@ struct ChatsHomeView: View {
                 await app.loadSessions()
             }
             .task { await app.loadSessions() }
-            .onAppear(perform: openDeepLinkedThread)
+            .onAppear {
+                openDeepLinkedThread()
+                openRequestedFamiliar()
+            }
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
             // open a specific thread — surface it in the detail column.
             .onChange(of: app.threadToOpen) { _, thread in
@@ -71,6 +91,7 @@ struct ChatsHomeView: View {
                 if lastThreadId != thread.id { open(.thread(thread)) }
                 app.threadToOpen = nil
             }
+            .onChange(of: app.familiarToOpen) { _, _ in openRequestedFamiliar() }
             .sidebarColumn()
         } detail: {
             detailColumn
@@ -144,12 +165,23 @@ struct ChatsHomeView: View {
         open(.thread(thread))
     }
 
+    private func openRequestedFamiliar() {
+        guard let familiar = app.familiarToOpen else { return }
+        open(.familiar(familiar))
+        app.familiarToOpen = nil
+    }
+
     /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
     /// so every tab's title aligns at the same flush position.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(spacing: 12) {
+            CircularIconButton(systemImage: "line.3.horizontal",
+                               active: drawerOpen,
+                               label: "Menu") {
+                drawerOpen = true
+            }
             Text("Chats")
-                .font(.largeTitle.weight(.bold))
+                .font(.title2.weight(.bold))
             Spacer()
             if canReorder {
                 Button(editMode.isEditing ? "Done" : "Reorder") {
@@ -161,10 +193,14 @@ struct ChatsHomeView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            CircularIconButton(systemImage: "square.and.pencil",
+                               label: "New chat") {
+                showNewChat = true
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 12)
+        .padding(.bottom, 10)
         .glassChrome(.top)
     }
 
@@ -578,7 +614,7 @@ struct ThreadRow: View {
     private var previewText: String {
         guard let last = lastMessage else { return "Tap to start chatting" }
         if last.streaming && last.text.isEmpty { return "…" }
-        let prefix = last.role == .user ? "You: " : ""
+        let prefix = last.role == .user ? "\(app.operatorDisplayName): " : ""
         return prefix + last.text.replacingOccurrences(of: "\n", with: " ")
     }
 }

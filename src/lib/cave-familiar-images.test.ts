@@ -22,7 +22,7 @@ globalThis.window = {
 
 // Map-backed fake IndexedDB driver with a write-failure toggle (simulates the
 // browser refusing a write — quota, private mode, etc.).
-const idb = { familiarImages: new Map(), userAvatar: new Map() };
+const idb = { familiarImages: new Map() };
 let denyWrites = false;
 const fakeDriver = {
   async getAll(store) {

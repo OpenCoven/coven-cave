@@ -125,6 +125,36 @@ find_free_port() {
   return 1
 }
 
+wait_for_port_to_clear() {
+  local port="${1:-$PORT}"
+  for _ in $(seq 1 40); do
+    if ! port_is_listening_at "$port" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+take_over_same_checkout_server_for_app() {
+  if [ "$COMMAND" != "app" ]; then
+    return 1
+  fi
+  if ! occupant_is_this_checkout; then
+    return 1
+  fi
+
+  echo "Taking over untracked same-checkout dev server on ${HOST}:${PORT} (pid ${OCCUPANT_PID}) for native app mode."
+  kill "$OCCUPANT_PID" >/dev/null 2>&1 || true
+  if ! wait_for_port_to_clear "$PORT"; then
+    echo "Port ${PORT} is still in use after stopping pid ${OCCUPANT_PID}." >&2
+    describe_port_occupant "$PORT" >&2
+    exit 1
+  fi
+  rm -f "$PID_FILE" "$MODE_FILE"
+  return 0
+}
+
 # Servers this script starts are tracked in per-port state dirs. When the
 # default port is squatted by a server it did not start (another session's dev
 # server, a stale corpse), never touch that server — sidestep to a free port
@@ -138,6 +168,10 @@ maybe_fallback_port() {
     return 0
   fi
   if recorded_server_is_running; then
+    return 0
+  fi
+
+  if take_over_same_checkout_server_for_app; then
     return 0
   fi
 
@@ -206,6 +240,7 @@ recorded_server_mode_is() {
 
 clear_mobile_tokens() {
   rm -f "$TOKEN_FILE" "$SIDECAR_TOKEN_FILE"
+  rm -f "$INVITE_FILE" "$EXPIRES_FILE"
 }
 
 tailscale_cmd() {

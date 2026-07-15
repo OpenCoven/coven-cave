@@ -26,3 +26,24 @@ export function runStatusColor(
       return "var(--text-muted)";
   }
 }
+
+/**
+ * Shared run-status → icon mapping (cave-dgli): the colored dot alone encoded
+ * status by color only (WCAG 1.4.1) — a distinct SHAPE per status carries the
+ * outcome for color-blind users, with `runStatusColor` still tinting it. All
+ * names are already in the curated icon subset.
+ */
+export function runStatusIcon(status: AutomationRunStatus | string): "ph:x-circle-fill" | "ph:check-circle-fill" | "ph:clock-countdown" | "ph:play-fill" | "ph:circle-fill" {
+  switch (status) {
+    case "failed":
+      return "ph:x-circle-fill";
+    case "running":
+      return "ph:play-fill";
+    case "queued":
+      return "ph:clock-countdown";
+    case "succeeded":
+      return "ph:check-circle-fill";
+    default:
+      return "ph:circle-fill";
+  }
+}

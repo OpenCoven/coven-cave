@@ -105,8 +105,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /pullRequest: \{[\s\S]*number: task\.prNumber[\s\S]*state: task\.status/,
-  "Workspace should attach linked PR number and state to chat sessions",
+  /pullRequest: session\.pullRequest \?\? \{[\s\S]*number: task\.prNumber[\s\S]*state: task\.status/,
+  "Workspace should attach linked PR number and state to chat sessions (server-enriched PR state wins)",
 );
 assert.match(
   workspace,

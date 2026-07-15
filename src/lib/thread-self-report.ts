@@ -224,11 +224,21 @@ export type ThreadSignalsAggregate = {
 export type ThreadSignalReviewItem = {
   kind: "blocker" | "skill-access" | "skill-clarity" | "capability" | "context-pressure" | "low-score";
   severity: "critical" | "warning" | "info";
+  /** Stable upstream identity within the kind (blocker id, skill id,
+   *  capability name, metric label) — titles are display-only and are not
+   *  enforced unique, so dismissal keys and React keys hang off this. */
+  sourceId: string;
   title: string;
   detail: string;
 };
 
-const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
+export const REVIEW_SEVERITY_ORDER: Record<ThreadSignalReviewItem["severity"], number> = {
+  critical: 0,
+  warning: 1,
+  info: 2,
+};
+
+export const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
   blocker: "persistent blocker",
   "skill-access": "skill access gap",
   "skill-clarity": "skill clarity gap",
@@ -238,25 +248,29 @@ const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
 };
 
 /**
- * Seed prompt for a focused discussion about one review-queue item. Selecting an
- * item in the Thread Signals review queue opens a new chat with the familiar
- * primed with this, so the topic is "unlocked" into a working conversation.
+ * Seed prompt that launches a working thread to RESOLVE one review-queue item.
+ * Selecting a signal in the Thread Signals review queue (or a table row) opens
+ * a new chat with the familiar primed with this; the initialPrompt auto-sends,
+ * so the thread starts working the fix immediately rather than idling on a
+ * blank composer.
  */
-export function buildThreadSignalDiscussionPrompt(item: ThreadSignalReviewItem): string {
+export function buildThreadSignalResolutionPrompt(item: ThreadSignalReviewItem): string {
   return [
-    `Let's work through a ${REVIEW_KIND_LABEL[item.kind]} from your thread self-reports:`,
+    `Resolve this ${REVIEW_KIND_LABEL[item.kind]} surfaced by your thread self-reports:`,
     "",
     `**${item.title}**`,
     item.detail,
     "",
-    "What's the root cause, and what concrete change — prompt, memory, skill, or access — would resolve it? Walk me through it.",
+    "This thread exists to fix the signal, not just discuss it:",
+    "1. Diagnose the root cause.",
+    "2. Apply the concrete fix now — update the prompt, memory, skill, config, or workflow at fault. If the fix needs something only I can grant (credentials, permissions, a product decision), stop and tell me exactly what to provide.",
+    "3. Verify the fix and summarize what changed, so future threads stop reporting this signal.",
   ].join("\n");
 }
 
 export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
 
 const IMPORTANCE_WEIGHT: Record<CapabilityImportance, number> = { "nice-to-have": 1, important: 2, blocking: 3 };
-const STATE_WEIGHT: Record<CapabilityState, number> = { available: 1, degraded: 2, missing: 3 };
 
 function libAvg(values: number[]): number {
   if (values.length === 0) return 0;
@@ -347,8 +361,11 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     for (const s of r.skillsNeedingClarity) if (!clarity.has(s.skillId)) clarity.set(s.skillId, s);
     for (const s of r.skillsNeedingAccess) if (!access.has(s.skillId)) access.set(s.skillId, s);
     for (const c of r.capabilitiesVital) {
-      const prev = capVital.get(c.name);
-      if (!prev || STATE_WEIGHT[c.currentState] > STATE_WEIGHT[prev.currentState]) capVital.set(c.name, c);
+      // Latest report wins: `currentState` is a *current* observation, and
+      // reports iterate newest-first. Letting an older, worse state override
+      // (the old STATE_WEIGHT behavior) pinned long-fixed capabilities at
+      // "missing" for the whole report window (cave-hdkx).
+      if (!capVital.has(c.name)) capVital.set(c.name, c);
     }
     for (const c of r.capabilitiesLacking) {
       const prev = capLacking.get(c.name);
@@ -393,6 +410,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "blocker",
       severity: blocker.crit || blocker.impact === "blocking" ? "critical" : "warning",
+      sourceId: blocker.id,
       title: blocker.title,
       detail: `${blocker.frequency}x - ${blocker.impact}${blocker.suggestedResolution ? ` - ${blocker.suggestedResolution}` : ""}`,
       rank: blocker.crit || blocker.impact === "blocking" ? 100 + blocker.rankScore : 70 + blocker.rankScore,
@@ -403,6 +421,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "skill-access",
       severity: "critical",
+      sourceId: skill.skillId,
       title: skill.skillId,
       detail: skill.reason,
       rank: 85,
@@ -413,6 +432,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "capability",
       severity: "critical",
+      sourceId: capability.name,
       title: capability.name,
       detail: capability.detail,
       rank: 80,
@@ -423,6 +443,7 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "context-pressure",
       severity: aggregate.contextCounts.critical > 0 ? "critical" : "warning",
+      sourceId: "context-pressure",
       title: "Context pressure",
       detail: `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`,
       rank: aggregate.contextCounts.critical > 0 ? 75 : 55,
@@ -433,23 +454,25 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
     items.push({
       kind: "skill-clarity",
       severity: "warning",
+      sourceId: skill.skillId,
       title: skill.skillId,
       detail: skill.reason,
       rank: 45,
     });
   }
 
-  const lowScores: [ThreadSignalReviewItem["title"], number][] = [
-    ["Confidence", aggregate.averageConfidence],
-    ["Tool reliability", aggregate.averageToolReliability],
-    ["Memory recall", aggregate.averageMemoryRecall],
-    ["File locatability", aggregate.averageFileLocatability],
+  const lowScores: [string, ThreadSignalReviewItem["title"], number][] = [
+    ["confidence", "Confidence", aggregate.averageConfidence],
+    ["tool-reliability", "Tool reliability", aggregate.averageToolReliability],
+    ["memory-recall", "Memory recall", aggregate.averageMemoryRecall],
+    ["file-locatability", "File locatability", aggregate.averageFileLocatability],
   ];
-  for (const [title, score] of lowScores) {
+  for (const [sourceId, title, score] of lowScores) {
     if (score > 0 && score < 60) {
       items.push({
         kind: "low-score",
         severity: score < 40 ? "critical" : "warning",
+        sourceId,
         title,
         detail: `Average ${score}/100`,
         rank: score < 40 ? 72 : 42,
@@ -458,7 +481,15 @@ export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate):
   }
 
   return items
-    .sort((a, b) => b.rank - a.rank || a.title.localeCompare(b.title))
+    // Severity first — a stack of warnings must never outrank a critical
+    // (rankScore-boosted warning blockers previously could). Rank breaks ties
+    // within a severity tier; title keeps the order stable.
+    .sort(
+      (a, b) =>
+        REVIEW_SEVERITY_ORDER[a.severity] - REVIEW_SEVERITY_ORDER[b.severity] ||
+        b.rank - a.rank ||
+        a.title.localeCompare(b.title),
+    )
     .slice(0, 8)
     .map(({ rank: _rank, ...item }) => item);
 }

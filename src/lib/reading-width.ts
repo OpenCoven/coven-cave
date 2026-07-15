@@ -31,6 +31,8 @@ export function normalizeReadingWidth(value: unknown): ReadingWidth {
 }
 
 export function readReadingWidth(): ReadingWidth {
+  const central = normalizeReadingWidth(readAppPreferences().appearance.reading.width);
+  if (central !== DEFAULT_READING_WIDTH || readAppPreferences().initialized) return central;
   if (typeof window === "undefined") return DEFAULT_READING_WIDTH;
   try {
     return normalizeReadingWidth(window.localStorage.getItem(READING_WIDTH_KEY));
@@ -43,9 +45,12 @@ export function readReadingWidth(): ReadingWidth {
  * Apply the level: set `--cave-reading-width` on <html> (or remove it for the
  * default so `.cave-md`'s `none` fallback applies) and persist the choice.
  */
-export function applyReadingWidth(level: ReadingWidth) {
+export function applyReadingWidth(level: ReadingWidth, options: { persist?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const normalized = normalizeReadingWidth(level);
+  if (options.persist !== false) {
+    updateAppPreferences({ appearance: { reading: { width: normalized } } });
+  }
   const root = document.documentElement;
   if (normalized === DEFAULT_READING_WIDTH) {
     root.style.removeProperty("--cave-reading-width");
@@ -59,3 +64,4 @@ export function applyReadingWidth(level: ReadingWidth) {
     /* ignore unavailable storage */
   }
 }
+import { readAppPreferences, updateAppPreferences } from "./app-preferences.ts";

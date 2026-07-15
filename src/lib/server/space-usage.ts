@@ -31,7 +31,7 @@ export type SpaceUsageArea = {
 /** Fixed allow-list of scanned areas. `dir` is relative to the coven home;
  *  `filesOnly` limits the walk to the top-level plain files (app-state JSON). */
 const AREAS: { id: string; label: string; dir: string; filesOnly?: boolean }[] = [
-  { id: "conversations", label: "Chat transcripts", dir: "cave-conversations" },
+  { id: "conversations", label: "Chat transcripts", dir: "cave/conversations" },
   { id: "workspaces", label: "Familiar workspaces", dir: "workspaces" },
   { id: "memory", label: "Familiar memory", dir: "memory" },
   { id: "knowledge", label: "Knowledge vault", dir: "knowledge" },
@@ -40,7 +40,7 @@ const AREAS: { id: string; label: string; dir: string; filesOnly?: boolean }[] =
   { id: "prompts", label: "Prompt templates", dir: "prompts" },
   { id: "skills", label: "Skills", dir: "skills" },
   { id: "trash", label: "Trash", dir: ".trash" },
-  { id: "state", label: "App state", dir: ".", filesOnly: true },
+  { id: "state", label: "App state", dir: "cave", filesOnly: true },
 ];
 
 const MAX_ENTRIES_PER_AREA = 20_000;

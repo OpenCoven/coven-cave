@@ -8,7 +8,7 @@ const inventory = await readFile(
 assert.match(source, /listMemoryFileEntries/, "route returns the shared memory file inventory");
 assert.match(
   inventory,
-  /scanCovenFamiliarWorkspaces/,
+  /collectCovenFamiliarWorkspaces/,
   "memory inventory surfaces coven familiar workspace memory",
 );
 assert.match(inventory, /workspaces.*familiars|"familiars"/, "scans the coven familiars dir");
