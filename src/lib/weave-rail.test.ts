@@ -145,6 +145,17 @@ describe("surfaceStateFromPayload — envelope to render state", () => {
     assert.equal(state.kind, "blocked");
   });
 
+  it("R8: a meta with an unknown adapter is a contract violation — blocked, decisions stay off", () => {
+    const forged = { ...meta(), adapter: "mystery" } as unknown as ThreadsMeta;
+    const state = surfaceStateFromPayload<WeaveSummary[]>(
+      { data: weaves, meta: forged, blocked: false },
+      FRESH,
+    );
+    assert.equal(state.kind, "blocked");
+    assert.equal(state.kind === "blocked" ? state.why : "", "meta-missing");
+    assert.equal(decisionsEnabled(state), false);
+  });
+
   it("R11: not-found blocks with its own message, never an empty-healthy list", () => {
     const state = surfaceStateFromPayload<WeaveSummary[]>(blockedEnvelope("not-found", meta()), FRESH);
     assert.equal(state.kind, "blocked");
