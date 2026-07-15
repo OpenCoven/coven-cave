@@ -64,4 +64,14 @@ export type CaveOmnigentConfig = {
   defaultHostId: string;
   /** Absolute default workspace path for new runs on external hosts. */
   defaultWorkspace: string;
+  /**
+   * Map Cave/SSH host aliases → Omnigent host_id.
+   * e.g. { "ubuntu-root": "host_9add…" }
+   */
+  hostMap: Record<string, string>;
+  /**
+   * When true, /api/hosts includes Omnigent fleet hosts (omnigent:<host_id>)
+   * in the composer Host chip so Chat/Home can run on the fleet.
+   */
+  exposeHostsInComposer: boolean;
 };

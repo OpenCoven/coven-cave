@@ -33,3 +33,26 @@ test("pickDefaultHostId prefers preferred id then online host", () => {
   assert.equal(pickDefaultHostId(hosts, "host_offline"), "host_offline");
   assert.equal(pickDefaultHostId(hosts), "host_online");
 });
+
+test("omnigent host option ids round-trip", async () => {
+  const { omnigentHostOptionId, parseOmnigentHostOptionId, isOmnigentHostOptionId } = await import(
+    "./ids.ts"
+  );
+  const id = omnigentHostOptionId("host_abc");
+  assert.equal(id, "omnigent:host_abc");
+  assert.equal(parseOmnigentHostOptionId(id), "host_abc");
+  assert.equal(isOmnigentHostOptionId(id), true);
+  assert.equal(isOmnigentHostOptionId("local"), false);
+});
+
+test("normalizeOmnigentConfig keeps hostMap and exposeHostsInComposer", async () => {
+  const { normalizeOmnigentConfig } = await import("../cave-config.ts");
+  const cfg = normalizeOmnigentConfig({
+    baseUrl: "https://omni.example.com/",
+    hostMap: { "ubuntu-root": "host_9" },
+    exposeHostsInComposer: false,
+  });
+  assert.equal(cfg.baseUrl, "https://omni.example.com");
+  assert.equal(cfg.hostMap["ubuntu-root"], "host_9");
+  assert.equal(cfg.exposeHostsInComposer, false);
+});

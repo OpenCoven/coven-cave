@@ -500,6 +500,142 @@ function parseExecutorUrls(text: string): string[] {
   );
 }
 
+/** Omnigent fleet connection — Settings companion to the Fleet surface. */
+function OmnigentSettingsGroup() {
+  const { announce } = useAnnouncer();
+  const [baseUrl, setBaseUrl] = useState("");
+  const [workspace, setWorkspace] = useState("");
+  const [exposeHosts, setExposeHosts] = useState(true);
+  const [statusLine, setStatusLine] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ctl = new AbortController();
+    fetch("/api/config", { cache: "no-store", signal: ctl.signal })
+      .then((r) => r.json())
+      .then((j: {
+        ok?: boolean;
+        config?: {
+          omnigent?: {
+            baseUrl?: string;
+            defaultWorkspace?: string;
+            exposeHostsInComposer?: boolean;
+          };
+        };
+      }) => {
+        if (ctl.signal.aborted || !j.ok) return;
+        const o = j.config?.omnigent;
+        setBaseUrl(o?.baseUrl ?? "");
+        setWorkspace(o?.defaultWorkspace ?? "");
+        setExposeHosts(o?.exposeHostsInComposer !== false);
+      })
+      .catch(() => {});
+    fetch("/api/omnigent/status", { cache: "no-store", signal: ctl.signal })
+      .then((r) => r.json())
+      .then((j: { online?: boolean; hasToken?: boolean; configured?: boolean; error?: string }) => {
+        if (ctl.signal.aborted) return;
+        if (!j.configured) setStatusLine("Not configured");
+        else if (j.online && j.hasToken) setStatusLine("Online · token ok");
+        else if (j.online) setStatusLine("Online · missing token (run omnigent login)");
+        else setStatusLine(j.error ? `Offline · ${j.error}` : "Offline");
+      })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          omnigent: {
+            baseUrl: baseUrl.trim(),
+            defaultWorkspace: workspace.trim(),
+            exposeHostsInComposer: exposeHosts,
+          },
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `save failed (${res.status})`);
+      }
+      announce("Omnigent settings saved.");
+      const st = await fetch("/api/omnigent/status", { cache: "no-store" }).then((r) => r.json());
+      if (st?.online && st?.hasToken) setStatusLine("Online · token ok");
+      else if (st?.configured) setStatusLine(st.error || "Configured");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "could not save";
+      setError(msg);
+      announce(`Couldn't save Omnigent settings: ${msg}`, "assertive");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsGroup label="Omnigent fleet">
+      <SettingControlRow
+        label="Server URL"
+        hint="HTTPS URL of your Omnigent server (e.g. Tailscale). Token is read from ~/.omnigent/auth_tokens.json — never stored in Cave config."
+      >
+        <input
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.target.value)}
+          aria-label="Omnigent server URL"
+          placeholder="https://omnigent.example.ts.net"
+          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
+          spellCheck={false}
+        />
+      </SettingControlRow>
+      <SettingControlRow
+        label="Default workspace"
+        hint="Absolute path on the Omnigent host used when Chat/Fleet start a run without an override."
+      >
+        <input
+          value={workspace}
+          onChange={(e) => setWorkspace(e.target.value)}
+          aria-label="Default Omnigent workspace"
+          placeholder="/home/you/project"
+          className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none"
+          spellCheck={false}
+        />
+      </SettingControlRow>
+      <SettingControlRow
+        label="Show fleet in Host chip"
+        hint="When on, Chat and Home Host pickers list Omnigent hosts (omnigent:…) so a send can start a fleet session."
+      >
+        <label className="flex items-center gap-2 text-[12px]">
+          <input
+            type="checkbox"
+            checked={exposeHosts}
+            onChange={(e) => setExposeHosts(e.target.checked)}
+          />
+          Expose Omnigent hosts in composer
+        </label>
+      </SettingControlRow>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-2.5 pt-0.5">
+        <span className="text-[11px] text-[var(--text-muted)]">{statusLine || "—"}</span>
+        <div className="flex items-center gap-2">
+          {error && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{error}</span>}
+          <Button
+            variant="secondary"
+            size="xs"
+            onClick={() => void save()}
+            disabled={saving}
+            leadingIcon="ph:floppy-disk-bold"
+          >
+            {saving ? "Saving..." : "Save Omnigent"}
+          </Button>
+        </div>
+      </div>
+    </SettingsGroup>
+  );
+}
+
 function DaemonSection() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -702,6 +838,8 @@ function DaemonSection() {
           </Button>
         </div>
       </SettingsGroup>
+
+      <OmnigentSettingsGroup />
 
       <SettingsGroup label="Status">
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">

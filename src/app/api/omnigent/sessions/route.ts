@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/cave-config";
-import {
-  OmnigentClient,
-  OmnigentError,
-  pickDefaultAgentId,
-  pickDefaultHostId,
-} from "@/lib/omnigent/client";
+import { OmnigentClient, OmnigentError } from "@/lib/omnigent/client";
+import { createOmnigentRun } from "@/lib/omnigent/run";
 import { rejectNonLocalRequest, readJsonBody } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -60,11 +56,16 @@ type CreateBody = {
   title?: string;
   prompt?: string;
   familiar?: string;
+  source?: string;
+  boardCardId?: string;
+  jobId?: string;
+  sourceSha256?: string;
+  labels?: Record<string, string>;
 };
 
 /**
  * POST /api/omnigent/sessions — create a session on a host (JSON catalog path).
- * Defaults fill from Cave omnigent config + first online host / claude-native-ui.
+ * Resolves familiar + global Omnigent defaults via createOmnigentRun.
  */
 export async function POST(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
@@ -73,103 +74,41 @@ export async function POST(req: Request) {
   const parsed = await readJsonBody<CreateBody>(req, 32_000);
   if (!parsed.ok) return parsed.response;
 
-  const config = await loadConfig();
-  if (!config.omnigent.baseUrl) {
-    return NextResponse.json(
-      { ok: false, error: "omnigent.baseUrl is not configured" },
-      { status: 400 },
-    );
-  }
-
   const body = parsed.body;
-  const hostType = body.hostType === "managed" ? "managed" : "external";
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) {
     return NextResponse.json({ ok: false, error: "prompt is required" }, { status: 400 });
   }
 
   try {
-    const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
-    if (!client.hasToken) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "No Omnigent token found. Run `omnigent login <url>` or set OMNIGENT_TOKEN.",
-        },
-        { status: 401 },
-      );
-    }
-
-    const [agents, hosts] = await Promise.all([client.listAgents(), client.listHosts()]);
-    const agentId =
-      (typeof body.agentId === "string" && body.agentId.trim()) ||
-      pickDefaultAgentId(agents, config.omnigent.defaultAgentId);
-    if (!agentId) {
-      return NextResponse.json(
-        { ok: false, error: "No catalog agents available on Omnigent server" },
-        { status: 400 },
-      );
-    }
-
-    let hostId: string | undefined;
-    let workspace: string | undefined;
-    if (hostType === "external") {
-      hostId =
-        (typeof body.hostId === "string" && body.hostId.trim()) ||
-        pickDefaultHostId(hosts, config.omnigent.defaultHostId) ||
-        undefined;
-      if (!hostId) {
-        return NextResponse.json(
-          { ok: false, error: "No online Omnigent host available" },
-          { status: 400 },
-        );
-      }
-      workspace =
-        (typeof body.workspace === "string" && body.workspace.trim()) ||
-        config.omnigent.defaultWorkspace ||
-        undefined;
-      if (!workspace || !workspace.startsWith("/")) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "workspace must be an absolute path on the host (set defaultWorkspace or pass workspace)",
-          },
-          { status: 400 },
-        );
-      }
-    } else {
-      workspace =
-        typeof body.workspace === "string" && body.workspace.trim()
-          ? body.workspace.trim()
-          : undefined;
-    }
-
-    const familiar =
-      typeof body.familiar === "string" && body.familiar.trim()
-        ? body.familiar.trim()
-        : undefined;
-    const title =
-      typeof body.title === "string" && body.title.trim()
-        ? body.title.trim()
-        : undefined;
-
-    const session = await client.createSession({
-      agentId,
-      hostId,
-      workspace,
-      hostType,
+    const config = await loadConfig();
+    const result = await createOmnigentRun(config, {
       prompt,
-      familiar,
-      title,
-      labels: { "coven.source": "cave-fleet" },
+      title: typeof body.title === "string" ? body.title : undefined,
+      familiarId: typeof body.familiar === "string" ? body.familiar : undefined,
+      agentId: typeof body.agentId === "string" ? body.agentId : undefined,
+      hostId: typeof body.hostId === "string" ? body.hostId : undefined,
+      workspace: typeof body.workspace === "string" ? body.workspace : undefined,
+      hostType: body.hostType === "managed" ? "managed" : "external",
+      source: typeof body.source === "string" ? body.source : "cave-fleet",
+      boardCardId: typeof body.boardCardId === "string" ? body.boardCardId : undefined,
+      jobId: typeof body.jobId === "string" ? body.jobId : undefined,
+      sourceSha256: typeof body.sourceSha256 === "string" ? body.sourceSha256 : undefined,
+      labels:
+        body.labels && typeof body.labels === "object" && !Array.isArray(body.labels)
+          ? Object.fromEntries(
+              Object.entries(body.labels).filter(
+                (e): e is [string, string] => typeof e[0] === "string" && typeof e[1] === "string",
+              ),
+            )
+          : undefined,
     });
 
     return NextResponse.json({
       ok: true,
-      session,
-      webUrl: client.webSessionUrl(session.id),
+      session: result.session,
+      webUrl: result.webUrl,
+      resolved: result.resolved,
     });
   } catch (err) {
     if (err instanceof OmnigentError) {

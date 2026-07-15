@@ -488,6 +488,43 @@ export function HomeComposer({
       return;
     }
 
+    // Host chip on Omnigent fleet → create session on the control plane (not Cave chat stream).
+    if (runtimeHost && prompt) {
+      const { isOmnigentHostOptionId } = await import("@/lib/omnigent/ids");
+      if (isOmnigentHostOptionId(runtimeHost)) {
+        if (!selectedFamiliarId) {
+          onToast("No familiar yet — summon one to send this. Your draft is saved.");
+          requestSummonFamiliar();
+          return;
+        }
+        setSending(true);
+        try {
+          const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+          const result = await startOmnigentRunFromBrowser({
+            prompt,
+            runtimeHost,
+            familiarId: selectedFamiliarId,
+            title: prompt.slice(0, 80),
+            source: "cave-home",
+          });
+          if (!result.ok) {
+            onToast(result.error);
+            return;
+          }
+          pushHistory(prompt);
+          setText("");
+          clearDraft();
+          clearAttachments();
+          onToast("Omnigent session started — opening…");
+          const { openExternalUrl } = await import("@/lib/open-external");
+          void openExternalUrl(result.webUrl);
+        } finally {
+          setSending(false);
+        }
+        return;
+      }
+    }
+
     pushHistory(prompt);
     setSending(true);
     try {
@@ -559,9 +596,11 @@ export function HomeComposer({
     modelHarness,
     thinkingEffort,
     responseSpeed,
+    runtimeHost,
     sending,
     attachments,
     clearDraft,
+    clearAttachments,
     pushHistory,
     handleSelectModel,
     onSlash,
@@ -573,6 +612,7 @@ export function HomeComposer({
     prompts,
     insertPromptTemplate,
     promptEnhance.reset,
+    requestSummonFamiliar,
   ]);
 
   const handleKeyDown = useCallback(
