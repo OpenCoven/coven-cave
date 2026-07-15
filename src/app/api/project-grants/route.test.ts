@@ -19,13 +19,18 @@ assert.match(
 );
 assert.match(
   permissions,
-  /grantProposal\.status = input\.decision === "accepted" \? "accepted" : "rejected"/,
-  "proposal resolution should persist accepted/rejected state",
+  /grantProposal\.status = "accepting";[\s\S]{0,240}GRANT_ACCEPT_UNDO_WINDOW_MS/,
+  "accepting a proposal should park it in the undo window instead of granting instantly",
 );
 assert.match(
   permissions,
-  /if \(input\.decision === "accepted"\)[\s\S]*ensureProjectGrant/,
-  "accepting a proposal should create the target project grant",
+  /export function materializeDueGrantProposals\([\s\S]*?ensureProjectGrant\(/,
+  "the grant should materialize only when the undo window elapses",
+);
+assert.match(
+  permissions,
+  /export async function undoGrantProposal\(/,
+  "permission core should expose human undo inside the acceptance window",
 );
 
 assert.match(grantsRoute, /export async function GET\(/, "project grants route should list grants");
