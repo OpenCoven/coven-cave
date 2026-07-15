@@ -61,6 +61,16 @@ test("plan chips are honest about interactivity", () => {
   assert.match(css, /\.research-plan-chip--note \{[^}]*border-color: transparent/);
 });
 
+
+test("mission list uses roving tabindex keyboard navigation", () => {
+  assert.match(list, /resolveRovingId\(missionIds, current, selectedId\)/);
+  assert.match(list, /nextRovingId\(missionIds, rovingId, event\.key as RovingKey\)/);
+  assert.match(list, /tabIndex=\{mission\.id === rovingId \? 0 : -1\}/);
+  assert.match(list, /onKeyDown=\{onListKeyDown\}/);
+  assert.match(list, /buttonRefs\.current\.get\(id\)\?\.focus\(\)/);
+  assert.match(list, /research-mission-row focus-ring/);
+});
+
 test("mission list and evidence trajectory expose semantic state", () => {
   assert.match(list, /aria-current=\{selected/);
   assert.match(detail, /aria-label="Research progress"/);
