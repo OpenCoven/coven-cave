@@ -62,6 +62,9 @@ export function startCopilotFlowRun(launch: CopilotFlowLaunch): CopilotFlowStart
     newSessionId: sessionId,
     model: null,
     permissionMode: "full",
+    // Flow runs have no granted-roots concept; the spawn cwd (projectRoot)
+    // is already trusted and must not be listed (cave-n1yc contract).
+    addDirs: [],
   });
 
   const child = spawn(launch.spec.executable, args, {
