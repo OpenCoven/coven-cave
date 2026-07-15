@@ -398,6 +398,7 @@ function GeneralSection() {
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
+      <BackupSettingsGroup />
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
@@ -462,6 +463,122 @@ function StopPhraseField() {
         className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
       />
     </SettingsRow>
+  );
+}
+
+
+function BackupSettingsGroup() {
+  const { announce } = useAnnouncer();
+  const [passphrase, setPassphrase] = useState("");
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState<"export" | "restore" | null>(null);
+  const [status, setStatus] = useState<string>("");
+
+  const canSubmit = passphrase.length >= 8;
+
+  const exportBackup = async () => {
+    setBusy("export");
+    setStatus("");
+    try {
+      const res = await fetch("/api/backup/export", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passphrase }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || `export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `coven-cave-backup-${new Date().toISOString().slice(0, 10)}.ccbackup`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus("Encrypted backup exported. Store the file somewhere you control, like iCloud Drive.");
+      announce("Encrypted backup exported.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "backup export failed";
+      setStatus(message);
+      announce(`Backup export failed: ${message}`, "assertive");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const restoreBackup = async () => {
+    if (!restoreFile) return;
+    setBusy("restore");
+    setStatus("");
+    try {
+      const archiveBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("could not read backup file"));
+        reader.onload = () => {
+          const result = typeof reader.result === "string" ? reader.result : "";
+          resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
+        };
+        reader.readAsDataURL(restoreFile);
+      });
+      const res = await fetch("/api/backup/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passphrase, archiveBase64 }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json?.error || `restore failed (${res.status})`);
+      const count = Array.isArray(json.restored) ? json.restored.length : 0;
+      setStatus(`Restored ${count} files. Restart Cave so every surface reloads restored state.`);
+      announce(`Restored ${count} files from backup.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "backup restore failed";
+      setStatus(message);
+      announce(`Backup restore failed: ${message}`, "assertive");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <SettingsGroup label="Backup" description="Manual encrypted snapshots for machine loss recovery.">
+      <SettingsRow
+        label="Encrypted export"
+        description="Includes Tier-1 state and the vault key inside a passphrase-wrapped envelope. Browser profile state is not included yet."
+      >
+        <div className="flex w-full max-w-md flex-col gap-2">
+          <input
+            type="password"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            placeholder="Backup passphrase"
+            aria-label="Backup passphrase"
+            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] outline-none"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={exportBackup} disabled={!canSubmit || busy !== null} leadingIcon="ph:arrow-down">
+              {busy === "export" ? "Exporting…" : "Export backup"}
+            </Button>
+            <label className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]">
+              Choose backup
+              <input
+                type="file"
+                accept=".ccbackup,application/octet-stream"
+                className="sr-only"
+                onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <Button size="sm" onClick={restoreBackup} disabled={!canSubmit || !restoreFile || busy !== null} leadingIcon="ph:arrow-counter-clockwise">
+              {busy === "restore" ? "Restoring…" : "Restore"}
+            </Button>
+          </div>
+          {restoreFile ? <p className="text-[11px] text-[var(--text-muted)]">Selected {restoreFile.name}</p> : null}
+          {status ? <p className="text-[11px] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
+        </div>
+      </SettingsRow>
+    </SettingsGroup>
   );
 }
 
