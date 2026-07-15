@@ -166,9 +166,13 @@ async function computeSessionsList(
     loadProjects(),
   ]);
   const localConversations = await listConversations();
+  // Backfill for local-only chat rows (UI chats the daemon never sees):
+  // map the conversation's recorded cwd to its registered project root so
+  // the sidebar's project groups pick new chats up immediately.
+  const projectRootForCwd = (cwd: string) => projectForRoot(cwd, projects)?.root ?? null;
   if (!res.ok || !res.data) {
     const localSessions = await applyAutoArchiveSweep(
-      localConversationSessionRows(localConversations, state, includeArchived),
+      localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd),
       state,
       includeArchived,
     );
@@ -206,6 +210,7 @@ async function computeSessionsList(
       state,
       includeArchived,
       isValidDaemonProjectRoot: isKnownProjectOrValidDir,
+      projectRootForCwd,
     }),
     state,
     includeArchived,

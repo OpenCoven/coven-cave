@@ -393,4 +393,52 @@ assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps 
   assert.equal(byId.get("local-branched")?.workBranch, "feat/local-work", "local-only rows carry their recorded branch too");
 }
 
+// Project backfill (cave-9nj1): sidebar/rail project groups key on
+// project_root, and UI chats exist only as local conversations — so a row's
+// project_root must be backfilled from the conversation's recorded runtime
+// cwd ("local:<cwd>") when that cwd maps to a registered project. Chats in a
+// familiar workspace / unregistered dir (and ssh runtimes) stay "" so they
+// keep landing in the "No project" bucket.
+{
+  const bareState = { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} };
+  const projectRootForCwd = (cwd) => (cwd === "/Users/example/repo" ? "/Users/example/repo" : null);
+  const conv = (sessionId, runtime) => ({
+    sessionId,
+    familiarId: "nova",
+    harness: "codex",
+    title: "Chat",
+    updatedAt: "2026-06-08T20:05:00.000Z",
+    ...(runtime ? { runtime } : {}),
+  });
+  const rows = localConversationSessionRows(
+    [
+      conv("in-project", "local:/Users/example/repo"),
+      conv("workspace", "local:/Users/example/.coven/workspaces/familiars/nova"),
+      conv("remote", "ssh:host:/srv/repo"),
+      conv("no-runtime"),
+    ],
+    bareState,
+    false,
+    projectRootForCwd,
+  );
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  assert.equal(byId.get("in-project")?.project_root, "/Users/example/repo", "registered-project cwd backfills project_root");
+  assert.equal(byId.get("workspace")?.project_root, "", "unregistered cwd (familiar workspace) stays No-project");
+  assert.equal(byId.get("remote")?.project_root, "", "ssh runtimes have no local project root");
+  assert.equal(byId.get("no-runtime")?.project_root, "", "conversations without a runtime stay No-project");
+
+  const mergedBackfill = mergeSessionRows({
+    daemonSessions: [],
+    localConversations: [conv("in-project", "local:/Users/example/repo")],
+    state: bareState,
+    includeArchived: false,
+    projectRootForCwd,
+  });
+  assert.equal(
+    mergedBackfill[0]?.project_root,
+    "/Users/example/repo",
+    "mergeSessionRows threads the resolver through to local-only rows",
+  );
+}
+
 console.log("session-list-merge.test.ts: ok");

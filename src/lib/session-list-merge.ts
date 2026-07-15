@@ -32,11 +32,24 @@ type MergeOptions = {
   state: CaveState;
   includeArchived: boolean;
   isValidDaemonProjectRoot?: (projectRoot: string) => boolean;
+  /** Map a local conversation's recorded cwd to a registered project root
+   *  (null = no registered project). See localConversationToSession. */
+  projectRootForCwd?: (cwd: string) => string | null;
 };
+
+/** Extract the local cwd from a conversation runtime ("local:<cwd>").
+ *  Kept dependency-free here (rather than importing the server work-branch
+ *  helper) so this module stays pure and unit-testable. */
+function conversationLocalCwd(runtime: string | undefined): string | null {
+  if (!runtime?.startsWith("local:")) return null;
+  const cwd = runtime.slice("local:".length).trim();
+  return cwd || null;
+}
 
 function localConversationToSession(
   conv: LocalConversationSummary,
   state: CaveState,
+  projectRootForCwd?: (cwd: string) => string | null,
 ): SessionRow {
   const keep = Boolean(state.sessionKeep?.[conv.sessionId]);
   const extendedUntil = state.sessionArchiveExtendedUntil?.[conv.sessionId] ?? null;
@@ -44,9 +57,17 @@ function localConversationToSession(
     state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
   const familiarId = state.sessionFamiliar[conv.sessionId] ?? conv.familiarId ?? null;
   const status = conv.status ?? "completed";
+  // Sidebar/rail project groups key on project_root. A UI chat only exists as
+  // a local conversation (the daemon never sees it), so without this backfill
+  // every new chat lands in the "No project" bucket instead of its project's
+  // folder. Only registered-project cwds map — a chat running in the
+  // familiar's own workspace (or any unregistered dir) stays No-project by
+  // design (see resolveChatProjectSelection in chat-projects.ts).
+  const cwd = conversationLocalCwd(conv.runtime);
+  const projectRoot = (cwd ? projectRootForCwd?.(cwd) : null) ?? "";
   return {
     id: conv.sessionId,
-    project_root: "",
+    project_root: projectRoot,
     harness: conv.harness ?? "chat",
     ...(conv.model ? { model: conv.model } : {}),
     ...(conv.runtime ? { runtime: conv.runtime } : {}),
@@ -74,9 +95,10 @@ export function localConversationSessionRows(
   localConversations: LocalConversationSummary[],
   state: CaveState,
   includeArchived: boolean,
+  projectRootForCwd?: (cwd: string) => string | null,
 ): SessionRow[] {
   return localConversations
-    .map((conv) => localConversationToSession(conv, state))
+    .map((conv) => localConversationToSession(conv, state, projectRootForCwd))
     .filter((row) => visibleSession(row, state, includeArchived))
     .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
 }
@@ -87,6 +109,7 @@ export function mergeSessionRows({
   state,
   includeArchived,
   isValidDaemonProjectRoot,
+  projectRootForCwd,
 }: MergeOptions): SessionRow[] {
   const seen = new Set<string>();
   const rows: SessionRow[] = [];
@@ -156,7 +179,7 @@ export function mergeSessionRows({
     if (visibleSession(row, state, includeArchived)) rows.push(row);
   }
 
-  for (const row of localConversationSessionRows(localConversations, state, includeArchived)) {
+  for (const row of localConversationSessionRows(localConversations, state, includeArchived, projectRootForCwd)) {
     if (seen.has(row.id)) continue;
     rows.push(row);
   }
