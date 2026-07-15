@@ -16,9 +16,10 @@ assert.match(src, /generateArtifactCode/, "refine calls the generator");
 assert.match(src, /buildRefinePrompt/, "refine wraps with the refine prompt");
 assert.match(src, /\/api\/canvas/, "save posts to the canvas store");
 assert.match(src, /cave:navigate-mode/, "open-in-canvas navigates to the canvas page");
-assert.doesNotMatch(src, /new Blob\(\[srcDoc\]/, "open-in-browser must not create same-origin blob URLs from untrusted artifacts");
-assert.doesNotMatch(src, /URL\.createObjectURL\(/, "open-in-browser must not use same-origin object URLs for untrusted artifacts");
-assert.match(src, /data:text\/html;charset=utf-8/, "open-in-browser uses an opaque-origin data URL");
+assert.doesNotMatch(src, /new\s+Blob\s*\(\s*\[\s*srcDoc\b/, "open-in-browser must not create same-origin blob URLs from untrusted artifacts");
+assert.doesNotMatch(src, /URL\s*\.\s*createObjectURL\s*\(/, "open-in-browser must not use same-origin object URLs for untrusted artifacts");
+assert.match(src, /data:text\/html;charset=utf-8,/, "open-in-browser uses an opaque-origin data URL");
+assert.match(src, /encodeURIComponent\s*\(\s*srcDoc\s*\)/, "open-in-browser must encode artifact HTML when building the data URL");
 
 // Expand-to-fullscreen: a toggle action enters a fullscreen overlay, Escape
 // exits, and — critically — the overlay is PORTALED to document.body so it
