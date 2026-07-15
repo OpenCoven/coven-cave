@@ -5944,14 +5944,17 @@ button:active > .edge-rail-chip {
   padding: 2px 2px 4px;
 }
 
+/* One box family for the whole action row: every header control is the same
+   28px hairline-bordered square (radius-control), transparent at rest, tinted
+   on hover. Badges and icon tints carry the signals; the boxes stay uniform. */
 .top-bar__account {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-standard),
@@ -5972,7 +5975,7 @@ button:active > .edge-rail-chip {
   width: 28px;
   height: 28px;
   border-radius: var(--radius-control);
-  border: 0;
+  border: 1px solid var(--border-hairline);
   background: transparent;
   color: var(--text-secondary);
   display: grid;
@@ -5993,6 +5996,20 @@ button:active > .edge-rail-chip {
 .top-bar__tasks {
   position: relative;
   display: inline-flex;
+}
+
+/* The "⋯" trigger joins the same square-box family as its neighbors —
+   ui-icon-btn is borderless with --radius-sm by default, which left it
+   the one boxless control in the row. */
+.top-bar__actions .top-bar__tasks > .ui-icon-btn {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+
+/* The familiar-switcher trigger sits in the same row; drop its raised fill
+   so it rests transparent like every other box in the family. */
+.top-bar__actions .familiar-switcher__trigger {
+  background: transparent;
 }
 
 .top-bar__tasks-badge {
@@ -7188,10 +7205,11 @@ a.mobile-handoff__link:hover {
     outline-offset: -2px;
   }
   /* Unify the action row into one set of equal-height, equally boxed touch
-     targets: every control is a 44px hairline-bordered box with a transparent
-     fill (hover/active and the bell's unread state tint it). The icon buttons
-     (chat, tasks) and the cat drawer toggle are borderless/undersized by
-     default, so they get the box + size here to match the bell/account/avatar. */
+     targets: every control — including the "⋯" tasks overflow — is a 44px
+     hairline-bordered square with a transparent fill (hover/active tints it).
+     The icon buttons (chat, tasks) and the cat drawer toggle are
+     borderless/undersized by default, so they get the box + size here to
+     match the bell/account/avatar. */
   .top-bar__actions .notification-bell__trigger,
   .top-bar__account,
   .top-bar__actions .familiar-switcher__trigger,
@@ -7210,6 +7228,10 @@ a.mobile-handoff__link:hover {
   .top-bar__actions .top-bar__tasks > .ui-icon-btn {
     width: var(--touch-target);
     height: var(--touch-target);
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border-hairline);
   }
   .top-bar__account {
     background: transparent;
@@ -7217,10 +7239,25 @@ a.mobile-handoff__link:hover {
   .top-bar__actions .familiar-switcher__trigger {
     background: transparent;
   }
+  /* Same-square familiar trigger: the switcher compacts to its avatar box at
+     every top-bar width so the action row reads as one uniform set of
+     squares. The active familiar's name lives in the dropdown (and the
+     trigger's title); label + caret stay hidden here. */
+  .top-bar__actions .familiar-switcher__trigger-label,
+  .top-bar__actions .familiar-switcher__trigger-caret {
+    display: none;
+  }
   .top-bar__actions .familiar-switcher__trigger--labeled {
-    width: auto;
-    max-width: min(132px, 36vw);
-    padding-inline: 6px 8px;
+    justify-content: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    max-width: var(--touch-target);
+    padding: 0;
+  }
+  .top-bar__actions .familiar-switcher__trigger--labeled img {
+    width: 100%;
+    height: 100%;
+    border-radius: calc(var(--radius-control) - 1px);
   }
   /* Familiar selection is dropdown-only — the wrapper just keeps the switcher
      compact inside the phone action cluster. */
@@ -7230,28 +7267,6 @@ a.mobile-handoff__link:hover {
   }
   .top-bar__actions .notification-bell {
     position: static;
-  }
-  /* Phone-width top bar: the labeled familiar trigger (chat mode adds the
-     quickswitch to the actions cluster) plus the full icon set overflow the
-     actions grid track — justify-self:end anchors the right edge, so the
-     cluster bleeds LEFT over the nav toggle and search. Compact the trigger
-     to its avatar and drop the secondary Enhance shortcut (still reachable
-     from the composer) so the cluster fits a 360px bar. */
-  @media (max-width: 480px) {
-    .top-bar__actions .familiar-switcher__trigger-label {
-      display: none;
-    }
-    .top-bar__actions .familiar-switcher__trigger--labeled {
-      justify-content: center;
-      width: var(--touch-target);
-      max-width: var(--touch-target);
-      padding: 0;
-    }
-    .top-bar__actions .familiar-switcher__trigger--labeled img {
-      width: 100%;
-      height: 100%;
-      border-radius: calc(var(--radius-control) - 1px);
-    }
   }
   /* Below 456px, five global actions leave search under 120px even before its
      text is considered. Chat and Board already live in the bottom destination
