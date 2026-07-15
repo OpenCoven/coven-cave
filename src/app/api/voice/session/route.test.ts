@@ -165,3 +165,34 @@ test("200 familiar-brain provider mints keyless and binds the session id", async
   assert.equal(json.grant.connection.sessionId, SESSION_ID);
   assert.equal(json.grant.connection.voice, "Samantha");
 });
+
+test("400 vault_key_unresolved for elevenlabs without ELEVENLABS_API_KEY", async () => {
+  delete process.env.ELEVENLABS_API_KEY;
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  assert.equal(res.status, 400);
+  assert.equal(json.error, "vault_key_unresolved");
+  assert.equal(json.missingKey, "ELEVENLABS_API_KEY");
+});
+
+test("200 elevenlabs provider mints with defaults and binds the session id", async () => {
+  writeFamiliar({ display_name: "M", role: "x", voiceProvider: "elevenlabs" });
+  writeSession([]);
+  process.env.ELEVENLABS_API_KEY = "xi-good";
+  nextFetchResponse = new Response("[]", { status: 200 });
+  const res = await POST(req({ familiarId: FAMILIAR_ID, sessionId: SESSION_ID }));
+  const json = await res.json();
+  delete process.env.ELEVENLABS_API_KEY;
+  assert.equal(res.status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.grant.provider, "elevenlabs");
+  assert.equal(json.grant.connection.kind, "elevenlabs-familiar");
+  assert.equal(json.grant.connection.sessionId, SESSION_ID);
+  // Route DEFAULTS applied: Rachel + turbo, overridable per-familiar.
+  assert.equal(json.grant.connection.voiceId, "21m00Tcm4TlvDq8ikWAM");
+  assert.equal(json.grant.connection.modelId, "eleven_turbo_v2_5");
+  // The vault key must never reach the client.
+  assert.equal(JSON.stringify(json).includes("xi-good"), false);
+});

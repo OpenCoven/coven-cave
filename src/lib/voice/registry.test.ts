@@ -45,12 +45,21 @@ test("getVoiceProvider returns the familiar-brain provider", () => {
   assert.equal(familiar.persistsTranscripts, true);
 });
 
+test("getVoiceProvider returns the elevenlabs provider", () => {
+  const eleven = getVoiceProvider("elevenlabs");
+  assert.ok(eleven);
+  assert.equal(eleven.id, "elevenlabs");
+  assert.equal(typeof eleven.mintSession, "function");
+  assert.equal(typeof eleven.clientAdapter.connect, "function");
+  assert.equal(eleven.persistsTranscripts, true);
+});
+
 test("getVoiceProvider returns null for unknown id", () => {
   assert.equal(getVoiceProvider("bogus"), null);
   assert.equal(getVoiceProvider(""), null);
 });
 
-test("listVoiceProviders returns stable order: openai, gemini, local, familiar", () => {
+test("listVoiceProviders returns stable order: openai, gemini, local, familiar, elevenlabs", () => {
   const list = listVoiceProviders();
-  assert.deepEqual(list.map(p => p.id), ["openai", "gemini", "local", "familiar"]);
+  assert.deepEqual(list.map(p => p.id), ["openai", "gemini", "local", "familiar", "elevenlabs"]);
 });

@@ -17,6 +17,10 @@ import {
   findOpenAiVoice,
   openAiVoiceDetail,
 } from "@/lib/voice/openai-voices";
+import {
+  DEFAULT_ELEVENLABS_MODEL_ID,
+  DEFAULT_ELEVENLABS_VOICE_ID,
+} from "@/lib/voice/elevenlabs-shared";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -232,13 +236,23 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
       return;
     }
 
-    // OpenAI: fetch the server-minted sample (fetch carries the sidecar auth
-    // token; a bare <audio src> would not) and play it from a blob URL.
+    // OpenAI / ElevenLabs: fetch the server-minted sample (fetch carries the
+    // sidecar auth token; a bare <audio src> would not), play from a blob URL.
     const gen = ++previewGenRef.current;
     setPreviewStatus("loading");
     const voiceId = draftVoiceName || DEFAULT_OPENAI_VOICE_ID;
     try {
-      const res = await fetch(`/api/voice/preview?voice=${encodeURIComponent(voiceId)}`);
+      const res = draftVoiceProvider === "elevenlabs"
+        ? await fetch("/api/voice/elevenlabs/tts", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              text: "Hey — this is how your familiar will sound.",
+              voiceId: draftVoiceName.trim() || DEFAULT_ELEVENLABS_VOICE_ID,
+              modelId: draftVoiceModel.trim() || DEFAULT_ELEVENLABS_MODEL_ID,
+            }),
+          })
+        : await fetch(`/api/voice/preview?voice=${encodeURIComponent(voiceId)}`);
       if (gen !== previewGenRef.current) return;
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok || !contentType.includes("audio/")) {
@@ -249,6 +263,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             message = json.hint ?? message;
           } else if (json.providerMessage) {
             message = `Preview failed: ${json.providerMessage}`;
+          } else if (json.hint) {
+            message = json.hint;
           }
         } catch { /* keep default */ }
         setPreviewNote(message);
@@ -413,6 +429,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                   options={[
                     { value: "", label: "None" },
                     { value: "familiar", label: "Familiar brain (true voice)" },
+                    { value: "elevenlabs", label: "ElevenLabs (true voice)" },
                     { value: "openai", label: "OpenAI Realtime" },
                     { value: "local", label: "Local (on-device)" },
                     { value: "gemini", label: "Gemini Live (v1.1)", disabled: true },
@@ -428,7 +445,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               </p>
             )}
 
-            {(draftVoiceProvider === "openai" || draftVoiceProvider === "local" || draftVoiceProvider === "familiar") && (
+            {draftVoiceProvider === "elevenlabs" && (
+              <p className="familiar-studio-brain__hint">
+                ElevenLabs speaks the replies — every spoken turn still runs
+                through this familiar&apos;s own runtime, as a real chat turn.
+              </p>
+            )}
+
+            {(draftVoiceProvider === "openai" || draftVoiceProvider === "local" || draftVoiceProvider === "familiar" || draftVoiceProvider === "elevenlabs") && (
               <>
                 {draftVoiceProvider !== "familiar" && (
                 <label className="familiar-studio-brain__row">
@@ -441,7 +465,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       value={draftVoiceModel}
                       onChange={(e) => setDraftVoiceModel(e.target.value)}
                       onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || null })}
-                      placeholder={draftVoiceProvider === "local" ? "llama3.2" : "gpt-realtime"}
+                      placeholder={
+                        draftVoiceProvider === "local"
+                          ? "llama3.2"
+                          : draftVoiceProvider === "elevenlabs"
+                            ? DEFAULT_ELEVENLABS_MODEL_ID
+                            : "gpt-realtime"
+                      }
                       className="familiar-studio-brain__input"
                     />
                   </div>
@@ -486,8 +516,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     ) : null}
                   </label>
                 ) : (
-                  // Local and familiar-brain speech ride the system synthesizer —
-                  // the voice is a system voice name (empty = platform default).
+                  // Local and familiar-brain speech ride the system synthesizer
+                  // (voice = a system voice name, empty = platform default);
+                  // ElevenLabs takes a voice id from the user's voice library.
                   <label className="familiar-studio-brain__row">
                     <span className="familiar-studio-brain__label">Voice</span>
                     <div className="familiar-studio-brain__control">
@@ -496,7 +527,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         value={draftVoiceName}
                         onChange={(e) => setDraftVoiceName(e.target.value)}
                         onBlur={() => void save({ voiceName: draftVoiceName.trim() || null })}
-                        placeholder="System default (e.g. Samantha)"
+                        placeholder={
+                          draftVoiceProvider === "elevenlabs"
+                            ? "ElevenLabs voice id (default: Rachel)"
+                            : "System default (e.g. Samantha)"
+                        }
                         className="familiar-studio-brain__input"
                       />
                       {previewButton}

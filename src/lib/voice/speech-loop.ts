@@ -26,6 +26,44 @@ export type SpeechBrain = (
   speak: (chunk: string) => void,
 ) => Promise<string>;
 
+/** The mouth half of the loop: voice one utterance, resolving when playback
+ *  finishes. `cancel()` stops playback immediately (call ending). The default
+ *  mouth is the system synthesizer; ElevenLabs plugs in a network mouth. */
+export type SpeechMouth = {
+  speak(text: string): Promise<void>;
+  cancel(): void;
+};
+
+/** The system speechSynthesis mouth — AVSpeechSynthesizer voices on macOS
+ *  WebViews. `voiceName` picks a system voice; empty means platform default.
+ *  Environments without speechSynthesis resolve immediately (silent). */
+export function createSystemSynthMouth(voiceName?: string): SpeechMouth {
+  return {
+    speak(text: string) {
+      return new Promise<void>((resolve) => {
+        if (typeof window === "undefined" || !window.speechSynthesis) {
+          resolve();
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (voiceName) {
+          const match = window.speechSynthesis
+            .getVoices()
+            .find((v) => v.name === voiceName);
+          if (match) utterance.voice = match;
+        }
+        const done = () => resolve();
+        utterance.onend = done;
+        utterance.onerror = done;
+        window.speechSynthesis.speak(utterance);
+      });
+    },
+    cancel() {
+      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    },
+  };
+}
+
 /** Minimum characters before a sentence break is worth voicing on its own —
  *  keeps list markers ("1.") and initials from becoming tiny utterances. */
 export const MIN_SPOKEN_SENTENCE_CHARS = 24;
@@ -94,8 +132,11 @@ export const STT_UNAVAILABLE_HINT =
 
 export type SpeechLoopOptions = {
   mic: MediaStream;
-  /** System synthesizer voice name; empty for the platform default. */
+  /** System synthesizer voice name; empty for the platform default. Ignored
+   *  when a custom `mouth` is supplied. */
   voiceName?: string;
+  /** Custom mouth (e.g. ElevenLabs TTS). Defaults to the system synthesizer. */
+  mouth?: SpeechMouth;
   callbacks: VoiceCallbacks;
   brain: SpeechBrain;
   /** Machine code reported when the brain throws a non-VoiceConnectError. */
@@ -114,6 +155,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     throw new VoiceConnectError("stt_unavailable", STT_UNAVAILABLE_HINT);
   }
   const { mic, callbacks } = opts;
+  const mouth = opts.mouth ?? createSystemSynthMouth(opts.voiceName);
 
   let closed = false;
   let muted = false;
@@ -139,7 +181,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
   };
 
   const speakNext = () => {
-    if (closed || typeof window === "undefined" || !window.speechSynthesis) {
+    if (closed) {
       utterances.length = 0;
       speaking = false;
       onQueueDrained?.();
@@ -154,17 +196,20 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
     }
     speaking = true;
     hush();
-    const utterance = new SpeechSynthesisUtterance(text);
-    if (opts.voiceName) {
-      const match = window.speechSynthesis
-        .getVoices()
-        .find((v) => v.name === opts.voiceName);
-      if (match) utterance.voice = match;
-    }
-    const done = () => { speakNext(); };
-    utterance.onend = done;
-    utterance.onerror = done;
-    window.speechSynthesis.speak(utterance);
+    mouth
+      .speak(text)
+      .catch((err) => {
+        // A mouth failure (e.g. the TTS proxy erroring) surfaces like a brain
+        // failure but keeps draining — one bad utterance must not end the call.
+        if (!closed) {
+          callbacks.onError(
+            err instanceof VoiceConnectError
+              ? err
+              : new VoiceConnectError(opts.brainErrorCode, opts.brainErrorHint),
+          );
+        }
+      })
+      .then(() => { speakNext(); });
   };
 
   const enqueueSpeech = (chunk: string) => {
@@ -251,7 +296,7 @@ export function connectSpeechLoop(opts: SpeechLoopOptions): LiveSession {
       recognition.onend = null;
       hush();
       utterances.length = 0;
-      if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+      mouth.cancel();
       for (const track of mic.getAudioTracks()) track.stop();
     },
   };

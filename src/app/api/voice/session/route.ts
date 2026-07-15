@@ -6,6 +6,10 @@ import { caveHome } from "../../../../lib/coven-paths.ts";
 import { resolveSecret } from "../../../../lib/vault.ts";
 import { getVoiceProvider } from "../../../../lib/voice/registry.ts";
 import { hydrateForVoiceCall } from "../../../../lib/voice/hydrate-instructions.ts";
+import {
+  DEFAULT_ELEVENLABS_MODEL_ID,
+  DEFAULT_ELEVENLABS_VOICE_ID,
+} from "../../../../lib/voice/elevenlabs-shared.ts";
 import { isSafeConversationSessionId } from "../../../../lib/cave-conversations.ts";
 
 export const runtime = "nodejs";
@@ -14,6 +18,7 @@ export const dynamic = "force-dynamic";
 const VAULT_KEY_BY_PROVIDER: Record<string, string> = {
   openai: "OPENAI_API_KEY",
   gemini: "GOOGLE_API_KEY",
+  elevenlabs: "ELEVENLABS_API_KEY",
 };
 
 // Providers whose brain lives on this machine (or behind our own chat bridge)
@@ -29,6 +34,9 @@ const DEFAULTS: Record<string, { model: string; voice: string }> = {
   // The familiar's own harness is the brain — there is no voice model to pick,
   // and the voice is a system synthesizer voice name.
   familiar: { model: "", voice: "" },
+  // Brain = the familiar's harness (like `familiar`); voice = an ElevenLabs
+  // voice id and model = an ElevenLabs model id, spoken through our TTS proxy.
+  elevenlabs: { model: DEFAULT_ELEVENLABS_MODEL_ID, voice: DEFAULT_ELEVENLABS_VOICE_ID },
 };
 
 type FamiliarRecord = {

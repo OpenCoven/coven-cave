@@ -1,4 +1,4 @@
-export type VoiceProviderId = "openai" | "gemini" | "local" | "familiar";
+export type VoiceProviderId = "openai" | "gemini" | "local" | "familiar" | "elevenlabs";
 
 export type VoiceSessionRequest = {
   familiarId: string;

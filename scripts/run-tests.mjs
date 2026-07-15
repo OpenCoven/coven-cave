@@ -859,6 +859,7 @@ export const SUITES = {
     "src/lib/voice/local-loop.test.ts",
     "src/lib/voice/speech-loop.test.ts",
     "src/lib/voice/familiar-brain.test.ts",
+    "src/lib/voice/elevenlabs.test.ts",
     "src/lib/voice/hydrate-instructions.test.ts",
     "src/lib/voice/append-voice-turn.test.ts",
     "src/lib/voice/openai-realtime.test.ts",
@@ -866,6 +867,7 @@ export const SUITES = {
     "src/app/api/voice/session/route.test.ts",
     "src/app/api/voice/preview/route.test.ts",
     "src/app/api/voice/local/chat/route.test.ts",
+    "src/app/api/voice/elevenlabs/tts/route.test.ts",
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
@@ -1115,6 +1117,7 @@ const ALIAS_LOADER = new Set([
   // familiar-brain imports familiar-stream, whose graph reaches "@/lib/…".
   "src/lib/voice/familiar-brain.test.ts",
   "src/lib/voice/registry.test.ts",
+  "src/lib/voice/elevenlabs.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
