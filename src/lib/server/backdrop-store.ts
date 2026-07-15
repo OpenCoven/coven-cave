@@ -45,6 +45,30 @@ export function backdropPath(): string {
   return override || path.join(caveHome(), "backdrop.jpg");
 }
 
+/** Directory holding per-familiar backdrop overrides, one image per familiar. */
+export function familiarBackdropDir(): string {
+  const override = process.env.COVEN_FAMILIAR_BACKDROP_DIR?.trim();
+  return override || path.join(caveHome(), "backdrops");
+}
+
+// Familiar ids come from cave-config; the store still refuses anything that
+// could escape its directory. Extension-less storage is fine — reads identify
+// the format from magic bytes, exactly like the app-wide image.
+const FAMILIAR_BACKDROP_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** Resolve the image path for one familiar, refusing traversal-shaped ids. */
+export function familiarBackdropPath(familiarId: string): string {
+  if (!FAMILIAR_BACKDROP_ID_RE.test(familiarId) || familiarId.includes("..")) {
+    throw new BackdropValidationError("invalid familiar id", 400);
+  }
+  const dir = familiarBackdropDir();
+  const target = path.resolve(dir, `familiar-${familiarId}.img`);
+  if (target !== dir && !target.startsWith(dir + path.sep)) {
+    throw new BackdropValidationError("invalid familiar id", 400);
+  }
+  return target;
+}
+
 function hasPrefix(bytes: Uint8Array, prefix: readonly number[]): boolean {
   return bytes.byteLength >= prefix.length && prefix.every((byte, index) => bytes[index] === byte);
 }
@@ -109,8 +133,7 @@ function validatedFile(bytes: Uint8Array, declaredMime: string): BackdropFile {
 }
 
 /** Return null for missing, malformed, or oversized on-disk data. */
-export async function readBackdropFile(): Promise<BackdropFile | null> {
-  const target = backdropPath();
+async function readImageAt(target: string): Promise<BackdropFile | null> {
   try {
     const info = await stat(target);
     if (!info.isFile() || info.size <= 0 || info.size > MAX_BACKDROP_BYTES) return null;
@@ -125,18 +148,47 @@ export async function readBackdropFile(): Promise<BackdropFile | null> {
   }
 }
 
-/** Validate, then atomically replace the canonical image. */
-export async function writeBackdropFile(
+/** Validate, then atomically replace the image at `target`. */
+async function writeImageAt(
+  target: string,
   bytes: Uint8Array,
   declaredMime: string,
 ): Promise<BackdropFile> {
   const image = validatedFile(bytes, declaredMime);
-  const target = backdropPath();
   await mkdir(path.dirname(target), { recursive: true });
   await writeFileAtomic(target, image.bytes);
   return image;
 }
 
+/** Return null for missing, malformed, or oversized on-disk data. */
+export async function readBackdropFile(): Promise<BackdropFile | null> {
+  return readImageAt(backdropPath());
+}
+
+/** Validate, then atomically replace the canonical image. */
+export async function writeBackdropFile(
+  bytes: Uint8Array,
+  declaredMime: string,
+): Promise<BackdropFile> {
+  return writeImageAt(backdropPath(), bytes, declaredMime);
+}
+
 export async function deleteBackdropFile(): Promise<void> {
   await rm(backdropPath(), { force: true });
+}
+
+export async function readFamiliarBackdropFile(familiarId: string): Promise<BackdropFile | null> {
+  return readImageAt(familiarBackdropPath(familiarId));
+}
+
+export async function writeFamiliarBackdropFile(
+  familiarId: string,
+  bytes: Uint8Array,
+  declaredMime: string,
+): Promise<BackdropFile> {
+  return writeImageAt(familiarBackdropPath(familiarId), bytes, declaredMime);
+}
+
+export async function deleteFamiliarBackdropFile(familiarId: string): Promise<void> {
+  await rm(familiarBackdropPath(familiarId), { force: true });
 }

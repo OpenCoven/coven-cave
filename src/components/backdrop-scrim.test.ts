@@ -74,3 +74,41 @@ assert.match(
 );
 
 console.log("backdrop-scrim.test.ts: ok");
+
+// ── Per-familiar backdrop override wiring (cave-j0dz) ────────────────────────
+// The active chat familiar's own backdrop takes over the layer; the app-wide
+// image stays the fallback/default everywhere else.
+const layer = readFileSync(new URL("./cave-backdrop-layer.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
+const lookTab = readFileSync(new URL("./familiar-studio-look-tab.tsx", import.meta.url), "utf8");
+
+assert.match(
+  layer,
+  /const effectiveUrl = familiarUrl \?\? imageUrl;/,
+  "the familiar override wins while present; the generic image is the fallback",
+);
+assert.match(
+  layer,
+  /const effectiveEnabled = prefs\.enabled \|\| familiarUrl !== null;/,
+  "a familiar backdrop shows even when the app-wide backdrop is off",
+);
+assert.match(
+  layer,
+  /matchAccent: false, accentSeed: null/,
+  "the generic image's sampled accent never tints a familiar override",
+);
+assert.match(
+  workspace,
+  /familiarId=\{mode === "chat" \? activeId : null\}/,
+  "the workspace scopes the override to the active single-familiar chat selection",
+);
+assert.match(
+  lookTab,
+  /FamiliarBackdropSection familiarId=\{familiar\.id\}/,
+  "the Studio Look tab owns the per-familiar backdrop controls",
+);
+assert.match(
+  lookTab,
+  /writeFamiliarBackdropImage\(familiarId, blob\)/,
+  "uploads persist through the per-familiar backdrop store",
+);

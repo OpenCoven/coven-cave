@@ -2648,8 +2648,12 @@ export function Workspace() {
     <FamiliarStudioProvider redirectToSettings>
       {/* Backdrop vibe: the user's image behind Home + Chat, painted under
           the shell; the derived accent applies document-wide from the same
-          store (cave-backdrop.ts). */}
-      <CaveBackdropLayer active={mode === "home" || mode === "chat"} />
+          store (cave-backdrop.ts). In chat, a single-familiar scope with its
+          own backdrop overrides the app-wide image (generic = fallback). */}
+      <CaveBackdropLayer
+        active={mode === "home" || mode === "chat"}
+        familiarId={mode === "chat" ? activeId : null}
+      />
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}

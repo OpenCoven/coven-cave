@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { Modal } from "./ui/modal";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
 import { useFamiliarImages } from "@/lib/cave-familiar-images";
 import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
+import {
+  prepareBackdropImage,
+  readFamiliarBackdropImage,
+  useFamiliarBackdropRevision,
+  writeFamiliarBackdropImage,
+} from "@/lib/cave-backdrop";
 import {
   setFamiliarOverride,
   clearFamiliarOverrideField,
@@ -187,6 +193,11 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
       </section>
 
       <section className="familiar-studio-look__section">
+        <h3 className="familiar-studio-look__heading">Backdrop</h3>
+        <FamiliarBackdropSection familiarId={familiar.id} />
+      </section>
+
+      <section className="familiar-studio-look__section">
         <h3 className="familiar-studio-look__heading">Accent color</h3>
         <div
           className="familiar-studio-look__scope"
@@ -282,4 +293,117 @@ function colorInputValue(color: string | null): string {
   return color && /^#[0-9a-f]{6}$/i.test(color)
     ? color
     : (COLOR_PRESETS[0]?.inputFallback ?? "#888888");
+}
+
+// Per-familiar backdrop override (cave-j0dz): shows behind Chat while THIS
+// familiar is the active scope; every other surface keeps the app backdrop
+// (Settings → Appearance), which stays the fallback/default.
+function FamiliarBackdropSection({ familiarId }: { familiarId: string }) {
+  const revision = useFamiliarBackdropRevision(familiarId);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const removeConfirm = useArmedConfirm();
+  const urlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readFamiliarBackdropImage(familiarId)
+      .catch(() => null)
+      .then((blob) => {
+        if (cancelled) return;
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+        urlRef.current = blob ? URL.createObjectURL(blob) : null;
+        setPreviewUrl(urlRef.current);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [familiarId, revision]);
+  useEffect(
+    () => () => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    },
+    [],
+  );
+
+  async function pickImage(file: File) {
+    setBusy(true);
+    setNote(null);
+    try {
+      const { blob } = await prepareBackdropImage(file);
+      await writeFamiliarBackdropImage(familiarId, blob);
+      setNote("Backdrop set — shows in chat while this familiar is active.");
+    } catch (err) {
+      const heicLike = /\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
+      setNote(
+        heicLike
+          ? "Couldn't decode that HEIC photo here. Convert it to JPEG first."
+          : err instanceof Error && err.message
+            ? err.message
+            : "Could not read that image.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeBackdrop() {
+    setBusy(true);
+    setNote(null);
+    try {
+      await writeFamiliarBackdropImage(familiarId, null);
+      setNote("Backdrop removed — the app backdrop applies again.");
+    } catch {
+      setNote("Could not remove the backdrop.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="familiar-studio-look__upload">
+          <Icon name="ph:cloud-arrow-up-bold" width={14} />
+          {previewUrl ? " Replace image" : " Choose image"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif"
+            hidden
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void pickImage(file);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {previewUrl ? (
+          <>
+            <img
+              src={previewUrl}
+              alt="Current familiar backdrop"
+              width={96}
+              height={54}
+              className="h-[54px] w-24 rounded-md border border-[var(--border-hairline)] object-cover"
+            />
+            <Button
+              variant="danger-ghost"
+              size="xs"
+              onClick={() => removeConfirm.trigger(() => void removeBackdrop())}
+              disabled={busy}
+            >
+              {removeConfirm.armed ? "Really remove?" : "Remove"}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      <p className="familiar-studio-look__note">
+        Overrides the app backdrop in chat while this familiar is selected. Without one, the app
+        backdrop (Settings → Appearance) is the default.
+      </p>
+      {note ? <p className="familiar-studio-look__toast" role="status">{note}</p> : null}
+    </div>
+  );
 }

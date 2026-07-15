@@ -8,10 +8,13 @@ import {
   backdropPath,
   BackdropValidationError,
   deleteBackdropFile,
+  deleteFamiliarBackdropFile,
   detectBackdropMime,
   MAX_BACKDROP_BYTES,
   readBackdropFile,
+  readFamiliarBackdropFile,
   writeBackdropFile,
+  writeFamiliarBackdropFile,
 } from "./backdrop-store.ts";
 
 const routeSource = await readFile(
@@ -36,11 +39,14 @@ const WEBP = Buffer.from([
 
 const root = await mkdtemp(path.join(tmpdir(), "cave-backdrop-store-"));
 const originalOverride = process.env.COVEN_BACKDROP_PATH;
+const originalFamiliarDir = process.env.COVEN_FAMILIAR_BACKDROP_DIR;
 const originalCovenHome = process.env.COVEN_HOME;
 
 after(async () => {
   if (originalOverride === undefined) delete process.env.COVEN_BACKDROP_PATH;
   else process.env.COVEN_BACKDROP_PATH = originalOverride;
+  if (originalFamiliarDir === undefined) delete process.env.COVEN_FAMILIAR_BACKDROP_DIR;
+  else process.env.COVEN_FAMILIAR_BACKDROP_DIR = originalFamiliarDir;
   if (originalCovenHome === undefined) delete process.env.COVEN_HOME;
   else process.env.COVEN_HOME = originalCovenHome;
   await rm(root, { recursive: true, force: true });
@@ -186,4 +192,64 @@ test("route keeps normal API auth plus local-only, bounded, no-store raster sema
   assert.match(routeSource, /"X-Content-Type-Options": "nosniff"/);
   assert.match(routeSource, /req\.headers\.get\("if-none-match"\) === image\.etag[\s\S]*status: 304/);
   assert.doesNotMatch(routeSource, /image\/svg|svg\+xml/i, "the route never allowlists SVG");
+});
+
+// ── per-familiar overrides (cave-j0dz) ───────────────────────────────────────
+
+const familiarRouteSource = await readFile(
+  new URL("../../app/api/familiars/[id]/backdrop/route.ts", import.meta.url),
+  "utf8",
+);
+
+function useFamiliarDir(name: string): string {
+  const dir = path.join(root, name);
+  process.env.COVEN_FAMILIAR_BACKDROP_DIR = dir;
+  return dir;
+}
+
+test("familiar backdrops round-trip in their own directory and delete idempotently", async () => {
+  const dir = useFamiliarDir("familiar-roundtrip");
+  const saved = await writeFamiliarBackdropFile("nova", PNG, "image/png");
+  assert.equal(saved.mime, "image/png");
+  assert.deepEqual(await readFile(path.join(dir, "familiar-nova.img")), PNG);
+
+  const loaded = await readFamiliarBackdropFile("nova");
+  assert.ok(loaded);
+  assert.equal(loaded.etag, saved.etag);
+  assert.equal(await readFamiliarBackdropFile("someone-else"), null, "familiars are isolated");
+
+  await deleteFamiliarBackdropFile("nova");
+  await deleteFamiliarBackdropFile("nova"); // idempotent
+  assert.equal(await readFamiliarBackdropFile("nova"), null);
+});
+
+test("traversal-shaped familiar ids are refused with a 400 validation error", async () => {
+  useFamiliarDir("familiar-traversal");
+  for (const evil of ["../escape", "a/b", "a\\b", "", ".hidden", "x".repeat(80)]) {
+    await expectValidation(() => readFamiliarBackdropFile(evil), 400);
+    await expectValidation(() => writeFamiliarBackdropFile(evil, PNG, "image/png"), 400);
+    await expectValidation(() => deleteFamiliarBackdropFile(evil), 400);
+  }
+});
+
+test("familiar route mirrors the app route's local-only, bounded, no-store semantics", () => {
+  for (const method of ["GET", "PUT", "DELETE"]) {
+    assert.match(
+      familiarRouteSource,
+      new RegExp(`export async function ${method}\\(req: Request[\\s\\S]*?rejectNonLocalRequest\\(req\\)`),
+    );
+  }
+  assert.match(familiarRouteSource, /req\.body\?\.getReader\(\)/, "PUT streams instead of unbounded arrayBuffer parsing");
+  assert.match(familiarRouteSource, /total > MAX_BACKDROP_BYTES[\s\S]*BackdropValidationError\("backdrop image is too large", 413\)/);
+  assert.match(familiarRouteSource, /SAFE_BACKDROP_MIME_TYPES[\s\S]*unsupported backdrop image type[\s\S]*415/);
+  assert.match(familiarRouteSource, /writeFamiliarBackdropFile\(params\.id, bytes, mime\)/);
+  assert.match(familiarRouteSource, /"Cache-Control": "no-store"/);
+  assert.match(familiarRouteSource, /"X-Content-Type-Options": "nosniff"/);
+  assert.match(familiarRouteSource, /req\.headers\.get\("if-none-match"\) === image\.etag[\s\S]*status: 304/);
+  assert.doesNotMatch(familiarRouteSource, /image\/svg|svg\+xml/i, "the route never allowlists SVG");
+  assert.doesNotMatch(
+    familiarRouteSource,
+    /patchPreferences/,
+    "per-familiar images live outside the app-wide preferences snapshot",
+  );
 });

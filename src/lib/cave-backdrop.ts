@@ -360,3 +360,65 @@ export function applyBackdropToDocument(prefs: BackdropPrefs, imageUrl?: string 
     root.style.removeProperty("--accent-presence");
   }
 }
+
+// ── per-familiar backdrop override (cave-j0dz) ───────────────────────────────
+//
+// A familiar can carry its own backdrop image. While that familiar is the
+// active chat scope, its image overrides the app-wide one; every other
+// surface (and familiars without one) falls back to the generic backdrop.
+// Bytes live server-side beside the app image (`/api/familiars/:id/backdrop`);
+// this store is a thin fetch + revision layer so the layer and the Studio
+// Look tab stay in sync after uploads/removals.
+
+const familiarBackdropRevisions = new Map<string, number>();
+const familiarBackdropListeners = new Set<() => void>();
+
+function notifyFamiliarBackdrop() {
+  for (const fn of familiarBackdropListeners) fn();
+}
+
+function familiarBackdropUrl(familiarId: string): string {
+  return `/api/familiars/${encodeURIComponent(familiarId)}/backdrop`;
+}
+
+/** Fetch a familiar's backdrop override; null when it has none (404). */
+export async function readFamiliarBackdropImage(familiarId: string): Promise<Blob | null> {
+  if (!familiarId) return null;
+  const response = await fetch(familiarBackdropUrl(familiarId), { cache: "no-store" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Could not read familiar backdrop (${response.status}).`);
+  return response.blob();
+}
+
+/** Persist (PUT) or remove (DELETE with null) a familiar's backdrop override. */
+export async function writeFamiliarBackdropImage(
+  familiarId: string,
+  blob: Blob | null,
+): Promise<void> {
+  const response = await fetch(familiarBackdropUrl(familiarId), {
+    method: blob ? "PUT" : "DELETE",
+    ...(blob ? { headers: { "content-type": blob.type || "image/jpeg" }, body: blob } : {}),
+  });
+  if (!response.ok) throw new Error(`Could not persist familiar backdrop (${response.status}).`);
+  familiarBackdropRevisions.set(
+    familiarId,
+    (familiarBackdropRevisions.get(familiarId) ?? 0) + 1,
+  );
+  notifyFamiliarBackdrop();
+}
+
+function subscribeFamiliarBackdrop(fn: () => void): () => void {
+  familiarBackdropListeners.add(fn);
+  return () => {
+    familiarBackdropListeners.delete(fn);
+  };
+}
+
+/** Bumps whenever `familiarId`'s override is replaced or removed in this tab. */
+export function useFamiliarBackdropRevision(familiarId: string | null): number {
+  return useSyncExternalStore(
+    subscribeFamiliarBackdrop,
+    () => (familiarId ? familiarBackdropRevisions.get(familiarId) ?? 0 : 0),
+    () => 0,
+  );
+}

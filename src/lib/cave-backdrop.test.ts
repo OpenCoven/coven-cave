@@ -275,8 +275,8 @@ assert.match(
 assert.match(layer, /root\.dataset\.backdropOn = "1"/, "the frontmost-surface flag rides <html>");
 assert.match(
   workspace,
-  /<CaveBackdropLayer active=\{mode === "home" \|\| mode === "chat"\} \/>/,
-  "the workspace scopes the backdrop to Home + Chat",
+  /<CaveBackdropLayer\s+active=\{mode === "home" \|\| mode === "chat"\}\s+familiarId=\{mode === "chat" \? activeId : null\}\s*\/>/,
+  "the workspace scopes the backdrop to Home + Chat, with the active chat familiar as the override scope",
 );
 assert.match(css, /html\[data-backdrop-on\] \.shell-root,/, "shell panes go translucent only while a backdrop surface is frontmost");
 assert.match(
