@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   reportDaemonSyncFailure,
@@ -10,6 +10,13 @@ import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
+import { IconButton } from "@/components/ui/icon-button";
+import {
+  DEFAULT_OPENAI_VOICE_ID,
+  OPENAI_REALTIME_VOICES,
+  findOpenAiVoice,
+  openAiVoiceDetail,
+} from "@/lib/voice/openai-voices";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -47,6 +54,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [manifest, setManifest] = useState<HarnessCapabilityManifest | null>(null);
   const [manifestState, setManifestState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [capsOpen, setCapsOpen] = useState(false);
+  const [previewStatus, setPreviewStatus] = useState<"idle" | "loading" | "playing">("idle");
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  // Generation counter: bumping it invalidates any preview fetch still in
+  // flight, so a stop click (or voice switch) can't be overtaken by late audio.
+  const previewGenRef = useRef(0);
 
   useEffect(() => {
     setDraftHarness(familiar.harnessOverride ?? "");
@@ -160,6 +174,122 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     }
   }
 
+  const stopVoicePreview = useCallback(() => {
+    previewGenRef.current++;
+    const audio = previewAudioRef.current;
+    previewAudioRef.current = null;
+    if (audio) {
+      audio.onended = null;
+      audio.pause();
+    }
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setPreviewStatus("idle");
+  }, []);
+
+  // Kill any playing sample on unmount or when switching familiars.
+  useEffect(() => stopVoicePreview, [stopVoicePreview]);
+  useEffect(() => {
+    stopVoicePreview();
+    setPreviewNote(null);
+  }, [familiar.id, stopVoicePreview]);
+
+  async function playVoicePreview() {
+    if (previewStatus !== "idle") {
+      stopVoicePreview();
+      return;
+    }
+    setPreviewNote(null);
+
+    // Local speech rides the browser/system synthesizer — free and offline.
+    if (draftVoiceProvider === "local") {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+        setPreviewNote("Speech synthesis isn't available in this environment.");
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(
+        "Hey — this is how your familiar will sound.",
+      );
+      const wanted = draftVoiceName.trim();
+      if (wanted) {
+        const match = window.speechSynthesis
+          .getVoices()
+          .find((v) => v.name.toLowerCase() === wanted.toLowerCase());
+        if (match) utterance.voice = match;
+        else setPreviewNote(`No system voice named “${wanted}” — previewing the platform default.`);
+      }
+      utterance.onend = () => setPreviewStatus("idle");
+      utterance.onerror = () => setPreviewStatus("idle");
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+      setPreviewStatus("playing");
+      return;
+    }
+
+    // OpenAI: fetch the server-minted sample (fetch carries the sidecar auth
+    // token; a bare <audio src> would not) and play it from a blob URL.
+    const gen = ++previewGenRef.current;
+    setPreviewStatus("loading");
+    const voiceId = draftVoiceName || DEFAULT_OPENAI_VOICE_ID;
+    try {
+      const res = await fetch(`/api/voice/preview?voice=${encodeURIComponent(voiceId)}`);
+      if (gen !== previewGenRef.current) return;
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!res.ok || !contentType.includes("audio/")) {
+        let message = "Couldn't load the voice preview.";
+        try {
+          const json = await res.json();
+          if (json.error === "preview_unsupported" || json.error === "vault_key_unresolved") {
+            message = json.hint ?? message;
+          } else if (json.providerMessage) {
+            message = `Preview failed: ${json.providerMessage}`;
+          }
+        } catch { /* keep default */ }
+        setPreviewNote(message);
+        setPreviewStatus("idle");
+        return;
+      }
+      const blob = await res.blob();
+      if (gen !== previewGenRef.current) return;
+      const url = URL.createObjectURL(blob);
+      previewUrlRef.current = url;
+      const audio = new Audio(url);
+      previewAudioRef.current = audio;
+      audio.onended = () => stopVoicePreview();
+      await audio.play();
+      if (gen !== previewGenRef.current) return;
+      setPreviewStatus("playing");
+    } catch {
+      if (gen !== previewGenRef.current) return;
+      stopVoicePreview();
+      setPreviewNote("Couldn't load the voice preview.");
+    }
+  }
+
+  const selectedOpenAiVoice =
+    findOpenAiVoice(draftVoiceName) ?? findOpenAiVoice(DEFAULT_OPENAI_VOICE_ID);
+  const defaultOpenAiVoice = findOpenAiVoice(DEFAULT_OPENAI_VOICE_ID);
+  const selectedDefaultVoiceDetail = defaultOpenAiVoice
+    ? openAiVoiceDetail(defaultOpenAiVoice)
+    : undefined;
+
+  const previewButton = (
+    <IconButton
+      icon={previewStatus === "playing" ? "ph:stop-fill" : "ph:speaker-high-fill"}
+      className="familiar-studio-brain__voice-preview"
+      onClick={() => void playVoicePreview()}
+      disabled={previewStatus === "loading"}
+      active={previewStatus === "playing"}
+      aria-label={previewStatus === "playing" ? "Stop voice preview" : "Preview voice"}
+      title={previewStatus === "playing" ? "Stop preview" : "Hear a sample of this voice"}
+    />
+  );
+
   return (
     <div className="familiar-studio-brain">
       <div className="familiar-studio-brain__workspace">
@@ -271,6 +401,8 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                   label="Voice provider"
                   value={draftVoiceProvider}
                   onChange={(next) => {
+                    stopVoicePreview();
+                    setPreviewNote(null);
                     setDraftVoiceProvider(next);
                     void save({ voiceProvider: next || null });
                   }}
@@ -311,23 +443,34 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         label="Voice"
                         value={draftVoiceName}
                         onChange={(next) => {
+                          stopVoicePreview();
+                          setPreviewNote(null);
                           setDraftVoiceName(next);
                           void save({ voiceName: next || null });
                         }}
                         className="familiar-studio-brain__input"
                         options={[
-                          { value: "", label: "Default (alloy)" },
-                          { value: "alloy", label: "alloy" },
-                          { value: "ash", label: "ash" },
-                          { value: "ballad", label: "ballad" },
-                          { value: "coral", label: "coral" },
-                          { value: "echo", label: "echo" },
-                          { value: "sage", label: "sage" },
-                          { value: "shimmer", label: "shimmer" },
-                          { value: "verse", label: "verse" },
+                          {
+                            value: "",
+                            label: `Default (${DEFAULT_OPENAI_VOICE_ID})`,
+                            detail: selectedDefaultVoiceDetail,
+                          },
+                          ...OPENAI_REALTIME_VOICES.map((voice) => ({
+                            value: voice.id,
+                            label: voice.label,
+                            detail: openAiVoiceDetail(voice),
+                          })),
                         ]}
                       />
+                      {previewButton}
                     </div>
+                    {selectedOpenAiVoice ? (
+                      // Trait line for the current pick, so gender/accent stay
+                      // visible without opening the menu. Perceived, not official.
+                      <p className="familiar-studio-brain__hint">
+                        {openAiVoiceDetail(selectedOpenAiVoice)}
+                      </p>
+                    ) : null}
                   </label>
                 ) : (
                   // Local speech rides the system synthesizer — the voice is a
@@ -343,9 +486,13 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         placeholder="System default (e.g. Samantha)"
                         className="familiar-studio-brain__input"
                       />
+                      {previewButton}
                     </div>
                   </label>
                 )}
+                {previewNote ? (
+                  <p className="familiar-studio-brain__hint" role="status">{previewNote}</p>
+                ) : null}
               </>
             )}
           </section>

@@ -197,6 +197,7 @@ const contracts: RouteContract[] = [
   { route: "/travel/client", methods: ["GET", "PATCH"], kind: "json", readsJson: true },
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/local/chat", methods: ["POST"], kind: "json", readsJson: true },
+  { route: "/voice/preview", methods: ["GET"], kind: "stream" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/transcript", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/workflows/delete", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
