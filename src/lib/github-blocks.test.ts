@@ -136,11 +136,43 @@ test("slice: malformed markers are dropped, never rendered raw", () => {
   }
 });
 
-test("slice: action markers are stripped without a card (W2b renders them)", () => {
-  const pieces = sliceGitHubBlocks('do it <coven:github-action kind="merge" repo="a/b" number="7" /> now');
-  assert.ok(pieces.every((p) => p.kind === "text"));
+test("slice: action markers become proposal pieces (agents propose, humans dispose)", () => {
+  const pieces = sliceGitHubBlocks(
+    'do it <coven:github-action kind="merge" repo="a/b" number="7" method="rebase" note="ready" /> now',
+  );
+  const actions = pieces.filter((p) => p.kind === "action");
+  assert.equal(actions.length, 1);
+  assert.deepEqual((actions[0] as { action: unknown }).action, {
+    kind: "merge",
+    repo: "a/b",
+    note: "ready",
+    body: undefined,
+    number: 7,
+    method: "rebase",
+  });
   const joined = pieces.map((p) => (p.kind === "text" ? p.text : "")).join("");
   assert.ok(!joined.includes("coven:github-action"));
+});
+
+test("slice: action attrs validate per kind — malformed proposals drop silently", () => {
+  // review without a valid event, dispatch without ref, rerun without run id.
+  for (const bad of [
+    '<coven:github-action kind="review" repo="a/b" number="7" event="SHIP_IT" />',
+    '<coven:github-action kind="dispatch" repo="a/b" workflow="ci.yml" />',
+    '<coven:github-action kind="rerun" repo="a/b" />',
+    '<coven:github-action kind="merge" repo="not-a-repo" number="7" />',
+  ]) {
+    const pieces = sliceGitHubBlocks(bad);
+    assert.ok(pieces.every((p) => p.kind === "text"), bad);
+  }
+  // merge method defaults to squash; unknown methods coerce to squash.
+  const merged = sliceGitHubBlocks('<coven:github-action kind="merge" repo="a/b" number="7" method="yolo" />');
+  assert.equal((merged[0] as { action: { method?: string } }).action.method, "squash");
+  // review with a valid verdict parses.
+  const rev = sliceGitHubBlocks(
+    '<coven:github-action kind="review" repo="a/b" number="7" event="approve" note="lgtm" />',
+  );
+  assert.equal((rev[0] as { action: { event?: string } }).action.event, "APPROVE");
 });
 
 // ── sliceGitHubBlocks: bare-line URL unfurl ──────────────────────────────────

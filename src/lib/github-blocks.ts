@@ -34,7 +34,8 @@ export type GitHubBlockDescriptor = {
 /** One ordered piece of a text span after GitHub extraction. */
 export type GitHubTextPiece =
   | { kind: "text"; text: string }
-  | { kind: "card"; descriptor: GitHubBlockDescriptor };
+  | { kind: "card"; descriptor: GitHubBlockDescriptor }
+  | { kind: "action"; action: GitHubActionDescriptor };
 
 /** Write-action kinds (design §3) — tier classification is pinned by tests. */
 export type GitHubActionKind =
@@ -63,6 +64,96 @@ export function classifyGitHubAction(kind: GitHubActionKind): "fire" | "confirm"
       return "confirm";
     default:
       return "fire";
+  }
+}
+
+/** An agent-proposed GitHub write, parsed from `<coven:github-action …>`
+ *  (design §3). Rendered as a proposal card that ALWAYS requires a user tap —
+ *  agents propose, humans dispose — regardless of the kind's tier. */
+export type GitHubActionDescriptor = {
+  kind: GitHubActionKind;
+  repo: string;
+  /** Target issue/PR (comment, reply, resolve, issue-state, review, merge). */
+  number?: number;
+  /** Merge method; defaults to squash at fire time. */
+  method?: "squash" | "merge" | "rebase";
+  /** Review verdict (review). */
+  event?: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+  /** Comment/review/issue body text. */
+  body?: string;
+  /** Issue title (issue-create). */
+  title?: string;
+  /** Workflow run id (rerun). */
+  runId?: number;
+  /** Workflow file/id + ref (dispatch). */
+  workflow?: string;
+  ref?: string;
+  /** Agent's one-line rationale, shown on the proposal card. */
+  note?: string;
+};
+
+const ACTION_KINDS: ReadonlySet<string> = new Set([
+  "comment",
+  "reply",
+  "resolve",
+  "unresolve",
+  "issue-create",
+  "issue-state",
+  "review",
+  "merge",
+  "rerun",
+  "dispatch",
+]);
+
+/** Parse + validate an action marker's attributes; null when the proposal is
+ *  malformed or missing its kind's required target. */
+function actionFromAttrs(attrs: Record<string, string>): GitHubActionDescriptor | null {
+  const kind = attrs.kind;
+  const repo = attrs.repo ?? "";
+  if (!kind || !ACTION_KINDS.has(kind) || !REPO_RE.test(repo)) return null;
+  const number = positiveInt(attrs.number);
+  const note = attrs.note?.trim() || undefined;
+  const body = attrs.body?.trim() || undefined;
+  const base = { repo, note, body };
+  switch (kind as GitHubActionKind) {
+    case "comment":
+    case "reply":
+    case "resolve":
+    case "unresolve":
+      return number ? { kind: kind as GitHubActionKind, ...base, number } : null;
+    case "issue-state": {
+      if (!number) return null;
+      return { kind: "issue-state", ...base, number };
+    }
+    case "issue-create": {
+      const title = attrs.title?.trim();
+      return title ? { kind: "issue-create", ...base, title } : null;
+    }
+    case "review": {
+      if (!number) return null;
+      const event = attrs.event?.toUpperCase();
+      if (event !== "APPROVE" && event !== "REQUEST_CHANGES" && event !== "COMMENT") return null;
+      return { kind: "review", ...base, number, event };
+    }
+    case "merge": {
+      if (!number) return null;
+      const method = attrs.method;
+      return {
+        kind: "merge",
+        ...base,
+        number,
+        method: method === "merge" || method === "rebase" ? method : "squash",
+      };
+    }
+    case "rerun": {
+      const runId = positiveInt(attrs.run);
+      return runId ? { kind: "rerun", ...base, runId } : null;
+    }
+    case "dispatch": {
+      const workflow = attrs.workflow?.trim();
+      const ref = attrs.ref?.trim();
+      return workflow && ref ? { kind: "dispatch", ...base, workflow, ref } : null;
+    }
   }
 }
 
@@ -198,9 +289,10 @@ function bareLineDescriptor(line: string): GitHubBlockDescriptor | null {
 }
 
 /**
- * Split one prose span into ordered text/card pieces (design §1):
+ * Split one prose span into ordered text/card/action pieces (design §1, §3):
  * - complete `<coven:github …>` display markers become cards at their position
- * - `<coven:github-action …>` markers are stripped (no card until W2b)
+ * - `<coven:github-action …>` markers become PROPOSAL pieces (rendered as
+ *   cards that always require a user tap — agents propose, humans dispose)
  * - a URL standing alone on its own line unfurls into a card replacing the line
  * Inline URL mentions stay plain text. Returns [{kind:"text", text}] unchanged
  * when there is nothing to extract, so callers can cheaply detect "no cards".
@@ -220,12 +312,15 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
       pushText(text.slice(cursor, m.index));
       cursor = m.index + m[0].length;
       const isAction = Boolean(m[1]);
-      if (!isAction) {
+      if (isAction) {
+        const a = actionFromAttrs(parseAttrs(m[2] ?? ""));
+        if (a) pieces.push({ kind: "action", action: a });
+        // Malformed action markers are dropped silently — never raw tags.
+      } else {
         const d = descriptorFromAttrs(parseAttrs(m[2] ?? ""));
         if (d) pieces.push({ kind: "card", descriptor: d });
         // Malformed display markers are dropped silently — never raw tags.
       }
-      // Action markers: stripped, cardless in W1a (proposal cards land in W2b).
     }
     pushText(text.slice(cursor));
   } else {
@@ -235,7 +330,7 @@ export function sliceGitHubBlocks(text: string): GitHubTextPiece[] {
   // Second pass: unfurl bare-line URLs inside the text pieces.
   const out: GitHubTextPiece[] = [];
   for (const piece of pieces) {
-    if (piece.kind === "card") {
+    if (piece.kind !== "text") {
       out.push(piece);
       continue;
     }

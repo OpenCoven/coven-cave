@@ -220,10 +220,15 @@ function stateGlyph(d: GitHubBlockDescriptor, item: ItemDetail | null): { icon: 
 
 type ActionPhase = "idle" | "sending" | "error";
 
-/** Tier-1 action row for hydrated issue/PR cards (design §3): comment posts
- *  through the existing /api/github/comment; issues close/reopen through
- *  PATCH /api/github/issue. Tier-1 fires directly on the user's tap — no
- *  confirm card (that's tier-2, W2b). */
+type PendingTier2 =
+  | { kind: "merge"; method: "squash" }
+  | { kind: "review"; event: "APPROVE" | "REQUEST_CHANGES" };
+
+/** Tier-1 action row + tier-2 confirm step for hydrated issue/PR cards
+ *  (design §3). Tier-1 (comment, close/reopen) fires on the user's tap;
+ *  tier-2 (approve, request changes, merge) opens an inline confirm strip
+ *  stating exactly what will fire — proposed → confirming → firing →
+ *  done|error, with GitHub's own guard errors shown verbatim. */
 function CardActions({
   descriptor,
   item,
@@ -237,6 +242,8 @@ function CardActions({
   const [draft, setDraft] = useState("");
   const [phase, setPhase] = useState<ActionPhase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingTier2 | null>(null);
+  const [reviewBody, setReviewBody] = useState("");
   const composerId = `gh-card-composer-${descriptor.repo.replace(/[^A-Za-z0-9]/g, "-")}-${descriptor.number}`;
 
   const run = async (fn: () => Promise<Response>) => {
@@ -287,6 +294,45 @@ function CardActions({
     if (ok) onMutated();
   };
 
+  const fireTier2 = async () => {
+    if (!pending) return;
+    const ok =
+      pending.kind === "merge"
+        ? await run(() =>
+            fetch("/api/github/merge", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ repo: descriptor.repo, number: descriptor.number, method: pending.method }),
+            }),
+          )
+        : await run(() =>
+            fetch("/api/github/review", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                repo: descriptor.repo,
+                number: descriptor.number,
+                event: pending.event,
+                body: reviewBody.trim(),
+              }),
+            }),
+          );
+    if (ok) {
+      setPending(null);
+      setReviewBody("");
+      onMutated();
+    }
+  };
+
+  const tier2Summary = !pending
+    ? ""
+    : pending.kind === "merge"
+      ? `Merge ${descriptor.repo}#${descriptor.number} via ${pending.method}?`
+      : pending.event === "APPROVE"
+        ? `Approve ${descriptor.repo}#${descriptor.number}?`
+        : `Request changes on ${descriptor.repo}#${descriptor.number}?`;
+  const needsBody = pending?.kind === "review" && pending.event === "REQUEST_CHANGES";
+
   const btn =
     "focus-ring rounded border border-[var(--border-strong)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-50";
 
@@ -314,11 +360,76 @@ function CardActions({
             </button>
           )
         ) : null}
+        {item.isPull && item.state === "open" && !item.merged ? (
+          <>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => setPending({ kind: "review", event: "APPROVE" })}
+              disabled={phase === "sending"}
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => setPending({ kind: "review", event: "REQUEST_CHANGES" })}
+              disabled={phase === "sending"}
+            >
+              Request changes
+            </button>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => setPending({ kind: "merge", method: "squash" })}
+              disabled={phase === "sending"}
+            >
+              Merge
+            </button>
+          </>
+        ) : null}
         {phase === "sending" ? <span className="text-[10px] text-[var(--text-secondary)]" aria-live="polite">sending…</span> : null}
         {phase === "error" && error ? (
           <span className="text-[10px] text-[var(--color-warning)]" role="alert">{error}</span>
         ) : null}
       </div>
+      {pending ? (
+        // Tier-2 confirm strip (design §3): states exactly what will fire.
+        <div className="mt-1.5 rounded border border-[var(--color-danger)] px-2 py-1.5" role="group" aria-label={tier2Summary}>
+          <div className="text-[11px] text-[var(--text-primary)]">{tier2Summary}</div>
+          {pending.kind === "review" ? (
+            <textarea
+              value={reviewBody}
+              onChange={(e) => setReviewBody(e.target.value)}
+              rows={2}
+              placeholder={needsBody ? "Why are changes needed? (required)" : "Optional review comment…"}
+              aria-label="Review comment"
+              className="focus-ring mt-1 min-h-[2.5em] w-full resize-y rounded border border-[var(--border-hairline)] bg-transparent px-2 py-1 text-[12px] text-[var(--text-primary)]"
+            />
+          ) : null}
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <button
+              type="button"
+              className={`${btn} border-[var(--color-danger)] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)]`}
+              onClick={fireTier2}
+              disabled={phase === "sending" || (needsBody && !reviewBody.trim())}
+            >
+              {phase === "sending" ? "Working…" : "Confirm"}
+            </button>
+            <button
+              type="button"
+              className={btn}
+              onClick={() => {
+                setPending(null);
+                setError(null);
+              }}
+              disabled={phase === "sending"}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
       {composing ? (
         <div id={composerId} className="mt-1.5 flex items-end gap-1.5">
           <textarea
