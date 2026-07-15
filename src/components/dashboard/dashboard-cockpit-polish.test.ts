@@ -59,7 +59,7 @@ assert.match(
 );
 assert.match(
   panels,
-  /<time dateTime=\{new Date\(r\.lastModifiedMs\)\.toISOString\(\)\}>/,
+  /<time dateTime=\{lastModifiedIso\}>\{relativeTime\(lastModifiedIso\)/,
   "space-usage Updated column is a semantic time element",
 );
 

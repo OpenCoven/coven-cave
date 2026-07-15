@@ -544,6 +544,7 @@ export function SpaceUsagePanel({ rows, loaded }: { rows: SpaceUsageRow[]; loade
         <span role="columnheader" className="cockpit-space__lastcol" aria-sort={ariaSort("lastModified")}>{head("lastModified", "Updated", "desc")}</span>
       </div>
       {sorted.map((r) => {
+        const lastModifiedIso = r.lastModifiedMs ? new Date(r.lastModifiedMs).toISOString() : null;
         const inner = (
           <>
             <span className="cockpit-space__area" role="cell" title={r.relPath}>
@@ -558,7 +559,7 @@ export function SpaceUsagePanel({ rows, loaded }: { rows: SpaceUsageRow[]; loade
             </span>
             <span className="cockpit-space__files cockpit-space__filescol" role="cell">{r.files}{r.truncated ? "+" : ""}</span>
             <span className="cockpit-space__last cockpit-space__lastcol" role="cell">
-              {r.lastModifiedMs ? <time dateTime={new Date(r.lastModifiedMs).toISOString()}>{relativeTime(new Date(r.lastModifiedMs).toISOString()) || "just now"}</time> : "—"}
+              {lastModifiedIso ? <time dateTime={lastModifiedIso}>{relativeTime(lastModifiedIso) || "just now"}</time> : "—"}
             </span>
           </>
         );

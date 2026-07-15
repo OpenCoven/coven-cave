@@ -1,6 +1,6 @@
 // Pure formatting + vocab helpers for the dashboard cockpit — extracted from
-// dashboard-cockpit.tsx (cave-tsoz) so the pieces the KPI tiles, panels, and
-// layout persistence share are testable without a React tree.
+// dashboard-cockpit.tsx (cave-tsoz) so the pieces that the KPI tiles, panels,
+// and layout persistence share are testable without a React tree.
 
 import type { SparkPoint } from "@/components/ui/sparkline";
 import type { CardStatus } from "@/lib/cave-board-types";
@@ -49,7 +49,9 @@ export function reconcileLayout(stored: Partial<Layout>): Layout {
 
 export const TREND_DAYS = 7;
 export type TrendKey = "confidence" | "active" | "sessions" | "accept" | "contract" | "needs";
-export type DaySnap = Record<TrendKey, number>;
+// Persisted JSON can legitimately miss keys for a day (older snapshots predate
+// newer metrics) — seriesFor already reads missing values as gaps.
+export type DaySnap = Partial<Record<TrendKey, number>>;
 export type TrendStore = Record<string, DaySnap>; // "YYYY-MM-DD" -> snapshot
 
 export function dayKey(d: Date): string {
