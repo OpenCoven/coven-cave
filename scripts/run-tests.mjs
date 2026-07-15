@@ -1101,6 +1101,8 @@ const ALIAS_LOADER = new Set([
   "src/lib/command-controls.test.ts",
   "src/lib/travel-network-drop-proof.test.ts",
   "src/lib/chat-task-autofill.test.ts",
+  "src/lib/voice/hydrate-instructions.test.ts",
+  "src/app/api/voice/session/route.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
