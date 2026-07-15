@@ -12,6 +12,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 type DraftBody = {
   familiar?: unknown;
   roleIds?: unknown;
+  displayName?: unknown;
 };
 
 export async function GET(req: Request) {
@@ -30,6 +31,10 @@ export async function POST(req: Request) {
   const roleIds = Array.isArray(parsed.body.roleIds)
     ? parsed.body.roleIds.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter(Boolean)
     : [];
+  // Optional operator rename (docs/craft-ux.md F12) — bounded, never the id.
+  const displayName = typeof parsed.body.displayName === "string"
+    ? parsed.body.displayName.trim().slice(0, 120)
+    : "";
   if (!familiar || roleIds.length === 0) {
     return NextResponse.json(
       { ok: false, error: "familiar and roleIds required" },
@@ -45,7 +50,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "no matching roles" }, { status: 404 });
   }
 
-  const draft = buildCraftDraftFromRoles({ familiar, roles });
+  const draft = buildCraftDraftFromRoles({ familiar, roles, displayName: displayName || undefined });
   await saveCraftDraft(draft);
   return NextResponse.json({ ok: true, draft });
 }

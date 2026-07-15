@@ -17,10 +17,13 @@ import {
   type CraftDraftBriefInput,
 } from "@/lib/craft-agent-prompt";
 import { CraftDetail, type CraftActionError } from "@/components/marketplace/craft-detail";
+import type { CraftDrawerSeed } from "@/components/marketplace/craft-create-drawer";
 import {
   CraftDraftPreview,
   craftSpecGroups,
+  extractionLedgerGroups,
 } from "@/components/marketplace/craft-draft-preview";
+import { deriveCraftDisplayName, type CraftDraft } from "@/lib/craft-draft";
 import { KnowledgePackDetail } from "@/components/marketplace/knowledge-pack-detail";
 
 type PackPrompt = PromptOption;
@@ -43,6 +46,9 @@ type Props = {
   onActionCleared?: () => void;
   /** Fired after a local draft Craft is deleted so the hub can refresh. */
   onDraftDeleted?: () => void;
+  /** Reopens the create drawer seeded with this draft's roles for in-place
+   *  editing (docs/craft-ux.md F5). */
+  onAdjustRoles?: (seed: CraftDrawerSeed) => void;
 };
 
 function kindIcon(kind: MarketplacePlugin["kind"]) {
@@ -120,7 +126,14 @@ function detailDecisionItems(plugin: MarketplacePlugin) {
 
 export function MarketplaceDetail(props: Props) {
   if (props.plugin.kind === "craft" && props.plugin.draft) {
-    return <DraftCraftDetail plugin={props.plugin} onClose={props.onClose} onDeleted={props.onDraftDeleted} />;
+    return (
+      <DraftCraftDetail
+        plugin={props.plugin}
+        onClose={props.onClose}
+        onDeleted={props.onDraftDeleted}
+        onAdjustRoles={props.onAdjustRoles}
+      />
+    );
   }
   if (props.plugin.kind === "craft") {
     return (
@@ -145,10 +158,12 @@ function DraftCraftDetail({
   plugin,
   onClose,
   onDeleted,
+  onAdjustRoles,
 }: {
   plugin: MarketplacePlugin;
   onClose: () => void;
   onDeleted?: () => void;
+  onAdjustRoles?: (seed: CraftDrawerSeed) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useFocusTrap(true, ref, { onEscape: onClose });
@@ -161,11 +176,41 @@ function DraftCraftDetail({
   const [armedDelete, setArmedDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The card model carries only the craft spec; the drafts store has the
+  // attributed extraction ledger and role ids (docs/craft-ux.md F4/F5).
+  // Best-effort — the spec-based view remains the fallback.
+  const [fullDraft, setFullDraft] = useState<CraftDraft | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    const id = plugin.draftId ?? plugin.id;
+    fetch("/api/marketplace/crafts/drafts", { cache: "no-store", signal: controller.signal })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; drafts?: CraftDraft[] }) => {
+        if (controller.signal.aborted || !json.ok || !Array.isArray(json.drafts)) return;
+        setFullDraft(json.drafts.find((draft) => draft.id === id) ?? null);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [plugin.draftId, plugin.id]);
   useEffect(() => {
     if (!armedDelete) return;
     const t = window.setTimeout(() => setArmedDelete(false), 4000);
     return () => window.clearTimeout(t);
   }, [armedDelete]);
+
+  const adjustRoles = useCallback(() => {
+    if (!fullDraft || !onAdjustRoles) return;
+    const roleNames = fullDraft.extraction.roles.map((role) => role.name);
+    const derived = deriveCraftDisplayName(fullDraft.extraction.familiar, roleNames);
+    onAdjustRoles({
+      draftId: fullDraft.id,
+      familiar: fullDraft.extraction.familiar,
+      roleIds: fullDraft.extraction.roles.map((role) => role.id),
+      // Only carry a name the operator actually chose — a derived name should
+      // keep re-deriving as the role set changes.
+      displayName: plugin.displayName !== derived ? plugin.displayName : undefined,
+    });
+  }, [fullDraft, onAdjustRoles, plugin.displayName]);
 
   /** The refine/publish briefs carry the draft's identity + ledger shape
    *  (cave-46wg) so the familiar starts from what exists. */
@@ -245,7 +290,10 @@ function DraftCraftDetail({
           </button>
         </div>
 
-        <CraftDraftPreview groups={craftSpecGroups(craft)} ariaLabel="Draft extraction ledger" />
+        <CraftDraftPreview
+          groups={fullDraft ? extractionLedgerGroups(fullDraft.extraction.ledger) : craftSpecGroups(craft)}
+          ariaLabel="Draft extraction ledger"
+        />
 
         <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 text-[12px] text-[var(--text-muted)]">
           Drafts are local and reversible. Review the extracted bundle before publishing or installing it as a versioned Craft.
@@ -258,6 +306,18 @@ function DraftCraftDetail({
         ) : null}
 
         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-[var(--border-hairline)] pt-3">
+          {onAdjustRoles ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              leadingIcon="ph:stack"
+              disabled={!fullDraft}
+              onClick={adjustRoles}
+              title="Reopen the create flow with this draft's roles pre-selected"
+            >
+              Adjust roles
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             size="sm"

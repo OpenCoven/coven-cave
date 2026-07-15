@@ -37,6 +37,7 @@ assert.match(drafts, /readJsonBody/, "draft creation uses the bounded JSON-body 
 assert.match(drafts, /familiar and roleIds required/, "draft creation validates familiar + roleIds");
 assert.match(drafts, /role\.familiar === familiar/, "draft roles are scoped to the requested familiar");
 assert.match(drafts, /buildCraftDraftFromRoles/, "drafts are built through the shared role-composition builder");
+assert.match(drafts, /displayName\.trim\(\)\.slice\(0, 120\)/, "the optional operator rename is trimmed and bounded");
 
 assert.match(genericInstall, /kind\s*===\s*["']craft["']/, "generic track-only install refuses Crafts");
 assert.match(genericUninstall, /kind\s*===\s*["']craft["']/, "generic state-only uninstall refuses Crafts");

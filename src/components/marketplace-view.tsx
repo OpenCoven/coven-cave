@@ -22,7 +22,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
 import type { CraftActionError } from "@/components/marketplace/craft-detail";
-import { CraftCreateDrawer } from "@/components/marketplace/craft-create-drawer";
+import { CraftCreateDrawer, type CraftDrawerSeed } from "@/components/marketplace/craft-create-drawer";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
 import { SkillBuilder } from "@/components/marketplace/skill-builder";
@@ -145,6 +145,8 @@ export function MarketplaceViewSurface({
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [creatingCraft, setCreatingCraft] = useState(false);
+  // Editing an existing draft reopens the create drawer pre-seeded (F5).
+  const [craftSeed, setCraftSeed] = useState<CraftDrawerSeed | null>(null);
   const [craftErrors, setCraftErrors] = useState<Record<string, CraftActionError | undefined>>({});
   // Ids with an install/uninstall in flight. A Set (not a scalar) so two
   // concurrent installs each keep their own busy state — with a scalar, the
@@ -781,7 +783,10 @@ export function MarketplaceViewSurface({
                   variant="primary"
                   size="sm"
                   leadingIcon="ph:package-bold"
-                  onClick={() => setCreatingCraft(true)}
+                  onClick={() => {
+                    setCraftSeed(null);
+                    setCreatingCraft(true);
+                  }}
                 >
                   Create Craft
                 </Button>
@@ -920,6 +925,11 @@ export function MarketplaceViewSurface({
             setSelected(null);
             void load();
           }}
+          onAdjustRoles={(seed) => {
+            setSelected(null);
+            setCraftSeed(seed);
+            setCreatingCraft(true);
+          }}
         />
       ) : null}
 
@@ -935,9 +945,14 @@ export function MarketplaceViewSurface({
 
       <CraftCreateDrawer
         open={creatingCraft}
-        onClose={() => setCreatingCraft(false)}
+        seed={craftSeed}
+        onClose={() => {
+          setCreatingCraft(false);
+          setCraftSeed(null);
+        }}
         onCreated={(id) => {
           setCreatingCraft(false);
+          setCraftSeed(null);
           void load().then(() => setSelected(id));
           announce("Craft draft saved", "polite");
         }}

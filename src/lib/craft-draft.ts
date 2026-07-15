@@ -140,14 +140,24 @@ function workflowResource(id: string): CraftWorkflowResource {
   };
 }
 
+/** The mechanical name a draft gets from its familiar + role names — also
+ *  the reference point for "was this draft renamed?" (docs/craft-ux.md F12). */
+export function deriveCraftDisplayName(familiar: string, roleNames: readonly string[]): string {
+  return `${titleCase(familiar.trim())} ${roleNames.join(" + ")}`;
+}
+
 export function buildCraftDraftFromRoles({
   familiar,
   roles,
   now = new Date().toISOString(),
+  displayName,
 }: {
   familiar: string;
   roles: CraftDraftRoleInput[];
   now?: string;
+  /** Optional operator-chosen name (docs/craft-ux.md F12). The derived name
+   *  stays the id/slug source so renames never move the draft's identity. */
+  displayName?: string;
 }): CraftDraft {
   const cleanFamiliar = familiar.trim();
   if (!cleanFamiliar) throw new Error("familiar is required");
@@ -156,7 +166,9 @@ export function buildCraftDraftFromRoles({
 
   const roleNames = orderedRoles.map((role) => role.name.trim() || role.id);
   const roleIds = orderedRoles.map((role) => role.id.trim()).filter(Boolean);
-  const displayName = `${titleCase(cleanFamiliar)} ${roleNames.join(" + ")}`;
+  const derivedName = deriveCraftDisplayName(cleanFamiliar, roleNames);
+  const customName = displayName?.trim();
+  const finalName = customName || derivedName;
   const id = slugify(`${cleanFamiliar}-${roleNames.join("-")}`);
 
   const ledgers = {
@@ -221,7 +233,7 @@ export function buildCraftDraftFromRoles({
       id,
       draftId: id,
       draft: true,
-      displayName,
+      displayName: finalName,
       description: `Draft Craft extracted from ${roleNames.length === 1 ? `${roleNames[0]} role` : `${roleNames.length} roles`} for ${titleCase(cleanFamiliar)}.`,
       category: "Draft Crafts",
       author: "Local Cave",

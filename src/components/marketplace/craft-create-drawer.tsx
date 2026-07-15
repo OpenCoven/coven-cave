@@ -53,13 +53,25 @@ function initialCreateMode(): CreateMode {
  *  extraction ledger before anything is written. */
 type ExtractStep = "select" | "preview";
 
+/** Seed for editing an existing draft in place (docs/craft-ux.md F5):
+ *  the drawer opens on the preview step with the draft's familiar, roles,
+ *  and name; saving replaces the stored draft (delete + recreate — the
+ *  drafts store's native semantics). */
+export type CraftDrawerSeed = {
+  draftId: string;
+  familiar: string;
+  roleIds: string[];
+  displayName?: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
   onCreated: (id: string) => void;
+  seed?: CraftDrawerSeed | null;
 };
 
-export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
+export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<CreateMode>(initialCreateMode);
   const [step, setStep] = useState<ExtractStep>("select");
@@ -77,14 +89,37 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   // to the same onCreated the manual path uses.
   const [awaiting, setAwaiting] = useState(false);
   const baselineDraftIds = useRef<ReadonlySet<string>>(new Set());
+  // Rename (F12): empty means "use the derived name". Seeded edits start from
+  // the stored draft's name so a rename survives an adjust-roles round trip.
+  const [customName, setCustomName] = useState("");
+  // Per-familiar selection retention (F9): switching familiars stashes the
+  // current picks instead of destroying them.
+  const selectionsByFamiliar = useRef(new Map<string, ReadonlySet<string>>());
+  const appliedSeedId = useRef<string | null>(null);
   useFocusTrap(open, ref, { onEscape: onClose });
 
   useEffect(() => {
     if (!open) {
       setAwaiting(false);
       setStep("select");
+      setCustomName("");
+      selectionsByFamiliar.current = new Map();
+      appliedSeedId.current = null;
     }
   }, [open]);
+
+  // Editing an existing draft (F5): apply the seed once per open — mode
+  // flips to pick-roles (without touching the remembered preference), the
+  // draft's roles pre-select, and the flow lands on the preview step.
+  useEffect(() => {
+    if (!open || !seed || appliedSeedId.current === seed.draftId) return;
+    appliedSeedId.current = seed.draftId;
+    setMode("extract");
+    setFamiliar(seed.familiar);
+    setSelectedRoleIds(new Set(seed.roleIds));
+    setCustomName(seed.displayName ?? "");
+    setStep("preview");
+  }, [open, seed]);
 
   const chooseMode = useCallback((next: CreateMode) => {
     setMode(next);
@@ -180,9 +215,12 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   }, [selectedRoles]);
 
   const chooseFamiliar = useCallback((next: string) => {
-    setFamiliar(next);
-    setSelectedRoleIds(new Set());
-  }, []);
+    setFamiliar((current) => {
+      if (current) selectionsByFamiliar.current.set(current, selectedRoleIds);
+      return next;
+    });
+    setSelectedRoleIds(selectionsByFamiliar.current.get(next) ?? new Set());
+  }, [selectedRoleIds]);
 
   const toggleRole = useCallback((roleId: string) => {
     setSelectedRoleIds((current) => {
@@ -199,21 +237,36 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
   const previewDraft = useMemo(() => {
     if (!familiar || selectedRoles.length === 0) return null;
     try {
-      return buildCraftDraftFromRoles({ familiar, roles: selectedRoles });
+      return buildCraftDraftFromRoles({
+        familiar,
+        roles: selectedRoles,
+        displayName: customName.trim() || undefined,
+      });
     } catch {
       return null;
     }
-  }, [familiar, selectedRoles]);
+  }, [customName, familiar, selectedRoles]);
 
   const save = useCallback(async () => {
     if (!familiar || selectedRoleIds.size === 0) return;
     setSaving(true);
     setError(null);
     try {
+      // Seeded edits are recreate-and-replace (F5): drop the stored draft
+      // first so a role change that shifts the derived id leaves no orphan.
+      if (seed && appliedSeedId.current === seed.draftId) {
+        await fetch(`/api/marketplace/crafts/drafts?id=${encodeURIComponent(seed.draftId)}`, {
+          method: "DELETE",
+        }).catch(() => {});
+      }
       const res = await fetch("/api/marketplace/crafts/drafts", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ familiar, roleIds: [...selectedRoleIds] }),
+        body: JSON.stringify({
+          familiar,
+          roleIds: [...selectedRoleIds],
+          ...(customName.trim() ? { displayName: customName.trim() } : {}),
+        }),
       });
       const json = (await res.json()) as DraftResponse;
       if (!json.ok || !json.draft?.id) throw new Error(json.error ?? "draft create failed");
@@ -223,7 +276,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [familiar, onCreated, selectedRoleIds]);
+  }, [customName, familiar, onCreated, seed, selectedRoleIds]);
 
   /** Describe mode: hand the goal to a familiar as a complete agentic build
    *  prompt (role discovery → draft → plan verification), the same
@@ -363,6 +416,17 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
                     {selectedRoles.length} {selectedRoles.length === 1 ? "role" : "roles"} from {familiar}.
                     Review the extracted bundle, then save.
                   </p>
+                  <label className="craft-create-drawer__field">
+                    <span>Name (optional)</span>
+                    <input
+                      type="text"
+                      className="focus-ring craft-create-drawer__name"
+                      value={customName}
+                      maxLength={120}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      placeholder={previewDraft.plugin.displayName}
+                    />
+                  </label>
                   <CraftDraftPreview
                     groups={extractionLedgerGroups(previewDraft.extraction.ledger)}
                     ariaLabel="Extraction preview"
@@ -448,7 +512,7 @@ export function CraftCreateDrawer({ open, onClose, onCreated }: Props) {
                 disabled={!previewDraft}
                 onClick={save}
               >
-                Save draft
+                {seed && appliedSeedId.current === seed.draftId ? "Save changes" : "Save draft"}
               </Button>
             </>
           ) : (

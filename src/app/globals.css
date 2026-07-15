@@ -13624,6 +13624,15 @@ details[open] > .cave-edit-card__summary::before {
   padding: 8px 10px;
 }
 .craft-create-drawer__goal::placeholder { color: var(--text-muted); }
+.craft-create-drawer__name {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 8px);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 10px;
+}
+.craft-create-drawer__name::placeholder { color: var(--text-muted); }
 /* "What happens next" — quiet numbered steps for the agentic path. */
 .craft-create-drawer__how { display: grid; gap: 6px; }
 .craft-create-drawer__how h3 {
@@ -13748,12 +13757,19 @@ details[open] > .cave-edit-card__summary::before {
 .craft-draft-ledger p { margin: 0; color: var(--text-muted); font-size: 11px; }
 .craft-draft-ledger span {
   display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
   border: 1px solid var(--border-hairline);
   border-radius: 6px;
   background: var(--bg-base);
   color: var(--text-secondary);
   font-size: 10.5px;
   padding: 4px 6px;
+}
+.craft-draft-ledger__origin {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.3;
 }
 .craft-draft-ledger__stats {
   display: grid;

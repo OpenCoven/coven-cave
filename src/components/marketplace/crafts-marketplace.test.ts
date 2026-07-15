@@ -57,7 +57,7 @@ assert.match(createDrawer, /What happens next/, "describe mode explains the agen
 // detail; the Crafts grid separates local drafts from the published catalog.
 assert.match(createDrawer, /\{ id: "describe"[\s\S]*?\{ id: "extract"/, "describe leads the creation-mode tabs");
 assert.match(createDrawer, /MODE_MEMORY_KEY = "cave:craft-create:mode"/, "the last-used creation mode is remembered");
-assert.match(createDrawer, /buildCraftDraftFromRoles\(\{ familiar, roles: selectedRoles \}\)/, "pick-roles synthesizes the real draft client-side for preview");
+assert.match(createDrawer, /buildCraftDraftFromRoles\(\{\s*familiar,\s*roles: selectedRoles,/, "pick-roles synthesizes the real draft client-side for preview");
 assert.match(createDrawer, /Preview draft/, "role selection advances to a preview step before saving");
 assert.match(createDrawer, /Adjust roles/, "the preview step returns to selection without losing state");
 assert.match(createDrawer, /extractionLedgerGroups\(previewDraft\.extraction\.ledger\)/, "the preview renders the extraction ledger, not just counts");
@@ -66,9 +66,36 @@ assert.match(createDrawer, /extractionLedgerGroups\(previewDraft\.extraction\.le
   assert.match(draftPreview, /export function CraftDraftPreview/, "draft contents render through one shared component");
   assert.match(draftPreview, /craft-draft-ledger/, "the shared preview keeps the stable ledger styling hook");
 }
-assert.match(detail, /<CraftDraftPreview groups=\{craftSpecGroups\(craft\)\}/, "draft detail renders the same shared preview");
+assert.match(detail, /<CraftDraftPreview\s+groups=\{fullDraft \? extractionLedgerGroups\(fullDraft\.extraction\.ledger\) : craftSpecGroups\(craft\)\}/, "draft detail renders the same shared preview, attributed when the full draft loads");
 assert.match(view, /Your drafts/, "the Crafts grid groups local drafts above the published catalog");
 assert.match(css, /\.craft-grid-group \{/, "Craft lifecycle groups have a stable visual hook");
+
+// ── Power layer in-flow (docs/craft-ux.md CP3) ───────────────────────────────
+// The extraction ledger's provenance reaches the screen (F4); a saved draft
+// reopens the drawer pre-seeded for in-place editing (F5); switching familiars
+// retains each familiar's picks (F9); drafts can be renamed without moving
+// their identity (F12).
+{
+  const draftPreview = await readFile(new URL("./craft-draft-preview.tsx", import.meta.url), "utf8");
+  assert.match(draftPreview, /ledgerHint/, "ledger items carry origin + role attribution");
+  assert.match(draftPreview, /craft-draft-ledger__origin/, "attribution renders on a stable styling hook");
+}
+assert.match(createDrawer, /export type CraftDrawerSeed/, "draft editing seeds the drawer through a shared shape");
+assert.match(createDrawer, /appliedSeedId/, "a seed applies once per open, not on every render");
+assert.match(createDrawer, /setStep\("preview"\)/, "seeded edits land on the preview step");
+assert.match(createDrawer, /selectionsByFamiliar/, "switching familiars stashes the current role picks");
+assert.match(createDrawer, /displayName: customName\.trim\(\) \|\| undefined/, "the preview renders the operator's rename live");
+assert.match(createDrawer, /Save changes/, "seeded edits label the save as an edit");
+assert.match(createDrawer, /method: "DELETE"/, "seeded saves are recreate-and-replace");
+assert.match(detail, /onAdjustRoles/, "draft detail can hand off to the seeded drawer");
+assert.match(detail, /Adjust roles/, "adjusting roles is an explicit action");
+assert.match(detail, /deriveCraftDisplayName/, "only operator-chosen names survive the adjust round trip");
+assert.match(view, /setCraftSeed\(seed\)/, "the hub routes the seed from detail to drawer");
+{
+  const craftDraftLib = await readFile(new URL("../../lib/craft-draft.ts", import.meta.url), "utf8");
+  assert.match(craftDraftLib, /displayName\?: string/, "the draft builder accepts an optional operator name");
+  assert.match(craftDraftLib, /const id = slugify\(`\$\{cleanFamiliar\}-\$\{roleNames\.join\("-"\)\}`\)/, "renames never move the draft's derived identity");
+}
 
 // ── Describe-it closes its loop (cave-46wg) ──────────────────────────────────
 // The dispatched brief is no longer fire-and-forget: the drawer snapshots the

@@ -65,6 +65,25 @@ const reversedDraft = buildCraftDraftFromRoles({
   now: "2026-07-12T09:00:00.000Z",
 });
 
+// Rename (docs/craft-ux.md F12): an operator-chosen displayName replaces the
+// derived name but never moves the draft's identity (id stays derived).
+const renamedDraft = buildCraftDraftFromRoles({
+  familiar: "cody",
+  roles: roleInputs,
+  now: "2026-07-12T09:00:00.000Z",
+  displayName: "  Review Loadout  ",
+});
+assert.equal(renamedDraft.plugin.displayName, "Review Loadout");
+assert.equal(renamedDraft.id, "cody-implementation-review");
+assert.equal(renamedDraft.plugin.draftId, "cody-implementation-review");
+const blankNameDraft = buildCraftDraftFromRoles({
+  familiar: "cody",
+  roles: roleInputs,
+  now: "2026-07-12T09:00:00.000Z",
+  displayName: "   ",
+});
+assert.equal(blankNameDraft.plugin.displayName, "Cody Implementation + Review");
+
 assert.equal(draft.id, "cody-implementation-review");
 assert.equal(draft.plugin.kind, "craft");
 assert.equal(draft.plugin.draft, true);
