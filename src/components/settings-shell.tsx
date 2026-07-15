@@ -1966,7 +1966,9 @@ function describeMobileHandoffError(raw: string): { headline: string; hint: stri
       hint: "Open Tailscale and sign in — pairing resumes here automatically.",
     };
   }
-  if (text.includes("serve")) {
+  // Word-boundary match: backend errors mentioning a "server" must not be
+  // misdiagnosed as Tailscale Serve failures (cave-gzje).
+  if (/\bserve\b/.test(text)) {
     return {
       headline: "Tailscale Serve couldn’t start",
       hint: "Retry below; if it keeps failing, quit and reopen Tailscale.",

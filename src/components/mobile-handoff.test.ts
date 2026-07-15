@@ -70,7 +70,29 @@ assert.match(handoffRoute, /nativeUrl/, "API should return the full Tailscale Se
 assert.match(handoffRoute, /ensureNativeAppServe/, "API should share one reconcile path for stale Tailscale Serve targets");
 assert.match(handoffRoute, /nativeAppBackendUrl/, "native mobile mode should choose a backend separately from invite handoff");
 assert.match(handoffRoute, /COVEN_CAVE_NATIVE_APP_BACKEND_URL/, "native mobile mode should allow an explicit loopback backend override");
-assert.match(handoffRoute, /COVEN_CAVE_BUNDLE === "1"[\s\S]*http:\/\/127\.0\.0\.1:3000/, "bundled desktop app must publish the tokenless native backend, not its authenticated sidecar port");
+// cave-gzje: the packaged bundle publishes ITS OWN sidecar and mints signed
+// invites — it must not depend on a dev checkout's tokenless :3000 server.
+assert.doesNotMatch(
+  handoffRoute,
+  /http:\/\/127\.0\.0\.1:3000/,
+  "bundled app-start must not hard-depend on the dev checkout's tokenless :3000 server",
+);
+assert.match(handoffRoute, /function nativeTokenlessMode\(\)/, "the tokenless/invite trust decision should be a single named predicate");
+assert.match(
+  handoffRoute,
+  /if \(!nativeTokenlessMode\(\)\) \{[\s\S]*?createMobileInvite\(\{[\s\S]*?accessSecret: mobileAccessSecret\(\),[\s\S]*?sidecarToken: process\.env\.COVEN_CAVE_AUTH_TOKEN/,
+  "token-gated app-start mints the signed invite the packaged phone pairs with",
+);
+assert.match(
+  handoffRoute,
+  /qrTarget = withChatFragment\(invite\.url, chatId\)/,
+  "the token-gated app-start QR is the SIGNED invite, still carrying the chat fragment",
+);
+assert.match(
+  handoffRoute,
+  /appInviteUrl: invite\.appInviteUrl/,
+  "app-start returns the covencave:// deep link so the Copy-app-link button works",
+);
 assert.match(handoffRoute, /verifyNativeAppBackend/, "native mobile mode should verify the tokenless backend before publishing Serve");
 assert.match(handoffRoute, /\/api\/familiars/, "native backend readiness should use the same lightweight endpoint as the iOS connection probe");
 assert.match(handoffRoute, /pnpm mobile:tailscale:app/, "native backend readiness errors should point to the documented app-mode command");

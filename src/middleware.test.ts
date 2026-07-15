@@ -57,6 +57,20 @@ assert.doesNotMatch(
 );
 assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless-tailnet CSRF guard");
 assert.match(source, /missing request source/, "tokenless tailnet GET webhooks should reject absent Origin and Referer headers");
+// cave-gzje: a verified signed mobile invite is the paired phone's credential.
+// The final sidecar gate must admit it (the phone can never learn the
+// webview's per-launch token), and the webhook-GET missing-source guard must
+// extend to mobile-cookie-authenticated requests in exchange.
+assert.match(
+  source,
+  /if \(!sidecarAuthenticated && !mobileAccessAuthenticated\) \{/,
+  "the sidecar gate must admit mobile-access-authenticated requests — packaged phones hold no sidecar token",
+);
+assert.match(
+  source,
+  /\(\(tailnetTrusted && !sidecarToken\) \|\| mobileAccessAuthenticated\) &&\s*isProductionWebhookGet/,
+  "the webhook-GET missing-source guard must also cover mobile-cookie-authenticated requests",
+);
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the
 // sidecar token in the CSRF-immune CUSTOM HEADER bypasses the origin/referer gate

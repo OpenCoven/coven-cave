@@ -243,6 +243,11 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.match(route, /withChatFragment\(discovery\.serveUrl, chatId\)/, "app-start QR target carries the chat fragment");
   assert.match(route, /ensureNativeAppServe\(req, chatId\)/, "POST threads chatId into app-start");
   assert.match(route, /lastSeenAt: await readMobileLastSeen\(\)/, "handoff responses expose the paired-device beat");
+  // cave-gzje: on token-gated servers (the packaged bundle above all),
+  // app-start mints the signed invite instead of the bare host, so a packaged
+  // scan pairs instead of landing on a 401.
+  assert.match(route, /qrTarget = withChatFragment\(invite\.url, chatId\)/, "token-gated app-start swaps the QR target to the signed invite");
+  assert.match(route, /expiresAtIso: invite\.expiresAtIso/, "token-gated app-start exposes the invite expiry");
 
   const refresh = read("../app/api/mobile-token/refresh/route.ts");
   assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");

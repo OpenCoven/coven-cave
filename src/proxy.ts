@@ -227,12 +227,13 @@ export async function proxy(req: NextRequest) {
     // request starts an agent-backed flow. In tokenless Tailscale mode there is
     // no sidecar secret to prove the caller is first-party, and browsers can
     // issue cross-site GET navigations/subresources with both Origin and
-    // Referer omitted (for example via Referrer-Policy: no-referrer). Require a
+    // Referer omitted (for example via Referrer-Policy: no-referrer). The same
+    // applies to a request authenticated only by the mobile-access cookie
+    // (SameSite=Lax still rides top-level GET navigations). Require a
     // same-origin source header for that narrow state-changing GET surface so
     // absent headers cannot bypass the CSRF gate.
     if (
-      tailnetTrusted &&
-      !sidecarToken &&
+      ((tailnetTrusted && !sidecarToken) || mobileAccessAuthenticated) &&
       isProductionWebhookGet(req.nextUrl.pathname, req.method) &&
       !origin &&
       !referer
@@ -256,7 +257,14 @@ export async function proxy(req: NextRequest) {
       : nextWithMobileAccessMarker(req, mobileAccessMarker);
   }
 
-  if (!sidecarAuthenticated) {
+  if (!sidecarAuthenticated && !mobileAccessAuthenticated) {
+    // A verified signed mobile invite is the paired phone's credential: the
+    // token is minted by this desktop from its access secret and already
+    // passed mobileAccessGate above. Requiring the webview's per-launch
+    // sidecar token ON TOP would 401 every native REST call in the packaged
+    // bundle — the phone can never learn that token — which is exactly the
+    // "packaged app cannot pair" failure (cave-gzje). CSRF stays covered: the
+    // Origin/Referer gates above ran for every non-header-trusted request.
     return jsonError(401, "unauthorized");
   }
 
