@@ -624,6 +624,7 @@ export const SUITES = {
     "src/lib/font-wiring.test.ts",
     "src/lib/cave-config.test.ts",
     "src/lib/omnigent/client.test.ts",
+    "src/lib/omnigent/fleet-gate.test.ts",
     "src/lib/omnigent/ward-preflight.test.ts",
     "src/lib/cave-config-state-race.test.ts",
     "src/lib/cave-config-write-race.test.ts",

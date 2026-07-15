@@ -11,6 +11,7 @@ import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { FamiliarAsanaSection } from "@/components/familiar-asana-section";
 import { IconButton } from "@/components/ui/icon-button";
+import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
 import {
   DEFAULT_OPENAI_VOICE_ID,
   OPENAI_REALTIME_VOICES,
@@ -44,6 +45,8 @@ function runtimeLabel(runtimeId: string | null | undefined, harnesses: HarnessRe
 
 export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
+  // Fleet defaults card stays hidden without an Omnigent auth token (cave-cfvv).
+  const fleetEnabled = useFleetTokenEnabled();
   const [draftHarness, setDraftHarness] = useState(familiar.harnessOverride ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
   // Explicit "Custom..." mode. Without this flag an empty draft is ambiguous:
@@ -516,6 +519,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             </label>
           </section>
 
+          {fleetEnabled ? (
           <section className="familiar-studio-brain__card">
             <h3 className="familiar-studio-brain__card-title">Omnigent fleet</h3>
             <p className="familiar-studio-brain__hint">
@@ -606,6 +610,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               </label>
             </div>
           </section>
+          ) : null}
 
           {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}
         </div>

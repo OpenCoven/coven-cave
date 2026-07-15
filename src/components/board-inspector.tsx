@@ -9,6 +9,7 @@ import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useFleetTokenEnabled } from "@/lib/omnigent/use-fleet-gate";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { GitHubItem } from "@/lib/github-tasks";
 import {
@@ -1315,6 +1316,8 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   // when you actually need to dispatch/cancel or read the timestamps.
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  // Fleet buttons stay hidden without an Omnigent auth token (cave-cfvv).
+  const fleetEnabled = useFleetTokenEnabled();
 
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;
   const moves = NEXT_MOVES[card.lifecycle] ?? [];
@@ -1591,32 +1594,34 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     {chatLinking ? "Starting…" : chatLinkError ? "Retry" : "Start"}
                     <Icon name="ph:arrow-right-bold" width={11} />
                   </button>
-                  <button
-                    type="button"
-                    className="board-drawer-chat-cta"
-                    title="Run on Omnigent fleet"
-                    onClick={() => {
-                      void (async () => {
-                        const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
-                        const { openExternalUrl } = await import("@/lib/open-external");
-                        const result = await startOmnigentRunFromBrowser({
-                          prompt: card.title,
-                          familiarId: card.familiarId ?? undefined,
-                          boardCardId: card.id,
-                          title: card.title,
-                          source: "cave-board",
-                        });
-                        if (!result.ok) {
-                          window.alert(result.error);
-                          return;
-                        }
-                        void openExternalUrl(result.webUrl);
-                      })();
-                    }}
-                  >
-                    Fleet
-                    <Icon name="ph:desktop" width={11} />
-                  </button>
+                  {fleetEnabled ? (
+                    <button
+                      type="button"
+                      className="board-drawer-chat-cta"
+                      title="Run on Omnigent fleet"
+                      onClick={() => {
+                        void (async () => {
+                          const { startOmnigentRunFromBrowser } = await import("@/lib/omnigent/browser-run");
+                          const { openExternalUrl } = await import("@/lib/open-external");
+                          const result = await startOmnigentRunFromBrowser({
+                            prompt: card.title,
+                            familiarId: card.familiarId ?? undefined,
+                            boardCardId: card.id,
+                            title: card.title,
+                            source: "cave-board",
+                          });
+                          if (!result.ok) {
+                            window.alert(result.error);
+                            return;
+                          }
+                          void openExternalUrl(result.webUrl);
+                        })();
+                      }}
+                    >
+                      Fleet
+                      <Icon name="ph:desktop" width={11} />
+                    </button>
+                  ) : null}
                 </div>
               </div>
             )}
