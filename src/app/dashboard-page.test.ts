@@ -206,7 +206,7 @@ assert.match(cockpit, /aria-label=\{`Drag to rearrange: \$\{title\}`\}/, "each g
 // model client-side, so cleared items leave, newly fired ones appear, and
 // caught-up flips truthfully.
 assert.match(cockpit, /getJson<\{ items: InboxItem\[\] \}>\("\/api\/inbox"\)/, "cockpit polls the full inbox (fired items included), not just status=pending");
-assert.match(cockpit, /if \(r\?\.items\) put\("inbox", r\.items\)/, "a failed inbox poll keeps the last known good list instead of flashing 'all clear'");
+assert.match(cockpit, /if \(r\?\.items\) \{\s*\n\s*put\("inbox", r\.items\);/, "a failed inbox poll keeps the last known good list instead of flashing 'all clear'");
 assert.match(cockpit, /buildDashboardModel\(data\.inbox, new Date\(\)\)/, "each poll rebuilds the dashboard model from the live inbox");
 assert.match(cockpit, /i\.status === "pending"/, "agenda derivation keeps the pending filter the old query param provided");
 {
@@ -214,11 +214,32 @@ assert.match(cockpit, /i\.status === "pending"/, "agenda derivation keeps the pe
   // Caught up is a designed state: the section stays (stable grid slot, calm
   // all-clear read) instead of vanishing — and the bare-widget mount means no
   // outer Panel is left husking a stale count over an empty body.
-  assert.match(cockpit, /case "needs": return <ActionInbox initialItems=\{model\.needsAttention\} \/>;/, "needs widget mounts ActionInbox bare — no double chrome, no husk Panel");
+  assert.match(cockpit, /case "needs": return <ActionInbox initialItems=\{model\.needsAttention\} openCount=\{model\.openCount\} onOpenCount=\{setLiveOpen\} \/>;/, "needs widget mounts ActionInbox bare — no double chrome, no husk Panel");
   assert.doesNotMatch(inbox, /if \(items\.length === 0\) return null/, "an empty list no longer unmounts the section");
   assert.match(inbox, /All clear — nothing needs you right now\./, "caught-up renders an honest all-clear state");
   assert.match(inbox, /caughtUp \? "ph:check-circle-bold" : "ph:warning-circle"/, "the section icon relaxes when caught up");
-  assert.match(inbox, /\{caughtUp \? null : <span className="dr-count">\{items\.length\}<\/span>\}/, "the live count hides at zero instead of reading 0");
+  assert.match(inbox, /\{caughtUp \? null : <span className="dr-count">\{liveTotal\}<\/span>\}/, "the live count hides at zero instead of reading 0");
+}
+// ── Counts are truthful past the display cap (cave-ckxk) ─────────────────────
+// needsAttention is capped at 8 for display; the true open total is
+// DashboardModel.openCount. The widget badge, its caught-up read, and the
+// Needs-you vital all use the uncapped total — an emptied visible page with
+// more items behind it is NOT "all clear" — and overflow drills into the
+// owning Rituals surface instead of silently truncating.
+{
+  const inbox = readFileSync(new URL("../components/dashboard/action-inbox.tsx", import.meta.url), "utf8");
+  const model = readFileSync(new URL("../lib/dashboard-model.ts", import.meta.url), "utf8");
+  assert.match(model, /openCount: breakdown\.openItems\.length/, "the model carries the uncapped open total");
+  assert.match(inbox, /const liveTotal = Math\.max\(0, openCount - \(initialItems\.length - items\.length\)\)/, "the widget derives a live total that tracks optimistic removals");
+  assert.match(inbox, /const caughtUp = liveTotal === 0/, "all-clear reads the uncapped total, not the visible page");
+  assert.match(inbox, /const hidden = Math\.max\(0, liveTotal - items\.length\)/, "overflow counts the items beyond the visible cap");
+  assert.match(inbox, /\+\{hidden\} more — open Rituals/, "overflow drills through instead of silently truncating");
+  assert.match(inbox, /className="dash-inbox__more focus-ring" href="\/\?mode=inbox"/, "the drill-through targets the Rituals surface");
+  assert.match(inbox, /onOpenCountRef\.current\?\.\(liveTotal\)/, "the widget reports its live total up");
+  assert.match(cockpit, /value: liveOpen \?\? model\.openCount, label: "Needs you"/, "the Needs-you vital reads the uncapped live total");
+  assert.match(cockpit, /metric: "needs", good: "down", href: "\/\?mode=inbox"/, "the Needs-you vital drills into Rituals like every other tile");
+  assert.match(cockpit, /needs: model\.openCount/, "trend snapshots record the uncapped total");
+  assert.doesNotMatch(cockpit, /model\.needsAttention\.length/, "nothing reads the capped list length as if it were the open total");
 }
 // The workspace SSE 'updated' branch bails on content-equal echoes, so an
 // optimistic complete/dismiss/snooze doesn't trigger one redundant re-render

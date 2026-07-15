@@ -36,6 +36,7 @@ function summary(slug) {
   const model = buildDashboardModel([summary("2026-06-19")], now);
   assert.equal(model.caughtUp, true, "no open items => caught up");
   assert.equal(model.needsAttention.length, 0);
+  assert.equal(model.openCount, 0, "openCount is 0 when caught up");
 }
 
 // busy when a response is pending today
@@ -48,13 +49,14 @@ function summary(slug) {
   assert.equal(model.needsAttention.length, 1);
 }
 
-// needsAttention is capped at 8
+// needsAttention is capped at 8, but openCount reports the true total
 {
   const many = Array.from({ length: 12 }, (_, i) =>
     item({ id: `r${i}`, kind: "response-needed", status: "pending" }),
   );
   const model = buildDashboardModel(many, now);
   assert.equal(model.needsAttention.length, 8, "needsAttention capped at 8");
+  assert.equal(model.openCount, 12, "openCount is uncapped");
   assert.equal(model.caughtUp, false);
 }
 

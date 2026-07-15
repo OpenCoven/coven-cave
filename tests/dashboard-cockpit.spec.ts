@@ -180,3 +180,54 @@ test("a fired reminder from the poll renders in Needs you with a live count", as
   await expect(needs.locator(".dr-count")).toHaveText("1");
   await expect(needs).not.toContainText("All clear");
 });
+
+const openResponse = (id: string, title: string) => {
+  const nowIso = new Date(NOW).toISOString();
+  return {
+    id, kind: "response-needed", title, status: "pending",
+    createdAt: nowIso, updatedAt: nowIso, firedAt: nowIso, recurrence: null, source: "agent",
+  };
+};
+
+test("clearing the last visible item lands on the all-clear moment", async ({ page }) => {
+  await gotoDashboard(page, [openResponse("r1", "Reply to Sage"), openResponse("r2", "Review the plan")]);
+  const needs = page.locator('section[aria-label="Needs you"]');
+  await expect(needs.locator(".dr-count")).toHaveText("2");
+
+  // Acting removes the row optimistically and the badge tracks it. (The POST
+  // hits the same **/api/inbox** mock — the buttons only check res.ok.)
+  await needs.locator(".dash-inbox__row", { hasText: "Reply to Sage" }).getByRole("button", { name: "Done" }).click();
+  await expect(needs.locator(".dash-inbox__row")).toHaveCount(1);
+  await expect(needs.locator(".dr-count")).toHaveText("1");
+
+  await needs.locator(".dash-inbox__row").getByRole("button", { name: "Done" }).click();
+  await expect(needs).toContainText("All clear — nothing needs you right now.");
+  await expect(needs.locator(".dr-count")).toHaveCount(0);
+});
+
+test("counts stay truthful past the display cap, with an overflow drill-through", async ({ page }) => {
+  const items = Array.from({ length: 10 }, (_, i) => openResponse(`r${i + 1}`, `Open item ${i + 1}`));
+  await gotoDashboard(page, items);
+  const needs = page.locator('section[aria-label="Needs you"]');
+
+  // Badge reads the uncapped total; the visible list is capped and the
+  // overflow drills into the owning Rituals surface.
+  await expect(needs.locator(".dr-count")).toHaveText("10");
+  await expect(needs.locator(".dash-inbox__row")).toHaveCount(8);
+  const more = needs.locator("a.dash-inbox__more");
+  await expect(more).toContainText("+2 more");
+  await expect(more).toHaveAttribute("href", "/?mode=inbox");
+
+  // The Needs-you vital shows the same uncapped total and drills through.
+  const kpi = page.locator(".cockpit-kpi", { hasText: "Needs you" });
+  await expect(kpi.locator(".cockpit-kpi__value")).toHaveText("10");
+  await expect(kpi).toHaveAttribute("href", "/?mode=inbox");
+
+  // Clearing all 8 visible rows is NOT all clear — 2 open items remain.
+  await needs.getByRole("button", { name: "Select" }).click();
+  await needs.getByRole("button", { name: "Select all" }).click();
+  await needs.getByRole("button", { name: "Done 8" }).click();
+  await expect(needs.locator(".dash-inbox__row")).toHaveCount(0);
+  await expect(needs).not.toContainText("All clear");
+  await expect(needs.locator(".dr-count")).toHaveText("2");
+});

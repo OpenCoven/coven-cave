@@ -104,6 +104,10 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
   // null while unresolved or when the probe fails — the panel's empty state only
   // offers "Connect GitHub" on a proven false, never on a guess.
   const [ghConnected, setGhConnected] = useState<boolean | null>(null);
+  // Live open total reported up by the ActionInbox — keeps the Needs-you vital
+  // honest through optimistic done/dismiss/snooze between polls. Reset when a
+  // fresh inbox lands (the rebuilt model is then authoritative).
+  const [liveOpen, setLiveOpen] = useState<number | null>(null);
 
   // Keep setState off an unmounted tree: the polled `load` may resolve after
   // unmount. A ref survives across the stable `load` identity.
@@ -125,7 +129,10 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     // The needs-attention/caught-up read derives from this list — keep the
     // last known good copy on a failed poll rather than flashing "all clear".
     void getJson<{ items: InboxItem[] }>("/api/inbox").then((r) => {
-      if (r?.items) put("inbox", r.items);
+      if (r?.items) {
+        put("inbox", r.items);
+        if (aliveRef.current) setLiveOpen(null);
+      }
     });
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
     void getJson<{ entries: CovenMemoryEntry[] }>("/api/coven-memory").then((r) => put("memory", r?.entries ?? []));
@@ -281,7 +288,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
     { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:list-checks-bold", value: contractPct, suffix: "%", label: "Contract health", sub: contractFetchPartial ? contractCoverageSub : contractSub(vitals), accent: "amber", metric: "contract", good: "up", href: "/dashboard/familiars/growth" },
-    { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", sub: model.caughtUp ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down" },
+    { icon: "ph:warning-circle", value: liveOpen ?? model.openCount, label: "Needs you", sub: (liveOpen ?? model.openCount) === 0 ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down", href: "/?mode=inbox" },
   ];
 
   // ── 7-day vitals trends: load history; snapshot today once the feeding data
@@ -299,7 +306,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       sessions: vitals.sessions7d,
       accept: acceptPct ?? 0,
       contract: contractPct ?? 0,
-      needs: model.needsAttention.length,
+      needs: model.openCount,
     };
     setTrends((prev) => {
       const store: TrendStore = { ...prev, [dayKey(now)]: snap };
@@ -309,7 +316,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       return store;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.needsAttention.length]);
+  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.openCount]);
 
   // ── Draggable secondary layout ──
   const sensors = useSensors(
@@ -393,7 +400,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       // Bare like "today": ActionInbox owns its section chrome (title, live
       // count, select toggle) — a wrapping Panel double-headered the widget
       // and its frozen count husked after the last item was cleared.
-      case "needs": return <ActionInbox initialItems={model.needsAttention} />;
+      case "needs": return <ActionInbox initialItems={model.needsAttention} openCount={model.openCount} onOpenCount={setLiveOpen} />;
       case "board": return (
         <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`} href="/?mode=board">
           <BoardSnapshot byStatus={byStatus} total={data.cards.length} active={activeCards} loaded={ready.has("cards")} familiars={data.familiars} />

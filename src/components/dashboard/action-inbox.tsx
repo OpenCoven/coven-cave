@@ -26,7 +26,14 @@ const ACTION_PAST_TENSE: Record<Action, string> = {
   snooze: "Snoozed",
 };
 
-export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
+export function ActionInbox({ initialItems, openCount, onOpenCount }: {
+  /** Visible rows — the model caps these for display. */
+  initialItems: InboxItem[];
+  /** True number of open items (uncapped) as of the same model snapshot. */
+  openCount: number;
+  /** Reports the live open total up so the Needs-you vital tracks optimistic actions. */
+  onOpenCount?: (n: number) => void;
+}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   useMinuteTick();    // keep the per-item "Nm ago" labels current; the parent
                       // cockpit re-fetches the list itself every 30s.
@@ -45,6 +52,17 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
     }
   }, [initialItems]);
   const { announce } = useAnnouncer();
+  // Live open total: the uncapped count minus rows removed optimistically but
+  // not yet reflected in the incoming model snapshot. Self-corrects when the
+  // fresh model lands (openCount drops, acted ids leave `initialItems`).
+  const liveTotal = Math.max(0, openCount - (initialItems.length - items.length));
+  const onOpenCountRef = useRef(onOpenCount);
+  onOpenCountRef.current = onOpenCount;
+  useEffect(() => {
+    onOpenCountRef.current?.(liveTotal);
+  }, [liveTotal]);
+  // Open items beyond the visible (capped) rows — the next poll promotes them.
+  const hidden = Math.max(0, liveTotal - items.length);
   // Bulk triage: select several items and done/dismiss/snooze them together.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -115,7 +133,9 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   // Caught up is a designed state, not a disappearance: keep the section (and
   // the grid slot stable) with a calm all-clear read. Clearing the last item
   // lands here immediately — the moment deserves better than a layout jump.
-  const caughtUp = items.length === 0;
+  // Reads the uncapped total: with more open items than visible rows, an
+  // emptied page is NOT all clear.
+  const caughtUp = liveTotal === 0;
 
   return (
     <section className="dr-section" aria-label="Needs you">
@@ -124,7 +144,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
           <Icon name={caughtUp ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
           Needs you
         </h2>
-        {caughtUp ? null : <span className="dr-count">{items.length}</span>}
+        {caughtUp ? null : <span className="dr-count">{liveTotal}</span>}
         {items.length > 1 ? (
           <button
             type="button"
@@ -236,6 +256,12 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
           );
         })}
       </div>
+      {hidden > 0 ? (
+        <a className="dash-inbox__more focus-ring" href="/?mode=inbox">
+          <Icon name="ph:arrow-right-bold" aria-hidden />
+          +{hidden} more — open Rituals
+        </a>
+      ) : null}
     </section>
   );
 }
