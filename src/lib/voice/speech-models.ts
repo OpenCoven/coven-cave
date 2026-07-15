@@ -312,7 +312,7 @@ export async function removeSpeechModel(modelId: string, root = speechModelsRoot
   const modelPath = speechModelPath(model, root);
   const modelDir = path.dirname(modelPath);
   try {
-    await rm(modelDir, { recursive: true, force: true });
+    await rm(modelDir, { recursive: true, force: false });
     return "removed";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
