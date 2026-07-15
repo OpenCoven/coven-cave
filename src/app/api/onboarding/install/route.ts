@@ -23,6 +23,7 @@ import {
   verifyOpenCovenToolInstall,
   type OpenCovenToolVerification,
 } from "@/lib/opencoven-tools-status";
+import { invalidateOpenCovenToolUpdateCache } from "@/lib/opencoven-tools-update-cache";
 import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
 import { resolveStaleOpenCovenLaunchers } from "@/lib/opencoven-tools-resolve";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
@@ -687,6 +688,7 @@ async function finishInstallJob(
 
     job.status = "done";
     job.finishedAt = Date.now();
+    if (installOk && targetName === "coven-cli") invalidateOpenCovenToolUpdateCache();
     job.ok = installOk && recovered;
     job.code = code;
     job.binaryPath = installed.path;

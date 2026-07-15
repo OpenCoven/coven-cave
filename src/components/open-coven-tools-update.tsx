@@ -263,7 +263,7 @@ export function OpenCovenToolsBannerTrigger() {
   useEffect(() => {
     let cancelled = false;
     const refreshBanner = () => {
-      void fetch("/api/opencoven-tools/status", { cache: "no-store" })
+      void fetch("/api/onboarding/update", { cache: "no-store" })
         .then(async (res) => {
           if (!res.ok) return null;
           return (await res.json()) as { ok?: boolean; tools?: ToolStatus[] };
@@ -335,15 +335,20 @@ export function OpenCovenToolsUpdate() {
   const mounted = useRef(true);
   const installObserver = useRef<ReturnType<typeof createOpenCovenInstallJobObserver> | null>(null);
 
-  const load = useCallback(async (): Promise<ToolStatus[] | null> => {
+  const load = useCallback(async (force = false): Promise<ToolStatus[] | null> => {
     setChecking(true);
     setError(null);
     try {
-      const res = await fetch("/api/opencoven-tools/status", { cache: "no-store" });
+      const res = await fetch("/api/onboarding/update", {
+        method: force ? "POST" : "GET",
+        cache: "no-store",
+      });
       const json = (await res.json()) as {
         ok?: boolean;
         tools?: ToolStatus[];
-        error?: string;
+        checkedAt?: string | null;
+        stale?: boolean;
+        error?: string | null;
       };
       if (!res.ok || json.ok === false) {
         throw new Error(json.error ?? "tool check failed");
@@ -351,9 +356,10 @@ export function OpenCovenToolsUpdate() {
       const nextTools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
       if (mounted.current) {
         setTools(nextTools);
-        setStale(false);
-        setLastSuccessfulCheckedAt(nextTools[0]?.checkedAt ?? new Date().toISOString());
-        setLastCheckError(null);
+        setStale(Boolean(json.stale));
+        setLastSuccessfulCheckedAt(json.checkedAt ?? nextTools[0]?.checkedAt ?? null);
+        setLastCheckError(json.error ?? null);
+        setError(json.error ?? null);
         if (!nextTools.some((tool) => tool.outdated || toolNeedsCompatibilityUpdate(tool))) {
           dismissBanner(TOOL_UPDATE_BANNER_ID);
         }
@@ -401,7 +407,7 @@ export function OpenCovenToolsUpdate() {
       },
       onTerminal: async (target, job) => {
         const completed = job as InstallJobView;
-        const refreshed = await load();
+        const refreshed = await load(true);
         if (!mounted.current) return;
         const result = installResultFromCompletion(
           target,
@@ -729,7 +735,7 @@ export function OpenCovenToolsUpdate() {
                 ? "Copy failed"
                 : "Copy diagnostics (safe)"}
           </Button>
-          <Button variant="secondary" size="xs" onClick={() => void load()} className={ghostBtn} disabled={checking}>
+          <Button variant="secondary" size="xs" onClick={() => void load(true)} className={ghostBtn} disabled={checking}>
             Check tools
           </Button>
         </div>

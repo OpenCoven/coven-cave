@@ -17,7 +17,8 @@ assert.doesNotMatch(
   /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
   "OpenCoven tools controls should use tokenized radii instead of hard-coded rounded classes",
 );
-assert.match(src, /\/api\/opencoven-tools\/status/, "component fetches OpenCoven tool version status");
+assert.match(src, /\/api\/onboarding\/update/, "component uses the shared cached update endpoint");
+assert.match(src, /method: force \? "POST" : "GET"/, "manual Settings checks also bypass the update cache");
 assert.match(src, /\/api\/onboarding\/install/, "component reuses the allowlisted background installer");
 assert.match(src, /\/api\/onboarding\/install", \{ cache: "no-store" \}/, "About queries the global installer lane without a target");
 assert.match(src, /Other npm updates are disabled until it finishes/, "About explains the shared npm lock before a second update can start");
@@ -52,7 +53,7 @@ assert.match(src, /json\.hint \?\?\s*json\.error/, "npm prerequisite and permiss
 assert.doesNotMatch(src, /tool\.latest\s*\?\s*` -> \$\{tool\.latest\}`/, "version line must not advertise latest when npm latest is older than installed");
 assert.doesNotMatch(src, /tool\.installed \? "Up to date" : "Not found"/, "installed-but-version-unknown tools must not fall through to Up to date");
 assert.match(src, /function installResultFromCompletion/, "post-install result reconciliation is centralized");
-assert.match(src, /const refreshed = await load\(\)/, "the UI refreshes status before displaying a completed install result");
+assert.match(src, /const refreshed = await load\(true\)/, "the UI forces an authoritative recheck before displaying a completed install result");
 assert.match(src, /Post-install recheck now resolves a different executable/, "a stale status recheck replaces optimistic success with a recovery message");
 assert.match(
   src,
@@ -85,7 +86,7 @@ assert.match(src, /Stale data from/, "failed rechecks explicitly mark retained t
 assert.match(src, /Last known/, "each retained tool row identifies last-known data");
 assert.match(src, /TOOL_UPDATE_RECHECK_EVENT/, "a completed in-page update requests a banner revalidation");
 assert.match(src, /window\.dispatchEvent\(new Event\(TOOL_UPDATE_RECHECK_EVENT\)\)/, "successful in-page updates revalidate the banner");
-assert.match(src, /onTerminal:[\s\S]*?const refreshed = await load\(\)/, "all completed recovery actions use the authoritative status recheck");
+assert.match(src, /onTerminal:[\s\S]*?const refreshed = await load\(true\)/, "all completed recovery actions use the authoritative status recheck");
 assert.match(src, /dismissBanner\(TOOL_UPDATE_BANNER_ID\)/, "a clean recheck dismisses an obsolete update banner");
 assert.match(src, /Copy diagnostics \(safe\)/, "the copy control discloses that diagnostics are sanitized");
 assert.match(src, /paths, raw output, URL queries, and secrets are omitted or redacted/, "the UI discloses copied-diagnostics redaction");

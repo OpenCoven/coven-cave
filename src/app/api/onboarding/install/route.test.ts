@@ -183,6 +183,12 @@ assert.match(
 
 assert.match(
   source,
+  /installOk && targetName === "coven-cli"\) invalidateOpenCovenToolUpdateCache\(\)/,
+  "a successful Coven CLI install invalidates cached update discovery",
+);
+
+assert.match(
+  source,
   /targetName === "coven-cli" \? \{ refresh: true \}/,
   "CLI success refreshes the executable environment before resolving the installed binary",
 );

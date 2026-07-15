@@ -104,6 +104,19 @@ export type OpenCovenToolStatus = {
   checkedAt: string;
 };
 
+/** Local-only readiness facts used by the frequently-polled onboarding
+ * endpoint. Update-only fields intentionally stay null/false so this shape
+ * remains backward-compatible without implying that npm was consulted. */
+export type OpenCovenToolReadinessStatus = Omit<
+  OpenCovenToolStatus,
+  "latest" | "latestCheck" | "outdated" | "checkedAt"
+> & {
+  latest: null;
+  latestCheck: null;
+  outdated: false;
+  checkedAt: null;
+};
+
 function firstSemver(text: string): string | null {
   const match = /\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/.exec(text);
   return match?.[1] ?? null;
@@ -461,6 +474,52 @@ export function composeOpenCovenToolStatus(
   };
 }
 
+export function composeOpenCovenToolReadinessStatus(
+  tool: OpenCovenToolSpec,
+  probe: OpenCovenToolProbe,
+): OpenCovenToolReadinessStatus {
+  const packageVerified =
+    probe.packageName === tool.packageName &&
+    Boolean(probe.packagePath) &&
+    Boolean(probe.executablePath) &&
+    probe.executableVerified;
+  const compatible =
+    packageVerified &&
+    !!probe.version &&
+    compareSemver(probe.version, tool.minimumVersion) >= 0;
+  const state = openCovenToolState({
+    installed: !!probe.path,
+    current: probe.version,
+    latest: null,
+    outdated: false,
+    compatible,
+    minimumVersion: tool.minimumVersion,
+  });
+
+  return {
+    id: tool.id,
+    label: tool.label,
+    packageName: tool.packageName,
+    binary: tool.binary,
+    installed: !!probe.path,
+    path: probe.path,
+    executablePath: probe.executablePath,
+    current: probe.version,
+    latest: null,
+    latestCheck: null,
+    outdated: false,
+    compatible,
+    state,
+    packageVerified,
+    executableVerified: probe.executableVerified,
+    packagePath: probe.packagePath,
+    discoveryError: probe.error ?? null,
+    minimumVersion: tool.minimumVersion,
+    installCommand: tool.installCommand,
+    checkedAt: null,
+  };
+}
+
 export async function verifyOpenCovenToolInstall(
   id: OpenCovenToolId,
 ): Promise<OpenCovenToolVerification<OpenCovenToolId>> {
@@ -493,4 +552,24 @@ async function toolStatus(
 export async function openCovenToolStatuses(): Promise<OpenCovenToolStatus[]> {
   const env = refreshCovenSpawnEnv();
   return Promise.all(OPEN_COVEN_TOOLS.map((tool) => toolStatus(tool, env)));
+}
+
+/** Discover installed/current compatibility without reading npm latest.
+ * Safe for readiness routes that poll frequently or must work offline. */
+export async function openCovenToolReadinessStatuses(
+  options: {
+    env?: NodeJS.ProcessEnv;
+    discover?: typeof discoverOpenCovenTool;
+  } = {},
+): Promise<OpenCovenToolReadinessStatus[]> {
+  const env = options.env ?? refreshCovenSpawnEnv();
+  const discover = options.discover ?? discoverOpenCovenTool;
+  return Promise.all(
+    OPEN_COVEN_TOOLS.map(async (tool) =>
+      composeOpenCovenToolReadinessStatus(
+        tool,
+        await discover(tool, { env }),
+      ),
+    ),
+  );
 }

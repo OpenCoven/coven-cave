@@ -305,7 +305,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /tools=\{\(status\?\.tools \?\? \[\]\)\.filter\(\s*\(tool\) => tool\.id === "coven-cli",?\s*\)\}/,
+  /tools=\{\(updateTools\.length > 0[\s\S]{0,120}status\?\.tools \?\? \[\][\s\S]{0,80}\.filter\(\(tool\) => tool\.id === "coven-cli"\)\}/,
   "the startup CLI step receives only the Coven CLI status — Coven Code never gates the tools step",
 );
 
@@ -374,7 +374,7 @@ assert.match(
 
 assert.match(
   source,
-  /function openCovenToolStatusText\(tool: OpenCovenToolStatus\): string/,
+  /function openCovenToolStatusText\(tool: OpenCovenToolStatus, stale = false\): string/,
   "startup formats tool status explicitly instead of treating unknown versions as up to date",
 );
 
@@ -386,8 +386,26 @@ assert.match(
 
 assert.match(
   source,
-  /latestCheckText\(tool\)/,
+  /latestCheckText\(tool, updateStale\)/,
   "startup exposes each tool's npm check result and freshness time",
+);
+
+assert.match(
+  source,
+  /fetch\("\/api\/onboarding\/update", \{[\s\S]*method: force \? "POST" : "GET"/,
+  "automatic update discovery uses GET while a manual check uses authoritative POST",
+);
+
+assert.match(
+  source,
+  /Check for updates/,
+  "the CLI step exposes an explicit manual update check",
+);
+
+assert.doesNotMatch(
+  source,
+  /setInterval\([\s\S]{0,180}loadUpdates/,
+  "the two-second readiness interval never polls the npm update endpoint",
 );
 
 assert.match(

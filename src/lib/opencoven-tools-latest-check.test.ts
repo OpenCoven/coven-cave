@@ -9,6 +9,7 @@ import {
   checkNpmLatestVersion,
   composeOpenCovenToolStatus,
   npmViewLaunchCommandForPath,
+  openCovenToolReadinessStatuses,
 } from "./opencoven-tools-status.ts";
 
 const checkedAt = new Date("2026-07-12T16:00:00.000Z");
@@ -23,6 +24,30 @@ function verifiedProbe(version: string) {
     packagePath: "C:\\tools\\node_modules\\@opencoven\\cli",
   } as const;
 }
+
+test("local readiness completes without waiting for a blocked registry probe", async () => {
+  let registryCalls = 0;
+  const blockedRegistryProbe = () => {
+    registryCalls += 1;
+    return new Promise<never>(() => {});
+  };
+  // Simulate npm being hung elsewhere in the process. Readiness has no
+  // dependency on that operation and must still settle.
+  void blockedRegistryProbe();
+  const readiness = openCovenToolReadinessStatuses({
+    env: { PATH: "/test" },
+    discover: async () => verifiedProbe("0.1.1"),
+  });
+  const result = await Promise.race([
+    readiness,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("readiness waited for registry")), 100),
+    ),
+  ]);
+  assert.equal(result[0]?.compatible, true);
+  assert.equal(result[0]?.latestCheck, null);
+  assert.equal(registryCalls, 1);
+});
 
 async function windowsNpmShim() {
   const dir = await mkdtemp(path.join(os.tmpdir(), "coven-npm-view-"));
