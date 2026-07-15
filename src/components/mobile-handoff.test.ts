@@ -137,6 +137,46 @@ assert.match(
   "the plain-dev failure tells users to open the packaged app instead of quoting pnpm incantations",
 );
 assert.match(settings, /Technical details/, "the raw handoff error stays available behind a disclosure");
+
+// ── Guided pairing checklist (cave-jr4r.1) ───────────────────────────────────
+// The route reports its whole probe ladder as structured steps; the Phone
+// card renders them instead of guessing which rung broke from one string.
+assert.match(
+  handoffRoute,
+  /steps: buildPairingSteps\(\{\s*access: \{ ok: false, detail: error \}/,
+  "a missing access token reports the ladder with the first rung failed",
+);
+assert.match(
+  handoffRoute,
+  /const tailscale = classifyTailscaleSelf\(self\);/,
+  "the tailscale probe classifies BackendState (install vs start vs sign in)",
+);
+assert.match(
+  handoffRoute,
+  /route: \{ ok: false, detail: routeDetail \}/,
+  "a dead tailnet route reports as the route rung, with the serve detail",
+);
+assert.match(
+  handoffRoute,
+  /phoneSeenAt: lastSeenAt,\s*\}\)/,
+  "the success response carries the full ladder including the phone rung",
+);
+assert.match(settings, /aria-label="Pairing checklist"/, "the Phone card renders the ladder as a labelled checklist");
+assert.match(
+  settings,
+  /PAIRING_STEP_GLYPH: Record<PairingStep\["state"\], \{ icon: IconName; className: string; announce: string \}>/,
+  "each checklist state pairs an icon with screen-reader text — never color alone",
+);
+assert.match(
+  settings,
+  /mobileModeEnabled && friendly && error && !steps/,
+  "the one-string friendly fallback only renders when the route couldn't report its ladder",
+);
+assert.match(
+  settings,
+  /text\.includes\("signed out"\)/,
+  "the fallback vocabulary understands the signed-out failure the classifier can now surface",
+);
 assert.match(
   settings,
   /aria-label="Pairing code for your iPhone camera"[\s\S]{0,80}dangerouslySetInnerHTML=\{\{ __html: handoff\.qrSvg \}\}/,

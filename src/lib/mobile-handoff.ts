@@ -386,3 +386,133 @@ export async function createMobileInvite({
     appTokenExpiresAt,
   };
 }
+
+// ─── Guided pairing checklist (cave-jr4r.1) ─────────────────────────────────────
+// The app-start flow runs a fixed probe ladder; these types let the route
+// report the WHOLE ladder instead of one opaque first-failure string, so the
+// Phone card can render "Tailscale installed → running → signed in → route
+// live → phone seen" as a real checklist.
+
+export type PairingStepId = "access" | "backend" | "tailscale" | "route" | "phone";
+
+export type PairingStep = {
+  id: PairingStepId;
+  label: string;
+  /** ok = proven; fail = this rung broke (detail says what to do); skipped =
+   *  never attempted because an earlier rung failed; pending = healthy but
+   *  waiting on the outside world (a phone that hasn't scanned yet). */
+  state: "ok" | "fail" | "skipped" | "pending";
+  detail?: string;
+};
+
+export type TailscaleSelfClassification =
+  | { kind: "running" }
+  | { kind: "needs-login"; detail: string }
+  | { kind: "not-running"; detail: string }
+  | { kind: "not-installed"; detail: string };
+
+/**
+ * Read the story out of a `tailscale status --self --json` probe. The exit
+ * code alone only proves the CLI exists — BackendState is what separates
+ * "open the app and sign in" from "start Tailscale" for the checklist.
+ */
+export function classifyTailscaleSelf(probe: {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+}): TailscaleSelfClassification {
+  if (!probe.ok) {
+    if (/not found/i.test(probe.stderr)) {
+      return {
+        kind: "not-installed",
+        detail: "Install Tailscale (tailscale.com/download), sign in, then retry.",
+      };
+    }
+    return {
+      kind: "not-running",
+      detail: probe.stderr.trim() || "Open Tailscale and connect, then retry.",
+    };
+  }
+  let backendState = "";
+  try {
+    const parsed = JSON.parse(probe.stdout) as { BackendState?: unknown };
+    if (typeof parsed.BackendState === "string") backendState = parsed.BackendState;
+  } catch {
+    // Fall through — an unparseable status reads as not-running below.
+  }
+  if (backendState === "Running") return { kind: "running" };
+  if (backendState === "NeedsLogin" || backendState === "NeedsMachineAuth") {
+    return {
+      kind: "needs-login",
+      detail: "Open Tailscale and sign in — pairing resumes here automatically.",
+    };
+  }
+  return {
+    kind: "not-running",
+    detail: "Open Tailscale and connect, then retry.",
+  };
+}
+
+const PAIRING_STEP_LABELS: Record<PairingStepId, string> = {
+  access: "Pairing service ready",
+  backend: "Cave server reachable",
+  tailscale: "Tailscale connected",
+  route: "Tailnet route live",
+  phone: "Phone seen",
+};
+
+/**
+ * Build the checklist from however far the ladder got. Pass detail-bearing
+ * outcomes for the rungs that ran; everything after the first failure reads
+ * "skipped". The phone rung is never a failure — it's "pending" until a
+ * paired device has actually been seen.
+ */
+export function buildPairingSteps(outcome: {
+  access: { ok: boolean; detail?: string };
+  backend?: { ok: boolean; detail?: string };
+  tailscale?: TailscaleSelfClassification;
+  route?: { ok: boolean; detail?: string };
+  phoneSeenAt?: number | null;
+}): PairingStep[] {
+  const steps: PairingStep[] = [];
+  let failed = false;
+  const push = (id: PairingStepId, rung?: { ok: boolean; detail?: string }) => {
+    if (failed || rung === undefined) {
+      steps.push({ id, label: PAIRING_STEP_LABELS[id], state: "skipped" });
+      return;
+    }
+    if (rung.ok) {
+      steps.push({ id, label: PAIRING_STEP_LABELS[id], state: "ok" });
+      return;
+    }
+    failed = true;
+    steps.push({ id, label: PAIRING_STEP_LABELS[id], state: "fail", detail: rung.detail });
+  };
+
+  push("access", outcome.access);
+  push("backend", outcome.backend);
+  push(
+    "tailscale",
+    outcome.tailscale === undefined
+      ? undefined
+      : outcome.tailscale.kind === "running"
+        ? { ok: true }
+        : { ok: false, detail: outcome.tailscale.detail },
+  );
+  push("route", outcome.route);
+  if (failed) {
+    steps.push({ id: "phone", label: PAIRING_STEP_LABELS.phone, state: "skipped" });
+  } else {
+    steps.push(
+      outcome.phoneSeenAt
+        ? { id: "phone", label: PAIRING_STEP_LABELS.phone, state: "ok" }
+        : {
+            id: "phone",
+            label: PAIRING_STEP_LABELS.phone,
+            state: "pending",
+            detail: "Waiting for the first scan.",
+          },
+    );
+  }
+  return steps;
+}

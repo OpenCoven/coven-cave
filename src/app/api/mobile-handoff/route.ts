@@ -4,6 +4,8 @@ import QRCode from "qrcode";
 import { stripAnsi } from "@/lib/ansi";
 import { readMobileLastSeen } from "@/lib/server/mobile-paired";
 import {
+  buildPairingSteps,
+  classifyTailscaleSelf,
   createMobileInvite,
   withChatFragment,
   MOBILE_INVITE_TTL_MS,
@@ -202,7 +204,10 @@ function mobileAccessUnavailableResponse() {
     process.env.NODE_ENV !== "production"
       ? "Mobile handoff isn't available in plain `pnpm dev` — it needs the signed access token that the packaged app and `pnpm mobile:tailscale` set up. Run `pnpm mobile:tailscale` (or open the packaged app), then use Open on phone from that session."
       : "mobile access token unavailable";
-  return NextResponse.json({ ok: false, error }, { status: 503 });
+  return NextResponse.json(
+    { ok: false, error, steps: buildPairingSteps({ access: { ok: false, detail: error } }) },
+    { status: 503 },
+  );
 }
 
 async function ensureNativeAppServe(req: Request, chatId?: string | null) {
@@ -217,15 +222,42 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   const backendReady = await verifyNativeAppBackend(req, backend);
   if (!backendReady.ok) {
     return NextResponse.json(
-      { ok: false, error: backendReady.error, backendUrl: backend },
+      {
+        ok: false,
+        error: backendReady.error,
+        backendUrl: backend,
+        steps: buildPairingSteps({
+          access: { ok: true },
+          backend: { ok: false, detail: backendReady.error },
+        }),
+      },
       { status: 503 },
     );
   }
 
   const self = await runTailscale(["status", "--self", "--json"]);
-  if (!self.ok) {
+  // BackendState separates "install Tailscale" / "start it" / "sign in" —
+  // the old exit-code-only check lumped a signed-out machine in with a
+  // missing CLI and let a Stopped one fail later with a route error.
+  const tailscale = classifyTailscaleSelf(self);
+  if (tailscale.kind !== "running") {
+    const error =
+      tailscale.kind === "not-installed"
+        ? "Tailscale is not installed"
+        : tailscale.kind === "needs-login"
+          ? "Tailscale is signed out"
+          : "Tailscale is not running";
     return NextResponse.json(
-      { ok: false, error: "tailscale is not connected", stderr: self.stderr },
+      {
+        ok: false,
+        error,
+        stderr: self.stderr,
+        steps: buildPairingSteps({
+          access: { ok: true },
+          backend: { ok: true },
+          tailscale,
+        }),
+      },
       { status: 503 },
     );
   }
@@ -268,12 +300,19 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   }
 
   if (!discovery.ok) {
+    const routeDetail = fallbackWarning ?? serveWarning ?? discovery.reason;
     return NextResponse.json(
       {
         ok: false,
-        error: fallbackWarning ?? serveWarning ?? discovery.reason,
+        error: routeDetail,
         stderr: fallbackWarning ?? serveWarning ?? status.stderr,
         backendUrl: backend,
+        steps: buildPairingSteps({
+          access: { ok: true },
+          backend: { ok: true },
+          tailscale,
+          route: { ok: false, detail: routeDetail },
+        }),
       },
       { status: 500 },
     );
@@ -322,6 +361,7 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
     width: 256,
     errorCorrectionLevel: "M",
   });
+  const lastSeenAt = await readMobileLastSeen();
 
   return NextResponse.json({
     ok: true,
@@ -334,7 +374,16 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
     discoverySource: discovery.source,
     // Paired signal (cave-i74f): the last token-refresh beat from a paired
     // device — null until a phone has actually connected.
-    lastSeenAt: await readMobileLastSeen(),
+    lastSeenAt,
+    // The whole proven ladder (cave-jr4r.1) — the Phone card renders it as a
+    // guided checklist instead of guessing from one error string.
+    steps: buildPairingSteps({
+      access: { ok: true },
+      backend: { ok: true },
+      tailscale,
+      route: { ok: true },
+      phoneSeenAt: lastSeenAt,
+    }),
     qrSvg,
     warning: fallbackWarning ?? serveWarning ?? undefined,
   });

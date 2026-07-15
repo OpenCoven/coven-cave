@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import {
   buildInviteUrl,
+  buildPairingSteps,
+  classifyTailscaleSelf,
   createMobileInvite,
   withChatFragment,
   findServeUrl,
@@ -269,3 +271,93 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 }
 
 console.log("mobile-handoff.test.ts OK");
+
+// ── Guided pairing checklist (cave-jr4r.1) ────────────────────────────────────
+
+// classifyTailscaleSelf reads BackendState — exit code alone can't separate
+// "sign in" from "start Tailscale" from "install Tailscale".
+{
+  assert.deepEqual(
+    classifyTailscaleSelf({ ok: true, stdout: JSON.stringify({ BackendState: "Running" }), stderr: "" }),
+    { kind: "running" },
+    "BackendState Running is the healthy state",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: true, stdout: JSON.stringify({ BackendState: "NeedsLogin" }), stderr: "" }).kind,
+    "needs-login",
+    "NeedsLogin asks for a sign-in, not an install",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: true, stdout: JSON.stringify({ BackendState: "NeedsMachineAuth" }), stderr: "" }).kind,
+    "needs-login",
+    "NeedsMachineAuth also reads as a sign-in problem",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: true, stdout: JSON.stringify({ BackendState: "Stopped" }), stderr: "" }).kind,
+    "not-running",
+    "Stopped asks to start Tailscale",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: true, stdout: "not json", stderr: "" }).kind,
+    "not-running",
+    "an unparseable status reads as not-running, never a crash",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: false, stdout: "", stderr: "Tailscale CLI not found. Install Tailscale…" }).kind,
+    "not-installed",
+    "a missing CLI asks for an install",
+  );
+  assert.equal(
+    classifyTailscaleSelf({ ok: false, stdout: "", stderr: "some transient failure" }).kind,
+    "not-running",
+    "other probe failures read as not-running with the stderr as detail",
+  );
+}
+
+// buildPairingSteps: the ladder reports every rung — fail marks the break,
+// everything after reads skipped, and the phone rung is pending (never a
+// failure) until a device has been seen.
+{
+  const broken = buildPairingSteps({
+    access: { ok: true },
+    backend: { ok: true },
+    tailscale: { kind: "needs-login", detail: "Open Tailscale and sign in." },
+  });
+  assert.deepEqual(
+    broken.map((s) => [s.id, s.state]),
+    [["access", "ok"], ["backend", "ok"], ["tailscale", "fail"], ["route", "skipped"], ["phone", "skipped"]],
+    "a mid-ladder failure marks later rungs skipped",
+  );
+  assert.equal(broken[2].detail, "Open Tailscale and sign in.", "the failing rung carries the actionable detail");
+
+  const waiting = buildPairingSteps({
+    access: { ok: true },
+    backend: { ok: true },
+    tailscale: { kind: "running" },
+    route: { ok: true },
+    phoneSeenAt: null,
+  });
+  assert.deepEqual(
+    waiting.map((s) => s.state),
+    ["ok", "ok", "ok", "ok", "pending"],
+    "a healthy ladder with no scan yet reads pending on the phone rung, not failed",
+  );
+
+  const paired = buildPairingSteps({
+    access: { ok: true },
+    backend: { ok: true },
+    tailscale: { kind: "running" },
+    route: { ok: true },
+    phoneSeenAt: Date.now(),
+  });
+  assert.equal(paired[4].state, "ok", "a seen phone completes the ladder");
+
+  const noToken = buildPairingSteps({ access: { ok: false, detail: "token unavailable" } });
+  assert.deepEqual(
+    noToken.map((s) => s.state),
+    ["fail", "skipped", "skipped", "skipped", "skipped"],
+    "a first-rung failure skips the whole rest of the ladder",
+  );
+}
+
+console.log("pairing checklist: ok");

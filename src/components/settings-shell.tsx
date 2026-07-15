@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/lib/icon";
+import { Icon, type IconName } from "@/lib/icon";
+import type { PairingStep } from "@/lib/mobile-handoff";
 import { relativeTime } from "@/lib/relative-time";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
@@ -2187,6 +2188,18 @@ function describeMobileHandoffError(raw: string): { headline: string; hint: stri
       hint: "This dev server can’t mint pairing codes — open CovenCave from Applications and pair from there.",
     };
   }
+  if (text.includes("tailscale") && (text.includes("not installed") || text.includes("cli not found"))) {
+    return {
+      headline: "Tailscale isn’t installed",
+      hint: "Install Tailscale from tailscale.com/download and sign in — pairing resumes here automatically.",
+    };
+  }
+  if (text.includes("tailscale") && (text.includes("signed out") || text.includes("logged out"))) {
+    return {
+      headline: "Tailscale is signed out",
+      hint: "Open Tailscale and sign in — pairing resumes here automatically.",
+    };
+  }
   if (
     text.includes("tailscale") &&
     (text.includes("not connected") ||
@@ -2224,9 +2237,21 @@ type MobileHandoffCardState = {
   lastSeenAt: number | null;
 };
 
+/** One glyph per checklist state — never color alone (cave-jr4r.1). */
+const PAIRING_STEP_GLYPH: Record<PairingStep["state"], { icon: IconName; className: string; announce: string }> = {
+  ok: { icon: "ph:check-circle-bold", className: "text-[var(--color-success)]", announce: "done" },
+  fail: { icon: "ph:x-circle", className: "text-[var(--color-warning)]", announce: "failed" },
+  skipped: { icon: "ph:minus-circle", className: "text-[var(--text-muted)]", announce: "skipped" },
+  pending: { icon: "ph:circle-dashed", className: "text-[var(--text-muted)]", announce: "waiting" },
+};
+
 function MobileModeToggle() {
   const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
+  // The proven probe ladder from the route (cave-jr4r.1) — present on success
+  // AND failure responses, so the card can show which rung broke instead of
+  // guessing from one error string.
+  const [steps, setSteps] = useState<PairingStep[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
@@ -2247,9 +2272,11 @@ function MobileModeToggle() {
         appInviteUrl?: string | null;
         qrSvg?: string | null;
         lastSeenAt?: number | null;
+        steps?: PairingStep[];
         error?: string;
         stderr?: string;
       };
+      setSteps(enabled && Array.isArray(json.steps) ? json.steps : null);
       if (!json.ok) {
         setError(json.stderr || json.error || "Mobile mode unavailable.");
         return;
@@ -2348,8 +2375,53 @@ function MobileModeToggle() {
         </button>
       </div>
 
-      {/* Humanized failure — the jargon lives behind a disclosure now. */}
-      {mobileModeEnabled && friendly && error ? (
+      {/* The proven ladder — which rung broke, and what to do about it. */}
+      {mobileModeEnabled && steps ? (
+        <ol className="flex flex-col gap-1.5 rounded-[var(--radius-card)] border border-[var(--border-hairline)] px-3.5 py-3" aria-label="Pairing checklist">
+          {steps.map((step) => {
+            const glyph = PAIRING_STEP_GLYPH[step.state];
+            return (
+              <li key={step.id} className="flex items-start gap-2 text-[12px]">
+                <Icon name={glyph.icon} className={`mt-[1px] shrink-0 ${glyph.className}`} aria-hidden />
+                <span className="min-w-0">
+                  <span className={step.state === "skipped" ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"}>
+                    {step.label}
+                  </span>
+                  <span className="sr-only"> — {glyph.announce}</span>
+                  {step.detail && (step.state === "fail" || step.state === "pending") ? (
+                    <span className={`block text-[11px] leading-relaxed ${step.state === "fail" ? "text-[var(--color-warning)]" : "text-[var(--text-muted)]"}`}>
+                      {step.detail}
+                    </span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
+          {steps.some((step) => step.state === "fail") ? (
+            <li className="mt-1 flex items-center gap-2" aria-hidden={false}>
+              <Button
+                size="xs"
+                variant="secondary"
+                leadingIcon="ph:arrows-clockwise"
+                onClick={() => void reconcileMobileMode(true, { busy: true })}
+                disabled={busy}
+              >
+                Retry
+              </Button>
+              {error ? (
+                <details className="text-[11px] text-[var(--text-muted)]">
+                  <summary className="cursor-pointer">Technical details</summary>
+                  <code className="mt-1 block whitespace-pre-wrap break-words font-mono text-[10px]">{error}</code>
+                </details>
+              ) : null}
+            </li>
+          ) : null}
+        </ol>
+      ) : null}
+
+      {/* Humanized failure — the jargon lives behind a disclosure now. Only
+          the fallback when the route couldn't even report its ladder. */}
+      {mobileModeEnabled && friendly && error && !steps ? (
         <div
           role="status"
           className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-[color-mix(in_oklch,var(--color-warning)_35%,var(--border-hairline))] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3.5 py-3"
