@@ -6,7 +6,7 @@ import { rejectNonLocalRequest } from "@/lib/server/api-security";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** GET /api/omnigent/status — health + token presence for configured server. */
+/** GET /api/omnigent/status — health + auth resolution for configured server. */
 export async function GET(req: Request) {
   const forbidden = rejectNonLocalRequest(req);
   if (forbidden) return forbidden;
@@ -19,6 +19,8 @@ export async function GET(req: Request) {
       configured: false,
       baseUrl: "",
       hasToken: false,
+      authenticated: false,
+      authMode: "none",
       online: false,
       error: "Set omnigent.baseUrl in Cave config (Fleet settings).",
     });
@@ -32,6 +34,8 @@ export async function GET(req: Request) {
       configured: true,
       baseUrl: client.baseUrl,
       hasToken: client.hasToken,
+      authenticated: client.authenticated || client.authMode === "none",
+      authMode: client.authMode,
       online: true,
       health,
       defaults: config.omnigent,
@@ -43,14 +47,32 @@ export async function GET(req: Request) {
         : err instanceof Error
           ? err.message
           : "status failed";
-    return NextResponse.json({
-      ok: true,
-      configured: true,
-      baseUrl,
-      hasToken: false,
-      online: false,
-      error: message,
-      defaults: config.omnigent,
-    });
+    // Health failed, but still try to report auth resolution for UI hints.
+    try {
+      const client = await OmnigentClient.fromBaseUrl(baseUrl);
+      return NextResponse.json({
+        ok: true,
+        configured: true,
+        baseUrl,
+        hasToken: client.hasToken,
+        authenticated: client.authenticated,
+        authMode: client.authMode,
+        online: false,
+        error: message,
+        defaults: config.omnigent,
+      });
+    } catch {
+      return NextResponse.json({
+        ok: true,
+        configured: true,
+        baseUrl,
+        hasToken: false,
+        authenticated: false,
+        authMode: "none",
+        online: false,
+        error: message,
+        defaults: config.omnigent,
+      });
+    }
   }
 }

@@ -20,6 +20,8 @@ type StatusPayload = {
   configured?: boolean;
   baseUrl?: string;
   hasToken?: boolean;
+  authenticated?: boolean;
+  authMode?: "jwt" | "env" | "databricks" | "none";
   online?: boolean;
   error?: string;
   defaults?: {
@@ -73,7 +75,9 @@ export function FleetView({ familiars = [], activeFamiliarId }: FleetViewProps) 
         setWorkspace((w) => w || st.defaults?.defaultWorkspace || "");
       }
 
-      if (!st.configured || !st.online || !st.hasToken) {
+      // Online is enough to load fleet data. Local Omnigent needs no token;
+      // multi-user 401s surface as errors from the list endpoints.
+      if (!st.configured || !st.online) {
         setHosts([]);
         setAgents([]);
         setSessions([]);
@@ -281,7 +285,11 @@ export function FleetView({ familiars = [], activeFamiliarId }: FleetViewProps) 
             {savingConfig ? "Saving…" : "Save connection"}
           </Button>
           <span className="text-xs opacity-60">
-            Token: {status?.hasToken ? "found" : "missing"} · Online: {status?.online ? "yes" : "no"}
+            Auth: {status?.authMode ?? "none"}
+            {status?.hasToken ? " · bearer" : ""}
+            {status?.authMode === "databricks" ? " · databricks" : ""}
+            {" · "}
+            Online: {status?.online ? "yes" : "no"}
           </span>
         </div>
       </section>

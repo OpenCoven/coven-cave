@@ -1,4 +1,4 @@
-import { loadOmnigentToken, normalizeOmnigentBaseUrl } from "./token.ts";
+import { resolveOmnigentAuth, normalizeOmnigentBaseUrl } from "./token.ts";
 import type {
   CreateSessionInput,
   OmnigentAgent,
@@ -22,24 +22,47 @@ export class OmnigentError extends Error {
 export class OmnigentClient {
   readonly baseUrl: string;
   private token: string | null;
+  private extraHeaders: Record<string, string>;
+  readonly authMode: "jwt" | "env" | "databricks" | "none";
+  /** True when we have JWT/env/databricks material — not required for local Omnigent. */
+  readonly authenticated: boolean;
 
-  constructor(baseUrl: string, token: string | null = null) {
+  constructor(
+    baseUrl: string,
+    token: string | null = null,
+    opts?: {
+      extraHeaders?: Record<string, string>;
+      authMode?: "jwt" | "env" | "databricks" | "none";
+      authenticated?: boolean;
+    },
+  ) {
     this.baseUrl = normalizeOmnigentBaseUrl(baseUrl);
     this.token = token;
+    this.extraHeaders = opts?.extraHeaders ?? {};
+    this.authMode = opts?.authMode ?? (token ? "jwt" : "none");
+    this.authenticated = opts?.authenticated ?? Boolean(token);
   }
 
   static async fromBaseUrl(baseUrl: string): Promise<OmnigentClient> {
     const normalized = normalizeOmnigentBaseUrl(baseUrl);
-    const token = await loadOmnigentToken(normalized);
-    return new OmnigentClient(normalized, token);
+    const auth = await resolveOmnigentAuth(normalized);
+    return new OmnigentClient(normalized, auth.token, {
+      extraHeaders: auth.extraHeaders,
+      authMode: auth.mode,
+      authenticated: auth.authenticated,
+    });
   }
 
+  /** @deprecated Prefer `authenticated` / `authMode`. Kept for UI that shows "token found". */
   get hasToken(): boolean {
     return Boolean(this.token);
   }
 
   private headers(json = true): HeadersInit {
-    const h: Record<string, string> = { Accept: "application/json" };
+    const h: Record<string, string> = {
+      Accept: "application/json",
+      ...this.extraHeaders,
+    };
     if (json) h["Content-Type"] = "application/json";
     if (this.token) h.Authorization = `Bearer ${this.token}`;
     return h;
@@ -102,37 +125,104 @@ export class OmnigentClient {
     return this.request("GET", `/v1/sessions/${encodeURIComponent(sessionId)}`);
   }
 
-  createSession(input: CreateSessionInput): Promise<OmnigentSession> {
+  /**
+   * Post a user message onto a live session (dispatches a turn when a runner
+   * is bound). Used after host-launched create so the prompt is not only
+   * seeded as history-only initial_items.
+   */
+  postMessage(sessionId: string, text: string): Promise<unknown> {
+    const body = {
+      type: "message",
+      data: {
+        role: "user",
+        content: [{ type: "input_text", text }],
+      },
+    };
+    return this.request("POST", `/v1/sessions/${encodeURIComponent(sessionId)}/events`, body);
+  }
+
+  /**
+   * Create a session.
+   *
+   * When `hostId` is set (Fleet external host path), the server launches a
+   * runner *after* create returns — `initial_items` would only seed history and
+   * would not dispatch a turn. In that case we create without initial_items,
+   * then POST the prompt to `/events` so the runner actually starts work.
+   */
+  async createSession(input: CreateSessionInput): Promise<OmnigentSession> {
     const labels: Record<string, string> = { ...(input.labels ?? {}) };
     if (input.familiar) labels["coven.familiar"] = input.familiar;
     if (input.sourceSha256) labels["coven.source_sha256"] = input.sourceSha256;
 
+    const hostType = input.hostType ?? "external";
+    const hasHost = Boolean(input.hostId) && hostType === "external";
+    const prompt = input.prompt?.trim() || "";
+
+    // Host-launched: defer prompt to /events after create (Codex P1).
+    // CLI-bound / no host: initial_items is fine.
+    const seedInitialItems = Boolean(prompt) && !hasHost;
+
     const body: Record<string, unknown> = {
       agent_id: input.agentId,
-      host_type: input.hostType ?? "external",
+      host_type: hostType,
       title: input.title ?? (input.familiar ? `${input.familiar}: run` : undefined),
       labels,
-      initial_items: input.prompt
+      initial_items: seedInitialItems
         ? [
             {
               type: "message",
               data: {
                 role: "user",
-                content: [{ type: "input_text", text: input.prompt }],
+                content: [{ type: "input_text", text: prompt }],
               },
             },
           ]
         : [],
     };
 
-    if ((input.hostType ?? "external") === "external") {
+    if (hostType === "external") {
       if (input.hostId) body.host_id = input.hostId;
       if (input.workspace) body.workspace = input.workspace;
     } else if (input.workspace) {
       body.workspace = input.workspace;
     }
 
-    return this.request("POST", "/v1/sessions", body);
+    const created = await this.request<OmnigentSession>("POST", "/v1/sessions", body);
+    const sessionId = created.id;
+    if (!sessionId) return created;
+
+    if (hasHost && prompt) {
+      // Host launch is async; brief settle so the runner can bind before the
+      // first event. Retries cover slow host tunnels without blocking forever.
+      const delaysMs = [0, 400, 800, 1600];
+      let lastErr: unknown;
+      for (const delay of delaysMs) {
+        if (delay) await new Promise((r) => setTimeout(r, delay));
+        try {
+          await this.postMessage(sessionId, prompt);
+          lastErr = undefined;
+          break;
+        } catch (err) {
+          lastErr = err;
+          // Retry only transient race (no runner / 409 / 503). 4xx auth/validation stop.
+          if (err instanceof OmnigentError && err.status >= 400 && err.status < 500 && err.status !== 409) {
+            throw err;
+          }
+        }
+      }
+      if (lastErr) {
+        // Session exists with host; surface a soft failure by rethrowing so the
+        // caller can show the session id + that the first turn did not dispatch.
+        throw lastErr;
+      }
+    }
+
+    // Return a fresh snapshot (runner_id / items after first event).
+    try {
+      return await this.getSession(sessionId);
+    } catch {
+      return created;
+    }
   }
 
   webSessionUrl(sessionId: string): string {

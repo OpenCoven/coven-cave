@@ -533,12 +533,23 @@ function OmnigentSettingsGroup() {
       .catch(() => {});
     fetch("/api/omnigent/status", { cache: "no-store", signal: ctl.signal })
       .then((r) => r.json())
-      .then((j: { online?: boolean; hasToken?: boolean; configured?: boolean; error?: string }) => {
+      .then((j: {
+        online?: boolean;
+        hasToken?: boolean;
+        authMode?: string;
+        configured?: boolean;
+        error?: string;
+      }) => {
         if (ctl.signal.aborted) return;
         if (!j.configured) setStatusLine("Not configured");
-        else if (j.online && j.hasToken) setStatusLine("Online · token ok");
-        else if (j.online) setStatusLine("Online · missing token (run omnigent login)");
-        else setStatusLine(j.error ? `Offline · ${j.error}` : "Offline");
+        else if (j.online) {
+          const mode = j.authMode || (j.hasToken ? "jwt" : "none");
+          setStatusLine(
+            mode === "none"
+              ? "Online · local/unauthenticated"
+              : `Online · auth ${mode}`,
+          );
+        } else setStatusLine(j.error ? `Offline · ${j.error}` : "Offline");
       })
       .catch(() => {});
     return () => ctl.abort();
@@ -565,8 +576,10 @@ function OmnigentSettingsGroup() {
       }
       announce("Omnigent settings saved.");
       const st = await fetch("/api/omnigent/status", { cache: "no-store" }).then((r) => r.json());
-      if (st?.online && st?.hasToken) setStatusLine("Online · token ok");
-      else if (st?.configured) setStatusLine(st.error || "Configured");
+      if (st?.online) {
+        const mode = st.authMode || (st.hasToken ? "jwt" : "none");
+        setStatusLine(mode === "none" ? "Online · local/unauthenticated" : `Online · auth ${mode}`);
+      } else if (st?.configured) setStatusLine(st.error || "Configured");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "could not save";
       setError(msg);

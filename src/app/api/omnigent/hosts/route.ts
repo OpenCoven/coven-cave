@@ -20,19 +20,16 @@ export async function GET(req: Request) {
   }
 
   try {
+    // Do not require a local token: single-user Omnigent accepts unauthenticated
+    // calls; multi-user servers return 401 from Omnigent itself.
     const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
-    if (!client.hasToken) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "No Omnigent token found. Run `omnigent login <url>` or set OMNIGENT_TOKEN.",
-        },
-        { status: 401 },
-      );
-    }
     const hosts = await client.listHosts();
-    return NextResponse.json({ ok: true, hosts, baseUrl: client.baseUrl });
+    return NextResponse.json({
+      ok: true,
+      hosts,
+      baseUrl: client.baseUrl,
+      authMode: client.authMode,
+    });
   } catch (err) {
     if (err instanceof OmnigentError) {
       return NextResponse.json(

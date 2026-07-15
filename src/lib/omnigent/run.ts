@@ -79,10 +79,9 @@ export async function createOmnigentRun(
 
   const hostType = request.hostType === "managed" ? "managed" : "external";
   const fam = familiarOmnigent(config, request.familiarId);
+  // Auth is optional for local single-user Omnigent; multi-user servers enforce
+  // themselves. Databricks pointer records mint a bearer inside the client.
   const client = await OmnigentClient.fromBaseUrl(baseUrl);
-  if (!client.hasToken) {
-    throw new Error("No Omnigent token found. Run `omnigent login <url>` or set OMNIGENT_TOKEN.");
-  }
 
   const [agents, hosts] = await Promise.all([client.listAgents(), client.listHosts()]);
 

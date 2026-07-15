@@ -22,18 +22,13 @@ export async function GET(req: Request) {
 
   try {
     const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
-    if (!client.hasToken) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "No Omnigent token found. Run `omnigent login <url>` or set OMNIGENT_TOKEN.",
-        },
-        { status: 401 },
-      );
-    }
     const sessions = await client.listSessions(40);
-    return NextResponse.json({ ok: true, sessions, baseUrl: client.baseUrl });
+    return NextResponse.json({
+      ok: true,
+      sessions,
+      baseUrl: client.baseUrl,
+      authMode: client.authMode,
+    });
   } catch (err) {
     if (err instanceof OmnigentError) {
       return NextResponse.json(

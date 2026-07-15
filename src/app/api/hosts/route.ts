@@ -40,7 +40,6 @@ async function omnigentHostOptions(
   if (!config.omnigent.baseUrl || !config.omnigent.exposeHostsInComposer) return [];
   try {
     const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
-    if (!client.hasToken) return [];
     const hosts = await client.listHosts();
     return hosts.map((h) => {
       const online = (h.status ?? "").toLowerCase() === "online";

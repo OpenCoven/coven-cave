@@ -1,9 +1,11 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { pickDefaultAgentId, pickDefaultHostId } from "./client.ts";
-import { normalizeOmnigentBaseUrl } from "./token.ts";
-// Keep .ts extensions so node --experimental-strip-types can resolve (same as other suite tests).
+import { normalizeOmnigentBaseUrl, resolveOmnigentAuth } from "./token.ts";
 
 test("normalizeOmnigentBaseUrl strips path and trailing slash", () => {
   assert.equal(
@@ -55,4 +57,92 @@ test("normalizeOmnigentConfig keeps hostMap and exposeHostsInComposer", async ()
   assert.equal(cfg.baseUrl, "https://omni.example.com");
   assert.equal(cfg.hostMap["ubuntu-root"], "host_9");
   assert.equal(cfg.exposeHostsInComposer, false);
+});
+
+test("resolveOmnigentAuth reads JWT and rejects expired", async () => {
+  const prevHome = process.env.HOME;
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "omnigent-auth-"));
+  process.env.HOME = tmp;
+  try {
+    const dir = path.join(tmp, ".omnigent");
+    await mkdir(dir, { recursive: true });
+    const base = "https://omni.example.com";
+    await writeFile(
+      path.join(dir, "auth_tokens.json"),
+      JSON.stringify({
+        [base]: {
+          token: "jwt-live",
+          user_id: "a",
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      }),
+    );
+    const live = await resolveOmnigentAuth(base);
+    assert.equal(live.mode, "jwt");
+    assert.equal(live.token, "jwt-live");
+    assert.equal(live.authenticated, true);
+
+    await writeFile(
+      path.join(dir, "auth_tokens.json"),
+      JSON.stringify({
+        [base]: {
+          token: "jwt-dead",
+          user_id: "a",
+          expires_at: Math.floor(Date.now() / 1000) - 10,
+        },
+      }),
+    );
+    delete process.env.OMNIGENT_TOKEN;
+    const expired = await resolveOmnigentAuth(base);
+    assert.equal(expired.token, null);
+    assert.equal(expired.mode, "none");
+  } finally {
+    process.env.HOME = prevHome;
+  }
+});
+
+test("resolveOmnigentAuth recognizes databricks pointer without requiring CLI mint", async () => {
+  const prevHome = process.env.HOME;
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "omnigent-dbx-"));
+  process.env.HOME = tmp;
+  try {
+    const dir = path.join(tmp, ".omnigent");
+    await mkdir(dir, { recursive: true });
+    const base = "https://myapp.aws.databricksapps.com";
+    await writeFile(
+      path.join(dir, "auth_tokens.json"),
+      JSON.stringify({
+        [base]: {
+          auth_type: "databricks",
+          workspace_host: "https://example.databricks.com",
+          org_id: "12345",
+        },
+      }),
+    );
+    // databricks CLI may be missing — pointer still marks authenticated, mode databricks
+    const auth = await resolveOmnigentAuth(base);
+    assert.equal(auth.mode, "databricks");
+    assert.equal(auth.authenticated, true);
+    assert.equal(auth.extraHeaders["X-Databricks-Org-Id"], "12345");
+  } finally {
+    process.env.HOME = prevHome;
+  }
+});
+
+test("resolveOmnigentAuth allows unauthenticated local mode", async () => {
+  const prevHome = process.env.HOME;
+  const prevTok = process.env.OMNIGENT_TOKEN;
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "omnigent-none-"));
+  process.env.HOME = tmp;
+  delete process.env.OMNIGENT_TOKEN;
+  try {
+    const auth = await resolveOmnigentAuth("http://127.0.0.1:6767");
+    assert.equal(auth.mode, "none");
+    assert.equal(auth.token, null);
+    assert.equal(auth.authenticated, false);
+  } finally {
+    process.env.HOME = prevHome;
+    if (prevTok === undefined) delete process.env.OMNIGENT_TOKEN;
+    else process.env.OMNIGENT_TOKEN = prevTok;
+  }
 });
