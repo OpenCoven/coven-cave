@@ -123,6 +123,21 @@ assert.match(detail, /draftDiagnostics/, "draft detail reads the honest draft di
   assert.match(arrivalLib, /CRAFT_ARRIVAL_MAX_AGE_MS/, "stale watches drop instead of spinning forever");
 }
 
+// ── Dead ends teach, errors recover, controls explain (docs/craft-ux.md CP5) ─
+assert.match(createDrawer, /openFamiliarStudioSettingsTab\("brain"/, "role dead-ends link to where roles are actually made");
+assert.match(createDrawer, /noRolesAnywhere/, "describe mode warns before dispatching a build that cannot succeed");
+assert.match(createDrawer, /craft-create-drawer__teach/, "teaching empty states use a stable styling hook");
+assert.match(createDrawer, /setRolesNonce/, "a failed roles load offers in-place retry");
+assert.match(createDrawer, /bundles roles from one familiar/, "the one-familiar constraint is stated, not discovered by loss");
+assert.match(createDrawer, /announce\("Draft preview ready", "polite"\)/, "step transitions are announced");
+{
+  const craftDetailSource = await readFile(craftDetailUrl, "utf8");
+  assert.match(craftDetailSource, /install the Craft first/, "disabled equip rows carry their reason inline");
+}
+assert.match(detail, /craft-lifecycle-strip/, "draft detail shows the Draft → Published → Installed → Equipped road");
+assert.match(detail, /human-reviewed catalog PR/, "the road to equipping names the publication reality");
+assert.match(css, /\.craft-lifecycle-strip \{/, "the lifecycle strip has a stable visual hook");
+
 // ── Describe-it closes its loop (cave-46wg) ──────────────────────────────────
 // The dispatched brief is no longer fire-and-forget: the drawer snapshots the
 // drafts store, polls while waiting, and hands an ARRIVED draft to the same

@@ -318,6 +318,23 @@ function DraftCraftDetail({
           </button>
         </div>
 
+        {/* Lifecycle strip (docs/craft-ux.md F8): where this draft stands and
+            what the road to equipping actually is. */}
+        <div className="craft-lifecycle-strip" aria-label="Craft lifecycle">
+          <ol>
+            {["Draft", "Published", "Installed", "Equipped"].map((stage, index) => (
+              <li key={stage} aria-current={index === 0 ? "step" : undefined}>
+                <small>{String(index + 1).padStart(2, "0")}</small>
+                <span>{stage}</span>
+              </li>
+            ))}
+          </ol>
+          <p>
+            Publishing is a human-reviewed catalog PR — <strong>Prepare for catalog</strong> drafts it with a
+            familiar. Installing and equipping unlock once the Craft ships in the catalog.
+          </p>
+        </div>
+
         <div role="status" className="craft-draft-plan-status" data-state={planState.kind}>
           {planState.kind === "loading" ? (
             <span>Checking the draft's install plan…</span>

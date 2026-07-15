@@ -7,6 +7,8 @@ import { StandardSelect } from "@/components/ui/select";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
 import { buildCraftAgentPrompt } from "@/lib/craft-agent-prompt";
 import {
   clearCraftArrivalWatch,
@@ -101,6 +103,10 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
   // current picks instead of destroying them.
   const selectionsByFamiliar = useRef(new Map<string, ReadonlySet<string>>());
   const appliedSeedId = useRef<string | null>(null);
+  // Roles fetch recovery (docs/craft-ux.md CP5): bumping the nonce re-runs
+  // the load instead of leaving a dead-end error.
+  const [rolesNonce, setRolesNonce] = useState(0);
+  const { announce } = useAnnouncer();
   useFocusTrap(open, ref, { onEscape: onClose });
 
   useEffect(() => {
@@ -193,7 +199,15 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
         if (!ctl.signal.aborted) setLoaded(true);
       });
     return () => ctl.abort();
-  }, [open]);
+  }, [open, rolesNonce]);
+
+  // Teaching dead ends (docs/craft-ux.md F7): roles live in the familiar
+  // studio's Brain tab — send the user there instead of stranding them.
+  const openRoleStudio = useCallback(() => {
+    openFamiliarStudioSettingsTab("brain", familiar || undefined);
+    onClose();
+  }, [familiar, onClose]);
+  const noRolesAnywhere = loaded && !error && roles.length === 0;
 
   const familiarOptions = useMemo(
     () => [...new Set(roles.map((role) => role.familiar))].sort().map((id) => ({ value: id, label: id })),
@@ -381,7 +395,28 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
         {error ? (
           <p role="alert" className="craft-create-drawer__alert">
             {error}
+            {roles.length === 0 ? (
+              <button
+                type="button"
+                className="focus-ring craft-create-drawer__retry"
+                onClick={() => setRolesNonce((nonce) => nonce + 1)}
+              >
+                Retry
+              </button>
+            ) : null}
           </p>
+        ) : null}
+
+        {noRolesAnywhere ? (
+          <div role="status" className="craft-create-drawer__teach">
+            <p>
+              No roles yet — a Craft bundles what a familiar&apos;s roles already equip, so there&apos;s nothing to
+              extract or describe until a familiar has at least one role.
+            </p>
+            <Button variant="secondary" size="sm" leadingIcon="ph:brain" onClick={openRoleStudio}>
+              Set up roles in the familiar studio
+            </Button>
+          </div>
         ) : null}
 
         {mode === "describe" ? (
@@ -480,6 +515,9 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
                 options={familiarOptions}
                 className="focus-ring craft-create-drawer__select"
               />
+              <em className="craft-create-drawer__hint">
+                A Craft bundles roles from one familiar — switching keeps each familiar&apos;s picks.
+              </em>
             </label>
 
             <section className="craft-create-drawer__roles" aria-label="Roles to extract">
@@ -487,7 +525,15 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
               {!loaded ? (
                 <p className="craft-create-drawer__status">Loading roles...</p>
               ) : visibleRoles.length === 0 ? (
-                <p className="craft-create-drawer__status">No roles found for this familiar.</p>
+                <div className="craft-create-drawer__teach">
+                  <p>
+                    No roles found for this familiar. Roles are defined in the familiar studio&apos;s Brain tab —
+                    each one lists the skills, tools, and workflows a Craft can bundle.
+                  </p>
+                  <Button variant="secondary" size="sm" leadingIcon="ph:brain" onClick={openRoleStudio}>
+                    Open the familiar studio
+                  </Button>
+                </div>
               ) : (
                 <div className="craft-create-drawer__role-list">
                   {visibleRoles.map((role) => (
@@ -526,14 +572,22 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
               variant="primary"
               size="sm"
               leadingIcon="ph:sparkle"
-              disabled={!goal.trim() || awaiting}
+              disabled={!goal.trim() || awaiting || noRolesAnywhere}
               onClick={() => void draftWithFamiliar()}
             >
               {awaiting ? "Drafting…" : "Draft with familiar"}
             </Button>
           ) : step === "preview" ? (
             <>
-              <Button variant="secondary" size="sm" leadingIcon="ph:arrow-left" onClick={() => setStep("select")}>
+              <Button
+                variant="secondary"
+                size="sm"
+                leadingIcon="ph:arrow-left"
+                onClick={() => {
+                  setStep("select");
+                  announce("Back to role selection", "polite");
+                }}
+              >
                 Adjust roles
               </Button>
               <Button
@@ -553,7 +607,10 @@ export function CraftCreateDrawer({ open, onClose, onCreated, seed = null }: Pro
               size="sm"
               leadingIcon="ph:magnifying-glass-bold"
               disabled={!familiar || selectedRoleIds.size === 0}
-              onClick={() => setStep("preview")}
+              onClick={() => {
+                setStep("preview");
+                announce("Draft preview ready", "polite");
+              }}
             >
               Preview draft
             </Button>

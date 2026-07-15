@@ -13495,6 +13495,35 @@ details[open] > .cave-edit-card__summary::before {
 .craft-draft-plan-status[data-state="ok"] span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .craft-draft-plan-status summary { cursor: pointer; color: var(--text-secondary); font-weight: 600; }
 .craft-draft-plan-status ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 4px; }
+/* Draft lifecycle strip (docs/craft-ux.md F8). */
+.craft-lifecycle-strip {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 9px 11px;
+}
+.craft-lifecycle-strip ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.craft-lifecycle-strip li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+.craft-lifecycle-strip li small { font-size: 9.5px; letter-spacing: 0.08em; }
+.craft-lifecycle-strip li[aria-current="step"] { color: var(--text-primary); font-weight: 650; }
+.craft-lifecycle-strip li + li::before { content: "→"; margin-right: 10px; color: var(--text-muted); }
+.craft-lifecycle-strip p { margin: 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.5; }
 .craft-dossier {
   display: flex;
   width: min(760px, 100vw);
@@ -13670,6 +13699,33 @@ details[open] > .cave-edit-card__summary::before {
   padding: 8px 10px;
 }
 .craft-create-drawer__name::placeholder { color: var(--text-muted); }
+.craft-create-drawer__hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+}
+.craft-create-drawer__teach {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  border: 1px dashed var(--border-hairline);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 10px 12px;
+}
+.craft-create-drawer__teach p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.craft-create-drawer__retry {
+  margin-left: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-decoration: underline;
+  padding: 0 2px;
+  cursor: pointer;
+}
 /* "What happens next" — quiet numbered steps for the agentic path. */
 .craft-create-drawer__how { display: grid; gap: 6px; }
 .craft-create-drawer__how h3 {

@@ -358,13 +358,17 @@ export function CraftDetail({
                     const key = `${role.familiar}:${role.id}`;
                     const checked = role.crafts.includes(plugin.id);
                     const canAttach = current || checked;
+                    // Inline disabled reason (docs/craft-ux.md F10): the "why"
+                    // used to live only in the far-away footer status.
+                    const installFirst = !canAttach ? " (install the Craft first)" : "";
                     return (
                       <div key={key} className="craft-role-row" data-selected={selectedRoleKey === key || undefined}>
                         <input
                           type="checkbox"
                           checked={checked}
                           disabled={roleBusy === key || !canAttach}
-                          aria-label={`${checked ? "Detach" : "Equip"} ${plugin.displayName} ${checked ? "from" : "on"} ${role.name}`}
+                          title={!canAttach ? "Install the Craft first to equip Roles" : undefined}
+                          aria-label={`${checked ? "Detach" : "Equip"} ${plugin.displayName} ${checked ? "from" : "on"} ${role.name}${installFirst}`}
                           onFocus={() => setSelectedRoleKey(key)}
                           onChange={(event) => void attachRole(role, event.target.checked)}
                         />
