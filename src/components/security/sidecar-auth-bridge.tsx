@@ -35,7 +35,15 @@ export const SIDECAR_AUTH_BRIDGE = `
   window.WebSocket = function CovenCaveWebSocket(url, protocols) {
     try {
       const nextUrl = new URL(url.toString(), window.location.href);
-      if (nextUrl.origin === window.location.origin && nextUrl.pathname === "/api/pty-ws") {
+      // Compare hosts, not origins: the real PTY URL is ws(s)://<host>/api/pty-ws
+      // (see src/lib/pty-ws-bridge.ts), so its origin is ws(s)://… while
+      // window.location.origin is http(s)://… — an origin equality check would
+      // never match and the token would never be injected.
+      const sameHost = nextUrl.host === window.location.host;
+      const supportedProtocol =
+        nextUrl.protocol === "ws:" || nextUrl.protocol === "wss:" ||
+        nextUrl.protocol === "http:" || nextUrl.protocol === "https:";
+      if (sameHost && supportedProtocol && nextUrl.pathname === "/api/pty-ws") {
         nextUrl.searchParams.set(tokenParam, token);
         return new NativeWebSocket(nextUrl, protocols);
       }
@@ -45,6 +53,11 @@ export const SIDECAR_AUTH_BRIDGE = `
     return new NativeWebSocket(url, protocols);
   };
   window.WebSocket.prototype = NativeWebSocket.prototype;
+  // Preserve the readyState statics (WebSocket.OPEN etc.): runtime checks like
+  // pty-ws-bridge's readyState === WebSocket.OPEN read them off the constructor.
+  for (const key of ["CONNECTING", "OPEN", "CLOSING", "CLOSED"]) {
+    window.WebSocket[key] = NativeWebSocket[key];
+  }
 
   const nativeFetch = window.fetch.bind(window);
   window.fetch = (input, init = {}) => {

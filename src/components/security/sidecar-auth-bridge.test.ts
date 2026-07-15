@@ -25,8 +25,19 @@ function makeWindow({ search = "", hash = "", origin = "http://localhost:3210" }
     this.protocols = protocols;
     webSocketCalls.push({ url: this.url, protocols });
   }
+  NativeWebSocket.CONNECTING = 0;
+  NativeWebSocket.OPEN = 1;
+  NativeWebSocket.CLOSING = 2;
+  NativeWebSocket.CLOSED = 3;
   const win = {
-    location: { search, hash, pathname: "/", origin, href: origin + "/" + search + hash },
+    location: {
+      search,
+      hash,
+      pathname: "/",
+      origin,
+      host: origin.replace(/^https?:\/\//, ""),
+      href: origin + "/" + search + hash,
+    },
     sessionStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
@@ -77,15 +88,35 @@ test("attaches the token header to same-origin /api/ fetches", async () => {
   assert.equal(headers.get(TOKEN_HEADER), "tok_api", "/api/ requests carry the sidecar token header");
 });
 
-test("attaches the token query param to same-origin PTY WebSockets", () => {
+test("attaches the token query param to same-host PTY WebSockets", () => {
   const win = makeWindow({ hash: "#covenCaveToken=tok_ws" });
   run(win);
-  const ws = new win.WebSocket("/api/pty-ws?threadId=t1&cols=80&rows=24");
+  // Same absolute ws:// URL shape as src/lib/pty-ws-bridge.ts: the WS origin
+  // (ws://…) never equals the page origin (http://…), so the bridge must
+  // match on host, not origin.
+  const ws = new win.WebSocket("ws://localhost:3210/api/pty-ws?threadId=t1&cols=80&rows=24");
   assert.equal(
     ws.url,
-    "http://localhost:3210/api/pty-ws?threadId=t1&cols=80&rows=24&covenCaveToken=tok_ws",
+    "ws://localhost:3210/api/pty-ws?threadId=t1&cols=80&rows=24&covenCaveToken=tok_ws",
     "PTY WebSockets carry the sidecar token because browsers cannot set custom WS headers",
   );
+});
+
+test("keeps the WebSocket readyState statics on the patched constructor", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_static" });
+  run(win);
+  // pty-ws-bridge checks readyState === WebSocket.OPEN off the constructor.
+  assert.equal(win.WebSocket.CONNECTING, 0);
+  assert.equal(win.WebSocket.OPEN, 1);
+  assert.equal(win.WebSocket.CLOSING, 2);
+  assert.equal(win.WebSocket.CLOSED, 3);
+});
+
+test("does not inject the token into cross-host WebSockets", () => {
+  const win = makeWindow({ hash: "#covenCaveToken=tok_cross" });
+  run(win);
+  const ws = new win.WebSocket("ws://evil.example.com/api/pty-ws");
+  assert.equal(ws.url, "ws://evil.example.com/api/pty-ws", "cross-host sockets must not receive the token");
 });
 
 test("does not touch non-/api/ or cross-origin fetches", async () => {
