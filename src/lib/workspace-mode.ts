@@ -15,5 +15,4 @@ export type WorkspaceMode =
   | "capabilities"
   | "familiar-work-queue"
   | "journal"
-  | "grimoire"
-  | "fleet";
+  | "grimoire";
