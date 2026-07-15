@@ -29,6 +29,12 @@ export const DEFAULT_LOCAL_MODEL = "llama3.2";
 /** Rolling turn cap for the brain call — enough context, bounded payload. */
 const MAX_BRAIN_TURNS = 24;
 
+/** Per-turn content cap, shared with the /api/voice/local/chat proxy so the
+ *  client can never assemble a payload the server rejects. Chat-history seed
+ *  turns routinely exceed this (code-heavy replies) — they get truncated for
+ *  the voice brain, never dropped mid-conversation. */
+export const MAX_BRAIN_CONTENT_CHARS = 8_000;
+
 export type LocalBrainTurn = { role: "user" | "assistant"; content: string };
 
 /** Resolve the loopback LLM base URL (COVEN_LOCAL_LLM_URL wins, no trailing slash). */
@@ -38,13 +44,24 @@ export function localLlmBaseUrl(envValue?: string | null): string {
   return base;
 }
 
-/** System prompt + capped turn tail, in OpenAI chat-completions shape. */
+/** System prompt + capped turn tail, in OpenAI chat-completions shape.
+ *  Every turn is clamped to the proxy's per-message cap and empty turns are
+ *  dropped — the raw conversation seed (hydrateForVoiceCall) is untruncated
+ *  chat history, and one oversized or empty turn must not 400 the whole brain
+ *  call (review finding on #3159). */
 export function buildLocalBrainMessages(
   instructions: string,
   turns: readonly LocalBrainTurn[],
   maxTurns: number = MAX_BRAIN_TURNS,
 ): Array<{ role: "system" | "user" | "assistant"; content: string }> {
-  const tail = turns.slice(-maxTurns);
+  const tail = turns
+    .filter((t) => t.content.trim().length > 0)
+    .map((t) =>
+      t.content.length > MAX_BRAIN_CONTENT_CHARS
+        ? { role: t.role, content: `${t.content.slice(0, MAX_BRAIN_CONTENT_CHARS - 1)}…` }
+        : t,
+    )
+    .slice(-maxTurns);
   return [{ role: "system" as const, content: instructions }, ...tail];
 }
 
