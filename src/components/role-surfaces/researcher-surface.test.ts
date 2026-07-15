@@ -8,6 +8,7 @@ const list = readFileSync(new URL("./research-mission-list.tsx", import.meta.url
 const detail = readFileSync(new URL("./research-mission-detail.tsx", import.meta.url), "utf8");
 const ledger = readFileSync(new URL("./research-evidence-ledger.tsx", import.meta.url), "utf8");
 const hook = readFileSync(new URL("./use-research-missions.ts", import.meta.url), "utf8");
+const missionsLib = readFileSync(new URL("../../lib/research-missions.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../app/globals.css", import.meta.url), "utf8");
 
 test("surface is mission-first and no longer stores a pretend research desk", () => {
@@ -102,8 +103,25 @@ test("autoresearch schedules use standard paused Automation controls", () => {
 });
 
 test("unknown research cost is shown honestly", () => {
-  assert.match(detail, /Cost unavailable/);
-  assert.match(detail, /hasReportedCost/);
+  // The quiet em dash keeps its honest explanation for tooltips and screen
+  // readers (researchBoundReadings, behaviorally tested in the lib suite).
+  assert.match(missionsLib, /value: "—"/);
+  assert.match(missionsLib, /Cost unavailable — the harness has not reported spend\./);
+  assert.match(missionsLib, /hasReportedCost/);
+});
+
+test("bound meter over/met states are visible beyond color alone", () => {
+  // Readings come from the shared gate-vs-target reconciler…
+  assert.match(detail, /researchBoundReadings\(mission\)\.map/);
+  // …tone lands as a class, prose lands as title + off-screen text…
+  assert.match(detail, /research-bound--\$\{reading\.tone\}/);
+  assert.match(detail, /title=\{reading\.detail\}/);
+  assert.match(detail, /<span className="sr-only"> — \{reading\.detail\}<\/span>/);
+  // …and the badge word makes over/met legible without color.
+  assert.match(detail, /research-bound-badge/);
+  assert.match(css, /\.research-bound--over dd/);
+  assert.match(css, /\.research-bound--met dd/);
+  assert.match(css, /\.research-bound-badge/);
 });
 
 test("polling is abortable, foreground-aware, and container responsive", () => {

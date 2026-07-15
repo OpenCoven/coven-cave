@@ -402,6 +402,91 @@ export function researchPhaseStatuses(
   });
 }
 
+export type ResearchBoundReading = {
+  id: "time" | "sources" | "checkpoint" | "spend";
+  label: string;
+  value: string;
+  /** over = past a stop gate (warn); met = target reached (good). */
+  tone: "neutral" | "over" | "met";
+  badge?: "over" | "met";
+  /** Plain-prose gate-vs-target semantics for tooltips and screen readers. */
+  detail: string;
+};
+
+/**
+ * Bound-meter rows with honest over/met states.
+ *
+ * Wall-clock minutes and reported spend are stop gates checked between
+ * iterations — a running iteration may legitimately finish past them, so
+ * exceeding one is a fact worth flagging, not a silent detail. The source
+ * count is a target, not a cap: reaching it is success. Badges only claim
+ * "over" when a value is strictly past its bound; a stop at the exact
+ * boundary is already explained by the mission's decision banner.
+ */
+export function researchBoundReadings(
+  mission: Pick<ResearchMission, "bounds" | "sources" | "iterations" | "startedAt" | "finishedAt" | "updatedAt">,
+): ResearchBoundReading[] {
+  const { bounds } = mission;
+  const elapsedMinutes = mission.startedAt
+    ? Math.max(0, Math.round((Date.parse(mission.finishedAt ?? mission.updatedAt) - Date.parse(mission.startedAt)) / 60_000))
+    : 0;
+  const timeOver = elapsedMinutes > bounds.wallClockMinutes;
+  const sourcesMet = mission.sources.length >= bounds.sourceTarget;
+  const reportedCost = mission.iterations.reduce((sum, item) => sum + (item.costUsd ?? 0), 0);
+  const hasReportedCost = mission.iterations.some((item) => item.costUsd !== undefined);
+  const spendOver = hasReportedCost && bounds.maxSpendUsd !== undefined && reportedCost > bounds.maxSpendUsd;
+  const spend: ResearchBoundReading = hasReportedCost
+    ? {
+      id: "spend",
+      label: "Spend",
+      value: `$${reportedCost.toFixed(2)}${bounds.maxSpendUsd === undefined ? " reported" : `/$${bounds.maxSpendUsd}`}`,
+      tone: spendOver ? "over" : "neutral",
+      ...(spendOver ? { badge: "over" as const } : {}),
+      detail: bounds.maxSpendUsd === undefined
+        ? "Reported spend so far; no spend cap is set."
+        : spendOver
+          ? "Reported spend is past the cap — no further iterations will start."
+          : "Spend cap is a stop gate checked between iterations.",
+    }
+    : {
+      id: "spend",
+      label: "Spend",
+      value: "—",
+      tone: "neutral",
+      detail: "Cost unavailable — the harness has not reported spend.",
+    };
+  return [
+    {
+      id: "time",
+      label: "Time",
+      value: `${elapsedMinutes}/${bounds.wallClockMinutes} min`,
+      tone: timeOver ? "over" : "neutral",
+      ...(timeOver ? { badge: "over" as const } : {}),
+      detail: timeOver
+        ? "Past the wall-clock budget — it is a stop gate checked between iterations, so a running iteration may finish over it, but no further iterations will start."
+        : "Wall-clock budget is a stop gate checked between iterations.",
+    },
+    {
+      id: "sources",
+      label: "Sources",
+      value: `${mission.sources.length}/${bounds.sourceTarget}`,
+      tone: sourcesMet ? "met" : "neutral",
+      ...(sourcesMet ? { badge: "met" as const } : {}),
+      detail: sourcesMet
+        ? "Source target reached — it is a goal, not a cap."
+        : "Source target is a goal, not a cap.",
+    },
+    {
+      id: "checkpoint",
+      label: "Checkpoint",
+      value: `every ${bounds.checkpointEvery} iteration${bounds.checkpointEvery === 1 ? "" : "s"}`,
+      tone: "neutral",
+      detail: "How often the mission pauses for review.",
+    },
+    spend,
+  ];
+}
+
 /**
  * Human-readable schedule for an autoresearch Automation link. Understands the
  * daily/weekly RRULEs the desk itself creates; anything else falls back to the
