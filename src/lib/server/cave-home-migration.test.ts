@@ -863,6 +863,104 @@ try {
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
+  // A failed Windows unlock rename can leave a lock owned by this still-live
+  // process on disk. Process liveness alone cannot distinguish that orphan
+  // from an active critical section, so the process-wide active-token set is
+  // authoritative for same-PID recovery.
+  {
+    const { coven, cave } = await home("same-process-orphan-lock");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.pid,
+      token: "abandoned-same-process-owner",
+      startedAt: new Date().toISOString(),
+    }));
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    const startedAt = Date.now();
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "a same-process orphan is reclaimed without timing out");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
+  // Publishing release intent must not let a waiter reclaim the lock before
+  // its owner finishes the unlock rename. Otherwise the old release path can
+  // rename a newly acquired successor lock and break mutual exclusion.
+  {
+    const { coven } = await home("release-publication-order");
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+    let finishRelease!: () => void;
+    const releaseMayFinish = new Promise<void>((resolve) => { finishRelease = resolve; });
+    let markReleasing!: () => void;
+    const ownerIsReleasing = new Promise<void>((resolve) => { markReleasing = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const owner = migrateCaveHome({
+      createSymlink: denySymlink,
+      lockProbe: async (event) => {
+        if (event === "acquired") {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+        } else if (event === "released") {
+          markReleasing();
+          await releaseMayFinish;
+          active -= 1;
+        }
+      },
+    });
+    await ownerIsReleasing;
+    const contender = migrateCaveHome({
+      createSymlink: denySymlink,
+      lockProbe: (event) => {
+        if (event === "acquired") {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+        } else if (event === "released") {
+          active -= 1;
+        }
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    assert.equal(maxActive, 1);
+    finishRelease();
+    const [ownerResult, contenderResult] = await Promise.all([owner, contender]);
+    assert.deepEqual(ownerResult.errors, []);
+    assert.deepEqual(contenderResult.errors, []);
+    assert.equal(maxActive, 1);
+    assert.equal(active, 0);
+  }
+
+  // A transient Windows unlock failure is completed by publishing release
+  // intent. The operation itself succeeds, and the next waiter reclaims the
+  // leftover directory rather than surfacing a 500 or waiting indefinitely.
+  {
+    const { coven, cave } = await home("failed-unlock-rename");
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+    let failUnlock = true;
+    const first = await migrateCaveHome({
+      createSymlink: denySymlink,
+      lockReleaseRename: async (source, destination) => {
+        if (failUnlock) {
+          failUnlock = false;
+          const error = new Error("injected Windows unlock failure") as NodeJS.ErrnoException;
+          error.code = "EPERM";
+          throw error;
+        }
+        await rename(source, destination);
+      },
+    });
+    assert.deepEqual(first.errors, []);
+    const lock = path.join(cave, ".migration.lock");
+    assert.equal(typeof (await json(path.join(lock, "owner.json"))).releasedAt, "string");
+
+    const second = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(second.errors, []);
+    assert.equal(await kind(lock), "missing");
+  }
+
   // Store transactions share the cross-process migration lock. A writer that
   // already passed startup reconciliation must not read an old snapshot while
   // a manual recovery is replacing canonical storage and overwrite it later.

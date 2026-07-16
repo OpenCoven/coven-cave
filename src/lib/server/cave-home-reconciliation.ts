@@ -113,6 +113,8 @@ export type ReconciliationOptions = {
   createSymlink?: typeof symlink;
   /** Test-only lock lifecycle probe. */
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
+  /** Test-only unlock rename override. */
+  lockReleaseRename?: typeof rename;
   /** Test-only hook before a legacy path is replaced by its compatibility bridge. */
   compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
   /** Test-only hook after managed-mirror canonical validation. */
@@ -136,7 +138,16 @@ const JOURNAL_VERSION = 1 as const;
 const MIGRATION_VERSION = 2 as const;
 const BACKUP_RETENTION = 10;
 const LOCK_STALE_MS = 5 * 60_000;
-const LOCK_WAIT_MS = 10_000;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __caveHomeReconciliationLockTokens: Set<string> | undefined;
+}
+
+function activeLockTokens(): Set<string> {
+  return globalThis.__caveHomeReconciliationLockTokens ??=
+    new Set<string>();
+}
 
 export const migrationJournalPath = () => path.join(caveHome(), "migration-state.json");
 export const migrationBackupRoot = () => path.join(caveHome(), "migration-backups");
@@ -241,13 +252,27 @@ async function delay(ms: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-async function readLockOwner(lock: string): Promise<{ pid: number | null; token: string | null }> {
+type LockOwner = {
+  pid: number | null;
+  token: string | null;
+  startedAt: string | null;
+  releasedAt: string | null;
+};
+
+async function readLockOwner(lock: string): Promise<LockOwner> {
   const owner = await readFile(path.join(lock, "owner.json"), "utf8")
-    .then((value) => JSON.parse(value) as { pid?: unknown; token?: unknown })
+    .then((value) => JSON.parse(value) as {
+      pid?: unknown;
+      token?: unknown;
+      startedAt?: unknown;
+      releasedAt?: unknown;
+    })
     .catch(() => null);
   return {
     pid: typeof owner?.pid === "number" && Number.isSafeInteger(owner.pid) ? owner.pid : null,
     token: typeof owner?.token === "string" ? owner.token : null,
+    startedAt: typeof owner?.startedAt === "string" ? owner.startedAt : null,
+    releasedAt: typeof owner?.releasedAt === "string" ? owner.releasedAt : null,
   };
 }
 
@@ -280,7 +305,6 @@ async function renameLockCandidate(candidate: string, lock: string): Promise<voi
 
 async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
-  const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     const token = randomBytes(16).toString("hex");
     const candidate = `${lock}.candidate-${token}`;
@@ -293,20 +317,58 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         await rm(candidate, { recursive: true, force: true });
         throw error;
       }
-      await options.lockProbe?.("acquired");
-      return async () => {
+      activeLockTokens().add(token);
+      const release = async () => {
         const owner = await readLockOwner(lock);
-        if (owner.token !== token) return;
+        if (owner.token !== token) {
+          activeLockTokens().delete(token);
+          return;
+        }
         // Mark the end of the test-observed critical section before publishing
         // the unlock. Once the rename below completes, a successor can acquire
         // immediately and must not overlap the prior owner's probe state.
         await options.lockProbe?.("released");
         const released = `${lock}.released-${token}`;
-        await rename(lock, released).catch((error) => {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        });
+        try {
+          await (options.lockReleaseRename ?? rename)(lock, released);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            activeLockTokens().delete(token);
+            return;
+          }
+          // Only publish release intent after this owner has stopped trying to
+          // rename the lock. Publishing it before the rename would let a
+          // waiter reclaim the directory and replace it with a successor lock
+          // that this release path could then rename out from under its owner.
+          try {
+            const currentOwner = await readLockOwner(lock);
+            if (currentOwner.token === token) {
+              await writeJsonAtomic(path.join(lock, "owner.json"), {
+                pid: process.pid,
+                token,
+                startedAt: currentOwner.startedAt ?? owner.startedAt ?? nowIso(),
+                releasedAt: nowIso(),
+              });
+            }
+          } finally {
+            activeLockTokens().delete(token);
+          }
+          // The persisted marker is the fallback unlock. A later contender
+          // will reclaim the directory, so do not turn a completed store or
+          // reconciliation operation into a 500 solely because Windows
+          // deferred the physical directory cleanup.
+          return;
+        }
+        activeLockTokens().delete(token);
         await rm(released, { recursive: true, force: true });
       };
+      try {
+        await options.lockProbe?.("acquired");
+      } catch (error) {
+        await release().catch(() => {});
+        throw error;
+      }
+      return release;
     } catch (error) {
       await rm(candidate, { recursive: true, force: true }).catch(() => {});
       if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
@@ -325,7 +387,10 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         // A recorded owner that no longer exists is safe to reclaim
         // immediately. The age threshold is only needed for an unreadable or
         // incomplete owner record, where liveness cannot be established.
-        const reclaimable = owner.pid ? !alive : Date.now() - info.mtimeMs > LOCK_STALE_MS;
+        const sameProcessOrphan = owner.pid === process.pid &&
+          (!owner.token || !activeLockTokens().has(owner.token));
+        const reclaimable = Boolean(owner.releasedAt) || sameProcessOrphan ||
+          (owner.pid ? !alive : Date.now() - info.mtimeMs > LOCK_STALE_MS);
         if (reclaimable) {
           await options.lockProbe?.("stale-observed");
           const takeover = path.join(lock, ".takeover");
@@ -349,7 +414,6 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         if ((lockError as NodeJS.ErrnoException).code === "ENOENT") continue;
         throw lockError;
       }
-      if (Date.now() >= deadline) throw new Error("timed out waiting for cave home migration lock");
       await delay(50);
     }
   }
