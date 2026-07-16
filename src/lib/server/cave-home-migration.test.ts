@@ -95,6 +95,26 @@ try {
     assert.equal(JSON.stringify(manifest).includes("older-tool"), false, "backup metadata never logs file contents");
   }
 
+  // An old tool can recreate the ordinary legacy file after reconciliation
+  // removes it but before the compatibility bridge is installed. Never let
+  // the mirror fallback overwrite that concurrent write.
+  {
+    const { coven, cave } = await home("windows-mirror-race");
+    const legacyPath = path.join(coven, "cave-config.json");
+    await writeFile(legacyPath, '{"source":"startup"}', "utf8");
+    const concurrentWriter: typeof denySymlink = async () => {
+      await writeFile(legacyPath, '{"source":"older-tool"}', "utf8");
+      const error = new Error("legacy path was recreated") as NodeJS.ErrnoException;
+      error.code = "EEXIST";
+      throw error;
+    };
+    const result = await migrateCaveHome({ createSymlink: concurrentWriter });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(path.join(cave, "config.json")), { source: "startup" });
+    assert.deepEqual(await json(legacyPath), { source: "older-tool" });
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
+  }
+
   // A damaged canonical copy must never overwrite the last known-good managed
   // mirror, and the status endpoint must surface the repair instead of hiding it.
   {

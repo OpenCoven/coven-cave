@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import {
   copyFile,
   cp,
@@ -285,7 +286,7 @@ async function pruneBackups(): Promise<void> {
 
 async function copyPath(source: string, destination: string, kind: PathInfo["kind"]): Promise<void> {
   if (kind === "dir") await cp(source, destination, { recursive: true, errorOnExist: true });
-  else await copyFile(source, destination);
+  else await copyFile(source, destination, fsConstants.COPYFILE_EXCL);
 }
 
 async function copyPathAtomically(
