@@ -43,8 +43,8 @@ assert.match(
 
 assert.match(
   route,
-  /async function finishInstallJob\([\s\S]*?recoverDaemonAfterCliInstall\(targetName, job\)[\s\S]*?finally \{[\s\S]*?npmLease\?\.release\(\);/,
-  "the shared npm lease should be released only after daemon recovery finishes",
+  /async function finishInstallJob\([\s\S]*?recoverDaemonAfterCliInstall\(targetName, job\)[\s\S]*?finally \{[\s\S]*?releaseNpmLease\(job, npmLease\);/,
+  "the shared npm lease should be released and traced only after daemon recovery finishes",
 );
 
 assert.doesNotMatch(
