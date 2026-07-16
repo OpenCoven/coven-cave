@@ -31,6 +31,7 @@ type ToolDiagnostic = Pick<
 
 const NPM_LATEST_CHECK_ERRORS = new Set<NpmLatestCheckError>([
   "npm_unavailable",
+  "runtime_error",
   "timeout",
   "registry_error",
   "malformed_version",

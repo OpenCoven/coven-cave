@@ -287,6 +287,22 @@ assert.match(
 
 assert.match(
   source,
+  /tail: json\.tail/,
+  "a completed failed install retains the server-redacted terminal tail",
+);
+assert.match(
+  source,
+  /!result\.ok && result\.tail \? <InstallLiveTail tail=\{result\.tail\}/,
+  "the retained failure tail remains visible after the live job stops",
+);
+assert.match(
+  source,
+  /setupError,[\s\S]{0,80}installJobs,[\s\S]{0,80}installResults/,
+  "copied onboarding diagnostics retain the terminal job and its redacted tail",
+);
+
+assert.match(
+  source,
   /NPM_INSTALL_TARGETS/,
   "npm-kind targets share a busy lock (mirrors the server's 409)",
 );

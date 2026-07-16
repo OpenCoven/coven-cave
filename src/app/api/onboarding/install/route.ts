@@ -20,6 +20,7 @@ import {
 } from "@/lib/coven-bin";
 import { installHermesShim } from "@/lib/hermes-shim";
 import {
+  npmLaunchCommandForPath,
   verifyOpenCovenToolInstall,
   type OpenCovenToolVerification,
 } from "@/lib/opencoven-tools-status";
@@ -31,6 +32,7 @@ import { startLocalDaemon } from "@/lib/daemon-start";
 import { redactSecretText } from "@/lib/secret-redaction";
 import {
   markDaemonCliInstalling,
+  daemonUpdateTraceLine,
   prepareDaemonForCliUpdate,
   recoverDaemonAfterCliUpdate,
   type DaemonCommandResult,
@@ -251,13 +253,23 @@ async function spawnPlanFor(
       return { sudoRequired: true, packageName: target.packageName };
     }
 
+    const launch = npmLaunchCommandForPath(npm);
+    if (!launch) {
+      return {
+        commandLookupFailed: true,
+        binary: "npm runtime",
+        error: `Could not resolve npm-cli.js from ${npm}`,
+      };
+    }
+
     return {
-      command: npm,
-      args: ["install", "-g", target.packageName],
-      // Windows resolves npm to npm.cmd, which Node refuses to spawn without
-      // a shell. The argv is fully fixed (allowlisted package, no user
-      // input), so shell interpolation has nothing to grab.
-      shell: process.platform === "win32",
+      command: launch.command,
+      args: [...launch.fixedArgs, "install", "-g", target.packageName],
+      // Node 24 concatenates shell:true argv without escaping. A Windows npm
+      // path such as C:\Program Files\nodejs\npm.cmd is consequently truncated
+      // to C:\Program and exits 1. npmLaunchCommandForPath remaps the shim to
+      // `node npm-cli.js`, preserving fixed argv without cmd.exe.
+      shell: false,
     };
   }
   // kind === "script" — run the harness's official installer exactly as its
@@ -461,7 +473,7 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
     wait: sleep,
     onState: (daemon) => {
       job.daemon = daemon;
-      appendOutput(job, `Daemon update status: ${daemon.detail ?? daemon.phase}.\n`);
+      appendOutput(job, daemonUpdateTraceLine(daemon));
     },
   };
 }

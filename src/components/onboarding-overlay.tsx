@@ -117,6 +117,8 @@ type InstallTarget =
 type InstallResult = {
   ok: boolean;
   detail: string;
+  /** Server-capped and secret-redacted terminal output retained on failure. */
+  tail?: string;
 };
 
 type NpmLaneState = {
@@ -608,6 +610,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // user hitting an unmet step).
           statusFailures,
           setupError,
+          installJobs,
           installResults,
           update: {
             checkedAt: updateCheckedAt,
@@ -899,7 +902,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       ? `installed at ${json.binaryPath}`
                       : "installed",
                   }
-                : { ok: false, detail: json.error ?? "install failed" },
+                : {
+                    ok: false,
+                    detail: json.error ?? "install failed",
+                    tail: json.tail,
+                  },
             }));
             if (target === "coven-cli" && json.ok) {
               await loadUpdates(true);
@@ -1889,13 +1896,16 @@ function NodeSetupNotice({
 function InstallResultNote({ result }: { result?: InstallResult }) {
   if (!result) return null;
   return (
-    <p
-      className={`text-[11px] leading-4 ${
-        result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
-      }`}
-    >
-      {result.detail}
-    </p>
+    <div className="flex flex-col gap-2">
+      <p
+        className={`text-[11px] leading-4 ${
+          result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+        }`}
+      >
+        {result.detail}
+      </p>
+      {!result.ok && result.tail ? <InstallLiveTail tail={result.tail} /> : null}
+    </div>
   );
 }
 

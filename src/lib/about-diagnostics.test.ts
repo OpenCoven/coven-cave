@@ -89,6 +89,14 @@ assert.deepEqual(
   { status: "failed", checkedAt, error: "registry_error" },
   "registry unavailability retains only the safe canonical npm error enum",
 );
+assert.deepEqual(
+  diagnosticTool({
+    latest: null,
+    latestCheck: { status: "failed", checkedAt, error: "runtime_error" },
+  }).latestCheck,
+  { status: "failed", checkedAt, error: "runtime_error" },
+  "local runtime failure retains only the safe canonical npm error enum",
+);
 assert.equal(
   diagnosticTool({ packageVerified: false }).packageVerified,
   false,

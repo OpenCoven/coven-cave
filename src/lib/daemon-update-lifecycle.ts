@@ -59,6 +59,13 @@ export type DaemonUpdateRecovery = {
   lifecycle: DaemonUpdateLifecycle;
 };
 
+/** A lifecycle detail is already prose and frequently carries punctuation. */
+export function daemonUpdateTraceLine(lifecycle: DaemonUpdateLifecycle): string {
+  const detail = (lifecycle.detail?.trim() || lifecycle.phase).trim();
+  const sentence = /[.!?]$/.test(detail) ? detail : `${detail}.`;
+  return `Daemon update status: ${sentence}\n`;
+}
+
 const DEFAULT_STOP_POLL_ATTEMPTS = 8;
 const DEFAULT_RESTART_POLL_ATTEMPTS = 16;
 const DEFAULT_POLL_DELAY_MS = 250;

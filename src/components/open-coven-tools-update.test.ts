@@ -54,6 +54,13 @@ assert.doesNotMatch(src, /tool\.latest\s*\?\s*` -> \$\{tool\.latest\}`/, "versio
 assert.doesNotMatch(src, /tool\.installed \? "Up to date" : "Not found"/, "installed-but-version-unknown tools must not fall through to Up to date");
 assert.match(src, /function installResultFromCompletion/, "post-install result reconciliation is centralized");
 assert.match(src, /const refreshed = await load\(true\)/, "the UI forces an authoritative recheck before displaying a completed install result");
+assert.match(src, /tail: job\.tail/, "completed About-panel failures retain the server-redacted tail");
+assert.match(
+  src,
+  /!busy && !result\?\.ok && result\?\.tail/,
+  "the About panel keeps failed installer output visible after completion",
+);
+assert.match(src, /const refreshed = await load\(true\)/, "the UI forces an authoritative recheck before displaying a completed install result");
 assert.match(src, /Post-install recheck now resolves a different executable/, "a stale status recheck replaces optimistic success with a recovery message");
 assert.match(
   src,
