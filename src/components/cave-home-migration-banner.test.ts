@@ -23,6 +23,7 @@ assert.match(src, /Recover legacy/, "review offers legacy recovery");
 assert.match(src, /Open backup folder/, "review exposes verified recovery bundles");
 assert.match(src, /return "Defer"/, "review lets users defer ambiguous decisions");
 assert.match(src, /shell_open_path/, "desktop opens the absolute backup directory through the validated command");
+assert.match(src, /usePausablePoll\(\(\) => void refresh\(\), 30_000/, "managed mirrors are rechecked for stale legacy writes while Cave remains open");
 assert.match(src, /JSON\.stringify\(\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry");
 assert.match(src, /review-dismissed:/, "dismissal is keyed by the exact review set");
 assert.match(css, /\.cave-migration-review/, "review workflow has responsive shell styling");

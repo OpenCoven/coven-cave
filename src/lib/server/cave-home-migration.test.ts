@@ -95,6 +95,31 @@ try {
     assert.equal(JSON.stringify(manifest).includes("older-tool"), false, "backup metadata never logs file contents");
   }
 
+  // A damaged canonical copy must never overwrite the last known-good managed
+  // mirror, and the status endpoint must surface the repair instead of hiding it.
+  {
+    const { coven, cave } = await home("damaged-canonical-mirror");
+    await writeFile(path.join(coven, "cave-config.json"), '{"knownGood":true}', "utf8");
+    assert.deepEqual((await migrateCaveHome({ createSymlink: denySymlink })).errors, []);
+    await writeFile(path.join(cave, "config.json"), "not-json", "utf8");
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(path.join(coven, "cave-config.json")), { knownGood: true });
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
+  }
+
+  // If the canonical side is deleted after startup, an unchanged managed
+  // mirror is still pending recovery rather than falsely reported as migrated.
+  {
+    const { coven, cave } = await home("missing-canonical-mirror");
+    await writeFile(path.join(coven, "cave-config.json"), '{"recoverable":true}', "utf8");
+    assert.deepEqual((await migrateCaveHome({ createSymlink: denySymlink })).errors, []);
+    await rm(path.join(cave, "config.json"));
+    const status = await caveHomeMigrationStatus();
+    assert.equal(status.pending.includes("cave-config.json"), true);
+    assert.equal(status.migrated, false);
+  }
+
   // Inbox records merge by stable ID; the newer revision/timestamp wins.
   {
     const { coven, cave } = await home("inbox");

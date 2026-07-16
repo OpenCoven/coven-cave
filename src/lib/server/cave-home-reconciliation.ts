@@ -623,14 +623,19 @@ async function mergeJson(strategy: ReconciliationStrategy, legacyPath: string, c
   return { ok: false, summary: "This file type requires an explicit choice." };
 }
 
-async function validateCanonical(entry: CaveHomeReconciliationEntry, canonicalPath: string): Promise<void> {
-  const info = await pathInfo(canonicalPath);
+async function validateCanonical(
+  entry: CaveHomeReconciliationEntry,
+  canonicalPath: string,
+  knownInfo?: PathInfo,
+): Promise<void> {
+  const info = knownInfo ?? await pathInfo(canonicalPath);
   if (info.kind === "missing" || info.kind === "symlink") throw new Error("canonical path is missing");
   if (entry.strategy === "directory") {
     if (info.kind !== "dir") throw new Error("canonical directory is invalid");
     await readdir(canonicalPath);
     return;
   }
+  if (info.kind !== "file") throw new Error("canonical file is invalid");
   if (entry.strategy === "inbox" || entry.strategy === "state" || entry.strategy === "preferences" || entry.next.endsWith(".json")) {
     const parsed = JSON.parse(await readFile(canonicalPath, "utf8")) as unknown;
     if (entry.strategy === "inbox") {
@@ -685,6 +690,9 @@ async function syncManagedMirror(
   const canonicalInfo = await pathInfo(canonicalPath);
   if (legacyInfo.kind === "missing" || canonicalInfo.kind === "missing") return null;
   if (!prior.managedMirrorHash || legacyInfo.hash !== prior.managedMirrorHash) return null;
+  // Do not replace the last known-good mirror until the newer canonical copy
+  // passes the same schema/type checks used by the initial migration.
+  await validateCanonical(entry, canonicalPath, canonicalInfo);
   const current: MigrationJournalEntry = {
     ...prior,
     legacyHash: legacyInfo.hash,
@@ -924,7 +932,12 @@ export async function caveHomeReconciliationStatus(
     if (legacyInfo.kind === "missing" || legacyInfo.kind === "symlink") continue;
     const canonicalInfo = await pathInfo(canonicalPath);
     const prior = journal.entries[entry.legacy];
-    const managed = Boolean(prior?.managedMirrorHash && legacyInfo.hash === prior.managedMirrorHash);
+    const canonicalValid = await validateCanonical(entry, canonicalPath, canonicalInfo).then(() => true, () => false);
+    const managed = Boolean(
+      canonicalValid &&
+      prior?.managedMirrorHash &&
+      legacyInfo.hash === prior.managedMirrorHash,
+    );
     if (managed) continue;
     const isPending = canonicalInfo.kind === "missing";
     (isPending ? pending : conflicts).push(entry.legacy);

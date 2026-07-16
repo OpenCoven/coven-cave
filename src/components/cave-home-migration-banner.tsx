@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useShellBanners } from "@/lib/shell-banners";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 
 type MigrationAction = "merge" | "keep-canonical" | "recover-legacy" | "defer";
 
@@ -117,6 +118,11 @@ export function CaveHomeMigrationBannerTrigger() {
     const payload = await response.json() as StatusPayload;
     if (payload.ok && payload.status) publish(payload.status);
   }, [publish]);
+
+  // Ordinary Windows mirrors can be changed by an older tool after Cave has
+  // started. Re-check while the shell is visible so those writes are surfaced
+  // without requiring an app restart.
+  usePausablePoll(() => void refresh(), 30_000, { pauseWhileInputActive: true });
 
   useEffect(() => {
     let cancelled = false;
