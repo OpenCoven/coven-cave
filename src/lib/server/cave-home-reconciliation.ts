@@ -608,6 +608,9 @@ function mergeInbox(legacy: unknown, canonical: unknown): MergeOutcome {
       if (!item || typeof item.id !== "string" || !item.id) {
         return { ok: false, summary: "Inbox item without a stable ID requires review." };
       }
+      if (ids.has(item.id)) {
+        return { ok: false, summary: `Inbox contains duplicate item ID ${item.id} and requires review.` };
+      }
       ids.add(item.id);
     }
   }
@@ -703,6 +706,19 @@ function mergeTravel(leftValue: unknown, rightValue: unknown): MergeOutcome {
   if (!left || !right) return { ok: false, summary: "Travel state is malformed." };
   const leftQueue = Array.isArray(left.offlineQueue) ? left.offlineQueue : [];
   const rightQueue = Array.isArray(right.offlineQueue) ? right.offlineQueue : [];
+  for (const items of [leftQueue, rightQueue]) {
+    const ids = new Set<string>();
+    for (const raw of items) {
+      const item = record(raw);
+      if (!item || typeof item.id !== "string" || !item.id) {
+        return { ok: false, summary: "Queued travel work without a stable ID requires review." };
+      }
+      if (ids.has(item.id)) {
+        return { ok: false, summary: `Travel queue contains duplicate item ID ${item.id} and requires review.` };
+      }
+      ids.add(item.id);
+    }
+  }
   const queue = new Map<string, Record<string, unknown>>();
   for (const raw of [...leftQueue, ...rightQueue]) {
     const item = record(raw);
@@ -1347,4 +1363,20 @@ export async function caveHomeReconciliationStatus(
     backupRoot: migrationBackupRoot(),
     journalPath: migrationJournalPath(),
   };
+}
+
+/** Fail closed when a previously preserved conflict loses its canonical store. */
+export async function validateCaveHomeReconciliationStore(
+  entries: readonly CaveHomeReconciliationEntry[],
+  legacy: string,
+): Promise<void> {
+  const entry = entries.find((candidate) => candidate.legacy === legacy);
+  if (!entry) return;
+  const prior = (await readJournal()).entries[legacy];
+  if (
+    prior?.decision !== "unresolved" &&
+    prior?.decision !== "deferred" &&
+    !prior?.managedMirrorHash
+  ) return;
+  await validateCanonical(entry, canonicalPathFor(entry));
 }

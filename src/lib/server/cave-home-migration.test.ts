@@ -297,6 +297,20 @@ try {
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-inbox.json"), true);
   }
 
+  // Duplicate IDs inside one snapshot are malformed. Collapsing them through
+  // a Map would silently discard one record during automatic reconciliation.
+  {
+    const { coven, cave } = await home("inbox-duplicate-id");
+    await mkdir(cave, { recursive: true });
+    const first = { id: "duplicate", title: "first", revision: 1, updatedAt: "2026-01-01T00:00:00Z" };
+    const second = { id: "duplicate", title: "second", revision: 2, updatedAt: "2026-02-01T00:00:00Z" };
+    await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [first, second] }));
+    await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [first] }));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-inbox.json"));
+    assert.deepEqual((await json(path.join(cave, "inbox.json"))).items, [first]);
+  }
+
   // Append-only state maps and queued work are unioned without dropping
   // legacy-only keys.
   {
@@ -350,6 +364,25 @@ try {
     assert.ok(result.skipped.includes("cave-state.json"));
     assert.equal((await json(path.join(cave, "state.json"))).travel.offlineQueue[0].status, "syncing");
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-state.json"), true);
+  }
+
+  // A duplicate queue ID within one snapshot is likewise ambiguous and must
+  // not be deduplicated as though it were the same item from both snapshots.
+  {
+    const { coven, cave } = await home("state-duplicate-queue-id");
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    legacy.travel.offlineQueue.push(
+      { id: "duplicate", status: "pending" },
+      { id: "duplicate", status: "failed" },
+    );
+    const canonical = baseState();
+    canonical.travel.offlineQueue.push({ id: "duplicate", status: "pending" });
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-state.json"));
+    assert.deepEqual((await json(path.join(cave, "state.json"))).travel.offlineQueue, canonical.travel.offlineQueue);
   }
 
   // Travel mode can transition in both directions. Without a transition
@@ -539,6 +572,8 @@ try {
     assert.equal(entry.decision, "deferred");
     assert.equal(await kind(path.join(cave, "migration-backups", entry.backupId)), "dir");
     await rm(path.join(cave, "config.json"));
+    globalThis.__caveHomeMigration = Promise.resolve(result);
+    await assert.rejects(ensureCaveHomeReconciled("cave-config.json"), /canonical path is missing/);
     const retry = await migrateCaveHome({ createSymlink: denySymlink });
     assert.equal(retry.errors.some((error) => error.legacy === "cave-config.json"), true);
     assert.deepEqual(await json(path.join(coven, "cave-config.json")), { source: "legacy" });

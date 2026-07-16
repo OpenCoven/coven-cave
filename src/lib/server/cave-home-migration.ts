@@ -1,5 +1,6 @@
 import {
   reconcileCaveHome,
+  validateCaveHomeReconciliationStore,
   type CaveHomeReconciliationEntry,
   type CaveHomeReconciliationResult,
   type ReconciliationOptions,
@@ -91,4 +92,5 @@ export async function ensureCaveHomeReconciled(legacy?: string): Promise<void> {
   if (failures.length > 0) {
     throw new Error(`Cave home reconciliation failed for ${failures.map((entry) => entry.legacy).join(", ")}`);
   }
+  if (legacy) await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
 }
