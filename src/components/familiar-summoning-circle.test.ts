@@ -87,6 +87,11 @@ assert.match(
 );
 assert.match(
   source,
+  /vessel === "local"\s*\n\s*\? \{ runtime: \{ kind: "local" \} \}/,
+  "summoning a local familiar explicitly binds it to the Cave host",
+);
+assert.match(
+  source,
   /openclawAgentId: selectedAgent\.id/,
   "summoning from an OpenClaw agent sends openclawAgentId",
 );

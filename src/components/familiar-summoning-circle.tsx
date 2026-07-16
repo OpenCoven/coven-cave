@@ -548,7 +548,9 @@ function SummoningRite({
                     command: sshCommand.trim(),
                   },
                 }
-              : {}),
+              : vessel === "local"
+                ? { runtime: { kind: "local" } }
+                : {}),
           },
         }),
       });
