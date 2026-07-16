@@ -42,20 +42,28 @@ type RunPayload = StatusPayload & {
 };
 
 const MIGRATION_BANNER_ID = "cave-home-migration";
-const CONFLICT_DISMISS_KEY = (names: string[]) =>
-  `coven-cave:cave-home-migration:review-dismissed:${[...names].sort().join("|")}`;
+const CONFLICT_DISMISS_KEY = (details: MigrationDetail[]) =>
+  `coven-cave:cave-home-migration:review-dismissed:${details
+    .map((detail) => [
+      detail.legacy,
+      detail.state,
+      detail.legacyHash ?? "missing",
+      detail.canonicalHash ?? "missing",
+    ].join(":"))
+    .sort()
+    .join("|")}`;
 
-function dismissed(names: string[]): boolean {
+function dismissed(details: MigrationDetail[]): boolean {
   try {
-    return window.localStorage.getItem(CONFLICT_DISMISS_KEY(names)) === "1";
+    return window.localStorage.getItem(CONFLICT_DISMISS_KEY(details)) === "1";
   } catch {
     return false;
   }
 }
 
-function rememberDismissal(names: string[]): void {
+function rememberDismissal(details: MigrationDetail[]): void {
   try {
-    window.localStorage.setItem(CONFLICT_DISMISS_KEY(names), "1");
+    window.localStorage.setItem(CONFLICT_DISMISS_KEY(details), "1");
   } catch {
     // Private browsing can reject storage. Dismissal still lasts this mount.
   }
@@ -99,7 +107,7 @@ export function CaveHomeMigrationBannerTrigger() {
       setReviewOpen(false);
       return;
     }
-    if (dismissed(names)) return;
+    if (dismissed(next.details)) return;
     const conflicts = next.conflicts.length;
     pushBanner({
       id: MIGRATION_BANNER_ID,
@@ -108,7 +116,7 @@ export function CaveHomeMigrationBannerTrigger() {
         ? `${conflicts} Cave data conflict${conflicts === 1 ? " needs" : "s need"} review. Both copies are preserved until you choose.`
         : `${next.pending.length} legacy Cave file${next.pending.length === 1 ? " is" : "s are"} ready for safe migration.`,
       cta: { label: "Review files", onClick: () => setReviewOpen(true) },
-      onDismiss: () => rememberDismissal(names),
+      onDismiss: () => rememberDismissal(next.details),
     });
   }, [dismissBanner, pushBanner]);
 

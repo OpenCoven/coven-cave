@@ -538,31 +538,10 @@ const PREFERENCE_SECTIONS = [
   ["phone"],
 ] as const;
 
-function preferenceScore(value: CavePreferences): [number, number] {
-  return [value.revision, parseDate(value.updatedAt)];
-}
-
-function newerPreference(left: CavePreferences, right: CavePreferences): "left" | "right" | "tie" {
-  const [leftRevision, leftTime] = preferenceScore(left);
-  const [rightRevision, rightTime] = preferenceScore(right);
-  if (leftRevision !== rightRevision) return leftRevision > rightRevision ? "left" : "right";
-  if (leftTime !== rightTime) return leftTime > rightTime ? "left" : "right";
-  return "tie";
-}
-
 function getNested(value: Record<string, unknown>, keys: readonly string[]): unknown {
   let cursor: unknown = value;
   for (const key of keys) cursor = record(cursor)?.[key];
   return cursor;
-}
-
-function setNested(value: Record<string, unknown>, keys: readonly string[], child: unknown): void {
-  let cursor = value;
-  for (const key of keys.slice(0, -1)) {
-    cursor[key] = { ...(record(cursor[key]) ?? {}) };
-    cursor = cursor[key] as Record<string, unknown>;
-  }
-  cursor[keys[keys.length - 1]] = child;
 }
 
 function validPreferences(value: unknown): CavePreferences | null {
@@ -579,14 +558,17 @@ function mergePreferences(legacy: unknown, canonical: unknown): MergeOutcome {
   const left = validPreferences(legacy);
   const right = validPreferences(canonical);
   if (!left || !right) return { ok: false, summary: "Preferences data is malformed and requires review." };
-  const globalChoice = newerPreference(left, right);
   const output = structuredClone(right) as unknown as Record<string, unknown>;
   for (const keys of PREFERENCE_SECTIONS) {
     const leftValue = getNested(left as unknown as Record<string, unknown>, keys);
     const rightValue = getNested(right as unknown as Record<string, unknown>, keys);
     if (JSON.stringify(leftValue) === JSON.stringify(rightValue)) continue;
-    if (globalChoice === "tie") return { ok: false, summary: `Preferences section ${keys.join(".")} differs at the same revision and timestamp.` };
-    setNested(output, keys, globalChoice === "left" ? leftValue : rightValue);
+    // Preferences have one file-wide revision, not a revision per section. If
+    // two writers changed different sections, choosing every value from the
+    // snapshot with the larger global revision would silently discard the
+    // other writer's independent change. Only theme has its own revision, so
+    // any other divergent section needs an explicit whole-file decision.
+    return { ok: false, summary: `Preferences section ${keys.join(".")} differs without an independent revision and requires review.` };
   }
   const leftTheme = left.appearance.theme;
   const rightTheme = right.appearance.theme;

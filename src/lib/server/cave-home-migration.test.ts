@@ -160,8 +160,8 @@ try {
     assert.deepEqual(merged.travel.offlineQueue.map((item) => item.id).sort(), ["current-work", "legacy-work"]);
   }
 
-  // Preference sections use global revision/timestamp while theme selection
-  // uses its own revision/timestamp.
+  // Theme selection can merge independently because it has its own revision
+  // and timestamp.
   {
     const { coven, cave } = await home("preferences");
     await mkdir(cave, { recursive: true });
@@ -174,14 +174,35 @@ try {
     const canonical = createDefaultPreferences(true);
     canonical.revision = 8;
     canonical.updatedAt = "2026-03-01T00:00:00Z";
-    canonical.general.newsHeadlines = false;
     await writeFile(path.join(coven, "cave-preferences.json"), JSON.stringify(legacy));
     await writeFile(path.join(cave, "preferences.json"), JSON.stringify(canonical));
     await migrateCaveHome({ createSymlink: denySymlink });
     const merged = await json(path.join(cave, "preferences.json"));
-    assert.equal(merged.general.newsHeadlines, false, "newer global section wins");
     assert.equal(merged.appearance.theme.id, "tide", "newer independent theme selection wins");
     assert.equal(merged.revision, 9);
+  }
+
+  // A file-wide revision cannot establish which side owns independent
+  // section edits. Leave both snapshots reviewable instead of letting the
+  // larger revision silently discard a unique change from the other side.
+  {
+    const { coven, cave } = await home("preferences-ambiguous-sections");
+    await mkdir(cave, { recursive: true });
+    const legacy = createDefaultPreferences(true);
+    legacy.revision = 2;
+    legacy.updatedAt = "2026-01-01T00:00:00Z";
+    legacy.general.stopPhrase = "legacy stop";
+    const canonical = createDefaultPreferences(true);
+    canonical.revision = 8;
+    canonical.updatedAt = "2026-03-01T00:00:00Z";
+    canonical.general.newsHeadlines = false;
+    await writeFile(path.join(coven, "cave-preferences.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "preferences.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-preferences.json"));
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-preferences.json"), true);
+    assert.equal((await json(path.join(coven, "cave-preferences.json"))).general.stopPhrase, "legacy stop");
+    assert.equal((await json(path.join(cave, "preferences.json"))).general.newsHeadlines, false);
   }
 
   // Existing Cave-home and per-store path overrides remain authoritative.

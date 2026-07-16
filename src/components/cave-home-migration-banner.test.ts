@@ -26,6 +26,8 @@ assert.match(src, /shell_open_path/, "desktop opens the absolute backup director
 assert.match(src, /usePausablePoll\(\(\) => void refresh\(\), 30_000/, "managed mirrors are rechecked for stale legacy writes while Cave remains open");
 assert.match(src, /JSON\.stringify\(\{ legacy: detail\.legacy, action \}\)/, "actions identify one manifest entry");
 assert.match(src, /review-dismissed:/, "dismissal is keyed by the exact review set");
+assert.match(src, /detail\.legacyHash \?\? "missing"/, "a changed legacy mirror re-surfaces after an earlier dismissal");
+assert.match(src, /detail\.canonicalHash \?\? "missing"/, "a changed canonical copy re-surfaces after an earlier dismissal");
 assert.match(css, /\.cave-migration-review/, "review workflow has responsive shell styling");
 assert.match(shell, /CaveHomeMigrationBannerTrigger/, "Shell mounts the migration trigger");
 assert.match(status, /caveHomeReconciliationStatus\(CAVE_HOME_MIGRATIONS\)/, "qualification stays centralized");
