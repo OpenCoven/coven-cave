@@ -24,13 +24,15 @@ import {
 } from "./knowledge-vault.ts";
 
 export function marketplacePluginsRoot(): string {
-  return process.env.COVEN_MARKETPLACE_PLUGINS_DIR || path.join(process.cwd(), "marketplace", "plugins");
+  // Marketplace assets are copied explicitly by sidecar-bundle.sh; runtime
+  // paths and project seed destinations are not output-tracing inputs.
+  return process.env.COVEN_MARKETPLACE_PLUGINS_DIR || path.join(/* turbopackIgnore: true */ process.cwd(), "marketplace", "plugins");
 }
 
 function pluginDir(packId: string): string {
   if (!isValidPackSlug(packId)) throw new Error("invalid pack id");
-  const root = path.resolve(marketplacePluginsRoot());
-  const resolved = path.resolve(root, packId);
+  const root = path.resolve(/* turbopackIgnore: true */ marketplacePluginsRoot());
+  const resolved = path.resolve(/* turbopackIgnore: true */ root, packId);
   if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== root) throw new Error("invalid pack id");
   return resolved;
 }
@@ -80,7 +82,7 @@ function parseManifest(raw: string, dirName: string): KnowledgePackManifest | nu
 export async function listKnowledgePacks(): Promise<KnowledgePackManifest[]> {
   let entries;
   try {
-    entries = await readdir(marketplacePluginsRoot(), { withFileTypes: true });
+    entries = await readdir(/* turbopackIgnore: true */ marketplacePluginsRoot(), { withFileTypes: true });
   } catch {
     return [];
   }
@@ -88,7 +90,7 @@ export async function listKnowledgePacks(): Promise<KnowledgePackManifest[]> {
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isDirectory() || !isValidPackSlug(entry.name)) continue;
     try {
-      const manifest = parseManifest(await readFile(path.join(marketplacePluginsRoot(), entry.name, "pack.json"), "utf8"), entry.name);
+      const manifest = parseManifest(await readFile(path.join(/* turbopackIgnore: true */ marketplacePluginsRoot(), entry.name, "pack.json"), "utf8"), entry.name);
       if (manifest) packs.push(manifest);
     } catch {
       // Broken marketplace entries are ignored.
@@ -100,7 +102,7 @@ export async function listKnowledgePacks(): Promise<KnowledgePackManifest[]> {
 export async function readKnowledgePack(packId: string): Promise<KnowledgePackManifest | null> {
   if (!isValidPackSlug(packId)) return null;
   try {
-    return parseManifest(await readFile(path.join(pluginDir(packId), "pack.json"), "utf8"), packId);
+    return parseManifest(await readFile(path.join(/* turbopackIgnore: true */ pluginDir(packId), "pack.json"), "utf8"), packId);
   } catch {
     return null;
   }
@@ -109,11 +111,11 @@ export async function readKnowledgePack(packId: string): Promise<KnowledgePackMa
 export async function readPackTemplate(packId: string, templateMeta: KnowledgePackTemplateMeta): Promise<string> {
   const dir = pluginDir(packId);
   if (!isValidPackSlug(templateMeta.id)) throw new Error("invalid template id");
-  const expectedRelative = path.join("templates", `${templateMeta.id}.md`);
+  const expectedRelative = path.join(/* turbopackIgnore: true */ "templates", `${templateMeta.id}.md`);
   if (path.normalize(templateMeta.path) !== expectedRelative) throw new Error("invalid template path");
-  const resolved = path.resolve(dir, expectedRelative);
+  const resolved = path.resolve(/* turbopackIgnore: true */ dir, expectedRelative);
   if (!resolved.startsWith(dir + path.sep)) throw new Error("invalid template path");
-  return readFile(resolved, "utf8");
+  return readFile(/* turbopackIgnore: true */ resolved, "utf8");
 }
 
 function folderMeta(pack: KnowledgePackManifest, folder: KnowledgePackFolder): KnowledgeCollectionMeta {
@@ -130,7 +132,7 @@ function folderMeta(pack: KnowledgePackManifest, folder: KnowledgePackFolder): K
 
 async function exists(filePath: string): Promise<boolean> {
   try {
-    await access(filePath, fsConstants.F_OK);
+    await access(/* turbopackIgnore: true */ filePath, fsConstants.F_OK);
     return true;
   } catch {
     return false;
@@ -142,8 +144,8 @@ async function writeFileIfMissing(filePath: string, contents: string, result: Kn
     result.skipped.push(filePath);
     return;
   }
-  await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, contents, "utf8");
+  await mkdir(/* turbopackIgnore: true */ path.dirname(filePath), { recursive: true });
+  await writeFile(/* turbopackIgnore: true */ filePath, contents, "utf8");
   result.created.push(filePath);
 }
 
@@ -207,19 +209,19 @@ async function seedProject(pack: KnowledgePackManifest, request: Extract<Knowled
   const projects = await loadProjects();
   const project = projectForRoot(request.projectRoot, projects);
   if (!project) throw new Error("unregistered project root");
-  const projectRoot = path.resolve(project.root);
-  const base = path.resolve(projectRoot, ...validateSubfolder(request.subfolder));
+  const projectRoot = path.resolve(/* turbopackIgnore: true */ project.root);
+  const base = path.resolve(/* turbopackIgnore: true */ projectRoot, ...validateSubfolder(request.subfolder));
   assertWithinRoot(base, projectRoot);
   const result: KnowledgePackSeedResult = { ok: true, target: "project", created: [], skipped: [] };
   for (const folder of pack.folders) {
-    const folderDir = path.resolve(base, folder.id);
+    const folderDir = path.resolve(/* turbopackIgnore: true */ base, folder.id);
     assertWithinRoot(folderDir, projectRoot);
     const meta = folderMeta(pack, folder);
-    await writeFileIfMissing(path.join(folderDir, ".cave", "frontmatter.yml"), stringifyYaml(meta), result);
+    await writeFileIfMissing(path.join(/* turbopackIgnore: true */ folderDir, ".cave", "frontmatter.yml"), stringifyYaml(meta), result);
     const readme = `${folder.description} ${folder.storyQuestion ? `This folder answers: ${folder.storyQuestion}` : `Use this folder for ${folder.name}.`}\n`;
-    await writeFileIfMissing(path.join(folderDir, "README.md"), readme, result);
+    await writeFileIfMissing(path.join(/* turbopackIgnore: true */ folderDir, "README.md"), readme, result);
     for (const template of templatesByFolder(pack, folder)) {
-      await writeFileIfMissing(path.join(folderDir, "_templates", `${template.id}.md`), await readPackTemplate(pack.id, template), result);
+      await writeFileIfMissing(path.join(/* turbopackIgnore: true */ folderDir, "_templates", `${template.id}.md`), await readPackTemplate(pack.id, template), result);
     }
   }
   await recordKnowledgePackSeed(pack.id, { target: "project", root: project.root });

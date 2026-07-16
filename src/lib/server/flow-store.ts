@@ -18,13 +18,13 @@ export const FLOW_RUNS_CAP = 200;
 function flowsDir(): string {
   const override = process.env.COVEN_FLOWS_DIR?.trim();
   if (override) return override;
-  return path.join(homedir(), ".coven", "flows");
+  return path.join(/* turbopackIgnore: true */ homedir(), ".coven", "flows");
 }
 
 function runsPath(): string {
   const override = process.env.COVEN_FLOW_RUNS_PATH?.trim();
   if (override) return override;
-  return path.join(homedir(), ".coven", "flow-runs.json");
+  return path.join(/* turbopackIgnore: true */ homedir(), ".coven", "flow-runs.json");
 }
 
 /** A safe, traversal-proof filename for a flow id. */
@@ -158,7 +158,8 @@ function coercePublished(value: unknown): FlowDoc["published"] {
 export async function listFlows(): Promise<FlowDoc[]> {
   let entries: string[];
   try {
-    entries = await readdir(flowsDir());
+    // Flows and run history are runtime user data, never build inputs.
+    entries = await readdir(/* turbopackIgnore: true */ flowsDir());
   } catch {
     return [];
   }
@@ -166,7 +167,7 @@ export async function listFlows(): Promise<FlowDoc[]> {
   for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
     try {
-      const text = await readFile(path.join(flowsDir(), entry), "utf8");
+      const text = await readFile(path.join(/* turbopackIgnore: true */ flowsDir(), entry), "utf8");
       const doc = coerceDoc(JSON.parse(text));
       if (doc) flows.push(doc);
     } catch {
@@ -179,7 +180,7 @@ export async function listFlows(): Promise<FlowDoc[]> {
 
 export async function loadFlow(id: string): Promise<FlowDoc | null> {
   try {
-    const text = await readFile(path.join(flowsDir(), flowFileName(id)), "utf8");
+    const text = await readFile(path.join(/* turbopackIgnore: true */ flowsDir(), flowFileName(id)), "utf8");
     return coerceDoc(JSON.parse(text));
   } catch {
     return null;
@@ -191,14 +192,14 @@ export async function saveFlow(input: FlowDoc): Promise<FlowDoc> {
   if (!doc) throw new Error("invalid flow document");
   const now = new Date().toISOString();
   const saved: FlowDoc = { ...doc, updatedAt: now };
-  await mkdir(flowsDir(), { recursive: true });
-  await writeJsonAtomic(path.join(flowsDir(), flowFileName(saved.id)), saved);
+  await mkdir(/* turbopackIgnore: true */ flowsDir(), { recursive: true });
+  await writeJsonAtomic(path.join(/* turbopackIgnore: true */ flowsDir(), flowFileName(saved.id)), saved);
   return saved;
 }
 
 export async function deleteFlow(id: string): Promise<boolean> {
   try {
-    await rm(path.join(flowsDir(), flowFileName(id)), { force: true });
+    await rm(path.join(/* turbopackIgnore: true */ flowsDir(), flowFileName(id)), { force: true });
     return true;
   } catch {
     return false;
@@ -211,7 +212,7 @@ type RunsFile = { version: 1; runs: FlowRunRecord[] };
 
 async function loadRunsFile(): Promise<RunsFile> {
   try {
-    const text = await readFile(runsPath(), "utf8");
+    const text = await readFile(/* turbopackIgnore: true */ runsPath(), "utf8");
     const parsed = JSON.parse(text) as RunsFile;
     if (parsed && Array.isArray(parsed.runs)) return { version: 1, runs: parsed.runs };
   } catch {
@@ -233,8 +234,8 @@ export async function recordFlowRun(input: Omit<FlowRunRecord, "id">): Promise<F
     const file = await loadRunsFile();
     file.runs.unshift(record);
     if (file.runs.length > FLOW_RUNS_CAP) file.runs.length = FLOW_RUNS_CAP;
-    await mkdir(path.dirname(runsPath()), { recursive: true });
-    await writeJsonAtomic(runsPath(), file);
+    await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
+    await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
   });
   return record;
 }
@@ -260,8 +261,8 @@ export async function updateFlowRun(
     if (index < 0) return null;
     const updated: FlowRunRecord = { ...file.runs[index], ...patch, id };
     file.runs[index] = updated;
-    await mkdir(path.dirname(runsPath()), { recursive: true });
-    await writeJsonAtomic(runsPath(), file);
+    await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
+    await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
     return updated;
   });
 }
@@ -271,8 +272,8 @@ export async function clearFlowRuns(flowId?: string): Promise<number> {
     const file = await loadRunsFile();
     const before = file.runs.length;
     file.runs = flowId ? file.runs.filter((run) => run.flowId !== flowId) : [];
-    await mkdir(path.dirname(runsPath()), { recursive: true });
-    await writeJsonAtomic(runsPath(), file);
+    await mkdir(/* turbopackIgnore: true */ path.dirname(runsPath()), { recursive: true });
+    await writeJsonAtomic(/* turbopackIgnore: true */ runsPath(), file);
     return before - file.runs.length;
   });
 }

@@ -111,13 +111,13 @@ function isBundle(): boolean {
 function vaultYamlPath(): string {
   const override = process.env.COVEN_VAULT_FILE?.trim();
   if (override) return override;
-  if (isBundle()) return join(caveHome(), "vault.yaml");
-  return join(process.cwd(), "vault.yaml");
+  if (isBundle()) return join(/* turbopackIgnore: true */ caveHome(), "vault.yaml");
+  return join(/* turbopackIgnore: true */ process.cwd(), "vault.yaml");
 }
 
 /** Read-only vault map shipped inside the bundle (cwd at runtime). */
 function bundledSeedVaultPath(): string {
-  return join(process.cwd(), "vault.yaml");
+  return join(/* turbopackIgnore: true */ process.cwd(), "vault.yaml");
 }
 
 let _vaultSeedChecked = false;
@@ -131,13 +131,13 @@ function seedVaultIfNeeded(): void {
   if (_vaultSeedChecked) return;
   _vaultSeedChecked = true;
   const dest = vaultYamlPath();
-  if (existsSync(dest)) return;
+  if (existsSync(/* turbopackIgnore: true */ dest)) return;
   const seed = bundledSeedVaultPath();
-  if (resolve(seed) === resolve(dest)) return;
+  if (resolve(/* turbopackIgnore: true */ seed) === resolve(/* turbopackIgnore: true */ dest)) return;
   try {
-    if (!existsSync(seed)) return;
-    mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(seed, dest);
+    if (!existsSync(/* turbopackIgnore: true */ seed)) return;
+    mkdirSync(/* turbopackIgnore: true */ dirname(dest), { recursive: true });
+    copyFileSync(/* turbopackIgnore: true */ seed, dest);
   } catch {
     // Best-effort: a failed seed just means the map starts empty.
   }
@@ -151,9 +151,9 @@ export function loadVaultMap(force = false): VaultMap {
   if (_vaultMap && !force) return _vaultMap;
   seedVaultIfNeeded();
   const vaultYaml = vaultYamlPath();
-  if (!existsSync(vaultYaml)) { _vaultMap = {}; return {}; }
+  if (!existsSync(/* turbopackIgnore: true */ vaultYaml)) { _vaultMap = {}; return {}; }
   try {
-    const raw = readFileSync(vaultYaml, "utf8");
+    const raw = readFileSync(/* turbopackIgnore: true */ vaultYaml, "utf8");
     const parsed = parseYaml(raw) as VaultMap | null;
     _vaultMap = parsed ?? {};
     return _vaultMap;
@@ -199,8 +199,8 @@ export function saveVaultMap(map: VaultMap): void {
     lines.push("");
   }
   const vaultYaml = vaultYamlPath();
-  mkdirSync(dirname(vaultYaml), { recursive: true });
-  writeFileSync(vaultYaml, lines.join("\n"), "utf8");
+  mkdirSync(/* turbopackIgnore: true */ dirname(vaultYaml), { recursive: true });
+  writeFileSync(/* turbopackIgnore: true */ vaultYaml, lines.join("\n"), "utf8");
   _vaultMap = map; // bust cache
 }
 
@@ -238,8 +238,8 @@ function resolverEnv(): NodeJS.ProcessEnv {
     "/opt/homebrew/bin",
     "/opt/homebrew/sbin",
     "/usr/local/bin",
-    join(home, ".local", "bin"),
-    join(home, "bin"),
+    join(/* turbopackIgnore: true */ home, ".local", "bin"),
+    join(/* turbopackIgnore: true */ home, "bin"),
   ];
   const current = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
   const merged = [...current, ...candidates.filter((dir) => !current.includes(dir))];
@@ -271,12 +271,12 @@ function isTimeoutError(e: unknown): boolean {
  *  attempt was killed by the base timeout. Returns null on failure. */
 function cliRead(cli: "op" | "dcli", ref: string): string | null {
   const run = (timeout: number) =>
-    execFileSync(cli, ["read", ref], {
+    String(Reflect.apply(execFileSync, undefined, [cli, ["read", ref], {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout,
       env: resolverEnv(),
-    }).trim();
+    }])).trim();
 
   try {
     return run(refReadTimeoutMs()) || null;
