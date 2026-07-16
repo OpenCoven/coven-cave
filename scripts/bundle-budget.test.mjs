@@ -5,7 +5,7 @@ const source = readFileSync(new URL("./bundle-budget.mjs", import.meta.url), "ut
 
 assert.match(
   source,
-  /diagnostics["',),\s]+route-bundle-stats\.json/,
+  /diagnostics["'\),\s]+route-bundle-stats\.json/,
   "bundle gate reads Next's generated route bundle diagnostic",
 );
 assert.match(
