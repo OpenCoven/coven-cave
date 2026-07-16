@@ -84,6 +84,57 @@ console.log(`  largest: ${kb(largest?.bytes ?? 0)}  (budget: ${kb(MAX_CHUNK_BYTE
 
 let failed = false;
 
+// --- Full familiar glyph catalogue must stay out of the initial `/` graph ---
+// Turbopack records the concrete entry files in the page client-reference
+// manifest. Identify the generated catalogue chunk by several names sampled
+// from the committed collection, then prove none of those chunks are startup
+// entries. This remains valid when content hashes change between builds.
+try {
+  const clientManifestPath = path.join(nextDir, "server", "app", "page_client-reference-manifest.js");
+  const source = readFileSync(clientManifestPath, "utf8");
+  const assignment = 'globalThis.__RSC_MANIFEST["/page"] = ';
+  const start = source.indexOf(assignment);
+  if (start < 0) throw new Error("missing /page manifest assignment");
+  const manifest = JSON.parse(source.slice(start + assignment.length).replace(/;\s*$/, ""));
+  const pageEntries = new Set(
+    (manifest.entryJSFiles?.["[project]/src/app/page"] ?? []).map((file) =>
+      file.replace(/^static\/chunks\//, ""),
+    ),
+  );
+  if (pageEntries.size === 0) throw new Error("/page manifest has no JavaScript entries");
+
+  const glyphSource = JSON.parse(
+    readFileSync(path.join(root, "src", "lib", "ph-glyph-catalog.json"), "utf8"),
+  );
+  const glyphNames = Object.keys(glyphSource.icons ?? {});
+  const sentinels = [0.08, 0.31, 0.57, 0.83].map(
+    (position) => glyphNames[Math.floor(glyphNames.length * position)],
+  );
+  const catalogChunks = chunks.filter((chunk) => {
+    const contents = readFileSync(path.join(chunksDir, chunk.file), "utf8");
+    return sentinels.every((name) => contents.includes(JSON.stringify(name)));
+  });
+  if (catalogChunks.length === 0) {
+    throw new Error("could not identify the generated glyph catalogue chunk");
+  }
+  const eagerCatalogChunks = catalogChunks.filter((chunk) => pageEntries.has(chunk.file));
+  console.log(
+    `\nbundle-budget — familiar glyph catalog: ${catalogChunks.map((chunk) => `${kb(chunk.bytes).trim()} ${chunk.file}`).join(", ")}`,
+  );
+  if (eagerCatalogChunks.length > 0) {
+    failed = true;
+    console.error(
+      `\n✗ bundle-budget: full familiar glyph catalogue is eager in /: ` +
+        eagerCatalogChunks.map((chunk) => chunk.file).join(", "),
+    );
+  } else {
+    console.log("✓ bundle-budget: full familiar glyph catalogue is lazy for /.\n");
+  }
+} catch (error) {
+  failed = true;
+  console.error(`\n✗ bundle-budget: could not verify lazy familiar glyph catalogue: ${error.message}`);
+}
+
 if (shellBytes > MAX_SHELL_BYTES) {
   failed = true;
   console.error(

@@ -28,7 +28,6 @@ import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
-import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
 import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
@@ -56,6 +55,7 @@ import {
   BrowserPane,
   CalendarView,
   FamiliarWorkQueueView,
+  FamiliarGlyphPicker,
   GitHubView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
@@ -2844,11 +2844,13 @@ export function Workspace() {
 
       <MagicTriggers />
 
-      <FamiliarGlyphPicker
-        open={glyphPickerFor !== null}
-        familiar={glyphPickerFor}
-        onClose={() => setGlyphPickerFor(null)}
-      />
+      {glyphPickerFor ? (
+        <FamiliarGlyphPicker
+          open
+          familiar={glyphPickerFor}
+          onClose={() => setGlyphPickerFor(null)}
+        />
+      ) : null}
 
       <MobileHandoffModal
         open={mobileHandoffOpen}

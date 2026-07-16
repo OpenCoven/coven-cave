@@ -25,6 +25,20 @@ function SurfaceFallback() {
   );
 }
 
+function GlyphPickerFallback() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/70 backdrop-blur-sm">
+      <div
+        className="flex h-[560px] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4 shadow-2xl"
+        aria-busy="true"
+        aria-label="Loading glyph picker"
+      >
+        <SkeletonRows count={8} />
+      </div>
+    </div>
+  );
+}
+
 // Wrap a lazy loader so the chunk's fetch+parse time is recorded as a
 // `surface-load:<name>` perf measure (visible in the ?perf=1 overlay). This is
 // the runtime cost of code-splitting these surfaces — worth watching so a
@@ -75,6 +89,13 @@ export const FamiliarWorkQueueView = dynamic(
     import("@/components/familiar-work-queue-view").then((m) => m.FamiliarWorkQueueView),
   ),
   { ssr: false, loading: SurfaceFallback },
+);
+
+export const FamiliarGlyphPicker = dynamic(
+  timed("familiar-glyph-picker", () =>
+    import("@/components/familiar-glyph-picker").then((m) => m.FamiliarGlyphPicker),
+  ),
+  { ssr: false, loading: GlyphPickerFallback },
 );
 
 // BrowserPane's imperative handle crosses this boundary as the regular
