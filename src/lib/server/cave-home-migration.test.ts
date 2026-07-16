@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -114,6 +114,27 @@ try {
     assert.deepEqual(await json(path.join(cave, "config.json")), { source: "startup" });
     assert.deepEqual(await json(legacyPath), { source: "older-tool" });
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
+  }
+
+  // The directory fallback must also fail closed if an old tool recreates the
+  // legacy directory after removal but before the compatibility copy starts.
+  {
+    const { coven, cave } = await home("windows-directory-mirror-race");
+    const legacyPath = path.join(coven, "cave-conversations");
+    await mkdir(legacyPath, { recursive: true });
+    await writeFile(path.join(legacyPath, "startup.json"), "startup");
+    const concurrentWriter: typeof denySymlink = async () => {
+      await mkdir(legacyPath, { recursive: true });
+      await writeFile(path.join(legacyPath, "older-tool.json"), "older-tool");
+      const error = new Error("legacy directory was recreated") as NodeJS.ErrnoException;
+      error.code = "EEXIST";
+      throw error;
+    };
+    const result = await migrateCaveHome({ createSymlink: concurrentWriter });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-conversations"), true);
+    assert.equal(await readFile(path.join(cave, "conversations", "startup.json"), "utf8"), "startup");
+    assert.equal(await readFile(path.join(legacyPath, "older-tool.json"), "utf8"), "older-tool");
+    assert.equal(await kind(path.join(legacyPath, "startup.json")), "missing");
   }
 
   // A damaged canonical copy must never overwrite the last known-good managed
@@ -464,6 +485,48 @@ try {
     assert.deepEqual(second.errors, []);
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // Competing stale-lock observers serialize through an exclusive takeover
+  // claim; neither can remove the successor lock after the first reclaims it.
+  {
+    const { coven, cave } = await home("stale-lock-takeover");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ pid: 2_147_483_647, token: "dead-owner" }));
+    const stale = new Date(Date.now() - 10 * 60_000);
+    await utimes(lock, stale, stale);
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    let staleObservers = 0;
+    let releaseObservers!: () => void;
+    const bothObserved = new Promise<void>((resolve) => { releaseObservers = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const lockProbe = async (event: "stale-observed" | "acquired" | "released") => {
+      if (event === "stale-observed") {
+        staleObservers += 1;
+        if (staleObservers === 2) releaseObservers();
+        await bothObserved;
+      } else if (event === "acquired") {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      } else {
+        active -= 1;
+      }
+    };
+    const [first, second] = await Promise.all([
+      migrateCaveHome({ createSymlink: denySymlink, lockProbe }),
+      migrateCaveHome({ createSymlink: denySymlink, lockProbe }),
+    ]);
+    assert.deepEqual(first.errors, []);
+    assert.deepEqual(second.errors, []);
+    assert.equal(staleObservers, 2);
+    assert.equal(maxActive, 1);
+    assert.equal(active, 0);
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
   // Store readers fail closed on a bad migration, then retry on the next call

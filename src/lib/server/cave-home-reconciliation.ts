@@ -12,6 +12,7 @@ import {
   rm,
   stat,
   symlink,
+  writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 
@@ -109,6 +110,8 @@ export type ReconciliationOptions = {
   faultAt?: string;
   /** Test-only compatibility bridge override. */
   createSymlink?: typeof symlink;
+  /** Test-only lock lifecycle probe. */
+  lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
 };
 
 type PathInfo = {
@@ -214,40 +217,76 @@ async function delay(ms: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-async function acquireLock(): Promise<() => Promise<void>> {
+async function readLockOwner(lock: string): Promise<{ pid: number | null; token: string | null }> {
+  const owner = await readFile(path.join(lock, "owner.json"), "utf8")
+    .then((value) => JSON.parse(value) as { pid?: unknown; token?: unknown })
+    .catch(() => null);
+  return {
+    pid: typeof owner?.pid === "number" && Number.isSafeInteger(owner.pid) ? owner.pid : null,
+    token: typeof owner?.token === "string" ? owner.token : null,
+  };
+}
+
+async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
+    const token = randomBytes(16).toString("hex");
+    const candidate = `${lock}.candidate-${token}`;
     try {
-      await mkdir(lock);
+      await mkdir(candidate);
       try {
-        await writeJsonAtomic(path.join(lock, "owner.json"), { pid: process.pid, startedAt: nowIso() });
+        await writeJsonAtomic(path.join(candidate, "owner.json"), { pid: process.pid, token, startedAt: nowIso() });
+        await rename(candidate, lock);
       } catch (error) {
-        await rm(lock, { recursive: true, force: true });
+        await rm(candidate, { recursive: true, force: true });
         throw error;
       }
-      return async () => { await rm(lock, { recursive: true, force: true }); };
+      await options.lockProbe?.("acquired");
+      return async () => {
+        const owner = await readLockOwner(lock);
+        if (owner.token !== token) return;
+        const released = `${lock}.released-${token}`;
+        await rename(lock, released).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        });
+        await rm(released, { recursive: true, force: true });
+        await options.lockProbe?.("released");
+      };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      await rm(candidate, { recursive: true, force: true }).catch(() => {});
+      if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
       try {
         const info = await stat(lock);
         if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
-          const owner = await readFile(path.join(lock, "owner.json"), "utf8")
-            .then((value) => JSON.parse(value) as { pid?: unknown })
-            .catch(() => null);
-          const pid = typeof owner?.pid === "number" && Number.isSafeInteger(owner.pid) ? owner.pid : null;
+          const owner = await readLockOwner(lock);
           let alive = false;
-          if (pid) {
+          if (owner.pid) {
             try {
-              process.kill(pid, 0);
+              process.kill(owner.pid, 0);
               alive = true;
             } catch (ownerError) {
               alive = (ownerError as NodeJS.ErrnoException).code === "EPERM";
             }
           }
           if (!alive) {
-            await rm(lock, { recursive: true, force: true });
-            continue;
+            await options.lockProbe?.("stale-observed");
+            const takeover = path.join(lock, ".takeover");
+            const takeoverToken = randomBytes(16).toString("hex");
+            try {
+              await writeFile(takeover, JSON.stringify({ takeoverToken, ownerToken: owner.token }), { flag: "wx" });
+              const currentOwner = await readLockOwner(lock);
+              if (currentOwner.token !== owner.token) {
+                await rm(takeover, { force: true });
+              } else {
+                const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
+                await rename(lock, reclaimed);
+                await rm(reclaimed, { recursive: true, force: true });
+                continue;
+              }
+            } catch (takeoverError) {
+              if (!["EEXIST", "ENOENT"].includes((takeoverError as NodeJS.ErrnoException).code ?? "")) throw takeoverError;
+            }
           }
         }
       } catch {
@@ -284,7 +323,7 @@ async function pruneBackups(journal: MigrationJournal): Promise<void> {
 }
 
 async function copyPath(source: string, destination: string, kind: PathInfo["kind"]): Promise<void> {
-  if (kind === "dir") await cp(source, destination, { recursive: true, errorOnExist: true });
+  if (kind === "dir") await cp(source, destination, { recursive: true, errorOnExist: true, force: false });
   else await copyFile(source, destination, fsConstants.COPYFILE_EXCL);
 }
 
@@ -922,7 +961,7 @@ export async function reconcileCaveHome(
     moved: [], linked: [], skipped: [], merged: [], backedUp: [], resolved: [], errors: [],
   };
   await mkdir(caveHome(), { recursive: true });
-  const release = await acquireLock();
+  const release = await acquireLock(options);
   try {
     const journal = await readJournal();
     for (const entry of entries) {
