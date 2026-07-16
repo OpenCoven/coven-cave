@@ -351,7 +351,10 @@ async function createRecoveryBundle(
   return { id, directory };
 }
 
-async function restoreBundleRole(directory: string, role: "legacy" | "canonical", destination: string): Promise<void> {
+async function verifiedBundleRole(
+  directory: string,
+  role: "legacy" | "canonical",
+): Promise<{ source: string; hash: string; info: PathInfo }> {
   const manifest = JSON.parse(await readFile(path.join(directory, "manifest.json"), "utf8")) as {
     files?: Array<{ role?: string; storedPath?: string; hash?: string }>;
   };
@@ -361,10 +364,15 @@ async function restoreBundleRole(directory: string, role: "legacy" | "canonical"
   if (path.dirname(source) !== path.resolve(directory)) throw new Error(`${role} backup path is invalid`);
   const sourceInfo = await pathInfo(source);
   if (sourceInfo.hash !== file.hash) throw new Error(`${role} backup hash changed before recovery`);
+  return { source, hash: file.hash, info: sourceInfo };
+}
+
+async function restoreBundleRole(directory: string, role: "legacy" | "canonical", destination: string): Promise<void> {
+  const { source, hash, info: sourceInfo } = await verifiedBundleRole(directory, role);
   const destinationInfo = await pathInfo(destination);
   await rm(destination, { recursive: destinationInfo.kind === "dir", force: true });
   await copyPath(source, destination, sourceInfo.kind);
-  if ((await pathInfo(destination)).hash !== file.hash) throw new Error(`${role} recovery verification failed`);
+  if ((await pathInfo(destination)).hash !== hash) throw new Error(`${role} recovery verification failed`);
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -774,10 +782,21 @@ async function reconcileEntry(
     legacyMtimeMs: legacyInfo.mtimeMs,
     canonicalMtimeMs: canonicalInfo.mtimeMs,
     decision: "absent",
+    backupId: prior?.backupId,
     decidedAt: nowIso(),
   };
 
   if (options.action === "defer") {
+    if (
+      !samePath(legacyPath, canonicalPath) &&
+      legacyInfo.kind !== "missing" && legacyInfo.kind !== "symlink" &&
+      canonicalInfo.kind !== "missing" && canonicalInfo.kind !== "symlink" &&
+      legacyInfo.hash !== canonicalInfo.hash
+    ) {
+      const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, journal, options);
+      result.backedUp.push(backup.directory);
+      journalEntry.backupId = backup.id;
+    }
     journalEntry.decision = "deferred";
     journalEntry.summary = "User deferred this migration; existing copies remain in place.";
     journal.entries[entry.legacy] = journalEntry;
@@ -845,6 +864,8 @@ async function reconcileEntry(
     if (options.action === "recover-legacy") {
       // Restore from the verified bundle, not the live legacy path, so an old
       // writer cannot change the selected bytes between backup and recovery.
+      const legacyBackup = await verifiedBundleRole(backup.directory, "legacy");
+      await validateCanonical(entry, legacyBackup.source, legacyBackup.info);
       await restoreBundleRole(backup.directory, "legacy", canonicalPath);
       journalEntry.decision = "recovered-legacy";
       journalEntry.summary = "Recovered the legacy copy into canonical storage after verified backup.";

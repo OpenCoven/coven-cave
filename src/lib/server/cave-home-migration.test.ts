@@ -296,6 +296,25 @@ try {
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
   }
 
+  // Deferring a divergent pair retains a verified recovery source in the
+  // journal instead of making its bundle eligible for retention pruning.
+  {
+    const { coven, cave } = await home("deferred-backup");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-config.json"), JSON.stringify({ source: "legacy" }));
+    await writeFile(path.join(cave, "config.json"), JSON.stringify({ source: "canonical" }));
+    const result = await migrateCaveHome({
+      legacy: "cave-config.json",
+      action: "defer",
+      createSymlink: denySymlink,
+    });
+    assert.equal(result.backedUp.length, 1);
+    const journal = await json(path.join(cave, "migration-state.json"));
+    const entry = journal.entries["cave-config.json"];
+    assert.equal(entry.decision, "deferred");
+    assert.equal(await kind(path.join(cave, "migration-backups", entry.backupId)), "dir");
+  }
+
   // Malformed JSON never overwrites either side and remains reviewable.
   {
     const { coven, cave } = await home("malformed");
@@ -306,6 +325,22 @@ try {
     assert.equal(await readFile(path.join(coven, "cave-inbox.json"), "utf8"), "not-json");
     assert.deepEqual(await json(path.join(cave, "inbox.json")), { version: 1, items: [] });
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-inbox.json"), true);
+  }
+  // Explicit recovery also validates the verified legacy backup before it
+  // replaces a good canonical store.
+  {
+    const { coven, cave } = await home("malformed-recovery");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-inbox.json"), "not-json");
+    await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [{ id: "safe" }] }));
+    const result = await migrateCaveHome({
+      legacy: "cave-inbox.json",
+      action: "recover-legacy",
+      createSymlink: denySymlink,
+    });
+    assert.equal(result.errors.length, 1);
+    assert.deepEqual(await json(path.join(cave, "inbox.json")), { version: 1, items: [{ id: "safe" }] });
+    assert.equal(await readFile(path.join(coven, "cave-inbox.json"), "utf8"), "not-json");
   }
   {
     const { coven, cave } = await home("malformed-identical");
