@@ -11,12 +11,11 @@ import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
-import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
+import type { PaletteIntent } from "@/components/command-palette";
 // Journal retired as an in-shell surface (redirects to Settings → Familiars),
 // so JournalView is gone; Grimoire is a new in-shell surface from main.
-import { GrimoireView, type GrimoireViewKind } from "@/components/grimoire-view";
+import type { GrimoireViewKind } from "@/components/grimoire-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
-import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
 import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
@@ -24,8 +23,7 @@ import {
   shouldAutoOpenOnboarding,
   type OnboardingStatusPayload,
 } from "@/lib/onboarding-gate";
-import { InboxEscalationsView } from "@/components/inbox-escalations-view";
-import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
+import { draftFromSlashArgs } from "@/lib/reminder-slash-draft";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
 import { Shell, type ShellHandle } from "@/components/shell";
@@ -34,10 +32,7 @@ import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { openGrimoireDoc } from "@/lib/grimoire-link";
 import { FamiliarStudioProvider, openFamiliarStudioSettingsTab } from "@/lib/familiar-studio-context";
-import { RailInspector } from "@/components/inspector-pane";
 import { useAnnouncer } from "@/components/ui/live-region";
-import { SalemChatPanel } from "@/components/salem/salem-widget";
-import { FamiliarsView } from "@/components/familiars-view";
 import {
   getFamiliarScope,
   setFamiliarScope,
@@ -54,18 +49,26 @@ import {
   BoardView,
   BrowserPane,
   CalendarView,
+  CommandPalette,
+  FamiliarsView,
   FamiliarWorkQueueView,
   FamiliarGlyphPicker,
   GitHubView,
+  GrimoireView,
+  InboxEscalationsView,
   MarketplaceView,
+  MobileHandoffModal,
+  NewReminderModal,
+  OnboardingOverlay,
+  OpenCovenSubmissionPage,
+  RailInspector,
+  SalemChatPanel,
+  ShortcutsSheet,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending, markProjectsTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface } from "@/components/chat-surface";
-import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
-import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
@@ -2762,77 +2765,81 @@ export function Workspace() {
         detail={detail}
       />
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        familiars={familiars}
-        sessions={sessions}
-        activeFamiliarId={activeId}
-        initialQuery={topSearchQuery}
-        onQueryChange={setTopSearchQuery}
-        onIntent={onPaletteIntent}
-      />
+      {paletteOpen && (
+        <CommandPalette
+          open
+          onClose={() => setPaletteOpen(false)}
+          familiars={familiars}
+          sessions={sessions}
+          activeFamiliarId={activeId}
+          initialQuery={topSearchQuery}
+          onQueryChange={setTopSearchQuery}
+          onIntent={onPaletteIntent}
+        />
+      )}
 
-      <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      {shortcutsOpen && <ShortcutsSheet open onClose={() => setShortcutsOpen(false)} />}
 
-      <OnboardingOverlay open={onboardingOpen} onDismiss={closeOnboarding} />
+      {onboardingOpen && <OnboardingOverlay open onDismiss={closeOnboarding} />}
 
-      <NewReminderModal
-        open={reminderModalOpen}
-        onClose={() => {
-          setReminderModalOpen(false);
-          setEditingReminder(null);
-        }}
-        familiars={familiars}
-        defaultFamiliarId={activeId}
-        defaultFireAt={reminderModalDefaults.fireAt}
-        defaultWhenText={reminderModalDefaults.whenText}
-        defaultTitle={reminderModalDefaults.title}
-        editing={
-          editingReminder
-            ? {
-                id: editingReminder.id,
-                title: editingReminder.title,
-                whenText: editingReminder.whenText ?? undefined,
-                fireAt: editingReminder.fireAt ?? new Date().toISOString(),
-                recurrence: editingReminder.recurrence,
-                link: editingReminder.link ?? null,
-              }
-            : undefined
-        }
-        onUpdate={async (id, draft) => {
-          await fetch(`/api/inbox/${id}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: draft.title,
-              fireAt: draft.fireAt,
-              recurrence: draft.recurrence ?? { type: "none" },
-              whenText: draft.whenText ?? null,
-              link: draft.link ?? null,
-            }),
-          });
-          // SSE `updated` event refreshes the row; mirror the create path.
-        }}
-        onCreate={async (draft) => {
-          await fetch("/api/inbox", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              kind: "reminder",
-              title: draft.title,
-              body: draft.body,
-              fireAt: draft.fireAt,
-              familiarId: draft.familiarId,
-              recurrence: draft.recurrence ?? { type: "none" },
-              whenText: draft.whenText ?? null,
-              link: draft.link ?? null,
-              source: "user",
-            }),
-          });
-          // SSE `created` event will append the row; no manual refresh needed.
-        }}
-      />
+      {reminderModalOpen && (
+        <NewReminderModal
+          open
+          onClose={() => {
+            setReminderModalOpen(false);
+            setEditingReminder(null);
+          }}
+          familiars={familiars}
+          defaultFamiliarId={activeId}
+          defaultFireAt={reminderModalDefaults.fireAt}
+          defaultWhenText={reminderModalDefaults.whenText}
+          defaultTitle={reminderModalDefaults.title}
+          editing={
+            editingReminder
+              ? {
+                  id: editingReminder.id,
+                  title: editingReminder.title,
+                  whenText: editingReminder.whenText ?? undefined,
+                  fireAt: editingReminder.fireAt ?? new Date().toISOString(),
+                  recurrence: editingReminder.recurrence,
+                  link: editingReminder.link ?? null,
+                }
+              : undefined
+          }
+          onUpdate={async (id, draft) => {
+            await fetch(`/api/inbox/${id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                title: draft.title,
+                fireAt: draft.fireAt,
+                recurrence: draft.recurrence ?? { type: "none" },
+                whenText: draft.whenText ?? null,
+                link: draft.link ?? null,
+              }),
+            });
+            // SSE `updated` event refreshes the row; mirror the create path.
+          }}
+          onCreate={async (draft) => {
+            await fetch("/api/inbox", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                kind: "reminder",
+                title: draft.title,
+                body: draft.body,
+                fireAt: draft.fireAt,
+                familiarId: draft.familiarId,
+                recurrence: draft.recurrence ?? { type: "none" },
+                whenText: draft.whenText ?? null,
+                link: draft.link ?? null,
+                source: "user",
+              }),
+            });
+            // SSE `created` event will append the row; no manual refresh needed.
+          }}
+        />
+      )}
 
       <InboxToastStack
         toasts={toasts}
@@ -2852,18 +2859,20 @@ export function Workspace() {
         />
       ) : null}
 
-      <MobileHandoffModal
-        open={mobileHandoffOpen}
-        chatId={mobileHandoffChatId}
-        onClose={() => {
-          setMobileHandoffOpen(false);
-          setMobileHandoffChatId(null);
-        }}
-        mobileModeEnabled={mobileModeEnabled}
-        nativeHost={mobileModeHost}
-        mobileModeError={mobileModeError}
-        onMobileModeChange={setMobileModeEnabled}
-      />
+      {mobileHandoffOpen && (
+        <MobileHandoffModal
+          open
+          chatId={mobileHandoffChatId}
+          onClose={() => {
+            setMobileHandoffOpen(false);
+            setMobileHandoffChatId(null);
+          }}
+          mobileModeEnabled={mobileModeEnabled}
+          nativeHost={mobileModeHost}
+          mobileModeError={mobileModeError}
+          onMobileModeChange={setMobileModeEnabled}
+        />
+      )}
 
       {chatDeepLinkPending && (
         <div className="workspace-deeplink-pending" role="status">

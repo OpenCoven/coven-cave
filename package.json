@@ -27,6 +27,7 @@
     "build": "next build && pnpm build:server",
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
+    "analyze:bundle": "next experimental-analyze --output",
     "typecheck": "tsc --noEmit",
     "check:tests-wired": "node scripts/check-tests-wired.mjs",
     "test": "node scripts/run-tests.mjs app",

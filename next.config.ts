@@ -1,10 +1,9 @@
 import type { NextConfig } from "next";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
-// Opt-in client/server bundle visualizer. `ANALYZE=1 pnpm build` writes
-// interactive treemaps to .next/analyze/ so we can see which chunk a dep lands
-// in (e.g. confirm @xyflow/react / @uiw/react-codemirror left the shared
-// bundle after code-splitting the heavy surfaces). No-op for normal builds.
+// Opt-in Webpack bundle visualizer retained for `next build --webpack`.
+// Turbopack builds use `pnpm analyze:bundle`, which writes Next's interactive
+// analysis to `.next/diagnostics/analyze/`. No-op for normal builds.
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "1" || process.env.ANALYZE === "true",
 });

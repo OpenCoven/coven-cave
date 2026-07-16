@@ -3,19 +3,21 @@
 // if client JS regresses past budget — no new required status check needed.
 //
 // What it guards:
-//   1. SHELL — the always-loaded root chunks (build-manifest `rootMainFiles`):
+//   1. HOME ROUTE — Next's complete first-load JS graph for `/`, including
+//      App Router page/layout entries and shared root chunks.
+//   2. SHELL — the always-loaded root chunks (build-manifest `rootMainFiles`):
 //      the JS every page load pays for, regardless of surface. This is the
 //      clearest health signal and what code-splitting protects.
-//   2. CATASTROPHIC chunk — a loose ceiling on the single largest chunk, to
+//   3. CATASTROPHIC chunk — a loose ceiling on the single largest chunk, to
 //      catch a heavy dep ballooning one chunk back toward the pre-split ~3 MB.
 //
-// Why not gate per-route "First Load JS": this app builds with Turbopack, which
-// does not emit the App Router client chunk graph (`app-build-manifest.json`),
-// so a precise per-route eager-load number isn't available here. The two
-// signals above are what we can measure robustly.
+// Next 16 writes `.next/diagnostics/route-bundle-stats.json` from the same App
+// Router client-reference manifests it uses for its build report. Consuming
+// that diagnostic avoids reconstructing Turbopack's route graph ourselves.
 //
 // Tune by lowering the budgets as splitting work lands. Override at runtime with
-// BUNDLE_MAX_SHELL_KB / BUNDLE_MAX_CHUNK_KB for experiments.
+// BUNDLE_MAX_HOME_KB / BUNDLE_MAX_SHELL_KB / BUNDLE_MAX_CHUNK_KB for
+// experiments.
 //
 // Run: `node scripts/bundle-budget.mjs` (wired as `pnpm test:bundle` + postbuild).
 
@@ -26,11 +28,17 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextDir = path.join(root, ".next");
 const chunksDir = path.join(nextDir, "static", "chunks");
+const routeStatsFile = path.join(nextDir, "diagnostics", "route-bundle-stats.json");
 
 // Budgets, seeded with headroom over the post-split measured values so ordinary
 // feature growth doesn't trip them — only a structural regression does.
 // Measured at introduction: shell ~447 KB, largest chunk ~1713 KB (the lazy
 // code-editor surface: @uiw/react-codemirror + @xterm).
+// #3262 baseline (origin/main d5ed41b): 4,796,271 bytes across 30 first-load
+// chunks. After splitting non-conversation surfaces: 2,452,293 bytes across 20
+// chunks. 2,800 KiB preserves ~17% growth headroom without allowing the old
+// 4.57 MiB graph back in unnoticed.
+const MAX_HOME_BYTES = (Number(process.env.BUNDLE_MAX_HOME_KB) || 2800) * 1024;
 const MAX_SHELL_BYTES = (Number(process.env.BUNDLE_MAX_SHELL_KB) || 650) * 1024;
 const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024;
 
@@ -62,6 +70,27 @@ function walk(dir, acc) {
 }
 const chunks = walk(chunksDir, []).sort((a, b) => b.bytes - a.bytes);
 
+// --- Complete first-load graph for `/` (App Router entries + shared shell) ---
+let homeRoute;
+try {
+  const routeStats = JSON.parse(readFileSync(routeStatsFile, "utf8"));
+  homeRoute = routeStats.find((entry) => entry.route === "/");
+} catch {
+  // The explicit failure below also covers an unreadable diagnostic.
+}
+
+if (!homeRoute || !Number.isFinite(homeRoute.firstLoadUncompressedJsBytes)) {
+  console.error(
+    `✗ bundle-budget: ${path.relative(root, routeStatsFile)} has no valid "/" route — run \`pnpm build\` first.`,
+  );
+  process.exit(1);
+}
+
+const homeBytes = homeRoute.firstLoadUncompressedJsBytes;
+const homeFiles = Array.isArray(homeRoute.firstLoadChunkPaths)
+  ? homeRoute.firstLoadChunkPaths
+  : [];
+
 // --- Always-loaded shell (rootMainFiles from the build manifest) ---
 let shellFiles = [];
 try {
@@ -73,6 +102,9 @@ try {
 }
 const shellBytes = shellFiles.reduce((a, f) => a + sizeOf(f), 0);
 
+console.log(`\nbundle-budget — initial / route JavaScript:`);
+console.log(`  ${kb(homeBytes)}  TOTAL first-load JS across ${homeFiles.length} chunks  (budget: ${kb(MAX_HOME_BYTES)})`);
+
 console.log(`\nbundle-budget — always-loaded shell (rootMainFiles):`);
 for (const f of shellFiles) console.log(`  ${kb(sizeOf(f))}  ${f.replace("static/chunks/", "")}`);
 console.log(`  ${kb(shellBytes)}  TOTAL shell  (budget: ${kb(MAX_SHELL_BYTES)})`);
@@ -83,6 +115,17 @@ const largest = chunks[0];
 console.log(`  largest: ${kb(largest?.bytes ?? 0)}  (budget: ${kb(MAX_CHUNK_BYTES)})`);
 
 let failed = false;
+
+if (homeBytes > MAX_HOME_BYTES) {
+  failed = true;
+  console.error(
+    `\n✗ bundle-budget: initial / route JavaScript ${kb(homeBytes).trim()} exceeds budget ` +
+      `${kb(MAX_HOME_BYTES).trim()}.\n` +
+      `  A mode- or open-gated dependency likely entered the Chat-first startup graph.\n` +
+      `  Inspect the / route with \`pnpm analyze:bundle\` and move non-critical UI\n` +
+      `  behind src/components/lazy-surfaces.tsx, or raise BUNDLE_MAX_HOME_KB deliberately.`,
+  );
+}
 
 // --- Full familiar glyph catalogue must stay out of the initial `/` graph ---
 // Turbopack records the concrete entry files in the page client-reference
