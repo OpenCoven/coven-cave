@@ -1,6 +1,7 @@
 import {
   reconcileCaveHome,
   validateCaveHomeReconciliationStore,
+  withCaveHomeReconciliationLock,
   type CaveHomeReconciliationEntry,
   type CaveHomeReconciliationResult,
   type ReconciliationOptions,
@@ -93,4 +94,18 @@ export async function ensureCaveHomeReconciled(legacy?: string): Promise<void> {
     throw new Error(`Cave home reconciliation failed for ${failures.map((entry) => entry.legacy).join(", ")}`);
   }
   if (legacy) await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
+}
+
+/** Keep a store read or read-modify-write transaction outside migration replacements. */
+export async function withCaveHomeReconciledStore<T>(
+  legacy: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await ensureCaveHomeReconciled(legacy);
+  return withCaveHomeReconciliationLock(async () => {
+    // Another process may have reconciled the entry between the preflight and
+    // lock acquisition. Revalidate preserved stores while we own the lock.
+    await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
+    return operation();
+  });
 }

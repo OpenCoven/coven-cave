@@ -15,7 +15,7 @@ import {
   type CustomThemeData,
 } from "@/lib/preferences-schema";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
-import { ensureCaveHomeReconciled } from "./cave-home-migration.ts";
+import { withCaveHomeReconciledStore } from "./cave-home-migration.ts";
 
 export function preferencesPath(): string {
   const override = process.env.COVEN_PREFERENCES_PATH?.trim();
@@ -236,10 +236,10 @@ async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
 
 /** Load the canonical snapshot, seeding it once from cave-theme.json when possible. */
 export function loadPreferences(): Promise<CavePreferences> {
-  return withPreferencesLock(async () => {
-    await ensureCaveHomeReconciled("cave-preferences.json");
-    return (await loadPreferencesUnlocked({ seedLegacy: true })).preferences;
-  });
+  return withPreferencesLock(() => withCaveHomeReconciledStore(
+    "cave-preferences.json",
+    async () => (await loadPreferencesUnlocked({ seedLegacy: true })).preferences,
+  ));
 }
 
 export class PreferencesConflictError extends Error {
@@ -259,8 +259,7 @@ export class PreferencesConflictError extends Error {
 export function updatePreferences(
   mutator: (current: CavePreferences) => CavePreferencesPatch | null | Promise<CavePreferencesPatch | null>,
 ): Promise<CavePreferences> {
-  return withPreferencesLock(async () => {
-    await ensureCaveHomeReconciled("cave-preferences.json");
+  return withPreferencesLock(() => withCaveHomeReconciledStore("cave-preferences.json", async () => {
     const release = await acquirePreferencesFileLock();
     try {
       const disk = await loadPreferencesUnlocked({ seedLegacy: true });
@@ -277,7 +276,7 @@ export function updatePreferences(
     } finally {
       await release();
     }
-  });
+  }));
 }
 
 export function patchPreferences(patch: CavePreferencesPatch): Promise<CavePreferences> {

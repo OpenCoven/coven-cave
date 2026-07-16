@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const roots: string[] = [];
-const { ensureCaveHomeReconciled, migrateCaveHome } = await import("./cave-home-migration.ts");
+const { ensureCaveHomeReconciled, migrateCaveHome, withCaveHomeReconciledStore } = await import("./cave-home-migration.ts");
 const { reconcileCaveHome } = await import("./cave-home-reconciliation.ts");
 const { caveHomeMigrationStatus } = await import("./cave-home-migration-status.ts");
 const { createDefaultPreferences } = await import("../preferences-schema.ts");
@@ -861,6 +861,44 @@ try {
     assert.equal(maxActive, 1);
     assert.equal(active, 0);
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
+  // Store transactions share the cross-process migration lock. A writer that
+  // already passed startup reconciliation must not read an old snapshot while
+  // a manual recovery is replacing canonical storage and overwrite it later.
+  {
+    const { coven, cave } = await home("store-transaction-lock");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-config.json"), JSON.stringify({ source: "legacy" }));
+    await writeFile(path.join(cave, "config.json"), JSON.stringify({ source: "canonical" }));
+    const initial = await migrateCaveHome({ legacy: "cave-config.json", createSymlink: denySymlink });
+    globalThis.__caveHomeMigration = Promise.resolve(initial);
+
+    let continueRecovery!: () => void;
+    const recoveryPaused = new Promise<void>((resolve) => { continueRecovery = resolve; });
+    let recoveryReached!: () => void;
+    const atReplacement = new Promise<void>((resolve) => { recoveryReached = resolve; });
+    const recovery = migrateCaveHome({
+      legacy: "cave-config.json",
+      action: "recover-legacy",
+      createSymlink: denySymlink,
+      resolutionProbe: async () => {
+        recoveryReached();
+        await recoveryPaused;
+      },
+    });
+    await atReplacement;
+
+    let storeEntered = false;
+    const store = withCaveHomeReconciledStore("cave-config.json", async () => {
+      storeEntered = true;
+      return json(path.join(cave, "config.json"));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    assert.equal(storeEntered, false);
+    continueRecovery();
+    assert.deepEqual((await recovery).errors, []);
+    assert.deepEqual(await store, { source: "legacy" });
   }
 
   // Store readers fail closed on a bad migration, then retry on the next call

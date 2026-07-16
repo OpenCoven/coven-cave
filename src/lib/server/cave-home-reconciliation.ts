@@ -355,6 +355,17 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
   }
 }
 
+/** Serialize a Cave store operation with reconciliation in every process. */
+export async function withCaveHomeReconciliationLock<T>(operation: () => Promise<T>): Promise<T> {
+  await mkdir(caveHome(), { recursive: true });
+  const release = await acquireLock({});
+  try {
+    return await operation();
+  } finally {
+    await release();
+  }
+}
+
 async function pruneBackups(journal: MigrationJournal): Promise<void> {
   await mkdir(migrationBackupRoot(), { recursive: true });
   const protectedIds = new Set(
