@@ -142,6 +142,10 @@ function canonicalPathFor(entry: CaveHomeReconciliationEntry): string {
   return override || path.join(caveHome(), entry.next);
 }
 
+function samePath(left: string, right: string): boolean {
+  return path.relative(path.resolve(left), path.resolve(right)) === "";
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -480,16 +484,17 @@ function mergeTravel(leftValue: unknown, rightValue: unknown): MergeOutcome {
   const leftQueue = Array.isArray(left.offlineQueue) ? left.offlineQueue : [];
   const rightQueue = Array.isArray(right.offlineQueue) ? right.offlineQueue : [];
   const queue = new Map<string, Record<string, unknown>>();
-  const rank: Record<string, number> = { pending: 0, syncing: 1, failed: 2, synced: 3 };
   for (const raw of [...leftQueue, ...rightQueue]) {
     const item = record(raw);
     if (!item || typeof item.id !== "string") return { ok: false, summary: "Queued travel work without a stable ID requires review." };
     const existing = queue.get(item.id);
     if (!existing) queue.set(item.id, item);
     else if (JSON.stringify(existing) !== JSON.stringify(item)) {
-      const samePayload = JSON.stringify({ ...existing, status: undefined, lastError: undefined }) === JSON.stringify({ ...item, status: undefined, lastError: undefined });
-      if (!samePayload) return { ok: false, summary: `Queued travel work ${item.id} differs and requires review.` };
-      if ((rank[String(item.status)] ?? -1) > (rank[String(existing.status)] ?? -1)) queue.set(item.id, item);
+      // Queue status is not monotonic: failed work can be retried and return
+      // to syncing. Without an item revision or transition timestamp, ranking
+      // statuses can replace a newer retry with an older failed snapshot (or
+      // suppress work as already synced). Preserve both files for review.
+      return { ok: false, summary: `Queued travel work ${item.id} differs and requires review.` };
     }
   }
   const latestReachability = parseDate(left.lastHubReachableAt) > parseDate(right.lastHubReachableAt) ? left : right;
@@ -787,6 +792,18 @@ async function reconcileEntry(
     return;
   }
 
+  // A supported per-store override may intentionally keep the canonical file
+  // at its historical legacy path. In that case there is no bridge to create:
+  // removing the "legacy" side would remove the canonical file itself.
+  if (samePath(legacyPath, canonicalPath)) {
+    await validateCanonical(entry, canonicalPath, canonicalInfo);
+    journalEntry.decision = "identical";
+    journalEntry.summary = "The configured canonical path is already the legacy path.";
+    journal.entries[entry.legacy] = journalEntry;
+    result.resolved.push(entry.legacy);
+    return;
+  }
+
   if (canonicalInfo.kind === "missing") {
     // Keep the legacy source intact until a fully copied and hash-verified
     // canonical sibling has been atomically installed. A crash can therefore
@@ -915,6 +932,7 @@ export async function caveHomeReconciliationStatus(
     const canonicalInfo = await pathInfo(canonicalPath);
     const prior = journal.entries[entry.legacy];
     const canonicalValid = await validateCanonical(entry, canonicalPath, canonicalInfo).then(() => true, () => false);
+    if (samePath(legacyPath, canonicalPath) && canonicalValid) continue;
     const managed = Boolean(
       canonicalValid &&
       prior?.managedMirrorHash &&

@@ -160,6 +160,24 @@ try {
     assert.deepEqual(merged.travel.offlineQueue.map((item) => item.id).sort(), ["current-work", "legacy-work"]);
   }
 
+  // Queue statuses have no revision and can move from failed back to syncing
+  // on retry, so divergent snapshots must not be ranked as if monotonic.
+  {
+    const { coven, cave } = await home("state-ambiguous-queue-status");
+    await mkdir(cave, { recursive: true });
+    const item = { id: "shared-work", kind: "job", summary: "Shared", createdAt: "2026-01-01T00:00:00Z" };
+    const legacy = baseState();
+    legacy.travel.offlineQueue.push({ ...item, status: "failed", lastError: "old failure" });
+    const canonical = baseState();
+    canonical.travel.offlineQueue.push({ ...item, status: "syncing" });
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-state.json"));
+    assert.equal((await json(path.join(cave, "state.json"))).travel.offlineQueue[0].status, "syncing");
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-state.json"), true);
+  }
+
   // Theme selection can merge independently because it has its own revision
   // and timestamp.
   {
@@ -218,6 +236,24 @@ try {
     assert.equal((await json(process.env.COVEN_PREFERENCES_PATH)).revision, 3);
     assert.equal((await json(path.join(process.env.COVEN_CAVE_HOME, "migration-state.json"))).migrationVersion, 2);
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // An override may intentionally retain the historical path. Treat that
+  // path as canonical instead of deleting it while creating a compat bridge.
+  {
+    const { coven } = await home("legacy-path-override");
+    const legacyPath = path.join(coven, "cave-preferences.json");
+    process.env.COVEN_PREFERENCES_PATH = legacyPath;
+    const preferences = createDefaultPreferences(true);
+    preferences.revision = 4;
+    await writeFile(legacyPath, JSON.stringify(preferences));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.equal(await kind(legacyPath), "file");
+    assert.equal((await json(legacyPath)).revision, 4);
+    assert.equal((await caveHomeMigrationStatus()).migrated, true);
+    await rm(legacyPath);
+    assert.deepEqual((await migrateCaveHome({ createSymlink: denySymlink })).errors, []);
   }
 
   // Ambiguous state is backed up and left untouched until an explicit recovery.
