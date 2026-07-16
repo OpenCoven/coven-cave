@@ -312,6 +312,7 @@ function SummoningRite({
   // Stage I — the vessel.
   const [vessel, setVessel] = useState<VesselKind | null>(draftVessel);
   const [harnesses, setHarnesses] = useState<HarnessReport[] | null>(null);
+  const [localHost, setLocalHost] = useState<string | null>(null);
   const [harness, setHarness] = useState<string | null>(
     draft?.harness && isSummonableLocalHarness(draft.harness)
       ? draft.harness
@@ -373,11 +374,20 @@ function SummoningRite({
     (async () => {
       try {
         const res = await fetch("/api/harnesses", { cache: "no-store" });
-        const json = (await res.json()) as { ok?: boolean; harnesses?: (HarnessReport & { binary?: string })[] };
+        const json = (await res.json()) as {
+          ok?: boolean;
+          runtimeHost?: unknown;
+          harnesses?: (HarnessReport & { binary?: string })[];
+        };
         if (cancelled) return;
-        if (res.ok && json.ok !== false && (json.harnesses ?? []).length > 0) {
-          setHarnesses(json.harnesses!.filter((h) => h.chatSupported && isSummonableLocalHarness(h.id)));
-          return;
+        if (res.ok && json.ok !== false) {
+          const runtimeHost =
+            typeof json.runtimeHost === "string" ? json.runtimeHost.trim() : "";
+          setLocalHost(runtimeHost || null);
+          if ((json.harnesses ?? []).length > 0) {
+            setHarnesses(json.harnesses!.filter((h) => h.chatSupported && isSummonableLocalHarness(h.id)));
+            return;
+          }
         }
         throw new Error("empty");
       } catch {
@@ -660,6 +670,7 @@ function SummoningRite({
                 {stage === 0 ? (
                   <StageVessel
                     vessel={vessel}
+                    localHost={localHost}
                     setVessel={(v) => {
                       setVessel(v);
                       setError(null);
@@ -718,7 +729,9 @@ function SummoningRite({
                       vessel === "openclaw"
                         ? `OpenClaw · ${selectedAgent?.displayName ?? agentId ?? ""}`
                         : `${(harnesses ?? []).find((h) => h.id === harness)?.label ?? harness ?? ""}${
-                            vessel === "ssh" ? ` over SSH · ${sshHost.trim()}` : " on this machine"
+                            vessel === "ssh"
+                              ? ` over SSH · ${sshHost.trim()}`
+                              : ` on ${localHost ?? "this Cave host"}`
                           }`
                     }
                     name={name.trim()}
@@ -794,6 +807,7 @@ function SummoningRite({
 
 function StageVessel({
   vessel,
+  localHost,
   setVessel,
   harnesses,
   harness,
@@ -813,6 +827,7 @@ function StageVessel({
   onTestSsh,
 }: {
   vessel: VesselKind | null;
+  localHost: string | null;
   setVessel: (v: VesselKind) => void;
   harnesses: HarnessReport[] | null;
   harness: string | null;
@@ -832,7 +847,14 @@ function StageVessel({
   onTestSsh: () => void;
 }) {
   const vessels: { kind: VesselKind; icon: IconName; title: string; hint: string }[] = [
-    { kind: "local", icon: "ph:desktop", title: "This machine", hint: "Runs on a runtime installed here." },
+    {
+      kind: "local",
+      icon: "ph:desktop",
+      title: localHost ? `Local runtime — ${localHost}` : "This Cave host",
+      hint: localHost
+        ? `Runs on ${localHost}, the host serving this Cave.`
+        : "Runs on the host serving this Cave.",
+    },
     { kind: "ssh", icon: "ph:globe", title: "A remote machine", hint: "Reaches over SSH to a host you name." },
     { kind: "openclaw", icon: "ph:robot", title: "An OpenClaw agent", hint: "Bridge an agent you already keep." },
   ];

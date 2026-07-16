@@ -17,6 +17,10 @@ const css = await readFile(
   new URL("../styles/summoning-circle.css", import.meta.url),
   "utf8",
 );
+const harnessesRoute = await readFile(
+  new URL("../app/api/harnesses/route.ts", import.meta.url),
+  "utf8",
+);
 
 // ── Creation posts to the app route, never the onboarding one ───────────────
 assert.match(
@@ -40,6 +44,31 @@ assert.match(
   source,
   /fetch\("\/api\/harnesses"/,
   "local/SSH vessels list installed runtimes from /api/harnesses",
+);
+assert.match(
+  harnessesRoute,
+  /runtimeHost: hostname\(\)/,
+  "the harness probe reports the hostname of the Cave runtime host",
+);
+assert.match(
+  source,
+  /title: localHost \? `Local runtime — \$\{localHost\}` : "This Cave host"/,
+  "the local vessel names the Cave runtime host and has an unambiguous fallback",
+);
+assert.match(
+  source,
+  /Runs on \$\{localHost\}, the host serving this Cave\./,
+  "the local vessel explains what the hostname identifies",
+);
+assert.match(
+  source,
+  /` on \$\{localHost \?\? "this Cave host"\}`/,
+  "the summoning recap uses the same runtime hostname or fallback",
+);
+assert.doesNotMatch(
+  source,
+  /title: "This machine"/,
+  "the ambiguous local vessel label must not return",
 );
 assert.match(
   source,
