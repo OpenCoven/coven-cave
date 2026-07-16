@@ -302,6 +302,8 @@ export function Workspace() {
   // sessions.
   const loadSessionsReqRef = useRef(0);
   const loadGitHubTasksReqRef = useRef(0);
+  const loadGitHubTasksForceEpochRef = useRef(0);
+  const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
   const githubTasksRef = useRef<unknown>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
@@ -874,13 +876,23 @@ export function Workspace() {
 
   const loadGitHubTasks = useCallback(async (force = false) => {
     const reqId = ++loadGitHubTasksReqRef.current;
+    const forceEpoch = force
+      ? ++loadGitHubTasksForceEpochRef.current
+      : loadGitHubTasksForceEpochRef.current;
+    const startedDuringForcedRefresh = !force && loadGitHubTasksForceInFlightRef.current > 0;
+    if (force) loadGitHubTasksForceInFlightRef.current += 1;
     try {
       const res = await fetch("/api/github/tasks", {
         method: force ? "POST" : "GET",
         cache: "no-store",
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json || json.ok === false || reqId !== loadGitHubTasksReqRef.current) return;
+      const superseded = force
+        ? forceEpoch !== loadGitHubTasksForceEpochRef.current
+        : startedDuringForcedRefresh ||
+          forceEpoch !== loadGitHubTasksForceEpochRef.current ||
+          reqId !== loadGitHubTasksReqRef.current;
+      if (!res.ok || !json || json.ok === false || superseded) return;
 
       githubTasksRef.current = json;
       setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
@@ -894,6 +906,8 @@ export function Workspace() {
     } catch {
       // Keep the last-known-good count and session context. The next scheduled
       // or explicit refresh will retry without blanking GitHub metadata.
+    } finally {
+      if (force) loadGitHubTasksForceInFlightRef.current -= 1;
     }
   }, []);
 

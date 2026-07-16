@@ -281,6 +281,7 @@ assert.match(source, /function schedulePoll\(ms: number\)[\s\S]{0,160}?document\
 assert.match(source, /addEventListener\("visibilitychange", onVis\)/, "polling resumes when the tab returns to the foreground");
 assert.match(source, /refreshActivity\(\);\s*\n\s*refreshLinkedWork\(\);/, "⌘R refreshes activity and linked work together");
 assert.match(source, /const refreshLinkedWork = useCallback\([\s\S]{0,180}reloadCards\(\);[\s\S]{0,80}onTasksRefresh\?\.\(\)/, "linked-work refresh updates both cards and shell task context");
+assert.match(source, /onClose=\{close\}\s*\n\s*onComplete=\{onAfterLink\}/, "closing the task popover without a change does not force-refresh linked work");
 
 // Memoised so a re-render doesn't re-filter the (potentially large) item set.
 assert.match(source, /const filtered = useMemo\(/, "the kind-filtered set is memoised");

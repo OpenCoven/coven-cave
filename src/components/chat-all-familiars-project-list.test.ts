@@ -118,5 +118,10 @@ assert.doesNotMatch(
   /const loadSessions = useCallback[\s\S]*?fetch\("\/api\/github\/tasks"/,
   "The four-second session poll must not fetch GitHub tasks",
 );
+assert.match(
+  workspace,
+  /startedDuringForcedRefresh[\s\S]*?forceEpoch !== loadGitHubTasksForceEpochRef\.current/,
+  "A scheduled read cannot supersede an explicit GitHub task refresh",
+);
 
 console.log("chat-all-familiars-project-list.test.ts: ok");

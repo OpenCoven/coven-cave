@@ -737,7 +737,6 @@ function AddToBoardAction({
   }
   function close() {
     setMode(null);
-    onAfterLink();
   }
 
   return (
@@ -761,6 +760,7 @@ function AddToBoardAction({
             cards={cards}
             cardsFailed={cardsFailed}
             onClose={close}
+            onComplete={onAfterLink}
           />
         </div>
       )}
