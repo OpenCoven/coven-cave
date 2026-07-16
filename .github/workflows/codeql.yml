@@ -85,3 +85,8 @@ jobs:
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          # Default setup rejects advanced SARIF uploads. Keep the migration
+          # workflow green in analysis-only mode until an administrator
+          # disables default setup and sets this repository variable to always.
+          upload: ${{ vars.CODEQL_ADVANCED_UPLOAD || 'never' }}
