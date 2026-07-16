@@ -1,9 +1,9 @@
 /**
  * Small, dependency-injected state machine for the durable backdrop image.
  *
- * Only confirmed image bytes are cached. A 404, an auth failure, or a
- * transient sidecar failure never becomes a permanent `null` cache entry, so
- * a later read can recover without a reload. Mutations and legacy migration
+ * Only confirmed image bytes are cached. A missing response, an auth failure,
+ * or a transient sidecar failure never becomes a permanent `null` cache entry,
+ * so a later read can recover without a reload. Mutations and legacy migration
  * share one queue to prevent an old IndexedDB image from racing a new upload.
  */
 

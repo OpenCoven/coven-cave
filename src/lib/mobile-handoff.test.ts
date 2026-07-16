@@ -248,6 +248,7 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   // scan pairs instead of landing on a 401.
   assert.match(route, /qrTarget = withChatFragment\(invite\.url, chatId\)/, "token-gated app-start swaps the QR target to the signed invite");
   assert.match(route, /expiresAtIso: invite\.expiresAtIso/, "token-gated app-start exposes the invite expiry");
+  assert.match(route, /ok: false, unavailable: true/, "known optional prerequisites use a clean application-level unavailable response");
 
   const refresh = read("../app/api/mobile-token/refresh/route.ts");
   assert.match(refresh, /await recordMobileSeen\(\);/, "a successful token refresh records the paired-device beat");

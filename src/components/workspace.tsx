@@ -19,6 +19,7 @@ import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { CaveBackdropLayer } from "@/components/cave-backdrop-layer";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import {
   shouldAutoOpenOnboarding,
   type OnboardingStatusPayload,
@@ -469,6 +470,7 @@ export function Workspace() {
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
+  const [mobileModeAutoRetryBlocked, setMobileModeAutoRetryBlocked] = useState(false);
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
   // Deep-link target captured at mount, held until the async sessions fetch
@@ -517,35 +519,20 @@ export function Workspace() {
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
+    setMobileModeAutoRetryBlocked(false);
     setMobileModeEnabledState(enabled);
   }, []);
 
-  const reconcileMobileMode = useCallback(async (enabled: boolean) => {
-    try {
-      const body = enabled
-        ? { action: "app-start" }
-        : { action: "app-stop" };
-      const res = await fetch("/api/mobile-handoff", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        nativeHost?: string | null;
-        error?: string;
-        stderr?: string;
-      };
-      if (!json.ok) {
-        setMobileModeError(json.stderr || json.error || "Mobile mode unavailable.");
-        if (!enabled) setMobileModeHost(null);
-        return;
-      }
-      setMobileModeError(null);
-      setMobileModeHost(enabled ? json.nativeHost ?? null : null);
-    } catch (err) {
-      setMobileModeError(err instanceof Error ? err.message : "Mobile mode unavailable.");
+  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean }) => {
+    const result = await reconcileMobileModeRequest(enabled, options);
+    setMobileModeAutoRetryBlocked(result.retryBlocked);
+    if (!result.ok) {
+      setMobileModeError(result.stderr || result.error || "Mobile mode unavailable.");
+      if (!enabled) setMobileModeHost(null);
+      return;
     }
+    setMobileModeError(null);
+    setMobileModeHost(enabled ? result.nativeHost ?? null : null);
   }, []);
 
   // Reconcile only when mobile mode is (or just was) enabled. With the pref
@@ -564,7 +551,7 @@ export function Workspace() {
   // Recurring reconcile only while mobile mode is on; usePausablePoll pauses it
   // in a hidden tab and refreshes on return.
   usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
-    enabled: mobileModeEnabled,
+    enabled: mobileModeEnabled && !mobileModeAutoRetryBlocked,
   });
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {

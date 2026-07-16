@@ -28,9 +28,14 @@ type BridgeState = {
   merged: MergedPrRef[];
   beads: ReadyBead[];
   loaded: boolean;
+  retryBlocked: boolean;
 };
 
-const EMPTY_BRIDGE: BridgeState = { open: [], merged: [], beads: [], loaded: false };
+const EMPTY_BRIDGE: BridgeState = { open: [], merged: [], beads: [], loaded: false, retryBlocked: false };
+
+function blocksAutomaticBridgeRetry(status: number) {
+  return status === 503 || (status >= 400 && status < 500);
+}
 
 function useStageSnapshot(projectRoot: string | null | undefined, branch: string | null): StageSnapshot | null {
   const [state, setState] = useState<BridgeState>(EMPTY_BRIDGE);
@@ -68,6 +73,7 @@ function useStageSnapshot(projectRoot: string | null | undefined, branch: string
           merged: prs?.ok && Array.isArray(prs.merged) ? prs.merged : [],
           beads: beads?.ok && Array.isArray(beads.data) ? (beads.data as ReadyBead[]) : [],
           loaded: true,
+          retryBlocked: blocksAutomaticBridgeRetry(prsRes.status) || blocksAutomaticBridgeRetry(beadsRes.status),
         });
       } catch {
         // Clear rather than preserve: a failed fetch hides the header (it's
@@ -84,7 +90,7 @@ function useStageSnapshot(projectRoot: string | null | undefined, branch: string
   // Live-refresh while an open PR anchors the stage — checks/review flip
   // often. Bead-only and merged stages refresh on (root, branch) changes.
   usePausablePoll(() => setTick((t) => t + 1), POLL_MS, {
-    enabled: Boolean(projectRoot && branch && snapshot?.pr),
+    enabled: Boolean(projectRoot && branch && snapshot?.pr && !state.retryBlocked),
   });
   return snapshot;
 }

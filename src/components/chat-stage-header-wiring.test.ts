@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const header = readFileSync(new URL("./chat-stage-header.tsx", import.meta.url), "utf8");
+assert.match(header, /status === 503 \|\| \(status >= 400 && status < 500\)/, "stable invalid or unavailable roots block automatic bridge retries");
+assert.match(header, /snapshot\?\.pr && !state\.retryBlocked/, "the stage poll stays paused until the project-root key changes");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const queue = readFileSync(new URL("../lib/beads-work-queue.ts", import.meta.url), "utf8");
 
@@ -19,7 +21,7 @@ assert.match(header, /\/api\/beads\?mode=ready&projectRoot=/, "header reads read
 
 // Clean-chat rule + poll discipline.
 assert.match(header, /if \(!snapshot\) return null;/, "renders nothing without a PR/bead anchor");
-assert.match(header, /usePausablePoll\(.*\{\s*\n?\s*enabled: Boolean\(projectRoot && branch && snapshot\?\.pr\),/s, "re-polls only while an open PR anchors the stage");
+assert.match(header, /usePausablePoll\(.*\{\s*\n?\s*enabled: Boolean\(projectRoot && branch && snapshot\?\.pr && !state\.retryBlocked\),/s, "re-polls only while an open PR anchors a healthy stage");
 
 // Mounted between the top bar and the transcript.
 assert.match(
