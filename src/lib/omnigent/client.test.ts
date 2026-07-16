@@ -18,6 +18,11 @@ test("normalizeOmnigentBaseUrl adds https when scheme missing", () => {
   assert.equal(normalizeOmnigentBaseUrl("omnigent.example.com"), "https://omnigent.example.com");
 });
 
+test("normalizeOmnigentBaseUrl handles adversarial slash runs in linear time", () => {
+  const repeatedSlashes = `bad host${"/".repeat(25_000)}!`;
+  assert.equal(normalizeOmnigentBaseUrl(repeatedSlashes), repeatedSlashes);
+});
+
 test("pickDefaultAgentId prefers preferred id then claude-native-ui", () => {
   const agents = [
     { id: "ag_a", name: "polly" },

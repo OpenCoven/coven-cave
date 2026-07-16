@@ -15,6 +15,7 @@ import {
   isSshRuntime,
   normalizeFamiliarRuntime,
 } from "./familiar-runtime.ts";
+import { normalizeOmnigentBaseUrl } from "./omnigent/token.ts";
 import type { UserProfile } from "./user-profile-shared.ts";
 
 const CONFIG_PATH = path.join(caveHome(), "config.json");
@@ -426,23 +427,8 @@ function normalizeStringRecord(input: unknown): Record<string, string> {
   return out;
 }
 
-function trimTrailingSlashes(value: string): string {
-  let end = value.length;
-  while (end > 0 && value[end - 1] === "/") end -= 1;
-  return value.slice(0, end);
-}
-
 export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | undefined): CaveOmnigentConfig {
-  const rawUrl = typeof input?.baseUrl === "string" ? trimTrailingSlashes(input.baseUrl.trim()) : "";
-  let baseUrl = rawUrl;
-  if (rawUrl) {
-    try {
-      const parsed = new URL(rawUrl.includes("://") ? rawUrl : `https://${rawUrl}`);
-      baseUrl = `${parsed.protocol}//${parsed.host}`;
-    } catch {
-      baseUrl = rawUrl;
-    }
-  }
+  const baseUrl = typeof input?.baseUrl === "string" ? normalizeOmnigentBaseUrl(input.baseUrl) : "";
   return {
     baseUrl,
     defaultAgentId: typeof input?.defaultAgentId === "string" ? input.defaultAgentId.trim() : "",
