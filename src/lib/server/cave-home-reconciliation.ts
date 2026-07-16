@@ -194,7 +194,15 @@ async function sha256Dir(target: string): Promise<string> {
 async function pathInfo(target: string): Promise<PathInfo> {
   try {
     const info = await lstat(target);
-    if (info.isSymbolicLink()) return { kind: "symlink", mtimeMs: info.mtimeMs, size: info.size };
+    if (info.isSymbolicLink()) {
+      const linkTarget = await readlink(target);
+      return {
+        kind: "symlink",
+        hash: createHash("sha256").update(`symlink\0${linkTarget}`).digest("hex"),
+        mtimeMs: info.mtimeMs,
+        size: info.size,
+      };
+    }
     if (info.isDirectory()) return { kind: "dir", hash: await sha256Dir(target), mtimeMs: info.mtimeMs, size: info.size };
     return { kind: "file", hash: await sha256File(target), mtimeMs: info.mtimeMs, size: info.size };
   } catch (error) {
@@ -289,12 +297,15 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
       return async () => {
         const owner = await readLockOwner(lock);
         if (owner.token !== token) return;
+        // Mark the end of the test-observed critical section before publishing
+        // the unlock. Once the rename below completes, a successor can acquire
+        // immediately and must not overlap the prior owner's probe state.
+        await options.lockProbe?.("released");
         const released = `${lock}.released-${token}`;
         await rename(lock, released).catch((error) => {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         });
         await rm(released, { recursive: true, force: true });
-        await options.lockProbe?.("released");
       };
     } catch (error) {
       await rm(candidate, { recursive: true, force: true }).catch(() => {});
@@ -405,7 +416,7 @@ async function retireExpectedPath(
   probe?: () => void | Promise<void>,
   label = "legacy",
 ): Promise<string> {
-  if (!expected.hash || expected.kind === "missing" || expected.kind === "symlink") {
+  if (!expected.hash || expected.kind === "missing") {
     throw new Error(`${label} path is unavailable for replacement`);
   }
   await probe?.();

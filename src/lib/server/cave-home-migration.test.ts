@@ -587,6 +587,33 @@ try {
     assert.deepEqual(await json(path.join(cave, "inbox.json")), { version: 1, items: [{ id: "safe" }] });
     assert.equal(await readFile(path.join(coven, "cave-inbox.json"), "utf8"), "not-json");
   }
+  // The status surface offers Recover legacy when canonical storage is an
+  // invalid symlink. Retire that exact link safely instead of advertising an
+  // action that can never replace it; the link target itself remains intact.
+  {
+    const { coven, cave } = await home("canonical-symlink-recovery");
+    const legacyPath = path.join(coven, "cave-config.json");
+    const canonicalPath = path.join(cave, "config.json");
+    const foreignPath = path.join(cave, "foreign-config.json");
+    await mkdir(cave, { recursive: true });
+    await writeFile(legacyPath, '{"source":"legacy"}');
+    await writeFile(foreignPath, '{"source":"foreign"}');
+    await symlink(path.basename(foreignPath), canonicalPath, "file");
+    assert.deepEqual(
+      (await caveHomeMigrationStatus()).details.find((detail) => detail.legacy === "cave-config.json")?.actions,
+      ["recover-legacy"],
+    );
+
+    const result = await migrateCaveHome({
+      legacy: "cave-config.json",
+      action: "recover-legacy",
+      createSymlink: denySymlink,
+    });
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(await json(canonicalPath), { source: "legacy" });
+    assert.deepEqual(await json(foreignPath), { source: "foreign" });
+    assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
   {
     const { coven, cave } = await home("malformed-identical");
     await mkdir(cave, { recursive: true });
