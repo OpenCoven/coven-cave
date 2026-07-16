@@ -209,6 +209,32 @@ try {
   assert.equal(config.bindingFor(cfg, "missing").autoSelfReport, false);
 
   await config.saveConfig({
+    defaults: {
+      runtime: { kind: "ssh", host: "build-box", cwd: "/srv/work", command: "coven" },
+    },
+    familiars: {
+      local: { runtime: { kind: "local" } },
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(
+    cfg.familiars.local.runtime,
+    { kind: "local" },
+    "an explicit local runtime must survive config persistence",
+  );
+  const explicitLocalBinding = config.bindingFor(cfg, "local");
+  assert.deepEqual(
+    explicitLocalBinding.runtime,
+    { kind: "local" },
+    "an explicit local familiar binding must override a workspace SSH default",
+  );
+  assert.deepEqual(
+    config.bindingFor(cfg, "missing").runtime,
+    { kind: "ssh", host: "build-box", cwd: "/srv/work", command: "coven" },
+    "familiars without an explicit runtime must continue to inherit the workspace default",
+  );
+
+  await config.saveConfig({
     familiars: {
       nova: {
         voiceProvider: null,
@@ -224,7 +250,7 @@ try {
     role: "review familiar",
   });
 
-  await config.saveConfig({ familiars: { nova: null } });
+  await config.saveConfig({ familiars: { nova: null, local: null } });
   cfg = await config.loadConfig();
   assert.equal(cfg.familiars.nova, undefined);
 } finally {

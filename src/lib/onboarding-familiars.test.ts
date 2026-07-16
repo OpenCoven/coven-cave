@@ -170,12 +170,23 @@ assert.throws(
   /SSH runtime needs a host/,
 );
 
-// Non-ssh runtime input is ignored entirely.
-assert.equal(
+// An explicit local runtime must survive normalization so it can override a
+// workspace-level SSH default in the persisted familiar binding.
+assert.deepEqual(
   normalizeFamiliarDraft({
     displayName: "Local",
     description: "Stays on this machine.",
     runtime: { kind: "local" },
+  }).runtime,
+  { kind: "local" },
+);
+
+// Unknown runtime kinds remain ignored for compatibility with older callers.
+assert.equal(
+  normalizeFamiliarDraft({
+    displayName: "Unknown Runtime",
+    description: "Does not request a supported runtime override.",
+    runtime: { kind: "unsupported" },
   }).runtime,
   undefined,
 );
