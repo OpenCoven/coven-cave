@@ -25,7 +25,7 @@ import { loadConversation, isSafeConversationSessionId } from "../cave-conversat
 import { parseSafeGitHubUrl, parseSafeHttpUrl } from "../url-safety.ts";
 import { makePin, PIN_CONTENT_MAX, type PinKind, type StitchPin } from "../stitch.ts";
 import { covenKnowledgeRoot } from "./knowledge-vault.ts";
-import { resolveAllowedMemoryFilePath } from "./memory-file-paths.ts";
+import { resolveAllowedFileReadPath, resolveAllowedMemoryFilePath } from "./memory-file-paths.ts";
 
 export type PinCaptureRequest = {
   kind: PinKind;
@@ -369,10 +369,7 @@ async function resolveReadableFile(ref: string): Promise<string | null> {
   // Memory allow-list roots first, then the knowledge vault root.
   const allowed = await resolveAllowedMemoryFilePath(ref);
   if (allowed) return allowed;
-  const root = path.resolve(covenKnowledgeRoot());
-  const resolved = path.resolve(ref);
-  if (resolved === root || resolved.startsWith(root + path.sep)) return resolved;
-  return null;
+  return resolveAllowedFileReadPath(ref, covenKnowledgeRoot());
 }
 
 async function captureFileLike(kind: "file" | "memory", req: PinCaptureRequest): Promise<PinCaptureResult> {

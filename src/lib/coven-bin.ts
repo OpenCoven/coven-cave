@@ -103,12 +103,12 @@ export function runnableNodeToolchainDirs(
   const npmNames = platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
 
   return directories.filter((directory) => {
-    const node = path.join(directory, nodeName);
-    const npmName = npmNames.find((name) => exists(path.join(directory, name)));
+    const node = path.join(/* turbopackIgnore: true */ directory, nodeName);
+    const npmName = npmNames.find((name) => exists(path.join(/* turbopackIgnore: true */ directory, name)));
     if (!exists(node) || !npmName) {
       return false;
     }
-    const npm = path.join(directory, npmName);
+    const npm = path.join(/* turbopackIgnore: true */ directory, npmName);
     const env = {
       ...process.env,
       PATH: [directory, process.env.PATH].filter(Boolean).join(path.delimiter),
@@ -134,12 +134,12 @@ export function runnableNodeToolchainDirs(
 }
 
 function nodeNvmBinDirs(): string[] {
-  const nvmRoot = path.join(HOME, ".nvm", "versions", "node");
-  if (!existsSync(nvmRoot)) return [];
+  const nvmRoot = path.join(/* turbopackIgnore: true */ HOME, ".nvm", "versions", "node");
+  if (!existsSync(/* turbopackIgnore: true */ nvmRoot)) return [];
   try {
-    const directories = readdirSync(nvmRoot)
-      .map((v) => path.join(nvmRoot, v, "bin"))
-      .filter((d) => existsSync(d))
+    const directories = readdirSync(/* turbopackIgnore: true */ nvmRoot)
+      .map((v) => path.join(/* turbopackIgnore: true */ nvmRoot, v, "bin"))
+      .filter((d) => existsSync(/* turbopackIgnore: true */ d))
       .sort()
       .reverse(); // newest version first by lexicographic sort
     return runnableNodeToolchainDirs(directories);
@@ -149,12 +149,12 @@ function nodeNvmBinDirs(): string[] {
 }
 
 function fnmBinDirs(): string[] {
-  const fnmRoot = path.join(HOME, ".fnm", "node-versions");
-  if (!existsSync(fnmRoot)) return [];
+  const fnmRoot = path.join(/* turbopackIgnore: true */ HOME, ".fnm", "node-versions");
+  if (!existsSync(/* turbopackIgnore: true */ fnmRoot)) return [];
   try {
-    const directories = readdirSync(fnmRoot)
-      .map((v) => path.join(fnmRoot, v, "installation", "bin"))
-      .filter((d) => existsSync(d))
+    const directories = readdirSync(/* turbopackIgnore: true */ fnmRoot)
+      .map((v) => path.join(/* turbopackIgnore: true */ fnmRoot, v, "installation", "bin"))
+      .filter((d) => existsSync(/* turbopackIgnore: true */ d))
       .sort()
       .reverse();
     return runnableNodeToolchainDirs(directories);
@@ -166,9 +166,9 @@ function fnmBinDirs(): string[] {
 function windowsNpmBinDirs(): string[] {
   if (process.platform === "win32") {
     const dirs = [
-      process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : null,
+      process.env.APPDATA ? path.join(/* turbopackIgnore: true */ process.env.APPDATA, "npm") : null,
       process.env.npm_config_prefix ?? null,
-    ].filter((d): d is string => !!d && existsSync(d));
+    ].filter((d): d is string => !!d && existsSync(/* turbopackIgnore: true */ d));
     return Array.from(new Set(dirs));
   }
   return [];
@@ -179,15 +179,15 @@ function candidateDirs(): string[] {
     ...nodeNvmBinDirs(),
     ...fnmBinDirs(),
     ...windowsNpmBinDirs(),
-    path.join(HOME, "Library", "pnpm"),
-    path.join(HOME, ".bun", "bin"),
+    path.join(/* turbopackIgnore: true */ HOME, "Library", "pnpm"),
+    path.join(/* turbopackIgnore: true */ HOME, ".bun", "bin"),
     "/opt/homebrew/bin",
     "/usr/local/bin",
-    path.join(HOME, ".local", "bin"),
+    path.join(/* turbopackIgnore: true */ HOME, ".local", "bin"),
     // ~/.cargo/bin last: often holds a stale `cargo install` of coven that's
     // missing flags. Prefer the npm-published binary when both exist.
-    path.join(HOME, ".cargo", "bin"),
-  ].filter((d) => existsSync(d));
+    path.join(/* turbopackIgnore: true */ HOME, ".cargo", "bin"),
+  ].filter((d) => existsSync(/* turbopackIgnore: true */ d));
 }
 
 function candidateBinNames(): string[] {
@@ -302,7 +302,7 @@ export function covenBin(): string {
   const envBin = process.env.COVEN_BIN;
   if (envBin) {
     try {
-      const st = statSync(envBin);
+      const st = statSync(/* turbopackIgnore: true */ envBin);
       if (st.isFile() || st.isSymbolicLink()) {
         cachedBin = envBin;
         return cachedBin;
@@ -314,9 +314,9 @@ export function covenBin(): string {
 
   for (const dir of candidateDirs()) {
     for (const name of candidateBinNames()) {
-      const candidate = path.join(dir, name);
+      const candidate = path.join(/* turbopackIgnore: true */ dir, name);
       try {
-        const st = statSync(candidate);
+        const st = statSync(/* turbopackIgnore: true */ candidate);
         if (st.isFile() || st.isSymbolicLink()) {
           cachedBin = candidate;
           return cachedBin;
@@ -357,7 +357,7 @@ export function covenBin(): string {
 function windowsShimTargetFromFile(shimPath: string): string | null {
   const binDir = path.dirname(shimPath);
   try {
-    const shim = readFileSync(shimPath, "utf-8");
+    const shim = readFileSync(/* turbopackIgnore: true */ shimPath, "utf-8");
     // npm's cmd-shim generator quotes the package entry point relative to
     // either `%dp0%` (its shim-directory variable) or `%~dp0` (the batch
     // parameter form). Do not infer a package name: an npm `bin` target may
@@ -376,8 +376,8 @@ function windowsShimTargetFromFile(shimPath: string): string | null {
         .filter((target): target is string => !!target && !target.includes("%"));
       const relativeTarget = targets.at(-1)?.replace(/[\\/]+/g, path.sep);
       if (!relativeTarget) continue;
-      const candidate = path.resolve(binDir, relativeTarget);
-      if (existsSync(candidate)) {
+      const candidate = path.resolve(/* turbopackIgnore: true */ binDir, relativeTarget);
+      if (existsSync(/* turbopackIgnore: true */ candidate)) {
         return candidate;
       }
     }
@@ -424,8 +424,8 @@ export function covenAdapterDirsEnvValue(
   existing: string | undefined,
   covenHome?: string,
 ): string {
-  const home = covenHome?.trim() || path.join(HOME, ".coven");
-  const adaptersDir = path.join(home, "adapters");
+  const home = covenHome?.trim() || path.join(/* turbopackIgnore: true */ HOME, ".coven");
+  const adaptersDir = path.join(/* turbopackIgnore: true */ home, "adapters");
   const dirs = (existing ?? "").split(path.delimiter).filter(Boolean);
   if (dirs.includes(adaptersDir)) return dirs.join(path.delimiter);
   return [...dirs, adaptersDir].join(path.delimiter);

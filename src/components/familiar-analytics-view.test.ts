@@ -421,9 +421,11 @@ describe("FamiliarAnalyticsView", () => {
   it("renders the heal request count and keeps thread analytics present", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
-    const model = buildFamiliarAnalyticsModel(data);
+    // Pin the clock so the fixture's June 25 activity does not become an
+    // additional inactivity heal request as wall-clock time advances.
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
 
-    assert.equal(model.healRequests.length, 1);
+    assert.equal(model.healRequests.length, 2);
     assert.equal(model.threadReports.length, 1);
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);

@@ -5,31 +5,34 @@ import { covenHome, caveHome, covenWorkspaceRoot } from "@/lib/coven-paths";
 import { researchMissionsRoot } from "@/lib/server/research-mission-store";
 
 function realpathOrResolve(value: string): string {
-  const resolved = path.resolve(value);
+  const resolved = path.resolve(/* turbopackIgnore: true */ value);
   try {
-    return fs.realpathSync(resolved);
+    return fs.realpathSync(/* turbopackIgnore: true */ resolved);
   } catch {
     return resolved;
   }
 }
 
 function normalizeLegacyCovenWorkspacePath(value: string): string {
-  const resolved = path.resolve(value);
-  const legacyRoot = path.resolve(path.join(covenHome(), "workspace"));
+  const resolved = path.resolve(/* turbopackIgnore: true */ value);
+  const legacyRoot = path.resolve(path.join(/* turbopackIgnore: true */ covenHome(), "workspace"));
   if (resolved !== legacyRoot && !resolved.startsWith(legacyRoot + path.sep)) {
     return value;
   }
 
-  return path.join(path.resolve(path.join(covenHome(), "workspaces")), path.relative(legacyRoot, resolved));
+  return path.join(
+    /* turbopackIgnore: true */ path.resolve(path.join(/* turbopackIgnore: true */ covenHome(), "workspaces")),
+    path.relative(/* turbopackIgnore: true */ legacyRoot, resolved),
+  );
 }
 
 function caveProjectsFilePath(): string {
-  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(caveHome(), "projects.json");
+  return process.env.CAVE_PROJECTS_PATH_OVERRIDE ?? path.join(/* turbopackIgnore: true */ caveHome(), "projects.json");
 }
 
 function savedCaveProjectRoots(): string[] {
   try {
-    const parsed = JSON.parse(fs.readFileSync(caveProjectsFilePath(), "utf8")) as {
+    const parsed = JSON.parse(fs.readFileSync(/* turbopackIgnore: true */ caveProjectsFilePath(), "utf8")) as {
       projects?: Array<{ root?: unknown }>;
     };
     if (!Array.isArray(parsed.projects)) return [];
@@ -53,7 +56,7 @@ function builtInProjectRoots(): string[] {
     covenWorkspaceRoot(),
     // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
     process.env.OPENCLAW_WORKSPACE_ROOT,
-    path.join(homedir(), ".openclaw", "workspace"),
+    path.join(/* turbopackIgnore: true */ homedir(), ".openclaw", "workspace"),
     process.cwd(),
     // Research mission workspaces host bounded research sessions and live
     // under cave state rather than a registered project root.
@@ -76,7 +79,7 @@ function isWithinRoot(candidate: string, root: string): boolean {
 }
 
 function relativeWithinRoot(candidate: string, root: string): string | null {
-  const relativePath = path.relative(root, candidate);
+  const relativePath = path.relative(/* turbopackIgnore: true */ root, candidate);
   if (
     relativePath.startsWith("..") ||
     path.isAbsolute(relativePath) ||
@@ -103,7 +106,7 @@ export function resolveAllowedProjectSubpath(value: string): { root: string; rel
 
 export function resolveAllowedProjectPath(value: string): string | null {
   const subpath = resolveAllowedProjectSubpath(value);
-  return subpath ? path.join(subpath.root, subpath.relativePath) : null;
+  return subpath ? path.join(/* turbopackIgnore: true */ subpath.root, subpath.relativePath) : null;
 }
 
 export function isAllowedNewProjectRoot(value: string): boolean {

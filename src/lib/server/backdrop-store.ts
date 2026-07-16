@@ -42,13 +42,13 @@ export class BackdropValidationError extends Error {
 /** Resolve at call-time; an empty override is treated as unset. */
 export function backdropPath(): string {
   const override = process.env.COVEN_BACKDROP_PATH?.trim();
-  return override || path.join(caveHome(), "backdrop.jpg");
+  return override || path.join(/* turbopackIgnore: true */ caveHome(), "backdrop.jpg");
 }
 
 /** Directory holding per-familiar backdrop overrides, one image per familiar. */
 export function familiarBackdropDir(): string {
   const override = process.env.COVEN_FAMILIAR_BACKDROP_DIR?.trim();
-  return override || path.join(caveHome(), "backdrops");
+  return override || path.join(/* turbopackIgnore: true */ caveHome(), "backdrops");
 }
 
 // Familiar ids come from cave-config; the store still refuses anything that
@@ -63,8 +63,8 @@ export function familiarBackdropPath(familiarId: string): string {
   }
   // Resolve the base too: a trailing separator on the env override would
   // otherwise double up in the prefix check and reject valid paths.
-  const dir = path.resolve(familiarBackdropDir());
-  const target = path.resolve(dir, `familiar-${familiarId}.img`);
+  const dir = path.resolve(/* turbopackIgnore: true */ familiarBackdropDir());
+  const target = path.resolve(/* turbopackIgnore: true */ dir, `familiar-${familiarId}.img`);
   if (target !== dir && !target.startsWith(dir + path.sep)) {
     throw new BackdropValidationError("invalid familiar id", 400);
   }
@@ -137,9 +137,10 @@ function validatedFile(bytes: Uint8Array, declaredMime: string): BackdropFile {
 /** Return null for missing, malformed, or oversized on-disk data. */
 async function readImageAt(target: string): Promise<BackdropFile | null> {
   try {
-    const info = await stat(target);
+    // Backdrops are validated runtime user data, never build inputs.
+    const info = await stat(/* turbopackIgnore: true */ target);
     if (!info.isFile() || info.size <= 0 || info.size > MAX_BACKDROP_BYTES) return null;
-    const bytes = await readFile(target);
+    const bytes = await readFile(/* turbopackIgnore: true */ target);
     if (bytes.byteLength > MAX_BACKDROP_BYTES) return null;
     const mime = detectBackdropMime(bytes);
     if (!mime) return null;
@@ -157,8 +158,8 @@ async function writeImageAt(
   declaredMime: string,
 ): Promise<BackdropFile> {
   const image = validatedFile(bytes, declaredMime);
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeFileAtomic(target, image.bytes);
+  await mkdir(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
+  await writeFileAtomic(/* turbopackIgnore: true */ target, image.bytes);
   return image;
 }
 
@@ -176,7 +177,7 @@ export async function writeBackdropFile(
 }
 
 export async function deleteBackdropFile(): Promise<void> {
-  await rm(backdropPath(), { force: true });
+  await rm(/* turbopackIgnore: true */ backdropPath(), { force: true });
 }
 
 export async function readFamiliarBackdropFile(familiarId: string): Promise<BackdropFile | null> {
@@ -192,5 +193,5 @@ export async function writeFamiliarBackdropFile(
 }
 
 export async function deleteFamiliarBackdropFile(familiarId: string): Promise<void> {
-  await rm(familiarBackdropPath(familiarId), { force: true });
+  await rm(/* turbopackIgnore: true */ familiarBackdropPath(familiarId), { force: true });
 }

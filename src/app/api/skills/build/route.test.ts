@@ -22,7 +22,11 @@ assert.doesNotMatch(route, /child_process|execFile|spawn/, "authoring never shel
 
 assert.match(format, /replace\(\/\[\^a-z0-9-\]\/g, ""\)/, "slugs are constrained to [a-z0-9-], so they cannot traverse");
 assert.match(lib, /code: "exists"/, "existing skill dirs are refused, never overwritten");
-assert.match(lib, /writeFileAtomic\(filePath, composeSkillMd\(input\)\)/, "SKILL.md lands atomically");
+assert.match(
+  lib,
+  /writeFileAtomic\(\/\* turbopackIgnore: true \*\/ filePath, composeSkillMd\(input\)\)/,
+  "SKILL.md lands atomically without tracing the runtime destination",
+);
 assert.match(lib, /path\.join\(home, "\.claude", "skills"\)/, "claude root matches the scanner's root");
 assert.match(lib, /path\.join\(home, "\.codex", "skills"\)/, "codex root matches the scanner's root");
 assert.match(lib, /path\.join\(home, "\.agents", "skills"\)/, "agents root matches the scanner's root");

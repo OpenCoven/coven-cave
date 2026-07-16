@@ -86,19 +86,21 @@ export async function buildSkill(input: SkillBuildInput, opts: RootOptions = {})
   if (!rootDir) return { ok: false, code: "invalid", error: "unknown destination root" };
 
   const slug = slugifySkillName(input.name);
-  const dir = path.join(rootDir, slug);
-  const filePath = path.join(dir, "SKILL.md");
+  const dir = path.join(/* turbopackIgnore: true */ rootDir, slug);
+  // The selected root and slug are runtime user choices constrained above;
+  // none of these local filesystem paths are build-time dependencies.
+  const filePath = path.join(/* turbopackIgnore: true */ dir, "SKILL.md");
 
   try {
-    await stat(dir);
+    await stat(/* turbopackIgnore: true */ dir);
     return { ok: false, code: "exists", error: `a skill with id "${slug}" already exists at ${dir}` };
   } catch {
     // Missing directory is the happy path.
   }
 
   try {
-    await mkdir(dir, { recursive: true });
-    await writeFileAtomic(filePath, composeSkillMd(input));
+    await mkdir(/* turbopackIgnore: true */ dir, { recursive: true });
+    await writeFileAtomic(/* turbopackIgnore: true */ filePath, composeSkillMd(input));
   } catch (err) {
     return { ok: false, code: "io", error: err instanceof Error ? err.message : "write failed" };
   }
