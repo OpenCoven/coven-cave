@@ -38,10 +38,18 @@ the #3262 branch:
 | --- | ---: | ---: | ---: |
 | `/` page entry only | 4,335,119 B / 23 chunks | 1,991,068 B / 13 chunks | 54.1% |
 | Complete `/` first load | 4,796,271 B / 30 chunks | 2,452,293 B / 20 chunks | 48.9% |
+| Complete `/` first load after current `main` | 4,796,271 B / 30 chunks | 1,812,801 B / 19 chunks | 62.2% |
 
-The largest remaining eager chunk is the 638,871-byte glyph catalog tracked by
-#3263. The Sessions conversation remains eager; Projects, Canvas, Familiar,
-Settings, Group Chat, and the code rail now show the shared surface skeleton
-while their packaged local chunks load. Because those chunks ship inside the
-standalone Next bundle and are served by the local sidecar, the split does not
-introduce an internet dependency in the desktop app.
+The first two rows are the original #3262 branch measurement. After #3263
+landed on `main`, rebasing this branch made the 638,871-byte glyph catalog lazy
+too, producing the final merge-candidate row. The Sessions conversation remains
+eager; Projects, Canvas, Familiar, Settings, Group Chat, and the code rail show
+the shared surface skeleton while their packaged local chunks load. Because
+those chunks ship inside the standalone Next bundle and are served by the local
+sidecar, the split does not introduce an internet dependency in the desktop app.
+
+The extra packaged lazy chunks raised the sidecar runtime from the existing
+5,470-file ceiling to 5,486 files on macOS, 5,490 on Linux, and 5,492 on
+Windows. The shared release and Windows-extractor ceiling is therefore 5,500
+files, leaving eight files of measured cross-platform headroom while retaining
+the existing strict 200 MiB expanded-size limit.
