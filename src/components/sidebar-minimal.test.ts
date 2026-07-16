@@ -301,7 +301,7 @@ assert.match(
 // the active-row accent) or clicking a recent session silently does nothing.
 assert.match(
   source,
-  /<RecentActivityRollup\b[^/]*\bonOpenSession=\{onOpenSession\}/,
+  /<RecentActivityRollup\b[^/]*\bsessions=\{sessions\}[^/]*\bonOpenSession=\{onOpenSession\}/,
   "Recent Activity must receive onOpenSession so selecting an item navigates to it",
 );
 assert.match(
