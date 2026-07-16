@@ -301,35 +301,37 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
       if (!["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
       try {
         const info = await stat(lock);
-        if (Date.now() - info.mtimeMs > LOCK_STALE_MS) {
-          const owner = await readLockOwner(lock);
-          let alive = false;
-          if (owner.pid) {
-            try {
-              process.kill(owner.pid, 0);
-              alive = true;
-            } catch (ownerError) {
-              alive = (ownerError as NodeJS.ErrnoException).code === "EPERM";
-            }
+        const owner = await readLockOwner(lock);
+        let alive = false;
+        if (owner.pid) {
+          try {
+            process.kill(owner.pid, 0);
+            alive = true;
+          } catch (ownerError) {
+            alive = (ownerError as NodeJS.ErrnoException).code === "EPERM";
           }
-          if (!alive) {
-            await options.lockProbe?.("stale-observed");
-            const takeover = path.join(lock, ".takeover");
-            const takeoverToken = randomBytes(16).toString("hex");
-            try {
-              await writeFile(takeover, JSON.stringify({ takeoverToken, ownerToken: owner.token }), { flag: "wx" });
-              const currentOwner = await readLockOwner(lock);
-              if (currentOwner.token !== owner.token) {
-                await rm(takeover, { force: true });
-              } else {
-                const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
-                await rename(lock, reclaimed);
-                await rm(reclaimed, { recursive: true, force: true });
-                continue;
-              }
-            } catch (takeoverError) {
-              if (!["EEXIST", "ENOENT"].includes((takeoverError as NodeJS.ErrnoException).code ?? "")) throw takeoverError;
+        }
+        // A recorded owner that no longer exists is safe to reclaim
+        // immediately. The age threshold is only needed for an unreadable or
+        // incomplete owner record, where liveness cannot be established.
+        const reclaimable = owner.pid ? !alive : Date.now() - info.mtimeMs > LOCK_STALE_MS;
+        if (reclaimable) {
+          await options.lockProbe?.("stale-observed");
+          const takeover = path.join(lock, ".takeover");
+          const takeoverToken = randomBytes(16).toString("hex");
+          try {
+            await writeFile(takeover, JSON.stringify({ takeoverToken, ownerToken: owner.token }), { flag: "wx" });
+            const currentOwner = await readLockOwner(lock);
+            if (currentOwner.token !== owner.token) {
+              await rm(takeover, { force: true });
+            } else {
+              const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
+              await rename(lock, reclaimed);
+              await rm(reclaimed, { recursive: true, force: true });
+              continue;
             }
+          } catch (takeoverError) {
+            if (!["EEXIST", "ENOENT"].includes((takeoverError as NodeJS.ErrnoException).code ?? "")) throw takeoverError;
           }
         }
       } catch (lockError) {

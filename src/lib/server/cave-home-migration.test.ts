@@ -689,6 +689,23 @@ try {
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
   }
 
+  // A process crash leaves a fresh lock directory behind. Its recorded dead
+  // owner is enough to reclaim immediately instead of blocking stores.
+  {
+    const { coven, cave } = await home("fresh-dead-lock");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({ pid: 2_147_483_647, token: "dead-owner" }));
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    const startedAt = Date.now();
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "a crashed owner is reclaimed without waiting for the stale-age threshold");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
   // Competing stale-lock observers serialize through an exclusive takeover
   // claim; neither can remove the successor lock after the first reclaims it.
   {
