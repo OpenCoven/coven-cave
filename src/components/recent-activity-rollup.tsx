@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { modelIcon } from "@/lib/model-label";
@@ -34,11 +35,12 @@ function projectLabel(root: string | undefined): string {
 
 type Props = {
   sessions: SessionRow[];
+  selectedFamiliarIds?: ReadonlySet<string>;
   activeSessionId?: string | null;
   onOpenSession?: (id: string) => void;
 };
 
-export function RecentActivityRollup({ sessions, activeSessionId, onOpenSession }: Props) {
+export function RecentActivityRollup({ sessions, selectedFamiliarIds, activeSessionId, onOpenSession }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   // Default open for SSR + first paint, then hydrate the saved preference after
   // mount so the server and client markup match.
@@ -69,8 +71,15 @@ export function RecentActivityRollup({ sessions, activeSessionId, onOpenSession 
   // That keeps every sessions surface permission-consistent and avoids restoring
   // the roll-up's former unscoped request through a second store or fetch path.
   const rows = useMemo(
-    () => sessions.filter((session) => !session.archived_at).slice(0, MAX_ROWS),
-    [sessions],
+    () =>
+      sessions
+        .filter(
+          (session) =>
+            !session.archived_at &&
+            (!selectedFamiliarIds || familiarInScope(selectedFamiliarIds, session.familiarId)),
+        )
+        .slice(0, MAX_ROWS),
+    [sessions, selectedFamiliarIds],
   );
 
   if (rows.length === 0) return null;

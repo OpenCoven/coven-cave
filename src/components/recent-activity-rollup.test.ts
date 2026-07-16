@@ -39,14 +39,19 @@ assert.match(
 );
 assert.match(
   sidebar,
-  /<RecentActivityRollup sessions=\{sessions\} activeSessionId=\{activeSessionId\} onOpenSession=\{onOpenSession\} \/>/,
+  /<RecentActivityRollup[\s\S]{0,180}sessions=\{sessions\}[\s\S]{0,120}selectedFamiliarIds=\{selectedFamiliarIds\}/,
   "the mounted sidebar passes Workspace-owned sessions into Recent Activity",
 );
 assert.match(source, /sessions: SessionRow\[\]/, "Recent Activity requires the shared sessions prop");
 assert.match(
   source,
-  /sessions\.filter\(\(session\) => !session\.archived_at\)\.slice\(0, MAX_ROWS\)/,
-  "Recent Activity derives its visible recent slice from the shared stream",
+  /familiarInScope\(selectedFamiliarIds, session\.familiarId\)/,
+  "Recent Activity filters the shared stream against single- and multi-familiar scope",
+);
+assert.match(
+  source,
+  /\[sessions, selectedFamiliarIds\]/,
+  "Recent Activity re-derives rows whenever the persistent familiar selection changes",
 );
 assert.doesNotMatch(source, /fetch\s*\(/, "Recent Activity performs no mount-time session request");
 assert.doesNotMatch(source, /usePausablePoll|setInterval|POLL_MS/, "Recent Activity owns no refresh interval");
