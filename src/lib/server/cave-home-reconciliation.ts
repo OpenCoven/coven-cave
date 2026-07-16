@@ -259,9 +259,8 @@ async function acquireLock(): Promise<() => Promise<void>> {
   }
 }
 
-async function pruneBackups(): Promise<void> {
+async function pruneBackups(journal: MigrationJournal): Promise<void> {
   await mkdir(migrationBackupRoot(), { recursive: true });
-  const journal = await readJournal();
   const protectedIds = new Set(
     Object.values(journal.entries)
       .filter((entry) => entry.decision === "unresolved" || entry.decision === "deferred")
@@ -316,9 +315,10 @@ async function createRecoveryBundle(
   canonicalPath: string,
   legacyInfo: PathInfo,
   canonicalInfo: PathInfo,
+  journal: MigrationJournal,
   options: ReconciliationOptions,
 ): Promise<{ id: string; directory: string }> {
-  await pruneBackups();
+  await pruneBackups(journal);
   const id = `${nowIso().replace(/[:.]/g, "-")}-${randomBytes(4).toString("hex")}`;
   const directory = path.join(migrationBackupRoot(), id);
   await mkdir(directory, { recursive: true });
@@ -837,7 +837,7 @@ async function reconcileEntry(
     return;
   }
 
-  const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, options);
+  const backup = await createRecoveryBundle(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, journal, options);
   result.backedUp.push(backup.directory);
   journalEntry.backupId = backup.id;
 

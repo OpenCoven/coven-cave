@@ -6,6 +6,7 @@ import path from "node:path";
 
 const roots: string[] = [];
 const { ensureCaveHomeReconciled, migrateCaveHome } = await import("./cave-home-migration.ts");
+const { reconcileCaveHome } = await import("./cave-home-reconciliation.ts");
 const { caveHomeMigrationStatus } = await import("./cave-home-migration-status.ts");
 const { createDefaultPreferences } = await import("../preferences-schema.ts");
 
@@ -381,6 +382,27 @@ try {
       })).errors, []);
     }
     assert.ok((await readdir(path.join(cave, "migration-backups"))).length <= 10);
+  }
+
+  // More than the retention limit can become unresolved in one transaction.
+  // Protect bundles recorded in the in-memory journal before it is committed,
+  // rather than pruning an earlier conflict while processing a later one.
+  {
+    const { coven, cave } = await home("same-run-retention");
+    await mkdir(cave, { recursive: true });
+    const entries = Array.from({ length: 11 }, (_, index) => ({
+      legacy: `legacy-${index}.json`, next: `canonical-${index}.json`, strategy: "manual" as const,
+    }));
+    for (let index = 0; index < entries.length; index += 1) {
+      await writeFile(path.join(coven, entries[index].legacy), JSON.stringify({ legacy: index }));
+      await writeFile(path.join(cave, entries[index].next), JSON.stringify({ canonical: index }));
+    }
+    assert.deepEqual((await reconcileCaveHome(entries, { createSymlink: denySymlink })).errors, []);
+    const journal = await json(path.join(cave, "migration-state.json"));
+    for (const entry of entries) {
+      const backupId = journal.entries[entry.legacy].backupId;
+      assert.equal(await kind(path.join(cave, "migration-backups", backupId)), "dir", `${entry.legacy} keeps its recovery bundle`);
+    }
   }
 
   // A malformed or unsupported journal fails closed before touching either
