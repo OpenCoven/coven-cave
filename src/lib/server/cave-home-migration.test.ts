@@ -886,6 +886,53 @@ try {
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
+  // Publishing release intent must not let a waiter reclaim the lock before
+  // its owner finishes the unlock rename. Otherwise the old release path can
+  // rename a newly acquired successor lock and break mutual exclusion.
+  {
+    const { coven } = await home("release-publication-order");
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+    let finishRelease!: () => void;
+    const releaseMayFinish = new Promise<void>((resolve) => { finishRelease = resolve; });
+    let markReleasing!: () => void;
+    const ownerIsReleasing = new Promise<void>((resolve) => { markReleasing = resolve; });
+    let active = 0;
+    let maxActive = 0;
+    const owner = migrateCaveHome({
+      createSymlink: denySymlink,
+      lockProbe: async (event) => {
+        if (event === "acquired") {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+        } else if (event === "released") {
+          markReleasing();
+          await releaseMayFinish;
+          active -= 1;
+        }
+      },
+    });
+    await ownerIsReleasing;
+    const contender = migrateCaveHome({
+      createSymlink: denySymlink,
+      lockProbe: (event) => {
+        if (event === "acquired") {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+        } else if (event === "released") {
+          active -= 1;
+        }
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    assert.equal(maxActive, 1);
+    finishRelease();
+    const [ownerResult, contenderResult] = await Promise.all([owner, contender]);
+    assert.deepEqual(ownerResult.errors, []);
+    assert.deepEqual(contenderResult.errors, []);
+    assert.equal(maxActive, 1);
+    assert.equal(active, 0);
+  }
+
   // Store transactions share the cross-process migration lock. A writer that
   // already passed startup reconciliation must not read an old snapshot while
   // a manual recovery is replacing canonical storage and overwrite it later.

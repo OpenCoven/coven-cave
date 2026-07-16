@@ -322,28 +322,38 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           activeLockTokens().delete(token);
           return;
         }
-        // Publish the completed critical section before the Windows directory
-        // rename. If rename is denied transiently by a watcher or scanner, a
-        // waiter can reclaim this token instead of treating the live PID as a
-        // permanent owner.
-        try {
-          await writeJsonAtomic(path.join(lock, "owner.json"), {
-            pid: process.pid,
-            token,
-            startedAt: owner.startedAt ?? nowIso(),
-            releasedAt: nowIso(),
-          });
-        } finally {
-          activeLockTokens().delete(token);
-        }
         // Mark the end of the test-observed critical section before publishing
         // the unlock. Once the rename below completes, a successor can acquire
         // immediately and must not overlap the prior owner's probe state.
         await options.lockProbe?.("released");
         const released = `${lock}.released-${token}`;
-        await rename(lock, released).catch((error) => {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        });
+        try {
+          await rename(lock, released);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+            activeLockTokens().delete(token);
+            return;
+          }
+          // Only publish release intent after this owner has stopped trying to
+          // rename the lock. Publishing it before the rename would let a
+          // waiter reclaim the directory and replace it with a successor lock
+          // that this release path could then rename out from under its owner.
+          try {
+            const currentOwner = await readLockOwner(lock);
+            if (currentOwner.token === token) {
+              await writeJsonAtomic(path.join(lock, "owner.json"), {
+                pid: process.pid,
+                token,
+                startedAt: currentOwner.startedAt ?? owner.startedAt ?? nowIso(),
+                releasedAt: nowIso(),
+              });
+            }
+          } finally {
+            activeLockTokens().delete(token);
+          }
+          throw error;
+        }
+        activeLockTokens().delete(token);
         await rm(released, { recursive: true, force: true });
       };
       try {
