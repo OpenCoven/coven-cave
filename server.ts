@@ -216,8 +216,22 @@ function firstQueryValue(value: string | string[] | undefined): string | undefin
 type UpgradeQuery = Record<string, string | string[] | undefined>;
 
 const UPGRADE_URL_BASE = "http://localhost";
-const MAX_UPGRADE_QUERY_PAIRS = 1_000;
+const MAX_UPGRADE_QUERY_SEGMENTS = 1_000;
 const ABSOLUTE_FORM_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+
+function boundedUpgradeQuery(suffix: string): string {
+  if (!suffix.startsWith("?")) return "";
+
+  const fragmentStart = suffix.indexOf("#", 1);
+  const rawQuery = suffix.slice(1, fragmentStart === -1 ? undefined : fragmentStart);
+  let segmentCount = 1;
+  for (let index = 0; index < rawQuery.length; index += 1) {
+    if (rawQuery[index] !== "&") continue;
+    if (segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS) return rawQuery.slice(0, index);
+    segmentCount += 1;
+  }
+  return rawQuery;
+}
 
 function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQuery } {
   const pathEnd = rawUrl.search(/[?#]/);
@@ -231,8 +245,13 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
   // untouched when a valid non-PTY upgrade is forwarded to Next.
   const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
   const parsedUrl = absoluteForm
-    ? new URL(`${normalizedPath}${suffix}`)
-    : new URL(`/.${rootedPath}${suffix}`, UPGRADE_URL_BASE);
+    ? new URL(normalizedPath)
+    : new URL(`/.${rootedPath}`, UPGRADE_URL_BASE);
+
+  // Bound the raw `&`-separated segments before URLSearchParams sees them.
+  // querystring.parse() counts empty segments toward maxKeys, while iterating
+  // URLSearchParams alone would skip them and parse the entire query first.
+  parsedUrl.search = boundedUpgradeQuery(suffix);
 
   // WHATWG URL canonicalizes dot segments. Route against the pre-canonical
   // path so unusual request targets cannot broaden into /api/pty-ws. For a
@@ -244,14 +263,10 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
   }
 
   // node:querystring, used by url.parse(..., true), returns a null-prototype
-  // object and processes at most 1,000 pairs by default. Preserve both details
-  // while retaining first-value and duplicate ordering semantics.
+  // object and processes at most 1,000 segments by default. Preserve both
+  // details while retaining first-value and duplicate ordering semantics.
   const query: UpgradeQuery = Object.create(null);
-  let pairCount = 0;
   for (const [key, value] of parsedUrl.searchParams) {
-    if (pairCount >= MAX_UPGRADE_QUERY_PAIRS) break;
-    pairCount += 1;
-
     const current = query[key];
     if (current === undefined) query[key] = value;
     else if (Array.isArray(current)) current.push(value);

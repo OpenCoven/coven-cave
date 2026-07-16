@@ -120,8 +120,20 @@ function firstQueryValue(value) {
   return Array.isArray(value) ? value[0] : value;
 }
 const UPGRADE_URL_BASE = "http://localhost";
-const MAX_UPGRADE_QUERY_PAIRS = 1e3;
+const MAX_UPGRADE_QUERY_SEGMENTS = 1e3;
 const ABSOLUTE_FORM_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+function boundedUpgradeQuery(suffix) {
+  if (!suffix.startsWith("?")) return "";
+  const fragmentStart = suffix.indexOf("#", 1);
+  const rawQuery = suffix.slice(1, fragmentStart === -1 ? void 0 : fragmentStart);
+  let segmentCount = 1;
+  for (let index = 0; index < rawQuery.length; index += 1) {
+    if (rawQuery[index] !== "&") continue;
+    if (segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS) return rawQuery.slice(0, index);
+    segmentCount += 1;
+  }
+  return rawQuery;
+}
 function parseUpgradeTarget(rawUrl) {
   const pathEnd = rawUrl.search(/[?#]/);
   const rawPath = pathEnd === -1 ? rawUrl : rawUrl.slice(0, pathEnd);
@@ -129,17 +141,15 @@ function parseUpgradeTarget(rawUrl) {
   const normalizedPath = rawPath.replaceAll("\\", "/");
   const absoluteForm = ABSOLUTE_FORM_RE.exec(normalizedPath);
   const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
-  const parsedUrl = absoluteForm ? new URL(`${normalizedPath}${suffix}`) : new URL(`/.${rootedPath}${suffix}`, UPGRADE_URL_BASE);
+  const parsedUrl = absoluteForm ? new URL(normalizedPath) : new URL(`/.${rootedPath}`, UPGRADE_URL_BASE);
+  parsedUrl.search = boundedUpgradeQuery(suffix);
   let pathname = normalizedPath;
   if (absoluteForm) {
     const pathStart = normalizedPath.indexOf("/", absoluteForm[0].length);
     pathname = pathStart === -1 ? "/" : normalizedPath.slice(pathStart);
   }
   const query = /* @__PURE__ */ Object.create(null);
-  let pairCount = 0;
   for (const [key, value] of parsedUrl.searchParams) {
-    if (pairCount >= MAX_UPGRADE_QUERY_PAIRS) break;
-    pairCount += 1;
     const current = query[key];
     if (current === void 0) query[key] = value;
     else if (Array.isArray(current)) current.push(value);

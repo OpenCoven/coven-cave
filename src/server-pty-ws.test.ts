@@ -18,11 +18,21 @@ assert.match(src, /void handle\(req, res\);/, "ordinary HTTP parsing stays owned
 assert.match(src, /const UPGRADE_URL_BASE = "http:\/\/localhost"/, "upgrade parsing uses a fixed internal URL base");
 assert.match(
   src,
-  /new URL\(`\/\.\$\{rootedPath\}\$\{suffix\}`, UPGRADE_URL_BASE\)/,
+  /new URL\(`\/\.\$\{rootedPath\}`, UPGRADE_URL_BASE\)/,
   "origin-form targets keep authority-looking prefixes in the path",
 );
 assert.match(src, /const query: UpgradeQuery = Object\.create\(null\)/, "upgrade query records have no prototype");
-assert.match(src, /MAX_UPGRADE_QUERY_PAIRS = 1_000/, "upgrade query parsing retains the legacy 1,000-pair cap");
+assert.match(src, /MAX_UPGRADE_QUERY_SEGMENTS = 1_000/, "upgrade query parsing retains the legacy 1,000-segment cap");
+assert.match(
+  src,
+  /if \(segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS\) return rawQuery\.slice\(0, index\)/,
+  "empty query segments count toward the legacy cutoff",
+);
+assert.match(
+  src,
+  /parsedUrl\.search = boundedUpgradeQuery\(suffix\)/,
+  "the raw query is bounded before URLSearchParams parses it",
+);
 assert.match(
   src,
   /else if \(Array\.isArray\(current\)\) current\.push\(value\);\s*else query\[key\] = \[current, value\];/,
@@ -303,6 +313,45 @@ assert.match(
 // above keepAliveTimeout so a reused socket isn't reaped mid-headers.
 assert.match(src, /server\.keepAliveTimeout = 75_000/, "server extends the idle keep-alive window past client reuse");
 assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds keepAliveTimeout");
+
+// Execute the parser itself without starting Next or the PTY server. Extracting
+// this inline block keeps the production build bundle-free while covering the
+// legacy maxKeys behavior that URLSearchParams does not preserve by default.
+{
+  const parserBlock = src.match(
+    /type UpgradeQuery[\s\S]+?(?=\nfunction isPtyAuthRequired)/,
+  );
+  assert.ok(parserBlock, "upgrade parser block is available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${parserBlock[0]}\nexport { parseUpgradeTarget };`,
+    { loader: "ts", format: "esm", target: "node22" },
+  );
+  const parserModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`
+  );
+  const parseUpgradeTarget = parserModule.parseUpgradeTarget as (
+    rawUrl: string,
+  ) => { query: Record<string, string | string[] | undefined> };
+
+  const acceptedAtLegacyLimit = parseUpgradeTarget(
+    `/api/pty-ws?${"&".repeat(999)}coven_access_token=valid`,
+  );
+  assert.equal(
+    acceptedAtLegacyLimit.query.coven_access_token,
+    "valid",
+    "the 1,000th raw query segment is still parsed",
+  );
+
+  const rejectedBeyondLegacyLimit = parseUpgradeTarget(
+    `/api/pty-ws?${"&".repeat(1_000)}coven_access_token=valid`,
+  );
+  assert.equal(
+    rejectedBeyondLegacyLimit.query.coven_access_token,
+    undefined,
+    "empty segments consume maxKeys so credentials beyond the legacy cutoff stay ignored",
+  );
+}
 
 // Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a
 // server.ts security fix that skips `pnpm build:server` silently ships nothing
