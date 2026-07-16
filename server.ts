@@ -251,7 +251,7 @@ function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQ
   // Bound the raw `&`-separated segments before URLSearchParams sees them.
   // querystring.parse() counts empty segments toward maxKeys, while iterating
   // URLSearchParams alone would skip them and parse the entire query first.
-  parsedUrl.search = boundedUpgradeQuery(suffix);
+  parsedUrl.search = `?${boundedUpgradeQuery(suffix)}`;
 
   // WHATWG URL canonicalizes dot segments. Route against the pre-canonical
   // path so unusual request targets cannot broaden into /api/pty-ws. For a

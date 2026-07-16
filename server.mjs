@@ -142,7 +142,7 @@ function parseUpgradeTarget(rawUrl) {
   const absoluteForm = ABSOLUTE_FORM_RE.exec(normalizedPath);
   const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
   const parsedUrl = absoluteForm ? new URL(normalizedPath) : new URL(`/.${rootedPath}`, UPGRADE_URL_BASE);
-  parsedUrl.search = boundedUpgradeQuery(suffix);
+  parsedUrl.search = `?${boundedUpgradeQuery(suffix)}`;
   let pathname = normalizedPath;
   if (absoluteForm) {
     const pathStart = normalizedPath.indexOf("/", absoluteForm[0].length);

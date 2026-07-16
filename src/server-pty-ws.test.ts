@@ -30,8 +30,8 @@ assert.match(
 );
 assert.match(
   src,
-  /parsedUrl\.search = boundedUpgradeQuery\(suffix\)/,
-  "the raw query is bounded before URLSearchParams parses it",
+  /parsedUrl\.search = `\?\$\{boundedUpgradeQuery\(suffix\)\}`/,
+  "the raw query is bounded without consuming a data-leading question mark",
 );
 assert.match(
   src,
@@ -333,6 +333,20 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   const parseUpgradeTarget = parserModule.parseUpgradeTarget as (
     rawUrl: string,
   ) => { query: Record<string, string | string[] | undefined> };
+
+  const dataLeadingQuestionMark = parseUpgradeTarget(
+    "/api/pty-ws??coven_access_token=value",
+  );
+  assert.equal(
+    dataLeadingQuestionMark.query["?coven_access_token"],
+    "value",
+    "a second question mark remains part of the query key",
+  );
+  assert.equal(
+    dataLeadingQuestionMark.query.coven_access_token,
+    undefined,
+    "a malformed double-question-mark key cannot become a valid credential",
+  );
 
   const acceptedAtLegacyLimit = parseUpgradeTarget(
     `/api/pty-ws?${"&".repeat(999)}coven_access_token=valid`,
