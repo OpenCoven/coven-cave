@@ -132,7 +132,29 @@ try {
     assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
     assert.deepEqual(await json(path.join(cave, "config.json")), { source: "startup" });
     assert.deepEqual(await json(legacyPath), { source: "older-tool" });
+    assert.equal((await readdir(coven)).some((name) => name.includes("migration-retired")), false);
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
+  }
+
+  // A canonical writer can also race bridge installation. If it changes the
+  // validated canonical bytes, keep the original legacy copy at its ordinary
+  // path instead of replacing it with the unvalidated canonical write.
+  {
+    const { coven, cave } = await home("canonical-pre-bridge-write");
+    const legacyPath = path.join(coven, "cave-config.json");
+    const canonicalPath = path.join(cave, "config.json");
+    await mkdir(cave, { recursive: true });
+    await writeFile(legacyPath, '{"source":"known-good"}', "utf8");
+    await writeFile(canonicalPath, '{"source":"known-good"}', "utf8");
+    const result = await migrateCaveHome({
+      createSymlink: denySymlink,
+      compatibilityProbe: async () => {
+        await writeFile(canonicalPath, "not-json", "utf8");
+      },
+    });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(legacyPath), { source: "known-good" });
+    assert.equal(await readFile(canonicalPath, "utf8"), "not-json");
   }
 
   // The directory fallback must also fail closed if an old tool recreates the
@@ -169,6 +191,27 @@ try {
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
   }
 
+  // Canonical data can change after validation but before a managed mirror is
+  // refreshed. Stage and hash-check the exact validated snapshot before
+  // retiring the last known-good mirror.
+  {
+    const { coven, cave } = await home("canonical-mirror-refresh-race");
+    const legacyPath = path.join(coven, "cave-config.json");
+    const canonicalPath = path.join(cave, "config.json");
+    await writeFile(legacyPath, '{"knownGood":true}', "utf8");
+    assert.deepEqual((await migrateCaveHome({ createSymlink: denySymlink })).errors, []);
+    await writeFile(canonicalPath, '{"newer":true}', "utf8");
+    const result = await migrateCaveHome({
+      createSymlink: denySymlink,
+      managedMirrorProbe: async () => {
+        await writeFile(canonicalPath, "not-json", "utf8");
+      },
+    });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(legacyPath), { knownGood: true });
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
+  }
+
   // If the canonical side is deleted after startup, an unchanged managed
   // mirror is still pending recovery rather than falsely reported as migrated.
   {
@@ -201,24 +244,41 @@ try {
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
   }
 
-  // State maps and queued work are unioned without dropping legacy-only keys.
+  // Append-only state maps and queued work are unioned without dropping
+  // legacy-only keys.
   {
     const { coven, cave } = await home("state");
     await mkdir(cave, { recursive: true });
     const legacy = baseState();
-    legacy.sessionTitles.legacy = "Legacy session";
     legacy.sessionFamiliar.legacy = "nova";
     legacy.travel.offlineQueue.push({ id: "legacy-work", kind: "job", summary: "Legacy", createdAt: "2026-01-01T00:00:00Z", status: "pending" });
     const canonical = baseState();
-    canonical.sessionTitles.current = "Current session";
     canonical.sessionFamiliar.current = "salem";
     canonical.travel.offlineQueue.push({ id: "current-work", kind: "job", summary: "Current", createdAt: "2026-02-01T00:00:00Z", status: "pending" });
     await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
     await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
     await migrateCaveHome({ createSymlink: denySymlink });
     const merged = await json(path.join(cave, "state.json"));
-    assert.deepEqual(Object.keys(merged.sessionTitles).sort(), ["current", "legacy"]);
+    assert.deepEqual(Object.keys(merged.sessionFamiliar).sort(), ["current", "legacy"]);
     assert.deepEqual(merged.travel.offlineQueue.map((item) => item.id).sort(), ["current-work", "legacy-work"]);
+  }
+
+  // Session titles, archive markers, and keep markers delete keys during
+  // ordinary user actions. A one-sided key cannot be distinguished from a
+  // later deletion, so preserve both snapshots for explicit review.
+  {
+    const { coven, cave } = await home("state-ambiguous-deleted-key");
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    legacy.sessionArchived.session = "2026-01-01T00:00:00Z";
+    const canonical = baseState();
+    canonical.sessionFamiliar.current = "salem";
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-state.json"));
+    assert.deepEqual((await json(path.join(cave, "state.json"))).sessionArchived, {});
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-state.json"), true);
   }
 
   // Queue statuses have no revision and can move from failed back to syncing

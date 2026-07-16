@@ -114,6 +114,8 @@ export type ReconciliationOptions = {
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
   /** Test-only hook before a legacy path is replaced by its compatibility bridge. */
   compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
+  /** Test-only hook after managed-mirror canonical validation. */
+  managedMirrorProbe?: (canonicalPath: string) => void | Promise<void>;
 };
 
 type PathInfo = {
@@ -351,6 +353,35 @@ async function copyPathAtomically(
   }
 }
 
+async function retireExpectedPath(
+  target: string,
+  expected: PathInfo,
+  probe?: () => void | Promise<void>,
+): Promise<string> {
+  if (!expected.hash || expected.kind === "missing" || expected.kind === "symlink") {
+    throw new Error("legacy path is unavailable for replacement");
+  }
+  await probe?.();
+  const retired = path.join(
+    path.dirname(target),
+    `.${path.basename(target)}.migration-retired-${process.pid}-${randomBytes(6).toString("hex")}`,
+  );
+  await rename(target, retired);
+  const retiredInfo = await pathInfo(retired);
+  if (retiredInfo.kind === expected.kind && retiredInfo.hash === expected.hash) return retired;
+
+  // The pathname may have changed after its final inspection but before the
+  // atomic rename. Put those bytes back when the old pathname is still vacant;
+  // otherwise keep the retired copy so neither concurrent writer is lost.
+  const targetMissing = (await pathInfo(target)).kind === "missing";
+  if (targetMissing) {
+    await rename(retired, target);
+  }
+  throw new Error(targetMissing
+    ? "legacy data changed during compatibility bridge installation"
+    : `legacy data changed during compatibility bridge installation; preserved at ${retired}`);
+}
+
 async function createRecoveryBundle(
   entry: CaveHomeReconciliationEntry,
   legacyPath: string,
@@ -508,6 +539,12 @@ const TIMESTAMP_STATE_MAPS = new Set<string>([
   "sessionOwned",
 ]);
 
+const DELETABLE_STATE_MAPS = new Set<string>([
+  "sessionTitles",
+  "sessionArchived",
+  "sessionKeep",
+]);
+
 function mergeRecordMap(
   name: string,
   leftValue: unknown,
@@ -518,7 +555,17 @@ function mergeRecordMap(
   if (!left || !right) return { ok: false, summary: `State map ${name} is malformed.` };
   const value = { ...left, ...right };
   for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
-    if (!(key in left) || !(key in right) || JSON.stringify(left[key]) === JSON.stringify(right[key])) continue;
+    if (!(key in left) || !(key in right)) {
+      // These maps delete keys for ordinary user actions (clear title,
+      // summon/unarchive, unmark keep). A key present in only one snapshot may
+      // therefore be either an addition or a later deletion; unioning it can
+      // silently resurrect state that the user already removed.
+      if (DELETABLE_STATE_MAPS.has(name)) {
+        return { ok: false, summary: `State map ${name} has ambiguous presence for ${key}.` };
+      }
+      continue;
+    }
+    if (JSON.stringify(left[key]) === JSON.stringify(right[key])) continue;
     if (!TIMESTAMP_STATE_MAPS.has(name)) return { ok: false, summary: `State map ${name} has an ambiguous value for ${key}.` };
     const leftTime = parseDate(left[key]);
     const rightTime = parseDate(right[key]);
@@ -703,7 +750,6 @@ async function ensureCompatibility(
 ): Promise<void> {
   const canonicalInfo = await pathInfo(canonicalPath);
   if (canonicalInfo.kind === "missing" || canonicalInfo.kind === "symlink") throw new Error("canonical path unavailable for compatibility bridge");
-  await options.compatibilityProbe?.(legacyPath);
   const existingLegacy = await pathInfo(legacyPath);
   if (
     existingLegacy.kind === "missing" || existingLegacy.kind === "symlink" ||
@@ -711,20 +757,54 @@ async function ensureCompatibility(
   ) {
     throw new Error("legacy data changed before compatibility bridge installation");
   }
-  await rm(legacyPath, { recursive: existingLegacy.kind === "dir", force: true });
+  const retired = await retireExpectedPath(
+    legacyPath,
+    existingLegacy,
+    () => options.compatibilityProbe?.(legacyPath),
+  );
   const createLink = options.createSymlink ?? symlink;
+  let installed = false;
   try {
-    const relative = path.relative(path.dirname(legacyPath), canonicalPath);
-    await createLink(relative, legacyPath, canonicalInfo.kind === "dir" ? "junction" : "file");
-    result.linked.push(entry.legacy);
-    journalEntry.compatibility = "symlink";
-    journalEntry.managedMirrorHash = undefined;
-  } catch {
-    await copyPath(canonicalPath, legacyPath, canonicalInfo.kind);
-    const mirror = await pathInfo(legacyPath);
-    if (mirror.hash !== canonicalInfo.hash) throw new Error("compatibility mirror verification failed");
-    journalEntry.compatibility = "mirror";
-    journalEntry.managedMirrorHash = mirror.hash;
+    try {
+      const relative = path.relative(path.dirname(legacyPath), canonicalPath);
+      await createLink(relative, legacyPath, canonicalInfo.kind === "dir" ? "junction" : "file");
+      const linkedCanonical = await pathInfo(canonicalPath);
+      await validateCanonical(entry, canonicalPath, linkedCanonical);
+      if (linkedCanonical.kind !== canonicalInfo.kind || linkedCanonical.hash !== canonicalInfo.hash) {
+        await rm(legacyPath, { recursive: true, force: true });
+        throw new Error("canonical data changed during compatibility link installation");
+      }
+      result.linked.push(entry.legacy);
+      journalEntry.compatibility = "symlink";
+      journalEntry.managedMirrorHash = undefined;
+      installed = true;
+    } catch {
+      await copyPath(canonicalPath, legacyPath, canonicalInfo.kind);
+      const mirror = await pathInfo(legacyPath);
+      if (mirror.hash !== canonicalInfo.hash) throw new Error("compatibility mirror verification failed");
+      journalEntry.compatibility = "mirror";
+      journalEntry.managedMirrorHash = mirror.hash;
+      installed = true;
+    }
+  } finally {
+    if (installed) {
+      await rm(retired, { recursive: true, force: true });
+    } else {
+      const failedLegacy = await pathInfo(legacyPath);
+      if (failedLegacy.kind === "missing") {
+        await rename(retired, legacyPath);
+      } else {
+        const currentCanonical = await pathInfo(canonicalPath);
+        if (
+          failedLegacy.kind === currentCanonical.kind &&
+          failedLegacy.hash && failedLegacy.hash === currentCanonical.hash &&
+          failedLegacy.hash !== existingLegacy.hash
+        ) {
+          await rm(legacyPath, { recursive: failedLegacy.kind === "dir", force: true });
+          await rename(retired, legacyPath);
+        }
+      }
+    }
   }
 }
 
@@ -752,12 +832,33 @@ async function syncManagedMirror(
     decidedAt: nowIso(),
   };
   if (legacyInfo.hash !== canonicalInfo.hash) {
-    await rm(legacyPath, { recursive: legacyInfo.kind === "dir", force: true });
-    await copyPath(canonicalPath, legacyPath, canonicalInfo.kind);
-    const mirror = await pathInfo(legacyPath);
-    if (mirror.hash !== canonicalInfo.hash) throw new Error("managed mirror refresh failed");
-    current.legacyHash = mirror.hash;
-    current.managedMirrorHash = mirror.hash;
+    await options.managedMirrorProbe?.(canonicalPath);
+    const staged = path.join(
+      path.dirname(legacyPath),
+      `.${path.basename(legacyPath)}.migration-refresh-${process.pid}-${randomBytes(6).toString("hex")}`,
+    );
+    await copyPathAtomically(canonicalPath, staged, canonicalInfo.kind, canonicalInfo.hash);
+    try {
+      await validateCanonical(entry, staged);
+      const retired = await retireExpectedPath(legacyPath, legacyInfo);
+      let installed = false;
+      try {
+        await copyPath(staged, legacyPath, canonicalInfo.kind);
+        const mirror = await pathInfo(legacyPath);
+        if (mirror.hash !== canonicalInfo.hash) throw new Error("managed mirror refresh failed");
+        current.legacyHash = mirror.hash;
+        current.managedMirrorHash = mirror.hash;
+        installed = true;
+      } finally {
+        if (installed) {
+          await rm(retired, { recursive: true, force: true });
+        } else if ((await pathInfo(legacyPath)).kind === "missing") {
+          await rename(retired, legacyPath);
+        }
+      }
+    } finally {
+      await rm(staged, { recursive: true, force: true });
+    }
   }
   current.compatibility = "mirror";
   current.summary = "Compatibility mirror is managed and unchanged by legacy tools.";
