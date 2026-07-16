@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -65,6 +65,23 @@ try {
     await mkdir(cave, { recursive: true });
     await writeFile(path.join(cave, "config.json"), "{}", "utf8");
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // Do not treat an arbitrary or broken legacy symlink as a completed
+  // compatibility bridge. Its target may contain the only remaining data.
+  {
+    const { coven, cave } = await home("foreign-legacy-symlink");
+    const foreign = path.join(coven, "foreign-config.json");
+    await mkdir(cave, { recursive: true });
+    await writeFile(foreign, '{"source":"foreign"}', "utf8");
+    await writeFile(path.join(cave, "config.json"), '{"source":"canonical"}', "utf8");
+    await symlink(path.basename(foreign), path.join(coven, "cave-config.json"), "file");
+    const status = await caveHomeMigrationStatus();
+    assert.equal(status.conflicts.includes("cave-config.json"), true);
+    assert.deepEqual(status.details.find((detail) => detail.legacy === "cave-config.json")?.actions, ["defer"]);
+    const result = await migrateCaveHome();
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(foreign), { source: "foreign" });
   }
 
   // Legacy-only data moves to canonical storage. On normal Windows, a verified
@@ -155,6 +172,28 @@ try {
     assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
     assert.deepEqual(await json(legacyPath), { source: "known-good" });
     assert.equal(await readFile(canonicalPath, "utf8"), "not-json");
+  }
+
+  // A symlink can be installed before canonical validation notices a late
+  // invalid write. Remove that attempted link and restore the original legacy
+  // pathname instead of hiding the recoverable bytes in a retired file.
+  {
+    const { coven, cave } = await home("canonical-post-link-write");
+    const legacyPath = path.join(coven, "cave-config.json");
+    const canonicalPath = path.join(cave, "config.json");
+    await mkdir(cave, { recursive: true });
+    await writeFile(legacyPath, '{"source":"known-good"}', "utf8");
+    await writeFile(canonicalPath, '{"source":"known-good"}', "utf8");
+    const result = await migrateCaveHome({
+      createSymlink: async (target, linkPath, type) => {
+        await symlink(target, linkPath, type);
+        await writeFile(canonicalPath, "not-json", "utf8");
+      },
+    });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(legacyPath), { source: "known-good" });
+    assert.equal(await readFile(canonicalPath, "utf8"), "not-json");
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
   }
 
   // The directory fallback must also fail closed if an old tool recreates the
@@ -412,6 +451,58 @@ try {
     await migrateCaveHome({ legacy: "cave-state.json", action: "recover-legacy", createSymlink: denySymlink });
     assert.equal((await json(path.join(cave, "state.json"))).sessionTitles.shared, "Legacy title");
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // Explicit recovery must not overwrite a canonical write that lands after
+  // the recovery bundle is verified.
+  {
+    const { coven, cave } = await home("recovery-canonical-race");
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    const canonical = baseState();
+    legacy.sessionTitles.shared = "Legacy title";
+    canonical.sessionTitles.shared = "Canonical title";
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({
+      legacy: "cave-state.json",
+      action: "recover-legacy",
+      createSymlink: denySymlink,
+      resolutionProbe: async (canonicalPath) => {
+        const late = baseState();
+        late.sessionTitles.shared = "Late canonical title";
+        await writeFile(canonicalPath, JSON.stringify(late));
+      },
+    });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-state.json"), true);
+    assert.equal((await json(path.join(cave, "state.json"))).sessionTitles.shared, "Late canonical title");
+    assert.equal((await json(path.join(coven, "cave-state.json"))).sessionTitles.shared, "Legacy title");
+  }
+
+  // Automatic JSON merge has the same late-writer boundary: preserve the new
+  // canonical snapshot and leave the pair reviewable rather than replacing it.
+  {
+    const { coven, cave } = await home("merge-canonical-race");
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [
+      { id: "legacy", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+    ] }));
+    await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [
+      { id: "canonical", createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" },
+    ] }));
+    const late = { version: 1, items: [
+      { id: "late", createdAt: "2026-01-03T00:00:00Z", updatedAt: "2026-01-03T00:00:00Z" },
+    ] };
+    const result = await migrateCaveHome({
+      legacy: "cave-inbox.json",
+      createSymlink: denySymlink,
+      resolutionProbe: async (canonicalPath) => {
+        await writeFile(canonicalPath, JSON.stringify(late));
+      },
+    });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-inbox.json"), true);
+    assert.deepEqual(await json(path.join(cave, "inbox.json")), late);
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-inbox.json"), true);
   }
 
   // Deferring a divergent pair retains a verified recovery source in the

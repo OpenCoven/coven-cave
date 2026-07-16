@@ -3,6 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import {
   copyFile,
   cp,
+  link,
   lstat,
   mkdir,
   readFile,
@@ -116,6 +117,8 @@ export type ReconciliationOptions = {
   compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
   /** Test-only hook after managed-mirror canonical validation. */
   managedMirrorProbe?: (canonicalPath: string) => void | Promise<void>;
+  /** Test-only hook before an explicit/automatic canonical replacement. */
+  resolutionProbe?: (canonicalPath: string) => void | Promise<void>;
 };
 
 type PathInfo = {
@@ -152,6 +155,15 @@ function canonicalPathFor(entry: CaveHomeReconciliationEntry): string {
 
 function samePath(left: string, right: string): boolean {
   return path.relative(path.resolve(left), path.resolve(right)) === "";
+}
+
+async function isCanonicalCompatibilityLink(legacyPath: string, canonicalPath: string): Promise<boolean> {
+  try {
+    const target = await readlink(legacyPath);
+    return samePath(path.resolve(path.dirname(legacyPath), target), canonicalPath);
+  } catch {
+    return false;
+  }
 }
 
 function nowIso(): string {
@@ -346,7 +358,12 @@ async function copyPathAtomically(
     await copyPath(source, temporary, kind);
     const copied = await pathInfo(temporary);
     if (!expectedHash || copied.hash !== expectedHash) throw new Error("migration copy verification failed");
-    await rename(temporary, destination);
+    // A hard link publishes a file snapshot atomically but, unlike rename(2),
+    // fails when a concurrent writer already created the destination. Directory
+    // rename already fails when the competing directory contains data.
+    if (copied.kind === "file") await link(temporary, destination);
+    else await rename(temporary, destination);
+    await rm(temporary, { recursive: copied.kind === "dir", force: true }).catch(() => {});
   } catch (error) {
     await rm(temporary, { recursive: true, force: true }).catch(() => {});
     throw error;
@@ -357,9 +374,10 @@ async function retireExpectedPath(
   target: string,
   expected: PathInfo,
   probe?: () => void | Promise<void>,
+  label = "legacy",
 ): Promise<string> {
   if (!expected.hash || expected.kind === "missing" || expected.kind === "symlink") {
-    throw new Error("legacy path is unavailable for replacement");
+    throw new Error(`${label} path is unavailable for replacement`);
   }
   await probe?.();
   const retired = path.join(
@@ -378,8 +396,8 @@ async function retireExpectedPath(
     await rename(retired, target);
   }
   throw new Error(targetMissing
-    ? "legacy data changed during compatibility bridge installation"
-    : `legacy data changed during compatibility bridge installation; preserved at ${retired}`);
+    ? `${label} data changed during replacement`
+    : `${label} data changed during replacement; preserved at ${retired}`);
 }
 
 async function createRecoveryBundle(
@@ -440,12 +458,42 @@ async function verifiedBundleRole(
   return { source, hash: file.hash, info: sourceInfo };
 }
 
-async function restoreBundleRole(directory: string, role: "legacy" | "canonical", destination: string): Promise<void> {
-  const { source, hash, info: sourceInfo } = await verifiedBundleRole(directory, role);
-  const destinationInfo = await pathInfo(destination);
-  await rm(destination, { recursive: destinationInfo.kind === "dir", force: true });
-  await copyPath(source, destination, sourceInfo.kind);
-  if ((await pathInfo(destination)).hash !== hash) throw new Error(`${role} recovery verification failed`);
+async function replaceExpectedPath(
+  source: string,
+  sourceInfo: PathInfo,
+  destination: string,
+  expectedDestination: PathInfo,
+  verificationError: string,
+): Promise<void> {
+  const retired = await retireExpectedPath(destination, expectedDestination, undefined, "canonical");
+  let installed = false;
+  try {
+    await copyPathAtomically(source, destination, sourceInfo.kind, sourceInfo.hash);
+    if (!sourceInfo.hash || (await pathInfo(destination)).hash !== sourceInfo.hash) throw new Error(verificationError);
+    installed = true;
+  } finally {
+    if (installed) {
+      await rm(retired, { recursive: true, force: true });
+    } else if ((await pathInfo(destination)).kind === "missing") {
+      await rename(retired, destination);
+    }
+  }
+}
+
+async function restoreBundleRole(
+  directory: string,
+  role: "legacy" | "canonical",
+  destination: string,
+  expectedDestination: PathInfo,
+): Promise<void> {
+  const { source, info: sourceInfo } = await verifiedBundleRole(directory, role);
+  await replaceExpectedPath(
+    source,
+    sourceInfo,
+    destination,
+    expectedDestination,
+    `${role} recovery verification failed`,
+  );
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -779,6 +827,18 @@ async function ensureCompatibility(
       journalEntry.managedMirrorHash = undefined;
       installed = true;
     } catch {
+      // A link may have been created successfully before validation detected a
+      // concurrent/invalid canonical change. Remove that attempted bridge
+      // before entering the ordinary-file fallback; otherwise copyFile/cp can
+      // follow the link and leave the retired legacy bytes hidden.
+      if ((await pathInfo(legacyPath)).kind === "symlink") {
+        await rm(legacyPath, { recursive: true, force: true });
+      }
+      const fallbackCanonical = await pathInfo(canonicalPath);
+      await validateCanonical(entry, canonicalPath, fallbackCanonical);
+      if (fallbackCanonical.kind !== canonicalInfo.kind || fallbackCanonical.hash !== canonicalInfo.hash) {
+        throw new Error("canonical data changed during compatibility bridge installation");
+      }
       await copyPath(canonicalPath, legacyPath, canonicalInfo.kind);
       const mirror = await pathInfo(legacyPath);
       if (mirror.hash !== canonicalInfo.hash) throw new Error("compatibility mirror verification failed");
@@ -959,9 +1019,21 @@ async function reconcileEntry(
     return;
   }
 
-  if (legacyInfo.kind === "missing" || legacyInfo.kind === "symlink") {
-    journalEntry.decision = legacyInfo.kind === "symlink" ? "linked" : "absent";
-    journalEntry.summary = legacyInfo.kind === "symlink" ? "Legacy path is a compatibility link." : "No legacy data remains.";
+  if (legacyInfo.kind === "missing") {
+    journalEntry.decision = "absent";
+    journalEntry.summary = "No legacy data remains.";
+    journal.entries[entry.legacy] = journalEntry;
+    result.skipped.push(entry.legacy);
+    return;
+  }
+
+  if (legacyInfo.kind === "symlink") {
+    if (!await isCanonicalCompatibilityLink(legacyPath, canonicalPath)) {
+      throw new Error("legacy symlink does not target canonical storage");
+    }
+    await validateCanonical(entry, canonicalPath, canonicalInfo);
+    journalEntry.decision = "linked";
+    journalEntry.summary = "Legacy path is a verified compatibility link.";
     journal.entries[entry.legacy] = journalEntry;
     result.skipped.push(entry.legacy);
     return;
@@ -1021,7 +1093,8 @@ async function reconcileEntry(
       // writer cannot change the selected bytes between backup and recovery.
       const legacyBackup = await verifiedBundleRole(backup.directory, "legacy");
       await validateCanonical(entry, legacyBackup.source, legacyBackup.info);
-      await restoreBundleRole(backup.directory, "legacy", canonicalPath);
+      await options.resolutionProbe?.(canonicalPath);
+      await restoreBundleRole(backup.directory, "legacy", canonicalPath, canonicalInfo);
       journalEntry.decision = "recovered-legacy";
       journalEntry.summary = "Recovered the legacy copy into canonical storage after verified backup.";
     } else {
@@ -1042,11 +1115,38 @@ async function reconcileEntry(
 
   let merged: MergeOutcome;
   if (entry.strategy === "directory") merged = (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result, options)).outcome;
-  else if (["inbox", "state", "preferences"].includes(entry.strategy)) merged = await mergeJson(entry.strategy, legacyPath, canonicalPath);
+  else if (["inbox", "state", "preferences"].includes(entry.strategy)) {
+    // Merge the exact snapshots recorded in the verified bundle. Reading the
+    // live paths here would let an uncoordinated store writer change either
+    // input after backup verification.
+    const legacyBackup = await verifiedBundleRole(backup.directory, "legacy");
+    const canonicalBackup = await verifiedBundleRole(backup.directory, "canonical");
+    merged = await mergeJson(entry.strategy, legacyBackup.source, canonicalBackup.source);
+  }
   else merged = { ok: false, summary: "This file has no lossless automatic merge and requires an explicit choice." };
 
   if (merged.ok && (options.action === "merge" || !options.action)) {
-    if (entry.strategy !== "directory") await writeJsonAtomic(canonicalPath, merged.value);
+    if (entry.strategy !== "directory") {
+      const staged = path.join(
+        path.dirname(canonicalPath),
+        `.${path.basename(canonicalPath)}.migration-merge-${process.pid}-${randomBytes(6).toString("hex")}`,
+      );
+      try {
+        await writeJsonAtomic(staged, merged.value);
+        const stagedInfo = await pathInfo(staged);
+        await validateCanonical(entry, staged, stagedInfo);
+        await options.resolutionProbe?.(canonicalPath);
+        await replaceExpectedPath(
+          staged,
+          stagedInfo,
+          canonicalPath,
+          canonicalInfo,
+          "merged canonical verification failed",
+        );
+      } finally {
+        await rm(staged, { recursive: true, force: true }).catch(() => {});
+      }
+    }
     fault(options, "after-merge-write");
     await validateCanonical(entry, canonicalPath);
     journalEntry.decision = "merged";
@@ -1105,10 +1205,14 @@ export async function caveHomeReconciliationStatus(
     const legacyPath = path.join(covenHome(), entry.legacy);
     const canonicalPath = canonicalPathFor(entry);
     const legacyInfo = await pathInfo(legacyPath);
-    if (legacyInfo.kind === "missing" || legacyInfo.kind === "symlink") continue;
+    if (legacyInfo.kind === "missing") continue;
     const canonicalInfo = await pathInfo(canonicalPath);
     const prior = journal.entries[entry.legacy];
     const canonicalValid = await validateCanonical(entry, canonicalPath, canonicalInfo).then(() => true, () => false);
+    if (
+      legacyInfo.kind === "symlink" && canonicalValid &&
+      await isCanonicalCompatibilityLink(legacyPath, canonicalPath)
+    ) continue;
     if (samePath(legacyPath, canonicalPath) && canonicalValid) continue;
     const managed = Boolean(
       canonicalValid &&
@@ -1116,7 +1220,7 @@ export async function caveHomeReconciliationStatus(
       legacyInfo.hash === prior.managedMirrorHash,
     );
     if (managed) continue;
-    const isPending = canonicalInfo.kind === "missing";
+    const isPending = canonicalInfo.kind === "missing" && legacyInfo.kind !== "symlink";
     (isPending ? pending : conflicts).push(entry.legacy);
     const backupPath = prior?.backupId ? path.join(migrationBackupRoot(), prior.backupId) : undefined;
     details.push({
@@ -1130,10 +1234,14 @@ export async function caveHomeReconciliationStatus(
       legacyMtimeMs: legacyInfo.mtimeMs,
       canonicalMtimeMs: canonicalInfo.mtimeMs,
       state: isPending ? "pending" : "unresolved",
-      summary: prior?.summary ?? (isPending ? "Legacy data is ready to move." : "Legacy and canonical data differ."),
+      summary: legacyInfo.kind === "symlink"
+        ? "Legacy symlink is not a valid compatibility bridge and requires review."
+        : prior?.summary ?? (isPending ? "Legacy data is ready to move." : "Legacy and canonical data differ."),
       differences: await describeDifferences(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo),
       backupPath,
-      actions: isPending
+      actions: legacyInfo.kind === "symlink"
+        ? ["defer"]
+        : isPending
         ? ["merge", "defer"]
         : entry.strategy === "manual"
           ? ["keep-canonical", "recover-legacy", "defer"]
