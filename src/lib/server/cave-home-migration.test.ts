@@ -520,7 +520,9 @@ try {
   }
 
   // Deferring a divergent pair retains a verified recovery source in the
-  // journal instead of making its bundle eligible for retention pruning.
+  // journal instead of making its bundle eligible for retention pruning. A
+  // later canonical failure must still fail the store gate rather than letting
+  // deferral turn missing data into a default-store overwrite.
   {
     const { coven, cave } = await home("deferred-backup");
     await mkdir(cave, { recursive: true });
@@ -536,6 +538,26 @@ try {
     const entry = journal.entries["cave-config.json"];
     assert.equal(entry.decision, "deferred");
     assert.equal(await kind(path.join(cave, "migration-backups", entry.backupId)), "dir");
+    await rm(path.join(cave, "config.json"));
+    const retry = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.equal(retry.errors.some((error) => error.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(path.join(coven, "cave-config.json")), { source: "legacy" });
+  }
+
+  // A legacy-only file is the sole usable store, so a crafted defer request
+  // cannot suppress migration and let readers continue against missing
+  // canonical storage.
+  {
+    const { coven, cave } = await home("defer-pending");
+    await writeFile(path.join(coven, "cave-config.json"), JSON.stringify({ source: "only-copy" }));
+    const result = await migrateCaveHome({
+      legacy: "cave-config.json",
+      action: "defer",
+      createSymlink: denySymlink,
+    });
+    assert.equal(result.errors.some((error) => error.legacy === "cave-config.json"), true);
+    assert.equal(await kind(path.join(cave, "config.json")), "missing");
+    assert.deepEqual(await json(path.join(coven, "cave-config.json")), { source: "only-copy" });
   }
 
   // Malformed JSON never overwrites either side and remains reviewable.

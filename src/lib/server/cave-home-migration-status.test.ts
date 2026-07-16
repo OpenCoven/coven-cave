@@ -25,7 +25,7 @@ try {
   status = await caveHomeMigrationStatus();
   assert.deepEqual(status.pending, ["cave-config.json"]);
   assert.equal(status.details[0].state, "pending");
-  assert.deepEqual(status.details[0].actions, ["merge", "defer"]);
+  assert.deepEqual(status.details[0].actions, ["merge"]);
   assert.match(status.details[0].differences[0], /only source/);
 
   await mkdir(cave, { recursive: true });

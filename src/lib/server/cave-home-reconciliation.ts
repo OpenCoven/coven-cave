@@ -1022,6 +1022,10 @@ async function reconcileEntry(
   const prior = journal.entries[entry.legacy];
 
   if (prior?.decision === "deferred" && !options.action) {
+    // Deferral may stop automatic reconciliation, but it must not bypass the
+    // reader/writer gate. A missing or malformed canonical store would make
+    // callers fall back to defaults and later overwrite recoverable data.
+    await validateCanonical(entry, canonicalPath, canonicalInfo);
     result.skipped.push(entry.legacy);
     return;
   }
@@ -1050,6 +1054,9 @@ async function reconcileEntry(
   };
 
   if (options.action === "defer") {
+    // Cave continues to read and write canonical storage while a decision is
+    // deferred, so only allow deferral when that authoritative copy is usable.
+    await validateCanonical(entry, canonicalPath, canonicalInfo);
     if (
       !samePath(legacyPath, canonicalPath) &&
       legacyInfo.kind !== "missing" && legacyInfo.kind !== "symlink" &&
@@ -1288,12 +1295,16 @@ export async function caveHomeReconciliationStatus(
       differences: await describeDifferences(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo),
       backupPath,
       actions: legacyInfo.kind === "symlink"
-        ? ["defer"]
+        ? canonicalValid ? ["defer"] : []
         : isPending
-        ? ["merge", "defer"]
+        ? ["merge"]
         : entry.strategy === "manual"
-          ? ["keep-canonical", "recover-legacy", "defer"]
-          : ["merge", "keep-canonical", "recover-legacy", "defer"],
+          ? canonicalValid
+            ? ["keep-canonical", "recover-legacy", "defer"]
+            : ["recover-legacy"]
+          : canonicalValid
+            ? ["merge", "keep-canonical", "recover-legacy", "defer"]
+            : ["merge", "recover-legacy"],
     });
   }
   return {
