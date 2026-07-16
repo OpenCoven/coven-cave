@@ -429,6 +429,21 @@ async function retireExpectedPath(
     : `${label} data changed during replacement; preserved at ${retired}`);
 }
 
+async function restoreInterruptedRetirement(target: string): Promise<void> {
+  if ((await pathInfo(target)).kind !== "missing") return;
+  const parent = path.dirname(target);
+  const prefix = `.${path.basename(target)}.migration-retired-`;
+  const retired = (await readdir(parent).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  })).filter((name) => name.startsWith(prefix));
+  if (retired.length === 0) return;
+  if (retired.length > 1) {
+    throw new Error(`multiple interrupted replacements require review for ${target}`);
+  }
+  await rename(path.join(parent, retired[0]), target);
+}
+
 async function createRecoveryBundle(
   entry: CaveHomeReconciliationEntry,
   legacyPath: string,
@@ -1017,6 +1032,12 @@ async function reconcileEntry(
   const legacyPath = path.join(covenHome(), entry.legacy);
   const canonicalPath = canonicalPathFor(entry);
   await mkdir(path.dirname(canonicalPath), { recursive: true });
+  // A hard process termination can bypass finally blocks after the atomic
+  // retirement rename. Restore the sole preserved copy before classifying the
+  // entry; otherwise a missing legacy path can be journaled as complete, or a
+  // missing canonical path can be rebuilt from an older compatibility copy.
+  await restoreInterruptedRetirement(legacyPath);
+  await restoreInterruptedRetirement(canonicalPath);
   let legacyInfo = await pathInfo(legacyPath);
   let canonicalInfo = await pathInfo(canonicalPath);
   const prior = journal.entries[entry.legacy];

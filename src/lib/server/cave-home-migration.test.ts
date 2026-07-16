@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -647,6 +647,26 @@ try {
     assert.deepEqual(await json(path.join(cave, "config.json")), { durable: true });
     assert.deepEqual((await migrateCaveHome({ createSymlink: denySymlink })).errors, []);
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // A real process termination does not run the replacement finally blocks.
+  // Recover an atomically retired path before migration classifies either side
+  // as missing, then resume the ordinary reconciliation flow.
+  {
+    const { coven, cave } = await home("crash-after-retirement");
+    const legacyPath = path.join(coven, "cave-config.json");
+    const canonicalPath = path.join(cave, "config.json");
+    await mkdir(cave, { recursive: true });
+    await writeFile(legacyPath, '{"source":"legacy"}');
+    await writeFile(canonicalPath, '{"source":"canonical"}');
+    await rename(legacyPath, path.join(coven, ".cave-config.json.migration-retired-123-deadbeef"));
+    await rename(canonicalPath, path.join(cave, ".config.json.migration-retired-123-deadbeef"));
+
+    const resumed = await migrateCaveHome({ legacy: "cave-config.json", createSymlink: denySymlink });
+    assert.deepEqual(resumed.errors, []);
+    assert.deepEqual(await json(legacyPath), { source: "legacy" });
+    assert.deepEqual(await json(canonicalPath), { source: "canonical" });
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
   }
 
   // Completed backup bundles are bounded while the active recovery bundle is
