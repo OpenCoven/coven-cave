@@ -90,12 +90,16 @@ for (const component of [
 for (const gate of [
   /\{paletteOpen && \(\s*<CommandPalette/,
   /\{shortcutsOpen && <ShortcutsSheet/,
-  /\{onboardingOpen && <OnboardingOverlay/,
   /\{reminderModalOpen && \(\s*<NewReminderModal/,
   /\{mobileHandoffOpen && \(\s*<MobileHandoffModal/,
 ]) {
   assert.match(workspace, gate, "lazy modal chunks load only after their open intent");
 }
+assert.match(
+  workspace,
+  /\{\(onboardingOpen \|\| onboardingMounted\) && \(\s*<OnboardingOverlay[\s\S]*open=\{onboardingOpen\}/,
+  "onboarding loads on first open but remains mounted so job polling and one-shot refs survive close/reopen",
+);
 
 // The right companion rail was removed in favour of drag-to-split, so the
 // workspace no longer computes rail visibility (showCompanionRail), a rail Chat

@@ -445,6 +445,10 @@ export function Workspace() {
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  // Lazy-load onboarding on first use, then keep its host mounted while closed.
+  // Its refs and job polling intentionally survive close/reopen cycles so an
+  // in-flight install is not forgotten and daemon auto-start stays one-shot.
+  const [onboardingMounted, setOnboardingMounted] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
@@ -2780,7 +2784,15 @@ export function Workspace() {
 
       {shortcutsOpen && <ShortcutsSheet open onClose={() => setShortcutsOpen(false)} />}
 
-      {onboardingOpen && <OnboardingOverlay open onDismiss={closeOnboarding} />}
+      {(onboardingOpen || onboardingMounted) && (
+        <OnboardingOverlay
+          open={onboardingOpen}
+          onDismiss={() => {
+            setOnboardingMounted(true);
+            closeOnboarding();
+          }}
+        />
+      )}
 
       {reminderModalOpen && (
         <NewReminderModal
