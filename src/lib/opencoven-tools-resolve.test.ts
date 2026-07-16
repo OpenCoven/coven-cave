@@ -320,23 +320,28 @@ test("isNodeModulesPackagePath demands a node_modules/<package> tail", () => {
 });
 
 test("npmGlobalPrefixFromNpmPath routes Windows npm.cmd through node npm-cli.js", async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "coven-npm-prefix-"));
-  const npmCli = path.join(dir, "node_modules", "npm", "bin", "npm-cli.js");
-  const npmCmd = path.join(dir, "npm.cmd");
-  await mkdir(path.dirname(npmCli), { recursive: true });
-  await writeFile(npmCli, "process.stdout.write('C:\\\\Users\\\\dev\\\\npm-global\\n');\n");
-  await writeFile(npmCmd, "@ECHO off\r\nREM npm shim\r\n");
+  const npmCmd = String.raw`C:\Program Files\nodejs\npm.cmd`;
+  const npmCli = String.raw`C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js`;
 
   // The .cmd shim itself is never exec'd (Node >= 21.7 rejects it without a
-  // shell); the launch remap runs npm-cli.js with Cave's own Node, so this
-  // works — and is asserted — even from a POSIX test host.
+  // shell); the launch remap runs npm-cli.js with Cave's own Node. Inject the
+  // process boundary so a POSIX CI host still proves literal Windows path
+  // semantics, including the space in Program Files.
   const prefix = await npmGlobalPrefixFromNpmPath(
     npmCmd,
     { ...process.env },
     "win32",
+    {
+      fileExists: (candidate) => candidate === npmCli,
+      execFile: async (command, args, options) => {
+        assert.equal(command, process.execPath);
+        assert.deepEqual(args, [npmCli, "prefix", "-g"]);
+        assert.equal(options.timeout, 5000);
+        return { stdout: "C:\\Users\\dev\\npm-global\n", stderr: "" };
+      },
+    },
   );
   assert.equal(prefix, "C:\\Users\\dev\\npm-global");
-  await rm(dir, { recursive: true, force: true });
 });
 
 test("removeLauncherFile deletes files but refuses directories", async () => {

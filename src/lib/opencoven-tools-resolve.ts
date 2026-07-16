@@ -20,6 +20,17 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+type NpmPrefixExecFile = (
+  command: string,
+  args: readonly string[],
+  options: { env: NodeJS.ProcessEnv; timeout: number },
+) => Promise<{ stdout: string; stderr: string }>;
+
+const defaultNpmPrefixExecFile: NpmPrefixExecFile = async (command, args, options) => {
+  const { stdout, stderr } = await execFileAsync(command, args, options);
+  return { stdout: String(stdout), stderr: String(stderr) };
+};
+
 /**
  * Stale-launcher remediation for the OpenCoven tool Update/Repair flow.
  *
@@ -96,11 +107,19 @@ export async function npmGlobalPrefixFromNpmPath(
   npmPath: string,
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
+  dependencies: {
+    fileExists?: (file: string) => boolean;
+    execFile?: NpmPrefixExecFile;
+  } = {},
 ): Promise<string | null> {
-  const launch = npmViewLaunchCommandForPath(npmPath, platform);
+  const launch = npmViewLaunchCommandForPath(
+    npmPath,
+    platform,
+    dependencies.fileExists,
+  );
   if (!launch) return null;
   try {
-    const { stdout } = await execFileAsync(
+    const { stdout } = await (dependencies.execFile ?? defaultNpmPrefixExecFile)(
       launch.command,
       [...launch.fixedArgs, "prefix", "-g"],
       { env, timeout: 5000 },

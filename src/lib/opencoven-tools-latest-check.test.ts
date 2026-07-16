@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import { test } from "node:test";
 import {
   OPEN_COVEN_TOOLS,
   checkNpmLatestVersion,
   composeOpenCovenToolStatus,
+  npmLaunchCommandForPath,
   npmViewLaunchCommandForPath,
   openCovenToolReadinessStatuses,
 } from "./opencoven-tools-status.ts";
@@ -49,28 +46,29 @@ test("local readiness completes without waiting for a blocked registry probe", a
   assert.equal(registryCalls, 1);
 });
 
-async function windowsNpmShim() {
-  const dir = await mkdtemp(path.join(os.tmpdir(), "coven-npm-view-"));
-  const npmCli = path.join(dir, "node_modules", "npm", "bin", "npm-cli.js");
-  const npmCmd = path.join(dir, "npm.cmd");
-  await mkdir(path.dirname(npmCli), { recursive: true });
-  await writeFile(npmCli, "process.stdout.write('\\\"0.0.54\\\"');\n");
-  await writeFile(npmCmd, "@ECHO off\r\nREM npm shim\r\n");
-  return { npmCli, npmCmd };
+function windowsNpmShim() {
+  const npmCmd = String.raw`C:\Program Files\nodejs\npm.cmd`;
+  const npmCli = String.raw`C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js`;
+  const fileExists = (candidate: string) => candidate === npmCli;
+  return { npmCli, npmCmd, fileExists };
 }
 
 test("Windows npm.cmd latest checks launch npm-cli.js through Node with fixed argv", async () => {
-  const { npmCli, npmCmd } = await windowsNpmShim();
-  assert.deepEqual(npmViewLaunchCommandForPath(npmCmd, "win32"), {
+  const { npmCli, npmCmd, fileExists } = windowsNpmShim();
+  assert.deepEqual(npmLaunchCommandForPath(npmCmd, "win32", fileExists), {
     command: process.execPath,
     fixedArgs: [npmCli],
   });
+  assert.deepEqual(npmViewLaunchCommandForPath(npmCmd, "win32", fileExists), {
+    command: process.execPath,
+    fixedArgs: [npmCli],
+  }, "the compatibility alias uses the same spaced-path-safe mapping");
 
   const result = await checkNpmLatestVersion(OPEN_COVEN_TOOLS[0], {
     platform: "win32",
     now: () => checkedAt,
     resolveNpmPath: async () => npmCmd,
-    fileExists: existsSync,
+    fileExists,
     env: () => ({ ...process.env, PATH: "C:\\fake" }),
     execFile: async (command, args, options) => {
       assert.equal(command, process.execPath, "Windows never passes npm.cmd to execFile");

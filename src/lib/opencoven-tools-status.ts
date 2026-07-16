@@ -322,8 +322,9 @@ export function npmLaunchCommandForPath(
   if (platform !== "win32" || !/\.(cmd|bat)$/i.test(npmPath)) {
     return { command: npmPath, fixedArgs: [] };
   }
-  const npmCli = path.join(
-    path.dirname(npmPath),
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const npmCli = pathApi.join(
+    pathApi.dirname(npmPath),
     "node_modules",
     "npm",
     "bin",
