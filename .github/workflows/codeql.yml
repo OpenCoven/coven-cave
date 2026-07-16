@@ -1,0 +1,85 @@
+name: CodeQL Advanced
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 2"
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+            runner: ubuntu-latest
+            timeout: 15
+          - language: javascript-typescript
+            build-mode: none
+            runner: ubuntu-latest
+            timeout: 20
+          - language: python
+            build-mode: none
+            runner: ubuntu-latest
+            timeout: 15
+          - language: rust
+            build-mode: none
+            runner: ubuntu-latest
+            timeout: 20
+          - language: swift
+            build-mode: manual
+            runner: macos-15
+            timeout: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Install XcodeGen
+        if: matrix.language == 'swift'
+        run: brew install xcodegen
+
+      - name: Generate and build the iOS project
+        if: matrix.language == 'swift'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+        run: |
+          set -euo pipefail
+          xcodegen generate --spec apps/ios/CovenCave/project.yml
+          xcodebuild \
+            -project apps/ios/CovenCave/CovenCave.xcodeproj \
+            -scheme CovenCave \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/CovenCaveDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 \
+            build
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
