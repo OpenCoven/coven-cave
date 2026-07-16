@@ -178,6 +178,12 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
 const CHAT_HASH_PREFIX = "#chat-";
 
+// GitHub task context is low-churn. At five minutes, uninterrupted idle
+// foreground use makes at most 12 Cave requests/hour instead of piggybacking on
+// the four-second session poll (~900/hour). usePausablePoll also pauses this in
+// hidden windows and while the user is composing input.
+const GITHUB_TASKS_POLL_MS = 5 * 60_000;
+
 function readChatHash(): string | null {
   if (typeof window === "undefined") return null;
   const hash = window.location.hash;
@@ -295,6 +301,9 @@ export function Workspace() {
   // change, so a stale in-flight load must not paint the previous familiar's
   // sessions.
   const loadSessionsReqRef = useRef(0);
+  const loadGitHubTasksReqRef = useRef(0);
+  const baseSessionsRef = useRef<SessionRow[]>([]);
+  const githubTasksRef = useRef<unknown>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
   const [responseNeeded, setResponseNeeded] = useState<Set<string>>(new Set());
@@ -863,6 +872,31 @@ export function Workspace() {
     selectFamiliarScope(id);
   }, [selectFamiliarScope]);
 
+  const loadGitHubTasks = useCallback(async (force = false) => {
+    const reqId = ++loadGitHubTasksReqRef.current;
+    try {
+      const res = await fetch("/api/github/tasks", {
+        method: force ? "POST" : "GET",
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json || json.ok === false || reqId !== loadGitHubTasksReqRef.current) return;
+
+      githubTasksRef.current = json;
+      setGithubAssignedCount(Array.isArray(json.tasks) ? json.tasks.length : 0);
+      setSessions((currentSessions) => {
+        const baseSessions = baseSessionsRef.current.length > 0
+          ? baseSessionsRef.current
+          : currentSessions;
+        const enriched = attachGitHubTaskContext(baseSessions, json);
+        return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
+      });
+    } catch {
+      // Keep the last-known-good count and session context. The next scheduled
+      // or explicit refresh will retry without blanking GitHub metadata.
+    }
+  }, []);
+
   const loadSessions = useCallback(() => {
     // Sequence guard. loadSessions runs from mount, the 4s poll, the
     // familiars-refresh event, and — because `activeId` is a dep — re-fires
@@ -878,9 +912,6 @@ export function Workspace() {
 
     return (async () => {
       let baseSessionsApplied = false;
-      const githubTasksPromise = fetch("/api/github/tasks", { cache: "no-store" })
-        .then((res) => (res.ok ? res.json() : null))
-        .catch(() => null);
       try {
         // Scope the session list to the active familiar's granted projects so
         // every surface fed by `sessions` enforces the familiar→projects map.
@@ -899,24 +930,16 @@ export function Workspace() {
 
         setSessionsError(false);
         const baseSessions = (json.sessions ?? []) as SessionRow[];
+        baseSessionsRef.current = baseSessions;
+        const visibleSessions = githubTasksRef.current
+          ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
+          : baseSessions;
         // The 4s poll rebuilds a fresh array each tick; keep the previous
         // reference when nothing changed so an unchanged list doesn't re-render
         // every sessions consumer (chat list, rails, badges) for nothing.
-        setSessions((prev) => (sameSessionList(prev, baseSessions) ? prev : baseSessions));
+        setSessions((prev) => (sameSessionList(prev, visibleSessions) ? prev : visibleSessions));
         setSessionsLoaded(true);
         baseSessionsApplied = true;
-
-        const githubTasksJson = await githubTasksPromise;
-        if (githubTasksJson && isCurrent()) {
-          setGithubAssignedCount(Array.isArray(githubTasksJson.tasks) ? githubTasksJson.tasks.length : 0);
-          setSessions((currentSessions) => {
-            const enriched = attachGitHubTaskContext(
-              currentSessions.length > 0 ? currentSessions : baseSessions,
-              githubTasksJson,
-            );
-            return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
-          });
-        }
       } catch {
         if (isCurrent()) setSessionsError(true); // transient — poll retries
       } finally {
@@ -928,7 +951,8 @@ export function Workspace() {
   useEffect(() => {
     loadFamiliars();
     loadSessions();
-  }, [loadFamiliars, loadSessions]);
+    void loadGitHubTasks();
+  }, [loadFamiliars, loadSessions, loadGitHubTasks]);
   // Composers rebind a familiar's runtime through /api/config (the runtime
   // chip). Surfaces reading the roster's familiar.harness (e.g. the chat
   // empty-state identity line) shouldn't wait for the next natural reload —
@@ -939,6 +963,9 @@ export function Workspace() {
     return () => window.removeEventListener("cave:familiars-refresh", onFamiliarsRefresh);
   }, [loadFamiliars]);
   usePausablePoll(() => void loadSessions(), 4000, {
+    pauseWhileInputActive: true,
+  });
+  usePausablePoll(() => void loadGitHubTasks(), GITHUB_TASKS_POLL_MS, {
     pauseWhileInputActive: true,
   });
 
@@ -2561,6 +2588,7 @@ export function Workspace() {
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         initialTarget={githubTarget}
+        onTasksRefresh={() => void loadGitHubTasks(true)}
       />
     ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
       // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
