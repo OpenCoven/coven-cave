@@ -9,47 +9,29 @@ breaking config changes; patch releases stay additive.
 
 ## [0.1.2] - 2026-07-16
 
-> _One-line teaser — edit before merge._
+> 🛡️ **A safer, leaner Cave.** Windows home migration becomes lossless and contention-safe, the familiar glyph catalogue leaves the startup bundle, encrypted backup/restore arrives, and daily chat, dashboard, updater, and multi-host workflows get a broad reliability pass.
 
-Patch release on top of v0.1.1.
+### Added
+- **Encrypted backup and restore** — export Cave state into a manually controlled encrypted archive and restore it through the new persistence flow (cave-166o).
+- **Voice model registry** — discover speech engines and models, download them with checksum verification, and surface honest engine readiness (cave-ti1j).
+- **Threads Phase 4 surfaces** — read plumbing, weave rail, thread pane, strand inspection, and proposal approval complete the Phase 4 Cave experience, with follow-up validation hardened fail-closed (#3223, #3248, #3254).
+- **Multi-host workspace routing** — Omnigent hosts can map their own workspaces for multi-machine runs (#3247).
+- **Inbox series and project context** — repeating schedules group into series rows with a past-due filter, workspace threads show PR-status badges, and new familiars record the Cave runtime host (#3244, #3249, #3282).
+- **Theme: Snow** — a frost-blue palette based on tweakcn's Frosty joins desktop and iOS, with contrast-tuned light and dark tokens (#3242).
+- **Navigation polish** — sticky familiar-tab context and keyboard navigation for research missions reduce context loss in dense workspaces (cave-d9d6, cave-pwev).
 
-### Changes
-- Fix Cave home migration lock timeouts (#3289)
-- Lazy-load the familiar glyph catalog (#3288)
-- Fix lossless Cave home migration on Windows (#3270)
-- fix(server): replace deprecated request URL parsing (#3279)
-- Fix CodeQL familiar contract path alert (#3286)
-- Name the Cave runtime host when summoning a familiar (#3282)
-- Fix standalone repository-wide tracing (#3284)
-- fix: cache GitHub task polling (#3272)
-- fix: stop optional API failure storms (#3280)
-- fix: retain safe updater lifecycle traces (#3274)
-- Fix duplicate session polling in Recent Activity (#3271)
-- fix: split onboarding readiness from update checks (#3259)
-- fix: harden Coven CLI update tracing (cave-dp8) (#3260)
-- feat(voice): speech-model registry + download/checksum + engines readiness (cave-ti1j)
-- feat(persistence): manual encrypted export/restore (cave-166o)
-- fix(spawn): scrub sidecar-internal env from every child process (cave-o01k) (#3255)
-- fix(threads): harden Phase 4 review follow-ups — adapter meta validation, fail-closed pending listing, inclusive file-count boundary (#3254)
-- fix(dashboard): harden profile card refresh (cave-wczm) (#3252)
-- feat(chat): sticky familiar-tab hero (cave-d9d6)
-- feat(research-desk): keyboard nav on mission list (cave-pwev)
-- feat(sidebar): PR-status badge on workspace sidebar thread rows (#3249)
-- beads: Phase 4 freeze approved (threads-986.17.9) — all gates cleared, RFC-0001 issues #3 #4 filed (#3248)
-- feat(omnigent): per-host workspace map for multi-machine runs (#3247)
-- fix(dashboard): Needs-you counts stay truthful past the display cap (cave-ckxk) (#3245)
-- fix(dashboard): growth/analytics sub-pages drop stale load settles + Growth freshness stamp (cave-5p5m) (#3246)
-- feat(threads): Phase 4 Cave surfaces — read plumbing, weave rail, thread pane, strand inspection, proposal approval (threads-986.17) (#3223)
-- feat(inbox): group repeating-schedule notifications into series rows + past-due filter (cave-w7z0) (#3244)
-- feat(theme): add Snow — frost-blue palette ported from tweakcn Frosty (#3242)
-- fix(dashboard): needs-attention reads live from the poll + honest caught-up state (cave-456r) (#3241)
-- refactor(dashboard): extract per-familiar contract fetch into useFamiliarContracts hook (cave-hwux) (#3240)
-- fix(projects): reject unsafe project roots (#3238)
-- fix(flows): preserve hub routing for copilot sessions (#3239)
+### Changed
+- **Faster startup** — the full familiar glyph catalogue is now lazy-loaded and guarded by a production bundle budget (#3288).
+- **Quieter polling** — GitHub task results are cached, duplicate Recent Activity session polling is removed, and optional API failures stop creating request storms (#3272, #3271, #3280).
+- **Clearer onboarding and updates** — readiness is separated from update checks, Coven CLI update tracing is hardened, and safe updater lifecycle traces remain available for diagnostics (#3259, #3260, #3274).
 
+### Fixed
+- **Lossless Windows home migration** — legacy Cave homes reconcile without overwriting divergent user data, and concurrent or orphaned migration locks recover without fixed timeout failures (#3270, #3289).
+- **Dashboard truthfulness** — Needs-you counts remain accurate beyond the display cap, stale profile/growth requests cannot overwrite fresher state, and caught-up status reads from live polling (#3240, #3241, #3245, #3246, #3252).
+- **Packaging and routing reliability** — standalone tracing stays scoped to release inputs, deprecated request URL parsing is removed, and copilot sessions preserve hub routing (#3284, #3279, #3239).
 
-### Features
-- **Theme: Snow** — a frost-blue palette ported from tweakcn's "Frosty" (powder-sky accents on midnight-navy ice in dark mode; near-white slate surfaces in light), joining the preset roster across desktop and iOS with soft 1rem-radius chrome. Light-mode primary/presence pairs, the destructive red, and the dark accent text are retuned to hold WCAG 2.1 AA per the theme contrast audit.
+### Security
+- Unsafe project roots are rejected, sidecar-only environment variables are scrubbed from child processes, thread adapter metadata is validated, pending listings fail closed, and the familiar contract path alert is resolved (#3238, #3255, #3254, #3286).
 
 ## [0.1.1] - 2026-07-15
 
