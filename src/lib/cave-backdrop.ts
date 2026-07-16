@@ -393,7 +393,7 @@ export async function readFamiliarBackdropImage(familiarId: string): Promise<Blo
   const missing = familiarBackdropMissingUntil.get(familiarId);
   if (missing?.revision === revision && missing.expiresAt > Date.now()) return null;
   const pending = familiarBackdropReads.get(familiarId);
-  if (pending?.revision === revision) return pending.read;
+  if (pending?.revision === revision) return await pending.read;
 
   const read = (async () => {
     const response = await fetch(familiarBackdropUrl(familiarId), { cache: "no-store" });

@@ -77,9 +77,9 @@ export function createMobileModeReconciler(request: MobileModeRequest) {
 
 const reconcileSharedMobileMode = createMobileModeReconciler((input, init) => fetch(input, init));
 
-export function reconcileMobileModeRequest(
+export async function reconcileMobileModeRequest(
   enabled: boolean,
   options?: { force?: boolean },
 ): Promise<MobileModeResponse> {
-  return reconcileSharedMobileMode(enabled, options);
+  return await reconcileSharedMobileMode(enabled, options);
 }
