@@ -102,7 +102,7 @@ async function ensureDir() {
 }
 
 export async function loadInbox(): Promise<InboxFile> {
-  await ensureCaveHomeReconciled();
+  await ensureCaveHomeReconciled("cave-inbox.json");
   try {
     const raw = await readFile(INBOX_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<InboxFile>;
@@ -116,7 +116,7 @@ export async function loadInbox(): Promise<InboxFile> {
 }
 
 export async function saveInbox(file: InboxFile): Promise<void> {
-  await ensureCaveHomeReconciled();
+  await ensureCaveHomeReconciled("cave-inbox.json");
   await ensureDir();
   await writeJsonAtomic(INBOX_PATH, file);
 }

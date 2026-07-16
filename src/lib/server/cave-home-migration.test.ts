@@ -774,11 +774,29 @@ try {
   // after the recoverable input is repaired instead of caching the failure.
   {
     const { coven, cave } = await home("reader-gate-retry");
+    globalThis.__caveHomeMigration = undefined;
     await writeFile(path.join(coven, "cave-inbox.json"), "not-json");
-    await assert.rejects(ensureCaveHomeReconciled(), /cave-inbox\.json/);
+    await assert.rejects(ensureCaveHomeReconciled("cave-inbox.json"), /cave-inbox\.json/);
     await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [] }));
-    await ensureCaveHomeReconciled();
+    await ensureCaveHomeReconciled("cave-inbox.json");
     assert.deepEqual(await json(path.join(cave, "inbox.json")), { version: 1, items: [] });
+  }
+
+  // An unrelated legacy-path problem must not take every gated Cave store
+  // offline or force a full reconciliation pass on every state read.
+  {
+    const { coven, cave } = await home("reader-gate-scoped");
+    globalThis.__caveHomeMigration = undefined;
+    await mkdir(cave, { recursive: true });
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(baseState()));
+    await writeFile(path.join(cave, "backdrop.jpg"), "canonical");
+    await writeFile(path.join(coven, "foreign-backdrop.jpg"), "foreign");
+    await symlink("foreign-backdrop.jpg", path.join(coven, "cave-backdrop.jpg"), "file");
+
+    await ensureCaveHomeReconciled("cave-state.json");
+    const cached = await globalThis.__caveHomeMigration;
+    assert.deepEqual(cached?.errors.map((entry) => entry.legacy), ["cave-backdrop.jpg"]);
+    await ensureCaveHomeReconciled("cave-state.json");
   }
 
   console.log("cave-home-migration.test.ts: ok");

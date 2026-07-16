@@ -237,7 +237,7 @@ async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
 /** Load the canonical snapshot, seeding it once from cave-theme.json when possible. */
 export function loadPreferences(): Promise<CavePreferences> {
   return withPreferencesLock(async () => {
-    await ensureCaveHomeReconciled();
+    await ensureCaveHomeReconciled("cave-preferences.json");
     return (await loadPreferencesUnlocked({ seedLegacy: true })).preferences;
   });
 }
@@ -260,7 +260,7 @@ export function updatePreferences(
   mutator: (current: CavePreferences) => CavePreferencesPatch | null | Promise<CavePreferencesPatch | null>,
 ): Promise<CavePreferences> {
   return withPreferencesLock(async () => {
-    await ensureCaveHomeReconciled();
+    await ensureCaveHomeReconciled("cave-preferences.json");
     const release = await acquirePreferencesFileLock();
     try {
       const disk = await loadPreferencesUnlocked({ seedLegacy: true });

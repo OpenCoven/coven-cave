@@ -60,16 +60,9 @@ export function migrateCaveHomeOnce(): Promise<CaveHomeMigrationResult> {
   if (!globalThis.__caveHomeMigration) {
     const run = migrateCaveHome();
     globalThis.__caveHomeMigration = run;
-    void run.then(
-      (result) => {
-        if (result.errors.length > 0 && globalThis.__caveHomeMigration === run) {
-          globalThis.__caveHomeMigration = undefined;
-        }
-      },
-      () => {
-        if (globalThis.__caveHomeMigration === run) globalThis.__caveHomeMigration = undefined;
-      },
-    );
+    void run.catch(() => {
+      if (globalThis.__caveHomeMigration === run) globalThis.__caveHomeMigration = undefined;
+    });
   }
   return globalThis.__caveHomeMigration;
 }
@@ -80,9 +73,22 @@ export function migrateCaveHomeOnce(): Promise<CaveHomeMigrationResult> {
  * failure must stop a store from reading defaults and overwriting recoverable
  * legacy data.
  */
-export async function ensureCaveHomeReconciled(): Promise<void> {
+export async function ensureCaveHomeReconciled(legacy?: string): Promise<void> {
+  const alreadyStarted = Boolean(globalThis.__caveHomeMigration);
   const result = await migrateCaveHomeOnce();
-  if (result.errors.length > 0) {
-    throw new Error(`Cave home reconciliation failed for ${result.errors.map((entry) => entry.legacy).join(", ")}`);
+  let failures = legacy ? result.errors.filter((entry) => entry.legacy === legacy) : result.errors;
+  if (failures.length > 0 && alreadyStarted) {
+    const retry = await migrateCaveHome(legacy ? { legacy } : {});
+    failures = legacy ? retry.errors.filter((entry) => entry.legacy === legacy) : retry.errors;
+    if (failures.length === 0) {
+      if (legacy) {
+        result.errors = result.errors.filter((entry) => entry.legacy !== legacy);
+      } else {
+        globalThis.__caveHomeMigration = Promise.resolve(retry);
+      }
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Cave home reconciliation failed for ${failures.map((entry) => entry.legacy).join(", ")}`);
   }
 }
