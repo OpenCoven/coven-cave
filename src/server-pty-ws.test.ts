@@ -8,6 +8,31 @@ const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.me
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
 assert.match(src, /app\.getUpgradeHandler\(\)/, "server forwards non-PTY upgrades to Next.js");
+assert.doesNotMatch(
+  src,
+  /import\s+\{\s*parse\s*\}\s+from\s+"node:url"/,
+  "server does not import the deprecated node:url parser",
+);
+assert.doesNotMatch(src, /\bparse\(req\.url/, "server does not call deprecated url.parse for requests");
+assert.match(src, /void handle\(req, res\);/, "ordinary HTTP parsing stays owned by Next.js");
+assert.match(src, /const UPGRADE_URL_BASE = "http:\/\/localhost"/, "upgrade parsing uses a fixed internal URL base");
+assert.match(
+  src,
+  /new URL\(`\/\.\$\{rootedPath\}\$\{suffix\}`, UPGRADE_URL_BASE\)/,
+  "origin-form targets keep authority-looking prefixes in the path",
+);
+assert.match(src, /const query: UpgradeQuery = Object\.create\(null\)/, "upgrade query records have no prototype");
+assert.match(src, /MAX_UPGRADE_QUERY_PAIRS = 1_000/, "upgrade query parsing retains the legacy 1,000-pair cap");
+assert.match(
+  src,
+  /else if \(Array\.isArray\(current\)\) current\.push\(value\);\s*else query\[key\] = \[current, value\];/,
+  "duplicate query values retain insertion order",
+);
+assert.match(
+  src,
+  /try \{\s*\(\{ pathname, query \} = parseUpgradeTarget\(req\.url \?\? "\/"\)\);\s*\} catch \{\s*socket\.write\("HTTP\/1\.1 400 Bad Request\\r\\n\\r\\n"\);\s*socket\.destroy\(\);\s*return;/,
+  "malformed upgrade targets fail with HTTP 400 and a closed socket",
+);
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
 assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");

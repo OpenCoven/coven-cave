@@ -2,7 +2,6 @@ import { createHmac } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
-import { parse } from "node:url";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -212,6 +211,54 @@ function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false
 
 function firstQueryValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+type UpgradeQuery = Record<string, string | string[] | undefined>;
+
+const UPGRADE_URL_BASE = "http://localhost";
+const MAX_UPGRADE_QUERY_PAIRS = 1_000;
+const ABSOLUTE_FORM_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+
+function parseUpgradeTarget(rawUrl: string): { pathname: string; query: UpgradeQuery } {
+  const pathEnd = rawUrl.search(/[?#]/);
+  const rawPath = pathEnd === -1 ? rawUrl : rawUrl.slice(0, pathEnd);
+  const suffix = pathEnd === -1 ? "" : rawUrl.slice(pathEnd);
+  const normalizedPath = rawPath.replaceAll("\\", "/");
+  const absoluteForm = ABSOLUTE_FORM_RE.exec(normalizedPath);
+
+  // Prefix relative and origin-form targets with `/.` so WHATWG parsing cannot
+  // reinterpret a leading `//` as an authority. The raw request remains
+  // untouched when a valid non-PTY upgrade is forwarded to Next.
+  const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+  const parsedUrl = absoluteForm
+    ? new URL(`${normalizedPath}${suffix}`)
+    : new URL(`/.${rootedPath}${suffix}`, UPGRADE_URL_BASE);
+
+  // WHATWG URL canonicalizes dot segments. Route against the pre-canonical
+  // path so unusual request targets cannot broaden into /api/pty-ws. For a
+  // standard absolute-form target, strip only its scheme and authority.
+  let pathname = normalizedPath;
+  if (absoluteForm) {
+    const pathStart = normalizedPath.indexOf("/", absoluteForm[0].length);
+    pathname = pathStart === -1 ? "/" : normalizedPath.slice(pathStart);
+  }
+
+  // node:querystring, used by url.parse(..., true), returns a null-prototype
+  // object and processes at most 1,000 pairs by default. Preserve both details
+  // while retaining first-value and duplicate ordering semantics.
+  const query: UpgradeQuery = Object.create(null);
+  let pairCount = 0;
+  for (const [key, value] of parsedUrl.searchParams) {
+    if (pairCount >= MAX_UPGRADE_QUERY_PAIRS) break;
+    pairCount += 1;
+
+    const current = query[key];
+    if (current === undefined) query[key] = value;
+    else if (Array.isArray(current)) current.push(value);
+    else query[key] = [current, value];
+  }
+
+  return { pathname, query };
 }
 
 function isPtyAuthRequired(): boolean {
@@ -494,12 +541,20 @@ await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 
 const server = createServer((req, res) => {
-  const parsedUrl = parse(req.url ?? "/", true);
-  void handle(req, res, parsedUrl);
+  void handle(req, res);
 });
 
 server.on("upgrade", (req, socket, head) => {
-  const { pathname, query } = parse(req.url ?? "/", true);
+  let pathname: string;
+  let query: UpgradeQuery;
+  try {
+    ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
+  } catch {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
   if (pathname !== "/api/pty-ws") {
     void nextUpgradeHandler(req, socket, head).catch((err) => {
       console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);
