@@ -952,6 +952,7 @@ export const SUITES = {
     "scripts/sidecar-bundle.test.mjs",
     "scripts/sidecar-bundle-deps.test.mjs",
     "scripts/sidecar-runtime-closure.test.mjs",
+    "scripts/standalone-budget.test.mjs",
     "scripts/tray-icon.test.mjs",
     "src/app/api/sessions/[id]/events/route.test.ts",
     "src/app/api/sessions/prune/prune-response.test.ts",

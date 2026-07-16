@@ -605,7 +605,7 @@ for (const contract of contracts) {
   );
   assert.match(
     projectPathsSource,
-    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(subpath\.root, subpath\.relativePath\)/,
+    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(\/\* turbopackIgnore: true \*\/ subpath\.root, subpath\.relativePath\)/,
     "shared project path validation must keep the existing absolute-path API contract",
   );
   assert.match(

@@ -75,7 +75,7 @@ async function walk(root: string, filesOnly: boolean): Promise<WalkTally | null>
         tally.truncated = true;
         return tally;
       }
-      const full = path.join(dir, entry.name);
+      const full = path.join(/* turbopackIgnore: true */ dir, entry.name);
       if (entry.isDirectory()) {
         if (filesOnly) continue;
         if (depth + 1 > MAX_DEPTH) {
@@ -104,7 +104,7 @@ async function walk(root: string, filesOnly: boolean): Promise<WalkTally | null>
 export async function collectSpaceUsage(home = covenHome()): Promise<SpaceUsageArea[]> {
   return Promise.all(
     AREAS.map(async (area): Promise<SpaceUsageArea> => {
-      const root = area.dir === "." ? home : path.join(home, area.dir);
+      const root = area.dir === "." ? home : path.join(/* turbopackIgnore: true */ home, area.dir);
       const tally = await walk(root, area.filesOnly ?? false);
       return {
         id: area.id,

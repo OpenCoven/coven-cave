@@ -369,8 +369,8 @@ async function resolveReadableFile(ref: string): Promise<string | null> {
   // Memory allow-list roots first, then the knowledge vault root.
   const allowed = await resolveAllowedMemoryFilePath(ref);
   if (allowed) return allowed;
-  const root = path.resolve(covenKnowledgeRoot());
-  const resolved = path.resolve(ref);
+  const root = path.resolve(/* turbopackIgnore: true */ covenKnowledgeRoot());
+  const resolved = path.resolve(/* turbopackIgnore: true */ ref);
   if (resolved === root || resolved.startsWith(root + path.sep)) return resolved;
   return null;
 }
@@ -383,14 +383,14 @@ async function captureFileLike(kind: "file" | "memory", req: PinCaptureRequest):
     return { ok: false, error: "only markdown/text files can be pinned", status: 400 };
   }
   try {
-    const info = await stat(allowed);
+    const info = await stat(/* turbopackIgnore: true */ allowed);
     if (info.size > FETCH_BYTE_CAP) return { ok: false, error: "file too large to pin", status: 413 };
   } catch {
     return { ok: false, error: "file not found", status: 404 };
   }
   let raw: string;
   try {
-    raw = await readFile(allowed, "utf8");
+    raw = await readFile(/* turbopackIgnore: true */ allowed, "utf8");
   } catch {
     return { ok: false, error: "file unreadable", status: 404 };
   }

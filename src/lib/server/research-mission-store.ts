@@ -28,7 +28,7 @@ function missionLocks(): Map<string, Promise<void>> {
 export function researchMissionsRoot(): string {
   return (
     process.env.COVEN_RESEARCH_MISSIONS_DIR?.trim() ||
-    path.join(caveHome(), "research-missions")
+    path.join(/* turbopackIgnore: true */ caveHome(), "research-missions")
   );
 }
 
@@ -42,14 +42,14 @@ function assertMissionId(id: string): void {
 
 export function researchMissionWorkspacePath(id: string): string {
   assertMissionId(id);
-  return path.join(researchMissionsRoot(), id);
+  return path.join(/* turbopackIgnore: true */ researchMissionsRoot(), id);
 }
 
 export function missionArtifactPath(id: string, fileName: string): string {
   if (!ARTIFACT_FILE_RE.test(fileName) || path.basename(fileName) !== fileName) {
     throw new Error("invalid artifact filename");
   }
-  return path.join(researchMissionWorkspacePath(id), "artifacts", fileName);
+  return path.join(/* turbopackIgnore: true */ researchMissionWorkspacePath(id), "artifacts", fileName);
 }
 
 function isWithin(candidate: string, root: string): boolean {
@@ -93,13 +93,15 @@ export function withResearchMissionLock<T>(
 
 async function assertRealMissionDirectory(id: string): Promise<string> {
   const directory = researchMissionWorkspacePath(id);
-  const stat = await lstat(directory);
+  // Research workspaces live beneath the user's runtime cave home. They are
+  // validated below, but are never build inputs for the Next server bundle.
+  const stat = await lstat(/* turbopackIgnore: true */ directory);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw new Error("mission workspace must be a real directory");
   }
   const [resolvedDirectory, resolvedRoot] = await Promise.all([
-    realpath(directory),
-    realpath(researchMissionsRoot()),
+    realpath(/* turbopackIgnore: true */ directory),
+    realpath(/* turbopackIgnore: true */ researchMissionsRoot()),
   ]);
   if (!isWithin(resolvedDirectory, resolvedRoot)) {
     throw new Error("mission workspace is outside research root");
@@ -114,23 +116,23 @@ export async function createResearchMissionWorkspace(
   return withResearchMissionLock(mission.id, async () => {
     const root = researchMissionsRoot();
     const directory = researchMissionWorkspacePath(mission.id);
-    await mkdir(root, { recursive: true });
-    await mkdir(directory);
+    await mkdir(/* turbopackIgnore: true */ root, { recursive: true });
+    await mkdir(/* turbopackIgnore: true */ directory);
     try {
-      await mkdir(path.join(directory, "artifacts"));
+      await mkdir(path.join(/* turbopackIgnore: true */ directory, "artifacts"));
       await Promise.all([
-        writeJsonAtomic(path.join(directory, "mission.json"), mission),
+        writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "mission.json"), mission),
         writeFileAtomic(
-          path.join(directory, "research-state.yaml"),
+          path.join(/* turbopackIgnore: true */ directory, "research-state.yaml"),
           `version: 1\nmission: ${mission.id}\nstatus: ${mission.status}\niteration: 0\n`,
         ),
-        writeFileAtomic(path.join(directory, "findings.md"), "# Findings\n"),
-        writeFileAtomic(path.join(directory, "research-log.md"), "# Research log\n"),
-        writeJsonAtomic(path.join(directory, "sources.json"), mission.sources),
+        writeFileAtomic(path.join(/* turbopackIgnore: true */ directory, "findings.md"), "# Findings\n"),
+        writeFileAtomic(path.join(/* turbopackIgnore: true */ directory, "research-log.md"), "# Research log\n"),
+        writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "sources.json"), mission.sources),
       ]);
       return mission;
     } catch (error) {
-      await rm(directory, { recursive: true, force: true });
+      await rm(/* turbopackIgnore: true */ directory, { recursive: true, force: true });
       throw error;
     }
   });
@@ -140,7 +142,7 @@ export async function saveResearchMission(mission: ResearchMission): Promise<voi
   assertMissionId(mission.id);
   await withResearchMissionLock(mission.id, async () => {
     const directory = await assertRealMissionDirectory(mission.id);
-    await writeJsonAtomic(path.join(directory, "mission.json"), mission);
+    await writeJsonAtomic(path.join(/* turbopackIgnore: true */ directory, "mission.json"), mission);
   });
 }
 
@@ -148,7 +150,7 @@ export async function loadResearchMission(id: string): Promise<ResearchMission |
   assertMissionId(id);
   try {
     const directory = await assertRealMissionDirectory(id);
-    const raw = await readFile(path.join(directory, "mission.json"), "utf8");
+    const raw = await readFile(path.join(/* turbopackIgnore: true */ directory, "mission.json"), "utf8");
     const parsed: unknown = JSON.parse(raw);
     if (!isResearchMission(parsed) || parsed.id !== id) return null;
     return parsed;
@@ -162,7 +164,7 @@ export async function loadResearchMission(id: string): Promise<ResearchMission |
 export async function listResearchMissions(): Promise<ResearchMission[]> {
   let entries;
   try {
-    entries = await readdir(researchMissionsRoot(), { withFileTypes: true });
+    entries = await readdir(/* turbopackIgnore: true */ researchMissionsRoot(), { withFileTypes: true });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -182,17 +184,17 @@ export async function readValidatedMissionFile(
   relativePath: string,
 ): Promise<string> {
   const directory = await assertRealMissionDirectory(id);
-  const candidate = path.resolve(directory, relativePath);
+  const candidate = path.resolve(/* turbopackIgnore: true */ directory, relativePath);
   if (!relativePath || path.isAbsolute(relativePath) || !isWithin(candidate, directory)) {
     throw new Error("file is outside mission workspace");
   }
-  const stat = await lstat(candidate);
+  const stat = await lstat(/* turbopackIgnore: true */ candidate);
   if (stat.isSymbolicLink()) throw new Error("research files cannot be symlinks");
   if (!stat.isFile()) throw new Error("research path is not a file");
   if (stat.size > MAX_RESEARCH_FILE_BYTES) throw new Error("research file is too large");
-  const resolvedCandidate = await realpath(candidate);
+  const resolvedCandidate = await realpath(/* turbopackIgnore: true */ candidate);
   if (!isWithin(resolvedCandidate, directory)) {
     throw new Error("file is outside mission workspace");
   }
-  return readFile(resolvedCandidate, "utf8");
+  return readFile(/* turbopackIgnore: true */ resolvedCandidate, "utf8");
 }
