@@ -6,7 +6,7 @@ const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ migrateCaveHome \} from "@\/lib\/server\/cave-home-migration"/,
+  /import \{ CAVE_HOME_MIGRATIONS, migrateCaveHome \} from "@\/lib\/server\/cave-home-migration"/,
   "POST must reuse the boot-time migration implementation, not a parallel one",
 );
 assert.match(
@@ -21,8 +21,8 @@ assert.match(
 );
 assert.match(
   source,
-  /export async function POST\(\)[\s\S]*?await migrateCaveHome\(\)/,
-  "POST runs the idempotent migration on demand",
+  /export async function POST\(request: Request\)[\s\S]*?await migrateCaveHome\(options\)/,
+  "POST runs the transactional reconciliation with validated options",
 );
 assert.match(
   source,
@@ -35,5 +35,8 @@ assert.match(
   "POST ok reflects whether the migration finished without errors",
 );
 assert.match(source, /force-dynamic/, "status must never be served from the route cache");
+assert.match(source, /ACTIONS = new Set<ReconciliationAction>/, "review actions are allowlisted");
+assert.match(source, /Unknown legacy migration entry/, "action requests are restricted to the shared manifest");
+assert.match(source, /request\.json\(\)\.catch\(\(\) => null\)/, "body-less legacy POST requests remain compatible");
 
 console.log("cave-home-migration route.test.ts: ok");

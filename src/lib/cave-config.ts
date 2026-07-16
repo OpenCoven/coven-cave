@@ -2,6 +2,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { ensureCaveHomeReconciled } from "./server/cave-home-migration.ts";
 import { rememberHubAccessToken, splitHubAccessToken } from "./hub-access-token.ts";
 import {
   type ChatAutoArchivePolicy,
@@ -305,6 +306,7 @@ export type CaveState = {
 };
 
 export async function loadConfig(): Promise<CaveConfig> {
+  await ensureCaveHomeReconciled();
   try {
     const raw = await readFile(CONFIG_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveConfig>;
@@ -696,6 +698,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
 }
 
 export async function loadState(): Promise<CaveState> {
+  await ensureCaveHomeReconciled();
   try {
     const raw = await readFile(STATE_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveState>;
@@ -716,6 +719,7 @@ export async function loadState(): Promise<CaveState> {
 }
 
 async function saveState(state: CaveState): Promise<void> {
+  await ensureCaveHomeReconciled();
   await mkdir(path.dirname(STATE_PATH), { recursive: true });
   await writeJsonAtomic(STATE_PATH, state);
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { migrateCaveHome } from "@/lib/server/cave-home-migration";
+import { CAVE_HOME_MIGRATIONS, migrateCaveHome } from "@/lib/server/cave-home-migration";
 import { caveHomeMigrationStatus } from "@/lib/server/cave-home-migration-status";
+import type { ReconciliationAction } from "@/lib/server/cave-home-reconciliation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,8 +22,21 @@ export async function GET() {
   return NextResponse.json({ ok: true, status: await caveHomeMigrationStatus() });
 }
 
-export async function POST() {
-  const result = await migrateCaveHome();
+const ACTIONS = new Set<ReconciliationAction>(["merge", "keep-canonical", "recover-legacy", "defer"]);
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => null) as { action?: unknown; legacy?: unknown } | null;
+  let options: { action?: ReconciliationAction; legacy?: string } = {};
+  if (body) {
+    if (typeof body.action !== "string" || !ACTIONS.has(body.action as ReconciliationAction)) {
+      return NextResponse.json({ ok: false, error: "Unsupported migration action" }, { status: 400 });
+    }
+    if (typeof body.legacy !== "string" || !CAVE_HOME_MIGRATIONS.some((entry) => entry.legacy === body.legacy)) {
+      return NextResponse.json({ ok: false, error: "Unknown legacy migration entry" }, { status: 400 });
+    }
+    options = { action: body.action as ReconciliationAction, legacy: body.legacy };
+  }
+  const result = await migrateCaveHome(options);
   const status = await caveHomeMigrationStatus();
   return NextResponse.json({ ok: result.errors.length === 0, result, status });
 }

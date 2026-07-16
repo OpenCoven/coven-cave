@@ -1055,6 +1055,7 @@ export const SUITES = {
   conformance: [
     "scripts/cross-environment.test.ts",
     "scripts/windows-native-browser-regression.test.mjs",
+    "scripts/cave-home-migration-windows.test.ts",
   ],
 };
 
@@ -1066,6 +1067,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "scripts/cave-home-migration-windows.test.ts",
   "src/lib/omnigent/ward-preflight.test.ts",
   "src/lib/cave-inbox-bulk.test.ts",
   "src/app/api/prompts/route.test.ts",

@@ -15,6 +15,7 @@ import {
   type CustomThemeData,
 } from "@/lib/preferences-schema";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
+import { ensureCaveHomeReconciled } from "./cave-home-migration.ts";
 
 export function preferencesPath(): string {
   const override = process.env.COVEN_PREFERENCES_PATH?.trim();
@@ -235,7 +236,10 @@ async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
 
 /** Load the canonical snapshot, seeding it once from cave-theme.json when possible. */
 export function loadPreferences(): Promise<CavePreferences> {
-  return withPreferencesLock(async () => (await loadPreferencesUnlocked({ seedLegacy: true })).preferences);
+  return withPreferencesLock(async () => {
+    await ensureCaveHomeReconciled();
+    return (await loadPreferencesUnlocked({ seedLegacy: true })).preferences;
+  });
 }
 
 export class PreferencesConflictError extends Error {
@@ -256,6 +260,7 @@ export function updatePreferences(
   mutator: (current: CavePreferences) => CavePreferencesPatch | null | Promise<CavePreferencesPatch | null>,
 ): Promise<CavePreferences> {
   return withPreferencesLock(async () => {
+    await ensureCaveHomeReconciled();
     const release = await acquirePreferencesFileLock();
     try {
       const disk = await loadPreferencesUnlocked({ seedLegacy: true });

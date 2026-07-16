@@ -4,6 +4,7 @@ import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import type { DailyReportPayload } from "./daily-report-facts.ts";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { ensureCaveHomeReconciled } from "./server/cave-home-migration.ts";
 
 const INBOX_PATH = path.join(caveHome(), "inbox.json");
 
@@ -101,6 +102,7 @@ async function ensureDir() {
 }
 
 export async function loadInbox(): Promise<InboxFile> {
+  await ensureCaveHomeReconciled();
   try {
     const raw = await readFile(INBOX_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<InboxFile>;
@@ -114,6 +116,7 @@ export async function loadInbox(): Promise<InboxFile> {
 }
 
 export async function saveInbox(file: InboxFile): Promise<void> {
+  await ensureCaveHomeReconciled();
   await ensureDir();
   await writeJsonAtomic(INBOX_PATH, file);
 }
