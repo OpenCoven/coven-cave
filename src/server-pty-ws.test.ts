@@ -8,6 +8,41 @@ const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.me
 assert.match(src, /new WebSocketServer\(\{ noServer: true \}\)/, "server owns a noServer WebSocket upgrade handler");
 assert.match(src, /pathname !== "\/api\/pty-ws"/, "server only handles /api/pty-ws upgrades");
 assert.match(src, /app\.getUpgradeHandler\(\)/, "server forwards non-PTY upgrades to Next.js");
+assert.doesNotMatch(
+  src,
+  /import\s+\{\s*parse\s*\}\s+from\s+"node:url"/,
+  "server does not import the deprecated node:url parser",
+);
+assert.doesNotMatch(src, /\bparse\(req\.url/, "server does not call deprecated url.parse for requests");
+assert.match(src, /void handle\(req, res\);/, "ordinary HTTP parsing stays owned by Next.js");
+assert.match(src, /const UPGRADE_URL_BASE = "http:\/\/localhost"/, "upgrade parsing uses a fixed internal URL base");
+assert.match(
+  src,
+  /new URL\(`\/\.\$\{rootedPath\}`, UPGRADE_URL_BASE\)/,
+  "origin-form targets keep authority-looking prefixes in the path",
+);
+assert.match(src, /const query: UpgradeQuery = Object\.create\(null\)/, "upgrade query records have no prototype");
+assert.match(src, /MAX_UPGRADE_QUERY_SEGMENTS = 1_000/, "upgrade query parsing retains the legacy 1,000-segment cap");
+assert.match(
+  src,
+  /if \(segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS\) return rawQuery\.slice\(0, index\)/,
+  "empty query segments count toward the legacy cutoff",
+);
+assert.match(
+  src,
+  /parsedUrl\.search = `\?\$\{boundedUpgradeQuery\(suffix\)\}`/,
+  "the raw query is bounded without consuming a data-leading question mark",
+);
+assert.match(
+  src,
+  /else if \(Array\.isArray\(current\)\) current\.push\(value\);\s*else query\[key\] = \[current, value\];/,
+  "duplicate query values retain insertion order",
+);
+assert.match(
+  src,
+  /try \{\s*\(\{ pathname, query \} = parseUpgradeTarget\(req\.url \?\? "\/"\)\);\s*\} catch \{\s*socket\.write\("HTTP\/1\.1 400 Bad Request\\r\\n\\r\\n"\);\s*socket\.destroy\(\);\s*return;/,
+  "malformed upgrade targets fail with HTTP 400 and a closed socket",
+);
 assert.match(src, /COVEN_CAVE_ACCESS_TOKEN/, "server checks sidecar access token");
 assert.match(src, /ACCESS_COOKIE = "coven_cave_access"/, "server accepts the same access cookie as REST middleware");
 assert.match(src, /ACCESS_QUERY_PARAM = "coven_access_token"/, "server accepts the mobile access token query param for WebSocket auth");
@@ -278,6 +313,59 @@ assert.match(
 // above keepAliveTimeout so a reused socket isn't reaped mid-headers.
 assert.match(src, /server\.keepAliveTimeout = 75_000/, "server extends the idle keep-alive window past client reuse");
 assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds keepAliveTimeout");
+
+// Execute the parser itself without starting Next or the PTY server. Extracting
+// this inline block keeps the production build bundle-free while covering the
+// legacy maxKeys behavior that URLSearchParams does not preserve by default.
+{
+  const parserBlock = src.match(
+    /type UpgradeQuery[\s\S]+?(?=\nfunction isPtyAuthRequired)/,
+  );
+  assert.ok(parserBlock, "upgrade parser block is available for behavioral coverage");
+  const { transformSync } = await import("esbuild");
+  const transformed = transformSync(
+    `${parserBlock[0]}\nexport { parseUpgradeTarget };`,
+    { loader: "ts", format: "esm", target: "node22" },
+  );
+  const parserModule = await import(
+    `data:text/javascript;base64,${Buffer.from(transformed.code).toString("base64")}`
+  );
+  const parseUpgradeTarget = parserModule.parseUpgradeTarget as (
+    rawUrl: string,
+  ) => { query: Record<string, string | string[] | undefined> };
+
+  const dataLeadingQuestionMark = parseUpgradeTarget(
+    "/api/pty-ws??coven_access_token=value",
+  );
+  assert.equal(
+    dataLeadingQuestionMark.query["?coven_access_token"],
+    "value",
+    "a second question mark remains part of the query key",
+  );
+  assert.equal(
+    dataLeadingQuestionMark.query.coven_access_token,
+    undefined,
+    "a malformed double-question-mark key cannot become a valid credential",
+  );
+
+  const acceptedAtLegacyLimit = parseUpgradeTarget(
+    `/api/pty-ws?${"&".repeat(999)}coven_access_token=valid`,
+  );
+  assert.equal(
+    acceptedAtLegacyLimit.query.coven_access_token,
+    "valid",
+    "the 1,000th raw query segment is still parsed",
+  );
+
+  const rejectedBeyondLegacyLimit = parseUpgradeTarget(
+    `/api/pty-ws?${"&".repeat(1_000)}coven_access_token=valid`,
+  );
+  assert.equal(
+    rejectedBeyondLegacyLimit.query.coven_access_token,
+    undefined,
+    "empty segments consume maxKeys so credentials beyond the legacy cutoff stay ignored",
+  );
+}
 
 // Twin parity: `pnpm start` runs the committed server.mjs, not server.ts, so a
 // server.ts security fix that skips `pnpm build:server` silently ships nothing
