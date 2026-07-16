@@ -98,7 +98,7 @@ const contracts: RouteContract[] = [
   { route: "/github/review", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/runs", methods: ["GET"], kind: "json" },
   { route: "/github/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
-  { route: "/github/tasks", methods: ["GET"], kind: "json" },
+  { route: "/github/tasks", methods: ["GET", "POST"], kind: "json" },
   { route: "/github/worktree", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -577,6 +577,16 @@ for (const contract of contracts) {
     /if \(!endpoint\) \{[\s\S]*?return NextResponse\.json\(\{[\s\S]*?ok: false,[\s\S]*?tasks: \[\],[\s\S]*?\}\);/,
     "/github/tasks: missing optional task endpoint should be a quiet ok:false payload, not a browser-console 503",
   );
+  assert.match(
+    githubTasksSource,
+    /export async function POST\(\)[\s\S]*respondWithTasks\(true\)/,
+    "/github/tasks: explicit refreshes bypass the fresh TTL entry",
+  );
+  assert.match(
+    githubTasksSource,
+    /forceGitHubTasksRefresh\(endpoint\)[\s\S]*getGitHubTasks\(endpoint\)/,
+    "/github/tasks: both forced and automatic reads use the shared process cache",
+  );
 }
 
 {
@@ -595,7 +605,7 @@ for (const contract of contracts) {
   );
   assert.match(
     projectPathsSource,
-    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(subpath\.root, subpath\.relativePath\)/,
+    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(\/\* turbopackIgnore: true \*\/ subpath\.root, subpath\.relativePath\)/,
     "shared project path validation must keep the existing absolute-path API contract",
   );
   assert.match(

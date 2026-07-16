@@ -80,7 +80,7 @@ assert.match(
 // via npx postinstall) code and must not see sidecar secrets either.
 for (const rel of [
   "../app/api/beads/prs/route.ts",
-  "../app/api/beads/route.ts",
+  "./server/beads-cli.ts",
   "../app/api/skills/directory/install/route.ts",
   "../app/api/skills/directory/use/route.ts",
   "./branch-pr-context.ts",
@@ -90,7 +90,7 @@ for (const rel of [
   const spawnSite = await readFile(new URL(rel, import.meta.url), "utf8");
   assert.match(
     spawnSite,
-    /scrubSidecarInternalEnv\(\{ \.\.\.process\.env/,
+    /scrubSidecarInternalEnv\(\{\s*\.\.\.process\.env/,
     `${rel} scrubs sidecar-internal env before spawning`,
   );
   assert.doesNotMatch(

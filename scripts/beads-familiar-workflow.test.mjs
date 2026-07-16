@@ -83,7 +83,7 @@ assert.match(apiRoute, /export async function GET[\s\S]*rejectNonLocalRequest\(r
 assert.match(apiRoute, /export async function POST[\s\S]*rejectNonLocalRequest\(req\)/, "Beads mutations must stay local-only");
 assert.match(apiRoute, /id required for mode=show/, "explicit show requests should fail clearly when id is missing");
 assert.match(apiRoute, /readJsonBody<[\s\S]*MAX_SESSION_JSON_BYTES/, "Beads mutations must use the bounded JSON body helper");
-assert.match(apiRoute, /execFileAsync\("bd"/, "Beads route should call bd through argv arrays, not shell strings");
+assert.match(apiRoute, /runBdCommand\(/, "Beads route should use the cross-platform argv-safe CLI adapter");
 assert.match(apiRoute, /case "claim":[\s\S]*"--claim"/, "Beads POST should support atomic familiar claiming");
 assert.match(apiRoute, /case "comment":[\s\S]*"comments"[\s\S]*"add"/, "Beads POST should support session handoff comments");
 assert.match(apiRoute, /case "close":[\s\S]*"close"/, "Beads POST should support closing completed work");

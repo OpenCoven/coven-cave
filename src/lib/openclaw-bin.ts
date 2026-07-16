@@ -37,9 +37,9 @@ function dedupe(values: string[]): string[] {
 function windowsNpmBinDirs(): string[] {
   if (process.platform !== "win32") return [];
   return [
-    process.env.APPDATA ? path.join(process.env.APPDATA, "npm") : null,
+    process.env.APPDATA ? path.join(/* turbopackIgnore: true */ process.env.APPDATA, "npm") : null,
     process.env.npm_config_prefix ?? null,
-  ].filter((dir): dir is string => !!dir && existsSync(dir));
+  ].filter((dir): dir is string => !!dir && existsSync(/* turbopackIgnore: true */ dir));
 }
 
 function candidateDirs(): string[] {
@@ -47,7 +47,7 @@ function candidateDirs(): string[] {
   return dedupe([
     ...windowsNpmBinDirs(),
     ...(env.PATH ? env.PATH.split(path.delimiter) : []),
-  ]).filter((dir) => existsSync(dir));
+  ]).filter((dir) => existsSync(/* turbopackIgnore: true */ dir));
 }
 
 function candidateBinNames(): string[] {
@@ -60,7 +60,7 @@ export function openClawBin(): string {
   const envBin = process.env.OPENCLAW_BIN;
   if (envBin) {
     try {
-      const st = statSync(envBin);
+      const st = statSync(/* turbopackIgnore: true */ envBin);
       if (st.isFile() || st.isSymbolicLink()) {
         cachedBin = envBin;
         return cachedBin;
@@ -72,9 +72,9 @@ export function openClawBin(): string {
 
   for (const dir of candidateDirs()) {
     for (const name of candidateBinNames()) {
-      const candidate = path.join(dir, name);
+      const candidate = path.join(/* turbopackIgnore: true */ dir, name);
       try {
-        const st = statSync(candidate);
+        const st = statSync(/* turbopackIgnore: true */ candidate);
         if (st.isFile() || st.isSymbolicLink()) {
           cachedBin = candidate;
           return cachedBin;

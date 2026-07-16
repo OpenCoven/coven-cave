@@ -39,16 +39,18 @@ export async function isAllowedSkillFilePath(fullPath: string, home = homedir())
   let candidateStat;
   let candidateRealPath: string;
   try {
-    candidateStat = await lstat(fullPath);
+    candidateStat = await lstat(/* turbopackIgnore: true */ fullPath);
     if (candidateStat.isSymbolicLink() || !candidateStat.isFile()) return false;
-    candidateRealPath = await realpath(fullPath);
+    candidateRealPath = await realpath(/* turbopackIgnore: true */ fullPath);
   } catch {
     return false;
   }
 
   if (path.basename(candidateRealPath) === CODEX_AUTOMATION_FILE_NAME) {
     try {
-      const automationsRoot = await realpath(path.join(home, ".codex", "automations"));
+      const automationsRoot = await realpath(
+        /* turbopackIgnore: true */ path.join(home, ".codex", "automations"),
+      );
       return isWithinRoot(candidateRealPath, automationsRoot);
     } catch {
       return false;
@@ -57,7 +59,9 @@ export async function isAllowedSkillFilePath(fullPath: string, home = homedir())
 
   for (const sub of HOME_SKILL_ROOT_SUBPATHS) {
     try {
-      const rootRealPath = await realpath(path.join(home, sub));
+      const rootRealPath = await realpath(
+        /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ home, sub),
+      );
       if (isWithinRoot(candidateRealPath, rootRealPath)) return true;
     } catch {
       // Missing harness roots are not previewable roots.
@@ -66,7 +70,9 @@ export async function isAllowedSkillFilePath(fullPath: string, home = homedir())
 
   for (const sub of PROJECT_SKILL_ROOT_SUBPATHS) {
     try {
-      const rootRealPath = await realpath(path.join(process.cwd(), sub));
+      const rootRealPath = await realpath(
+        /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ process.cwd(), sub),
+      );
       if (isWithinRoot(candidateRealPath, rootRealPath)) return true;
     } catch {
       // Missing project roots are not previewable roots.
@@ -91,9 +97,9 @@ export async function isRemovableSkillDir(dir: string, home = homedir()): Promis
 
   let real: string;
   try {
-    const st = await lstat(dir);
+    const st = await lstat(/* turbopackIgnore: true */ dir);
     if (st.isSymbolicLink() || !st.isDirectory()) return false;
-    real = await realpath(dir);
+    real = await realpath(/* turbopackIgnore: true */ dir);
   } catch {
     return false;
   }
@@ -108,7 +114,7 @@ export async function isRemovableSkillDir(dir: string, home = homedir()): Promis
   ];
   for (const root of rootCandidates) {
     try {
-      const rootReal = await realpath(root);
+      const rootReal = await realpath(/* turbopackIgnore: true */ root);
       // Must be a DIRECT child of a scan root — never the root itself, never nested.
       if (parent === rootReal && real !== rootReal) return true;
     } catch {

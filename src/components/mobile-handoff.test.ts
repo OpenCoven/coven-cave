@@ -7,6 +7,7 @@ const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url)
 const modal = await readFile(new URL("./mobile-handoff-modal.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const mobileModePref = await readFile(new URL("../lib/mobile-mode-pref.ts", import.meta.url), "utf8");
+const mobileModeReconcile = await readFile(new URL("../lib/mobile-mode-reconcile.ts", import.meta.url), "utf8");
 const handoffRoute = await readFile(new URL("../app/api/mobile-handoff/route.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const mobileStub = await readFile(new URL("../../src-tauri/frontend-stub/index.html", import.meta.url), "utf8");
@@ -40,8 +41,11 @@ assert.doesNotMatch(
   /localStorage\.(?:getItem|setItem|removeItem)/,
   "the shared mobile-mode adapter must not treat one loopback origin as authority",
 );
-assert.match(workspace, /action: "app-start"/, "Workspace should reconcile the native iOS Tailscale route while mobile mode is enabled");
-assert.match(workspace, /action: "app-stop"/, "Workspace should stop the native iOS Tailscale route when mobile mode is disabled");
+assert.match(mobileModeReconcile, /action: enabled \? "app-start" : "app-stop"/, "the shared reconciler should start or stop the native route from the desired state");
+assert.match(workspace, /reconcileMobileModeRequest/, "Workspace should share the mobile-mode request circuit breaker");
+assert.match(settings, /reconcileMobileModeRequest/, "Settings should share the mobile-mode request circuit breaker");
+assert.match(mobileModeReconcile, /json\.unavailable === true \|\| response\.status === 503/, "current clean unavailability and legacy 503 responses block automatic retries");
+assert.match(mobileModeReconcile, /options\?\.force/, "user Retry and toggle actions bypass the automatic circuit breaker");
 assert.match(workspace, /mobileModeHost/, "Workspace should keep the current native app host returned by the route");
 assert.match(workspace, /setMobileModeEnabled/, "Workspace should expose a way to toggle mobile mode from Settings");
 assert.match(modal, /\/api\/mobile-handoff/, "Modal should call the mobile handoff API");
@@ -125,7 +129,7 @@ assert.match(
 assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
-assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings should keep reconciling mobile mode while enabled (pausable poll, paused in a hidden tab)");
+assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled && !autoRetryBlocked,?\s*\}\)/, "Settings should stop automatic polling after a known prerequisite 503");
 assert.match(settings, /Mobile mode/, "Settings should label the one-click native iOS route switch");
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");
 

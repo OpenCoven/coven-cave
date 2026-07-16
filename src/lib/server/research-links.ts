@@ -32,7 +32,8 @@ type ResearchLinksFile = {
 
 export function researchLinksPath(): string {
   const override = process.env.CAVE_RESEARCH_LINKS_PATH_OVERRIDE?.trim();
-  return override || path.join(caveHome(), "research-links.json");
+  // Saved links are runtime user data beneath Cave home, never build inputs.
+  return override || path.join(/* turbopackIgnore: true */ caveHome(), "research-links.json");
 }
 
 function emptyFile(): ResearchLinksFile {
@@ -67,7 +68,7 @@ function normalizeStoredLink(value: unknown): SavedLink | null {
 async function loadFile(): Promise<ResearchLinksFile> {
   let text: string;
   try {
-    text = await readFile(researchLinksPath(), "utf8");
+    text = await readFile(/* turbopackIgnore: true */ researchLinksPath(), "utf8");
   } catch (error) {
     // Only a missing file means "empty store". Transient read failures
     // (EACCES/EMFILE/EIO) must surface — otherwise the next save would
@@ -93,13 +94,13 @@ async function loadFile(): Promise<ResearchLinksFile> {
 async function preserveMalformedFile(): Promise<void> {
   const source = researchLinksPath();
   const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
-  await copyFile(source, `${source}.corrupt-${suffix}`).catch(() => {});
+  await copyFile(/* turbopackIgnore: true */ source, `${source}.corrupt-${suffix}`).catch(() => {});
 }
 
 async function saveFile(file: ResearchLinksFile): Promise<void> {
   const target = researchLinksPath();
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeJsonAtomic(target, file);
+  await mkdir(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
+  await writeJsonAtomic(/* turbopackIgnore: true */ target, file);
 }
 
 let writeMutex: Promise<unknown> = Promise.resolve();

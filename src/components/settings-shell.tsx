@@ -35,6 +35,7 @@ import {
   writeStopPhrase,
 } from "@/lib/stop-phrase";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
@@ -2346,44 +2347,31 @@ function MobileModeToggle() {
   const [handoff, setHandoff] = useState<MobileHandoffCardState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRetryBlocked, setAutoRetryBlocked] = useState(false);
   const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
+  const initialReconcileDoneRef = useRef(false);
 
-  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean }) => {
+  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean; force?: boolean }) => {
     if (options?.busy) setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/mobile-handoff", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: enabled ? "app-start" : "app-stop" }),
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        nativeHost?: string | null;
-        inviteUrl?: string | null;
-        appInviteUrl?: string | null;
-        qrSvg?: string | null;
-        lastSeenAt?: number | null;
-        error?: string;
-        stderr?: string;
-      };
-      if (!json.ok) {
-        setError(json.stderr || json.error || "Mobile mode unavailable.");
+      const result = await reconcileMobileModeRequest(enabled, { force: options?.force });
+      setAutoRetryBlocked(result.retryBlocked);
+      if (!result.ok) {
+        setError(result.stderr || result.error || "Mobile mode unavailable.");
         return;
       }
       setHandoff(
         enabled
           ? {
-              nativeHost: json.nativeHost ?? null,
-              inviteUrl: json.inviteUrl ?? null,
-              appInviteUrl: json.appInviteUrl ?? null,
-              qrSvg: json.qrSvg ?? null,
-              lastSeenAt: json.lastSeenAt ?? null,
+              nativeHost: result.nativeHost ?? null,
+              inviteUrl: result.inviteUrl ?? null,
+              appInviteUrl: result.appInviteUrl ?? null,
+              qrSvg: result.qrSvg ?? null,
+              lastSeenAt: result.lastSeenAt ?? null,
             }
           : null,
       );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Mobile mode unavailable.");
     } finally {
       if (options?.busy) setBusy(false);
     }
@@ -2392,15 +2380,19 @@ function MobileModeToggle() {
   const onMobileModeChange = async (enabled: boolean) => {
     writeMobileModeEnabled(enabled);
     setMobileModeEnabled(enabled);
-    await reconcileMobileMode(enabled, { busy: true });
+    setAutoRetryBlocked(false);
+    await reconcileMobileMode(enabled, { busy: true, force: true });
   };
 
   useEffect(() => {
+    if (initialReconcileDoneRef.current) return;
+    initialReconcileDoneRef.current = true;
+    if (!mobileModeEnabled) return;
     void reconcileMobileMode(mobileModeEnabled);
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; pauses in a hidden tab.
   usePausablePoll(() => void reconcileMobileMode(true), 60_000, {
-    enabled: mobileModeEnabled,
+    enabled: mobileModeEnabled && !autoRetryBlocked,
   });
 
   const copy = (kind: "link" | "app" | "host", value: string) => {
@@ -2478,7 +2470,7 @@ function MobileModeToggle() {
               size="xs"
               variant="secondary"
               leadingIcon="ph:arrows-clockwise"
-              onClick={() => void reconcileMobileMode(true, { busy: true })}
+              onClick={() => void reconcileMobileMode(true, { busy: true, force: true })}
               disabled={busy}
             >
               Retry

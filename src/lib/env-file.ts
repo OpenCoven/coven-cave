@@ -18,8 +18,8 @@ import { caveHome } from "./coven-paths.ts";
 export function envLocalPath(): string {
   const override = process.env.COVEN_CAVE_ENV_FILE?.trim();
   if (override) return override;
-  if (process.env.COVEN_CAVE_BUNDLE === "1") return path.join(caveHome(), ".env.local");
-  return path.join(process.cwd(), ".env.local");
+  if (process.env.COVEN_CAVE_BUNDLE === "1") return path.join(/* turbopackIgnore: true */ caveHome(), ".env.local");
+  return path.join(/* turbopackIgnore: true */ process.cwd(), ".env.local");
 }
 
 /**
@@ -32,7 +32,7 @@ export function envLocalPath(): string {
 export function readEnvLocalAll(): Record<string, string> {
   let raw: string;
   try {
-    raw = readFileSync(envLocalPath(), "utf8");
+    raw = readFileSync(/* turbopackIgnore: true */ envLocalPath(), "utf8");
   } catch {
     return {};
   }
@@ -68,7 +68,7 @@ export function readEnvLocalAll(): Record<string, string> {
 export function readEnvLocalValue(key: string): string | undefined {
   let raw: string;
   try {
-    raw = readFileSync(envLocalPath(), "utf8");
+    raw = readFileSync(/* turbopackIgnore: true */ envLocalPath(), "utf8");
   } catch {
     return undefined;
   }

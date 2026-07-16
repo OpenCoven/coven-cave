@@ -5,10 +5,37 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { dominantVibrantOklab, fitAccentToBackground } from "./cave-backdrop.ts";
+import {
+  dominantVibrantOklab,
+  fitAccentToBackground,
+  readFamiliarBackdropImage,
+  writeFamiliarBackdropImage,
+} from "./cave-backdrop.ts";
 import { createBackdropImageState } from "./backdrop-image-state.ts";
 import { createDefaultPreferences } from "./preferences-schema.ts";
 import { parseThemeColor, contrastRatio } from "./theme-contrast.ts";
+
+// Known-missing familiar bytes are fetched once during normal navigation, but
+// an in-app mutation invalidates the bounded negative cache immediately.
+{
+  const originalFetch = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async (_input, init) => {
+    if (init?.method === "DELETE") return new Response(null, { status: 204 });
+    reads += 1;
+    return new Response(null, { status: 204 });
+  };
+  try {
+    assert.equal(await readFamiliarBackdropImage("missing-cache-test"), null);
+    assert.equal(await readFamiliarBackdropImage("missing-cache-test"), null);
+    assert.equal(reads, 1, "a known-missing familiar backdrop is not refetched on rerender");
+    await writeFamiliarBackdropImage("missing-cache-test", null);
+    assert.equal(await readFamiliarBackdropImage("missing-cache-test"), null);
+    assert.equal(reads, 2, "a backdrop mutation invalidates the known-missing cache");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
 
 // ── dominantVibrantOklab: picks the vibrant hue, ignores neutrals ────────────
 function pixels(colors: Array<[number, number, number]>, repeat = 1): Uint8ClampedArray {
@@ -202,7 +229,9 @@ const bootScript = await readFile(new URL("../../public/scripts/theme-init.js", 
 // The central API is canonical; old origin stores remain migration/mirror data.
 assert.match(lib, /indexedDB\.open\(DB_NAME, DB_VERSION\)/, "legacy image bytes remain available for migration");
 assert.match(lib, /PREFS_KEY = "cave:backdrop:v1"/, "legacy prefs remain a stable compatibility mirror");
-assert.match(lib, /response\.status === 404/, "only a real 404 is classified as a missing central image");
+assert.match(lib, /response\.status === 204 \|\| response\.status === 404/, "clean 204 and legacy 404 both classify a missing central image");
+assert.match(lib, /FAMILIAR_BACKDROP_MISSING_TTL_MS = 5 \* 60_000/, "known-missing familiar backdrops are bounded-cached across normal navigation");
+assert.match(lib, /familiarBackdropMissingUntil\.delete\(familiarId\)/, "familiar writes immediately invalidate the negative cache");
 assert.doesNotMatch(lib, /\.delete\(IMAGE_KEY\)/, "legacy backdrop bytes are never deleted during migration or clear");
 
 // The vibe rides exactly one custom property, so clearing restores the theme.

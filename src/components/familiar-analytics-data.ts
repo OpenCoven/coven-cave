@@ -224,6 +224,7 @@ export function buildFamiliarAnalyticsModel(
         familiar,
         stats,
         retroState: retroStateFor(data.retroSnapshot, familiar.id),
+        now,
       })
     : null;
   const confidence = deriveThreadConfidence(data.threadReports);

@@ -28,6 +28,7 @@ type Props = {
   familiarsFailed?: boolean;
   cardsFailed?: boolean;
   onClose: () => void;
+  onComplete?: () => void;
 };
 
 // ── Feedback banner ────────────────────────────────────────────────────────────
@@ -63,11 +64,13 @@ function BoardMode({
   cards,
   cardsFailed = false,
   onClose,
+  onComplete,
 }: {
   item: GitHubItem;
   cards: Card[];
   cardsFailed?: boolean;
   onClose: () => void;
+  onComplete?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
@@ -97,6 +100,7 @@ function BoardMode({
     setBusy(false);
     if (result.ok) {
       setFeedback({ status: "success", message: "Link added to card." });
+      onComplete?.();
       setTimeout(onClose, 1200);
     } else {
       setFeedback({ status: "error", message: result.error ?? "Failed." });
@@ -110,6 +114,7 @@ function BoardMode({
     setBusy(false);
     if (result.ok) {
       setFeedback({ status: "success", message: "Card created." });
+      onComplete?.();
       setTimeout(onClose, 1200);
     } else {
       setFeedback({ status: "error", message: result.error ?? "Failed." });
@@ -320,6 +325,7 @@ export function GitHubActionPopover({
   familiarsFailed = false,
   cardsFailed = false,
   onClose,
+  onComplete,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -403,7 +409,13 @@ export function GitHubActionPopover({
 
       {/* Mode content */}
       {mode === "board" && (
-        <BoardMode item={item} cards={cards} cardsFailed={cardsFailed} onClose={onClose} />
+        <BoardMode
+          item={item}
+          cards={cards}
+          cardsFailed={cardsFailed}
+          onClose={onClose}
+          onComplete={onComplete}
+        />
       )}
       {(mode === "chat" || mode === "assign") && (
         <FamiliarPicker

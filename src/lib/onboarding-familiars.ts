@@ -2,7 +2,7 @@ import { isTrustedOnboardingHarness } from "./harness-adapters.ts";
 import {
   isSshRuntime,
   normalizeFamiliarRuntime,
-  type SshFamiliarRuntime,
+  type FamiliarRuntime,
 } from "./familiar-runtime.ts";
 import { defaultModelForRuntime } from "./runtime-models.ts";
 
@@ -15,9 +15,9 @@ export type OnboardingFamiliarDraft = {
   harness: string;
   model: string;
   openclawAgentId?: string;
-  /** Optional remote runtime. Persisted to cave-config.json (the binding
+  /** Optional runtime override. Persisted to cave-config.json (the binding
    *  source chat reads), never to familiars.toml. */
-  runtime?: SshFamiliarRuntime;
+  runtime?: FamiliarRuntime;
 };
 
 export type OnboardingFamiliarInput = {
@@ -98,8 +98,9 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   // A runtime request is all-or-nothing: a partial/invalid SSH config must
   // fail loudly here instead of silently degrading to a local familiar the
   // user believes is remote.
-  let runtime: SshFamiliarRuntime | undefined;
-  if (input.runtime && cleanText(input.runtime.kind) === "ssh") {
+  let runtime: FamiliarRuntime | undefined;
+  const runtimeKind = cleanText(input.runtime?.kind);
+  if (input.runtime && runtimeKind === "ssh") {
     const normalized = normalizeFamiliarRuntime({
       kind: "ssh",
       host: input.runtime.host ?? "",
@@ -112,6 +113,8 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
       );
     }
     runtime = normalized;
+  } else if (runtimeKind === "local") {
+    runtime = { kind: "local" };
   }
 
   return {

@@ -71,8 +71,10 @@ export async function runBoundedAssist(opts: {
   missingRuntimeHint?: string;
 }): Promise<AssistRunResult> {
   const timeoutMs = opts.timeoutMs ?? ASSIST_TIMEOUT_MS;
-  const dir = await mkdtemp(path.join(tmpdir(), "assist-run-"));
-  const lastMessagePath = path.join(dir, "last-message.txt");
+  const dir = await mkdtemp(
+    /* turbopackIgnore: true */ path.join(/* turbopackIgnore: true */ tmpdir(), "assist-run-"),
+  );
+  const lastMessagePath = path.join(/* turbopackIgnore: true */ dir, "last-message.txt");
   try {
     const inv = buildAssistInvocation(opts.prompt, lastMessagePath);
     let stderrTail = "";
@@ -88,11 +90,19 @@ export async function runBoundedAssist(opts: {
       // read-only sandbox shouldn't be pointed at the repo as its workspace.
       // No familiar context: shared vault keys only (assists embed
       // attacker-influenceable content; scoped secrets never reach them).
-      const child = spawn(inv.command, inv.args, {
-        cwd: dir,
-        stdio: ["pipe", "ignore", "pipe"],
-        env: harnessSpawnEnv(),
-      });
+      // `inv.command` is a runtime override (`COVEN_CODEX_BIN`) or a PATH
+      // lookup, never a bundled executable. Calling through Reflect prevents
+      // Next's child_process tracer from treating that dynamic command as a
+      // repository-relative build input while preserving spawn semantics.
+      const child = Reflect.apply(spawn, undefined, [
+        inv.command,
+        inv.args,
+        {
+          cwd: dir,
+          stdio: ["pipe", "ignore", "pipe"],
+          env: harnessSpawnEnv(),
+        },
+      ]);
       // Keep a bounded stderr tail so a non-zero exit carries its reason
       // (e.g. codex trust/auth refusals) instead of an opaque exit code.
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -118,6 +128,13 @@ export async function runBoundedAssist(opts: {
         clearTimeout(timer);
         settle({ code });
       });
+      // `stdio[0]` is explicitly "pipe" above. Keep the null guard because
+      // Reflect.apply necessarily widens Node's spawn overload at type-check
+      // time even though the runtime contract guarantees a writable stream.
+      if (!child.stdin) {
+        settle({ code: null, error: "assist stdin unavailable" });
+        return;
+      }
       child.stdin.write(inv.stdinPrompt);
       child.stdin.end();
     });
@@ -131,7 +148,7 @@ export async function runBoundedAssist(opts: {
     }
     let lastMessage: string;
     try {
-      lastMessage = await readFile(lastMessagePath, "utf8");
+      lastMessage = await readFile(/* turbopackIgnore: true */ lastMessagePath, "utf8");
     } catch {
       return { ok: false, error: "assist produced no output" };
     }
@@ -139,6 +156,6 @@ export async function runBoundedAssist(opts: {
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "assist failed" };
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(/* turbopackIgnore: true */ dir, { recursive: true, force: true });
   }
 }

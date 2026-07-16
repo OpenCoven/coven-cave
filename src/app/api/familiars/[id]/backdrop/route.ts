@@ -66,7 +66,7 @@ export async function GET(req: Request, { params: rawParams }: RouteContext) {
   try {
     const image = await readFamiliarBackdropFile(params.id);
     if (!image) {
-      return new NextResponse(null, { status: 404, headers: NO_STORE_HEADERS });
+      return new NextResponse(null, { status: 204, headers: NO_STORE_HEADERS });
     }
     const headers = {
       ...NO_STORE_HEADERS,

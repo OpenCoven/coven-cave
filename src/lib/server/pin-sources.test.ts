@@ -1,13 +1,47 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  capturePin,
   extractHeadingSection,
   githubApiTarget,
   htmlToText,
   isPrivateIp,
   publicOnlyLookup,
 } from "./pin-sources.ts";
+
+describe("capturePin file containment", () => {
+  it("reads vault files but blocks symlinks that escape the vault root", async () => {
+    const sandbox = await mkdtemp(path.join(tmpdir(), "coven-pin-sources-"));
+    const vault = path.join(sandbox, "knowledge");
+    const safeFile = path.join(vault, "safe.md");
+    const outsideFile = path.join(sandbox, "outside.md");
+    const escapeLink = path.join(vault, "escape.md");
+    const previousRoot = process.env.COVEN_KNOWLEDGE_DIR;
+
+    try {
+      await mkdir(vault);
+      await writeFile(safeFile, "safe vault content", "utf8");
+      await writeFile(outsideFile, "outside content", "utf8");
+      await symlink(outsideFile, escapeLink, "file");
+      process.env.COVEN_KNOWLEDGE_DIR = vault;
+
+      const safe = await capturePin({ kind: "file", ref: safeFile });
+      assert.equal(safe.ok, true);
+      if (safe.ok) assert.equal(safe.pin.content, "safe vault content");
+
+      const escaped = await capturePin({ kind: "file", ref: escapeLink });
+      assert.deepEqual(escaped, { ok: false, error: "path is outside the allowed roots", status: 403 });
+    } finally {
+      if (previousRoot === undefined) delete process.env.COVEN_KNOWLEDGE_DIR;
+      else process.env.COVEN_KNOWLEDGE_DIR = previousRoot;
+      await rm(sandbox, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("isPrivateIp — SSRF guard ranges", () => {
   it("blocks loopback, private, link-local, CGNAT, multicast v4", () => {
