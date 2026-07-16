@@ -7,6 +7,47 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-16
+
+> _One-line teaser — edit before merge._
+
+Patch release on top of v0.1.1.
+
+### Changes
+- Fix Cave home migration lock timeouts (#3289)
+- Lazy-load the familiar glyph catalog (#3288)
+- Fix lossless Cave home migration on Windows (#3270)
+- fix(server): replace deprecated request URL parsing (#3279)
+- Fix CodeQL familiar contract path alert (#3286)
+- Name the Cave runtime host when summoning a familiar (#3282)
+- Fix standalone repository-wide tracing (#3284)
+- fix: cache GitHub task polling (#3272)
+- fix: stop optional API failure storms (#3280)
+- fix: retain safe updater lifecycle traces (#3274)
+- Fix duplicate session polling in Recent Activity (#3271)
+- fix: split onboarding readiness from update checks (#3259)
+- fix: harden Coven CLI update tracing (cave-dp8) (#3260)
+- feat(voice): speech-model registry + download/checksum + engines readiness (cave-ti1j)
+- feat(persistence): manual encrypted export/restore (cave-166o)
+- fix(spawn): scrub sidecar-internal env from every child process (cave-o01k) (#3255)
+- fix(threads): harden Phase 4 review follow-ups — adapter meta validation, fail-closed pending listing, inclusive file-count boundary (#3254)
+- fix(dashboard): harden profile card refresh (cave-wczm) (#3252)
+- feat(chat): sticky familiar-tab hero (cave-d9d6)
+- feat(research-desk): keyboard nav on mission list (cave-pwev)
+- feat(sidebar): PR-status badge on workspace sidebar thread rows (#3249)
+- beads: Phase 4 freeze approved (threads-986.17.9) — all gates cleared, RFC-0001 issues #3 #4 filed (#3248)
+- feat(omnigent): per-host workspace map for multi-machine runs (#3247)
+- fix(dashboard): Needs-you counts stay truthful past the display cap (cave-ckxk) (#3245)
+- fix(dashboard): growth/analytics sub-pages drop stale load settles + Growth freshness stamp (cave-5p5m) (#3246)
+- feat(threads): Phase 4 Cave surfaces — read plumbing, weave rail, thread pane, strand inspection, proposal approval (threads-986.17) (#3223)
+- feat(inbox): group repeating-schedule notifications into series rows + past-due filter (cave-w7z0) (#3244)
+- feat(theme): add Snow — frost-blue palette ported from tweakcn Frosty (#3242)
+- fix(dashboard): needs-attention reads live from the poll + honest caught-up state (cave-456r) (#3241)
+- refactor(dashboard): extract per-familiar contract fetch into useFamiliarContracts hook (cave-hwux) (#3240)
+- fix(projects): reject unsafe project roots (#3238)
+- fix(flows): preserve hub routing for copilot sessions (#3239)
+
+
 ### Features
 - **Theme: Snow** — a frost-blue palette ported from tweakcn's "Frosty" (powder-sky accents on midnight-navy ice in dark mode; near-white slate surfaces in light), joining the preset roster across desktop and iOS with soft 1rem-radius chrome. Light-mode primary/presence pairs, the destructive red, and the dark accent text are retuned to hold WCAG 2.1 AA per the theme contrast audit.
 
