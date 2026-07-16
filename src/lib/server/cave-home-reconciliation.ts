@@ -113,6 +113,8 @@ export type ReconciliationOptions = {
   createSymlink?: typeof symlink;
   /** Test-only lock lifecycle probe. */
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
+  /** Test-only unlock rename override. */
+  lockReleaseRename?: typeof rename;
   /** Test-only hook before a legacy path is replaced by its compatibility bridge. */
   compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
   /** Test-only hook after managed-mirror canonical validation. */
@@ -328,7 +330,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
         await options.lockProbe?.("released");
         const released = `${lock}.released-${token}`;
         try {
-          await rename(lock, released);
+          await (options.lockReleaseRename ?? rename)(lock, released);
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") {
             activeLockTokens().delete(token);
@@ -351,7 +353,11 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           } finally {
             activeLockTokens().delete(token);
           }
-          throw error;
+          // The persisted marker is the fallback unlock. A later contender
+          // will reclaim the directory, so do not turn a completed store or
+          // reconciliation operation into a 500 solely because Windows
+          // deferred the physical directory cleanup.
+          return;
         }
         activeLockTokens().delete(token);
         await rm(released, { recursive: true, force: true });

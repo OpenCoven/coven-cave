@@ -933,6 +933,34 @@ try {
     assert.equal(active, 0);
   }
 
+  // A transient Windows unlock failure is completed by publishing release
+  // intent. The operation itself succeeds, and the next waiter reclaims the
+  // leftover directory rather than surfacing a 500 or waiting indefinitely.
+  {
+    const { coven, cave } = await home("failed-unlock-rename");
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+    let failUnlock = true;
+    const first = await migrateCaveHome({
+      createSymlink: denySymlink,
+      lockReleaseRename: async (source, destination) => {
+        if (failUnlock) {
+          failUnlock = false;
+          const error = new Error("injected Windows unlock failure") as NodeJS.ErrnoException;
+          error.code = "EPERM";
+          throw error;
+        }
+        await rename(source, destination);
+      },
+    });
+    assert.deepEqual(first.errors, []);
+    const lock = path.join(cave, ".migration.lock");
+    assert.equal(typeof (await json(path.join(lock, "owner.json"))).releasedAt, "string");
+
+    const second = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(second.errors, []);
+    assert.equal(await kind(lock), "missing");
+  }
+
   // Store transactions share the cross-process migration lock. A writer that
   // already passed startup reconciliation must not read an old snapshot while
   // a manual recovery is replacing canonical storage and overwrite it later.
