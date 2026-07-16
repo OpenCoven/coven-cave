@@ -1217,7 +1217,16 @@ async function reconcileEntry(
   }
 
   let merged: MergeOutcome;
-  if (entry.strategy === "directory") merged = (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result, options)).outcome;
+  if (entry.strategy === "directory") {
+    // Files in migrated directories are not append-only (conversations, for
+    // example, can be deleted). A child present only in the legacy snapshot is
+    // therefore ambiguous: it may be a new file or a stale file deleted from
+    // canonical storage. Do not resurrect it until the user explicitly asks
+    // to merge the two directory snapshots.
+    merged = options.action === "merge"
+      ? (await reconcileDirectory(entry, legacyPath, canonicalPath, legacyInfo, canonicalInfo, result, options)).outcome
+      : { ok: false, summary: "Directory entries differ and require an explicit merge or whole-directory choice." };
+  }
   else if (["inbox", "state", "preferences"].includes(entry.strategy)) {
     // Merge the exact snapshots recorded in the verified bundle. Reading the
     // live paths here would let an uncoordinated store writer change either

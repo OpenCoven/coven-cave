@@ -16,12 +16,12 @@ assert.match(
 );
 assert.match(
   source,
-  /export async function GET\(\)[\s\S]*?status: await caveHomeMigrationStatus\(\)/,
+  /export async function GET\(req: Request\)[\s\S]*?rejectNonLocalRequest\(req\)[\s\S]*?status: await caveHomeMigrationStatus\(\)/,
   "GET reports pending/conflicts/migrated status for the banner qualification check",
 );
 assert.match(
   source,
-  /export async function POST\(request: Request\)[\s\S]*?await migrateCaveHome\(options\)/,
+  /export async function POST\(req: Request\)[\s\S]*?rejectNonLocalRequest\(req\)[\s\S]*?await migrateCaveHome\(options\)/,
   "POST runs the transactional reconciliation with validated options",
 );
 assert.match(
@@ -37,6 +37,6 @@ assert.match(
 assert.match(source, /force-dynamic/, "status must never be served from the route cache");
 assert.match(source, /ACTIONS = new Set<ReconciliationAction>/, "review actions are allowlisted");
 assert.match(source, /Unknown legacy migration entry/, "action requests are restricted to the shared manifest");
-assert.match(source, /request\.json\(\)\.catch\(\(\) => null\)/, "body-less legacy POST requests remain compatible");
+assert.match(source, /req\.body[\s\S]*readJsonBody<[^>]+>\(req, MAX_ACTION_BODY_BYTES\)[\s\S]*: null/, "actions are bounded while body-less legacy POST requests remain compatible");
 
 console.log("cave-home-migration route.test.ts: ok");

@@ -659,8 +659,9 @@ try {
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
   }
 
-  // Directory merge copies legacy-only children but preserves divergent
-  // collisions for review after a verified backup.
+  // Directory entries can be deleted, so automatic reconciliation must not
+  // resurrect a legacy-only child. An explicit merge may copy it while still
+  // preserving divergent collisions for review after a verified backup.
   {
     const { coven, cave } = await home("directory");
     await mkdir(path.join(coven, "cave-conversations"), { recursive: true });
@@ -669,7 +670,17 @@ try {
     await writeFile(path.join(coven, "cave-conversations", "shared.json"), "legacy");
     await writeFile(path.join(cave, "conversations", "shared.json"), "canonical");
     const result = await migrateCaveHome({ createSymlink: denySymlink });
-    assert.deepEqual(result.merged.find((entry) => entry.legacy === "cave-conversations"), {
+    assert.equal(result.merged.find((entry) => entry.legacy === "cave-conversations"), undefined);
+    assert.equal(await kind(path.join(cave, "conversations", "legacy.json")), "missing");
+    assert.equal(await readFile(path.join(cave, "conversations", "shared.json"), "utf8"), "canonical");
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-conversations"), true);
+
+    const merged = await migrateCaveHome({
+      legacy: "cave-conversations",
+      action: "merge",
+      createSymlink: denySymlink,
+    });
+    assert.deepEqual(merged.merged.find((entry) => entry.legacy === "cave-conversations"), {
       legacy: "cave-conversations", files: 1, collisions: 1,
     });
     assert.equal(await readFile(path.join(cave, "conversations", "legacy.json"), "utf8"), "legacy-only");
