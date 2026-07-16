@@ -243,6 +243,33 @@ async function readLockOwner(lock: string): Promise<{ pid: number | null; token:
   };
 }
 
+async function renameLockCandidate(candidate: string, lock: string): Promise<void> {
+  try {
+    await rename(candidate, lock);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    // Windows reports EPERM (rather than EEXIST/ENOTEMPTY) when a directory
+    // rename targets the already-held lock directory. Only translate it when
+    // the destination really exists so unrelated permission failures still
+    // fail closed.
+    if (["EACCES", "EPERM"].includes(code)) {
+      const lockExists = await stat(lock).then(
+        () => true,
+        (statError) => {
+          if ((statError as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw statError;
+        },
+      );
+      if (lockExists) {
+        const contention = new Error("cave home migration lock is already held") as NodeJS.ErrnoException;
+        contention.code = "EEXIST";
+        throw contention;
+      }
+    }
+    throw error;
+  }
+}
+
 async function acquireLock(options: ReconciliationOptions): Promise<() => Promise<void>> {
   const lock = migrationLockPath();
   const deadline = Date.now() + LOCK_WAIT_MS;
@@ -253,7 +280,7 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
       await mkdir(candidate);
       try {
         await writeJsonAtomic(path.join(candidate, "owner.json"), { pid: process.pid, token, startedAt: nowIso() });
-        await rename(candidate, lock);
+        await renameLockCandidate(candidate, lock);
       } catch (error) {
         await rm(candidate, { recursive: true, force: true });
         throw error;
@@ -544,6 +571,25 @@ function mergeInbox(legacy: unknown, canonical: unknown): MergeOutcome {
   const right = record(canonical);
   if (!left || !right || !Array.isArray(left.items) || !Array.isArray(right.items)) {
     return { ok: false, summary: "Inbox data is malformed and requires review." };
+  }
+  const leftIds = new Set<string>();
+  const rightIds = new Set<string>();
+  for (const [items, ids] of [[left.items, leftIds], [right.items, rightIds]] as const) {
+    for (const raw of items) {
+      const item = record(raw);
+      if (!item || typeof item.id !== "string" || !item.id) {
+        return { ok: false, summary: "Inbox item without a stable ID requires review." };
+      }
+      ids.add(item.id);
+    }
+  }
+  for (const id of new Set([...leftIds, ...rightIds])) {
+    if (!leftIds.has(id) || !rightIds.has(id)) {
+      // Inbox items can be deleted outright. Without a file-level revision or
+      // tombstone, a one-sided ID may be either a new item or a later deletion;
+      // unioning snapshots can silently resurrect an item the user removed.
+      return { ok: false, summary: `Inbox item ${id} has ambiguous presence and requires review.` };
+    }
   }
   const byId = new Map<string, Record<string, unknown>>();
   for (const raw of [...left.items, ...right.items]) {

@@ -263,24 +263,38 @@ try {
     assert.equal(status.migrated, false);
   }
 
-  // Inbox records merge by stable ID; the newer revision/timestamp wins.
+  // Inbox records present in both snapshots merge by stable ID; the newer
+  // revision/timestamp wins.
   {
     const { coven, cave } = await home("inbox");
     await mkdir(cave, { recursive: true });
     await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [
-      { id: "legacy-only", title: "legacy", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
       { id: "shared", title: "newer", revision: 2, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-03-01T00:00:00Z" },
     ] }));
     await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [
-      { id: "canonical-only", title: "canonical", createdAt: "2026-02-01T00:00:00Z", updatedAt: "2026-02-01T00:00:00Z" },
       { id: "shared", title: "older", revision: 1, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-02-01T00:00:00Z" },
     ] }));
     const result = await migrateCaveHome({ createSymlink: denySymlink });
     assert.deepEqual(result.errors, []);
     const merged = await json(path.join(cave, "inbox.json"));
-    assert.deepEqual(merged.items.map((item) => item.id), ["legacy-only", "shared", "canonical-only"]);
+    assert.deepEqual(merged.items.map((item) => item.id), ["shared"]);
     assert.equal(merged.items.find((item) => item.id === "shared").title, "newer");
     assert.equal((await caveHomeMigrationStatus()).migrated, true);
+  }
+
+  // Inbox deletion removes an ID without leaving a tombstone. A one-sided
+  // item may therefore be either a new item or one deleted from the other
+  // snapshot, so automatic union must leave both files for explicit review.
+  {
+    const { coven, cave } = await home("inbox-ambiguous-deletion");
+    await mkdir(cave, { recursive: true });
+    const deleted = { id: "deleted", title: "Removed", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
+    await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [deleted] }));
+    await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [] }));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-inbox.json"));
+    assert.deepEqual((await json(path.join(cave, "inbox.json"))).items, [], "deleted canonical item is not resurrected");
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-inbox.json"), true);
   }
 
   // Append-only state maps and queued work are unioned without dropping
@@ -485,10 +499,10 @@ try {
     const { coven, cave } = await home("merge-canonical-race");
     await mkdir(cave, { recursive: true });
     await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [
-      { id: "legacy", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "shared", title: "legacy", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-03-01T00:00:00Z" },
     ] }));
     await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [
-      { id: "canonical", createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" },
+      { id: "shared", title: "canonical", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-02-01T00:00:00Z" },
     ] }));
     const late = { version: 1, items: [
       { id: "late", createdAt: "2026-01-03T00:00:00Z", updatedAt: "2026-01-03T00:00:00Z" },
@@ -588,10 +602,10 @@ try {
     const { coven, cave } = await home(`fault-${boundary}`);
     await mkdir(cave, { recursive: true });
     await writeFile(path.join(coven, "cave-inbox.json"), JSON.stringify({ version: 1, items: [
-      { id: "legacy", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "shared", title: "legacy", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-03-01T00:00:00Z" },
     ] }));
     await writeFile(path.join(cave, "inbox.json"), JSON.stringify({ version: 1, items: [
-      { id: "canonical", createdAt: "2026-02-01T00:00:00Z", updatedAt: "2026-02-01T00:00:00Z" },
+      { id: "shared", title: "canonical", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-02-01T00:00:00Z" },
     ] }));
     if (boundary.includes("journal")) await assert.rejects(migrateCaveHome({ faultAt: boundary, createSymlink: denySymlink }));
     else assert.ok((await migrateCaveHome({ faultAt: boundary, createSymlink: denySymlink })).errors.length > 0);

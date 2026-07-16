@@ -27,6 +27,28 @@ try {
   const bridge = await lstat(legacy);
   assert.ok(bridge.isSymbolicLink() || bridge.isFile(), "Windows uses a link when permitted or an ordinary managed mirror");
   assert.equal((await caveHomeMigrationStatus()).migrated, true, "compatibility bridge never creates a false conflict");
+
+  // On Windows, renaming a candidate directory over an existing lock reports
+  // EPERM rather than EEXIST. A contender must wait for the owner instead of
+  // treating ordinary lock contention as a migration failure.
+  let markAcquired;
+  const acquired = new Promise((resolve) => { markAcquired = resolve; });
+  let releaseOwner;
+  const ownerMayFinish = new Promise((resolve) => { releaseOwner = resolve; });
+  const owner = migrateCaveHome({
+    lockProbe: async (event) => {
+      if (event !== "acquired") return;
+      markAcquired();
+      await ownerMayFinish;
+    },
+  });
+  await acquired;
+  const contender = migrateCaveHome();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  releaseOwner();
+  const [ownerResult, contenderResult] = await Promise.all([owner, contender]);
+  assert.deepEqual(ownerResult.errors, []);
+  assert.deepEqual(contenderResult.errors, []);
   console.log("cave-home-migration-windows.test.ts: ok");
 } finally {
   await rm(root, { recursive: true, force: true });
