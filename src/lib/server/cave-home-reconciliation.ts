@@ -112,6 +112,8 @@ export type ReconciliationOptions = {
   createSymlink?: typeof symlink;
   /** Test-only lock lifecycle probe. */
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
+  /** Test-only hook before a legacy path is replaced by its compatibility bridge. */
+  compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
 };
 
 type PathInfo = {
@@ -289,8 +291,9 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
             }
           }
         }
-      } catch {
-        continue;
+      } catch (lockError) {
+        if ((lockError as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw lockError;
       }
       if (Date.now() >= deadline) throw new Error("timed out waiting for cave home migration lock");
       await delay(50);
@@ -545,17 +548,22 @@ function mergeTravel(leftValue: unknown, rightValue: unknown): MergeOutcome {
       return { ok: false, summary: `Queued travel work ${item.id} differs and requires review.` };
     }
   }
+  for (const field of ["manualOffline", "staleCache", "hubUnreachableSince", "localSubdaemonWakeRequestedAt"] as const) {
+    if (JSON.stringify(left[field]) !== JSON.stringify(right[field])) {
+      return { ok: false, summary: `Travel state ${field} differs without a transition revision and requires review.` };
+    }
+  }
   const latestReachability = parseDate(left.lastHubReachableAt) > parseDate(right.lastHubReachableAt) ? left : right;
   return {
     ok: true,
     value: {
       ...left,
       ...right,
-      manualOffline: left.manualOffline === true || right.manualOffline === true,
-      staleCache: left.staleCache === true || right.staleCache === true,
+      manualOffline: left.manualOffline === true,
+      staleCache: left.staleCache === true,
       lastHubReachableAt: latestReachability.lastHubReachableAt ?? null,
-      hubUnreachableSince: left.hubUnreachableSince ?? right.hubUnreachableSince ?? null,
-      localSubdaemonWakeRequestedAt: left.localSubdaemonWakeRequestedAt ?? right.localSubdaemonWakeRequestedAt ?? null,
+      hubUnreachableSince: left.hubUnreachableSince ?? null,
+      localSubdaemonWakeRequestedAt: left.localSubdaemonWakeRequestedAt ?? null,
       localBindHost: "127.0.0.1",
       offlineQueue: [...queue.values()],
     },
@@ -695,7 +703,14 @@ async function ensureCompatibility(
 ): Promise<void> {
   const canonicalInfo = await pathInfo(canonicalPath);
   if (canonicalInfo.kind === "missing" || canonicalInfo.kind === "symlink") throw new Error("canonical path unavailable for compatibility bridge");
+  await options.compatibilityProbe?.(legacyPath);
   const existingLegacy = await pathInfo(legacyPath);
+  if (
+    existingLegacy.kind === "missing" || existingLegacy.kind === "symlink" ||
+    !journalEntry.legacyHash || existingLegacy.hash !== journalEntry.legacyHash
+  ) {
+    throw new Error("legacy data changed before compatibility bridge installation");
+  }
   await rm(legacyPath, { recursive: existingLegacy.kind === "dir", force: true });
   const createLink = options.createSymlink ?? symlink;
   try {

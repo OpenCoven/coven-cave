@@ -116,6 +116,25 @@ try {
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
   }
 
+  // A stale writer can also change the existing legacy path after its backup
+  // was verified but before bridge installation starts. Preserve that write
+  // instead of deleting it as though it were the snapshot we inspected.
+  {
+    const { coven, cave } = await home("windows-pre-bridge-write");
+    const legacyPath = path.join(coven, "cave-config.json");
+    await writeFile(legacyPath, '{"source":"startup"}', "utf8");
+    const result = await migrateCaveHome({
+      createSymlink: denySymlink,
+      compatibilityProbe: async () => {
+        await writeFile(legacyPath, '{"source":"older-tool"}', "utf8");
+      },
+    });
+    assert.equal(result.errors.some((entry) => entry.legacy === "cave-config.json"), true);
+    assert.deepEqual(await json(path.join(cave, "config.json")), { source: "startup" });
+    assert.deepEqual(await json(legacyPath), { source: "older-tool" });
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-config.json"), true);
+  }
+
   // The directory fallback must also fail closed if an old tool recreates the
   // legacy directory after removal but before the compatibility copy starts.
   {
@@ -217,6 +236,24 @@ try {
     const result = await migrateCaveHome({ createSymlink: denySymlink });
     assert.ok(result.skipped.includes("cave-state.json"));
     assert.equal((await json(path.join(cave, "state.json"))).travel.offlineQueue[0].status, "syncing");
+    assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-state.json"), true);
+  }
+
+  // Travel mode can transition in both directions. Without a transition
+  // revision, an older true value must not override a newer return-online
+  // snapshot during an otherwise mergeable state reconciliation.
+  {
+    const { coven, cave } = await home("state-ambiguous-travel-mode");
+    await mkdir(cave, { recursive: true });
+    const legacy = baseState();
+    legacy.travel.manualOffline = true;
+    legacy.travel.staleCache = true;
+    const canonical = baseState();
+    await writeFile(path.join(coven, "cave-state.json"), JSON.stringify(legacy));
+    await writeFile(path.join(cave, "state.json"), JSON.stringify(canonical));
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.ok(result.skipped.includes("cave-state.json"));
+    assert.equal((await json(path.join(cave, "state.json"))).travel.manualOffline, false);
     assert.equal((await caveHomeMigrationStatus()).conflicts.includes("cave-state.json"), true);
   }
 
