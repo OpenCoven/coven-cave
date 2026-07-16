@@ -426,8 +426,14 @@ function normalizeStringRecord(input: unknown): Record<string, string> {
   return out;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | undefined): CaveOmnigentConfig {
-  const rawUrl = typeof input?.baseUrl === "string" ? input.baseUrl.trim().replace(/\/+$/, "") : "";
+  const rawUrl = typeof input?.baseUrl === "string" ? trimTrailingSlashes(input.baseUrl.trim()) : "";
   let baseUrl = rawUrl;
   if (rawUrl) {
     try {

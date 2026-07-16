@@ -65,6 +65,19 @@ test("normalizeOmnigentConfig keeps hostMap, hostWorkspaceMap, exposeHostsInComp
   assert.equal(cfg.exposeHostsInComposer, false);
 });
 
+test("normalizeOmnigentConfig removes trailing slashes without a backtracking regex", async () => {
+  const { normalizeOmnigentConfig } = await import("../cave-config.ts");
+
+  assert.equal(
+    normalizeOmnigentConfig({ baseUrl: "https://omni.example.com////" }).baseUrl,
+    "https://omni.example.com",
+  );
+  assert.equal(normalizeOmnigentConfig({ baseUrl: "bad host///" }).baseUrl, "bad host");
+
+  const repeatedSlashes = `bad host${"/".repeat(25_000)}!`;
+  assert.equal(normalizeOmnigentConfig({ baseUrl: repeatedSlashes }).baseUrl, repeatedSlashes);
+});
+
 test("resolveWorkspaceForHost prefers host_id then name then hostMap alias", async () => {
   const { resolveWorkspaceForHost } = await import("./workspace-resolve.ts");
   const maps = {
