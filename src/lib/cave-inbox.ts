@@ -119,7 +119,7 @@ async function saveInboxUnlocked(file: InboxFile): Promise<void> {
   await writeJsonAtomic(INBOX_PATH, file);
 }
 
-export function loadInbox(): Promise<InboxFile> {
+export async function loadInbox(): Promise<InboxFile> {
   return withCaveHomeReconciledStore("cave-inbox.json", loadInboxUnlocked);
 }
 
