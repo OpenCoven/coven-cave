@@ -541,11 +541,16 @@ export function Workspace() {
     setMobileModeEnabledState(enabled);
   }, []);
 
-  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean }) => {
+  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { force?: boolean; suppressError?: boolean }) => {
     const result = await reconcileMobileModeRequest(enabled, options);
     setMobileModeAutoRetryBlocked(result.retryBlocked);
     if (!result.ok) {
-      setMobileModeError(result.stderr || result.error || "Mobile mode unavailable.");
+      // suppressError covers the one-time boot reconcile with the pref off:
+      // the shared reconciler reports transport failures as !ok too, so both
+      // the expected plain-web 503 and a fetch error stay silent there.
+      if (!options?.suppressError) {
+        setMobileModeError(result.stderr || result.error || "Mobile mode unavailable.");
+      }
       if (!enabled) setMobileModeHost(null);
       return;
     }
@@ -553,18 +558,23 @@ export function Workspace() {
     setMobileModeHost(enabled ? result.nativeHost ?? null : null);
   }, []);
 
-  // Reconcile only when mobile mode is (or just was) enabled. With the pref
-  // off there is nothing to stop — an unconditional boot-time POST meant
-  // every plain-web session hit /api/mobile-handoff, got the expected 503
-  // (the route needs the packaged app's signed token), and logged a console
-  // error + a misleading "Mobile mode unavailable" state for a feature the
-  // user never touched. Turning the toggle OFF still posts app-stop because
-  // the state change re-runs this effect while wasEnabledRef is set.
+  // Always reconcile once on boot, even when the persisted pref is off: Tailscale
+  // Serve routes outlive the web UI process, so a stale route from a crash or
+  // failed prior stop must be reset. Suppress only the boot-time disabled error
+  // so plain-web sessions do not show a misleading mobile-mode failure. After
+  // boot, disabled->disabled renders can skip, while enabled->disabled still
+  // posts app-stop.
   const mobileModeWasEnabledRef = useRef(false);
+  const didInitialMobileModeReconcileRef = useRef(false);
   useEffect(() => {
-    if (!mobileModeEnabled && !mobileModeWasEnabledRef.current) return;
+    const wasEnabled = mobileModeWasEnabledRef.current;
+    const isInitialReconcile = !didInitialMobileModeReconcileRef.current;
+    didInitialMobileModeReconcileRef.current = true;
     mobileModeWasEnabledRef.current = mobileModeEnabled;
-    void reconcileMobileMode(mobileModeEnabled);
+    if (!mobileModeEnabled && !wasEnabled && !isInitialReconcile) return;
+    void reconcileMobileMode(mobileModeEnabled, {
+      suppressError: isInitialReconcile && !mobileModeEnabled,
+    });
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; usePausablePoll pauses it
   // in a hidden tab and refreshes on return.

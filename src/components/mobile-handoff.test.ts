@@ -47,6 +47,17 @@ assert.match(settings, /reconcileMobileModeRequest/, "Settings should share the 
 assert.match(mobileModeReconcile, /json\.unavailable === true \|\| response\.status === 503/, "current clean unavailability and legacy 503 responses block automatic retries");
 assert.match(mobileModeReconcile, /options\?\.force/, "user Retry and toggle actions bypass the automatic circuit breaker");
 assert.match(workspace, /mobileModeHost/, "Workspace should keep the current native app host returned by the route");
+
+assert.match(
+  workspace,
+  /const didInitialMobileModeReconcileRef = useRef\(false\)[\s\S]*suppressError: isInitialReconcile && !mobileModeEnabled/,
+  "Workspace should silently send one boot-time app-stop when the persisted mobile-mode preference is disabled",
+);
+assert.doesNotMatch(
+  workspace,
+  /if \(!mobileModeEnabled && !mobileModeWasEnabledRef\.current\) return/,
+  "Workspace must not skip the initial disabled reconciliation because stale Tailscale Serve routes persist outside the UI process",
+);
 assert.match(workspace, /setMobileModeEnabled/, "Workspace should expose a way to toggle mobile mode from Settings");
 assert.match(modal, /\/api\/mobile-handoff/, "Modal should call the mobile handoff API");
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");
