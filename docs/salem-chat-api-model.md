@@ -29,16 +29,16 @@ When the request body contains `"mode": "context"`, respond with **JSON**
 // POST /api/chat   { "message": "...", "mode": "context" }
 {
   "mode": "context",
-  "systemPrompt": "…the Salem system prompt…",   // string (required)
-  "context": "…retrieved + reranked doc chunks as markdown, with source links…", // string
+  "context": "…retrieved + reranked doc chunks as markdown, with source links…", // string (required)
   "results": [ /* optional structured matches: {title, url, snippet, ...} */ ]
 }
 ```
 
-- `systemPrompt` (string) is **required** — Cave keys off it to decide context
-  mode succeeded (`typeof json.systemPrompt === "string"`).
-- `context` (string) should be the reranked doc passages Cave will ground the
-  local answer on, with markdown source links preserved.
+- `context` (string) is **required** and should be the reranked doc passages Cave
+  will ground the local answer on, with markdown source links preserved.
+- Do **not** send prompt instructions for the local model. Cave ignores any
+  upstream `systemPrompt` value and wraps `context` as untrusted quoted source
+  material before local familiar synthesis.
 - Do the vector search + reranking exactly as you do for a normal answer; just
   stop before generation and return the material instead.
 
@@ -58,8 +58,8 @@ Cave aborts the context request after **20s**. Keep it fast (no generation step)
 ## Acceptance criteria
 
 - `POST /api/chat` with `{"message":"...","mode":"context"}` returns JSON with a
-  string `systemPrompt` and a `context` string of reranked doc passages; **no**
-  generated answer.
+  `context` string of reranked doc passages; **no** generated answer and no
+  prompt-authority instructions.
 - `POST /api/chat` with `{"message":"..."}` (no mode) streams a `text/plain`
   answer exactly as today.
 - Add tests for both shapes.
