@@ -3,7 +3,8 @@
 // Rewrites exact on-scale px literals in src CSS to the sanctioned tokens
 // from `src/app/globals.css` (design-language checklist rule 1: tokens only):
 //
-//   font-size:      10/11/12/13/14/16/20/28px  -> var(--text-*)
+//   font-size:      10/11/12/13/14/20/28px     -> var(--text-*)
+//                   (16px stays literal — iOS anti-zoom floor, see below)
 //   padding/margin/gap family: 4px grid values -> var(--space-*)
 //   border-radius:  8/12/16/999px              -> var(--radius-*)
 //
@@ -183,7 +184,8 @@ export function cssFilesInScope() {
   const walk = (dir) => {
     for (const entry of readdirSync(dir)) {
       const full = path.join(dir, entry);
-      const rel = path.relative(repoRoot, full);
+      // POSIX-normalize so EXCLUDED_PATHS ("/"-separated) works on Windows.
+      const rel = path.relative(repoRoot, full).split(path.sep).join("/");
       if (EXCLUDED_PATHS.some((p) => (rel + "/").startsWith(p) || rel.startsWith(p))) continue;
       if (statSync(full).isDirectory()) walk(full);
       else if (entry.endsWith(".css")) out.push(rel);
