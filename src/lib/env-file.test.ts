@@ -58,4 +58,13 @@ const { upsertEnvContent } = await import("./env-file.ts");
   assert.equal(upsertEnvContent("ONLY=x\n", { ONLY: null }), "");
 }
 
+// Reject values containing newlines so caller-supplied values cannot inject
+// additional KEY=value entries into .env.local.
+{
+  assert.throws(
+    () => upsertEnvContent("", { GITHUB_USERNAME: "alice\nWORKSPACE_ROOT=/" }),
+    /must not contain newlines/,
+  );
+}
+
 console.log("env-file.test.ts: all assertions passed");
