@@ -10,6 +10,8 @@ import {
   setGroupSession,
   setGroupParticipants,
   parseMentions,
+  resolveGroupMessageTargets,
+  mentionSuggestionAuthor,
   renderCovenRoster,
   renderCovenRoundtablePrompt,
   renderCovenContext,
@@ -191,6 +193,36 @@ test("parseMentions: @ mid-word (email) is not a mention", () => {
 
 test("parseMentions: punctuation after a name still matches", () => {
   assert.deepEqual(parseMentions("@Nova, thoughts?", ROSTER), ["nova"]);
+});
+
+test("resolveGroupMessageTargets: no mention broadcasts in roster order", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("What does everyone think?", ["nova", "sage"], ROSTER),
+    { targetIds: ["nova", "sage"], targeted: false },
+  );
+});
+
+test("resolveGroupMessageTargets: composer mentions target their parsed subset", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("@Sage please check this", ["nova", "sage"], ROSTER),
+    { targetIds: ["sage"], targeted: true },
+  );
+});
+
+test("resolveGroupMessageTargets: explicit suggestion author cannot be widened by inner mentions", () => {
+  const text = mentionSuggestionAuthor("Ask @Sage to review it", "Nova Star");
+  assert.equal(text, "@Nova Star Ask @Sage to review it");
+  assert.deepEqual(
+    resolveGroupMessageTargets(text, ["nova-star", "sage"], ROSTER, ["nova-star"]),
+    { targetIds: ["nova-star"], targeted: true },
+  );
+});
+
+test("resolveGroupMessageTargets: removed explicit targets never fall back to broadcast", () => {
+  assert.deepEqual(
+    resolveGroupMessageTargets("@Nova Continue", ["sage"], ROSTER, ["nova"]),
+    { targetIds: [], targeted: true },
+  );
 });
 
 test("findActiveMention: caret inside a fresh token returns start + query", () => {
