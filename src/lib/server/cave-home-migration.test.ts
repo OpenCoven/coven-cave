@@ -908,6 +908,35 @@ try {
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
+  // A failed Windows reclaim rename can also leave a takeover claim from this
+  // still-live process. Only an actively tracked token represents an in-flight
+  // contender; an untracked same-process marker must not block later stores.
+  {
+    const { coven, cave } = await home("same-process-orphan-takeover");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    await writeFile(path.join(lock, "owner.json"), JSON.stringify({
+      pid: process.pid,
+      token: "released-same-process-owner",
+      startedAt: new Date().toISOString(),
+      releasedAt: new Date().toISOString(),
+    }));
+    await writeFile(path.join(lock, ".takeover"), JSON.stringify({
+      pid: process.pid,
+      takeoverToken: "abandoned-same-process-takeover",
+      ownerToken: "released-same-process-owner",
+      startedAt: new Date().toISOString(),
+    }));
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    const startedAt = Date.now();
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "a same-process orphan takeover is reclaimed without hanging");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
   // Publishing release intent must not let a waiter reclaim the lock before
   // its owner finishes the unlock rename. Otherwise the old release path can
   // rename a newly acquired successor lock and break mutual exclusion.

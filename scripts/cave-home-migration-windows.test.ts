@@ -49,6 +49,34 @@ try {
   const [ownerResult, contenderResult] = await Promise.all([owner, contender]);
   assert.deepEqual(ownerResult.errors, []);
   assert.deepEqual(contenderResult.errors, []);
+
+  // A failed reclaim rename can leave a recent takeover marker owned by this
+  // still-live sidecar. It is orphaned when its token is not actively tracked,
+  // and later storage operations must recover it without waiting five minutes.
+  const orphanHome = path.join(root, "same-process-orphan-takeover", ".coven");
+  process.env.COVEN_HOME = orphanHome;
+  const orphanCave = path.join(orphanHome, "cave");
+  const orphanLock = path.join(orphanCave, ".migration.lock");
+  await mkdir(orphanLock, { recursive: true });
+  await writeFile(path.join(orphanLock, "owner.json"), JSON.stringify({
+    pid: process.pid,
+    token: "released-same-process-owner",
+    startedAt: new Date().toISOString(),
+    releasedAt: new Date().toISOString(),
+  }));
+  await writeFile(path.join(orphanLock, ".takeover"), JSON.stringify({
+    pid: process.pid,
+    takeoverToken: "abandoned-same-process-takeover",
+    ownerToken: "released-same-process-owner",
+    startedAt: new Date().toISOString(),
+  }));
+  await writeFile(path.join(orphanHome, "cave-config.json"), '{"windows":true}', "utf8");
+
+  const orphanStartedAt = Date.now();
+  const orphanResult = await migrateCaveHome();
+  assert.deepEqual(orphanResult.errors, []);
+  assert.ok(Date.now() - orphanStartedAt < 2_000, "same-process takeover orphan is reclaimed immediately");
+  assert.deepEqual(JSON.parse(await readFile(path.join(orphanCave, "config.json"), "utf8")), { windows: true });
   console.log("cave-home-migration-windows.test.ts: ok");
 } finally {
   await rm(root, { recursive: true, force: true });

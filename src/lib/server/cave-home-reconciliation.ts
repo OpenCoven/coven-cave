@@ -142,10 +142,17 @@ const LOCK_STALE_MS = 5 * 60_000;
 declare global {
   // eslint-disable-next-line no-var
   var __caveHomeReconciliationLockTokens: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __caveHomeReconciliationTakeoverTokens: Set<string> | undefined;
 }
 
 function activeLockTokens(): Set<string> {
   return globalThis.__caveHomeReconciliationLockTokens ??=
+    new Set<string>();
+}
+
+function activeTakeoverTokens(): Set<string> {
+  return globalThis.__caveHomeReconciliationTakeoverTokens ??=
     new Set<string>();
 }
 
@@ -279,7 +286,7 @@ async function readLockOwner(lock: string): Promise<LockOwner> {
 async function removeOrphanTakeover(takeover: string): Promise<boolean> {
   const [claim, info] = await Promise.all([
     readFile(takeover, "utf8")
-      .then((value) => JSON.parse(value) as { pid?: unknown })
+      .then((value) => JSON.parse(value) as { pid?: unknown; takeoverToken?: unknown })
       .catch(() => null),
     stat(takeover).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -291,7 +298,15 @@ async function removeOrphanTakeover(takeover: string): Promise<boolean> {
   const pid = typeof claim?.pid === "number" && Number.isSafeInteger(claim.pid)
     ? claim.pid
     : null;
-  if (pid) {
+  const takeoverToken = typeof claim?.takeoverToken === "string"
+    ? claim.takeoverToken
+    : null;
+  const sameProcessOrphan = pid === process.pid &&
+    (!takeoverToken || !activeTakeoverTokens().has(takeoverToken));
+  if (sameProcessOrphan) {
+    // The claimant is still alive, but this token is not part of an active
+    // takeover in this process. Reclaim it without applying the age window.
+  } else if (pid) {
     try {
       process.kill(pid, 0);
       return false;
@@ -438,14 +453,22 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
               }),
               { flag: "wx" },
             );
-            const currentOwner = await readLockOwner(lock);
-            if (currentOwner.token !== owner.token) {
-              await rm(takeover, { force: true });
-            } else {
-              const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
-              await rename(lock, reclaimed);
-              await rm(reclaimed, { recursive: true, force: true });
-              continue;
+            activeTakeoverTokens().add(takeoverToken);
+            try {
+              const currentOwner = await readLockOwner(lock);
+              if (currentOwner.token !== owner.token) {
+                await rm(takeover, { force: true });
+              } else {
+                const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
+                await rename(lock, reclaimed);
+                await rm(reclaimed, { recursive: true, force: true });
+                continue;
+              }
+            } finally {
+              activeTakeoverTokens().delete(takeoverToken);
+              // A failed Windows rename must not leave a same-process claim
+              // that every later store mistakes for an active contender.
+              await rm(takeover, { force: true }).catch(() => {});
             }
           } catch (takeoverError) {
             const code = (takeoverError as NodeJS.ErrnoException).code ?? "";
