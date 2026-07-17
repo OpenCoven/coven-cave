@@ -173,6 +173,44 @@ assert.match(
   ], "Windows npm.cmd is health-checked through its supported shell launch path");
 }
 
+{
+  const secretDir = path.join("/virtual", "nvm", "v24.16.0", "bin");
+  const existing = new Set([path.join(secretDir, "node"), path.join(secretDir, "npm")]);
+  const originalSecretEnv = {
+    COVEN_CAVE_AUTH_TOKEN: process.env.COVEN_CAVE_AUTH_TOKEN,
+    __NEXT_PRIVATE_ORIGIN: process.env.__NEXT_PRIVATE_ORIGIN,
+    GITHUB_PAT: process.env.GITHUB_PAT,
+  };
+  process.env.COVEN_CAVE_AUTH_TOKEN = "sidecar-auth-secret";
+  process.env.__NEXT_PRIVATE_ORIGIN = "http://sidecar.internal";
+  process.env.GITHUB_PAT = "ghp_forbidden_secret";
+  try {
+    const probeEnvs: Array<NodeJS.ProcessEnv | undefined> = [];
+    const runnable = runnableNodeToolchainDirs([secretDir], {
+      platform: "linux",
+      exists: (file) => existing.has(file),
+      probe: (_command, _args, options) => probeEnvs.push(options.env),
+    });
+    assert.deepEqual(runnable, [secretDir], "a healthy toolchain still survives");
+    assert.equal(probeEnvs.length, 2, "both node and npm probes receive explicit env");
+    for (const env of probeEnvs) {
+      assert.ok(env, "probe env is provided instead of inheriting process.env");
+      assert.equal(env.COVEN_CAVE_AUTH_TOKEN, undefined, "node/npm probes do not receive sidecar auth tokens");
+      assert.equal(env.__NEXT_PRIVATE_ORIGIN, undefined, "node/npm probes do not receive Next private env");
+      assert.equal(env.GITHUB_PAT, undefined, "node/npm probes do not receive forbidden GitHub token keys");
+      assert.match(env.PATH ?? "", new RegExp(`^${secretDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "probe PATH still prioritizes the candidate directory");
+    }
+  } finally {
+    for (const [key, value] of Object.entries(originalSecretEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 assert.match(
   source,
   /function nodeNvmBinDirs\(\)[\s\S]*return runnableNodeToolchainDirs\(directories\)/,

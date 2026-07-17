@@ -109,15 +109,16 @@ export function runnableNodeToolchainDirs(
       return false;
     }
     const npm = path.join(/* turbopackIgnore: true */ directory, npmName);
-    const env = {
+    const env = scrubSidecarInternalEnv({
       ...process.env,
       PATH: [directory, process.env.PATH].filter(Boolean).join(path.delimiter),
-    };
+    });
     try {
       probe(node, ["--version"], {
         timeout: 1500,
         stdio: "ignore",
         windowsHide: true,
+        env,
       });
       probe(npm, ["--version"], {
         timeout: 1500,
