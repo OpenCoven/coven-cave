@@ -162,7 +162,7 @@ function globToRegExp(glob: string): RegExp {
     } else if (char === "?") {
       source += "[^/]";
     } else {
-      source += char.replace(/[\^$+?.()|{}[\]]/g, "\\$&");
+      source += char.replace(/[\\^$+?.()|{}[\]]/g, "\\$&");
     }
   }
   source += "$";
