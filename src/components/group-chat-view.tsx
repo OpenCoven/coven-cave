@@ -7,12 +7,11 @@ import "@/styles/cave-composer.css";
 /**
  * GroupChatView — the "coven" group-chat surface.
  *
- * A coven is a saved set of familiars you talk to together. A prompt is
- * broadcast to every participant in parallel; each familiar answers in its own
- * resumable `/api/chat/send` session and its reply is attributed inline. This
- * mirrors the daemon/coven-CLI model — there is no server-side "group session",
- * so the group lives client-side and simply pins one session id per familiar
- * (the same fan-out the iOS app uses).
+ * A coven is a saved set of familiars you talk to together. Broadcast mode fans
+ * a prompt out in parallel; Round robin mode rotates the lead and relays settled
+ * peer replies before the next familiar takes its turn. Each familiar still has
+ * its own resumable `/api/chat/send` session because there is no server-side
+ * group-session primitive.
  */
 
 import {
@@ -37,6 +36,7 @@ import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
+import { Segmented } from "@/components/ui/settings-controls";
 import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -55,7 +55,13 @@ import {
   extractCovenDelegations,
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
+  setGroupResponseMode,
+  orderRoundRobinFamiliarIds,
+  nextRoundRobinLeadId,
   renderCovenRoundtablePrompt,
+  renderCovenRoundRobinPrompt,
+  runCovenReplySchedule,
+  COVEN_RESPONSE_MODES,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -69,6 +75,7 @@ import {
   type GroupReply,
   type MentionableFamiliar,
   type RosterParticipant,
+  type CovenResponseMode,
 } from "@/lib/group-chat";
 
 type Props = {
@@ -394,7 +401,39 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     [persistGroups],
   );
 
-  // --- broadcast send ------------------------------------------------------
+  const changeResponseMode = useCallback(
+    (responseMode: CovenResponseMode) => {
+      const group = activeGroupRef.current;
+      if (!group || busy || group.responseMode === responseMode) return;
+      persistGroups(
+        upsertGroup(groupsRef.current, setGroupResponseMode(group, responseMode, nowIso())),
+      );
+      announce(
+        responseMode === "broadcast"
+          ? "Broadcast mode. Familiars will respond at the same time."
+          : "Round robin mode. Familiars will respond in turn and see earlier replies.",
+      );
+    },
+    [announce, busy, persistGroups],
+  );
+
+  const advanceRoundRobinLead = useCallback((groupId: string, leadId: string) => {
+    setGroups((prev) => {
+      const current = prev.find((group) => group.id === groupId);
+      if (!current) return prev;
+      const nextLead = nextRoundRobinLeadId(current.familiarIds, leadId);
+      if (current.nextRoundRobinLeadId === nextLead) return prev;
+      const next = upsertGroup(prev, {
+        ...current,
+        nextRoundRobinLeadId: nextLead,
+        updatedAt: nowIso(),
+      });
+      saveGroups(next);
+      return next;
+    });
+  }, []);
+
+  // --- mode-aware group send ----------------------------------------------
   const streamOne = useCallback(
     async (group: CovenGroup, reply: GroupReply, prompt: string, signal: AbortSignal): Promise<GroupReply> => {
       // `settled` mirrors the live React state so callers can await the final
@@ -477,6 +516,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         announce("That familiar is no longer in this coven.", "assertive");
         return;
       }
+      const orderedTargetIds = group.responseMode === "round-robin"
+        ? orderRoundRobinFamiliarIds(group.familiarIds, targetIds, group.nextRoundRobinLeadId)
+        : targetIds;
       // Roster reflects the FULL coven (not just @mention targets) — a familiar
       // should know who else is in the room even when addressed alone. Composed
       // per-familiar so each sees itself marked "(you)".
@@ -495,9 +537,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         role: "user",
         text,
         targetFamiliarIds: targeted ? targetIds : undefined,
+        responseMode: group.responseMode,
         createdAt: at,
       };
-      const replies: GroupReply[] = targetIds.map((fid) => ({
+      const replies: GroupReply[] = orderedTargetIds.map((fid, index) => ({
         id: newId(),
         role: "assistant",
         familiarId: fid,
@@ -505,8 +548,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         sessionId: group.sessions[fid] ?? null,
         text: "",
         status: "queued",
+        activity:
+          group.responseMode === "round-robin" && index > 0
+            ? `Waiting for ${byId.get(orderedTargetIds[index - 1])?.display_name ?? orderedTargetIds[index - 1]}…`
+            : undefined,
         createdAt: at,
       }));
+      const priorTurns = transcriptRef.current;
       // The user just sent — snap them to the bottom regardless of prior scroll.
       stickToBottomRef.current = true;
       setShowJump(false);
@@ -516,21 +564,37 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
-      const settled = await Promise.all(
-        replies.map((r) =>
-          streamOne(
-            group,
-            r,
-            renderCovenRoundtablePrompt({
-              participants: rosterParticipants,
-              receivingFamiliarId: r.familiarId,
-              userText: text,
-              targeted,
-            }),
-            controller.signal,
-          ),
-        ),
-      );
+      if (group.responseMode === "round-robin" && replies.length > 1) {
+        advanceRoundRobinLead(group.id, replies[0].familiarId);
+      }
+      const settled = await runCovenReplySchedule({
+        mode: group.responseMode,
+        replies,
+        signal: controller.signal,
+        onCancelled: (cancelled) => updateReply(cancelled.id, () => cancelled),
+        runReply: (reply, settledBefore) => {
+          const prompt = group.responseMode === "round-robin"
+            ? renderCovenRoundRobinPrompt({
+                participants: rosterParticipants,
+                receivingFamiliarId: reply.familiarId,
+                userText: text,
+                targeted,
+                familiarNames: mentionable,
+                transcript: [...priorTurns, userTurn, ...settledBefore].map((turn) =>
+                  turn.role === "assistant"
+                    ? { ...turn, text: extractNextPaths(turn.text).visible }
+                    : turn,
+                ),
+              })
+            : renderCovenRoundtablePrompt({
+                participants: rosterParticipants,
+                receivingFamiliarId: reply.familiarId,
+                userText: text,
+                targeted,
+              });
+          return streamOne(group, reply, prompt, controller.signal);
+        },
+      });
       // A familiar can perform an explicit human-requested handoff by emitting
       // a validated delegation trailer. Plain assistant @mentions remain prose.
       // Process the small delegation tree sequentially so Stop prevents queued
@@ -629,7 +693,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         announce(`${total - failed} of ${total} familiars replied; ${failed} failed.`, "assertive");
       }
     },
-    [busy, streamOne, byId, announce, operatorDisplayName],
+    [advanceRoundRobinLead, busy, streamOne, byId, announce, operatorDisplayName, updateReply],
   );
 
   // Composer sends and suggestion chips share the stream path, but a suggestion
@@ -684,12 +748,28 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       const settled = await streamOne(
         group,
         fresh,
-        renderCovenRoundtablePrompt({
-          participants: rosterParticipants,
-          receivingFamiliarId: fresh.familiarId,
-          userText: retryText,
-          targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
-        }),
+        (userTurn.responseMode ?? "broadcast") === "round-robin"
+          ? renderCovenRoundRobinPrompt({
+              participants: rosterParticipants,
+              receivingFamiliarId: fresh.familiarId,
+              userText: retryText,
+              targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
+              familiarNames: group.familiarIds.map((id) => ({
+                id,
+                name: byId.get(id)?.display_name ?? id,
+              })),
+              transcript: transcriptRef.current
+                .filter((turn) => turn.id !== reply.id)
+                .map((turn) => turn.role === "assistant"
+                  ? { ...turn, text: extractNextPaths(turn.text).visible }
+                  : turn),
+            })
+          : renderCovenRoundtablePrompt({
+              participants: rosterParticipants,
+              receivingFamiliarId: fresh.familiarId,
+              userText: retryText,
+              targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
+            }),
         controller.signal,
       );
       // Ownership-guarded (see broadcast): don't clobber a newer stream's wiring.
@@ -788,6 +868,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const participants = activeGroup
     ? activeGroup.familiarIds.map((id) => byId.get(id)).filter(Boolean as unknown as (f: ResolvedFamiliar | undefined) => f is ResolvedFamiliar)
     : [];
+  const nextRoundRobinLead = activeGroup?.nextRoundRobinLeadId
+    ? byId.get(activeGroup.nextRoundRobinLeadId) ?? null
+    : participants[0] ?? null;
 
   // --- render --------------------------------------------------------------
   return (
@@ -805,7 +888,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           {groups.length === 0 ? (
             <p className="px-2 py-3 text-[12px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
-              A coven is a group of familiars you talk to together. Create one to broadcast a prompt to all of them at once.
+              A coven is a group of familiars you talk to together. Create one to choose how they take turns responding.
             </p>
           ) : (
             <ul className="flex flex-col gap-0.5">
@@ -924,6 +1007,22 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   )}
                 </div>
               </div>
+              <div className="flex flex-col items-end gap-1">
+                <fieldset disabled={busy} className="disabled:opacity-60">
+                  <Segmented
+                    options={COVEN_RESPONSE_MODES}
+                    value={activeGroup.responseMode}
+                    onChange={changeResponseMode}
+                    getLabel={(mode) => mode === "broadcast" ? "Broadcast" : "Round robin"}
+                    ariaLabel="Coven response mode"
+                  />
+                </fieldset>
+                <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                  {activeGroup.responseMode === "broadcast"
+                    ? "Everyone responds at once"
+                    : `${nextRoundRobinLead?.display_name ?? "First familiar"} leads next`}
+                </span>
+              </div>
               <Button
                 ref={addBtnRef}
                 size="sm"
@@ -988,11 +1087,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                 <div className="grid h-full place-items-center">
                   <EmptyState
                     icon="ph:chats-circle"
-                    headline={participants.length === 0 ? "Add familiars to begin" : "Broadcast your first message"}
+                      headline={participants.length === 0 ? "Add familiars to begin" : "Start the conversation"}
                     subtitle={
                       participants.length === 0
                         ? "Use Add to pick the familiars in this coven."
-                        : "Your prompt goes to every familiar in the coven. Each replies in its own thread."
+                        : activeGroup.responseMode === "broadcast"
+                          ? "Every familiar responds at once in its own thread."
+                          : "Familiars respond in turn and see earlier replies."
                     }
                     compact
                   />

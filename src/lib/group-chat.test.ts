@@ -9,13 +9,19 @@ import {
   removeGroup,
   setGroupSession,
   setGroupParticipants,
+  setGroupResponseMode,
+  orderRoundRobinFamiliarIds,
+  nextRoundRobinLeadId,
   parseMentions,
   extractCovenDelegations,
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   renderCovenRoster,
   renderCovenRoundtablePrompt,
+  renderCovenRoundRobinPrompt,
   renderCovenContext,
+  runCovenReplySchedule,
+  loadGroups,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -123,6 +129,8 @@ test("makeGroup: dedupes participants and defaults the name", () => {
   assert.deepEqual(g.familiarIds, ["a", "b"]);
   assert.equal(g.name, "New coven");
   assert.deepEqual(g.sessions, {});
+  assert.equal(g.responseMode, "broadcast");
+  assert.equal(g.nextRoundRobinLeadId, "a");
 });
 
 test("upsertGroup: replaces by id and sorts newest-first", () => {
@@ -160,6 +168,55 @@ test("setGroupParticipants: drops session pins for removed familiars", () => {
   assert.deepEqual(g.familiarIds, ["a", "c"]);
   assert.equal(g.sessions.a, "sess-a");
   assert.equal(g.sessions.b, undefined);
+  assert.equal(g.nextRoundRobinLeadId, "a");
+});
+
+test("setGroupParticipants: repairs a removed round-robin lead", () => {
+  let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
+  g = { ...g, nextRoundRobinLeadId: "b" };
+  g = setGroupParticipants(g, ["a", "c"], "2026-06-24T01:00:00.000Z");
+  assert.equal(g.nextRoundRobinLeadId, "a");
+});
+
+test("setGroupResponseMode: preserves sessions and initializes the lead", () => {
+  let g = makeGroup("X", ["a", "b"], "2026-06-24T00:00:00.000Z", "g1");
+  g = setGroupSession(g, "a", "sess-a", "2026-06-24T00:30:00.000Z");
+  g = setGroupResponseMode({ ...g, nextRoundRobinLeadId: undefined }, "round-robin", "2026-06-24T01:00:00.000Z");
+  assert.equal(g.responseMode, "round-robin");
+  assert.equal(g.nextRoundRobinLeadId, "a");
+  assert.equal(g.sessions.a, "sess-a");
+});
+
+test("round-robin ordering rotates the lead and filters to mentioned targets", () => {
+  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "b", "c"], "b"), ["b", "c", "a"]);
+  assert.deepEqual(orderRoundRobinFamiliarIds(["a", "b", "c"], ["a", "c"], "b"), ["c", "a"]);
+  assert.equal(nextRoundRobinLeadId(["a", "b", "c"], "a"), "b");
+  assert.equal(nextRoundRobinLeadId(["a", "b", "c"], "c"), "a");
+});
+
+test("loadGroups: legacy groups default to broadcast without losing session pins", () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  const legacy = {
+    id: "legacy",
+    name: "Legacy coven",
+    familiarIds: ["a", "b"],
+    sessions: { a: "sess-a" },
+    createdAt: "t1",
+    updatedAt: "t2",
+  };
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: { getItem: () => JSON.stringify([legacy]) },
+  });
+  try {
+    const [loaded] = loadGroups();
+    assert.equal(loaded.responseMode, "broadcast");
+    assert.equal(loaded.nextRoundRobinLeadId, "a");
+    assert.equal(loaded.sessions.a, "sess-a");
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  }
 });
 
 // --- @mentions -------------------------------------------------------------
@@ -423,6 +480,99 @@ function roundTranscript(): GroupTurn[] {
     reply("r2", "charm", "u1", "Agreed — three of us."),
   ];
 }
+
+test("renderCovenRoundRobinPrompt: later recipients see settled peers and stay themselves", () => {
+  const out = renderCovenRoundRobinPrompt({
+    participants: COVEN,
+    receivingFamiliarId: "charm",
+    userText: "What should we do?",
+    targeted: false,
+    familiarNames: NAMES,
+    transcript: [
+      user("u1", "What should we do?"),
+      reply("r1", "nova", "u1", "Stabilize recovery first."),
+    ],
+  });
+  assert.match(out, /<coven_round_robin>/);
+  assert.match(out, /Nova said:[\s\S]*Stabilize recovery first/);
+  assert.match(out, /answer as yourself/i);
+  assert.doesNotMatch(out, /Charm said:/);
+  assert.doesNotMatch(out, /independent first-pass/);
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+test("runCovenReplySchedule: broadcast starts every familiar concurrently", async () => {
+  const controller = new AbortController();
+  const a = baseReply({ id: "a", familiarId: "a" });
+  const b = baseReply({ id: "b", familiarId: "b" });
+  const waits = new Map([["a", deferred<GroupReply>()], ["b", deferred<GroupReply>()]]);
+  const started: string[] = [];
+  const running = runCovenReplySchedule({
+    mode: "broadcast",
+    replies: [a, b],
+    signal: controller.signal,
+    runReply: (candidate) => {
+      started.push(candidate.familiarId);
+      return waits.get(candidate.familiarId)!.promise;
+    },
+  });
+  await Promise.resolve();
+  assert.deepEqual(started, ["a", "b"]);
+  waits.get("a")!.resolve({ ...a, status: "done", text: "A" });
+  waits.get("b")!.resolve({ ...b, status: "done", text: "B" });
+  assert.equal((await running).length, 2);
+});
+
+test("runCovenReplySchedule: round robin waits and passes settled replies forward", async () => {
+  const controller = new AbortController();
+  const a = baseReply({ id: "a", familiarId: "a" });
+  const b = baseReply({ id: "b", familiarId: "b" });
+  const first = deferred<GroupReply>();
+  const started: string[] = [];
+  const settledSeen: string[][] = [];
+  const running = runCovenReplySchedule({
+    mode: "round-robin",
+    replies: [a, b],
+    signal: controller.signal,
+    runReply: async (candidate, settledBefore) => {
+      started.push(candidate.familiarId);
+      settledSeen.push(settledBefore.map((item) => item.familiarId));
+      if (candidate.familiarId === "a") return first.promise;
+      return { ...candidate, status: "done", text: "B builds on A" };
+    },
+  });
+  await Promise.resolve();
+  assert.deepEqual(started, ["a"]);
+  first.resolve({ ...a, status: "done", text: "A's actual answer" });
+  const result = await running;
+  assert.deepEqual(started, ["a", "b"]);
+  assert.deepEqual(settledSeen, [[], ["a"]]);
+  assert.equal(result[1].text, "B builds on A");
+});
+
+test("runCovenReplySchedule: Stop cancels queued round-robin recipients", async () => {
+  const controller = new AbortController();
+  const a = baseReply({ id: "a", familiarId: "a" });
+  const b = baseReply({ id: "b", familiarId: "b" });
+  const cancelled: string[] = [];
+  const result = await runCovenReplySchedule({
+    mode: "round-robin",
+    replies: [a, b],
+    signal: controller.signal,
+    runReply: async (candidate) => {
+      controller.abort();
+      return { ...candidate, status: "error", error: "cancelled" };
+    },
+    onCancelled: (candidate) => cancelled.push(candidate.familiarId),
+  });
+  assert.deepEqual(cancelled, ["b"]);
+  assert.equal(result[1].error, "cancelled");
+});
 
 test("renderCovenContext: excludes the receiving familiar's own turns", () => {
   const out = renderCovenContext(roundTranscript(), "nova", NAMES);

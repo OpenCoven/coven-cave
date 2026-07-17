@@ -1,12 +1,11 @@
 /**
  * group-chat.ts — pure model + reducers for the Group Chat ("coven") surface.
  *
- * A *coven* is a saved set of familiars you talk to together. Sending a prompt
- * fans it out to every participant in parallel (one `/api/chat/send` stream per
- * familiar — the same client-side broadcast model the iOS app uses, since the
- * daemon/Coven CLI has no server-side "group session" concept). Each familiar
- * keeps its own resumable session; the group just remembers which session id
- * belongs to which familiar so every thread persists across reloads.
+ * A *coven* is a saved set of familiars you talk to together. Each Coven chooses
+ * whether a prompt fans out to everyone in parallel (broadcast) or moves through
+ * a rotating speaking order with peer-reply relay (round robin). Both modes use
+ * one `/api/chat/send` stream and resumable session per familiar because the
+ * daemon/Coven CLI has no server-side "group session" concept.
  *
  * Everything here is framework-free and deterministic (except the thin
  * localStorage + id/time wrappers at the bottom) so the streaming reducers and
@@ -26,6 +25,9 @@ export const MAX_COVEN_DELEGATION_DEPTH = 2;
 /** Independent cap for wide fan-out within one human turn. */
 export const MAX_COVEN_DELEGATIONS_PER_TURN = 4;
 
+export const COVEN_RESPONSE_MODES = ["broadcast", "round-robin"] as const;
+export type CovenResponseMode = (typeof COVEN_RESPONSE_MODES)[number];
+
 /** A saved group of familiars chatted with together. */
 export type CovenGroup = {
   id: string;
@@ -33,6 +35,10 @@ export type CovenGroup = {
   familiarIds: string[];
   /** Per-familiar resumed session ids so each thread survives reloads. */
   sessions: Record<string, string>;
+  /** How a multi-recipient human turn is dispatched. */
+  responseMode: CovenResponseMode;
+  /** Familiar that should lead the next multi-recipient round-robin turn. */
+  nextRoundRobinLeadId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -54,6 +60,8 @@ export type GroupUserTurn = {
   delegatedByFamiliarId?: string;
   delegationSourceReplyId?: string;
   delegationDepth?: number;
+  /** Snapshot at send time so retries keep the original turn semantics. */
+  responseMode?: CovenResponseMode;
   createdAt: string;
 };
 
@@ -374,6 +382,8 @@ export function makeGroup(
     name: name.trim() || "New coven",
     familiarIds: dedupe(familiarIds),
     sessions: {},
+    responseMode: "broadcast",
+    nextRoundRobinLeadId: dedupe(familiarIds)[0],
     createdAt: now,
     updatedAt: now,
   };
@@ -413,7 +423,48 @@ export function setGroupParticipants(
   for (const id of ids) {
     if (group.sessions[id]) sessions[id] = group.sessions[id];
   }
-  return { ...group, familiarIds: ids, sessions, updatedAt: now };
+  const nextRoundRobinLeadId = ids.includes(group.nextRoundRobinLeadId ?? "")
+    ? group.nextRoundRobinLeadId
+    : ids[0];
+  return { ...group, familiarIds: ids, sessions, nextRoundRobinLeadId, updatedAt: now };
+}
+
+export function setGroupResponseMode(
+  group: CovenGroup,
+  responseMode: CovenResponseMode,
+  now: string,
+): CovenGroup {
+  return {
+    ...group,
+    responseMode,
+    nextRoundRobinLeadId:
+      group.nextRoundRobinLeadId && group.familiarIds.includes(group.nextRoundRobinLeadId)
+        ? group.nextRoundRobinLeadId
+        : group.familiarIds[0],
+    updatedAt: now,
+  };
+}
+
+/** Rotate selected recipients around the persisted Coven lead. */
+export function orderRoundRobinFamiliarIds(
+  familiarIds: string[],
+  targetIds: string[],
+  nextLeadId?: string,
+): string[] {
+  const roster = dedupe(familiarIds);
+  const targets = new Set(dedupe(targetIds));
+  if (roster.length === 0 || targets.size === 0) return [];
+  const start = Math.max(0, nextLeadId ? roster.indexOf(nextLeadId) : 0);
+  const rotated = [...roster.slice(start), ...roster.slice(0, start)];
+  return rotated.filter((id) => targets.has(id));
+}
+
+/** Advance the persisted lead one roster slot after the familiar that led. */
+export function nextRoundRobinLeadId(familiarIds: string[], leadId: string): string | undefined {
+  const roster = dedupe(familiarIds);
+  if (roster.length === 0) return undefined;
+  const leadIndex = roster.indexOf(leadId);
+  return roster[(leadIndex < 0 ? 0 : leadIndex + 1) % roster.length];
 }
 
 function dedupe(ids: string[]): string[] {
@@ -502,6 +553,63 @@ export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): st
     "</coven_roundtable>",
   ].join("\n");
   return [roster, mode, args.userText.trim()].filter(Boolean).join("\n\n");
+}
+
+export type CovenRoundRobinPromptArgs = CovenRoundtablePromptArgs & {
+  transcript: GroupTurn[];
+  familiarNames: MentionableFamiliar[];
+};
+
+/** Build one sequential reply prompt with settled peer context. */
+export function renderCovenRoundRobinPrompt(args: CovenRoundRobinPromptArgs): string {
+  const roster = renderCovenRoster(args.participants, args.receivingFamiliarId);
+  const context = renderCovenContext(args.transcript, args.receivingFamiliarId, args.familiarNames);
+  const mode = [
+    "<coven_round_robin>",
+    args.targeted
+      ? "You were directly mentioned in this coven's round-robin conversation."
+      : "You are taking your turn in this coven's round-robin conversation.",
+    "Read the other participants' completed replies provided below, then answer as yourself.",
+    "Use your own identity, role, and judgment. You may agree, disagree, extend, or redirect the discussion.",
+    "Do not imitate another familiar or present their words as your own.",
+    "</coven_round_robin>",
+  ].join("\n");
+  return [roster, mode, context, args.userText.trim()].filter(Boolean).join("\n\n");
+}
+
+export type CovenReplyRunner = (
+  reply: GroupReply,
+  settledBefore: GroupReply[],
+) => Promise<GroupReply>;
+
+/**
+ * Dispatch one Coven turn. Broadcast starts every reply together. Round robin
+ * waits for each reply before starting the next and exposes the settled prefix
+ * to the prompt builder. Aborted queued replies are settled as cancelled without
+ * invoking the runner, so Stop cannot leak another request after cancellation.
+ */
+export async function runCovenReplySchedule(args: {
+  mode: CovenResponseMode;
+  replies: GroupReply[];
+  signal: AbortSignal;
+  runReply: CovenReplyRunner;
+  onCancelled?: (reply: GroupReply) => void;
+}): Promise<GroupReply[]> {
+  if (args.mode === "broadcast") {
+    return Promise.all(args.replies.map((reply) => args.runReply(reply, [])));
+  }
+
+  const settled: GroupReply[] = [];
+  for (const reply of args.replies) {
+    if (args.signal.aborted) {
+      const cancelled = { ...reply, status: "error" as const, error: "cancelled", activity: undefined };
+      settled.push(cancelled);
+      args.onCancelled?.(cancelled);
+      continue;
+    }
+    settled.push(await args.runReply(reply, [...settled]));
+  }
+  return settled;
 }
 
 // ---------------------------------------------------------------------------
@@ -599,7 +707,7 @@ export function loadGroups(): CovenGroup[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isCovenGroup);
+    return parsed.filter(isCovenGroup).map(normalizeCovenGroup);
   } catch {
     return [];
   }
@@ -668,4 +776,17 @@ function isCovenGroup(value: unknown): value is CovenGroup {
     typeof g.sessions === "object" &&
     g.sessions !== null
   );
+}
+
+function normalizeCovenGroup(group: CovenGroup): CovenGroup {
+  const responseMode: CovenResponseMode = COVEN_RESPONSE_MODES.includes(group.responseMode)
+    ? group.responseMode
+    : "broadcast";
+  const nextLead = group.nextRoundRobinLeadId;
+  return {
+    ...group,
+    responseMode,
+    nextRoundRobinLeadId:
+      nextLead && group.familiarIds.includes(nextLead) ? nextLead : group.familiarIds[0],
+  };
 }

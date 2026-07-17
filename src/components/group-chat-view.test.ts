@@ -9,24 +9,29 @@ const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), 
 const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 
-test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () => {
+test("GroupChatView schedules Broadcast and Round robin replies through /api/chat/send", () => {
   assert.match(view, /export function GroupChatView/, "exports GroupChatView");
-  // Fan-out: one /api/chat/send per participant carrying the per-familiar id.
+  // Both schedules use one /api/chat/send per participant carrying the
+  // per-familiar id. The pure scheduler owns concurrent vs sequential timing.
   assert.match(view, /fetch\("\/api\/chat\/send"/, "sends through the chat bridge");
   assert.match(view, /familiarId: reply\.familiarId/, "each stream targets one familiar");
-  assert.match(view, /Promise\.all\(\s*replies\.map/, "fans out to every participant in parallel");
+  assert.match(view, /runCovenReplySchedule\(\{/, "delegates reply timing to the tested scheduler");
+  assert.match(view, /mode: group\.responseMode/, "uses the active Coven's configured response mode");
   // Reuses the tested pure reducers rather than re-parsing inline.
   assert.match(view, /applyGroupEvent|parseSseBuffer/, "uses the pure stream reducers");
   // Per-familiar session pinning so each thread resumes.
   assert.match(view, /recordSession\(group\.id, reply\.familiarId/, "pins each familiar's session id");
   // A Stop control aborts the in-flight broadcast.
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
-  // Injects the coven roster into each send so a familiar knows who else is present.
+  // Broadcast injects the roster but remains an independent first pass.
   assert.match(view, /renderCovenRoundtablePrompt\(\{/, "builds the per-familiar roundtable prompt");
-  assert.match(view, /receivingFamiliarId: r\.familiarId/, "marks the receiving familiar in prompt context");
+  assert.match(view, /receivingFamiliarId: reply\.familiarId/, "marks the receiving familiar in prompt context");
   assert.match(view, /targeted,/, "tells the prompt whether the user targeted this reply");
-  assert.doesNotMatch(view, /renderCovenContext\(contextTurns, r\.familiarId/, "default group chat does not relay peer replies");
-  assert.doesNotMatch(view, /const shouldRelay = mentioned\.length === 0 && replies\.length > 1/, "full-coven broadcasts no longer switch to sequential relay");
+  // Round robin passes settled replies into a relay-aware prompt. The default
+  // remains Broadcast, so this branch is selected only by explicit config.
+  assert.match(view, /group\.responseMode === "round-robin"[\s\S]*renderCovenRoundRobinPrompt\(\{/, "round robin uses the relay-aware prompt");
+  assert.match(view, /transcript: \[\.\.\.priorTurns, userTurn, \.\.\.settledBefore\]/, "later speakers receive settled earlier replies");
+  assert.match(view, /extractNextPaths\(turn\.text\)\.visible/, "relay strips internal next-path controls");
   // Strips the piggybacked next-paths block (visible) and surfaces the parsed
   // lines (suggestions) so control markup never leaks and chips can render.
   assert.match(
@@ -71,7 +76,7 @@ test("@mentions target a subset of the coven", () => {
     "passes visible text, the current roster, and any authoritative target to routing",
   );
   assert.match(view, /targetFamiliarIds: targeted \? targetIds : undefined/, "records targeted ids on the user turn");
-  assert.match(view, /replies: GroupReply\[\] = targetIds\.map/, "only the targets reply");
+  assert.match(view, /replies: GroupReply\[\] = orderedTargetIds\.map/, "only the targets reply, in the selected mode's order");
   // Composer autocomplete reuses the tested pure helpers.
   assert.match(view, /findActiveMention\(el\.value/, "detects the active mention token");
   assert.match(view, /matchMentions\(mention\.query, mentionable\)/, "filters the roster by the query");
@@ -96,6 +101,16 @@ test("completed familiar delegation trailers route bounded, attributable follow-
   assert.match(view, /sessions\[targetId\] \?\? null/, "reuses the target familiar's latest pinned session");
   assert.match(view, /const retryText = delegator \? `Delegated by @\$\{delegator\}:\\n\$\{userTurn\.text\}` : userTurn\.text/, "preserves delegation attribution when a failed target is retried");
   assert.match(view, /delegator \? "HANDOFF" : "OP"/, "renders familiar-issued work as an attributed handoff");
+});
+
+test("response mode is configured per Coven and locked while a turn is running", () => {
+  assert.match(view, /options=\{COVEN_RESPONSE_MODES\}/, "offers the two canonical response modes");
+  assert.match(view, /ariaLabel="Coven response mode"/, "labels the mode selector for assistive technology");
+  assert.match(view, /<fieldset disabled=\{busy\}/, "prevents mid-turn mode changes");
+  assert.match(view, /setGroupResponseMode\(group, responseMode, nowIso\(\)\)/, "persists the setting on the active Coven");
+  assert.match(view, /responseMode: group\.responseMode/, "snapshots mode on each user turn for stable retries");
+  assert.match(view, /nextRoundRobinLeadId\(current\.familiarIds, leadId\)/, "rotates the next round-robin lead");
+  assert.match(view, /leads next/, "shows who will lead the next round");
 });
 
 test("Group chat transcript uses avatar author rows with recency", () => {
