@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -317,10 +318,10 @@ export function FamiliarGrowthView({
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
           </button>
           {selected ? (
-            <a className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
+            <Link className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
               <Icon name="ph:chart-bar-bold" aria-hidden />
               Analytics
-            </a>
+            </Link>
           ) : null}
         </div>
       </header>

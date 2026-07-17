@@ -10623,8 +10623,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   max-width: 100%;
   height: 40px;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-raised);
@@ -10635,14 +10635,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .growth-picker__value b {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 650;
 }
 .growth-picker__avatar,
@@ -10650,9 +10650,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   object-fit: cover;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 .growth-picker__count {
   margin-left: auto;
