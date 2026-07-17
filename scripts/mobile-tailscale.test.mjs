@@ -23,22 +23,16 @@ test("mobile tailscale runner exposes operator commands", () => {
   assert.match(packageJson.scripts["mobile:tailscale:stop"], /mobile-tailscale\.sh stop/);
 });
 
-test("mobile tailscale app mode serves the native client with no token", () => {
-  // The tokenless native-app path must mint/load NO access or sidecar token and
-  // unset both (plus COVEN_CAVE_BUNDLE) when starting the server.
+test("mobile tailscale app mode serves the native client with an access token", () => {
+  // The native-app path exposes the full API through Tailscale Serve, so it must
+  // mint/load a mobile access token and only clear sidecar/bundle trust.
   assert.match(script, /CAVE_MOBILE_APP/);
   assert.match(script, /app\) resolve_active_port; maybe_fallback_port; app_command ;;/);
-  assert.match(
-    script,
-    /unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE/,
-  );
-  assert.match(script, /-u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE/);
-  assert.match(script, /tokenless app mode: do not mint or load any token/);
-  // Tailscale Serve forwards the <host>.ts.net Host (verified against a real
-  // tailnet), so the tokenless server MUST set COVEN_CAVE_TAILNET_TRUST=1 to
-  // relax proxy.ts's loopback host gate — otherwise every request 403s.
-  assert.match(script, /export COVEN_CAVE_TAILNET_TRUST=1/);
-  assert.match(script, /COVEN_CAVE_TAILNET_TRUST=1/);
+  assert.match(script, /load_or_create_token/);
+  assert.match(script, /COVEN_CAVE_ACCESS_TOKEN="\$ACCESS_TOKEN"/);
+  assert.match(script, /unset COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE COVEN_CAVE_TAILNET_TRUST/);
+  assert.match(script, /-u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE -u COVEN_CAVE_TAILNET_TRUST/);
+  assert.match(script, /coven_access_token/);
   assert.match(script, /HOSTNAME="\$HOST"/);
   assert.match(script, /PORT="\$PORT"/);
 });
@@ -60,13 +54,11 @@ test("mobile tailscale app mode falls back to Tailscale IP HTTP when MagicDNS is
   assert.match(script, /APP_URL="http:\/\/\$\{APP_IP_HOST\}:\$\{PORT\}\/"/);
 });
 
-test("mobile tailscale app mode records tokenless ownership separately from invite tokens", () => {
+test("mobile tailscale app mode records ownership separately from sidecar tokens", () => {
   assert.match(script, /MODE_FILE=/);
   assert.match(script, /write_server_mode app/);
   assert.match(script, /recorded_server_mode_is app/);
-  assert.match(script, /clear_mobile_tokens/);
-  assert.match(script, /rm -f "\$TOKEN_FILE" "\$SIDECAR_TOKEN_FILE"/);
-  assert.match(script, /rm -f "\$INVITE_FILE" "\$EXPIRES_FILE"/);
+  assert.match(script, /rm -f "\$SIDECAR_TOKEN_FILE"/);
 });
 
 test("mobile tailscale app mode takes over an untracked same-checkout dev server", () => {

@@ -19,17 +19,13 @@ assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing side
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
-assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated, tailnetTrusted\)/, "valid mobile access and narrow tailnet-trust should feed the API host gate separately");
-assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless app mode (COVEN_CAVE_TAILNET_TRUST) should relax the host gate for tailnet-forwarded requests");
+assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated\)/, "valid mobile access should satisfy the API host gate");
+assert.doesNotMatch(source, /isAllowedApiHost\([^)]*tailnetTrusted[^)]*\)/, "tailnet membership alone must not relax the API host gate");
+assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "the tailnet-trust flag should survive only as a taint marker that further restricts automation ingress");
 assert.match(
   source,
-  /const mobileAccessMarker =\s*mobileAccessAuthenticated \|\| \(tailnetTrusted && isTailscaleServeHost\(requestHost\)\)/,
-  "tokenless tailnet-trust mode should still stamp the mobile-access marker for ts.net hosts",
-);
-assert.match(
-  source,
-  /nextWithMobileAccessMarker\(req, mobileAccessMarker\)/,
-  "proxy should forward the derived mobile marker into downstream request headers",
+  /nextWithMobileAccessMarker\(req, mobileAccessAuthenticated\)/,
+  "proxy should forward the verified mobile-access state into downstream request headers",
 );
 assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
 assert.match(source, /const referer = req\.headers\.get\("referer"\)/, "API referer gate should read the source referer header once");
@@ -55,10 +51,10 @@ assert.doesNotMatch(
   /image\/svg\+xml/,
   "the API content-type gate must not admit active SVG backdrop payloads",
 );
-assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless-tailnet CSRF guard");
+assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless CSRF guard");
 assert.match(source, /isLocalOnlyAutomationRun\(req\.nextUrl\.pathname, req\.method\)/, "run-now automation execution should have a dedicated local-only proxy guard");
 assert.match(source, /mobileAccessAuthenticated \|\| tailnetTrusted \|\| !isLoopbackHost\(requestHost\)/, "run-now automation execution must deny mobile, tailnet, and non-loopback proxy ingress");
-assert.match(source, /missing request source/, "tokenless tailnet GET webhooks should reject absent Origin and Referer headers");
+assert.match(source, /missing request source/, "tokenless GET webhooks should reject absent Origin and Referer headers");
 // cave-gzje: a verified signed mobile invite is the paired phone's credential.
 // The final sidecar gate must admit it (the phone can never learn the
 // webview's per-launch token), and the webhook-GET missing-source guard must
@@ -70,8 +66,8 @@ assert.match(
 );
 assert.match(
   source,
-  /\(\(tailnetTrusted && !sidecarToken\) \|\| mobileAccessAuthenticated\) &&\s*isProductionWebhookGet/,
-  "the webhook-GET missing-source guard must also cover mobile-cookie-authenticated requests",
+  /\(!sidecarToken \|\| mobileAccessAuthenticated\) &&\s*isProductionWebhookGet/,
+  "the webhook-GET missing-source guard must cover tokenless servers and mobile-cookie-authenticated requests",
 );
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the
@@ -101,7 +97,7 @@ assert.doesNotMatch(
 // the bypass ran first and silently let non-loopback callers through during
 // `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
 {
-  const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated, tailnetTrusted)");
+  const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated)");
   const originIdx = source.indexOf("isAllowedRequestSourceAny(origin, expectedOrigins)");
   const refererIdx = source.indexOf("isAllowedRequestSourceAny(referer, expectedOrigins)");
   const contentTypeIdx = source.indexOf("unsupported content-type");

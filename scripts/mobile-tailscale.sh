@@ -384,17 +384,11 @@ start_with_tmux() {
   fi
 
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
-    # Native SwiftUI app over Tailscale: NO token at all. Tailscale Serve is the
-    # only ingress to loopback:${PORT} and the proxy's CSRF Origin/Referer gate
-    # still blocks any drive-by browser request (those always carry an Origin);
-    # a native client sends none, so it passes the gate, and with neither
-    # COVEN_CAVE_ACCESS_TOKEN nor COVEN_CAVE_AUTH_TOKEN set (and not bundled) the
-    # /api/ proxy falls through to NextResponse.next(). COVEN_CAVE_TAILNET_TRUST=1
-    # relaxes the loopback host gate because Tailscale Serve forwards the
-    # <host>.ts.net Host (not 127.0.0.1). Tailnet membership is the trust
-    # boundary — see docs/ios-native-rebuild.md.
+    # Native SwiftUI app over Tailscale: protect the full API surface with the
+    # same mobile access token used by invite mode. Tailscale membership is not
+    # sufficient authorization because Serve exposes every /api route.
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE; export COVEN_CAVE_TAILNET_TRUST=1 HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
+      "bash -lc 'unset COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE COVEN_CAVE_TAILNET_TRUST; export COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
     tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
     return 0
   fi
@@ -417,9 +411,9 @@ start_with_tmux() {
 
 start_with_nohup() {
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
-    # Tokenless native-app server. See start_with_tmux for the trust rationale.
-    nohup env -u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE \
-      COVEN_CAVE_TAILNET_TRUST=1 \
+    # Token-gated native-app server. See start_with_tmux for the trust rationale.
+    nohup env -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE -u COVEN_CAVE_TAILNET_TRUST \
+      COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" \
       HOSTNAME="$HOST" \
       PORT="$PORT" \
       pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
@@ -445,13 +439,13 @@ start_next_server() {
     ensure_state_dir
     if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
       if recorded_server_is_running && recorded_server_mode_is app; then
-        clear_mobile_tokens
+        load_or_create_token
         echo "CovenCave native-app server is already listening on ${HOST}:${PORT}."
         return 0
       fi
-      # Refuse to reuse a token-gated or untracked server under tokenless app mode.
-      if [ -n "${COVEN_CAVE_ACCESS_TOKEN:-}" ] || [ -s "$TOKEN_FILE" ] || [ -s "$SIDECAR_TOKEN_FILE" ]; then
-        echo "Error: port ${PORT} is already in use by a token-gated server. Run 'pnpm mobile:tailscale:stop' first." >&2
+      # Refuse to reuse a sidecar-gated or untracked server under app mode.
+      if [ -s "$SIDECAR_TOKEN_FILE" ]; then
+        echo "Error: port ${PORT} is already in use by a native sidecar server. Run 'pnpm mobile:tailscale:stop' first." >&2
         exit 1
       fi
       require_recorded_server
@@ -477,9 +471,10 @@ start_next_server() {
   fi
 
   if [ "${CAVE_MOBILE_APP:-0}" = "1" ]; then
-    # tokenless app mode: do not mint or load any token, and clear stale tokens
-    # from invite/native runs so future app-mode reuse is judged by server.mode.
-    clear_mobile_tokens
+    # App mode serves the full API surface through Tailscale, so mint/load the
+    # mobile access token and clear only stale sidecar tokens from native runs.
+    rm -f "$SIDECAR_TOKEN_FILE"
+    load_or_create_token
   elif [ "${CAVE_MOBILE_NATIVE:-0}" != "1" ]; then
     load_or_create_token
   else
@@ -781,10 +776,9 @@ try {
 NODE
 }
 
-# Tokenless native SwiftUI app over Tailscale Serve. Starts a loopback Next
-# server with NO access/sidecar token, publishes it via `tailscale serve`, and
-# prints the host to type into the iOS app. There is no invite/token to copy —
-# tailnet membership is the trust boundary. See docs/ios-native-rebuild.md.
+# Native SwiftUI app over Tailscale Serve. Starts a loopback Next server with a
+# mobile access token, publishes it via `tailscale serve`, and prints/scans a
+# pairing URL so tailnet peers still need the Cave credential for the full API.
 app_command() {
   ensure_tailscale
   CAVE_MOBILE_APP=1 start_next_server
@@ -801,15 +795,15 @@ app_command() {
     APP_URL="http://${APP_IP_HOST}:${PORT}/"
   fi
 
-  APP_HOST="$(node -e "process.stdout.write(new URL(process.argv[1]).host)" "$APP_URL")"
+  APP_PAIRING_URL="$(node -e "const url = new URL(process.argv[1]); url.searchParams.set('coven_access_token', process.argv[2]); process.stdout.write(url.toString())" "$APP_URL" "$ACCESS_TOKEN")"
 
   echo
-  echo "Native iOS app is ready — no token required."
-  echo "In the Coven Cave app, enter this address:"
+  echo "Native iOS app is ready."
+  echo "In the Coven Cave app, scan or paste this pairing URL:"
   echo
-  echo "    ${APP_HOST}"
+  echo "    ${APP_PAIRING_URL}"
   echo
-  print_terminal_qr "$APP_URL"
+  print_terminal_qr "$APP_PAIRING_URL"
   echo
   echo "Stop with: pnpm mobile:tailscale:stop"
   echo

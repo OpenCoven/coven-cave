@@ -177,12 +177,16 @@ assert.match(src, /if \(!isLoopbackHost\(host\)\)/, "server only relaxes the loo
 // tailscale serve forwards from 127.0.0.1, so a non-loopback peer is a direct
 // LAN/WAN connection that must never be trusted.
 assert.match(src, /isLoopbackAddress\(req\.socket\.remoteAddress\)/, "server verifies the WebSocket peer address, not only the Host header");
-// Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1) relaxes ONLY the
-// loopback *host* gate for native clients that omit Origin, so the iOS terminal
-// reaches /api/pty-ws over the tailnet (tailscale serve forwards the <host>.ts.net
-// Host) without trusting browser-controlled Host+Origin pairs after DNS rebinding.
-assert.match(src, /process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless tailnet app mode has an explicit WebSocket host-gate relaxation");
-assert.match(src, /return tailnetTrusted && !req\.headers\.origin/, "tailnet host relaxation only accepts Origin-less native WebSocket upgrades");
+// Tailscale Serve forwards the <host>.ts.net Host. The iOS terminal may use
+// that host only after the mobile access token authenticates the upgrade;
+// tailnet membership alone must not relax the host gate.
+assert.match(src, /const tokenAuthenticated = isPtyAuthRequired\(\) \? isAuthorized\(req, query\) : false/, "the upgrade credential is verified before the host gate");
+assert.match(
+  src,
+  /if \(tokenAuthenticated\) return sameOrigin\(req\.headers\.origin, `http:\/\/\$\{host\}`\);\s*\n\s*return false;/,
+  "credential-less remote-looking WebSocket upgrades are rejected outright",
+);
+assert.doesNotMatch(src, /COVEN_CAVE_TAILNET_TRUST/, "tailnet trust must not bypass WebSocket host auth");
 assert.match(packageJson.scripts.postinstall ?? "", /fix-node-pty-spawn-helper\.mjs/, "postinstall repairs node-pty spawn-helper mode");
 assert.equal(
   existsSync(new URL("../scripts/fix-node-pty-spawn-helper.mjs", import.meta.url)),

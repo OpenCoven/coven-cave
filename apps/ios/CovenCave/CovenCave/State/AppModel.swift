@@ -638,7 +638,7 @@ final class AppModel {
             CaveConnection.saveAccessToken(token)
         } else if !isSameEndpoint {
             // Tokens are stored globally, so never carry an old desktop's
-            // credential to a newly configured host from a tokenless invite.
+            // credential to a newly configured host from an uncredentialed input.
             CaveConnection.saveAccessToken(nil)
         }
         if !isSameEndpoint {

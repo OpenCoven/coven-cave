@@ -1,11 +1,8 @@
 import Foundation
 
-/// Describes how to reach the desktop host over Tailscale.
-///
-/// There is **no token**. Trust is established by being on the same Tailscale
-/// tailnet as the host: the desktop serves the mobile API only over its Tailscale
-/// interface (via `tailscale serve`), so any request that reaches it is already
-/// tailnet-authenticated. The app only needs the host's address.
+/// Describes the Tailscale host and optional mobile access credential. The
+/// desktop may publish the full API through `tailscale serve`, so tailnet
+/// reachability is paired with a Cave access token for authorization.
 struct CaveConnection: Codable, Equatable {
     /// A MagicDNS name (e.g. `my-mac.tailnet-name.ts.net`) or a raw Tailscale IP
     /// (e.g. `100.101.102.103`). May include a scheme and/or port; we normalise.
