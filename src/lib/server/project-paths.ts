@@ -13,6 +13,19 @@ function realpathOrResolve(value: string): string {
   }
 }
 
+function expandHomeShortcut(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "~") return homedir();
+  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    return path.join(homedir(), trimmed.slice(2));
+  }
+  return value;
+}
+
+function normalizeNewProjectRootCandidate(value: string): string {
+  return normalizeLegacyCovenWorkspacePath(expandHomeShortcut(value));
+}
+
 function normalizeLegacyCovenWorkspacePath(value: string): string {
   const resolved = path.resolve(value);
   const legacyRoot = path.resolve(path.join(covenHome(), "workspace"));
@@ -107,6 +120,6 @@ export function resolveAllowedProjectPath(value: string): string | null {
 }
 
 export function isAllowedNewProjectRoot(value: string): boolean {
-  const candidate = realpathOrResolve(normalizeLegacyCovenWorkspacePath(value));
+  const candidate = realpathOrResolve(normalizeNewProjectRootCandidate(value));
   return uniqueRoots(builtInProjectRoots()).some((root) => isWithinRoot(candidate, root));
 }

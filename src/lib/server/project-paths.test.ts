@@ -112,6 +112,17 @@ try {
     false,
     "late saved projects do not authorize more arbitrary project roots",
   );
+
+  assert.equal(
+    isAllowedNewProjectRoot("~"),
+    false,
+    "tilde project roots are checked after home-directory expansion",
+  );
+  assert.equal(
+    isAllowedNewProjectRoot("~/secret"),
+    false,
+    "tilde subpaths cannot masquerade as relative paths under the current working directory",
+  );
 } finally {
   restoreEnv();
   await rm(tmp, { recursive: true, force: true });
