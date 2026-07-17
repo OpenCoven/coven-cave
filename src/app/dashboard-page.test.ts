@@ -49,10 +49,16 @@ assert.match(cockpit, /dashboardSignals/, "cockpit derives predictive signals");
 assert.match(cockpit, /case "signals"/, "a Signals panel is wired into the layout switch");
 assert.match(cockpit, /case "confidence"/, "a Confidence/performance panel is wired into the layout switch");
 assert.match(cockpit, /Heatmap/, "confidence renders the visx heatmap primitive");
-assert.match(cockpit, /deriveConfidenceScore/, "confidence reuses the shared scoring helper");
-assert.match(cockpit, /deriveGrowthReport/, "confidence composes the growth report for scoring");
-assert.match(cockpit, /\/api\/retro-runs/, "confidence pulls the shared retro-runs snapshot");
-assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract/, "confidence pulls each familiar's contract");
+// Confidence is the thread metric — real self-reports scored by the same
+// helper the familiar analytics page reads — not the retired synthetic
+// weighted-factor score (familiar-confidence.ts).
+assert.match(cockpit, /deriveThreadConfidence/, "confidence derives from real thread self-reports");
+assert.doesNotMatch(cockpit, /familiar-confidence/, "the synthetic weighted-factor lib is gone from the cockpit");
+assert.doesNotMatch(cockpit, /deriveConfidenceScore/, "no synthetic confidence scoring remains");
+assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/self-reports\?limit=/, "confidence pulls each familiar's thread self-reports");
+assert.match(cockpit, /deriveGrowthReport/, "growth report still derives the health badge");
+assert.match(cockpit, /\/api\/retro-runs/, "vitals pull the shared retro-runs snapshot");
+assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract/, "the contract column pulls each familiar's contract");
 assert.match(
   readFileSync(cockpitUrl, "utf8"),
   /useFamiliarContracts\(data\.familiars\)/,
@@ -171,7 +177,7 @@ const heatmap = readFileSync(new URL("../components/ui/charts/heatmap.tsx", impo
 assert.match(heatmap, /<title>/, "heatmap cells carry native hover titles");
 assert.match(heatmap, /role: "img"/, "heatmap can expose an accessible summary");
 assert.match(cockpit, /ariaLabel=\{`Board status:/, "board donut passes a data summary to AT");
-assert.match(cockpit, /ariaLabel=\{`Confidence factors by familiar:/, "confidence heatmap passes a data summary to AT");
+assert.match(cockpit, /ariaLabel=\{`Thread confidence metrics by familiar:/, "confidence heatmap passes a data summary to AT");
 
 // ── Drag a11y (cave-0k5b): titles, not ids ───────────────────────────────────
 // dnd-kit's default announcements read the raw widget ids; the cockpit supplies

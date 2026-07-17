@@ -68,6 +68,7 @@ async function gotoDashboard(page: Page, inboxItems: unknown[] = []) {
   });
   await page.route("**/api/familiars", (route) => route.fulfill({ json: { ok: true, familiars: FAMILIARS } }));
   await page.route("**/api/familiars/*/contract", (route) => route.fulfill({ status: 404, json: {} }));
+  await page.route("**/api/familiars/*/self-reports**", (route) => route.fulfill({ json: { ok: true, reports: [], total: 0 } }));
   await page.route("**/api/sessions/list**", (route) => route.fulfill({ json: { ok: true, sessions: SESSIONS } }));
   await page.route("**/api/github/activity", (route) => route.fulfill({ json: { items: GH_ACTIVITY } }));
   await page.route("**/api/github/assigned", (route) => route.fulfill({ json: { items: GH_ASSIGNED } }));

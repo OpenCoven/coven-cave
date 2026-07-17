@@ -10,7 +10,6 @@ import {
   dayKey,
   githubEmptyState,
   panelTitle,
-  prettyFactor,
   reconcileLayout,
   retroSub,
   seriesFor,
@@ -79,12 +78,9 @@ test("githubEmptyState: connect affordance only when the token probe proves disc
   });
 });
 
-test("small formatters: shortRepo, prettyFactor, confidenceColor clamps", () => {
+test("small formatters: shortRepo, confidenceColor clamps", () => {
   assert.equal(shortRepo("OpenCoven/coven-cave"), "coven-cave");
   assert.equal(shortRepo("bare-repo"), "bare-repo");
-  assert.equal(prettyFactor("accept_rate"), "Accept");
-  assert.equal(prettyFactor("contract_score"), "Contract");
-  assert.equal(prettyFactor("memory_freshness"), "Memory Freshness");
   assert.match(confidenceColor(1.4), /100%/); // clamped high
   assert.match(confidenceColor(-2), /\b0%/);  // clamped low
   assert.match(confidenceColor(0.5), /50%/);

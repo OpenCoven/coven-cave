@@ -15,7 +15,7 @@ const css = readFileSync(new URL("../../styles/dashboard.css", import.meta.url),
 // ── Empty tiles teach the action that fills them ─────────────────────────────
 assert.match(format, /fills in after the first retro run/, "Retro tile teaches when empty");
 assert.match(format, /fills in once familiars have contracts/, "Contract tile teaches when empty");
-assert.match(cockpit, /fills in after growth reviews/, "Confidence tile teaches when empty");
+assert.match(cockpit, /fills in after thread reflections/, "Confidence tile teaches when empty");
 for (const shrug of ["no retro runs", "no contracts", "no scores yet"]) {
   for (const [name, src] of [["cockpit", cockpit], ["panels", panels], ["format", format]]) {
     assert.doesNotMatch(src, new RegExp(`"${shrug}"`), `dead-end sub "${shrug}" is gone from ${name}`);

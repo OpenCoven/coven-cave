@@ -24,14 +24,14 @@ import {
   sortSpaceRows, formatBytes, type SpaceSortKey, type SpaceUsageRow,
 } from "@/lib/dashboard-analytics";
 import type { FamiliarInsightRow } from "@/lib/coven-analytics";
-import type { ConfidenceFactor } from "@/lib/familiar-confidence";
+import type { ThreadMetric } from "@/lib/thread-confidence";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { openExternalUrl } from "@/lib/open-external";
 import {
   HEALTH_META, STATUS_META, STATUS_ORDER, TIER_TONE, TREND_DAYS,
-  confidenceColor, githubEmptyState, prettyFactor, shortRepo, whenLabel,
+  confidenceColor, githubEmptyState, shortRepo, whenLabel,
 } from "@/lib/dashboard-cockpit-format";
 
 // ─── Coven insight banner ────────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ export function FamiliarInsightsTable({ rows, loaded }: { rows: FamiliarInsightR
                 <span className="cockpit-fam__score">{r.confidenceScore}</span>
                 {r.confidenceLabel ? <Badge tone={TIER_TONE[r.confidenceLabel] ?? "calm"}>{r.confidenceLabel}</Badge> : null}
               </>
-            ) : <span className="cockpit-fam__dash" title="No contract fetched yet">—</span>}
+            ) : <span className="cockpit-fam__dash" title="No thread reports yet">—</span>}
           </span>
           <span className="cockpit-fam__act" role="cell">
             {r.health ? <Badge tone={HEALTH_META[r.health].tone}>{HEALTH_META[r.health].label}</Badge> : null}
@@ -483,13 +483,15 @@ export function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
 
 // ─── Confidence / performance heatmap ────────────────────────────────────────────
 
-export type ConfidenceRow = { id: string; name: string; score: number; factors: ConfidenceFactor[] };
+// Thread-confidence metrics per familiar — the same self-reported averages the
+// analytics page reads (thread-confidence.ts), not the old synthetic factors.
+export type ConfidenceRow = { id: string; name: string; score: number; metrics: ThreadMetric[] };
 
 export function ConfidencePanel({ rows }: { rows: ConfidenceRow[] }) {
-  const cols = rows[0]?.factors.map((f) => prettyFactor(f.label)) ?? [];
-  // Cell value = the factor's normalized 0..1 strength (raw score ÷ 100).
+  const cols = rows[0]?.metrics.map((m) => m.label) ?? [];
+  // Cell value = the metric's normalized 0..1 strength (raw score ÷ 100).
   const cells = rows.flatMap((r) =>
-    r.factors.map((f) => ({ row: r.name, col: prettyFactor(f.label), value: f.value / 100 })),
+    r.metrics.map((m) => ({ row: r.name, col: m.label, value: m.value / 100 })),
   );
   return (
     <div className="cockpit-confidence">
@@ -502,7 +504,7 @@ export function ConfidencePanel({ rows }: { rows: ConfidenceRow[] }) {
             <a
               key={r.id}
               href={`/dashboard/familiars/${encodeURIComponent(r.id)}/analytics`}
-              title={`${r.name}: confidence ${r.score} — open analytics`}
+              title={`${r.name}: thread confidence ${r.score} — open analytics`}
             >
               {r.name}
             </a>
@@ -514,7 +516,7 @@ export function ConfidencePanel({ rows }: { rows: ConfidenceRow[] }) {
           cells={cells}
           colorFor={confidenceColor}
           height={Math.max(72, rows.length * 26)}
-          ariaLabel={`Confidence factors by familiar: ${rows.map((r) => `${r.name} ${r.score}`).join(", ")}`}
+          ariaLabel={`Thread confidence metrics by familiar: ${rows.map((r) => `${r.name} ${r.score}`).join(", ")}`}
           cellTitle={(c) => `${c.row} · ${c.col}: ${Math.round(c.value * 100)}/100`}
         />
       </div>

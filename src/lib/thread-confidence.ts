@@ -1,7 +1,7 @@
-// The analytics page's headline confidence, derived from real thread
-// self-reports (via aggregateThreadSignals) instead of the synthetic factor
-// weights in familiar-confidence.ts — which now only serves the dashboard
-// cockpit. Metric weights match deriveThreadScore so the aggregate score and
+// The headline confidence for familiar analytics AND the dashboard cockpit,
+// derived from real thread self-reports (via aggregateThreadSignals) — the
+// synthetic factor weights that used to live in familiar-confidence.ts are
+// gone. Metric weights match deriveThreadScore so the aggregate score and
 // each report's own score read on one scale.
 
 import {

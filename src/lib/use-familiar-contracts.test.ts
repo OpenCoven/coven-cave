@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// useFamiliarContracts is the cockpit's confidence raw material: per-familiar
-// contract reports + the shared retro-runs snapshot, fanned out with a bound
-// so a large coven can't stampede the daemon (cave-hwux — extracted from the
-// dashboard-cockpit root's inline effect).
+// useFamiliarContracts is the cockpit's insight-row raw material: per-familiar
+// contract reports + thread self-reports (the thread-confidence source) + the
+// shared retro-runs snapshot, fanned out with a bound so a large coven can't
+// stampede the daemon (cave-hwux — extracted from the dashboard-cockpit root's
+// inline effect).
 const src = readFileSync(new URL("./use-familiar-contracts.ts", import.meta.url), "utf8");
 
 assert.match(src, /CONTRACT_FETCH_CAP = 12/, "contract fan-out stays bounded at 12 familiars");
@@ -24,6 +25,15 @@ assert.match(
   /`\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract`/,
   "per-familiar contract endpoint, id URL-encoded",
 );
+// Thread self-reports ride the same bounded batch — the cockpit scores
+// confidence from real reflections (deriveThreadConfidence), and the fetch
+// window matches the analytics page's (limit=30).
+assert.match(src, /SELF_REPORT_FETCH_LIMIT = 30/, "self-report window matches the analytics page");
+assert.match(
+  src,
+  /`\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/self-reports\?limit=\$\{SELF_REPORT_FETCH_LIMIT\}`/,
+  "per-familiar self-reports endpoint, id URL-encoded",
+);
 assert.match(src, /cache: "no-store"/, "contract data is live — never the HTTP cache");
 // One effect-scoped cancelled guard covers both unmount and a key change; the
 // old inline version needed a second component-level aliveRef plus an
@@ -42,6 +52,7 @@ assert.match(
 // the whole Promise.all batch.
 assert.match(src, /if \(!res\.ok\) return null/, "non-OK responses resolve null");
 assert.match(src, /catch \{\s*return null;/, "network errors resolve null");
-assert.match(src, /reports\[i\]\?\.report \?\? null/, "a missing report is stored as an explicit null row");
+assert.match(src, /contractReports\[i\]\?\.report \?\? null/, "a missing contract is stored as an explicit null row");
+assert.match(src, /selfReports\[i\]\?\.reports \?\? \[\]/, "a missing self-report list degrades to empty — unmeasured, not broken");
 
 console.log("use-familiar-contracts.test.ts: ok");

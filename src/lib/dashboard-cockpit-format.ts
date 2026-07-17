@@ -140,12 +140,6 @@ export function shortRepo(repo: string): string {
   return slash >= 0 ? repo.slice(slash + 1) : repo;
 }
 
-/** Pretty label for a confidence factor key (e.g. "accept_rate" → "Accept"). */
-export function prettyFactor(label: string): string {
-  const base = label.replace(/_score$/, "").replace(/_rate$/, "");
-  return base.split("_").map((w) => w.slice(0, 1).toUpperCase() + w.slice(1)).join(" ");
-}
-
 /** 0 → danger, 1 → success, ramped through color-mix in oklch. */
 export function confidenceColor(value: number): string {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);

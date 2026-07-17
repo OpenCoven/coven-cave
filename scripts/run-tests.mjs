@@ -457,7 +457,6 @@ export const SUITES = {
     "src/lib/first-run-stamps.test.ts",
     "src/lib/summoning-draft.test.ts",
     "src/components/familiar-growth-view.test.ts",
-    "src/lib/familiar-confidence.test.ts",
     "src/lib/thread-confidence.test.ts",
     "src/lib/signal-trends.test.ts",
     "src/lib/familiar-analytics-insight.test.ts",

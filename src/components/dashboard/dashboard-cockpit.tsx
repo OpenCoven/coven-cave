@@ -20,7 +20,7 @@ import {
   deriveCovenVitals, deriveCovenInsight, covenSessionsSeries,
   type FamiliarInsightRow, type CovenVitals,
 } from "@/lib/coven-analytics";
-import { deriveConfidenceScore, type ConfidenceScore } from "@/lib/familiar-confidence";
+import { deriveThreadConfidence, type ThreadConfidence } from "@/lib/thread-confidence";
 import { deriveGrowthReport } from "@/lib/familiar-growth-signals";
 import { ACTIVITY_DAYS, buildFamiliarCardStats, type FamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
@@ -197,19 +197,21 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
     [data.github, data.sessions, data.familiars, nowMs],
   );
 
-  // ── Per-familiar contract fetch (bounded) + one shared retro-runs snapshot.
-  //    Keyed on the visible familiar set; rows recompute from live sessions. ──
+  // ── Per-familiar contract + thread self-report fetch (bounded) + one shared
+  //    retro-runs snapshot. Keyed on the visible familiar set; rows recompute
+  //    from live sessions. ──
   const {
     contracts: confidenceRaw,
     fetchedCount: contractFetchedCount,
     partial: contractFetchPartial,
   } = useFamiliarContracts(data.familiars);
 
-  // ── Per-familiar insight rows (+ full confidence for the heatmap). Growth and
-  //    activity derive from sessions/memory for every familiar; confidence only
-  //    for those whose contract was fetched. ──
+  // ── Per-familiar insight rows (+ full thread confidence for the heatmap).
+  //    Growth and activity derive from sessions/memory for every familiar;
+  //    confidence comes from real thread self-reports (same metric as the
+  //    analytics page), so it only fills for familiars with reflections. ──
   const perFamiliar = useMemo(() => {
-    if (data.familiars.length === 0) return [] as { row: FamiliarInsightRow; confidence: ConfidenceScore | null }[];
+    if (data.familiars.length === 0) return [] as { row: FamiliarInsightRow; confidence: ThreadConfidence | null }[];
     const statsById = buildFamiliarCardStats({
       familiars: data.familiars, sessions: data.sessions, covenEntries: data.memory,
     });
@@ -223,11 +225,11 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
       const profile = profileById.get(f.id);
       const retroState = snapshot?.familiars.find((r) => r.familiarId === f.id) ?? null;
       const growth = deriveGrowthReport({ familiar: f, stats, retroState, now: nowMs });
-      const hasContract = contractsById?.has(f.id) ?? false;
-      const contract = hasContract ? contractsById!.get(f.id) ?? null : null;
-      const confidence = hasContract
-        ? deriveConfidenceScore({ contractReport: contract, growthReport: growth, familiar: f })
-        : null;
+      const contract = contractsById?.get(f.id) ?? null;
+      const threadReports = confidenceRaw?.threadReportsById.get(f.id) ?? [];
+      const threadConfidence = threadReports.length > 0 ? deriveThreadConfidence(threadReports) : null;
+      // hasData false = unmeasured, never a fake "Low" — the row reads "—".
+      const confidence = threadConfidence?.hasData ? threadConfidence : null;
       const row: FamiliarInsightRow = {
         id: f.id,
         name: f.display_name,
@@ -253,7 +255,7 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
   const heatmapRows = useMemo<ConfidenceRow[]>(
     () => perFamiliar
       .filter((x) => x.confidence)
-      .map((x) => ({ id: x.row.id, name: x.row.name, score: x.confidence!.score, factors: x.confidence!.factors })),
+      .map((x) => ({ id: x.row.id, name: x.row.name, score: x.confidence!.score, metrics: x.confidence!.metrics })),
     [perFamiliar],
   );
 
@@ -280,10 +282,10 @@ export function DashboardCockpit({ model: initialModel }: { model: DashboardMode
   //    colored by meaning, and drills into the surface that owns the number. ──
   const contractPct = vitals.contractTotal ? Math.round((vitals.contractPass / vitals.contractTotal) * 100) : null;
   const acceptPct = vitals.retroAcceptRate != null ? Math.round(vitals.retroAcceptRate * 100) : null;
-  const scoredCoverageSub = coverageSub(vitals.confidenceTier ?? "fills in after growth reviews", contractFetchedCount, data.familiars.length, "scored");
+  const scoredCoverageSub = coverageSub(vitals.confidenceTier ?? "fills in after thread reflections", contractFetchedCount, data.familiars.length, "scored");
   const contractCoverageSub = coverageSub(contractSub(vitals), contractFetchedCount, data.familiars.length, "checked");
   const kpis: KpiSpec[] = [
-    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: contractFetchPartial ? scoredCoverageSub : vitals.confidenceTier ?? "fills in after growth reviews", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: contractFetchPartial ? scoredCoverageSub : vitals.confidenceTier ?? "fills in after thread reflections", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:sparkle", value: vitals.activeFamiliars, label: "Active familiars", sub: `${vitals.familiarCount} in coven`, accent: "green", metric: "active", good: "up", src: "familiars", href: "/?mode=agents" },
     { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
     { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
