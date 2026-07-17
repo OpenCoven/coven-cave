@@ -20,6 +20,34 @@ assert.doesNotMatch(
   "Debug payload blocks should not force unreadable break-all wrapping",
 );
 
+// ── Diagnostic depth (chat-session-debugging S2) ─────────────────────────────
+
+assert.match(
+  source,
+  /turnMetaSummary\(turn\)/,
+  "Turn rows should surface the served model + usage/cost meta, not bury it in raw JSON",
+);
+assert.match(
+  source,
+  /title=\{usageBreakdown\(turn\.usage, turn\.costUsd\) \?\? undefined\}/,
+  "The compact turn meta should carry the full usage breakdown as its tooltip",
+);
+assert.match(
+  source,
+  /formatTimestamp\(session\.created_at, dtPrefs\)/,
+  "Session created/updated must honor the user's datetime prefs (raw ISO stays on the title attr)",
+);
+assert.match(
+  source,
+  /<KVRow k="work branch"/,
+  "Session section should expose the per-session work branch attribution row",
+);
+assert.match(
+  source,
+  /session\?\.model \?\? familiar\?\.model/,
+  "Session model row prefers the daemon-recorded session model over the familiar's configured default",
+);
+
 // ── Changes panel (CHAT-D8-01): working-tree review, now hosted by the code
 // rail (the inspector right panel that first carried it is retired) ──────────
 

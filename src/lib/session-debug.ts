@@ -1,5 +1,6 @@
 import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
+import { usageSummary, type TurnUsage } from "./usage-format.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -41,7 +42,35 @@ export type DebugTurn = {
   lifecycle?: "queued" | "connecting" | "streaming" | "tooling" | "cancelled" | "failed" | "complete";
   durationMs?: number;
   origin?: "chat" | "voice";
+  /** Token usage / cost from the harness result event; absent when the
+   *  harness emitted none. */
+  usage?: TurnUsage;
+  costUsd?: number;
+  /** Structural subset of ChatResponseMetadata — enough to tell the model
+   *  that actually served the turn from the familiar's configured one. */
+  responseMetadata?: { model?: string; confirmedModel?: string };
 };
+
+/** The model that actually served a turn, when the harness reported one —
+ *  `confirmedModel` (post-application truth) over the requested `model`.
+ *  Distinct from the familiar's configured model shown in the Session
+ *  section: harness routing and model application can diverge from it. */
+export function turnActualModel(turn: DebugTurn): string | null {
+  const meta = turn.responseMetadata;
+  const model = meta?.confirmedModel || meta?.model;
+  return model?.trim() ? model : null;
+}
+
+/** One-line diagnostic meta for a turn row: "opus-4 · 12.4k tok · $0.08".
+ *  Null when the turn carries neither a served model nor usage/cost. */
+export function turnMetaSummary(turn: DebugTurn): string | null {
+  const parts: string[] = [];
+  const model = turnActualModel(turn);
+  if (model) parts.push(model);
+  const usage = usageSummary(turn.usage, turn.costUsd);
+  if (usage) parts.push(usage);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 export type DebugBundle = {
   session: SessionRow | null;

@@ -80,6 +80,55 @@ assert.equal(
 assert.equal(debugFileName("s1"), "debug-s1.json");
 assert.equal(debugFileName(null), "debug-session.json");
 
+// ── turnActualModel / turnMetaSummary: served-model + usage meta (S2) ───────
+import { turnActualModel, turnMetaSummary } from "./session-debug.ts";
+
+const baseTurn = { id: "t1", role: "assistant", text: "hi", createdAt: "2026-07-17T00:00:00Z" };
+
+assert.equal(turnActualModel(baseTurn), null, "no responseMetadata → no served model");
+assert.equal(
+  turnActualModel({ ...baseTurn, responseMetadata: { model: "opus-4" } }),
+  "opus-4",
+  "requested model reported when no confirmation exists",
+);
+assert.equal(
+  turnActualModel({ ...baseTurn, responseMetadata: { model: "opus-4", confirmedModel: "sonnet-4.6" } }),
+  "sonnet-4.6",
+  "confirmedModel (post-application truth) wins over the requested model",
+);
+assert.equal(
+  turnActualModel({ ...baseTurn, responseMetadata: { model: "  " } }),
+  null,
+  "whitespace-only model is not a model",
+);
+
+assert.equal(turnMetaSummary(baseTurn), null, "no model, no usage → null (row shows nothing)");
+assert.equal(
+  turnMetaSummary({ ...baseTurn, responseMetadata: { model: "opus-4" } }),
+  "opus-4",
+  "model-only meta",
+);
+assert.equal(
+  turnMetaSummary({ ...baseTurn, usage: { inputTokens: 1000, outputTokens: 234 }, costUsd: 0.08 }),
+  "1.2k tok · $0.08",
+  "usage-only meta reuses the shared usageSummary formatter",
+);
+assert.equal(
+  turnMetaSummary({
+    ...baseTurn,
+    responseMetadata: { confirmedModel: "sonnet-4.6" },
+    usage: { inputTokens: 1000, outputTokens: 234 },
+    costUsd: 0.08,
+  }),
+  "sonnet-4.6 · 1.2k tok · $0.08",
+  "combined meta: served model first, then tokens/cost",
+);
+assert.equal(
+  turnMetaSummary({ ...baseTurn, usage: { inputTokens: 0, outputTokens: 0 } }),
+  null,
+  "zero-token usage with no cost reports nothing, not '0 tok'",
+);
+
 console.log("session-debug core assertions passed");
 
 // ═══════════════════════════════════════════════════════════════════════════

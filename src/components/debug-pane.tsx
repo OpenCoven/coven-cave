@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
-import { formatClock } from "@/lib/datetime-format";
+import { formatClock, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
+import { formatRuntime } from "@/lib/chat-response-metadata";
+import { usageBreakdown } from "@/lib/usage-format";
 import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
@@ -16,6 +18,7 @@ import {
   formatEventPayload,
   nextAfterSeq,
   shouldPollEvents,
+  turnMetaSummary,
   type CovenEvent,
   type DebugTurn,
 } from "@/lib/session-debug";
@@ -114,6 +117,8 @@ function JsonBlock({ text }: { text: string }) {
 function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
   const [open, setOpen] = useState(false);
   const lifecycle = turn.lifecycle ?? (turn.error ? "failed" : turn.pending ? "pending" : "complete");
+  // Served model + token/cost meta — otherwise only visible in the raw JSON.
+  const meta = turnMetaSummary(turn);
   return (
     <div className="rounded-md border border-[var(--border-hairline)]">
       <button
@@ -131,11 +136,22 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
           {turn.tools?.length ? `${turn.tools.length} tool${turn.tools.length === 1 ? "" : "s"}` : ""}
           {turn.progress?.length ? `${turn.tools?.length ? " · " : ""}${turn.progress.length} progress` : ""}
         </span>
+        {meta ? (
+          <span
+            className="max-w-40 shrink-0 truncate font-mono text-[var(--text-muted)]"
+            title={usageBreakdown(turn.usage, turn.costUsd) ?? undefined}
+          >
+            {meta}
+          </span>
+        ) : null}
         <span className="shrink-0 font-mono text-[var(--text-muted)]">{fmtMs(turn.durationMs)}</span>
       </button>
       {open ? (
         <div className="border-t border-[var(--border-hairline)] p-2">
-          <div className="mb-1 flex justify-end">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-muted)]">
+              {usageBreakdown(turn.usage, turn.costUsd) ?? ""}
+            </span>
             <CopyButton getText={() => JSON.stringify(turn, null, 2)} label="Copy turn" />
           </div>
           <JsonBlock text={JSON.stringify(turn, null, 2)} />
@@ -175,6 +191,8 @@ function EventRow({ event }: { event: CovenEvent }) {
 function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const { sessionId, session, familiar, turns } = snapshot;
   const status = session?.status ?? null;
+  const dtPrefs = useDateTimePrefs();
+  const cwd = formatRuntime(session?.runtime);
   const [events, setEvents] = useState<CovenEvent[]>([]);
   const [eventsError, setEventsError] = useState<string | null>(null);
   // Tail-follow only makes sense while events are streaming in; opening a
@@ -304,15 +322,29 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
             </span>
           </KVRow>
           <KVRow k="harness">{session?.harness ?? familiar?.harness ?? "—"}</KVRow>
-          <KVRow k="model">{familiar?.model ?? "—"}</KVRow>
+          {/* The session's own model (daemon-recorded) over the familiar's
+              configured default; per-turn served models live on turn rows. */}
+          <KVRow k="model">{session?.model ?? familiar?.model ?? "—"}</KVRow>
           <KVRow k="familiar">{familiar?.display_name ?? "—"}</KVRow>
           <KVRow k="origin">{session?.origin ?? "—"}</KVRow>
           <KVRow k="exit code">{session?.exit_code ?? "—"}</KVRow>
           <KVRow k="project root" title={session?.project_root}>
             {session?.project_root ?? "—"}
           </KVRow>
-          <KVRow k="created">{session?.created_at ?? "—"}</KVRow>
-          <KVRow k="updated">{session?.updated_at ?? "—"}</KVRow>
+          {cwd ? (
+            <KVRow k="cwd" title={cwd.title}>
+              {cwd.label}
+            </KVRow>
+          ) : null}
+          <KVRow k="work branch" title={session?.workBranch ?? undefined}>
+            {session?.workBranch ?? "—"}
+          </KVRow>
+          <KVRow k="created" title={session?.created_at}>
+            {session?.created_at ? formatTimestamp(session.created_at, dtPrefs) || session.created_at : "—"}
+          </KVRow>
+          <KVRow k="updated" title={session?.updated_at}>
+            {session?.updated_at ? formatTimestamp(session.updated_at, dtPrefs) || session.updated_at : "—"}
+          </KVRow>
         </Section>
 
         <Section title="Turns" count={turns.length}>
