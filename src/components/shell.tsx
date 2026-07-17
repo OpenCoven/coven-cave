@@ -783,6 +783,9 @@ export const Shell = forwardRef<ShellHandle, Parameters<typeof ShellInner>[0]>(S
 
 function ShellBannerStrip() {
   const { banners, dismissBanner } = useShellBanners();
+  useEffect(() => {
+    window.dispatchEvent(new Event("cave:native-webview-layout"));
+  }, [banners]);
   if (banners.length === 0) return null;
   return (
     <div className="shell-banner-strip">

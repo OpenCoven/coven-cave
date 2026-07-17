@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
+const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const nativeLifecycle = await readFile(new URL("../lib/native-browser-lifecycle.ts", import.meta.url), "utf8");
@@ -115,7 +116,7 @@ assert.match(
 );
 assert.match(
   pane,
-  /querySelectorAll\([\s\S]{0,180}\[role="dialog"\][\s\S]{0,180}\[role="menu"\][\s\S]{0,180}\[role="listbox"\]/,
+  /NATIVE_WEBVIEW_COVER_SELECTOR\s*=\s*[\s\S]{0,180}\[role="dialog"\][\s\S]{0,180}\[role="menu"\][\s\S]{0,180}\[role="listbox"\]/,
   "visible dialogs, menus, and listboxes count as native-webview covers",
 );
 assert.match(
@@ -333,10 +334,16 @@ assert.match(pane, /if \(h\.stack\[h\.idx\] === evUrl\) \{/, "page-load history 
 
 // ───────── Correctness: listen() unlisten race + perf throttle ─────────
 assert.match(pane, /then\(\(fn\) => \{ if \(cancelled\) fn\(\); else unlisten/, "async listen() unlistens if the effect was already torn down");
-assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| \(!force && now - lastRun < 100\)\) return;/, "the fallback bounds loop is throttled + idle-gated");
-assert.match(pane, /forceReconcilePending = true/, "urgent bounds changes are coalesced into the next animation frame");
+assert.doesNotMatch(pane, /requestAnimationFrame\(tick\)/, "stable browser idle has no perpetual display-rate callback");
+assert.doesNotMatch(pane, /subtree:\s*true/, "BrowserPane does not observe unrelated mutations across the React tree");
+assert.match(pane, /if \(raf \|\| document\.visibilityState !== "visible"\) return;/, "urgent bounds changes coalesce into one animation frame");
+assert.match(pane, /BROWSER_RECONCILE_INTERVAL_MS = 100/, "active CSS motion samples at the intended 10 Hz rate");
+assert.match(pane, /BROWSER_MOTION_WINDOW_MS = 400/, "motion sampling stops after a bounded stability window");
 assert.match(pane, /new ResizeObserver\(scheduleImmediateReconcile\)/, "resizes schedule a coalesced native bounds reconcile");
-assert.match(pane, /new MutationObserver\(scheduleImmediateReconcile\)/, "overlay DOM changes schedule a coalesced visibility reconcile");
+assert.match(pane, /portalObserver\.observe\(document\.body, \{\s*childList: true,\s*\}\)/, "only direct body portal mounts are mutation-observed");
+assert.match(pane, /animationstart[\s\S]{0,600}transitionend/, "CSS motion opens and closes a bounded reconcile window");
+assert.match(shell, /dispatchEvent\(new Event\("cave:native-webview-layout"\)\)[\s\S]{0,80}\[banners\]/, "shell banner layout changes explicitly schedule native bounds reconciliation");
+assert.match(pane, /__CAVE_BROWSER_RECONCILE_METRICS__/, "reconciliation count and duration are exposed for native profiling");
 assert.match(pane, /visibilitychange[\s\S]{0,300}hideAll\(\)/, "backgrounding immediately hides native webviews");
 
 // ───────── a11y: tab strip is a real tablist ─────────
