@@ -26,6 +26,8 @@ assert.match(source, /isAllowedRequestSource\(origin, expectedOrigin\)/, "API or
 assert.match(source, /isAllowedRequestSource\(referer, expectedOrigin\)/, "API referer gate should require same-origin sources unless header-CSRF-trusted");
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
 assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless-tailnet CSRF guard");
+assert.match(source, /isLocalOnlyAutomationRun\(req\.nextUrl\.pathname, req\.method\)/, "run-now automation execution should have a dedicated local-only proxy guard");
+assert.match(source, /mobileAccessAuthenticated \|\| tailnetTrusted \|\| !isLoopbackHost\(requestHost\)/, "run-now automation execution must deny mobile, tailnet, and non-loopback proxy ingress");
 assert.match(source, /missing request source/, "tokenless tailnet GET webhooks should reject absent Origin and Referer headers");
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the

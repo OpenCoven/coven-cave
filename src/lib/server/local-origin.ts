@@ -1,3 +1,5 @@
+import { MOBILE_ACCESS_HEADER } from "../../proxy-helpers.ts";
+
 /**
  * True when the request's Host header is loopback (127.0.0.1 / localhost / [::1]).
  *
@@ -13,6 +15,8 @@
  * check has a single, test-covered source of truth.
  */
 export function isLocalOrigin(req: Request): boolean {
+  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return false;
+
   const host = req.headers.get("host") ?? "";
   const bare = host.split(":")[0];
   return bare === "127.0.0.1" || bare === "localhost" || bare === "[::1]";

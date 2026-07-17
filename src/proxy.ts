@@ -118,6 +118,10 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
+function isLocalOnlyAutomationRun(pathname: string, method: string) {
+  return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
+}
+
 function isProductionWebhookGet(pathname: string, method: string) {
   return (
     method === "GET" &&
@@ -166,6 +170,17 @@ export async function proxy(req: NextRequest) {
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
   if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)) {
     return jsonError(403, "forbidden host");
+  }
+
+  // Running a Codex automation launches the local `codex` binary with the
+  // user's repository/filesystem authority. Keep that execution surface off
+  // the mobile and tailnet ingress paths even when those paths are otherwise
+  // authenticated: their forwarded Host value is client/forwarder-controlled
+  // and cannot prove that the original peer was loopback.
+  if (isLocalOnlyAutomationRun(req.nextUrl.pathname, req.method)) {
+    if (mobileAccessAuthenticated || tailnetTrusted || !isLoopbackHost(requestHost)) {
+      return jsonError(403, "forbidden local-only endpoint");
+    }
   }
 
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
