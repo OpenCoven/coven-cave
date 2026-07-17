@@ -768,6 +768,8 @@ export const SUITES = {
     "src/lib/server/message-feedback-store.test.ts",
     "src/components/detail-split-host.test.ts",
     "src/lib/server/chat-stop-registry.test.ts",
+    "src/lib/server/chat-stream-buffer.test.ts",
+    "src/app/api/chat/stream/route.test.ts",
     "src/lib/harness-failure.test.ts",
     "src/components/harness-fix-actions.test.ts",
   ],

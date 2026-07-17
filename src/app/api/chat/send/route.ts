@@ -56,6 +56,7 @@ import {
   unregisterChatRun,
   type ChatRunHandle,
 } from "@/lib/server/chat-stop-registry";
+import { openRunBuffer, type RunBufferHandle } from "@/lib/server/chat-stream-buffer";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
@@ -765,6 +766,10 @@ function openClawChatResponse(args: {
       // events are dropped instead of throwing ERR_INVALID_STATE on a closed
       // controller (mirrors the native coven-run stream below).
       const push = (event: StreamEvent) => {
+        // Tee EVERY event through the per-run ring first (cave-h40l): the
+        // buffer is what makes a dropped client resumable, so it must see
+        // events even after the original transport closed.
+        runBuffer?.record(event);
         if (closed || args.req.signal.aborted) return;
         try {
           controller.enqueue(sse(event));
@@ -773,6 +778,7 @@ function openClawChatResponse(args: {
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
         }
       };
+      let runBuffer: RunBufferHandle | null = null;
       const pushProgress = (
         id: string,
         label: string,
@@ -873,10 +879,25 @@ function openClawChatResponse(args: {
       // by the detach cap in case nothing ever comes back for it.
       const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
-      const onAbort = () => {
+      const armDetachKill = () => {
         if (runHandle.stopRequested || detachKillTimer != null) return;
         detachKillTimer = setTimeout(killChild, CHAT_DETACH_MAX_MS);
       };
+      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
+      // tail dropping re-arms it — but only once the ORIGINAL request is
+      // gone, so a resume tail closing can't kill a still-attached turn.
+      runBuffer = openRunBuffer([args.body.runId, conversationId], {
+        attach: () => {
+          if (detachKillTimer != null) {
+            clearTimeout(detachKillTimer);
+            detachKillTimer = null;
+          }
+        },
+        detach: () => {
+          if (args.req.signal.aborted) armDetachKill();
+        },
+      });
+      const onAbort = () => armDetachKill();
       args.req.signal.addEventListener("abort", onAbort, { once: true });
 
       child.stdout.on("data", (data: Buffer) => {
@@ -901,6 +922,7 @@ function openClawChatResponse(args: {
         args.req.signal.removeEventListener("abort", onAbort);
         if (detachKillTimer != null) clearTimeout(detachKillTimer);
         unregisterChatRun(runHandle);
+        runBuffer?.finish();
         close();
       });
       child.on("close", async (code) => {
@@ -1043,6 +1065,7 @@ function openClawChatResponse(args: {
           sessionId: sessionId ?? undefined,
           responseMetadata,
         });
+        runBuffer?.finish();
         await sleep(20);
         close();
       });
@@ -1489,6 +1512,10 @@ export async function POST(req: Request) {
     start: async (controller) => {
       let closed = false;
       const push = (e: StreamEvent) => {
+        // Tee EVERY event through the per-run ring first (cave-h40l): the
+        // buffer is what makes a dropped client resumable, so it must see
+        // events even after the original transport closed.
+        runBuffer?.record(e);
         if (closed || req.signal.aborted) return;
         try {
           controller.enqueue(sse(e));
@@ -1497,6 +1524,7 @@ export async function POST(req: Request) {
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
         }
       };
+      let runBuffer: RunBufferHandle | null = null;
       const pushProgress = (
         id: string,
         label: string,
@@ -1864,6 +1892,24 @@ export async function POST(req: Request) {
         killCurrentChild,
       );
       let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+      const armDetachKill = () => {
+        if (runHandle.stopRequested || detachKillTimer != null) return;
+        detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
+      };
+      // Re-attach (GET /api/chat/stream) cancels the pending kill; the last
+      // tail dropping re-arms it — but only once the ORIGINAL request is
+      // gone, so a resume tail closing can't kill a still-attached turn.
+      runBuffer = openRunBuffer([body.runId, body.sessionId], {
+        attach: () => {
+          if (detachKillTimer != null) {
+            clearTimeout(detachKillTimer);
+            detachKillTimer = null;
+          }
+        },
+        detach: () => {
+          if (req.signal.aborted) armDetachKill();
+        },
+      });
 
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
@@ -1910,8 +1956,7 @@ export async function POST(req: Request) {
           const onAbort = () => {
             // Transport drop, not Stop — arm the detach cap and let the turn
             // finish. Deliberate stops kill through the registry instead.
-            if (runHandle.stopRequested || detachKillTimer != null) return;
-            detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
+            armDetachKill();
           };
           req.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -2216,6 +2261,7 @@ export async function POST(req: Request) {
       cleanupImageTempFiles(imageFilePaths);
       if (detachKillTimer != null) clearTimeout(detachKillTimer);
       unregisterChatRun(runHandle);
+      runBuffer?.finish();
       await sleep(20);
       close();
     },
