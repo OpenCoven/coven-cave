@@ -252,39 +252,42 @@ final class ChatThread: Identifiable, Hashable {
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         userMessageId: String? = nil,
                         client: CaveClient, onChange: @escaping () -> Void) async {
+        // Per-send token: the server keys its resumable run buffer under this
+        // (cave-h40l), so even a brand-new chat (no sessionId yet) can
+        // re-attach mid-turn after a transport drop.
+        let runId = UUID().uuidString
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
                                        sessionId: sessionIds[familiarId],
-                                       attachments: attachments.isEmpty ? nil : attachments)
+                                       attachments: attachments.isEmpty ? nil : attachments,
+                                       runId: runId)
         var receivedAnyEvent = false
+        // Resume cursor: the last applied frame's SSE id (run-buffer seq).
+        var cursor = 0
+        var sawDone = false
         do {
-            for try await event in client.sendStream(body) {
+            for try await frame in client.sendStream(body) {
                 receivedAnyEvent = true
-                switch event {
-                case .session(let sid):
-                    if !sid.isEmpty { sessionIds[familiarId] = sid }
-                case .assistantChunk(let chunk):
-                    mutate(messageId) { $0.text += chunk }
-                    onChange()
-                case .done(let isError, let sid):
-                    if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
-                    mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
-                case .error(let message):
-                    mutate(messageId) {
-                        if $0.text.isEmpty { $0.text = message }
-                        $0.isError = true; $0.streaming = false
-                    }
-                default:
-                    break
-                }
+                apply(frame.event, into: messageId, familiarId: familiarId,
+                      sawDone: &sawDone, onChange: onChange)
+                if let id = frame.id { cursor = id }
             }
             mutate(messageId) { $0.streaming = false }
         } catch {
             // Transport interruption (network handoff, backgrounding, desktop
-            // blip). The server persists the turn — including a partial reply
-            // — even when the stream dies, so recover its copy before
-            // surfacing a raw connection error.
-            let recovered = await resyncInterruptedTurn(familiarId: familiarId, prompt: prompt,
+            // blip). The run is usually STILL LIVE server-side — re-attach to
+            // its buffered stream first and keep rendering in real time
+            // (cave-h40l). Only when no resumable run exists (finished long
+            // ago / server restarted) fall back to adopting the persisted
+            // transcript.
+            let resumed = await resumeInterruptedStream(runId: runId, cursor: cursor,
+                                                        into: messageId, familiarId: familiarId,
+                                                        sawDone: &sawDone,
+                                                        client: client, onChange: onChange)
+            var recovered = resumed
+            if !recovered {
+                recovered = await resyncInterruptedTurn(familiarId: familiarId, prompt: prompt,
                                                         into: messageId, client: client)
+            }
             if !recovered {
                 if let userMessageId, !receivedAnyEvent, Self.isOfflineTransportError(error) {
                     // The send never reached the server (no route, DNS failure,
@@ -305,6 +308,67 @@ final class ChatThread: Identifiable, Hashable {
         }
         updatedAt = Date()
         onChange()
+    }
+
+    /// Apply one stream event to the thread — shared by the original send
+    /// stream and the mid-turn resume stream so both render identically.
+    private func apply(_ event: StreamEvent, into messageId: String, familiarId: String,
+                       sawDone: inout Bool, onChange: @escaping () -> Void) {
+        switch event {
+        case .session(let sid):
+            if !sid.isEmpty { sessionIds[familiarId] = sid }
+        case .assistantChunk(let chunk):
+            mutate(messageId) { $0.text += chunk }
+            onChange()
+        case .done(let isError, let sid):
+            if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
+            mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
+            sawDone = true
+        case .error(let message):
+            mutate(messageId) {
+                if $0.text.isEmpty { $0.text = message }
+                $0.isError = true; $0.streaming = false
+            }
+        default:
+            break
+        }
+    }
+
+    /// Re-attach to the still-live run after a transport drop: replay past
+    /// the cursor, then tail live until the turn ends. A few short-backoff
+    /// attempts ride out the network still settling (Wi-Fi handoff, tunnel
+    /// re-established). Returns true when the bubble finished live; false
+    /// falls back to the post-hoc transcript resync.
+    private func resumeInterruptedStream(runId: String, cursor: Int, into messageId: String,
+                                         familiarId: String, sawDone: inout Bool,
+                                         client: CaveClient, onChange: @escaping () -> Void) async -> Bool {
+        var nextCursor = cursor
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try? await Task.sleep(for: .milliseconds(600 * Int64(attempt)))
+            }
+            do {
+                for try await frame in client.resumeStream(runId: runId, cursor: nextCursor) {
+                    apply(frame.event, into: messageId, familiarId: familiarId,
+                          sawDone: &sawDone, onChange: onChange)
+                    if let id = frame.id { nextCursor = id }
+                }
+                // The resume stream closes when the run finishes. Without a
+                // done event the run may still be live (our tail dropped
+                // again) — retry from the advanced cursor.
+                if sawDone {
+                    mutate(messageId) { $0.streaming = false }
+                    return true
+                }
+            } catch is CaveClient.NoResumableRun {
+                // Nothing buffered under that run — turn ended long ago or
+                // the server restarted. Post-hoc resync owns recovery.
+                return false
+            } catch {
+                // Transport still flaky — back off and retry from the cursor.
+            }
+        }
+        return false
     }
 
     /// After a transport failure mid-stream, pull the persisted conversation

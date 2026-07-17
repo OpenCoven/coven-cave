@@ -379,9 +379,9 @@ struct DiaryView: View {
                                        attachments: nil)
         streamTask = Task { @MainActor in
             do {
-                for try await event in client.sendStream(body) {
+                for try await frame in client.sendStream(body) {
                     if Task.isCancelled { return }
-                    switch event {
+                    switch frame.event {
                     case .session(let sid):
                         if !sid.isEmpty { sessionId = sid }
                     case .assistantChunk(let chunk):

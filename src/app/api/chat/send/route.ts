@@ -428,8 +428,11 @@ async function autoNameSessionFromFirstExchange(
   }
 }
 
-function sse(event: StreamEvent): Uint8Array {
-  return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+function sse(event: StreamEvent, seq?: number): Uint8Array {
+  // `id:` carries the run buffer's seq (cave-h40l): a client that saw it can
+  // resume mid-turn via GET /api/chat/stream?cursor=<last id> after a drop.
+  const id = seq != null ? `id: ${seq}\n` : "";
+  return new TextEncoder().encode(`${id}data: ${JSON.stringify(event)}\n\n`);
 }
 
 // SSE comment frame + cadence keeping quiet streams alive: NATs, proxies, and
@@ -768,11 +771,12 @@ function openClawChatResponse(args: {
       const push = (event: StreamEvent) => {
         // Tee EVERY event through the per-run ring first (cave-h40l): the
         // buffer is what makes a dropped client resumable, so it must see
-        // events even after the original transport closed.
-        runBuffer?.record(event);
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(event);
         if (closed || args.req.signal.aborted) return;
         try {
-          controller.enqueue(sse(event));
+          controller.enqueue(sse(event, seq));
         } catch (error) {
           closed = true;
           if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
@@ -1554,11 +1558,12 @@ export async function POST(req: Request) {
       const push = (e: StreamEvent) => {
         // Tee EVERY event through the per-run ring first (cave-h40l): the
         // buffer is what makes a dropped client resumable, so it must see
-        // events even after the original transport closed.
-        runBuffer?.record(e);
+        // events even after the original transport closed. The returned seq
+        // rides the SSE `id:` so live clients always hold a resume cursor.
+        const seq = runBuffer?.record(e);
         if (closed || req.signal.aborted) return;
         try {
-          controller.enqueue(sse(e));
+          controller.enqueue(sse(e, seq));
         } catch (error) {
           closed = true;
           if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
