@@ -67,7 +67,6 @@ assert.deepEqual(
     "/Users/example/projects/alpha",
     "--add-dir",
     "/Users/example/.coven/workspaces/familiars/sage",
-    "--allow-all",
     "--output-format",
     "json",
     "--stream",
@@ -75,7 +74,7 @@ assert.deepEqual(
     "-p",
     "do the thing",
   ],
-  "fresh turns pre-assign the session id, strip the model namespace, trust each granted root via repeatable --add-dir (empty entries dropped), map full access to --allow-all, and trail the prompt after -p",
+  "fresh turns pre-assign the session id, strip the model namespace, trust each granted root via repeatable --add-dir (empty entries dropped), leave full access implicit, and trail the prompt after -p",
 );
 
 const resumeArgs = buildCopilotStreamArgs({

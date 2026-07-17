@@ -171,14 +171,12 @@ export function buildCopilotStreamArgs(launch: CopilotStreamLaunch): string[] {
   for (const dir of launch.addDirs) {
     if (dir) args.push(spec.addDirFlag, dir);
   }
-  // Sandbox mapping from the manifest. Full access maps to the declared
-  // full_args (`--allow-all`) — without it copilot's programmatic mode
-  // auto-denies every tool, which is the tools:0 regression this path fixes.
-  args.push(
-    ...(launch.permissionMode === "read"
-      ? spec.sandboxReadOnlyArgs
-      : spec.sandboxFullArgs),
-  );
+  // Sandbox mapping from the manifest. Read-only is enforced explicitly;
+  // full access stays implicit so the direct Copilot stream path does not widen
+  // the local harness sandbox with manifest full_args such as `--allow-all`.
+  if (launch.permissionMode === "read") {
+    args.push(...spec.sandboxReadOnlyArgs);
+  }
   args.push(...spec.prefixArgs, launch.prompt);
   return args;
 }
