@@ -82,6 +82,26 @@ assert.equal(
   true,
   "mobile token authentication should not depend on a loopback Host header",
 );
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net", false, true),
+  true,
+  "tokenless tailnet trust should allow Tailscale Serve hostnames",
+);
+assert.equal(
+  isAllowedApiHost("100.100.100.100:3000", false, true),
+  true,
+  "tokenless tailnet trust should allow Tailscale 100.64.0.0/10 IP fallback hosts",
+);
+assert.equal(
+  isAllowedApiHost("evil.example.com:3000", false, true),
+  false,
+  "tokenless tailnet trust must not bypass the loopback host gate for arbitrary hosts",
+);
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net.evil.com", false, true),
+  false,
+  "tokenless tailnet trust must not allow suffix-smuggled Tailscale hostnames",
+);
 
 // ─── isTailscaleServeHost ──────────────────────────────────────────────────
 assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net"), true);

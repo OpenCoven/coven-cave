@@ -19,7 +19,7 @@ assert.match(source, /process\.env\.COVEN_CAVE_BUNDLE === "1"[\s\S]*missing side
 assert.match(source, /req\.headers\.get\("origin"\)/, "middleware should reject unsafe origins");
 assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject unsafe hosts");
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
-assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated \|\| tailnetTrusted\)/, "valid mobile access or tailnet-trust should satisfy the API host gate");
+assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated, tailnetTrusted\)/, "valid mobile access and narrow tailnet-trust should feed the API host gate separately");
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless app mode (COVEN_CAVE_TAILNET_TRUST) should relax the host gate for tailnet-forwarded requests");
 assert.match(
   source,
@@ -101,7 +101,7 @@ assert.doesNotMatch(
 // the bypass ran first and silently let non-loopback callers through during
 // `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
 {
-  const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)");
+  const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated, tailnetTrusted)");
   const originIdx = source.indexOf("isAllowedRequestSourceAny(origin, expectedOrigins)");
   const refererIdx = source.indexOf("isAllowedRequestSourceAny(referer, expectedOrigins)");
   const contentTypeIdx = source.indexOf("unsupported content-type");
