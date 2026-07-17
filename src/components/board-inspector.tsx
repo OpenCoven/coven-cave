@@ -1316,7 +1316,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   // when you actually need to dispatch/cancel or read the timestamps.
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
-  // Fleet buttons stay hidden without an Omnigent auth token (cave-cfvv).
+  // Fleet buttons stay hidden unless OMNIGENT_TOKEN is set up in the user's Vault (cave-cfvv).
   const fleetEnabled = useFleetTokenEnabled();
 
   const session = sessions.find((s) => s.id === card.sessionId) ?? null;

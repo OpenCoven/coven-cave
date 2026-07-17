@@ -14,8 +14,9 @@ function probeFleetToken(): Promise<boolean> {
 }
 
 /**
- * True only when Omnigent is configured with an auth token — the condition
- * for showing any Fleet button. Defaults to false (hidden) until proven.
+ * True only when the user has the Omnigent env set up in their Cave Vault and
+ * the server resolved an auth token — the condition for showing any Fleet
+ * button. Defaults to false (hidden) until proven.
  */
 export function useFleetTokenEnabled(): boolean {
   const [enabled, setEnabled] = useState(false);
