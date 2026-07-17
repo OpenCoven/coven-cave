@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useEffect, useState } from "react";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";

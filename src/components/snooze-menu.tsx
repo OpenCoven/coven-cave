@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/dash-act.css";
+
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 

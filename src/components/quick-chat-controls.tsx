@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 // The slash menu popover reuses the home composer's .hc-slash-* affordance —
 // this stylesheet is global-scoped, so importing it here makes the menu render

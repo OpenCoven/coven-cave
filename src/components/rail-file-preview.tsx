@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Skeleton } from "@/components/ui/skeleton";

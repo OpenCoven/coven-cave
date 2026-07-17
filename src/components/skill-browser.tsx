@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-md.css";
+
 // Skill Browser — the Marketplace → Skills tab, laid out with the same quiet
 // grammar as Browse: a vertical filter rail on the left (Categories / Trust /
 // Topics as label+count rows, hidden in narrow panes where a chip row stands

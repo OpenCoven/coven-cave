@@ -132,7 +132,11 @@ assert.match(css, /--crepe-color-inline-code: color-mix\(in oklch, var\(--accent
 assert.match(css, /--crepe-color-inline-area: color-mix\(in oklch, var\(--accent-presence\) 14%, transparent\)/, "inline code pill bg is theme-aware");
 assert.doesNotMatch(css, /--crepe-color-inline-area: var\(--code-surface\)/, "inline code must NOT ride the fixed-dark code surface");
 assert.match(css, /\.milkdown-code-block \{[\s\S]*?background: var\(--code-surface\)/, "code blocks stay on the always-dark code surface");
-assert.match(globals, /@import "\.\.\/styles\/md-editor\.css"/, "md-editor.css imported in globals");
+// #3264: the sheet moved out of globals.css to the editor components so
+// non-editor routes stop paying for it — the components import it directly.
+const visualSource = await readFile(new URL("./md-editor-visual.tsx", import.meta.url), "utf8");
+assert.match(visualSource, /import "@\/styles\/md-editor\.css"/, "md-editor.css imported by the visual editor component");
+assert.doesNotMatch(globals, /@import "\.\.\/styles\/md-editor\.css"/, "md-editor.css stays out of the root stylesheet (#3264)");
 
 // The shared CodeMirror theme is one module for all three editor surfaces.
 const sharedTheme = await readFile(new URL("../code-editor-theme.ts", import.meta.url), "utf8");

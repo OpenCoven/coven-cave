@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/calendar.css";
+
 import { createContext, useCallback, useContext, useId, useMemo, useState, useRef, useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";

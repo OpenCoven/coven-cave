@@ -212,7 +212,9 @@ assert.match(
   "Markdown link clicks should prevent normal navigation and open in the provided browser target",
 );
 
-const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const css = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 assert.match(
   css,
   /\.cave-copy-btn:focus-visible \{ opacity: 1; \}/,

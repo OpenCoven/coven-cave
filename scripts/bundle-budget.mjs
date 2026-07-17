@@ -41,6 +41,16 @@ const routeStatsFile = path.join(nextDir, "diagnostics", "route-bundle-stats.jso
 const MAX_HOME_BYTES = (Number(process.env.BUNDLE_MAX_HOME_KB) || 2800) * 1024;
 const MAX_SHELL_BYTES = (Number(process.env.BUNDLE_MAX_SHELL_KB) || 650) * 1024;
 const MAX_CHUNK_BYTES = (Number(process.env.BUNDLE_MAX_CHUNK_KB) || 2400) * 1024;
+// CSS budgets (#3264). ROOT CSS is what EVERY route pays (measured via the
+// minimal _not-found route, which only loads the root layout's styles);
+// HOME CSS is the complete first-load stylesheet set for `/`. Baseline
+// before the stylesheet split: 886 KiB root / 921 KiB home. After moving
+// chat/composer/markdown/dashboard/editor/xterm sheets to their surfaces and
+// dropping the retired XYFlow import: 630 KiB root / 800 KiB home. Budgets
+// hold the win with ~10% headroom — a surface sheet re-entering the root
+// graph costs tens of KiB and fails immediately.
+const MAX_ROOT_CSS_BYTES = (Number(process.env.BUNDLE_MAX_ROOT_CSS_KB) || 690) * 1024;
+const MAX_HOME_CSS_BYTES = (Number(process.env.BUNDLE_MAX_HOME_CSS_KB) || 870) * 1024;
 
 if (!existsSync(chunksDir)) {
   console.error(
@@ -196,6 +206,59 @@ if (largest && largest.bytes > MAX_CHUNK_BYTES) {
       `budget ${kb(MAX_CHUNK_BYTES).trim()}.\n` +
       `  A heavy dependency ballooned a single chunk. Split it or raise BUNDLE_MAX_CHUNK_KB.`,
   );
+}
+
+// --- Route-level CSS budgets (#3264) ---
+// The client-reference manifests record every stylesheet a route injects.
+// `_not-found` renders nothing but the root layout, so its CSS set IS the
+// root stylesheet cost every route pays; `/page` is the home first load.
+function routeCssBytes(manifestRelPath, label) {
+  const manifestPath = path.join(nextDir, "server", "app", manifestRelPath);
+  const source = readFileSync(manifestPath, "utf8");
+  const files = [...new Set(source.match(/static\/chunks\/[\w-]+\.css/g) ?? [])];
+  if (files.length === 0) throw new Error(`${label}: no css entries in ${manifestRelPath}`);
+  const sized = files
+    .map((file) => ({ file: file.replace("static/chunks/", ""), bytes: sizeOf(file) }))
+    .sort((a, b) => b.bytes - a.bytes);
+  return { files: sized, bytes: sized.reduce((a, f) => a + f.bytes, 0) };
+}
+
+try {
+  const rootCss = routeCssBytes(path.join("_not-found", "page_client-reference-manifest.js"), "root");
+  const homeCss = routeCssBytes("page_client-reference-manifest.js", "home");
+
+  console.log(`bundle-budget — root-layout CSS (every route pays this):`);
+  for (const f of rootCss.files) console.log(`  ${kb(f.bytes)}  ${f.file}`);
+  console.log(`  ${kb(rootCss.bytes)}  TOTAL root CSS  (budget: ${kb(MAX_ROOT_CSS_BYTES)})`);
+  console.log(`\nbundle-budget — initial / route CSS:`);
+  console.log(
+    `  ${kb(homeCss.bytes)}  TOTAL first-load CSS across ${homeCss.files.length} stylesheets  (budget: ${kb(MAX_HOME_CSS_BYTES)})`,
+  );
+
+  if (rootCss.bytes > MAX_ROOT_CSS_BYTES) {
+    failed = true;
+    console.error(
+      `\n✗ bundle-budget: root-layout CSS ${kb(rootCss.bytes).trim()} exceeds budget ` +
+        `${kb(MAX_ROOT_CSS_BYTES).trim()}.\n` +
+        `  A surface stylesheet likely re-entered src/app/globals.css (or a component\n` +
+        `  in the always-loaded shell imported one). Import surface CSS from the\n` +
+        `  surface's own components instead (#3264), or raise BUNDLE_MAX_ROOT_CSS_KB\n` +
+        `  deliberately.`,
+    );
+  }
+  if (homeCss.bytes > MAX_HOME_CSS_BYTES) {
+    failed = true;
+    console.error(
+      `\n✗ bundle-budget: initial / route CSS ${kb(homeCss.bytes).trim()} exceeds budget ` +
+        `${kb(MAX_HOME_CSS_BYTES).trim()}.\n` +
+        `  A stylesheet for a mode- or open-gated surface entered the home first load.\n` +
+        `  Check new css imports on components reachable from the / startup graph, or\n` +
+        `  raise BUNDLE_MAX_HOME_CSS_KB deliberately.`,
+    );
+  }
+} catch (error) {
+  failed = true;
+  console.error(`\n✗ bundle-budget: could not measure route CSS: ${error.message}`);
 }
 
 if (failed) process.exit(1);

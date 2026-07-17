@@ -714,7 +714,13 @@ assert.match(
 // hint text reads as a placeholder, not typed content (user-reported: 85%
 // looked like actual text).
 {
-  const css = await readFile(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+  const css = (
+  await Promise.all(
+    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
   assert.match(css, /\.cave-composer-icon-button \{[\s\S]{0,600}?color: var\(--text-primary\);\n\}/, "composer icon buttons carry the primary text tier");
   assert.match(source, /placeholder:text-\[color-mix\(in_oklch,var\(--foreground\)_45%,transparent\)\]/, "the home placeholder renders at 45% foreground (reads as a hint)");
   const chat = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");

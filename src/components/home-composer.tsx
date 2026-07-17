@@ -1,5 +1,8 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+import "@/styles/home-composer.css";
+
 /**
  * HomeComposer — universal intent surface; the Cave's cold-start view.
  *

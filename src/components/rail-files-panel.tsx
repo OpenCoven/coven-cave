@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 import { useCallback, useEffect, useState } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Icon } from "@/lib/icon";

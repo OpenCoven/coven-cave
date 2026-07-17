@@ -19,6 +19,10 @@ const files = [
   ["globals.css", new URL("./globals.css", import.meta.url)],
   ["board.css", new URL("../styles/board.css", import.meta.url)],
   ["cave-chat.css", new URL("../styles/cave-chat.css", import.meta.url)],
+  // The composer input rules moved out of cave-chat.css in the #3264
+  // stylesheet split — keep scanning them in their new homes.
+  ["cave-composer.css", new URL("../styles/cave-composer.css", import.meta.url)],
+  ["cave-md.css", new URL("../styles/cave-md.css", import.meta.url)],
   ["home-composer.css", new URL("../styles/home-composer.css", import.meta.url)],
 ];
 

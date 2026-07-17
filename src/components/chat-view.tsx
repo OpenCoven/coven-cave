@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";

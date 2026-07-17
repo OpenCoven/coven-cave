@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 // Composer Options menu — a single icon-only trigger that collapses the chat
 // composer's response controls (Host · Access · Model · Thinking · Speed) into
 // one popover panel. Each control is an inline radiogroup, so there are no
