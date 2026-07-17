@@ -9,6 +9,7 @@ import { useAnnouncer } from "@/components/ui/live-region";
 import { AuthedImage } from "@/components/ui/authed-image";
 import { RelativeTime } from "@/components/ui/relative-time";
 import {
+  ACTIVITY_DAYS,
   buildFamiliarCardStats,
   type CovenMemoryEntry,
   type FamiliarCardStats,
@@ -89,8 +90,10 @@ function emptyStats(): FamiliarCardStats {
     memoryCount: 0,
     latestMemory: null,
     lastSessionAt: null,
+    sessionsTotal: 0,
     sessionsLast7d: 0,
     hasActiveSession: false,
+    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
   };
 }
 

@@ -26,8 +26,10 @@ function stats(overrides: Partial<FamiliarCardStats> = {}): FamiliarCardStats {
     memoryCount: 3,
     latestMemory: { title: "Recent memory", updatedAt: daysAgo(1) },
     lastSessionAt: daysAgo(1),
+    sessionsTotal: 4,
     sessionsLast7d: 4,
     hasActiveSession: true,
+    activity: new Array(14).fill(0),
     ...overrides,
   };
 }

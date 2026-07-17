@@ -108,6 +108,12 @@
      radius appearance setting: `sharp` overrides it to a squared value. */
   --radius-pill: 999px;
 
+  /* ---- Terminal-numeral glow (cave-uw7c) ----
+     The profile share card's glowing-stat treatment, generalized for themed
+     surfaces (roster stat tiles, dashboards). currentColor-based so it works
+     on any ink; light mode zeroes it — bloom on paper reads as blur. */
+  --glow-numeral: 0 0 12px color-mix(in srgb, currentColor 38%, transparent);
+
   /* ---- Spacing ---- */
   --space-1: 4px;
   --space-2: 8px;
@@ -267,6 +273,8 @@
    ============================================================ */
 :root[data-mode="light"] {
   color-scheme: light;
+  /* No numeral bloom on light surfaces — glow reads as blur on paper. */
+  --glow-numeral: none;
   --background: oklch(0.975 0.012 293);
   --foreground: oklch(0.18 0.020 293);
   --card: oklch(0.95 0.014 293);
@@ -6476,10 +6484,13 @@ a.mobile-handoff__link:hover {
 }
 
 /* ────────────────────────────────────────────────
-   Familiars roster cards (cave-g2r6)
-   De-boxed: a wash + inset soft hairline instead of a hard border, with a
-   quiet hover lift. The wrapper owns the visual card so the open button and
-   the footer analytics link live inside it as siblings.
+   Familiars roster cards (cave-g2r6 · cave-uw7c)
+   De-boxed terminal stat tile: a wash + inset soft hairline instead of a
+   hard border, with a quiet hover lift. The wrapper owns the visual card so
+   the open button and the footer profile/analytics links live inside it as
+   siblings. Typography follows the profile share card (profile-card.css):
+   monospace lowercase micro-labels, hairline-divided stat band, glowing
+   numerals, and a mini activity strip bucketed like the pfc heatmap.
    ──────────────────────────────────────────────── */
 
 .familiars-view__card {
@@ -6502,6 +6513,173 @@ a.mobile-handoff__link:hover {
   .familiars-view__card,
   .familiars-view__card:hover {
     transform: none;
+  }
+}
+
+/* Square framed avatar, as on the share card's identity rail. */
+.familiars-view__avatar-tile {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--bg-raised) 80%, transparent);
+  overflow: hidden;
+}
+.familiars-view__avatar-tile img {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  object-fit: cover;
+}
+
+/* Lowercase monospace micro-label — the share card's label voice. */
+.familiars-view__microlabel {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--text-muted);
+}
+
+.familiars-view__tagline {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-muted);
+}
+
+/* Page heading as the share card's checkerboard wordmark. */
+.familiars-view__wordmark {
+  display: inline-block;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--text-primary);
+  text-shadow: var(--glow-numeral);
+  background:
+    repeating-conic-gradient(
+      color-mix(in srgb, var(--foreground) 6%, transparent) 0% 25%,
+      transparent 0% 50%
+    )
+    0 0 / 12px 12px;
+}
+
+/* Detail-panel nameplate — the share card's halftone strip, theme-aware. */
+.familiars-view__nameplate {
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-primary);
+  text-shadow: var(--glow-numeral);
+  background:
+    radial-gradient(color-mix(in srgb, var(--foreground) 12%, transparent) 1px, transparent 1px)
+    0 0 / 6px 6px,
+    color-mix(in oklch, var(--bg-raised) 70%, transparent);
+}
+
+/* Hairline-divided tri-stat band. */
+.familiars-view__statband {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
+.familiars-view__stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+}
+.familiars-view__stat + .familiars-view__stat {
+  border-left: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
+.familiars-view__stat-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.familiars-view__stat-value {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+  text-shadow: var(--glow-numeral);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 14-day activity strip — accent-tinted level ramp, same 1..4 bucketing as
+   the profile-card heatmap. Cells are decorative (aria-hidden); the count
+   lives in the title tooltip. */
+.familiars-view__strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) 0;
+}
+.familiars-view__strip i {
+  display: block;
+  height: 14px;
+  /* Square cells on purpose — the share card's heatmap voice. */
+  background: color-mix(in oklch, var(--border-hairline) 45%, transparent);
+}
+.familiars-view__strip i[data-level="1"] {
+  background: color-mix(in oklch, var(--accent-presence) 30%, var(--bg-raised));
+}
+.familiars-view__strip i[data-level="2"] {
+  background: color-mix(in oklch, var(--accent-presence) 55%, var(--bg-raised));
+}
+.familiars-view__strip i[data-level="3"] {
+  background: color-mix(in oklch, var(--accent-presence) 80%, var(--bg-raised));
+}
+.familiars-view__strip i[data-level="4"] {
+  background: var(--accent-presence);
+}
+
+/* Status chips (active session / response needed) in the label voice. */
+.familiars-view__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-1);
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  /* Squared chip corners on purpose — terminal voice. */
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  line-height: 1.7;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+.familiars-view__chip--warning {
+  color: var(--color-warning);
+}
+
+/* Live-presence dot pulses gently; static under reduced motion. */
+.familiars-view__status-dot--live {
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-presence) 70%, transparent);
+  animation: familiars-status-pulse 2.4s ease-in-out infinite;
+}
+@keyframes familiars-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .familiars-view__status-dot--live {
+    animation: none;
   }
 }
 
