@@ -63,6 +63,9 @@ type Props = {
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinkingId?: string | null;
+  /** Card that just completed — plays the one-shot reward flare (celebrations
+      on; reduced-motion collapses it in CSS). Cleared by the owner. */
+  rewardCardId?: string | null;
 };
 
 const NO_PROJECT_KEY = "__noproject__";
@@ -164,7 +167,7 @@ function WipBadge({
   );
 }
 
-export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, wipLimits, onSetWipLimit, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, wipLimits, onSetWipLimit, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId, rewardCardId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -607,6 +610,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                               onJumpToSession={onJumpToSession}
                               onOpenTaskChat={onOpenTaskChat}
                               chatLinking={chatLinkingId === card.id}
+                              hasReward={rewardCardId === card.id}
                               inStatusColumn={groupBy === "status"} />
                           ))}
                           {onQuickAdd && !selectMode && (
@@ -704,7 +708,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   );
 }
 
-function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false, inStatusColumn = false }: {
+function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false, hasReward = false, inStatusColumn = false }: {
   card: Card; familiarById: Map<string, ResolvedFamiliar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
   isDragging: boolean; isSelected: boolean; isGrabbed: boolean; selectMode?: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
@@ -712,6 +716,8 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinking?: boolean;
+  /** One-shot completion flare (see BoardKanban.rewardCardId). */
+  hasReward?: boolean;
   /** True when the card sits in a column named after its status (groupBy
    *  "status") — a lifecycle badge that merely restates the column is noise. */
   inStatusColumn?: boolean;
@@ -778,7 +784,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
         isSelected ? " board-kanban-card--selected" : ""
       }${isDragging ? " board-kanban-card--dragging" : ""}${
         isGrabbed ? " board-kanban-card--grabbed" : ""
-      }`}
+      }${hasReward ? " board-kanban-card--reward" : ""}`}
     >
       {selectMode && (
         <span

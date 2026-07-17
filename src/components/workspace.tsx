@@ -41,6 +41,7 @@ import {
   setLastSurface,
 } from "@/lib/familiar-memory";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
@@ -1090,7 +1091,10 @@ export function Workspace() {
       }
       if (e.type === "created") {
         setInboxItems((prev) => [...prev, e.item]);
-        if (e.item.status === "fired" && !isMuted(e.item)) {
+        // Celebrations off = clean-tool mode: milestone items still land in
+        // the inbox (and the unread badge) but skip the toast + native ping.
+        const quietedMilestone = e.item.kind === "milestone" && !readCelebrationsEnabled();
+        if (e.item.status === "fired" && !isMuted(e.item) && !quietedMilestone) {
           setToasts((prev) => [...prev, toastFromItem(e.item)]);
           void nativeNotify(e.item.title, e.item.body, sound());
         }

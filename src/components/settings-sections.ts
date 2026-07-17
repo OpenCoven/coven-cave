@@ -52,6 +52,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
+  { section: "general", group: "Progression", keywords: "celebrations milestones renown streak toast flourish gamification quiet dial down" },
   { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },

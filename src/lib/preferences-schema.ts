@@ -94,6 +94,12 @@ export type CavePreferences = {
     newsHeadlines: boolean;
     /** Composer phrase that halts a running chat task; "" disables it. */
     stopPhrase: string;
+    /**
+     * Progression celebrations — milestone toasts and completion flourishes.
+     * Off keeps milestones inbox-only and stills the flourishes; the tool
+     * stays clean and fast for users who ignore the whole system.
+     */
+    celebrations: boolean;
   };
   phone: {
     mobileMode: boolean;
@@ -166,7 +172,7 @@ export function createDefaultPreferences(initialized = false): CavePreferences {
         image: { present: false, mime: null, updatedAt: "" },
       },
     },
-    general: { newsHeadlines: true, stopPhrase: DEFAULT_STOP_PHRASE },
+    general: { newsHeadlines: true, stopPhrase: DEFAULT_STOP_PHRASE, celebrations: true },
     phone: { mobileMode: true },
   };
 }
@@ -376,6 +382,7 @@ export function normalizeCavePreferences(input: unknown): CavePreferences {
     general: {
       newsHeadlines: general.newsHeadlines !== false,
       stopPhrase: normalizeStopPhrase(general.stopPhrase),
+      celebrations: general.celebrations !== false,
     },
     phone: { mobileMode: phone.mobileMode !== false },
   };
@@ -593,10 +600,13 @@ export function validatePreferencesPatch(value: unknown): CavePreferencesPatch {
 
   if (Object.hasOwn(input, "general")) {
     const general = strictRecord(input.general, "general");
-    assertAllowedKeys(general, ["newsHeadlines", "stopPhrase"], "general");
+    assertAllowedKeys(general, ["newsHeadlines", "stopPhrase", "celebrations"], "general");
     const generalPatch: NonNullable<CavePreferencesPatch["general"]> = {};
     if (Object.hasOwn(general, "newsHeadlines")) {
       generalPatch.newsHeadlines = strictBoolean(general.newsHeadlines, "general.newsHeadlines");
+    }
+    if (Object.hasOwn(general, "celebrations")) {
+      generalPatch.celebrations = strictBoolean(general.celebrations, "general.celebrations");
     }
     if (Object.hasOwn(general, "stopPhrase")) {
       if (typeof general.stopPhrase !== "string") fail("general.stopPhrase", "must be a string");
