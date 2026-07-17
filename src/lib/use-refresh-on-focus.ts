@@ -44,7 +44,7 @@ export function safeUnlisten(un: (() => void) | undefined): void {
  * the installed desktop app:
  *   - `window` "focus" + `document` "visibilitychange" — browser tabs and most
  *     webviews.
- *   - Tauri `onFocusChanged` — the desktop window manager does NOT reliably emit
+ *   - Tauri `tauri://focus` — the desktop window manager does NOT reliably emit
  *     the web events when you switch between OS windows, so the native focus
  *     event is the dependable signal in the Tauri build. This is the actual fix
  *     for "stale data after an action in the installed app".
@@ -85,9 +85,16 @@ export function useRefreshOnFocus(
       void (async () => {
         try {
           const { getCurrentWindow } = await import("@tauri-apps/api/window");
-          const un = await getCurrentWindow().onFocusChanged((e: { payload: boolean }) => {
-            if (e.payload) run();
-          });
+          // Raw WINDOW_FOCUS event (fires only when focus is gained) instead
+          // of onFocusChanged: that helper registers TWO listeners (focus +
+          // blur) and returns a composite sync unlisten that fire-and-forgets
+          // both inner async _unlisten promises — when the injected registry
+          // is already reset (HMR / webview navigation) their rejections are
+          // discarded inside the composite where safeUnlisten cannot reach,
+          // and surface as an unhandled "listeners[eventId].handlerId"
+          // TypeError. Window.listen's unlisten is a plain async fn whose
+          // rejection safeUnlisten swallows.
+          const un = await getCurrentWindow().listen("tauri://focus", () => run());
           if (disposed) safeUnlisten(un);
           else unlisten = un;
         } catch {

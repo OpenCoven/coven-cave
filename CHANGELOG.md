@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Fixed
+- **Desktop: unhandled `listeners[eventId].handlerId` TypeError on focus-listener teardown** — `useRefreshOnFocus` now subscribes to the raw `tauri://focus` event instead of `onFocusChanged`, whose composite unlisten discards its inner async deregistration promises; after an HMR or webview-navigation registry reset those surfaced as an uncatchable runtime error overlay.
+
 ### Changed
 - **Omnigent fleet is now per-user vault-gated** — Fleet surfaces (board Fleet button, `omnigent:…` host-chip options, per-familiar fleet defaults) appear if and only if the user has `OMNIGENT_TOKEN` set up in their Cave Vault; credentials that exist only in `~/.omnigent/auth_tokens.json` no longer surface Fleet UI on their own, and the token itself now resolves through the Vault chain (env → `.env.local` → encrypted store → `op://`/`dl://` reference).
 
