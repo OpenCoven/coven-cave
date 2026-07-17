@@ -15862,57 +15862,48 @@ details[open] > .cave-edit-card__summary::before {
   flex-direction: column;
   container-name: research-desk;
   container-type: inline-size;
-  background:
-    radial-gradient(80% 45% at 55% 0%, var(--research-accent-soft), transparent 68%),
-    var(--bg-base, var(--background));
+  background: var(--bg-base, var(--background));
 }
 
 .research-desk__intake {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.42fr) minmax(420px, 1fr);
-  gap: 18px;
-  padding: var(--space-4) 18px;
+  padding: var(--space-3) 18px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
 }
 
-/* ── Links shelf (cave-avrt): the desk's auto-organized link drop-box ── */
+/* ── Links shelf (cave-avrt): the desk's auto-organized link drop-box.
+   Collapsed by default — one quiet summary row until you need it. ── */
 .research-links {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: var(--space-3) 18px;
+  gap: 8px;
+  padding: var(--space-2) 18px;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--bg-raised) 46%, transparent);
 }
-.research-links__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-}
-.research-links__title {
+.research-links__summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
   font-size: var(--text-2xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
-.research-links__hint { font-size: var(--text-2xs); color: var(--text-muted); }
+.research-links__summary::-webkit-details-marker { display: none; }
+.research-links__summary:hover { color: var(--text-secondary); }
 .research-links__composer {
   display: flex;
   gap: var(--space-2);
-  align-items: flex-end;
+  align-items: center;
 }
 .research-links__input {
   flex: 1;
   min-width: 0;
-  resize: vertical;
-  padding: var(--space-2) 10px;
+  padding: var(--space-1) 10px;
+  min-height: 28px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
@@ -15974,14 +15965,6 @@ details[open] > .cave-edit-card__summary::before {
   font-size: var(--text-xs);
   color: var(--text-primary);
 }
-.research-links__url {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-}
 .research-links__meta { flex-shrink: 0; font-size: var(--text-2xs); color: var(--text-muted); }
 .research-links__remove {
   flex-shrink: 0;
@@ -15999,15 +15982,6 @@ details[open] > .cave-edit-card__summary::before {
 .research-links__remove:focus-visible { opacity: 1; }
 .research-links__remove:hover { color: var(--color-danger); }
 
-.research-desk__intake-copy {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  max-width: 300px;
-}
-
-.research-desk__intake-copy span,
 .research-mission-detail__eyebrow,
 .research-mission-nav__head,
 .research-evidence-trajectory__head,
@@ -16020,19 +15994,11 @@ details[open] > .cave-edit-card__summary::before {
   color: var(--text-muted);
 }
 
-.research-desk__intake-copy strong {
-  font-family: var(--font-serif, ui-serif, serif);
-  font-size: clamp(17px, 2vw, 23px);
-  font-weight: 500;
-  line-height: 1.15;
-  color: var(--text-primary);
-}
-
 .research-mission-composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--space-2) var(--space-3);
-  align-items: end;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .research-mission-composer__prompt {
@@ -16042,8 +16008,6 @@ details[open] > .cave-edit-card__summary::before {
   gap: 5px;
 }
 
-.research-mission-composer__prompt > label,
-.research-mission-mode > span,
 .research-bounds-grid span {
   font-size: 10.5px;
   font-weight: 600;
@@ -16071,17 +16035,12 @@ details[open] > .cave-edit-card__summary::before {
 
 .research-mission-composer__controls {
   display: flex;
-  align-items: end;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
 }
 
-.research-mission-mode {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.research-mission-mode select,
+.research-mission-composer__controls select,
 .research-bounds-grid input {
   min-height: 30px;
   color: var(--text-primary);
@@ -16092,64 +16051,44 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 16px;
 }
 
-.research-plan-review {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  grid-column: 1 / -1;
-}
-
-.research-plan-chip {
-  padding: 2px 7px;
-  font-size: 9.5px;
-  color: var(--text-muted);
+/* The whole plan in one quiet pill — mode, iterations, minutes, sources.
+   It is the bounds toggle, so it must read as pressable. */
+.research-plan-summary {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 9px;
+  font-size: 10px;
+  color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-raised) 65%, transparent);
+  cursor: pointer;
 }
-
-/* Only the bound chips are interactive; they must look it. */
-button.research-plan-chip { cursor: pointer; color: var(--text-secondary); }
-button.research-plan-chip:hover {
+.research-plan-summary:hover {
   color: var(--research-accent);
   border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
 }
-button.research-plan-chip:focus-visible {
+.research-plan-summary:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: 1px;
 }
-
-/* The inference explanation is prose, not a control — keep it plain. */
-.research-plan-chip--note {
-  border-color: transparent;
-  background: transparent;
-  padding-left: 2px;
-  padding-right: 2px;
-}
-
-.research-plan-chip--mode {
+.research-plan-summary[aria-expanded="true"] {
   color: var(--research-accent);
   border-color: color-mix(in oklch, var(--research-accent) 45%, transparent);
   background: var(--research-accent-soft);
 }
 
-.research-bounds-disclosure {
-  grid-column: 1 / -1;
-  font-size: 10.5px;
-  color: var(--text-muted);
-}
-
-.research-bounds-disclosure summary { cursor: pointer; width: fit-content; }
-
 .research-bounds-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(90px, 1fr));
   gap: var(--space-2);
-  padding-top: var(--space-2);
 }
 
 .research-bounds-grid label { display: flex; flex-direction: column; gap: 3px; }
-.research-runtime-note, .research-mission-error { grid-column: 1 / -1; font-size: 10.5px; }
+.research-runtime-note, .research-mission-error { font-size: 10.5px; }
 .research-runtime-note { color: oklch(0.8 0.1 75); }
 .research-mission-error { color: var(--destructive, oklch(0.68 0.18 25)); }
 .research-intent-minimum { margin-top: 4px; font-size: 10.5px; color: var(--text-muted); }
@@ -16345,8 +16284,6 @@ button.research-plan-chip:focus-visible {
 .research-output-empty { padding: 5px 0; font-size: 10.5px; color: var(--text-muted); }
 
 @container research-desk (max-width: 900px) {
-  .research-desk__intake { grid-template-columns: 1fr; }
-  .research-desk__intake-copy { max-width: none; }
   .research-desk__workspace { grid-template-columns: 1fr; overflow-y: auto; }
   .research-mission-nav { min-height: auto; max-height: 190px; border-right: 0; border-bottom: 1px solid var(--border); }
   .research-mission-nav__list { display: grid; grid-auto-columns: minmax(190px, 44%); grid-auto-flow: column; overflow-x: auto; }
@@ -16360,8 +16297,6 @@ button.research-plan-chip:focus-visible {
 
 @container research-desk (max-width: 560px) {
   .research-desk__intake { padding: 12px; }
-  .research-mission-composer { grid-template-columns: 1fr; }
-  .research-mission-composer__controls { justify-content: space-between; }
   .research-bounds-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .research-mission-detail { padding-inline: 10px; }
   .research-mission-detail__header { flex-direction: column; }

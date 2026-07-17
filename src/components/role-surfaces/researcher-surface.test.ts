@@ -19,6 +19,14 @@ test("surface is mission-first and no longer stores a pretend research desk", ()
   assert.doesNotMatch(surface, /RESEARCHER_INITIAL_STATE/);
 });
 
+test("intake is minimal — the composer is the hero, no marketing copy column", () => {
+  assert.doesNotMatch(surface, /research-desk__intake-copy/);
+  assert.doesNotMatch(surface, /From intent to evidence/);
+  // The intent question is asked exactly once: placeholder text, sr-only label.
+  assert.match(composer, /className="sr-only">What should we investigate\?/);
+  assert.match(composer, /placeholder="What should we investigate\?"/);
+});
+
 test("composer makes Auto routing and finite bounds reviewable", () => {
   assert.match(composer, /What should we investigate\?/);
   assert.match(composer, /Start research/);
@@ -42,23 +50,25 @@ test("composer enforces the shared minimum intent requirement", () => {
   assert.match(css, /\.research-intent-minimum/);
 });
 
-test("plan chips are honest about interactivity", () => {
-  // The three bound chips are buttons that open Review bounds and focus the
-  // matching input…
-  assert.match(composer, /const focusBound = \(inputId: string\) => \{/);
+test("the plan summary pill is the bounds toggle — honest, labeled, focusing", () => {
+  // One quiet pill states the whole plan (mode · iterations · minutes · sources)…
+  assert.match(composer, /className="research-plan-summary"/);
+  assert.match(composer, /\{MODE_LABELS\[effectiveMode\]\} · \{bounds\.maxIterations\}/);
+  // …explains Auto routing in its tooltip instead of a prose chip…
+  assert.match(composer, /title=\{mode === "auto" \? inferred\.reason : "Selected manually"\}/);
+  // …and toggles the bounds editor with real disclosure semantics, focusing
+  // the first input when opening.
+  assert.match(composer, /aria-expanded=\{boundsOpen\}/);
+  assert.match(composer, /aria-controls="research-bounds-editor"/);
+  assert.match(composer, /boundsOpen \? setBoundsOpen\(false\) : focusBound\("research-bound-minutes"\)/);
   assert.match(composer, /setBoundsOpen\(true\);\s*requestAnimationFrame\(\(\) => document\.getElementById\(inputId\)\?\.focus\(\)\)/);
   for (const id of ["research-bound-minutes", "research-bound-iterations", "research-bound-sources"]) {
-    assert.match(composer, new RegExp(`focusBound\\("${id}"\\)`));
     assert.match(composer, new RegExp(`id="${id}"`));
   }
-  // …the disclosure stays in sync when toggled natively…
-  assert.match(composer, /open=\{boundsOpen\}/);
-  assert.match(composer, /onToggle=\{\(event\) => setBoundsOpen\(event\.currentTarget\.open\)\}/);
-  // …and the inference explanation reads as prose, not a control.
-  assert.match(composer, /research-plan-chip--note/);
-  assert.match(css, /button\.research-plan-chip \{ cursor: pointer;/);
-  assert.match(css, /button\.research-plan-chip:focus-visible/);
-  assert.match(css, /\.research-plan-chip--note \{[^}]*border-color: transparent/);
+  // The toggle must look pressable and expose focus + expanded states.
+  assert.match(css, /\.research-plan-summary \{[^}]*cursor: pointer/);
+  assert.match(css, /\.research-plan-summary:focus-visible/);
+  assert.match(css, /\.research-plan-summary\[aria-expanded="true"\]/);
 });
 
 
