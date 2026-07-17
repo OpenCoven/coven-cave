@@ -1,15 +1,17 @@
 "use client";
 
-// Skill Browser — a three-column view of local skills: a category rail (All /
-// Claude Code / Generic with counts), a searchable card list, and a detail pane
-// that renders the selected skill's SKILL.md. Replaces the old flat list + slide
-// -over drawer for the Roles → Skills tab.
+// Skill Browser — the Marketplace → Skills tab, laid out with the same quiet
+// grammar as Browse: a vertical filter rail on the left (Categories / Trust /
+// Topics as label+count rows, hidden in narrow panes where a chip row stands
+// in), a searchable list with a compact count-plus-sort toolbar, and a detail
+// pane that renders the selected skill's SKILL.md.
 
 import { useEffect, useMemo, useState } from "react";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -79,41 +81,27 @@ const CATEGORY_LABEL: Record<"installed" | "claude" | "generic", string> = {
   generic: "Generic",
 };
 
-const RAIL: { id: Category; label: string; icon: IconName }[] = [
-  { id: "all", label: "All Skills", icon: "ph:squares-four" },
-  { id: "installed", label: "Installed", icon: "ph:check-circle" },
-  { id: "claude", label: "Claude Code", icon: "ph:terminal-window" },
-  { id: "generic", label: "Generic", icon: "ph:puzzle-piece" },
+// Rows read like Browse's category rail: plain label + count, no icons.
+const RAIL: { id: Category; label: string }[] = [
+  { id: "all", label: "All Skills" },
+  { id: "installed", label: "Installed" },
+  { id: "claude", label: "Claude Code" },
+  { id: "generic", label: "Generic" },
 ];
 
-const LEADERBOARD_MODES: { id: LeaderboardMode; label: string }[] = [
-  { id: "all-time", label: "All Time" },
+// Ranking modes survive the leaderboard header's removal as a plain sort
+// select in the list toolbar (Browse's sort grammar).
+const SORT_MODES: { id: LeaderboardMode; label: string }[] = [
+  { id: "all-time", label: "Most installed" },
   { id: "trending", label: "Trending" },
   { id: "hot", label: "Hot" },
 ];
 
-const BROWSE_FILTERS: { id: BrowseFilter; label: string; icon: IconName }[] = [
-  { id: "all", label: "All skills", icon: "ph:magnifying-glass" },
-  { id: "official", label: "Official", icon: "ph:seal-check" },
-  { id: "audited", label: "Security audits", icon: "ph:shield-warning" },
-  { id: "installed", label: "Installed", icon: "ph:check-circle" },
+// Trust toggles compose with the categories and click off back to everything.
+const TRUST_FILTERS: { id: "official" | "audited"; label: string }[] = [
+  { id: "official", label: "Official" },
+  { id: "audited", label: "Security audits" },
 ];
-
-const SKILLS_DIRECTORY_LINKS = [
-  { label: "Topics", href: "https://www.skills.sh/topic" },
-  { label: "Official", href: "https://www.skills.sh/official" },
-  { label: "Security audits", href: "https://www.skills.sh/audits" },
-  { label: "Docs", href: "https://www.skills.sh/docs" },
-] as const;
-
-const FEATURED_AGENT_LABELS = [
-  "Claude Code",
-  "Cursor",
-  "Codex",
-  "GitHub Copilot",
-  "Windsurf",
-  "Gemini",
-] as const;
 
 const TOPIC_FILTERS = [
   { id: "react", label: "React", keywords: ["react"] },
@@ -144,21 +132,6 @@ function formatCount(value: number | undefined): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
   return String(value);
-}
-
-function weeklyActivity(skill: SkillBrowserEntry) {
-  const weekly = (skill.weeklyInstalls ?? [])
-    .filter((value) => Number.isFinite(value))
-    .slice(-8);
-  const values = Array.from({ length: 8 }, (_, index) => weekly[index - (8 - weekly.length)] ?? 0);
-  const max = Math.max(...values, 1);
-  return {
-    label: values.map((value) => formatCount(value)).join(", "),
-    bars: values.map((value) => ({
-      value,
-      height: value > 0 ? Math.max(12, Math.round((value / max) * 100)) : 10,
-    })),
-  };
 }
 
 function sourceTarget(skill: SkillBrowserEntry): string {
@@ -381,6 +354,8 @@ export function SkillBrowser({
       installed: skills.filter((s) => categoryOf(s) === "installed").length,
       claude: skills.filter((s) => categoryOf(s) === "claude").length,
       generic: skills.filter((s) => categoryOf(s) === "generic").length,
+      official: skills.filter((s) => Boolean(s.trust?.official)).length,
+      audited: skills.filter((s) => Boolean(s.trust?.audited)).length,
     }),
     [skills],
   );
@@ -435,7 +410,6 @@ export function SkillBrowser({
         : [],
     [rankedVisible, selected],
   );
-  const ecosystemCommand = selected ? installCommand(selected) : "npx skills add <owner/repo>";
 
   // Load the selected skill's SKILL.md for the detail pane. Only paths under the
   // allow-listed roots return content; anything else 403s → fall back to the
@@ -586,62 +560,19 @@ export function SkillBrowser({
     }
   }
 
+  const visibleCategories = RAIL.filter(
+    (cat) => cat.id === "all" || cat.id === "installed" || counts[cat.id] > 0,
+  );
+
   return (
     <div className="skill-browser" role="group" aria-label="Skill browser">
-      {/* ── Merged panel — leaderboard header, then the filter strip, then
-             the ranked list. One panel owns discovery end-to-end; the detail
-             pane sits beside it. ── */}
-      <div className="skill-browser__list">
-        <div className="skill-browser__leaderboard">
-          <div>
-            <p className="skill-browser__leaderboard-kicker">Skills Leaderboard</p>
-            <p className="skill-browser__leaderboard-title">{formatCount(skills.reduce((sum, skill) => sum + (skill.installsAllTime ?? 0), 0))} installs tracked</p>
-            <div className="skill-browser__modes" role="group" aria-label="Rank skills">
-              {LEADERBOARD_MODES.map((item) => (
-                <Button
-                  key={item.id}
-                  variant="ghost"
-                  size="xs"
-                  className={`skill-browser__mode${mode === item.id ? " is-active" : ""}`}
-                  aria-pressed={mode === item.id}
-                  onClick={() => setMode(item.id)}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="skill-browser__ecosystem">
-            <div className="skill-browser__ecosystem-command">
-              {/* The command tracks the selection — say so, or a generic
-                  "Try it now" silently changes meaning three columns over. */}
-              <span>{selected ? `Install ${selected.name}` : "Try it now"}</span>
-              <code title={ecosystemCommand}>{ecosystemCommand}</code>
-            </div>
-            {/* One quiet summary line instead of a chip-per-agent strip that
-                forced a horizontal scrollbar in the narrow leaderboard. */}
-            <p className="skill-browser__agent-strip" aria-label="Available for these agents">
-              Works with {FEATURED_AGENT_LABELS.join(", ")}
-            </p>
-            <nav className="skill-browser__directory-links" aria-label="Skills directory links">
-              {SKILLS_DIRECTORY_LINKS.map((link) => (
-                <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
-                  {link.label}
-                </a>
-              ))}
-            </nav>
-          </div>
-        </div>
-        <nav className="skill-browser__rail" aria-label="Skill filters">
-        {/* One Filter group replaces the old Categories + Browse pair, which
-            duplicated All and Installed across two labeled rows and kept
-            zero-count categories (Claude Code 0) on screen. Categories stay
-            exclusive; the two badge toggles (Official / Security audits)
-            compose with them and click off back to everything. */}
-        <div className="skill-browser__rail-group" role="group" aria-label="Filter skills">
-          <p className="skill-browser__rail-label">Filter</p>
-          {RAIL.filter((cat) => cat.id === "all" || cat.id === "installed" || counts[cat.id] > 0).map((cat) => {
-            const count = counts[cat.id === "all" ? "all" : cat.id];
+      {/* ── Vertical filter rail — Browse's sidepanel grammar: uppercase group
+             labels over quiet full-width rows with the count right-aligned.
+             Hidden in narrow panes, where the chip row below stands in. ── */}
+      <aside className="skill-browser__rail" aria-label="Skill filters">
+        <nav className="skill-browser__rail-group" role="group" aria-label="Filter skills">
+          <p className="skill-browser__rail-label">Categories</p>
+          {visibleCategories.map((cat) => {
             const active = category === cat.id;
             return (
               <Button
@@ -651,80 +582,117 @@ export function SkillBrowser({
                 aria-pressed={active}
                 onClick={() => setCategory(cat.id)}
               >
-                <Icon name={cat.icon} width={15} className="skill-browser__cat-icon" aria-hidden />
                 <span className="skill-browser__cat-label">{cat.label}</span>
-                <span className="skill-browser__cat-count">{count}</span>
+                <span className="skill-browser__cat-count">{counts[cat.id]}</span>
               </Button>
             );
           })}
-          <div className="skill-browser__browse" role="group" aria-label="Badge filters">
-            {BROWSE_FILTERS.filter((item) => item.id === "official" || item.id === "audited").map((item) => {
-              const active = browse === item.id;
-              return (
-                <Button
-                  key={item.id}
-                  variant="ghost"
-                  size="xs"
-                  className={`skill-browser__browse-btn${active ? " is-active" : ""}`}
-                  aria-pressed={active}
-                  onClick={() => setBrowse(active ? "all" : item.id)}
-                >
-                  <Icon name={item.icon} width={13} aria-hidden />
-                  <span>{item.label}</span>
-                </Button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="skill-browser__rail-group" role="group" aria-label="Browse by topic">
-          <p className="skill-browser__rail-label">Topics</p>
-          <div className="skill-browser__topics">
-            <Button
-              variant="ghost"
-              size="xs"
-              className={`skill-browser__topic${topic === "all" ? " is-active" : ""}`}
-              aria-pressed={topic === "all"}
-              onClick={() => setTopic("all")}
-            >
-              All topics
-            </Button>
-            {TOPIC_FILTERS.filter((item) => (topics[item.id] ?? 0) > 0).map((item) => (
+        </nav>
+        {/* Trust toggles compose with the categories; clicking the active one
+            returns to everything. */}
+        <nav className="skill-browser__rail-group" role="group" aria-label="Filter by trust signal">
+          <p className="skill-browser__rail-label">Trust</p>
+          {TRUST_FILTERS.map((item) => {
+            const active = browse === item.id;
+            return (
               <Button
                 key={item.id}
                 variant="ghost"
-                size="xs"
-                className={`skill-browser__topic${topic === item.id ? " is-active" : ""}`}
-                aria-pressed={topic === item.id}
-                onClick={() => setTopic(item.id)}
+                className={`skill-browser__cat${active ? " is-active" : ""}`}
+                aria-pressed={active}
+                onClick={() => setBrowse(active ? "all" : item.id)}
               >
-                <span>{item.label}</span>
-                <span className="skill-browser__topic-count">{topics[item.id]}</span>
+                <span className="skill-browser__cat-label">{item.label}</span>
+                <span className="skill-browser__cat-count">{counts[item.id]}</span>
               </Button>
-            ))}
+            );
+          })}
+        </nav>
+        <nav className="skill-browser__rail-group" role="group" aria-label="Browse by topic">
+          <p className="skill-browser__rail-label">Topics</p>
+          <Button
+            variant="ghost"
+            className={`skill-browser__cat${topic === "all" ? " is-active" : ""}`}
+            aria-pressed={topic === "all"}
+            onClick={() => setTopic("all")}
+          >
+            <span className="skill-browser__cat-label">All topics</span>
+            <span className="skill-browser__cat-count">{counts.all}</span>
+          </Button>
+          {TOPIC_FILTERS.filter((item) => (topics[item.id] ?? 0) > 0).map((item) => (
+            <Button
+              key={item.id}
+              variant="ghost"
+              className={`skill-browser__cat${topic === item.id ? " is-active" : ""}`}
+              aria-pressed={topic === item.id}
+              onClick={() => setTopic(item.id)}
+            >
+              <span className="skill-browser__cat-label">{item.label}</span>
+              <span className="skill-browser__cat-count">{topics[item.id]}</span>
+            </Button>
+          ))}
+        </nav>
+      </aside>
+
+      {/* ── List column — category chips (narrow-pane stand-in for the rail),
+             a count + sort toolbar, then the rows. ── */}
+      <div className="skill-browser__list">
+        <div className="skill-browser__chips" role="group" aria-label="Filter skills">
+          {visibleCategories.map((cat) => {
+            const active = category === cat.id;
+            return (
+              <Button
+                key={cat.id}
+                variant="ghost"
+                size="xs"
+                className={`skill-browser__chip${active ? " is-active" : ""}`}
+                aria-pressed={active}
+                onClick={() => setCategory(cat.id)}
+              >
+                <span>{cat.label}</span>
+                <span className="skill-browser__chip-count">{counts[cat.id]}</span>
+              </Button>
+            );
+          })}
+        </div>
+        <div className="skill-browser__toolbar">
+          <p className="skill-browser__toolbar-count">
+            {!loaded ? (
+              <Skeleton variant="text-sm" width={72} />
+            ) : (
+              <>
+                {rankedVisible.length} {rankedVisible.length === 1 ? "skill" : "skills"}
+              </>
+            )}
+          </p>
+          <div className="skill-browser__toolbar-controls">
+            {agents.length > 1 ? (
+              <StandardSelect
+                label="Filter by agent"
+                value={agent}
+                onChange={(next) => setAgent(next)}
+                className="skill-browser__select skill-browser__agent-select"
+                options={agents.map((name) => ({
+                  value: name,
+                  label: name === "all" ? "All agents" : name,
+                }))}
+              />
+            ) : null}
+            <label className="skill-browser__sort">
+              <span className="sr-only">Sort skills</span>
+              <Icon name="ph:sort-ascending" width={14} aria-hidden />
+              <StandardSelect
+                label="Sort skills"
+                value={mode}
+                onChange={(next) => setMode(next)}
+                className="skill-browser__select"
+                options={SORT_MODES.map((item) => ({ value: item.id, label: item.label }))}
+              />
+            </label>
           </div>
         </div>
-        {/* Rank moved into the leaderboard header (it ranks the leaderboard);
-            the eight agent chips collapse into one compact select. */}
-        {agents.length > 1 ? (
-          <div className="skill-browser__rail-group skill-browser__rail-group--inline" role="group" aria-label="Filter by agent">
-            <p className="skill-browser__rail-label">Agent</p>
-            <StandardSelect
-              label="Filter by agent"
-              value={agent}
-              onChange={(next) => setAgent(next)}
-              className="skill-browser__agent-select"
-              options={agents.map((name) => ({
-                value: name,
-                label: name === "all" ? "All agents" : name,
-              }))}
-            />
-          </div>
-        ) : null}
-        </nav>
         {!loaded ? (
-          <div className="skill-browser__note" role="status">
-            Loading skills…
-          </div>
+          <SkeletonRows count={6} />
         ) : skills.length === 0 ? (
           <EmptyState
             compact
@@ -762,11 +730,10 @@ export function SkillBrowser({
             }
           />
         ) : (
-          rankedVisible.map((skill, index) => {
+          rankedVisible.map((skill) => {
             const key = skillKey(skill);
             const isSel = selected != null && skillKey(selected) === key;
-            const score = scoreFor(skill, mode);
-            const activity = weeklyActivity(skill);
+            const installs = skill.installsAllTime ?? 0;
             return (
               <Button
                 key={key}
@@ -775,7 +742,6 @@ export function SkillBrowser({
                 className={`skill-browser__card${isSel ? " is-active" : ""}`}
                 onClick={() => setSelectedKey(key)}
               >
-                <span className="skill-browser__rank">#{index + 1}</span>
                 <span className="skill-browser__card-main">
                   <span className="skill-browser__card-name">{skill.name}</span>
                   <span className="skill-browser__card-slug">{sourceTarget(skill)}</span>
@@ -783,27 +749,16 @@ export function SkillBrowser({
                     <span className="skill-browser__card-desc">{skill.description}</span>
                   ) : null}
                 </span>
-                <span className="skill-browser__row-stats">
+                {installs > 0 ? (
                   <span
-                    className="skill-browser__activity"
-                    aria-label={`8 week activity: ${activity.label}`}
-                    title={`8 week activity: ${activity.label}`}
+                    className="skill-browser__card-installs"
+                    title={`${installs} installs all time`}
+                    aria-label={`${installs} installs all time`}
                   >
-                    {activity.bars.map((bar, barIndex) => (
-                      <i
-                        // biome-ignore lint/suspicious/noArrayIndexKey: fixed eight-week sparkline slots.
-                        key={barIndex}
-                        className="skill-browser__activity-bar"
-                        style={{ height: `${bar.height}%` }}
-                        aria-hidden
-                      />
-                    ))}
+                    <Icon name="ph:download-simple" width={11} aria-hidden />
+                    {formatCount(installs)}
                   </span>
-                  <span className="skill-browser__metric">
-                    <span>{formatCount(score)}</span>
-                    <i style={{ width: `${Math.min(100, Math.max(8, score))}%` }} aria-hidden />
-                  </span>
-                </span>
+                ) : null}
               </Button>
             );
           })

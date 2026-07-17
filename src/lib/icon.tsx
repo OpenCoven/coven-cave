@@ -333,6 +333,7 @@ export const ICON_NAMES = [
   "ph:pause",
   "ph:clock-counter-clockwise",
   "ph:arrow-down",
+  "ph:download-simple",
   "ph:shield-warning",
   "ph:microphone",
 ] as const;

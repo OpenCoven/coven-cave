@@ -14245,74 +14245,80 @@ details[open] > .cave-edit-card__summary::before {
   .craft-draft-ledger__stats { grid-template-columns: 1fr; }
 }
 
-/* ── Skill Browser (Roles → Skills tab): rail · card list · SKILL.md detail ── */
+/* ── Skill Browser (Marketplace → Skills): rail · list · SKILL.md detail ── */
 .skill-browser {
   display: flex;
   height: 100%;
   min-height: 0;
   background: var(--bg-base);
 }
-/* Filter strip — lives INSIDE the merged list panel (below the leaderboard
-   header): labeled groups flow inline as wrapping chip rows. Chips are quiet
-   text on the canvas — the accent wash marks the one active choice. */
+/* Vertical filter rail — the same quiet sidepanel grammar as Browse's
+   category rail: uppercase group labels over full-width rows, count
+   right-aligned, the active row raised. Hidden in narrow panes (the chip
+   row inside the list column stands in). */
 .skill-browser__rail {
+  flex: 0 0 232px;
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: var(--space-2) 18px;
-  padding: 10px 2px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--border-hairline);
 }
 .skill-browser__rail-group {
-  flex: 0 1 auto;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
 }
 .skill-browser__rail-label {
   margin: 0;
-  padding: 0 2px;
-  font-size: 9.5px;
-  font-weight: 700;
+  padding: 0 var(--space-2) var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-muted);
-  opacity: 0.8;
 }
 .skill-browser__cat {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px 10px;
   white-space: nowrap;
-  border-radius: var(--radius-pill, 999px);
+  border-radius: var(--radius-control, 6px);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--text-base);
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.skill-browser__cat:hover { background: var(--bg-hover); color: var(--text-primary); }
-.skill-browser__cat.is-active {
-  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
-  color: var(--text-primary);
+.skill-browser__cat.ui-btn {
+  height: auto;
+  justify-content: space-between;
 }
-.skill-browser__cat-icon { flex: 0 0 auto; color: var(--text-muted); }
-.skill-browser__cat.is-active .skill-browser__cat-icon { color: var(--accent-presence); }
-.skill-browser__cat-label { flex: 0 0 auto; }
+.skill-browser__cat:hover { background: var(--bg-raised); color: var(--text-primary); }
+.skill-browser__cat.is-active {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.skill-browser__cat-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .skill-browser__cat-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-muted); }
 .skill-browser__cat.is-active .skill-browser__cat-count { color: var(--text-secondary); }
 
 .skill-browser__list {
-  /* Merged panel (leaderboard header + filter strip + ranked list) absorbs
-     the old 224px rail's width alongside the previous 300px list. */
-  flex: 0 0 440px;
+  /* The list column sits between the rail and the detail pane — the same
+     store-shelf role as Browse's card grid. */
+  flex: 0 0 400px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -14321,180 +14327,82 @@ details[open] > .cave-edit-card__summary::before {
   overflow-y: auto;
   border-right: 1px solid var(--border-hairline);
 }
-.skill-browser__leaderboard {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 2px 2px var(--space-3);
-  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
-}
-.skill-browser__leaderboard-kicker {
-  margin: 0;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--accent-presence);
-}
-.skill-browser__leaderboard-title {
-  margin: 2px 0 0;
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-/* Ecosystem block reads as quiet supporting copy, not a boxed sub-panel. */
-.skill-browser__ecosystem {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  min-width: 0;
-}
-.skill-browser__ecosystem-command {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.skill-browser__ecosystem-command span {
-  color: var(--text-muted);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  opacity: 0.8;
-}
-.skill-browser__ecosystem-command code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-radius: var(--radius-control);
-  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
-  color: var(--text-secondary);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: var(--text-xs);
-  padding: 6px 9px;
-}
-/* Single summary line — the old chip strip overflowed sideways. */
-.skill-browser__agent-strip {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  font-weight: 500;
-  line-height: 1.5;
-}
-.skill-browser__directory-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px var(--space-3);
-}
-.skill-browser__directory-links a {
+/* Category chips — the narrow-pane stand-in for the rail (Browse's pattern).
+   Hidden while the rail is visible. */
+.skill-browser__chips {
+  display: none;
+  /* overflow-x zeroes the automatic min-height, so pin flex-shrink or the
+     scrolling list column crushes the row to its padding. */
   flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  font-weight: 600;
-  line-height: 1.6;
-  padding: 0;
-  text-decoration: none;
-  transition: color 0.12s ease;
-}
-.skill-browser__directory-links a:hover {
-  color: var(--accent-presence);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.skill-browser__browse,
-.skill-browser__topics,
-.skill-browser__modes,
-.skill-browser__agents {
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--space-1);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
 }
-/* Badge toggles ride inside the merged Filter group, set off from the
-   category buttons by a hairline. */
-.skill-browser__rail-group .skill-browser__browse {
-  margin-top: 6px;
-  padding-top: var(--space-2);
-  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
-}
-/* Rank lives in the leaderboard header now — a compact segmented control. */
-.skill-browser__leaderboard .skill-browser__modes {
-  margin-top: var(--space-2);
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--radius-pill, 999px);
-  background: color-mix(in oklch, var(--bg-raised) 80%, transparent);
-  align-self: flex-start;
-}
-.skill-browser__rail-group--inline {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-}
-.skill-browser__rail-group--inline .skill-browser__rail-label {
-  margin: 0;
-}
-.skill-browser__agent-select {
-  min-width: 0;
-  flex: 1;
-  max-width: 220px;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: transparent;
-  padding: var(--space-1) var(--space-2);
-  font-size: var(--text-xs);
-}
-.skill-browser__topics {
-  gap: var(--space-1);
-}
-.skill-browser__browse-btn,
-.skill-browser__topic,
-.skill-browser__mode,
-.skill-browser__agent {
+.skill-browser__chip {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill, 999px);
+  gap: 7px;
+  padding: 6px var(--space-3);
+  border: 0;
+  border-radius: var(--radius-control, 6px);
   background: transparent;
   color: var(--text-muted);
   font-size: var(--text-xs);
-  font-weight: 550;
-  line-height: 1;
-  padding: 6px 9px;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.skill-browser__topic {
-  padding: 5px 9px;
+.skill-browser__chip:hover { background: var(--bg-raised); color: var(--text-primary); }
+.skill-browser__chip.is-active {
+  background: var(--text-primary);
+  color: var(--bg-base);
 }
-.skill-browser__topic-count {
+.skill-browser__chip-count { font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0.7; }
+/* Toolbar — result count on the left, sort (and agent) selects on the right:
+   Browse's summary-row grammar. */
+.skill-browser__toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+}
+.skill-browser__toolbar-count {
+  margin: 0;
+  min-width: 0;
   color: var(--text-muted);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-  opacity: 0.8;
+  font-size: var(--text-xs);
 }
-.skill-browser__browse-btn:hover,
-.skill-browser__topic:hover,
-.skill-browser__mode:hover,
-.skill-browser__agent:hover {
-  background: var(--bg-hover);
+.skill-browser__toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.skill-browser__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.skill-browser__select {
+  min-width: 0;
+  max-width: 180px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
   color: var(--text-primary);
+  cursor: pointer;
 }
-.skill-browser__browse-btn.is-active,
-.skill-browser__topic.is-active,
-.skill-browser__mode.is-active,
-.skill-browser__agent.is-active {
-  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
-  color: var(--text-primary);
-}
-.skill-browser__topic.is-active .skill-browser__topic-count {
-  color: var(--text-secondary);
-}
-/* Ranked rows sit directly on the canvas — no per-row box. Hover raises a
-   soft wash; the selected row carries the accent wash plus an inset accent
-   bar (the same active grammar as the chat nav). */
+/* Rows sit directly on the canvas — no per-row box. Hover raises a soft
+   wash; the selected row carries the accent wash plus an inset accent bar
+   (the same active grammar as the chat nav). */
 .skill-browser__card {
   position: relative;
   display: flex;
@@ -14502,9 +14410,8 @@ details[open] > .cave-edit-card__summary::before {
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  min-height: 72px;
   text-align: left;
-  padding: 11px var(--space-3);
+  padding: 10px var(--space-3);
   border-radius: var(--radius-card, 10px);
   border: 1px solid transparent;
   background: transparent;
@@ -14513,7 +14420,6 @@ details[open] > .cave-edit-card__summary::before {
 }
 .skill-browser__card.ui-btn {
   height: auto;
-  min-height: 72px;
 }
 .skill-browser__card:hover { background: var(--bg-hover); }
 .skill-browser__card:active { background: color-mix(in oklch, var(--bg-hover) 80%, var(--bg-raised)); }
@@ -14529,14 +14435,6 @@ details[open] > .cave-edit-card__summary::before {
   width: 2.5px;
   border-radius: 2px;
   background: var(--accent-presence);
-}
-.skill-browser__rank {
-  flex: 0 0 26px;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  padding-top: 3px;
-  opacity: 0.75;
 }
 .skill-browser__card-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .skill-browser__card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); letter-spacing: -0.005em; }
@@ -14570,53 +14468,18 @@ details[open] > .cave-edit-card__summary::before {
   padding: 3px 9px;
   white-space: nowrap;
 }
-.skill-browser__row-stats {
-  flex: 0 0 68px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 5px;
-  min-width: 68px;
-  padding-top: 2px;
-}
-/* Sparkline stays informative but recedes: hairline bars, accent reserved
-   for the selected/hovered row. */
-.skill-browser__activity {
-  width: 58px;
-  height: 18px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 2.5px;
-}
-.skill-browser__activity-bar {
-  width: 3.5px;
-  min-height: 2px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--text-muted) 55%, transparent);
-  transition: background 0.12s ease;
-}
-.skill-browser__card:hover .skill-browser__activity-bar,
-.skill-browser__card.is-active .skill-browser__activity-bar {
-  background: color-mix(in oklch, var(--accent-presence) 70%, transparent);
-}
-.skill-browser__metric {
-  width: 58px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+/* One quiet installs count per row — the sparkline/meter cluster retired
+   with the leaderboard chrome. */
+.skill-browser__card-installs {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   gap: var(--space-1);
-  color: var(--text-secondary);
+  padding-top: 2px;
+  color: var(--text-muted);
   font-size: var(--text-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-.skill-browser__metric i {
-  display: block;
-  max-width: 44px;
-  height: 2px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--accent-presence) 55%, transparent);
 }
 
 .skill-browser__detail { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
@@ -14926,7 +14789,6 @@ details[open] > .cave-edit-card__summary::before {
 }
 .skill-browser__fallback { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
 .skill-browser__detail-empty { display: grid; place-items: center; height: 100%; color: var(--text-muted); font-size: 13px; }
-.skill-browser__note { padding: 16px; color: var(--text-muted); font-size: 13px; }
 .skill-browser__empty {
   display: flex;
   flex-direction: column;
@@ -14959,49 +14821,36 @@ details[open] > .cave-edit-card__summary::before {
 @keyframes skill-browser-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 0.9; } }
 @media (prefers-reduced-motion: reduce) { .skill-browser__skeleton span { animation: none; } }
 
-@media (max-width: 900px) {
-  /* Narrow panes: the merged panel and the detail pane share the width as a
-     two-column grid (the filter strip already lives inside the panel). */
+@container marketplace (max-width: 1023px) {
+  /* Narrow panes: the rail folds away and the category chip row inside the
+     list column stands in — Browse's exact pattern. */
+  .skill-browser__rail { display: none; }
+  .skill-browser__chips { display: flex; }
+}
+@container marketplace (max-width: 899px) {
+  /* List and detail share the width as a two-column grid. */
   .skill-browser {
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
     grid-template-rows: minmax(0, 1fr);
   }
 }
-@media (max-width: 680px) {
-  /* Single column: merged panel over detail. */
+@container marketplace (max-width: 679px) {
+  /* Single column: list over detail. */
   .skill-browser {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
   }
-  /* Phone widths: one full-width row per filter group; the group owns the
-     sideways scroll (the categories group has no inner chip container). */
-  .skill-browser__rail-group {
-    flex: 1 1 100%;
-    flex-wrap: nowrap;
-    min-width: 0;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
   .skill-browser__list {
     border-right: 0;
     border-bottom: 1px solid var(--border-hairline);
   }
+  .skill-browser__toolbar {
+    flex-wrap: wrap;
+  }
   .skill-browser__decision {
     grid-template-columns: 1fr;
-  }
-  .skill-browser__browse,
-  .skill-browser__topics,
-  .skill-browser__modes,
-  .skill-browser__agents {
-    flex-wrap: nowrap;
-  }
-  .skill-browser__browse-btn,
-  .skill-browser__topic,
-  .skill-browser__mode,
-  .skill-browser__agent {
-    flex: 0 0 auto;
   }
 }
 

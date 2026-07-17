@@ -6,24 +6,24 @@ const src = readFileSync(new URL("./skill-browser.tsx", import.meta.url), "utf8"
 const hub = readFileSync(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-// ── Merged discovery panel (header + filters + list) · detail pane ──────────
+// ── Browse-style layout: vertical rail · list column · detail pane ──────────
 assert.match(src, /export function SkillBrowser\(/, "exports the SkillBrowser component");
-assert.match(src, /className="skill-browser__rail"/, "renders the filter strip");
-assert.match(src, /className="skill-browser__list"/, "renders the merged discovery panel");
+assert.match(src, /<aside className="skill-browser__rail" aria-label="Skill filters">/, "renders the vertical filter rail as an aside");
+assert.match(src, /className="skill-browser__list"/, "renders the list column");
 assert.match(src, /className="skill-browser__detail"/, "renders the detail pane");
-// Merged panel: the leaderboard header and the filter strip both live INSIDE
-// the list panel (panel opens, then header, then filters) — not beside it.
+// The rail is a sibling BESIDE the list column (Browse's sidepanel grammar) —
+// not a strip nested inside it.
 assert.ok(
-  src.indexOf('className="skill-browser__list"') < src.indexOf('className="skill-browser__leaderboard"') &&
-    src.indexOf('className="skill-browser__leaderboard"') < src.indexOf('className="skill-browser__rail"'),
-  "leaderboard header and filter strip are nested inside the merged list panel, header first",
+  src.indexOf('className="skill-browser__rail"') < src.indexOf('className="skill-browser__list"'),
+  "the rail precedes the list column as its own sidepanel",
 );
 
-// Category rail: All / Installed / Claude Code / Generic with derived counts.
+// Rail rows read like Browse's category rail: plain label + count, no icons.
 assert.match(src, /label: "All Skills"/, "rail has an All Skills entry");
 assert.match(src, /label: "Installed"/, "rail has an Installed entry");
-assert.match(src, /label: "Claude Code"[\s\S]*?icon: "ph:terminal-window"/, "rail has a Claude Code entry");
-assert.match(src, /label: "Generic"[\s\S]*?icon: "ph:puzzle-piece"/, "rail has a Generic entry");
+assert.match(src, /label: "Claude Code"/, "rail has a Claude Code entry");
+assert.match(src, /label: "Generic"/, "rail has a Generic entry");
+assert.doesNotMatch(src, /skill-browser__cat-icon/, "rail rows drop the per-category icon (Browse's rows are plain text)");
 assert.match(
   src,
   /familiar === "user" \? "claude" : "generic"/,
@@ -34,60 +34,99 @@ assert.match(
   /"codex-user" \| "agents-project" \| "agents-user"/,
   "browser type keeps Codex and shared .agents install scopes",
 );
-assert.match(src, /className="skill-browser__cat-count"/, "each category shows a count");
+assert.match(src, /className="skill-browser__cat-label"/, "rail rows carry a label span");
+assert.match(src, /className="skill-browser__cat-count"/, "each rail row shows a count");
 
-// Directory discovery: skills.sh-style ranking modes, agent compatibility, and
-// install commands sit above the local SKILL.md detail workflow.
-assert.match(src, /type LeaderboardMode = "all-time" \| "trending" \| "hot"/, "supports leaderboard modes");
-assert.match(src, /label: "All Time"/, "leaderboard includes All Time mode");
-assert.match(src, /label: "Trending"/, "leaderboard includes Trending mode");
-assert.match(src, /label: "Hot"/, "leaderboard includes Hot mode");
-assert.match(src, /type BrowseFilter = "all" \| "official" \| "audited" \| "installed"/, "supports skills.sh-style browse filters");
-assert.match(src, /label: "All skills"[\s\S]*?icon: "ph:magnifying-glass"/, "browse filter includes All skills");
-assert.match(src, /label: "Official"[\s\S]*?icon: "ph:seal-check"/, "browse filter includes Official");
-assert.match(src, /label: "Security audits"[\s\S]*?icon: "ph:shield-warning"/, "browse filter includes Security audits");
-assert.match(src, /const SKILLS_DIRECTORY_LINKS = \[/, "defines skills.sh top navigation links");
-assert.match(src, /label: "Topics"[\s\S]*?href: "https:\/\/www\.skills\.sh\/topic"/, "directory nav links to skills.sh Topics");
-assert.match(src, /label: "Official"[\s\S]*?href: "https:\/\/www\.skills\.sh\/official"/, "directory nav links to skills.sh Official");
-assert.match(src, /label: "Security audits"[\s\S]*?href: "https:\/\/www\.skills\.sh\/audits"/, "directory nav links to skills.sh Audits");
-assert.match(src, /label: "Docs"[\s\S]*?href: "https:\/\/www\.skills\.sh\/docs"/, "directory nav links to skills.sh Docs");
-assert.match(src, /const FEATURED_AGENT_LABELS = \[/, "defines the skills.sh supported agent strip");
-assert.match(src, /"Claude Code"[\s\S]*?"Cursor"[\s\S]*?"Codex"[\s\S]*?"GitHub Copilot"/, "supported agent strip starts with skills.sh's first-party agents");
-assert.match(src, /className="skill-browser__ecosystem"/, "leaderboard renders the skills.sh ecosystem panel");
-assert.match(src, /Try it now/, "ecosystem panel shows the skills.sh Try it now command");
-assert.match(src, /className="skill-browser__ecosystem-command"/, "ecosystem panel renders a global install command");
-assert.match(src, /className="skill-browser__agent-strip"/, "ecosystem panel renders supported agents");
-assert.match(src, /className="skill-browser__directory-links"/, "ecosystem panel renders directory navigation links");
-assert.match(src, /const TOPIC_FILTERS = \[/, "defines skills.sh-style topic filters");
+// Rail groups: Categories, Trust, and Topics — uppercase labels over rows.
+assert.match(src, /aria-label="Filter skills"/, "the Categories group filters skills");
+assert.match(src, /<p className="skill-browser__rail-label">Categories<\/p>/, "the rail labels its Categories group");
+assert.match(src, /aria-label="Filter by trust signal"/, "the rail has a Trust group");
+assert.match(src, /<p className="skill-browser__rail-label">Trust<\/p>/, "the rail labels its Trust group");
+assert.match(src, /aria-label="Browse by topic"/, "the rail has a Topics group");
+assert.match(src, /<p className="skill-browser__rail-label">Topics<\/p>/, "the rail labels its Topics group");
+assert.match(
+  src,
+  /RAIL\.filter\(\s*\(cat\) => cat\.id === "all" \|\| cat\.id === "installed" \|\| counts\[cat\.id\] > 0,?\s*\)/,
+  "zero-count claude/generic categories stay hidden",
+);
+
+// Trust toggles compose with the categories and click off back to everything.
+assert.match(src, /type BrowseFilter = "all" \| "official" \| "audited" \| "installed"/, "keeps the trust filter states");
+assert.match(src, /const TRUST_FILTERS: \{ id: "official" \| "audited"; label: string \}\[\]/, "defines the two trust toggles");
+assert.match(src, /label: "Official"/, "trust filters include Official");
+assert.match(src, /label: "Security audits"/, "trust filters include Security audits");
+assert.match(src, /setBrowse\(active \? "all" : item\.id\)/, "trust toggles deselect back to the full list");
+assert.match(src, /function matchesBrowseFilter\(skill: SkillBrowserEntry, filter: BrowseFilter\)/, "trust filters are applied by helper");
+assert.match(src, /matchesBrowseFilter\(s, browse\)/, "visible skills are filtered by trust state");
+
+// Topics: skills.sh-style keyword filters with counts, zero-count hidden.
+assert.match(src, /const TOPIC_FILTERS = \[/, "defines topic filters");
 assert.match(src, /label: "React"[\s\S]*?keywords: \["react"\]/, "topic filters include React");
 assert.match(src, /label: "Next\.js"/, "topic filters include Next.js");
 assert.match(src, /label: "Design & UI"/, "topic filters include Design & UI");
 assert.match(src, /label: "Agent workflows"/, "topic filters include Agent workflows");
-assert.match(src, /function matchesBrowseFilter\(skill: SkillBrowserEntry, filter: BrowseFilter\)/, "browse filters are applied by helper");
 assert.match(src, /function matchesTopic\(skill: SkillBrowserEntry, topicId: string\)/, "topic filters are applied by helper");
-assert.match(src, /matchesBrowseFilter\(s, browse\)/, "visible skills are filtered by browse state");
 assert.match(src, /matchesTopic\(s, topic\)/, "visible skills are filtered by topic state");
-assert.match(src, /className="skill-browser__browse"/, "renders the badge-toggle chip row");
-assert.match(src, /className="skill-browser__topics"/, "renders the Topics chip row");
-// cave-99k1 simplification: the rail collapsed from five labeled groups to
-// two. Categories + Browse merged into one Filter group (badge toggles click
-// off back to "all"; zero-count claude/generic categories hide), Rank rides
-// the leaderboard header, and the agent chips became one compact select.
-assert.match(src, /aria-label="Filter skills"/, "one merged Filter group replaces Categories + Browse");
-assert.doesNotMatch(src, /aria-label="Browse skills"/, "the separate Browse group stays deleted");
-assert.match(src, /setBrowse\(active \? "all" : item\.id\)/, "badge toggles deselect back to the full list");
+assert.match(src, /TOPIC_FILTERS\.filter\(\(item\) => \(topics\[item\.id\] \?\? 0\) > 0\)/, "zero-count topics stay hidden");
+
+// ── The leaderboard/ecosystem chrome stays retired (cave simplification):
+// ranking survives as a plain sort select in the list toolbar.
+assert.doesNotMatch(src, /skill-browser__leaderboard/, "the Skills Leaderboard header is gone");
+assert.doesNotMatch(src, /skill-browser__ecosystem/, "the skills.sh ecosystem panel is gone");
+assert.doesNotMatch(src, /skill-browser__directory-links/, "the skills.sh directory link strip is gone");
+assert.doesNotMatch(src, /skill-browser__agent-strip/, "the supported-agents strip is gone");
+assert.doesNotMatch(src, /Try it now/, "the Try-it-now command header is gone (the detail pane's CLI line remains the copy affordance)");
+assert.doesNotMatch(src, /skills\.sh/, "no skills.sh outlinks remain in the browser chrome");
+assert.match(src, /type LeaderboardMode = "all-time" \| "trending" \| "hot"/, "keeps the ranking modes");
+assert.match(src, /const SORT_MODES: \{ id: LeaderboardMode; label: string \}\[\]/, "ranking modes become sort options");
+assert.match(src, /label: "Most installed"/, "sort includes Most installed (all-time)");
+assert.match(src, /label: "Trending"/, "sort includes Trending");
+assert.match(src, /label: "Hot"/, "sort includes Hot");
+assert.match(src, /label="Sort skills"/, "the sort select stays labeled for AT");
+assert.match(src, /rankedVisible\.map\(\(skill\)/, "the list stays ranked by the selected mode");
+assert.doesNotMatch(src, /skill-browser__rank/, "rows drop the leaderboard rank number");
+assert.doesNotMatch(src, /skill-browser__activity/, "rows drop the 8-week sparkline");
+assert.doesNotMatch(src, /skill-browser__metric/, "rows drop the score meter");
+assert.match(src, /className="skill-browser__card-installs"/, "rows keep one quiet installs count");
+assert.match(src, /formatCount\(installs\)/, "the installs count is compact-formatted");
+assert.match(src, /name="ph:download-simple"/, "the installs count uses the download glyph");
+
+// ── List toolbar — Browse's summary-row grammar: count left, controls right.
+assert.match(src, /className="skill-browser__toolbar"/, "the list column has a toolbar");
+assert.match(src, /className="skill-browser__toolbar-count"/, "the toolbar shows a result count");
 assert.match(
   src,
-  /RAIL\.filter\(\(cat\) => cat\.id === "all" \|\| cat\.id === "installed" \|\| counts\[cat\.id\] > 0\)/,
-  "zero-count claude/generic categories stay hidden",
+  /\{rankedVisible\.length\} \{rankedVisible\.length === 1 \? "skill" : "skills"\}/,
+  "the count pluralizes",
 );
-assert.match(
+assert.match(src, /<Skeleton variant="text-sm" width=\{72\} \/>/, "the count shimmers while loading (one loading language per surface)");
+assert.match(src, /<SkeletonRows count=\{6\} \/>/, "the list shows skeleton rows while loading");
+assert.match(src, /label="Filter by agent"/, "the agent filter stays a labeled select");
+assert.match(src, /agents\.length > 1 \?/, "the agent select only renders when there are agents to filter");
+
+// ── Narrow panes: the rail folds away and a category chip row stands in.
+assert.match(src, /className="skill-browser__chips" role="group" aria-label="Filter skills"/, "the chip row mirrors the category filters");
+assert.match(src, /className=\{`skill-browser__chip\$\{active \? " is-active" : ""\}`\}/, "chips mark the active category");
+assert.match(src, /className="skill-browser__chip-count"/, "chips carry counts");
+
+// Labelled/icon actions must use the shared Button/IconButton. The sole
+// exception is the bespoke CLI copy-chip (a code line with a progressive fill
+// overlay the primitive can't express) — accessible via type="button" +
+// aria-label. Assert exactly one raw button and that it's that one.
+assert.match(src, /import \{ Button \}/, "SkillBrowser labelled actions use the shared Button primitive");
+assert.match(src, /import \{ IconButton \}/, "SkillBrowser icon actions use the shared IconButton primitive");
+{
+  const rawButtons = src.match(/<button\b/g) ?? [];
+  assert.equal(rawButtons.length, 1, "the only hand-rolled button is the bespoke CLI copy-chip; everything else uses the shared Button");
+  assert.match(src, /<button\s+type="button"\s+className=\{`skill-browser__cli/, "the one raw button is the clickable CLI copy line");
+}
+assert.doesNotMatch(
   src,
-  /skill-browser__leaderboard-title[\s\S]{0,400}skill-browser__modes/,
-  "Rank lives in the leaderboard header, not its own rail group",
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "SkillBrowser should not hard-code rectangular radius classes",
 );
-assert.match(src, /className="skill-browser__agent-select"/, "agents collapse into one compact select");
-assert.match(src, /label="Filter by agent"/, "the agent select stays labeled for AT");
+
+// ── Install / use workflow (unchanged by the layout simplification) ─────────
 assert.match(src, /function installCommand\(skill: SkillBrowserEntry\)/, "builds a skills CLI install command");
 assert.match(src, /function useCommand\(skill: SkillBrowserEntry\)/, "builds a skills CLI use command");
 assert.match(src, /function sourceTarget\(skill: SkillBrowserEntry\)/, "derives the skills CLI source from owner/repo or package");
@@ -115,7 +154,6 @@ assert.match(src, /className="skill-browser__cli-fill"/, "the CLI copy renders a
 assert.match(css, /\.skill-browser__cli\.is-copied \.skill-browser__cli-fill \{[\s\S]*?width: 100%;[\s\S]*?transition: width/, "the fill sweeps to 100% on copy");
 assert.doesNotMatch(src, /function handleInstall\(/, "the one-click Install button/pill is removed (copy the CLI or Use instead)");
 assert.doesNotMatch(src, /className="skill-browser__install-button"/, "the Install button markup is gone");
-assert.match(src, /onChanged\?\.\(\)/, "a successful delete asks the parent to rescan installed state");
 assert.match(src, /function handleUseSkill\(\)/, "detail pane can use a selected skill without installing it");
 assert.match(src, /fetch\("\/api\/skills\/directory\/use"/, "use action calls the guarded skills use route");
 assert.match(src, /function requestSkillPrompt\(selectedSkill: SkillBrowserEntry\)/, "use and copy prompt share the guarded prompt request");
@@ -125,22 +163,6 @@ assert.match(src, /function handleCopyPrompt\(\)/, "detail pane can copy the gen
 assert.match(src, /copyText\(prompt\)/, "copy prompt writes the generated prompt to the clipboard");
 assert.match(src, /className="skill-browser__prompt-button"/, "detail pane renders a copy-prompt action");
 assert.match(src, /leadingIcon="ph:clipboard-text"/, "copy-prompt action uses a clipboard icon");
-assert.match(src, /import \{ Button \}/, "SkillBrowser labelled actions use the shared Button primitive");
-assert.match(src, /import \{ IconButton \}/, "SkillBrowser icon actions use the shared IconButton primitive");
-// Labelled/icon actions must use the shared Button/IconButton. The sole
-// exception is the bespoke CLI copy-chip (a code line with a progressive fill
-// overlay the primitive can't express) — accessible via type="button" +
-// aria-label. Assert exactly one raw button and that it's that one.
-{
-  const rawButtons = src.match(/<button\b/g) ?? [];
-  assert.equal(rawButtons.length, 1, "the only hand-rolled button is the bespoke CLI copy-chip; everything else uses the shared Button");
-  assert.match(src, /<button\s+type="button"\s+className=\{`skill-browser__cli/, "the one raw button is the clickable CLI copy line");
-}
-assert.doesNotMatch(
-  src,
-  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
-  "SkillBrowser should not hard-code rectangular radius classes",
-);
 assert.match(src, /selected\.sourceUrl/, "detail pane links to skill source when available");
 assert.match(src, /selected\.registryUrl/, "detail pane links to the registry when available");
 assert.match(src, /const selectedSourceSummary = useMemo/, "detail pane derives a source summary for the selected skill");
@@ -149,15 +171,6 @@ assert.match(src, /More from \{selectedSource\}/, "detail pane labels the relate
 assert.match(src, /selectedSourceSummary\.count\} skills · \{formatCount\(selectedSourceSummary\.installs\)\} installs/, "source group shows count and total installs");
 assert.match(src, /className="skill-browser__source-skill"/, "source group renders clickable related skill rows");
 assert.match(src, /onClick=\{\(\) => setSelectedKey\(skillKey\(skill\)\)\}/, "related source rows select that skill in the detail pane");
-assert.match(src, /rankedVisible\.map\(\(skill, index\)/, "renders ranked leaderboard rows");
-assert.match(src, /className="skill-browser__rank"/, "leaderboard rows expose rank");
-assert.match(src, /className="skill-browser__metric"/, "leaderboard rows expose the active score metric");
-assert.match(src, /weeklyInstalls\?: number\[\]/, "browser entries carry skills.sh 8-week activity data");
-assert.match(src, /function weeklyActivity\(skill: SkillBrowserEntry\)/, "leaderboard rows derive weekly activity bars");
-assert.match(src, /aria-label=\{`8 week activity: \$\{activity\.label\}`\}/, "activity bars expose an accessible 8-week summary");
-assert.match(src, /className="skill-browser__row-stats"/, "leaderboard rows keep activity and metric in a stable stats column");
-assert.match(src, /className="skill-browser__activity"/, "leaderboard rows render skills.sh-style activity bars");
-assert.match(src, /className="skill-browser__activity-bar"/, "leaderboard activity renders individual weekly bars");
 
 // Detail pane sources the SKILL.md body from /api/skills/file and renders it.
 assert.match(
@@ -211,35 +224,40 @@ assert.match(
 
 // ── CSS present ──────────────────────────────────────────────────────────────
 assert.match(css, /\.skill-browser \{[\s\S]*?display: flex;/, "the browser is a flex 3-column layout");
-assert.match(css, /\.skill-browser__leaderboard \{/, "CSS includes the leaderboard header");
-assert.match(css, /\.skill-browser__ecosystem \{/, "CSS includes the skills.sh ecosystem panel");
-assert.match(css, /\.skill-browser__ecosystem-command \{/, "CSS includes the Try it now command treatment");
-assert.match(css, /\.skill-browser__agent-strip \{/, "CSS includes the supported agent strip");
-assert.match(css, /\.skill-browser__directory-links \{/, "CSS includes directory navigation links");
-assert.match(css, /\.skill-browser__browse,\s*\n\.skill-browser__topics,/, "CSS includes browse/topic filter rows");
-assert.match(css, /\.skill-browser__browse-btn,\s*\n\.skill-browser__topic,/, "CSS includes browse/topic buttons");
-assert.match(css, /\.skill-browser__topic-count/, "CSS includes topic count styling");
-assert.match(css, /\.skill-browser__mode\.is-active/, "CSS includes selected leaderboard mode state");
-assert.match(css, /\.skill-browser__install-button,\s*\n\.skill-browser__use-button,\s*\n\.skill-browser__prompt-button \{/, "CSS includes the install/use/prompt buttons");
+// The rail is a vertical sidepanel like Browse's category rail — never a
+// horizontal strip, with the active row raised (not accent-washed chips).
+assert.match(
+  css,
+  /\.skill-browser__rail \{[\s\S]{0,240}?flex-direction: column/,
+  "the rail stacks its groups vertically (Browse's sidepanel grammar)",
+);
+assert.match(css, /\.skill-browser__rail \{[\s\S]{0,240}?border-right: 1px solid var\(--border-hairline\)/, "the rail is set off by a hairline like Browse's");
+assert.match(css, /\.skill-browser__cat\.is-active \{[\s\S]{0,120}?background: var\(--bg-raised\)/, "the active rail row raises like Browse's active category");
+assert.match(css, /\.skill-browser__cat-count/, "rail rows style their counts");
+// Chips are the rail's narrow-pane stand-in: hidden by default, shown when the
+// marketplace container narrows (the rail hides in the same query).
+assert.match(css, /\.skill-browser__chips \{[\s\S]{0,80}?display: none/, "the chip row is hidden while the rail is visible");
+assert.match(
+  css,
+  /@container marketplace \(max-width: 1023px\) \{[\s\S]{0,400}?\.skill-browser__rail \{ display: none; \}[\s\S]{0,120}?\.skill-browser__chips \{ display: flex; \}/,
+  "narrow panes swap the rail for the chip row via the marketplace container query",
+);
+assert.match(css, /\.skill-browser__chip\.is-active \{[\s\S]{0,120}?background: var\(--text-primary\)/, "the active chip inverts like Browse's chips");
+// Toolbar styling: count + selects share Browse's summary-row treatment.
+assert.match(css, /\.skill-browser__toolbar \{/, "CSS includes the list toolbar");
+assert.match(css, /\.skill-browser__toolbar-count \{/, "CSS includes the toolbar count");
+assert.match(css, /\.skill-browser__select \{/, "CSS includes the toolbar select treatment");
+// Simplified rows: no reserved stats column, one installs count.
+assert.match(css, /\.skill-browser__card-installs \{/, "CSS includes the row installs count");
+assert.doesNotMatch(css, /\.skill-browser__row-stats/, "the reserved stats column is gone");
+assert.doesNotMatch(css, /\.skill-browser__activity/, "the sparkline CSS is gone");
+assert.doesNotMatch(css, /\.skill-browser__leaderboard/, "the leaderboard header CSS is gone");
+assert.doesNotMatch(css, /\.skill-browser__ecosystem/, "the ecosystem panel CSS is gone");
+assert.match(css, /\.skill-browser__card\.is-active \{/, "the selected card is highlighted");
 assert.match(css, /\.skill-browser__use-button \{/, "CSS includes the use button");
 assert.match(css, /\.skill-browser__prompt-button \{/, "CSS includes the prompt button");
 assert.match(css, /\.skill-browser__source-group \{/, "CSS includes the source group panel");
 assert.match(css, /\.skill-browser__source-list \{/, "CSS includes the related source grid");
 assert.match(css, /\.skill-browser__source-skill \{/, "CSS includes related source skill buttons");
-assert.match(css, /\.skill-browser__row-stats \{/, "CSS includes a stable stats column for activity and installs");
-assert.match(css, /\.skill-browser__activity \{/, "CSS includes the 8-week activity chart");
-assert.match(css, /\.skill-browser__activity-bar \{/, "CSS includes individual activity bars");
-assert.match(css, /\.skill-browser__card \{[\s\S]*?min-height: 72px;/, "skill cards reserve enough height for activity and install stats");
-assert.match(css, /\.skill-browser__card\.is-active \{/, "the selected card is highlighted");
-assert.match(
-  css,
-  /\.skill-browser__rail \{[\s\S]*?flex-direction: row/,
-  "the filter strip is a horizontal chip row inside the merged panel at every width",
-);
-assert.doesNotMatch(
-  css,
-  /\.skill-browser__rail[^{]*\{[^}]*display:\s*none/,
-  "the filter strip is the only category control, so it must never be display:none",
-);
 
 console.log("skill-browser.test.ts OK");
