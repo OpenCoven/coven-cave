@@ -41,6 +41,7 @@ export type BlockedWhy =
   | "meta-missing"
   | "not-found"
   | "proposal-corrupt"
+  | "proposal-refused"
   | "invalid-id";
 
 export const THREADS_STALE_TTL_MS = 30_000;

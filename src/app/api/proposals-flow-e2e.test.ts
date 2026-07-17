@@ -66,8 +66,8 @@ describe("route-source pins: handlers are exactly the composition under test", (
 });
 
 describe("GET flow — real checked-in staged writes through the env-selected adapter", () => {
-  it("serves the pending fixtures with the freshness envelope (fixtures default)", async () => {
-    delete process.env.COVEN_THREADS_ADAPTER;
+  it("serves the pending fixtures with the freshness envelope (explicit fixtures mode)", async () => {
+    process.env.COVEN_THREADS_ADAPTER = "fixtures";
     delete process.env.COVEN_THREADS_FIXTURE_SCENARIO;
     const envelope = await activeThreadsAdapter().proposals();
     assert.equal(httpStatusForEnvelope(envelope, "GET"), 200);
@@ -86,7 +86,7 @@ describe("GET flow — real checked-in staged writes through the env-selected ad
   });
 
   it("daemon-timeout scenario blocks the list (R3), never an empty-healthy answer", async () => {
-    delete process.env.COVEN_THREADS_ADAPTER;
+    process.env.COVEN_THREADS_ADAPTER = "fixtures";
     process.env.COVEN_THREADS_FIXTURE_SCENARIO = "daemon-timeout";
     const envelope = await activeThreadsAdapter().proposals();
     assert.equal(envelope.blocked, true);
@@ -98,7 +98,7 @@ describe("GET flow — real checked-in staged writes through the env-selected ad
 
 describe("decision flow — forward-only, fail-closed, staged files untouched", () => {
   it("R5: fixtures mode (no daemon) answers 503 and the checked-in files never change", async () => {
-    delete process.env.COVEN_THREADS_ADAPTER;
+    process.env.COVEN_THREADS_ADAPTER = "fixtures";
     delete process.env.COVEN_THREADS_FIXTURE_SCENARIO;
     const pendingDir = path.join(process.cwd(), "fixtures", "phase-4", "pending");
     const before = readdirSync(pendingDir).sort();
@@ -110,7 +110,7 @@ describe("decision flow — forward-only, fail-closed, staged files untouched", 
   });
 
   it("reject path fails closed identically without a daemon", async () => {
-    delete process.env.COVEN_THREADS_ADAPTER;
+    process.env.COVEN_THREADS_ADAPTER = "fixtures";
     const envelope = await activeThreadsAdapter().reject(PROPOSAL_OK);
     assert.equal(envelope.why, "daemon-unavailable");
     assert.equal(httpStatusForEnvelope(envelope, "POST"), 503);
