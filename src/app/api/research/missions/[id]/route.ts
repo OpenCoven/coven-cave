@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rejectNonLocalRequest } from "@/lib/server/api-security";
 import { makeProductionResearchMissionRunner } from "@/lib/server/research-mission-runner";
 import {
   isValidResearchMissionId,
@@ -9,9 +10,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
   const { id } = await context.params;
   if (!isValidResearchMissionId(id)) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });

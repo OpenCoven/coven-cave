@@ -848,6 +848,7 @@ export const SUITES = {
     "src/app/api/workflows/run/route.test.ts",
     "src/app/api/flows/run/route.test.ts",
     "src/app/api/research/missions/route.test.ts",
+    "src/app/api/research/missions/[id]/route.test.ts",
     "src/app/api/research/missions/[id]/actions/route.test.ts",
     "src/app/api/research/missions/[id]/schedule/route.test.ts",
     "src/app/api/flows/webhook/route.test.ts",
