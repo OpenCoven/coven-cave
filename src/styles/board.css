@@ -319,6 +319,26 @@
 .board-kanban-card--selected { background:color-mix(in oklch,var(--accent-presence) 13%,var(--bg-base)); border-color:color-mix(in oklch,var(--accent-presence) 55%,var(--border-strong)); box-shadow:inset 0 0 0 1px color-mix(in oklch,var(--accent-presence) 35%,transparent); }
 .board-kanban-card--dragging { opacity:.35; cursor:grabbing; }
 .board-kanban-card--grabbed { border-color:color-mix(in oklch,var(--accent-presence) 72%,var(--border-strong)); box-shadow:0 0 0 2px color-mix(in oklch,var(--accent-presence) 28%,transparent),inset 0 0 0 1px color-mix(in oklch,var(--accent-presence) 44%,transparent); }
+/* One-shot completion flare — the summoning circle's bloom vocabulary
+   (700ms, decelerate, radiate + fade) retold in success green as a card
+   lands in Done. Border/shadow only: no transform on the card itself, so
+   nothing shifts layout mid-drag. Purely visual — the move is announced
+   for AT — and reduced-motion collapses it entirely. */
+.board-kanban-card--reward { animation: board-reward-flare 700ms var(--ease-decelerate) forwards; }
+@keyframes board-reward-flare {
+  0% {
+    border-color: color-mix(in oklch, var(--color-success) 70%, var(--border-hairline));
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-success) 45%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-success) 40%, transparent);
+  }
+  100% {
+    border-color: var(--border-hairline);
+    box-shadow: 0 0 0 10px transparent, 0 0 34px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-kanban-card--reward { animation: none; }
+}
 /* Floating clone that follows the finger during a touch/pen drag. */
 .board-kanban-touch-ghost {
   position: fixed;

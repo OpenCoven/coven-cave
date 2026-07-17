@@ -28,6 +28,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { classifyAboutDaemonStatus, type AboutDaemonState } from "@/lib/about-status";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useCelebrationsEnabled, writeCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import {
   DEFAULT_STOP_PHRASE,
@@ -400,6 +401,9 @@ function GeneralSection() {
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
+      <SettingsGroup label="Progression">
+        <CelebrationsToggle />
+      </SettingsGroup>
       <BackupSettingsGroup />
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
@@ -428,6 +432,31 @@ function HomeNewsToggle() {
         aria-label="News headlines"
         onClick={() => writeHomeNewsEnabled(!newsEnabled)}
         className={`settings-switch focus-ring${newsEnabled ? " is-on" : ""}`}
+      >
+        <span className="settings-switch__knob" aria-hidden />
+      </button>
+    </SettingsRow>
+  );
+}
+
+// The dial-it-down switch for the renown system's louder moments. Off is a
+// clean-tool mode, not a mute-with-loss: milestones still land in the inbox
+// and completions still announce for AT — only the celebratory presentation
+// (toasts, flourishes) stills.
+function CelebrationsToggle() {
+  const celebrationsEnabled = useCelebrationsEnabled();
+  return (
+    <SettingsRow
+      label="Celebrations"
+      description="Milestone toasts and completion flourishes. Off keeps milestones in the inbox only."
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={celebrationsEnabled}
+        aria-label="Celebrations"
+        onClick={() => writeCelebrationsEnabled(!celebrationsEnabled)}
+        className={`settings-switch focus-ring${celebrationsEnabled ? " is-on" : ""}`}
       >
         <span className="settings-switch__knob" aria-hidden />
       </button>
