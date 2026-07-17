@@ -163,6 +163,27 @@ export class AssistantFilter {
     }
     if (this.phase !== "assistant") return "";
 
+    // Startup prompt echoes are always hidden before any other assistant-output
+    // heuristics run. In particular, an attacker-controlled startup block may
+    // contain lines that look like exec-echo state transitions; those must not
+    // be allowed to enter the exec parser and later bail out as visible prose.
+    if (this.suppressedStartupTag) {
+      const tag = startupBlockTag(trimmed);
+      if (tag?.closing && tag.tag === this.suppressedStartupTag) {
+        this.suppressedStartupTag = null;
+      }
+      return "";
+    }
+
+    const startupTag = startupBlockTag(trimmed);
+    if (startupTag && !startupTag.closing) {
+      this.suppressedStartupTag = startupTag.tag;
+      return "";
+    }
+    if (startupTag?.closing || isStartupNoiseLine(trimmed)) {
+      return "";
+    }
+
     // ── Exec-echo block detection ─────────────────────────────────────────
     // State machine: none → header → cmdline → output
     // We suppress the entire block from the saved assistant text.
@@ -253,23 +274,6 @@ export class AssistantFilter {
 
     if (isLeakedSkillDocBodyLine(trimmed)) {
       this.suppressLeakedSkillBody = true;
-      return "";
-    }
-
-    if (this.suppressedStartupTag) {
-      const tag = startupBlockTag(trimmed);
-      if (tag?.closing && tag.tag === this.suppressedStartupTag) {
-        this.suppressedStartupTag = null;
-      }
-      return "";
-    }
-
-    const tag = startupBlockTag(trimmed);
-    if (tag && !tag.closing) {
-      this.suppressedStartupTag = tag.tag;
-      return "";
-    }
-    if (tag?.closing || isStartupNoiseLine(trimmed)) {
       return "";
     }
 
