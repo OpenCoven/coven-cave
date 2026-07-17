@@ -92,8 +92,12 @@ export function addTileReducer(state: AddTileState, event: AddTileEvent): AddTil
     case "retry":
       return state.phase === "error" ? { ...state, phase: "generating", error: null } : state;
     case "generated":
+      // Async terminal events only apply to an in-flight generation — a late
+      // arrival after collapse/discard must not resurrect the tile.
+      if (state.phase !== "generating") return state;
       return { ...state, phase: "result", result: { code: event.code, kind: event.kind }, error: null };
     case "generation-failed":
+      if (state.phase !== "generating") return state;
       // A failed refine keeps the prior sketch recoverable (result retained).
       return { ...state, phase: "error", error: event.message };
     case "discard-result":
@@ -113,7 +117,11 @@ export function derivePastedTitle(code: string): string {
   const src = typeof code === "string" ? code : "";
   const title = src.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   const h1 = src.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
-  const raw = strip(title ?? h1 ?? "").replace(/\s+/g, " ").trim();
+  // First non-empty candidate wins — a present-but-empty <title></title> must
+  // not suppress the <h1> fallback.
+  const raw = [title, h1]
+    .map((s) => strip(s ?? "").replace(/\s+/g, " ").trim())
+    .find(Boolean) ?? "";
   return raw ? titleFromPrompt(raw) : "Pasted sketch";
 }
 

@@ -137,6 +137,30 @@ const s0 = INITIAL_ADD_TILE_STATE;
   assert.equal(addTileReducer(noResult, { type: "refine" }).phase, "composing", "refine is a no-op without a result");
 }
 
+// ── late async events never resurrect a collapsed/discarded tile ────────────
+{
+  const open = addTileReducer(s0, { type: "expand" });
+  const generating = addTileReducer({ ...open, prompt: "x" }, { type: "generate" });
+  const collapsed = addTileReducer(generating, { type: "collapse" });
+  assert.equal(
+   addTileReducer(collapsed, { type: "generated", code: "<p>late</p>", kind: "html" }).phase,
+   "collapsed",
+   "a late generated event never reopens a collapsed tile",
+  );
+  assert.equal(
+   addTileReducer(collapsed, { type: "generation-failed", message: "aborted" }).phase,
+   "collapsed",
+   "a late failure never reopens a collapsed tile",
+  );
+
+  const discarded = addTileReducer(
+   { ...s0, phase: "result", result: { code: "<p>v1</p>", kind: "html" } },
+   { type: "discard-result" },
+  );
+  const lateAfterDiscard = addTileReducer(discarded, { type: "generated", code: "<p>v1</p>", kind: "html" });
+  assert.equal(lateAfterDiscard.result, null, "a late generated event never revives a discarded sketch");
+}
+
 // ── discard and saved ────────────────────────────────────────────────────────
 {
   const result = {
@@ -180,6 +204,11 @@ assert.equal(
   derivePastedTitle(`<h1>${"long ".repeat(40)}</h1>`).length <= 60,
   true,
   "titles are clamped like every other artifact title",
+);
+assert.equal(
+  derivePastedTitle("<html><head><title></title></head><body><h1>Real Heading</h1></body></html>"),
+  "Real Heading",
+  "an empty <title> falls back to the h1",
 );
 
 // ── detectPastedKind ─────────────────────────────────────────────────────────
