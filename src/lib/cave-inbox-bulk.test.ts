@@ -9,7 +9,13 @@ import os from "node:os";
 import path from "node:path";
 
 const tmpHome = mkdtempSync(path.join(os.tmpdir(), "cave-inbox-bulk-"));
-process.env.COVEN_CAVE_HOME = tmpHome;
+// COVEN_HOME must move too: the store gate (withCaveHomeReconciledStore)
+// scans `covenHome()` for legacy cave-*.json entries, so pointing only
+// COVEN_CAVE_HOME at a temp dir still reads the developer's real ~/.coven —
+// and fails outright when its compatibility symlinks target the real
+// canonical dir instead of the temp one (cave-spqh).
+process.env.COVEN_HOME = path.join(tmpHome, ".coven");
+process.env.COVEN_CAVE_HOME = path.join(tmpHome, "cave");
 
 // Import AFTER the env override — INBOX_PATH is computed at module load.
 const { applyBulkAction, createItem, loadInbox } = await import("./cave-inbox.ts");

@@ -11,10 +11,15 @@ const prevPlugins = process.env.COVEN_MARKETPLACE_PLUGINS_DIR;
 const prevVault = process.env.COVEN_KNOWLEDGE_DIR;
 const prevProjects = process.env.CAVE_PROJECTS_PATH_OVERRIDE;
 const prevCaveHome = process.env.COVEN_CAVE_HOME;
+const prevCovenHome = process.env.COVEN_HOME;
 process.env.COVEN_MARKETPLACE_PLUGINS_DIR = path.join(scratchRoot, "plugins");
 process.env.COVEN_KNOWLEDGE_DIR = path.join(scratchRoot, "vault");
 process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(scratchRoot, "projects.json");
 process.env.COVEN_CAVE_HOME = path.join(scratchRoot, "cave-home");
+// The projects store's reconciliation gate scans `covenHome()` for legacy
+// entries; leave that at the real ~/.coven and the test reads (and can fail
+// on) the developer's live state (cave-spqh).
+process.env.COVEN_HOME = path.join(scratchRoot, ".coven");
 
 try {
   const packDir = path.join(process.env.COVEN_MARKETPLACE_PLUGINS_DIR, "worldbuilding");
@@ -140,6 +145,7 @@ try {
   if (prevVault === undefined) delete process.env.COVEN_KNOWLEDGE_DIR; else process.env.COVEN_KNOWLEDGE_DIR = prevVault;
   if (prevProjects === undefined) delete process.env.CAVE_PROJECTS_PATH_OVERRIDE; else process.env.CAVE_PROJECTS_PATH_OVERRIDE = prevProjects;
   if (prevCaveHome === undefined) delete process.env.COVEN_CAVE_HOME; else process.env.COVEN_CAVE_HOME = prevCaveHome;
+  if (prevCovenHome === undefined) delete process.env.COVEN_HOME; else process.env.COVEN_HOME = prevCovenHome;
   await rm(scratchRoot, { recursive: true, force: true });
 }
 
