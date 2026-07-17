@@ -53,15 +53,18 @@ retry() {
 }
 
 cleanup_release_artifacts() {
-  if [ -n "${DMG_STAGE:-}" ]; then
-    rm -rf "$DMG_STAGE"
-  fi
+  local exit_status=$?
+
   if [ -n "${NOTARY_KEYCHAIN_PATH:-}" ]; then
     security delete-keychain "$NOTARY_KEYCHAIN_PATH" >/dev/null 2>&1 || true
   fi
   if [ -n "${NOTARY_KEYCHAIN_DIR:-}" ]; then
-    rm -rf "$NOTARY_KEYCHAIN_DIR"
+    rm -rf "$NOTARY_KEYCHAIN_DIR" || true
   fi
+  if [ -n "${DMG_STAGE:-}" ]; then
+    rm -rf "$DMG_STAGE" || true
+  fi
+  return "$exit_status"
 }
 trap cleanup_release_artifacts EXIT
 

@@ -44,6 +44,10 @@ test("Apple ID notarization avoids putting the app password in process arguments
   assert.match(releaseScript, /security delete-keychain "\$NOTARY_KEYCHAIN_PATH"/);
   assert.match(releaseScript, /rm -rf "\$NOTARY_KEYCHAIN_DIR"/);
 
+  const cleanupFunction = releaseScript.slice(
+    releaseScript.indexOf("cleanup_release_artifacts()"),
+    releaseScript.indexOf("trap cleanup_release_artifacts EXIT"),
+  );
   const setupFunctions = releaseScript.slice(
     releaseScript.indexOf("store_notary_credentials()"),
     releaseScript.indexOf("print_notary_log()"),
@@ -57,6 +61,15 @@ test("Apple ID notarization avoids putting the app password in process arguments
     releaseScript.indexOf("cleanup_dmg_artifacts()"),
   );
 
+  assert.match(cleanupFunction, /local exit_status=\$\?/);
+  assert.match(cleanupFunction, /rm -rf "\$NOTARY_KEYCHAIN_DIR" \|\| true/);
+  assert.match(cleanupFunction, /rm -rf "\$DMG_STAGE" \|\| true/);
+  assert.match(cleanupFunction, /return "\$exit_status"/);
+  assert(
+    cleanupFunction.indexOf('security delete-keychain "$NOTARY_KEYCHAIN_PATH"') <
+      cleanupFunction.indexOf('rm -rf "$DMG_STAGE"'),
+    "credential cleanup must run before best-effort DMG cleanup",
+  );
   assert.doesNotMatch(setupFunctions, /--password/);
   assert.doesNotMatch(logFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
   assert.doesNotMatch(submitFunction, /--password "\$NOTARY_APPLE_PASSWORD"/);
