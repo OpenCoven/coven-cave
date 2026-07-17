@@ -63,7 +63,7 @@ export function parseFamiliarWorkspaces(raw: string): Map<string, string> {
 
 export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
   try {
-    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
+    const raw = await readFile(path.join(/* turbopackIgnore: true */ covenHome(), "familiars.toml"), "utf8");
     return parseFamiliarWorkspaces(raw);
   } catch {
     return new Map();
@@ -72,7 +72,7 @@ export async function readFamiliarWorkspaces(): Promise<Map<string, string>> {
 
 export async function familiarWorkspace(familiarId: string): Promise<string> {
   const declared = await readFamiliarWorkspaces();
-  return declared.get(familiarId) ?? path.join(familiarWorkspacesRoot(), familiarId);
+  return declared.get(familiarId) ?? path.join(/* turbopackIgnore: true */ familiarWorkspacesRoot(), familiarId);
 }
 
 export async function familiarIds(): Promise<string[]> {

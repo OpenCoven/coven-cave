@@ -40,8 +40,8 @@ assert.doesNotMatch(
 
 assert.match(
   workspace,
-  /import \{ FamiliarsView \} from "@\/components\/familiars-view"/,
-  "workspace.tsx imports FamiliarsView",
+  /import \{[\s\S]*FamiliarsView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "workspace.tsx imports FamiliarsView through the lazy surface boundary",
 );
 
 assert.match(
@@ -54,6 +54,51 @@ assert.match(
   workspace,
   /<FamiliarsView[\s\S]*activeFamiliar=\{active\}/,
   "Workspace passes the selected familiar into the Familiars page",
+);
+
+// Chat is the default boot surface and stays eager. Every mode/open-gated
+// workspace host crosses the shared next/dynamic boundary instead.
+assert.match(
+  workspace,
+  /import \{ ChatSurface \} from "@\/components\/chat-surface"/,
+  "ChatSurface stays eager for the Chat-first boot path",
+);
+assert.match(
+  workspace,
+  /import \{ HomeComposer \} from "@\/components\/home-composer"/,
+  "HomeComposer stays eager for the adjacent critical path",
+);
+for (const component of [
+  "CommandPalette",
+  "FamiliarsView",
+  "GrimoireView",
+  "InboxEscalationsView",
+  "MobileHandoffModal",
+  "NewReminderModal",
+  "OnboardingOverlay",
+  "OpenCovenSubmissionPage",
+  "RailInspector",
+  "SalemChatPanel",
+  "ShortcutsSheet",
+]) {
+  assert.match(
+    workspace,
+    new RegExp(`import \\{[\\s\\S]*${component}[\\s\\S]*\\} from "@/components/lazy-surfaces"`),
+    `${component} is imported through the lazy surface boundary`,
+  );
+}
+for (const gate of [
+  /\{paletteOpen && \(\s*<CommandPalette/,
+  /\{shortcutsOpen && <ShortcutsSheet/,
+  /\{reminderModalOpen && \(\s*<NewReminderModal/,
+  /\{mobileHandoffOpen && \(\s*<MobileHandoffModal/,
+]) {
+  assert.match(workspace, gate, "lazy modal chunks load only after their open intent");
+}
+assert.match(
+  workspace,
+  /\{\(onboardingOpen \|\| onboardingMounted\) && \(\s*<OnboardingOverlay[\s\S]*open=\{onboardingOpen\}/,
+  "onboarding loads on first open but remains mounted so job polling and one-shot refs survive close/reopen",
 );
 
 // The right companion rail was removed in favour of drag-to-split, so the

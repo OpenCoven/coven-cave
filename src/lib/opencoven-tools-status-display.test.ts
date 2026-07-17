@@ -26,6 +26,20 @@ test("a failed npm lookup never renders an installed tool as up to date", () => 
   );
 });
 
+test("a local Node/npm launch failure is not presented as a registry failure", () => {
+  const tool = {
+    installed: true,
+    current: null,
+    latest: null,
+    outdated: false,
+    compatible: false,
+    latestCheck: { status: "failed" as const, checkedAt, error: "runtime_error" as const },
+  };
+
+  assert.match(latestCheckText(tool), /local Node\/npm runtime failed/);
+  assert.doesNotMatch(latestCheckText(tool), /registry lookup failed/);
+});
+
 test("a failed refresh marks retained version data stale instead of current", () => {
   const tool = {
     installed: true,

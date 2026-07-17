@@ -23,6 +23,8 @@ const contracts: RouteContract[] = [
   { route: "/asana/assigned", methods: ["GET"], kind: "json" },
   { route: "/asana/workspaces", methods: ["GET"], kind: "json" },
   { route: "/asana/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/backup/export", methods: ["POST"], kind: "stream", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/backup/restore", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/beads", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true, pathGuard: true },
   { route: "/beads/prs", methods: ["GET"], kind: "json", localOriginGuard: true, pathGuard: true },
   { route: "/board/[id]/chat", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -32,7 +34,7 @@ const contracts: RouteContract[] = [
   { route: "/board", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/canvas", methods: ["GET", "PUT", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/capabilities", methods: ["GET"], kind: "json" },
-  { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json" },
+  { route: "/cave-home-migration", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/changes", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/chat/conversation/[id]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -96,7 +98,7 @@ const contracts: RouteContract[] = [
   { route: "/github/review", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/runs", methods: ["GET"], kind: "json" },
   { route: "/github/pat", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
-  { route: "/github/tasks", methods: ["GET"], kind: "json" },
+  { route: "/github/tasks", methods: ["GET", "POST"], kind: "json" },
   { route: "/github/worktree", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -147,6 +149,7 @@ const contracts: RouteContract[] = [
   { route: "/onboarding/codex-port-preflight", methods: ["POST"], kind: "json" },
   { route: "/onboarding/ssh-check", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/status", methods: ["GET"], kind: "json" },
+  { route: "/onboarding/update", methods: ["GET", "POST"], kind: "json" },
   { route: "/opencoven/executions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/opencoven/submissions", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
@@ -215,6 +218,10 @@ const contracts: RouteContract[] = [
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/elevenlabs/catalog", methods: ["GET"], kind: "json" },
   { route: "/voice/elevenlabs/tts", methods: ["POST"], kind: "stream", readsJson: true },
+  { route: "/voice/engines", methods: ["GET"], kind: "json" },
+  { route: "/voice/engines/downloads", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/voice/engines/downloads/[jobId]", methods: ["GET"], kind: "json" },
+  { route: "/voice/engines/models", methods: ["DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/voice/local/chat", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/preview", methods: ["GET"], kind: "stream" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
@@ -570,6 +577,16 @@ for (const contract of contracts) {
     /if \(!endpoint\) \{[\s\S]*?return NextResponse\.json\(\{[\s\S]*?ok: false,[\s\S]*?tasks: \[\],[\s\S]*?\}\);/,
     "/github/tasks: missing optional task endpoint should be a quiet ok:false payload, not a browser-console 503",
   );
+  assert.match(
+    githubTasksSource,
+    /export async function POST\(\)[\s\S]*respondWithTasks\(true\)/,
+    "/github/tasks: explicit refreshes bypass the fresh TTL entry",
+  );
+  assert.match(
+    githubTasksSource,
+    /forceGitHubTasksRefresh\(endpoint\)[\s\S]*getGitHubTasks\(endpoint\)/,
+    "/github/tasks: both forced and automatic reads use the shared process cache",
+  );
 }
 
 {
@@ -588,7 +605,7 @@ for (const contract of contracts) {
   );
   assert.match(
     projectPathsSource,
-    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(subpath\.root, subpath\.relativePath\)/,
+    /export function resolveAllowedProjectPath\(value: string\): string \| null \{[\s\S]*?path\.join\(\/\* turbopackIgnore: true \*\/ subpath\.root, subpath\.relativePath\)/,
     "shared project path validation must keep the existing absolute-path API contract",
   );
   assert.match(

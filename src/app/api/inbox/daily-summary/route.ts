@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  loadInbox,
-  saveInbox,
   withInboxLock,
   type InboxItem,
 } from "@/lib/cave-inbox";
@@ -96,8 +94,8 @@ export async function POST(req: Request) {
     cardsCompleted: board ? completedCardsForDay(board.cards, now) : undefined,
   };
 
-  const result = await withInboxLock(async () => {
-    const file = await loadInbox();
+  const result = await withInboxLock(async ({ load, save }) => {
+    const file = await load();
     const draft = buildDailySummaryContent({
       items: file.items,
       sessions,
@@ -124,7 +122,7 @@ export async function POST(req: Request) {
         updatedAt: now.toISOString(),
       };
       file.items = file.items.map((item) => (item.id === existing.id ? refreshed : item));
-      await saveInbox(file);
+      await save(file);
       return { item: refreshed, created: false };
     }
 
@@ -148,7 +146,7 @@ export async function POST(req: Request) {
       auto: draft.auto,
     };
     file.items.push(next);
-    await saveInbox(file);
+    await save(file);
     return { item: next, created: true };
   });
 

@@ -329,7 +329,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           </>
         )}
 
-        <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
+        <RecentActivityRollup
+          sessions={sessions}
+          selectedFamiliarIds={selectedFamiliarIds}
+          activeSessionId={activeSessionId}
+          onOpenSession={onOpenSession}
+        />
       </div>
 
       {/* Bottom: Dashboard + Settings, then the version line — shared with the

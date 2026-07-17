@@ -4,13 +4,15 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { killPtyBridge } from "@/lib/pty-ws-bridge";
-import { ProjectsView } from "@/components/projects-view";
-import { ChatSettingsView } from "@/components/chat-settings-view";
-import { ChatCanvasView } from "@/components/chat-canvas-view";
-import { GroupChatView } from "@/components/group-chat-view";
-import { ChatFamiliarView } from "@/components/chat-familiar-view";
+import {
+  ChatCanvasView,
+  ChatFamiliarView,
+  ChatSettingsView,
+  GroupChatView,
+  ProjectsView,
+  WorkspaceRail,
+} from "@/components/lazy-surfaces";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending, consumeProjectsTabPending } from "@/lib/chat-tab-events";
-import { WorkspaceRail } from "@/components/workspace-rail";
 import { useCodeRail } from "@/lib/use-code-rail";
 import { useStageChecksBadge } from "@/lib/use-stage-checks-badge";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";

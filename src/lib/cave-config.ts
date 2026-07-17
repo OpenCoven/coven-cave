@@ -2,6 +2,7 @@ import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 import { rememberHubAccessToken, splitHubAccessToken } from "./hub-access-token.ts";
 import {
   type ChatAutoArchivePolicy,
@@ -85,7 +86,7 @@ export async function recordKnowledgePackSeed(
   target: { target: "vault" | "project"; root?: string },
 ): Promise<string> {
   return withConfigLock(async () => {
-    const cfg = await loadConfig();
+    const cfg = await loadConfigUnlocked();
     const seededAt = new Date().toISOString();
     const nextEntry: KnowledgePackSeedEntry = {
       id: packId,
@@ -304,7 +305,7 @@ export type CaveState = {
   travel: CaveTravelState;
 };
 
-export async function loadConfig(): Promise<CaveConfig> {
+async function loadConfigUnlocked(): Promise<CaveConfig> {
   try {
     const raw = await readFile(CONFIG_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveConfig>;
@@ -366,6 +367,10 @@ export async function loadConfig(): Promise<CaveConfig> {
   }
 }
 
+export function loadConfig(): Promise<CaveConfig> {
+  return withCaveHomeReconciledStore("cave-config.json", loadConfigUnlocked);
+}
+
 /** Split an embedded access token out of `config.multiHost.hubUrl` into the
  *  local encrypted vault, in place. Returns whether the URL was rewritten. */
 function sanitizeMultiHostHubToken(config: Pick<CaveConfig, "multiHost">): boolean {
@@ -421,8 +426,14 @@ function normalizeStringRecord(input: unknown): Record<string, string> {
   return out;
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 export function normalizeOmnigentConfig(input: Partial<CaveOmnigentConfig> | undefined): CaveOmnigentConfig {
-  const rawUrl = typeof input?.baseUrl === "string" ? input.baseUrl.trim().replace(/\/+$/, "") : "";
+  const rawUrl = typeof input?.baseUrl === "string" ? trimTrailingSlashes(input.baseUrl.trim()) : "";
   let baseUrl = rawUrl;
   if (rawUrl) {
     try {
@@ -560,7 +571,7 @@ async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
   configMutex = new Promise<void>((resolve) => { release = resolve; });
   try {
     await previous.catch(() => {});
-    return await fn();
+    return await withCaveHomeReconciledStore("cave-config.json", fn);
   } finally {
     release();
   }
@@ -568,7 +579,7 @@ async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   return withConfigLock(async () => {
-  const current = await loadConfig();
+  const current = await loadConfigUnlocked();
   const updated: CaveConfig = {
     ...current,
     ...patch,
@@ -633,7 +644,7 @@ export async function installMarketplacePlugin(
   metadata: MarketplaceInstallMetadata = {},
 ): Promise<string> {
   return withConfigLock(async () => {
-  const cfg = await loadConfig();
+  const cfg = await loadConfigUnlocked();
   const installedAt = new Date().toISOString();
   const updated: CaveConfig = {
     ...cfg,
@@ -660,7 +671,7 @@ export async function installMarketplacePlugin(
 
 export async function uninstallMarketplacePlugin(pluginName: string): Promise<void> {
   return withConfigLock(async () => {
-  const cfg = await loadConfig();
+  const cfg = await loadConfigUnlocked();
   const installed = { ...cfg.marketplace.installed };
   delete installed[pluginName];
   const updated: CaveConfig = {
@@ -695,7 +706,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
   };
 }
 
-export async function loadState(): Promise<CaveState> {
+async function loadStateUnlocked(): Promise<CaveState> {
   try {
     const raw = await readFile(STATE_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<CaveState>;
@@ -715,7 +726,11 @@ export async function loadState(): Promise<CaveState> {
   }
 }
 
-async function saveState(state: CaveState): Promise<void> {
+export function loadState(): Promise<CaveState> {
+  return withCaveHomeReconciledStore("cave-state.json", loadStateUnlocked);
+}
+
+async function saveStateUnlocked(state: CaveState): Promise<void> {
   await mkdir(path.dirname(STATE_PATH), { recursive: true });
   await writeJsonAtomic(STATE_PATH, state);
 }
@@ -733,20 +748,22 @@ async function updateState<T>(
   stateMutex = new Promise<void>((resolve) => { release = resolve; });
   try {
     await previous.catch(() => {});
-    const state = await loadState();
-    const result = await mutator(state);
-    await saveState(state);
-    return result;
+    return await withCaveHomeReconciledStore("cave-state.json", async () => {
+      const state = await loadStateUnlocked();
+      const result = await mutator(state);
+      await saveStateUnlocked(state);
+      return result;
+    });
   } finally {
     release();
   }
 }
 
 export async function recordOwnedSession(sessionId: string): Promise<void> {
-  const state = await loadState();
-  state.sessionOwned[sessionId] = new Date().toISOString();
   try {
-    await saveState(state);
+    await updateState((state) => {
+      state.sessionOwned[sessionId] = new Date().toISOString();
+    });
   } catch {
     /* best effort */
   }
@@ -1011,7 +1028,7 @@ export async function upsertRoleConfig(
   active: boolean,
 ): Promise<void> {
   return withConfigLock(async () => {
-  const cfg = await loadConfig();
+  const cfg = await loadConfigUnlocked();
   const now = new Date().toISOString();
   const idx = cfg.roles.findIndex(r => r.id === roleId && r.familiar === familiar);
   if (idx >= 0) {

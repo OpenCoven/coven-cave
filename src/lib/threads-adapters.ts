@@ -56,11 +56,11 @@ const AUDIT_PAGE_SIZE = 200;
 function pendingDirCursor(dir: string): string {
   let listing: string[] = [];
   try {
-    listing = readdirSync(dir)
+    listing = readdirSync(/* turbopackIgnore: true */ dir)
       .filter((f) => f.endsWith(".json"))
       .sort()
       .map((f) => {
-        const stat = statSync(path.join(dir, f));
+        const stat = statSync(path.join(/* turbopackIgnore: true */ dir, f));
         return `${f}:${stat.size}:${stat.mtimeMs}`;
       });
   } catch {
@@ -75,7 +75,7 @@ function readPendingDir(dir: string): ProposalView[] | null {
   // instead of rendering blocked.
   let files: string[];
   try {
-    files = readdirSync(dir)
+    files = readdirSync(/* turbopackIgnore: true */ dir)
       .filter((f) => f.endsWith(".json"))
       .sort();
   } catch {
@@ -83,7 +83,7 @@ function readPendingDir(dir: string): ProposalView[] | null {
   }
   return files.map((file) => {
     try {
-      const raw: unknown = JSON.parse(readFileSync(path.join(dir, file), "utf8"));
+      const raw: unknown = JSON.parse(readFileSync(path.join(/* turbopackIgnore: true */ dir, file), "utf8"));
       return normalizeProposal(file, raw);
     } catch {
       // R6: corrupt pending file — listed, actions disabled, never dropped.
@@ -96,8 +96,8 @@ function findPendingFile(dir: string, proposalId: string): string | null {
   // Filename convention: <familiar-uuid>-<proposal-uuid>.json (staging.rs).
   // proposalId is regex-validated before this is called; never joined raw.
   try {
-    const match = readdirSync(dir).find((f) => f.endsWith(`-${proposalId}.json`));
-    return match ? path.join(dir, match) : null;
+    const match = readdirSync(/* turbopackIgnore: true */ dir).find((f) => f.endsWith(`-${proposalId}.json`));
+    return match ? path.join(/* turbopackIgnore: true */ dir, match) : null;
   } catch {
     return null;
   }
@@ -121,8 +121,10 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
   private readonly scenario: FixturesScenario;
 
   constructor(options: FixturesAdapterOptions = {}) {
-    this.root = options.root ?? path.join(process.cwd(), "fixtures", "phase-4");
-    this.pendingDir = options.pendingDir ?? path.join(this.root, "pending");
+    // Both fixture overrides and daemon stores are selected at runtime. Ignore
+    // them as trace roots while retaining the existing validation/read paths.
+    this.root = options.root ?? path.join(/* turbopackIgnore: true */ process.cwd(), "fixtures", "phase-4");
+    this.pendingDir = options.pendingDir ?? path.join(/* turbopackIgnore: true */ this.root, "pending");
     this.scenario = options.scenario ?? "default";
   }
 
@@ -138,7 +140,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
 
   private loadWeaveEntries(): RawWeaveEntry[] | null {
     try {
-      const raw: unknown = JSON.parse(readFileSync(path.join(this.root, "weaves.json"), "utf8"));
+      const raw: unknown = JSON.parse(readFileSync(path.join(/* turbopackIgnore: true */ this.root, "weaves.json"), "utf8"));
       return Array.isArray(raw) ? (raw as RawWeaveEntry[]) : null;
     } catch {
       return null;
@@ -147,7 +149,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
 
   private weaveCursor(): string {
     try {
-      const stat = statSync(path.join(this.root, "weaves.json"));
+      const stat = statSync(path.join(/* turbopackIgnore: true */ this.root, "weaves.json"));
       return `weave:fixture:${stat.size}:${stat.mtimeMs}`;
     } catch {
       return "weave:fixture:absent";
@@ -220,7 +222,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
     if (timeout) return timeout;
     let lines: string[];
     try {
-      lines = readFileSync(path.join(this.root, "ward-audit.jsonl"), "utf8")
+      lines = readFileSync(path.join(/* turbopackIgnore: true */ this.root, "ward-audit.jsonl"), "utf8")
         .split("\n")
         .filter((l) => l.trim().length > 0);
     } catch {
@@ -250,7 +252,7 @@ export class FixturesThreadsAdapter implements ThreadsReadAdapter {
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
     const timeout = this.timedOut<ProposalView[]>();
     if (timeout) return timeout;
-    if (!existsSync(this.pendingDir)) {
+    if (!existsSync(/* turbopackIgnore: true */ this.pendingDir)) {
       return blockedEnvelope("no-fixture", this.meta("pending:absent", false));
     }
     const listed = readPendingDir(this.pendingDir);
@@ -381,8 +383,8 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
   }
 
   async audit(threadId: string, before?: number): Promise<ThreadsEnvelope<AuditEntryView[]>> {
-    const dbPath = path.join(this.home, "coven.sqlite3");
-    if (!existsSync(dbPath)) {
+    const dbPath = path.join(/* turbopackIgnore: true */ this.home, "coven.sqlite3");
+    if (!existsSync(/* turbopackIgnore: true */ dbPath)) {
       return blockedEnvelope("no-audit-store", this.meta("ward_audit:absent", false));
     }
     try {
@@ -419,11 +421,11 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
   }
 
   async proposals(): Promise<ThreadsEnvelope<ProposalView[]>> {
-    const pendingDir = path.join(this.home, "pending");
-    if (!existsSync(pendingDir)) {
+    const pendingDir = path.join(/* turbopackIgnore: true */ this.home, "pending");
+    if (!existsSync(/* turbopackIgnore: true */ pendingDir)) {
       // No pending dir but a real coven home: nothing has ever been staged —
       // verified empty. No coven home at all: nothing to verify against.
-      if (existsSync(this.home)) return okEnvelope([], this.meta("pending:empty", true));
+      if (existsSync(/* turbopackIgnore: true */ this.home)) return okEnvelope([], this.meta("pending:empty", true));
       return blockedEnvelope("daemon-unavailable", this.meta("pending:absent", false));
     }
     const listed = readPendingDir(pendingDir);
@@ -443,11 +445,11 @@ export class DaemonThreadsAdapter implements ThreadsReadAdapter {
     if (!isSafeThreadsId(proposalId)) {
       return blockedEnvelope("invalid-id", this.meta("none", false));
     }
-    const pendingDir = path.join(this.home, "pending");
+    const pendingDir = path.join(/* turbopackIgnore: true */ this.home, "pending");
     const file = findPendingFile(pendingDir, proposalId);
     if (!file) return blockedEnvelope("not-found", this.meta(pendingDirCursor(pendingDir), false));
     try {
-      const parsed = normalizeProposal(path.basename(file), JSON.parse(readFileSync(file, "utf8")));
+      const parsed = normalizeProposal(path.basename(file), JSON.parse(readFileSync(/* turbopackIgnore: true */ file, "utf8")));
       if (parsed.parse === "corrupt") {
         return blockedEnvelope("proposal-corrupt", this.meta(pendingDirCursor(pendingDir), false));
       }

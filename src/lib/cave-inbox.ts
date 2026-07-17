@@ -4,6 +4,7 @@ import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import type { DailyReportPayload } from "./daily-report-facts.ts";
 import { caveHome } from "./coven-paths.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
+import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
 const INBOX_PATH = path.join(caveHome(), "inbox.json");
 
@@ -100,7 +101,7 @@ async function ensureDir() {
   await mkdir(path.dirname(INBOX_PATH), { recursive: true });
 }
 
-export async function loadInbox(): Promise<InboxFile> {
+async function loadInboxUnlocked(): Promise<InboxFile> {
   try {
     const raw = await readFile(INBOX_PATH, "utf8");
     const parsed = JSON.parse(raw) as Partial<InboxFile>;
@@ -113,9 +114,17 @@ export async function loadInbox(): Promise<InboxFile> {
   }
 }
 
-export async function saveInbox(file: InboxFile): Promise<void> {
+async function saveInboxUnlocked(file: InboxFile): Promise<void> {
   await ensureDir();
   await writeJsonAtomic(INBOX_PATH, file);
+}
+
+export async function loadInbox(): Promise<InboxFile> {
+  return withCaveHomeReconciledStore("cave-inbox.json", loadInboxUnlocked);
+}
+
+export function saveInbox(file: InboxFile): Promise<void> {
+  return withCaveHomeReconciledStore("cave-inbox.json", () => saveInboxUnlocked(file));
 }
 
 // Serialize all read-modify-write sequences against the inbox file. Without
@@ -128,9 +137,15 @@ declare global {
   var __inboxWriteChain: Promise<unknown> | undefined;
 }
 
-export function withInboxLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withInboxLock<T>(
+  fn: (store: { load: typeof loadInboxUnlocked; save: typeof saveInboxUnlocked }) => Promise<T>,
+): Promise<T> {
   const prev = globalThis.__inboxWriteChain ?? Promise.resolve();
-  const next = prev.then(fn, fn);
+  const run = () => withCaveHomeReconciledStore(
+    "cave-inbox.json",
+    () => fn({ load: loadInboxUnlocked, save: saveInboxUnlocked }),
+  );
+  const next = prev.then(run, run);
   globalThis.__inboxWriteChain = next.catch(() => undefined);
   return next;
 }
@@ -152,7 +167,7 @@ export type NewItemInput = {
 
 export async function createItem(input: NewItemInput): Promise<InboxItem> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const now = new Date().toISOString();
     const status: ItemStatus =
       (input.kind === "agent" || input.kind === "daily-summary") && !input.fireAt ? "fired" : "pending";
@@ -178,7 +193,7 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
       readAt: null,
     };
     file.items.push(item);
-    await saveInbox(file);
+    await saveInboxUnlocked(file);
     return item;
   });
 }
@@ -188,7 +203,7 @@ export async function updateItem(
   patch: Partial<Omit<InboxItem, "id" | "createdAt">>,
 ): Promise<InboxItem | null> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const idx = file.items.findIndex((i) => i.id === id);
     if (idx < 0) return null;
     const current = file.items[idx];
@@ -200,18 +215,18 @@ export async function updateItem(
       updatedAt: new Date().toISOString(),
     };
     file.items[idx] = next;
-    await saveInbox(file);
+    await saveInboxUnlocked(file);
     return next;
   });
 }
 
 export async function deleteItem(id: string): Promise<boolean> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const before = file.items.length;
     file.items = file.items.filter((i) => i.id !== id);
     if (file.items.length === before) return false;
-    await saveInbox(file);
+    await saveInboxUnlocked(file);
     return true;
   });
 }
@@ -262,7 +277,7 @@ export async function applyBulkAction(
   ids: string[] | null,
 ): Promise<BulkResult> {
   return withInboxLock(async () => {
-    const file = await loadInbox();
+    const file = await loadInboxUnlocked();
     const nowIso = new Date().toISOString();
     const idSet = ids ? new Set(ids) : null;
     const targeted = (item: InboxItem) =>
@@ -298,7 +313,7 @@ export async function applyBulkAction(
       });
     }
 
-    if (updated.length > 0 || deletedIds.length > 0) await saveInbox(file);
+    if (updated.length > 0 || deletedIds.length > 0) await saveInboxUnlocked(file);
     return { updated, deletedIds };
   });
 }

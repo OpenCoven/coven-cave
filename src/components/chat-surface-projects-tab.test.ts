@@ -7,7 +7,7 @@ const events = readFileSync(new URL("../lib/chat-tab-events.ts", import.meta.url
 
 assert.match(events, /CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects"/, "event constant defined");
 
-assert.match(surface, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "chat-surface imports ProjectsView");
+assert.match(surface, /import \{[\s\S]*ProjectsView[\s\S]*\} from "@\/components\/lazy-surfaces"/, "chat-surface lazy-loads ProjectsView");
 assert.match(surface, /CHAT_OPEN_PROJECTS_EVENT/, "chat-surface references the reroute event");
 assert.match(surface, /type FamiliarsScope = "conversation" \| "projects" \| "coven"/, "scope union is conversation + projects + coven (memory retired, cave-liut)");
 // Chat keeps a narrow Sessions / Projects tab pair so project creation is

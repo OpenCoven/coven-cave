@@ -76,11 +76,21 @@ type OpenCovenToolStatus = {
   path: string | null;
   current: string | null;
   latest: string | null;
-  latestCheck: LatestCheckDisplay;
+  latestCheck: LatestCheckDisplay | null;
   outdated: boolean;
   compatible: boolean;
   minimumVersion: string;
-  checkedAt?: string;
+  checkedAt?: string | null;
+};
+
+type OnboardingUpdatePayload = {
+  ok: boolean;
+  tools: OpenCovenToolStatus[];
+  checkedAt: string | null;
+  freshness: "fresh" | "stale" | "unavailable";
+  stale: boolean;
+  refreshing: boolean;
+  error: string | null;
 };
 
 type HarnessReport = {
@@ -107,6 +117,8 @@ type InstallTarget =
 type InstallResult = {
   ok: boolean;
   detail: string;
+  /** Server-capped and secret-redacted terminal output retained on failure. */
+  tail?: string;
 };
 
 type NpmLaneState = {
@@ -344,6 +356,11 @@ function parseOnboardingExecutorUrls(text: string): string[] {
 
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
+  const [updateTools, setUpdateTools] = useState<OpenCovenToolStatus[]>([]);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateStale, setUpdateStale] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updateCheckedAt, setUpdateCheckedAt] = useState<string | null>(null);
   const [platform, setPlatform] = useState<PlatformId>("unknown");
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
@@ -437,6 +454,30 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   }, []);
 
+  const loadUpdates = useCallback(async (force = false) => {
+    setUpdateChecking(true);
+    if (force) setUpdateError(null);
+    try {
+      const res = await fetch("/api/onboarding/update", {
+        method: force ? "POST" : "GET",
+        cache: "no-store",
+      });
+      const json = (await res.json()) as OnboardingUpdatePayload;
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "update check failed");
+      setUpdateTools(json.tools ?? []);
+      setUpdateStale(json.stale);
+      setUpdateError(json.error);
+      setUpdateCheckedAt(json.checkedAt);
+      return json.tools ?? [];
+    } catch (err) {
+      setUpdateStale(true);
+      setUpdateError(err instanceof Error ? err.message : "update check failed");
+      return null;
+    } finally {
+      setUpdateChecking(false);
+    }
+  }, []);
+
   const refreshNpmLane = useCallback(async () => {
     try {
       const res = await fetch("/api/onboarding/install", { cache: "no-store" });
@@ -500,6 +541,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   useEffect(() => {
     if (!open) return;
     void refresh();
+    void loadUpdates();
     void loadHarnesses();
     void refreshNpmLane();
     pollRef.current = setInterval(() => {
@@ -510,7 +552,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
-  }, [open, refresh, loadHarnesses, refreshNpmLane]);
+  }, [open, refresh, loadUpdates, loadHarnesses, refreshNpmLane]);
 
   // The harness probe races first paint: it loads once at open, so a slow or
   // failed first fetch left the runtime step's grid empty until a manual
@@ -546,6 +588,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     try {
       await Promise.all([
         refresh(),
+        loadUpdates(true),
         new Promise((resolve) => setTimeout(resolve, 600)),
       ]);
     } finally {
@@ -567,7 +610,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           // user hitting an unmet step).
           statusFailures,
           setupError,
+          installJobs,
           installResults,
+          update: {
+            checkedAt: updateCheckedAt,
+            stale: updateStale,
+            checking: updateChecking,
+            error: updateError,
+          },
           nodeHint,
           harnesses: harnesses.map((adapter) => ({
             id: adapter.id,
@@ -852,8 +902,15 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                       ? `installed at ${json.binaryPath}`
                       : "installed",
                   }
-                : { ok: false, detail: json.error ?? "install failed" },
+                : {
+                    ok: false,
+                    detail: json.error ?? "install failed",
+                    tail: json.tail,
+                  },
             }));
+            if (target === "coven-cli" && json.ok) {
+              await loadUpdates(true);
+            }
             await refresh();
             await loadHarnesses();
           }
@@ -1206,6 +1263,26 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           familiarDone={hasFamiliars}
         />
 
+        <section className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] p-4">
+          <div className="flex items-start gap-3">
+            <Icon name="ph:archive" width={18} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+            <div>
+              <div className="text-[13px] font-semibold text-[var(--text-primary)]">Restoring a previous Cave?</div>
+              <p className="mt-0.5 text-[12px] leading-5 text-[var(--text-secondary)]">
+                Use a .ccbackup file and its passphrase to restore chats, projects, memory, and vault-backed tokens before continuing setup.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.href = "/settings?group=Backup#general"; }}
+            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]"
+          >
+            <Icon name="ph:arrow-counter-clockwise" />
+            Restore from backup
+          </button>
+        </section>
+
         {setupComplete ? (
           // The finish CTA lives in the footer of a long scrolling page; when
           // the last step ticks, the counter reads 4/4 but the next action is
@@ -1420,15 +1497,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             platformCopy={platformCopy}
                             installJobs={installJobs}
                             installResults={installResults}
-                            tools={(status?.tools ?? []).filter(
-                              (tool) => tool.id === "coven-cli",
-                            )}
+                            tools={(status?.tools ?? [])
+                              .filter((tool) => tool.id === "coven-cli")
+                              .map((tool) => onboardingToolWithUpdate(tool, updateTools))}
+                            updateChecking={updateChecking}
+                            updateStale={updateStale}
+                            updateError={updateError}
+                            updateCheckedAt={updateCheckedAt}
                             nodeHint={nodeHint}
                             npmBusy={
                               npmLane !== null || anyNpmInstallRunning(installJobs)
                             }
                             npmBusyLabel={npmLane?.label ?? "another npm update"}
                             onInstall={(target) => void runInstall(target)}
+                            onCheckUpdates={() => void loadUpdates(true)}
                             onCopy={copyText}
                           />
                         ) : step.key === "covenHome" ? (
@@ -1814,13 +1896,16 @@ function NodeSetupNotice({
 function InstallResultNote({ result }: { result?: InstallResult }) {
   if (!result) return null;
   return (
-    <p
-      className={`text-[11px] leading-4 ${
-        result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
-      }`}
-    >
-      {result.detail}
-    </p>
+    <div className="flex flex-col gap-2">
+      <p
+        className={`text-[11px] leading-4 ${
+          result.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+        }`}
+      >
+        {result.detail}
+      </p>
+      {!result.ok && result.tail ? <InstallLiveTail tail={result.tail} /> : null}
+    </div>
   );
 }
 
@@ -1830,8 +1915,26 @@ function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
   return tool.outdated && tool.latest ? `${tool.current} -> ${tool.latest}` : tool.current;
 }
 
-function openCovenToolStatusText(tool: OpenCovenToolStatus): string {
-  return toolStatusText(tool);
+/** Readiness remains authoritative for local install/current facts. Cached
+ * update discovery contributes only registry-owned fields, so a stale update
+ * snapshot cannot make a missing local CLI appear installed. */
+function onboardingToolWithUpdate(
+  readiness: OpenCovenToolStatus,
+  updates: OpenCovenToolStatus[],
+): OpenCovenToolStatus {
+  const update = updates.find((tool) => tool.id === readiness.id);
+  if (!update) return readiness;
+  return {
+    ...readiness,
+    latest: update.latest,
+    latestCheck: update.latestCheck,
+    outdated: update.outdated,
+    checkedAt: update.checkedAt,
+  };
+}
+
+function openCovenToolStatusText(tool: OpenCovenToolStatus, stale = false): string {
+  return toolStatusText(tool, stale);
 }
 
 function StepCovenCli({
@@ -1839,20 +1942,30 @@ function StepCovenCli({
   installJobs,
   installResults,
   tools,
+  updateChecking,
+  updateStale,
+  updateError,
+  updateCheckedAt,
   nodeHint,
   npmBusy,
   npmBusyLabel,
   onInstall,
+  onCheckUpdates,
   onCopy,
 }: {
   platformCopy: (typeof PLATFORM_COPY)[PlatformId];
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   tools: OpenCovenToolStatus[];
+  updateChecking: boolean;
+  updateStale: boolean;
+  updateError: string | null;
+  updateCheckedAt: string | null;
   nodeHint: string | null;
   npmBusy: boolean;
   npmBusyLabel: string;
   onInstall: (target: "coven-cli") => void;
+  onCheckUpdates: () => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
   const job = installJobs["coven-cli"];
@@ -1891,6 +2004,14 @@ function StepCovenCli({
               ? `Waiting for ${npmBusyLabel}`
               : primaryActionLabel}
         </Button>
+        <Button
+          variant="secondary"
+          loading={updateChecking}
+          onClick={onCheckUpdates}
+          disabled={updateChecking}
+        >
+          {updateChecking ? "Checking…" : "Check for updates"}
+        </Button>
         {actionTargets.length > 0 ? (
           <span className="text-[11px] text-[var(--text-muted)]">
             or run it yourself:
@@ -1916,6 +2037,7 @@ function StepCovenCli({
               const currentVerified =
                 tool.installed &&
                 hasVerifiedLatestVersion(tool) &&
+                !updateStale &&
                 !tool.outdated &&
                 tool.compatible;
               const result = installResults[tool.id];
@@ -1933,7 +2055,13 @@ function StepCovenCli({
                         {openCovenToolVersionText(tool)}
                       </div>
                       <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
-                        {latestCheckText(tool)}
+                        {tool.latestCheck
+                          ? latestCheckText(tool, updateStale)
+                          : updateChecking
+                            ? "Checking npm for the latest version…"
+                            : updateError
+                              ? `Latest version unavailable: ${updateError}`
+                              : "Latest version has not been checked yet."}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1949,7 +2077,7 @@ function StepCovenCli({
                         ) : (
                           <Icon name="ph:warning-fill" />
                         )}
-                        {openCovenToolStatusText(tool)}
+                        {openCovenToolStatusText(tool, updateStale)}
                       </span>
                       {needsAction ? (
                         <button
@@ -1983,6 +2111,15 @@ function StepCovenCli({
           </div>
         </div>
       ) : null}
+      <p role="status" className="text-[10px] text-[var(--text-muted)]">
+        {updateChecking
+          ? "Checking npm now…"
+          : updateError
+            ? `${updateStale ? "Showing stale update data" : "Update check unavailable"}: ${updateError}`
+            : updateCheckedAt
+              ? `${updateStale ? "Stale update data" : "Update data current"} · checked ${new Date(updateCheckedAt).toLocaleString()}`
+              : "Update check pending."}
+      </p>
       {nodeHint ? (
         <NodeSetupNotice hint={nodeHint} nodeSetup={platformCopy.nodeSetup} />
       ) : null}

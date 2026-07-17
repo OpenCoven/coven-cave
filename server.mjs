@@ -2,7 +2,6 @@ import { createHmac } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { parse } from "node:url";
 import next from "next";
 import { WebSocket, WebSocketServer } from "ws";
 const require2 = createRequire(import.meta.url);
@@ -119,6 +118,44 @@ function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
 }
 function firstQueryValue(value) {
   return Array.isArray(value) ? value[0] : value;
+}
+const UPGRADE_URL_BASE = "http://localhost";
+const MAX_UPGRADE_QUERY_SEGMENTS = 1e3;
+const ABSOLUTE_FORM_RE = /^[a-z][a-z\d+.-]*:\/\//i;
+function boundedUpgradeQuery(suffix) {
+  if (!suffix.startsWith("?")) return "";
+  const fragmentStart = suffix.indexOf("#", 1);
+  const rawQuery = suffix.slice(1, fragmentStart === -1 ? void 0 : fragmentStart);
+  let segmentCount = 1;
+  for (let index = 0; index < rawQuery.length; index += 1) {
+    if (rawQuery[index] !== "&") continue;
+    if (segmentCount >= MAX_UPGRADE_QUERY_SEGMENTS) return rawQuery.slice(0, index);
+    segmentCount += 1;
+  }
+  return rawQuery;
+}
+function parseUpgradeTarget(rawUrl) {
+  const pathEnd = rawUrl.search(/[?#]/);
+  const rawPath = pathEnd === -1 ? rawUrl : rawUrl.slice(0, pathEnd);
+  const suffix = pathEnd === -1 ? "" : rawUrl.slice(pathEnd);
+  const normalizedPath = rawPath.replaceAll("\\", "/");
+  const absoluteForm = ABSOLUTE_FORM_RE.exec(normalizedPath);
+  const rootedPath = normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`;
+  const parsedUrl = absoluteForm ? new URL(normalizedPath) : new URL(`/.${rootedPath}`, UPGRADE_URL_BASE);
+  parsedUrl.search = `?${boundedUpgradeQuery(suffix)}`;
+  let pathname = normalizedPath;
+  if (absoluteForm) {
+    const pathStart = normalizedPath.indexOf("/", absoluteForm[0].length);
+    pathname = pathStart === -1 ? "/" : normalizedPath.slice(pathStart);
+  }
+  const query = /* @__PURE__ */ Object.create(null);
+  for (const [key, value] of parsedUrl.searchParams) {
+    const current = query[key];
+    if (current === void 0) query[key] = value;
+    else if (Array.isArray(current)) current.push(value);
+    else query[key] = [current, value];
+  }
+  return { pathname, query };
 }
 function isPtyAuthRequired() {
   return Boolean(ACCESS_TOKEN || SIDECAR_TOKEN);
@@ -327,11 +364,18 @@ const wss = new WebSocketServer({ noServer: true });
 await app.prepare();
 const nextUpgradeHandler = app.getUpgradeHandler();
 const server = createServer((req, res) => {
-  const parsedUrl = parse(req.url ?? "/", true);
-  void handle(req, res, parsedUrl);
+  void handle(req, res);
 });
 server.on("upgrade", (req, socket, head) => {
-  const { pathname, query } = parse(req.url ?? "/", true);
+  let pathname;
+  let query;
+  try {
+    ({ pathname, query } = parseUpgradeTarget(req.url ?? "/"));
+  } catch {
+    socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   if (pathname !== "/api/pty-ws") {
     void nextUpgradeHandler(req, socket, head).catch((err) => {
       console.error(`Failed to handle websocket upgrade for ${req.url ?? "unknown url"}`, err);

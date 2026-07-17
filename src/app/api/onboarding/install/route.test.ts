@@ -48,7 +48,7 @@ assert.match(
 
 assert.match(
   source,
-  /args: \["install", "-g", target\.packageName\]/,
+  /args: \[\.\.\.launch\.fixedArgs, "install", "-g", target\.packageName\]/,
   "npm argv is fully fixed — only the allowlisted package name varies",
 );
 
@@ -171,14 +171,40 @@ for (const platform of ["darwin", "win32"]) {
 
 assert.match(
   source,
-  /shell: process\.platform === "win32"/,
-  "Windows spawns npm through a shell because it resolves to npm.cmd",
+  /npmLaunchCommandForPath\(npm\)/,
+  "Windows npm.cmd installs are remapped to node npm-cli.js",
+);
+assert.match(
+  source,
+  /args: \[\.\.\.launch\.fixedArgs, "install", "-g", target\.packageName\][\s\S]*?shell: false/,
+  "npm installs preserve fixed argv and never pass npm.cmd through cmd.exe",
+);
+assert.match(
+  source,
+  /npm discovery: runnable launcher found on Cave PATH\./,
+  "the retained trace records npm discovery without copying its local path",
+);
+assert.match(
+  source,
+  /Installer launch: npm-cli\.js via Node with fixed argv; shell disabled\./,
+  "the retained trace records the shell-free fixed-argv Windows launch mode",
+);
+assert.doesNotMatch(
+  source,
+  /appendTrace\([^\n]*(?:plan\.command|launch\.command|npmResult\.path)/,
+  "retained trace markers never include discovered machine-local command paths",
 );
 
 assert.match(
   source,
   /verifyOpenCovenToolInstall\(targetName\)/,
   "OpenCoven installs refresh discovery and perform the authoritative executable/version verification",
+);
+
+assert.match(
+  source,
+  /installOk && targetName === "coven-cli"\) invalidateOpenCovenToolUpdateCache\(\)/,
+  "a successful Coven CLI install invalidates cached update discovery",
 );
 
 assert.match(
@@ -198,11 +224,22 @@ assert.match(
   /job\.verification = verification/,
   "the polled job carries sanitized path/version verification evidence to the UI",
 );
+assert.match(
+  source,
+  /Post-install verification:[\s\S]*?package=[\s\S]*?executable=[\s\S]*?compatible=[\s\S]*?latest=/,
+  "the retained trace records only safe post-install verification booleans",
+);
 
 assert.match(
   source,
   /redactSensitiveInstallOutput\(job\.output \+ stripAnsi\(chunk\)\)/,
   "installer tails re-redact the combined buffer so secrets split across chunks cannot leak",
+);
+
+assert.match(
+  source,
+  /appendOutput\(job, daemonUpdateTraceLine\(daemon\)\)/,
+  "daemon lifecycle trace punctuation is normalized by the tested helper",
 );
 
 assert.match(
@@ -281,8 +318,18 @@ assert.match(
 
 assert.match(
   source,
-  /function finishInstallJobError\([\s\S]*?npmLease\?\.release\(\)/,
-  "terminal job error paths release the global npm lease",
+  /function releaseNpmLease\([\s\S]*?npmLease\.release\(\);[\s\S]*?Global npm lane: released\./,
+  "terminal job paths release the global npm lease and retain that fact",
+);
+assert.match(
+  source,
+  /function finishInstallJobError\([\s\S]*?releaseNpmLease\(job, npmLease\)/,
+  "preparation error paths use the traced global npm lease release",
+);
+assert.match(
+  source,
+  /Installer process: exited with code \$\{code\}\./,
+  "the retained trace records the installer process exit code",
 );
 
 assert.match(
@@ -319,6 +366,11 @@ assert.match(
   source,
   /slice\(-OUTPUT_CAP\)/,
   "job output is capped, not unbounded",
+);
+assert.match(
+  source,
+  /function installJobTail\([\s\S]*?CLIENT_TAIL_CAP[\s\S]*?outputBudget[\s\S]*?job\.output\.slice\(-outputBudget\)/,
+  "the client tail keeps stable trace facts plus bounded raw output",
 );
 
 assert.match(

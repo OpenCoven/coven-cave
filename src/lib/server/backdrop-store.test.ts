@@ -189,6 +189,7 @@ test("route keeps normal API auth plus local-only, bounded, no-store raster sema
     "DELETE clears canonical image metadata",
   );
   assert.match(routeSource, /"Cache-Control": "no-store"/);
+  assert.match(routeSource, /!image[\s\S]*status: 204/, "missing optional bytes return a successful empty response");
   assert.match(routeSource, /"X-Content-Type-Options": "nosniff"/);
   assert.match(routeSource, /req\.headers\.get\("if-none-match"\) === image\.etag[\s\S]*status: 304/);
   assert.doesNotMatch(routeSource, /image\/svg|svg\+xml/i, "the route never allowlists SVG");
@@ -244,6 +245,7 @@ test("familiar route mirrors the app route's local-only, bounded, no-store seman
   assert.match(familiarRouteSource, /SAFE_BACKDROP_MIME_TYPES[\s\S]*unsupported backdrop image type[\s\S]*415/);
   assert.match(familiarRouteSource, /writeFamiliarBackdropFile\(params\.id, bytes, mime\)/);
   assert.match(familiarRouteSource, /"Cache-Control": "no-store"/);
+  assert.match(familiarRouteSource, /!image[\s\S]*status: 204/, "missing familiar bytes return a successful empty response");
   assert.match(familiarRouteSource, /"X-Content-Type-Options": "nosniff"/);
   assert.match(familiarRouteSource, /req\.headers\.get\("if-none-match"\) === image\.etag[\s\S]*status: 304/);
   assert.doesNotMatch(familiarRouteSource, /image\/svg|svg\+xml/i, "the route never allowlists SVG");

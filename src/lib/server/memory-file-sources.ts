@@ -58,6 +58,20 @@ async function isRealPathWithinAllowedRoot(targetPath: string, allowedRoot: stri
   return isWithinRoot(realTarget, realRoot);
 }
 
+/** Resolve an existing file and reject lexical traversal and symlink escapes. */
+export async function resolveAllowedFileReadPath(fullPath: string, allowedRoot: string): Promise<string | null> {
+  const resolved = path.resolve(/* turbopackIgnore: true */ fullPath);
+  const root = path.resolve(/* turbopackIgnore: true */ allowedRoot);
+  if (!isWithinRoot(resolved, root)) return null;
+
+  const [realTarget, realRoot] = await Promise.all([
+    realpathIfPresent(resolved),
+    realpathIfPresent(root),
+  ]);
+  if (realTarget === null || realRoot === null || !isWithinRoot(realTarget, realRoot)) return null;
+  return realTarget;
+}
+
 function familiarAllowedRootPath(fullPath: string, classification: MemoryFileClassification): string | null {
   if (!classification.familiarId) return null;
   const familiarRoot = classification.rootPath;

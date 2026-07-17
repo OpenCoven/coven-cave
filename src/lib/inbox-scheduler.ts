@@ -1,7 +1,6 @@
 import {
   computeNextOccurrence,
   loadInbox,
-  saveInbox,
   withInboxLock,
   type InboxItem,
 } from "@/lib/cave-inbox";
@@ -64,9 +63,9 @@ export async function snapshot(): Promise<InboxItem[]> {
 }
 
 async function tick(): Promise<void> {
-  const fired = await withInboxLock(async () => {
+  const fired = await withInboxLock(async ({ load, save }) => {
     const now = Date.now();
-    const file = await loadInbox();
+    const file = await load();
 
     const dueIdx: number[] = [];
     for (let i = 0; i < file.items.length; i++) {
@@ -115,7 +114,7 @@ async function tick(): Promise<void> {
       }
     }
 
-    await saveInbox(file);
+    await save(file);
     return out;
   });
 

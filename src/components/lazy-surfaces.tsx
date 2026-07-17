@@ -25,6 +25,20 @@ function SurfaceFallback() {
   );
 }
 
+function GlyphPickerFallback() {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--bg-base)]/70 backdrop-blur-sm">
+      <div
+        className="flex h-[560px] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4 shadow-2xl"
+        aria-busy="true"
+        aria-label="Loading glyph picker"
+      >
+        <SkeletonRows count={8} />
+      </div>
+    </div>
+  );
+}
+
 // Wrap a lazy loader so the chunk's fetch+parse time is recorded as a
 // `surface-load:<name>` perf measure (visible in the ?perf=1 overlay). This is
 // the runtime cost of code-splitting these surfaces — worth watching so a
@@ -77,9 +91,141 @@ export const FamiliarWorkQueueView = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
+export const FamiliarGlyphPicker = dynamic(
+  timed("familiar-glyph-picker", () =>
+    import("@/components/familiar-glyph-picker").then((m) => m.FamiliarGlyphPicker),
+  ),
+  { ssr: false, loading: GlyphPickerFallback },
+);
+
 // BrowserPane's imperative handle crosses this boundary as the regular
 // `handleRef` prop — next/dynamic does not forward element refs (cave-masj).
 export const BrowserPane = dynamic(
   timed("browser", () => import("@/components/browser-pane").then((m) => m.BrowserPane)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// The workspace boots into Chat. Everything below is either selected through
+// another mode or opened explicitly, so none of it belongs in the initial `/`
+// graph. Mode surfaces keep a full-area skeleton while their local chunk is
+// fetched from the packaged Next server.
+export const FamiliarsView = dynamic(
+  timed("familiars", () => import("@/components/familiars-view").then((m) => m.FamiliarsView)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const GrimoireView = dynamic(
+  timed("grimoire", () => import("@/components/grimoire-view").then((m) => m.GrimoireView)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const InboxEscalationsView = dynamic(
+  timed("schedules", () =>
+    import("@/components/inbox-escalations-view").then((m) => m.InboxEscalationsView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const OpenCovenSubmissionPage = dynamic(
+  timed("submissions", () =>
+    import("@/components/opencoven-submission-page").then((m) => m.OpenCovenSubmissionPage),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const RailInspector = dynamic(
+  timed("memory-inspector", () =>
+    import("@/components/inspector-pane").then((m) => m.RailInspector),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const SalemChatPanel = dynamic(
+  timed("salem", () =>
+    import("@/components/salem/salem-widget").then((m) => m.SalemChatPanel),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+// Modal hosts are conditionally rendered by workspace.tsx, so `loading: null`
+// never paints an empty overlay at boot and the chunk is requested only after
+// the corresponding open intent.
+export const CommandPalette = dynamic(
+  timed("command-palette", () =>
+    import("@/components/command-palette").then((m) => m.CommandPalette),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const OnboardingOverlay = dynamic(
+  timed("onboarding", () =>
+    import("@/components/onboarding-overlay").then((m) => m.OnboardingOverlay),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const NewReminderModal = dynamic(
+  timed("new-reminder", () =>
+    import("@/components/new-reminder-modal").then((m) => m.NewReminderModal),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const ShortcutsSheet = dynamic(
+  timed("shortcuts", () =>
+    import("@/components/shortcuts-sheet").then((m) => m.ShortcutsSheet),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+export const MobileHandoffModal = dynamic(
+  timed("mobile-handoff", () =>
+    import("@/components/mobile-handoff-modal").then((m) => m.MobileHandoffModal),
+  ),
+  { ssr: false, loading: () => null },
+);
+
+// Chat itself stays eager because it is the default workspace. Its secondary
+// tabs and code rail do not: the Sessions conversation remains interactive
+// without downloading every alternate Chat destination at startup.
+export const ProjectsView = dynamic(
+  timed("chat-projects", () =>
+    import("@/components/projects-view").then((m) => m.ProjectsView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const ChatCanvasView = dynamic(
+  timed("chat-canvas", () =>
+    import("@/components/chat-canvas-view").then((m) => m.ChatCanvasView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const ChatFamiliarView = dynamic(
+  timed("chat-familiar", () =>
+    import("@/components/chat-familiar-view").then((m) => m.ChatFamiliarView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const ChatSettingsView = dynamic(
+  timed("chat-settings", () =>
+    import("@/components/chat-settings-view").then((m) => m.ChatSettingsView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const GroupChatView = dynamic(
+  timed("group-chat", () =>
+    import("@/components/group-chat-view").then((m) => m.GroupChatView),
+  ),
+  { ssr: false, loading: SurfaceFallback },
+);
+
+export const WorkspaceRail = dynamic(
+  timed("workspace-rail", () =>
+    import("@/components/workspace-rail").then((m) => m.WorkspaceRail),
+  ),
   { ssr: false, loading: SurfaceFallback },
 );

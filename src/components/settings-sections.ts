@@ -37,7 +37,7 @@ export const SECTIONS: SectionMeta[] = [
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   profile: ["Display name & pronouns", "Profile image", "Bio, timezone & links"],
-  general: ["Workspace path", "Launch behavior", "Default start view"],
+  general: ["Workspace path", "Encrypted backup", "Launch behavior"],
   daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   familiars: ["Roster & identity", "Per-familiar permissions", "Pinned strip order"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
@@ -52,6 +52,7 @@ export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "profile", group: "Links", keywords: "links github socials url website portfolio" },
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
+  { section: "general", group: "Backup", keywords: "backup export restore encrypted passphrase archive vault recovery" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },

@@ -159,7 +159,9 @@ async function writeLegacyBackdropImage(blob: Blob): Promise<void> {
 
 async function readCentralBackdropImage() {
   const response = await fetch("/api/preferences/backdrop", { cache: "no-store" });
-  if (response.status === 404) return { kind: "missing" as const };
+  // 204 is the clean current contract; accept 404 from older sidecars during
+  // rolling upgrades so a missing optional image stays backward-compatible.
+  if (response.status === 204 || response.status === 404) return { kind: "missing" as const };
   if (!response.ok) {
     // In particular, 401/403 are auth failures rather than proof that no
     // central image exists. The image state keeps them retryable.
@@ -371,7 +373,10 @@ export function applyBackdropToDocument(prefs: BackdropPrefs, imageUrl?: string 
 // Look tab stay in sync after uploads/removals.
 
 const familiarBackdropRevisions = new Map<string, number>();
+const familiarBackdropMissingUntil = new Map<string, { revision: number; expiresAt: number }>();
+const familiarBackdropReads = new Map<string, { revision: number; read: Promise<Blob | null> }>();
 const familiarBackdropListeners = new Set<() => void>();
+const FAMILIAR_BACKDROP_MISSING_TTL_MS = 5 * 60_000;
 
 function notifyFamiliarBackdrop() {
   for (const fn of familiarBackdropListeners) fn();
@@ -381,13 +386,34 @@ function familiarBackdropUrl(familiarId: string): string {
   return `/api/familiars/${encodeURIComponent(familiarId)}/backdrop`;
 }
 
-/** Fetch a familiar's backdrop override; null when it has none (404). */
+/** Fetch a familiar's backdrop override; null when it has none (204/legacy 404). */
 export async function readFamiliarBackdropImage(familiarId: string): Promise<Blob | null> {
   if (!familiarId) return null;
-  const response = await fetch(familiarBackdropUrl(familiarId), { cache: "no-store" });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Could not read familiar backdrop (${response.status}).`);
-  return response.blob();
+  const revision = familiarBackdropRevisions.get(familiarId) ?? 0;
+  const missing = familiarBackdropMissingUntil.get(familiarId);
+  if (missing?.revision === revision && missing.expiresAt > Date.now()) return null;
+  const pending = familiarBackdropReads.get(familiarId);
+  if (pending?.revision === revision) return await pending.read;
+
+  const read = (async () => {
+    const response = await fetch(familiarBackdropUrl(familiarId), { cache: "no-store" });
+    if (response.status === 204 || response.status === 404) {
+      familiarBackdropMissingUntil.set(familiarId, {
+        revision,
+        expiresAt: Date.now() + FAMILIAR_BACKDROP_MISSING_TTL_MS,
+      });
+      return null;
+    }
+    if (!response.ok) throw new Error(`Could not read familiar backdrop (${response.status}).`);
+    familiarBackdropMissingUntil.delete(familiarId);
+    return response.blob();
+  })();
+  familiarBackdropReads.set(familiarId, { revision, read });
+  try {
+    return await read;
+  } finally {
+    if (familiarBackdropReads.get(familiarId)?.read === read) familiarBackdropReads.delete(familiarId);
+  }
 }
 
 /** Persist (PUT) or remove (DELETE with null) a familiar's backdrop override. */
@@ -404,6 +430,7 @@ export async function writeFamiliarBackdropImage(
     familiarId,
     (familiarBackdropRevisions.get(familiarId) ?? 0) + 1,
   );
+  familiarBackdropMissingUntil.delete(familiarId);
   notifyFamiliarBackdrop();
 }
 

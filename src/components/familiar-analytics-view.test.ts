@@ -421,7 +421,9 @@ describe("FamiliarAnalyticsView", () => {
   it("renders the heal request count and keeps thread analytics present", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
-    const model = buildFamiliarAnalyticsModel(data);
+    // Pin the clock nine days after the fixture's June 25 activity: this keeps
+    // the intended session-gap request without eventually adding stale memory.
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-07-04T20:00:00.000Z"));
 
     assert.equal(model.healRequests.length, 1);
     assert.equal(model.threadReports.length, 1);

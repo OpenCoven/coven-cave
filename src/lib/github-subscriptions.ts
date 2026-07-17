@@ -58,12 +58,13 @@ export function isValidRepo(repo: string): boolean {
 function storePath(): string {
   const override = process.env.COVEN_GITHUB_SUBSCRIPTIONS_PATH?.trim();
   if (override) return override;
-  return path.join(homedir(), ".coven", "github-subscriptions.json");
+  // The subscription store is runtime user state, never a build input.
+  return path.join(/* turbopackIgnore: true */ homedir(), ".coven", "github-subscriptions.json");
 }
 
 export async function loadSubscriptions(): Promise<GithubSubscriptions> {
   try {
-    const raw = await readFile(storePath(), "utf8");
+    const raw = await readFile(/* turbopackIgnore: true */ storePath(), "utf8");
     const parsed = JSON.parse(raw) as Partial<GithubSubscriptions>;
     return {
       version: 1,
@@ -98,8 +99,8 @@ export function withSubscriptionsLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function saveSubscriptions(subs: GithubSubscriptions): Promise<void> {
-  await mkdir(path.dirname(storePath()), { recursive: true });
-  await writeJsonAtomic(storePath(), subs);
+  await mkdir(/* turbopackIgnore: true */ path.dirname(storePath()), { recursive: true });
+  await writeJsonAtomic(/* turbopackIgnore: true */ storePath(), subs);
 }
 
 export type SubscriptionsPatch = {

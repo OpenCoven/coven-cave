@@ -301,13 +301,18 @@ assert.match(
 // the active-row accent) or clicking a recent session silently does nothing.
 assert.match(
   source,
-  /<RecentActivityRollup\b[^/]*\bonOpenSession=\{onOpenSession\}/,
+  /<RecentActivityRollup\b[\s\S]{0,220}\bsessions=\{sessions\}[\s\S]{0,180}\bonOpenSession=\{onOpenSession\}/,
   "Recent Activity must receive onOpenSession so selecting an item navigates to it",
 );
 assert.match(
   source,
-  /<RecentActivityRollup\b[^/]*\bactiveSessionId=\{activeSessionId\}/,
+  /<RecentActivityRollup\b[\s\S]{0,220}\bactiveSessionId=\{activeSessionId\}/,
   "Recent Activity must receive activeSessionId to highlight the open session",
+);
+assert.match(
+  source,
+  /<RecentActivityRollup\b[\s\S]{0,220}\bselectedFamiliarIds=\{selectedFamiliarIds\}/,
+  "Recent Activity must receive the persistent familiar selection so multi-scope stays honest",
 );
 
 // "New chat" is the left panel's top CTA: it sits directly under the wordmark

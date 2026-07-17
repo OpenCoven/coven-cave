@@ -14,14 +14,14 @@ const state = await readFile(
 
 assert.match(
   route,
-  /import \{ openCovenToolStatuses \} from "@\/lib\/opencoven-tools-status"/,
-  "the route uses the shared OpenCoven tool detector",
+  /import \{ getOpenCovenToolUpdates \} from "@\/lib\/opencoven-tools-update-cache"/,
+  "the compatibility route uses the shared update cache",
 );
 
 assert.match(
   route,
-  /const tools = await openCovenToolStatuses\(\)/,
-  "GET reports shared OpenCoven tool statuses",
+  /const update = await getOpenCovenToolUpdates\(\)/,
+  "GET preserves the old route without launching a second registry check",
 );
 
 assert.match(

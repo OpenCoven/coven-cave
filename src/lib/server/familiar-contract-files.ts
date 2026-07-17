@@ -47,7 +47,11 @@ export async function readFamiliarContractFiles(id: string): Promise<LoadedContr
   if (!isValidFamiliarId(id)) {
     throw new Error("invalid familiar id");
   }
-  const workspace = await familiarWorkspace(id);
+  // Keep declared-workspace lookup behavior while making the path barrier
+  // recognizable to CodeQL. The slug guard rejects separators and dots;
+  // basename is therefore behavior-preserving for every accepted id.
+  const safeId = path.basename(id);
+  const workspace = await familiarWorkspace(safeId);
 
   const readContractFile = async (name: string): Promise<string | null> => {
     try {

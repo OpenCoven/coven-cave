@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { usePausablePoll } from "@/lib/use-pausable-poll";
-import { arrayContentEqual } from "@/lib/array-content-equal";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { modelIcon } from "@/lib/model-label";
@@ -15,12 +14,11 @@ import type { SessionRow } from "@/lib/types";
  * each row shows the task title, the model it ran on, its project, a `+N −N`
  * diff stat, and a relative time; the active session gets a left accent bar.
  *
- * Data comes from `/api/sessions/list` (polled), which is also what feeds the
- * ephemeral top-right inbox toast — so an item flashes as a toast, then settles
- * here in the roll-up. Self-contained: it owns its own fetch + collapse state.
+ * Data comes from Workspace's shared, familiar-scoped session stream. Workspace
+ * is the shell's sole `/api/sessions/list` polling owner; this roll-up only
+ * derives the recent visible slice and owns its collapse state.
  */
 
-const POLL_MS = 15_000;
 const MAX_ROWS = 8;
 // Remember whether the roll-up is collapsed across reloads and remounts.
 const OPEN_STORAGE_KEY = "cave:recent-activity:open";
@@ -36,17 +34,17 @@ function projectLabel(root: string | undefined): string {
 }
 
 type Props = {
+  sessions: SessionRow[];
+  selectedFamiliarIds?: ReadonlySet<string>;
   activeSessionId?: string | null;
   onOpenSession?: (id: string) => void;
 };
 
-export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) {
+export function RecentActivityRollup({ sessions, selectedFamiliarIds, activeSessionId, onOpenSession }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
   // Default open for SSR + first paint, then hydrate the saved preference after
   // mount so the server and client markup match.
   const [open, setOpen] = useState(true);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     try {
@@ -69,38 +67,22 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
     });
   };
 
-  // This rollup is mounted in the sidebar for the whole app lifetime and polls
-  // the heavy /api/sessions/list every 15s. Guard the poll the way every other
-  // polled surface does: a monotonic reqId drops a superseded overlapping load
-  // (mount vs poll vs visibility-return), and arrayContentEqual keeps the
-  // previous reference when an idle tick rebuilds an identical list so the row
-  // list doesn't re-render for nothing.
-  const loadReqRef = useRef(0);
-  const load = useCallback(async () => {
-    const reqId = ++loadReqRef.current;
-    try {
-      const res = await fetch("/api/sessions/list", { cache: "no-store" });
-      const json = await res.json();
-      if (reqId !== loadReqRef.current) return; // superseded by a newer load
-      const rows: SessionRow[] = Array.isArray(json?.sessions) ? json.sessions : [];
-      const next = rows.filter((s) => !s.archived_at).slice(0, MAX_ROWS);
-      setSessions((prev) => (arrayContentEqual(prev, next) ? prev : next));
-      setLoaded(true);
-    } catch {
-      if (reqId === loadReqRef.current) setLoaded(true);
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
-  // Pauses in a hidden tab; refreshes on return. Also pauses while the user is
-  // typing — this polls the same heavy /api/sessions/list the shell does, so it
-  // must not compete with mobile composition.
-  usePausablePoll(() => void load(), POLL_MS, { pauseWhileInputActive: true });
+  // Recent Activity intentionally follows the active Workspace familiar scope.
+  // That keeps every sessions surface permission-consistent and avoids restoring
+  // the roll-up's former unscoped request through a second store or fetch path.
+  const rows = useMemo(
+    () =>
+      sessions
+        .filter(
+          (session) =>
+            !session.archived_at &&
+            (!selectedFamiliarIds || familiarInScope(selectedFamiliarIds, session.familiarId)),
+        )
+        .slice(0, MAX_ROWS),
+    [sessions, selectedFamiliarIds],
+  );
 
-  const rows = useMemo(() => sessions, [sessions]);
-
-  if (loaded && rows.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <section className="recent-activity">

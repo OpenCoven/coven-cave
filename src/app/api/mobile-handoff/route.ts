@@ -13,6 +13,7 @@ import {
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
+  type PairingStep,
 } from "@/lib/mobile-handoff";
 
 export const dynamic = "force-dynamic";
@@ -194,6 +195,13 @@ function nativeTokenlessMode() {
   return Boolean(normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL));
 }
 
+function mobileUnavailableResponse(
+  error: string,
+  details?: { stderr?: string; backendUrl?: string; steps?: PairingStep[] },
+) {
+  return NextResponse.json({ ok: false, unavailable: true, error, ...details });
+}
+
 function mobileAccessUnavailableResponse() {
   // Plain `next dev` never sets COVEN_CAVE_ACCESS_TOKEN, so neither signed
   // invites nor persistent native-app Serve routes are safe to create. Give
@@ -204,10 +212,9 @@ function mobileAccessUnavailableResponse() {
     process.env.NODE_ENV !== "production"
       ? "Mobile handoff isn't available in plain `pnpm dev` — it needs the signed access token that the packaged app and `pnpm mobile:tailscale` set up. Run `pnpm mobile:tailscale` (or open the packaged app), then use Open on phone from that session."
       : "mobile access token unavailable";
-  return NextResponse.json(
-    { ok: false, error, steps: buildPairingSteps({ access: { ok: false, detail: error } }) },
-    { status: 503 },
-  );
+  return mobileUnavailableResponse(error, {
+    steps: buildPairingSteps({ access: { ok: false, detail: error } }),
+  });
 }
 
 async function ensureNativeAppServe(req: Request, chatId?: string | null) {
@@ -221,18 +228,13 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
   const backend = nativeAppBackendUrl(req);
   const backendReady = await verifyNativeAppBackend(req, backend);
   if (!backendReady.ok) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: backendReady.error,
-        backendUrl: backend,
-        steps: buildPairingSteps({
-          access: { ok: true },
-          backend: { ok: false, detail: backendReady.error },
-        }),
-      },
-      { status: 503 },
-    );
+    return mobileUnavailableResponse(backendReady.error, {
+      backendUrl: backend,
+      steps: buildPairingSteps({
+        access: { ok: true },
+        backend: { ok: false, detail: backendReady.error },
+      }),
+    });
   }
 
   const self = await runTailscale(["status", "--self", "--json"]);
@@ -247,19 +249,14 @@ async function ensureNativeAppServe(req: Request, chatId?: string | null) {
         : tailscale.kind === "needs-login"
           ? "Tailscale is signed out"
           : "Tailscale is not running";
-    return NextResponse.json(
-      {
-        ok: false,
-        error,
-        stderr: self.stderr,
-        steps: buildPairingSteps({
-          access: { ok: true },
-          backend: { ok: true },
-          tailscale,
-        }),
-      },
-      { status: 503 },
-    );
+    return mobileUnavailableResponse(error, {
+      stderr: self.stderr,
+      steps: buildPairingSteps({
+        access: { ok: true },
+        backend: { ok: true },
+        tailscale,
+      }),
+    });
   }
 
   const parsedSelf = parseServeStatus(self.stdout);
@@ -402,10 +399,7 @@ async function mobileHandoff(req: Request, chatId?: string | null) {
   // source for the MagicDNS fallback host below.
   const self = await runTailscale(["status", "--self", "--json"]);
   if (!self.ok) {
-    return NextResponse.json(
-      { ok: false, error: "tailscale is not connected", stderr: self.stderr },
-      { status: 503 },
-    );
+    return mobileUnavailableResponse("tailscale is not connected", { stderr: self.stderr });
   }
   // Best-effort: an unparseable self status just disables the MagicDNS
   // fallback; an existing serve config can still yield a URL. Reuse the

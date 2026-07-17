@@ -1,10 +1,9 @@
 import type { NextConfig } from "next";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
-// Opt-in client/server bundle visualizer. `ANALYZE=1 pnpm build` writes
-// interactive treemaps to .next/analyze/ so we can see which chunk a dep lands
-// in (e.g. confirm @xyflow/react / @uiw/react-codemirror left the shared
-// bundle after code-splitting the heavy surfaces). No-op for normal builds.
+// Opt-in Webpack bundle visualizer retained for `next build --webpack`.
+// Turbopack builds use `pnpm analyze:bundle`, which writes Next's interactive
+// analysis to `.next/diagnostics/analyze/`. No-op for normal builds.
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "1" || process.env.ANALYZE === "true",
 });
@@ -33,15 +32,25 @@ const nextConfig: NextConfig = {
   // by the familiar avatar route (#2010) — must stay external so Next doesn't
   // trace/strip its platform-specific `.node` binaries out of the bundle.
   serverExternalPackages: ["node-pty", "sharp"],
-  // Next.js file tracing otherwise sucks the entire src-tauri/target/
-  // (multi-GB) into the standalone bundle. Exclude noisy siblings.
+  // Next.js file tracing otherwise sucks local build state (including Rust
+  // target trees) into the standalone bundle. These roots are never runtime
+  // inputs; packaged assets are copied explicitly by sidecar-bundle.sh.
   outputFileTracingExcludes: {
-    "*": [
+    "/*": [
+      "./.beads/**/*",
+      "./.claude/**/*",
+      "./.codex/**/*",
+      "./.next/cache/**/*",
+      "./.next/dev/**/*",
       "./src-tauri/**/*",
+      "./target/**/*",
+      "./target-windows/**/*",
       "./release/**/*",
       "./.git/**/*",
       "./scripts/**/*",
       "./.worktrees/**/*",
+      "./artifacts/**/*",
+      "./test-results/**/*",
       "./tests/**/*",
       "./src/**/*.test.*",
       "./apps/**/*.test.*",
@@ -52,7 +61,7 @@ const nextConfig: NextConfig = {
   // own require-hook (e.g. @swc/helpers/_/_interop_require_default).
   // Force-include the offenders so server.js can boot.
   outputFileTracingIncludes: {
-    "*": [
+    "/*": [
       "./node_modules/@swc/helpers/**/*",
       "./node_modules/node-pty/**/*",
     ],

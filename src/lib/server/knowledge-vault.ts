@@ -38,7 +38,7 @@ import { normalizePinRefs, type StitchPinRef } from "../stitch.ts";
 
 /** Root directory for vault entries. Overridable for tests/bundles. */
 export function covenKnowledgeRoot(): string {
-  return process.env.COVEN_KNOWLEDGE_DIR || path.join(covenHome(), "knowledge");
+  return process.env.COVEN_KNOWLEDGE_DIR || path.join(/* turbopackIgnore: true */ covenHome(), "knowledge");
 }
 
 const KNOWLEDGE_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -269,8 +269,8 @@ export function buildPromptWithKnowledgeVault(
 
 function collectionPath(collection: string): string {
   if (!isValidCollectionId(collection)) throw new Error("invalid knowledge collection");
-  const root = path.resolve(covenKnowledgeRoot());
-  const resolved = path.resolve(root, collection);
+  const root = path.resolve(/* turbopackIgnore: true */ covenKnowledgeRoot());
+  const resolved = path.resolve(/* turbopackIgnore: true */ root, collection);
   if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== root) {
     throw new Error("invalid knowledge collection");
   }
@@ -285,9 +285,9 @@ function entryPath(id: string, collection?: string): string {
   // Single chokepoint where a vault path is built from the (slug-validated) id.
   // Resolve and assert containment directly under the vault root so a path can
   // never escape it, even if a caller forgets the id guard.
-  const root = path.resolve(covenKnowledgeRoot());
+  const root = path.resolve(/* turbopackIgnore: true */ covenKnowledgeRoot());
   const parent = collection ? collectionPath(collection) : root;
-  const resolved = path.resolve(parent, `${id}.md`);
+  const resolved = path.resolve(/* turbopackIgnore: true */ parent, `${id}.md`);
   if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== parent) {
     throw new Error("invalid knowledge id");
   }
@@ -295,7 +295,7 @@ function entryPath(id: string, collection?: string): string {
 }
 
 function collectionMetaPath(collection: string): string {
-  return path.join(collectionPath(collection), "collection.yml");
+  return path.join(/* turbopackIgnore: true */ collectionPath(collection), "collection.yml");
 }
 
 /** List every vault entry on disk. Returns [] when the directory is absent or
@@ -305,7 +305,8 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
   const root = covenKnowledgeRoot();
   let names: string[];
   try {
-    names = await readdir(collection ? collectionPath(collection) : root);
+    // Vault entries are validated runtime user data, never build inputs.
+    names = await readdir(/* turbopackIgnore: true */ (collection ? collectionPath(collection) : root));
   } catch {
     return [];
   }
@@ -313,7 +314,7 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
   const scanRootEntries = async (dir: string, entryCollection?: string) => {
     let dirNames: string[];
     try {
-      dirNames = await readdir(dir);
+      dirNames = await readdir(/* turbopackIgnore: true */ dir);
     } catch {
       return;
     }
@@ -322,7 +323,7 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
       const id = name.slice(0, -3);
       if (!isValidKnowledgeId(id)) continue;
       try {
-        const raw = await readFile(path.join(dir, name), "utf8");
+        const raw = await readFile(path.join(/* turbopackIgnore: true */ dir, name), "utf8");
         entries.push(parseKnowledgeFile(id, raw, entryCollection));
       } catch {
         // Skip unreadable entries rather than failing the whole list.
@@ -336,12 +337,12 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
   }
 
   for (const name of names.sort()) {
-    const full = path.join(root, name);
+    const full = path.join(/* turbopackIgnore: true */ root, name);
     if (name.endsWith(".md")) {
       const id = name.slice(0, -3);
       if (!isValidKnowledgeId(id)) continue;
       try {
-        const raw = await readFile(full, "utf8");
+        const raw = await readFile(/* turbopackIgnore: true */ full, "utf8");
         entries.push(parseKnowledgeFile(id, raw));
       } catch {
         // Skip unreadable entries rather than failing the whole list.
@@ -350,7 +351,7 @@ export async function listKnowledgeEntries(collection?: string): Promise<Knowled
     }
     if (!isValidCollectionId(name)) continue;
     try {
-      const st = await stat(full);
+      const st = await stat(/* turbopackIgnore: true */ full);
       if (st.isDirectory()) await scanRootEntries(full, name);
     } catch {
       // Skip unreadable entries rather than failing the whole list.
@@ -363,7 +364,7 @@ export async function readKnowledgeEntry(id: string, collection?: string): Promi
   if (!isValidKnowledgeId(id)) return null;
   if (collection !== undefined && !isValidCollectionId(collection)) return null;
   try {
-    const raw = await readFile(entryPath(id, collection), "utf8");
+    const raw = await readFile(/* turbopackIgnore: true */ entryPath(id, collection), "utf8");
     return parseKnowledgeFile(id, raw, collection);
   } catch {
     return null;
@@ -376,8 +377,8 @@ export async function writeKnowledgeEntry(entry: KnowledgeEntry): Promise<Knowle
     throw new Error("invalid knowledge collection");
   }
   const root = covenKnowledgeRoot();
-  await mkdir(entry.collection ? collectionPath(entry.collection) : root, { recursive: true });
-  await writeFile(entryPath(entry.id, entry.collection), serializeKnowledgeEntry(entry), "utf8");
+  await mkdir(/* turbopackIgnore: true */ (entry.collection ? collectionPath(entry.collection) : root), { recursive: true });
+  await writeFile(/* turbopackIgnore: true */ entryPath(entry.id, entry.collection), serializeKnowledgeEntry(entry), "utf8");
   return entry;
 }
 
@@ -385,18 +386,18 @@ export async function deleteKnowledgeEntry(id: string, collection?: string): Pro
   if (!isValidKnowledgeId(id)) return false;
   if (collection !== undefined && !isValidCollectionId(collection)) return false;
   try {
-    await stat(entryPath(id, collection));
+    await stat(/* turbopackIgnore: true */ entryPath(id, collection));
   } catch {
     return false;
   }
-  await rm(entryPath(id, collection), { force: true });
+  await rm(/* turbopackIgnore: true */ entryPath(id, collection), { force: true });
   return true;
 }
 
 export async function readCollectionMeta(collection: string): Promise<KnowledgeCollectionMeta | null> {
   if (!isValidCollectionId(collection)) return null;
   try {
-    const raw = await readFile(collectionMetaPath(collection), "utf8");
+    const raw = await readFile(/* turbopackIgnore: true */ collectionMetaPath(collection), "utf8");
     const parsed = parseYaml(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const meta = parsed as Record<string, unknown>;
@@ -434,7 +435,7 @@ export async function readCollectionMeta(collection: string): Promise<KnowledgeC
 export async function collectionMetaExists(collection: string): Promise<boolean> {
   if (!isValidCollectionId(collection)) return false;
   try {
-    await stat(collectionMetaPath(collection));
+    await stat(/* turbopackIgnore: true */ collectionMetaPath(collection));
     return true;
   } catch {
     return false;
@@ -443,8 +444,8 @@ export async function collectionMetaExists(collection: string): Promise<boolean>
 
 export async function writeCollectionMeta(collection: string, meta: KnowledgeCollectionMeta): Promise<void> {
   if (!isValidCollectionId(collection)) throw new Error("invalid knowledge collection");
-  await mkdir(collectionPath(collection), { recursive: true });
-  await writeFile(collectionMetaPath(collection), stringifyYaml(meta), "utf8");
+  await mkdir(/* turbopackIgnore: true */ collectionPath(collection), { recursive: true });
+  await writeFile(/* turbopackIgnore: true */ collectionMetaPath(collection), stringifyYaml(meta), "utf8");
 }
 
 /** Count valid `*.md` entry files in a collection directory without reading
@@ -452,7 +453,7 @@ export async function writeCollectionMeta(collection: string, meta: KnowledgeCol
 async function countCollectionEntries(collection: string): Promise<number> {
   let dirents: import("node:fs").Dirent[];
   try {
-    dirents = await readdir(collectionPath(collection), { withFileTypes: true });
+    dirents = await readdir(/* turbopackIgnore: true */ collectionPath(collection), { withFileTypes: true });
   } catch {
     return 0;
   }
@@ -468,7 +469,7 @@ export async function listCollections(): Promise<{ id: string; meta: KnowledgeCo
   const root = covenKnowledgeRoot();
   let names: string[];
   try {
-    names = await readdir(root);
+    names = await readdir(/* turbopackIgnore: true */ root);
   } catch {
     return [];
   }
@@ -476,8 +477,8 @@ export async function listCollections(): Promise<{ id: string; meta: KnowledgeCo
   for (const name of names.sort()) {
     if (!isValidCollectionId(name)) continue;
     try {
-      const full = path.join(root, name);
-      const st = await stat(full);
+      const full = path.join(/* turbopackIgnore: true */ root, name);
+      const st = await stat(/* turbopackIgnore: true */ full);
       if (!st.isDirectory()) continue;
       collections.push({
         id: name,

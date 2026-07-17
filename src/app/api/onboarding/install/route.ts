@@ -20,9 +20,11 @@ import {
 } from "@/lib/coven-bin";
 import { installHermesShim } from "@/lib/hermes-shim";
 import {
+  npmLaunchCommandForPath,
   verifyOpenCovenToolInstall,
   type OpenCovenToolVerification,
 } from "@/lib/opencoven-tools-status";
+import { invalidateOpenCovenToolUpdateCache } from "@/lib/opencoven-tools-update-cache";
 import { isVerifiedOpenCovenInstallSuccess } from "@/lib/opencoven-tool-verification";
 import { resolveStaleOpenCovenLaunchers } from "@/lib/opencoven-tools-resolve";
 import { callDaemonTarget, localDaemonTarget } from "@/lib/coven-daemon";
@@ -30,6 +32,7 @@ import { startLocalDaemon } from "@/lib/daemon-start";
 import { redactSecretText } from "@/lib/secret-redaction";
 import {
   markDaemonCliInstalling,
+  daemonUpdateTraceLine,
   prepareDaemonForCliUpdate,
   recoverDaemonAfterCliUpdate,
   type DaemonCommandResult,
@@ -211,6 +214,8 @@ type SpawnPlan = {
   command: string;
   args: string[];
   shell: boolean;
+  /** Sanitized, path-free facts retained independently from npm output. */
+  traceLines: string[];
 };
 
 function sleep(ms: number) {
@@ -250,13 +255,29 @@ async function spawnPlanFor(
       return { sudoRequired: true, packageName: target.packageName };
     }
 
+    const launch = npmLaunchCommandForPath(npm);
+    if (!launch) {
+      return {
+        commandLookupFailed: true,
+        binary: "npm runtime",
+        error: `Could not resolve npm-cli.js from ${npm}`,
+      };
+    }
+
     return {
-      command: npm,
-      args: ["install", "-g", target.packageName],
-      // Windows resolves npm to npm.cmd, which Node refuses to spawn without
-      // a shell. The argv is fully fixed (allowlisted package, no user
-      // input), so shell interpolation has nothing to grab.
-      shell: process.platform === "win32",
+      command: launch.command,
+      args: [...launch.fixedArgs, "install", "-g", target.packageName],
+      // Node 24 concatenates shell:true argv without escaping. A Windows npm
+      // path such as C:\Program Files\nodejs\npm.cmd is consequently truncated
+      // to C:\Program and exits 1. npmLaunchCommandForPath remaps the shim to
+      // `node npm-cli.js`, preserving fixed argv without cmd.exe.
+      shell: false,
+      traceLines: [
+        "npm discovery: runnable launcher found on Cave PATH.",
+        launch.fixedArgs.length > 0
+          ? "Installer launch: npm-cli.js via Node with fixed argv; shell disabled."
+          : "Installer launch: direct npm executable with fixed argv; shell disabled.",
+      ],
     };
   }
   // kind === "script" — run the harness's official installer exactly as its
@@ -267,12 +288,14 @@ async function spawnPlanFor(
       command: "powershell",
       args: ["-NoProfile", "-Command", target.windows],
       shell: false,
+      traceLines: ["Installer launch: pinned PowerShell allowlist script; nested shell disabled."],
     };
   }
   return {
     command: "bash",
     args: ["-lc", target.posix],
     shell: false,
+    traceLines: ["Installer launch: pinned POSIX allowlist script."],
   };
 }
 
@@ -283,6 +306,8 @@ type InstallJob = {
   finishedAt?: number;
   /** Raw interleaved stdout+stderr, capped to OUTPUT_CAP. */
   output: string;
+  /** Sanitized lifecycle facts that must survive a long raw-output tail. */
+  trace: string[];
   ok?: boolean;
   code?: number | null;
   binaryPath?: string | null;
@@ -299,6 +324,9 @@ type InstallJob = {
  *  long installs (Hermes bootstraps a Python toolchain) from growing
  *  unbounded in memory. */
 const OUTPUT_CAP = 8_192;
+const CLIENT_TAIL_CAP = 2_000;
+const TRACE_LINE_CAP = 240;
+const TRACE_LINES_CAP = 8;
 
 // Next dev re-evaluates this module on HMR; a plain module-level Map would
 // orphan running jobs. globalThis survives re-evaluation.
@@ -368,6 +396,41 @@ function npmBusyResponse(owner: InstallTarget) {
 
 function appendOutput(job: InstallJob, chunk: string) {
   job.output = redactSensitiveInstallOutput(job.output + stripAnsi(chunk)).slice(-OUTPUT_CAP);
+}
+
+function appendTrace(job: InstallJob, line: string) {
+  const safeLine = redactSensitiveInstallOutput(stripAnsi(line))
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, TRACE_LINE_CAP);
+  if (!safeLine) return;
+  job.trace = [...job.trace, safeLine].slice(-TRACE_LINES_CAP);
+}
+
+/** Keep lifecycle facts stable while retaining the most useful raw output. */
+function installJobTail(job: InstallJob): string {
+  const trace = job.trace.join("\n").slice(-CLIENT_TAIL_CAP);
+  const separator = trace && job.output ? "\n" : "";
+  const outputBudget = Math.max(0, CLIENT_TAIL_CAP - trace.length - separator.length);
+  return `${trace}${separator}${job.output.slice(-outputBudget)}`;
+}
+
+function releaseNpmLease(job: InstallJob, npmLease?: NpmInstallLease) {
+  if (!npmLease) return;
+  npmLease.release();
+  appendTrace(job, "Global npm lane: released.");
+}
+
+function verificationTraceLine(verification: OpenCovenToolVerification): string {
+  const yesNo = (value: boolean | null) =>
+    value === null ? "unknown" : value ? "yes" : "no";
+  return (
+    "Post-install verification: " +
+    `package=${yesNo(verification.packageVerified)}; ` +
+    `executable=${yesNo(verification.executableVerified)}; ` +
+    `compatible=${yesNo(verification.compatible)}; ` +
+    `latest=${yesNo(verification.latestSatisfied)}.`
+  );
 }
 
 function runCommand(
@@ -460,7 +523,7 @@ function daemonLifecycleDependencies(job: InstallJob): DaemonUpdateDependencies 
     wait: sleep,
     onState: (daemon) => {
       job.daemon = daemon;
-      appendOutput(job, `Daemon update status: ${daemon.detail ?? daemon.phase}.\n`);
+      appendOutput(job, daemonUpdateTraceLine(daemon));
     },
   };
 }
@@ -505,7 +568,7 @@ function installFailureHint(targetName: InstallTarget, output: string): string |
 }
 
 function jobView(job: InstallJob) {
-  const tail = job.output.slice(-2000);
+  const tail = installJobTail(job);
   const elapsedMs = (job.finishedAt ?? Date.now()) - job.startedAt;
   if (job.status === "running") {
     return {
@@ -549,7 +612,7 @@ function finishInstallJobError(
   job.ok = false;
   job.error = safeMessage ?? installStartErrorMessage(err);
   job.cancel = undefined;
-  npmLease?.release();
+  releaseNpmLease(job, npmLease);
 }
 
 function installerOutcomeError(
@@ -584,7 +647,7 @@ async function finishInstallJob(
   npmLease?: NpmInstallLease,
 ) {
   if (job.status !== "running") {
-    npmLease?.release();
+    releaseNpmLease(job, npmLease);
     return;
   }
   try {
@@ -657,6 +720,14 @@ async function finishInstallJob(
     const installOk = verification
       ? isVerifiedOpenCovenInstallSuccess(code, verification)
       : !installError && code === 0 && !!installed.path;
+    if (isOpenCovenToolInstallTarget(targetName)) {
+      appendTrace(
+        job,
+        verification
+          ? verificationTraceLine(verification)
+          : "Post-install verification: skipped because the installer did not succeed.",
+      );
+    }
 
     // Hermes has no positional prompt slot, so the harness's `-- "<prompt>"`
     // convention needs the hermes-coven shim to remap it onto -q. This remains
@@ -687,6 +758,7 @@ async function finishInstallJob(
 
     job.status = "done";
     job.finishedAt = Date.now();
+    if (installOk && targetName === "coven-cli") invalidateOpenCovenToolUpdateCache();
     job.ok = installOk && recovered;
     job.code = code;
     job.binaryPath = installed.path;
@@ -705,7 +777,7 @@ async function finishInstallJob(
     appendOutput(job, `${job.error}\n`);
   } finally {
     job.cancel = undefined;
-    npmLease?.release();
+    releaseNpmLease(job, npmLease);
   }
 }
 
@@ -741,6 +813,14 @@ async function runInstallJob(
     if (finalized) return;
     finalized = true;
     clearTimers();
+    appendTrace(
+      job,
+      launchError
+        ? "Installer process: did not start."
+        : code === null
+          ? `Installer process: ended by signal ${signal ?? "unknown"}.`
+          : `Installer process: exited with code ${code}.`,
+    );
     await finishInstallJob(
       targetName,
       target,
@@ -789,6 +869,8 @@ async function runInstallJob(
       clearTimers();
       const safeMessage =
         "Cave could not safely stop the local daemon before updating the CLI. The update was not started.";
+      appendTrace(job, "Installer process: not started because daemon preparation failed.");
+      appendTrace(job, "Post-install verification: skipped because the installer did not start.");
       finishInstallJobError(
         job,
         new Error(job.daemon?.detail ?? safeMessage),
@@ -959,7 +1041,10 @@ export async function POST(req: Request) {
     kind: target.kind,
     startedAt: Date.now(),
     output: "",
+    trace: [],
   };
+  for (const line of plan.traceLines) appendTrace(job, line);
+  if (npmLease) appendTrace(job, "Global npm lane: reserved for this installer.");
   jobs.set(targetName, job);
 
   void runInstallJob(targetName, target, plan, job, npmLease);

@@ -49,7 +49,18 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // read/decision routes (/api/weaves*, /api/threads/*, /api/proposals*),
   // /weaves + /proposals pages, and the traced fixtures/phase-4 staged-write
   // mirrors put the runtime at 5,417 — raised to 5,440.
-  fileCount: 5_440,
+  // 2026-07-15 (voice models): speech-model management adds 4 API route
+  // handlers for readiness/download polling/removal, traced at 5,443 — raised
+  // to 5,450 with narrow headroom.
+  // 2026-07-15 (integrated main): the voice routes landed after the manual
+  // export/restore routes, producing 5,452–5,458 files across CI platforms.
+  // The onboarding readiness/update split and shared SWR cache then traced at
+  // 5,459–5,463, so retain seven files of measured headroom.
+  // 2026-07-16 (home payload): intentional lazy workspace boundaries add the
+  // packaged chunks that cut `/` first-load JS by 48.9%. CI measured 5,486 on
+  // macOS, 5,490 on Linux, and 5,492 on Windows — retain eight files of
+  // cross-platform headroom without relaxing the expanded-byte ceiling.
+  fileCount: 5_500,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 

@@ -36,6 +36,7 @@ import {
   writeStopPhrase,
 } from "@/lib/stop-phrase";
 import { readMobileModeEnabled, writeMobileModeEnabled } from "@/lib/mobile-mode-pref";
+import { reconcileMobileModeRequest } from "@/lib/mobile-mode-reconcile";
 import { ColorPicker, type ColorSwatch } from "@/components/ui/color-picker";
 import { Popover } from "@/components/ui/popover";
 import { addRecentColor, getRecentColors } from "@/lib/recent-colors";
@@ -399,6 +400,7 @@ function GeneralSection() {
       <SettingsGroup label="Chat">
         <StopPhraseField />
       </SettingsGroup>
+      <BackupSettingsGroup />
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
@@ -463,6 +465,122 @@ function StopPhraseField() {
         className="focus-ring w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
       />
     </SettingsRow>
+  );
+}
+
+
+function BackupSettingsGroup() {
+  const { announce } = useAnnouncer();
+  const [passphrase, setPassphrase] = useState("");
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState<"export" | "restore" | null>(null);
+  const [status, setStatus] = useState<string>("");
+
+  const canSubmit = passphrase.length >= 8;
+
+  const exportBackup = async () => {
+    setBusy("export");
+    setStatus("");
+    try {
+      const res = await fetch("/api/backup/export", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passphrase }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error || `export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `coven-cave-backup-${new Date().toISOString().slice(0, 10)}.ccbackup`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus("Encrypted backup exported. Store the file somewhere you control, like iCloud Drive.");
+      announce("Encrypted backup exported.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "backup export failed";
+      setStatus(message);
+      announce(`Backup export failed: ${message}`, "assertive");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const restoreBackup = async () => {
+    if (!restoreFile) return;
+    setBusy("restore");
+    setStatus("");
+    try {
+      const archiveBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("could not read backup file"));
+        reader.onload = () => {
+          const result = typeof reader.result === "string" ? reader.result : "";
+          resolve(result.includes(",") ? result.slice(result.indexOf(",") + 1) : result);
+        };
+        reader.readAsDataURL(restoreFile);
+      });
+      const res = await fetch("/api/backup/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ passphrase, archiveBase64 }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json?.error || `restore failed (${res.status})`);
+      const count = Array.isArray(json.restored) ? json.restored.length : 0;
+      setStatus(`Restored ${count} files. Restart Cave so every surface reloads restored state.`);
+      announce(`Restored ${count} files from backup.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "backup restore failed";
+      setStatus(message);
+      announce(`Backup restore failed: ${message}`, "assertive");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <SettingsGroup label="Backup" description="Manual encrypted snapshots for machine loss recovery.">
+      <SettingsRow
+        label="Encrypted export"
+        description="Includes Tier-1 state and the vault key inside a passphrase-wrapped envelope. Browser profile state is not included yet."
+      >
+        <div className="flex w-full max-w-md flex-col gap-2">
+          <input
+            type="password"
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            placeholder="Backup passphrase"
+            aria-label="Backup passphrase"
+            className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] outline-none"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={exportBackup} disabled={!canSubmit || busy !== null} leadingIcon="ph:arrow-down">
+              {busy === "export" ? "Exporting…" : "Export backup"}
+            </Button>
+            <label className="focus-ring inline-flex cursor-pointer items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--border-strong)]">
+              Choose backup
+              <input
+                type="file"
+                accept=".ccbackup,application/octet-stream"
+                className="sr-only"
+                onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <Button size="sm" onClick={restoreBackup} disabled={!canSubmit || !restoreFile || busy !== null} leadingIcon="ph:arrow-counter-clockwise">
+              {busy === "restore" ? "Restoring…" : "Restore"}
+            </Button>
+          </div>
+          {restoreFile ? <p className="text-[11px] text-[var(--text-muted)]">Selected {restoreFile.name}</p> : null}
+          {status ? <p className="text-[11px] leading-5 text-[var(--text-secondary)]">{status}</p> : null}
+        </div>
+      </SettingsRow>
+    </SettingsGroup>
   );
 }
 
@@ -2254,46 +2372,33 @@ function MobileModeToggle() {
   const [steps, setSteps] = useState<PairingStep[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoRetryBlocked, setAutoRetryBlocked] = useState(false);
   const [copied, setCopied] = useState<"link" | "app" | "host" | null>(null);
+  const initialReconcileDoneRef = useRef(false);
 
-  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean }) => {
+  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean; force?: boolean }) => {
     if (options?.busy) setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/mobile-handoff", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: enabled ? "app-start" : "app-stop" }),
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        nativeHost?: string | null;
-        inviteUrl?: string | null;
-        appInviteUrl?: string | null;
-        qrSvg?: string | null;
-        lastSeenAt?: number | null;
-        steps?: PairingStep[];
-        error?: string;
-        stderr?: string;
-      };
-      setSteps(enabled && Array.isArray(json.steps) ? json.steps : null);
-      if (!json.ok) {
-        setError(json.stderr || json.error || "Mobile mode unavailable.");
+      const result = await reconcileMobileModeRequest(enabled, { force: options?.force });
+      setAutoRetryBlocked(result.retryBlocked);
+      // The proven ladder rides both success and unavailable responses.
+      setSteps(enabled && Array.isArray(result.steps) ? result.steps : null);
+      if (!result.ok) {
+        setError(result.stderr || result.error || "Mobile mode unavailable.");
         return;
       }
       setHandoff(
         enabled
           ? {
-              nativeHost: json.nativeHost ?? null,
-              inviteUrl: json.inviteUrl ?? null,
-              appInviteUrl: json.appInviteUrl ?? null,
-              qrSvg: json.qrSvg ?? null,
-              lastSeenAt: json.lastSeenAt ?? null,
+              nativeHost: result.nativeHost ?? null,
+              inviteUrl: result.inviteUrl ?? null,
+              appInviteUrl: result.appInviteUrl ?? null,
+              qrSvg: result.qrSvg ?? null,
+              lastSeenAt: result.lastSeenAt ?? null,
             }
           : null,
       );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Mobile mode unavailable.");
     } finally {
       if (options?.busy) setBusy(false);
     }
@@ -2302,15 +2407,19 @@ function MobileModeToggle() {
   const onMobileModeChange = async (enabled: boolean) => {
     writeMobileModeEnabled(enabled);
     setMobileModeEnabled(enabled);
-    await reconcileMobileMode(enabled, { busy: true });
+    setAutoRetryBlocked(false);
+    await reconcileMobileMode(enabled, { busy: true, force: true });
   };
 
   useEffect(() => {
+    if (initialReconcileDoneRef.current) return;
+    initialReconcileDoneRef.current = true;
+    if (!mobileModeEnabled) return;
     void reconcileMobileMode(mobileModeEnabled);
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; pauses in a hidden tab.
   usePausablePoll(() => void reconcileMobileMode(true), 60_000, {
-    enabled: mobileModeEnabled,
+    enabled: mobileModeEnabled && !autoRetryBlocked,
   });
 
   const copy = (kind: "link" | "app" | "host", value: string) => {
@@ -2403,7 +2512,7 @@ function MobileModeToggle() {
                 size="xs"
                 variant="secondary"
                 leadingIcon="ph:arrows-clockwise"
-                onClick={() => void reconcileMobileMode(true, { busy: true })}
+                onClick={() => void reconcileMobileMode(true, { busy: true, force: true })}
                 disabled={busy}
               >
                 Retry
@@ -2433,7 +2542,7 @@ function MobileModeToggle() {
               size="xs"
               variant="secondary"
               leadingIcon="ph:arrows-clockwise"
-              onClick={() => void reconcileMobileMode(true, { busy: true })}
+              onClick={() => void reconcileMobileMode(true, { busy: true, force: true })}
               disabled={busy}
             >
               Retry

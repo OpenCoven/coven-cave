@@ -259,8 +259,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /<ShortcutsSheet open=\{shortcutsOpen\}/,
-  "Workspace should mount the ShortcutsSheet alongside the command palette",
+  /\{shortcutsOpen && <ShortcutsSheet open/,
+  "Workspace should mount the lazy ShortcutsSheet only after its open intent",
 );
 
 assert.match(

@@ -5,7 +5,6 @@ import type { Familiar } from "@/lib/types";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen } from "@/lib/parse-when";
 import { describeRecurrence, nextOccurrences } from "@/lib/schedule-plan";
-import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readDateTimePrefs } from "@/lib/datetime-format";
@@ -538,16 +537,6 @@ function Select({
   );
 }
 
-/**
- * Helper to map a "/remind …" args string into modal defaults — used by the
- * palette/slash handler to pre-fill the modal with the parsed body.
- */
-export function draftFromSlashArgs(args: string): {
-  title: string;
-  whenText: string;
-} {
-  const trimmed = args.trim();
-  const draft = draftReminderFromText(trimmed);
-  if (!draft.ok) return { title: trimmed, whenText: "" };
-  return { title: draft.title, whenText: draft.whenText };
-}
+// Backward-compatible export for callers that imported the helper alongside
+// the modal before the modal became a lazy workspace boundary.
+export { draftFromSlashArgs } from "@/lib/reminder-slash-draft";

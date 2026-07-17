@@ -6,6 +6,12 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 export type OmnigentAuthResolution = {
   /** Bearer token when available (JWT, env, or minted Databricks OAuth). */
   token: string | null;
@@ -18,7 +24,7 @@ export type OmnigentAuthResolution = {
 };
 
 export function normalizeOmnigentBaseUrl(url: string): string {
-  const trimmed = url.trim().replace(/\/+$/, "");
+  const trimmed = trimTrailingSlashes(url.trim());
   if (!trimmed) return "";
   try {
     const parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);

@@ -116,8 +116,8 @@ test("Group Chat is a tab inside the Chat surface, not a standalone page", () =>
   // scope tab, listens for the open-coven event, and renders it for that scope.
   assert.match(
     chatSurface,
-    /import \{ GroupChatView \} from "@\/components\/group-chat-view"/,
-    "ChatSurface imports GroupChatView",
+    /import \{[\s\S]*GroupChatView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+    "ChatSurface lazy-loads GroupChatView",
   );
   assert.match(
     chatSurface,

@@ -54,20 +54,26 @@ assert.match(
 
 assert.match(
   source,
-  /openCovenToolStatuses/,
-  "onboarding status uses the shared OpenCoven tool detector",
+  /openCovenToolReadinessStatuses/,
+  "onboarding status uses the local-only OpenCoven readiness detector",
 );
 
 assert.match(
   source,
-  /checkCovenCli\(tool: OpenCovenToolStatus \| undefined\)/,
-  "Coven CLI status is derived from the shared coven-cli tool result",
+  /checkCovenCli\(tool: OpenCovenToolReadinessStatus \| undefined\)/,
+  "Coven CLI readiness is derived from installed/current local facts",
 );
 
 assert.match(
   source,
-  /tool\.outdated \|\| !tool\.compatible[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
-  "startup should require a compatible Coven CLI version, not just any installed version",
+  /if \(!tool\.compatible\)[\s\S]{0,320}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
+  "startup requires a locally compatible Coven CLI without waiting for npm latest",
+);
+
+assert.doesNotMatch(
+  source,
+  /openCovenToolStatuses|checkNpmLatestVersion|npm view/,
+  "the frequently-polled status route never invokes package-registry discovery",
 );
 
 assert.match(

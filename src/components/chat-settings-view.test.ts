@@ -31,8 +31,8 @@ assert.match(
 );
 assert.match(
   surface,
-  /import \{ ChatSettingsView \} from "@\/components\/chat-settings-view"/,
-  "chat-surface imports ChatSettingsView",
+  /import \{[\s\S]*ChatSettingsView[\s\S]*\} from "@\/components\/lazy-surfaces"/,
+  "chat-surface lazy-loads ChatSettingsView",
 );
 
 // --- chat-settings-view: reads and writes the policy through /api/config ------

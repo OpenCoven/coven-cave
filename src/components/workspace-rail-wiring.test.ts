@@ -10,8 +10,8 @@ const source = await readFile(new URL("./chat-surface.tsx", import.meta.url), "u
 
 assert.match(
   source,
-  /import\s+\{\s*WorkspaceRail\s*\}\s+from\s+"@\/components\/workspace-rail"/,
-  "chat-surface imports WorkspaceRail",
+  /import\s+\{[\s\S]*WorkspaceRail[\s\S]*\}\s+from\s+"@\/components\/lazy-surfaces"/,
+  "chat-surface lazy-loads WorkspaceRail",
 );
 
 assert.match(

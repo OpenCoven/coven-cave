@@ -94,6 +94,8 @@ function orgOf(repo: string): string {
 type Props = {
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
   onFocusCard?: (cardId: string) => void;
+  /** Refresh the shell's cached GitHub assignment/session enrichment. */
+  onTasksRefresh?: () => void;
   /** Deep-link target from a GitHub-event inbox notification — opens that
    *  PR/issue's detail natively, even when it isn't in the activity list. */
   initialTarget?: GitHubItemTarget | null;
@@ -144,7 +146,8 @@ function useCards(): { cards: Card[]; cardsFailed: boolean; reload: () => void }
       });
     return () => { cancelled = true; };
   }, [tick]);
-  return { cards, cardsFailed, reload: () => setTick((t) => t + 1) };
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  return { cards, cardsFailed, reload };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -734,7 +737,6 @@ function AddToBoardAction({
   }
   function close() {
     setMode(null);
-    onAfterLink();
   }
 
   return (
@@ -758,6 +760,7 @@ function AddToBoardAction({
             cards={cards}
             cardsFailed={cardsFailed}
             onClose={close}
+            onComplete={onAfterLink}
           />
         </div>
       )}
@@ -2404,7 +2407,7 @@ const COLS: ColDef[] = [
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Props = {}) {
+export function GitHubView({ onJumpToSession, onFocusCard, onTasksRefresh, initialTarget }: Props = {}) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
@@ -2440,6 +2443,10 @@ export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Prop
 
   const { familiars, familiarsFailed } = useFamiliars();
   const { cards, cardsFailed, reload: reloadCards } = useCards();
+  const refreshLinkedWork = useCallback(() => {
+    reloadCards();
+    onTasksRefresh?.();
+  }, [reloadCards, onTasksRefresh]);
   const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
   const resolvedById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -2540,11 +2547,11 @@ export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Prop
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
       refreshActivity();
-      reloadCards(); // keep the linked-task chips fresh too (parity with the toolbar refresh)
+      refreshLinkedWork(); // keep linked cards and shell task context fresh too
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [refreshLinkedWork]);
 
   const items = activity?.items ?? [];
   const filtered = useMemo(
@@ -2901,7 +2908,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Prop
             size="sm"
             onClick={() => {
               refreshActivity();
-              reloadCards();
+              refreshLinkedWork();
             }}
             title="Refresh (⌘R)"
             aria-label="Refresh GitHub activity"
@@ -3015,7 +3022,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Prop
                 counts={counts}
                 onJumpToSession={onJumpToSession}
                 onFocusCard={onFocusCard}
-                onAfterLink={reloadCards}
+                onAfterLink={refreshLinkedWork}
               />
             }
           >
@@ -3217,7 +3224,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Prop
                             familiarsFailed={familiarsFailed}
                             cardsFailed={cardsFailed}
                             onJumpToSession={onJumpToSession}
-                            onAfterLink={reloadCards}
+                            onAfterLink={refreshLinkedWork}
                           />
                           <AddToBoardAction
                             item={item}
@@ -3225,7 +3232,7 @@ export function GitHubView({ onJumpToSession, onFocusCard, initialTarget }: Prop
                             cards={cards}
                             familiarsFailed={familiarsFailed}
                             cardsFailed={cardsFailed}
-                            onAfterLink={reloadCards}
+                            onAfterLink={refreshLinkedWork}
                           />
                           <SafeMergeAction
                             item={item}

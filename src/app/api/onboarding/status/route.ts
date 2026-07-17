@@ -8,8 +8,8 @@ import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
 import { covenLaunchCommand, covenSpawnEnv, pickWindowsLauncher } from "@/lib/coven-bin";
 import {
-  openCovenToolStatuses,
-  type OpenCovenToolStatus,
+  openCovenToolReadinessStatuses,
+  type OpenCovenToolReadinessStatus,
 } from "@/lib/opencoven-tools-status";
 import {
   COMPATIBILITY_ADAPTERS,
@@ -53,20 +53,17 @@ async function checkGit(): Promise<Step> {
   };
 }
 
-function checkCovenCli(tool: OpenCovenToolStatus | undefined): Step {
+function checkCovenCli(tool: OpenCovenToolReadinessStatus | undefined): Step {
   if (!tool?.installed) {
     return {
       ok: false,
       hint: `Install the Coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
     };
   }
-  if (tool.outdated || !tool.compatible) {
-    const detail =
-      tool.current && tool.latest
-        ? `Update available: ${tool.current} -> ${tool.latest}`
-        : tool.current
-          ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
-        : "Update available";
+  if (!tool.compatible) {
+    const detail = tool.current
+      ? `Update required: ${tool.current} is below ${tool.minimumVersion}`
+      : "Update required";
     return {
       ok: false,
       detail,
@@ -294,7 +291,7 @@ async function checkBinding(
 export async function GET() {
   const openclawAgentCount = await countOpenClawAgents();
   const [openCovenTools, covenHome, git, daemon, familiarsRes] = await Promise.all([
-    openCovenToolStatuses(),
+    openCovenToolReadinessStatuses(),
     checkCovenHome(),
     checkGit(),
     checkDaemon(),

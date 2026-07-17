@@ -1,234 +1,111 @@
-import { lstat, mkdir, readdir, rename, rm, rmdir, symlink } from "node:fs/promises";
-import path from "node:path";
-import { caveHome, covenHome } from "@/lib/coven-paths";
+import {
+  reconcileCaveHome,
+  validateCaveHomeReconciliationStore,
+  withCaveHomeReconciliationLock,
+  type CaveHomeReconciliationEntry,
+  type CaveHomeReconciliationResult,
+  type ReconciliationOptions,
+} from "./cave-home-reconciliation.ts";
 
 /**
- * Startup migration of cave-owned state into the dedicated cave home.
+ * Cave-owned legacy paths and their canonical names/strategies.
  *
- * Historically Cave scattered its files across the top level of `~/.coven`
- * as `cave-*.json` siblings of daemon-owned state. `migrateCaveHome()` moves
- * each of those into `caveHome()` (default `~/.coven/cave/`) under a
- * standardized name, then leaves a best-effort relative symlink at the legacy
- * path so external readers (daemon surfaces, scripts, older builds) keep
- * resolving until they catch up.
- *
- * Deliberately NOT migrated: files owned by other processes that merely share
- * the `cave-` prefix — `cave-calendar.json`, `cave-coven-calls.json`,
- * `cave-voice-calls.json` (daemon ledgers) — and ad-hoc user backups
- * (`*.bak.*`, `*.smoke-backup-*`).
- *
- * Semantics per entry (idempotent, crash-safe):
- *  - legacy path missing            → nothing to do
- *  - legacy path is a symlink       → already migrated (or user-bridged); skip
- *  - legacy AND destination are both real directories
- *                                   → per-file merge: children that only exist
- *                                     on the legacy side move over (lossless —
- *                                     each conversation is its own file);
- *                                     same-name children keep the destination
- *                                     copy. A fully drained legacy dir is
- *                                     replaced by the compat symlink.
- *  - destination already exists     → destination wins; legacy left untouched
- *  - otherwise                      → rename(legacy → cave/<name>), then
- *                                     best-effort compat symlink at legacy
- *
- * Every step is best-effort: a single failed entry is recorded and skipped so
- * one bad file can never block server boot or the rest of the migration.
+ * Entries with schema-aware strategies are merged automatically when safe.
+ * Directory children are merged by name. Every other entry is explicitly
+ * manual: differing copies are backed up and left unresolved until the user
+ * chooses which copy to keep. Daemon-owned ledgers and ad-hoc backups are not
+ * included in this manifest.
  */
-
-export type CaveHomeMigrationEntry = {
-  /** Name under `covenHome()` (legacy location). */
-  legacy: string;
-  /** Standardized name under `caveHome()`. */
-  next: string;
-};
-
-export const CAVE_HOME_MIGRATIONS: readonly CaveHomeMigrationEntry[] = [
-  { legacy: "cave-config.json", next: "config.json" },
-  { legacy: "cave-state.json", next: "state.json" },
-  { legacy: "cave-board.json", next: "board.json" },
-  { legacy: "cave-canvas.json", next: "canvas.json" },
-  { legacy: "cave-inbox.json", next: "inbox.json" },
-  { legacy: "cave-inbox-prefs.json", next: "inbox-prefs.json" },
-  { legacy: "cave-projects.json", next: "projects.json" },
-  { legacy: "cave-project-permissions.json", next: "project-permissions.json" },
-  { legacy: "cave-permission-config.json", next: "permission-config.json" },
-  { legacy: "cave-automation-runs.json", next: "automation-runs.json" },
-  { legacy: "cave-removed-familiars.json", next: "removed-familiars.json" },
-  { legacy: "cave-preferences.json", next: "preferences.json" },
-  // Write-intent sidecar dir for preferences (see preferences-store.ts).
-  { legacy: "cave-preferences.json.locks", next: "preferences.json.locks" },
-  { legacy: "cave-theme.json", next: "theme.json" },
-  { legacy: "cave-message-feedback.json", next: "message-feedback.json" },
-  { legacy: "cave-mobile-paired.json", next: "mobile-paired.json" },
-  { legacy: "cave-salem-pathfinder.json", next: "salem-pathfinder.json" },
-  { legacy: "cave-backdrop.jpg", next: "backdrop.jpg" },
-  { legacy: "cave-conversations", next: "conversations" },
+export const CAVE_HOME_MIGRATIONS: readonly CaveHomeReconciliationEntry[] = [
+  { legacy: "cave-config.json", next: "config.json", strategy: "manual" },
+  { legacy: "cave-state.json", next: "state.json", strategy: "state" },
+  { legacy: "cave-board.json", next: "board.json", strategy: "manual" },
+  { legacy: "cave-canvas.json", next: "canvas.json", strategy: "manual" },
+  { legacy: "cave-inbox.json", next: "inbox.json", strategy: "inbox" },
+  { legacy: "cave-inbox-prefs.json", next: "inbox-prefs.json", strategy: "manual" },
+  { legacy: "cave-projects.json", next: "projects.json", strategy: "manual" },
+  { legacy: "cave-project-permissions.json", next: "project-permissions.json", strategy: "manual" },
+  { legacy: "cave-permission-config.json", next: "permission-config.json", strategy: "manual" },
+  { legacy: "cave-automation-runs.json", next: "automation-runs.json", strategy: "manual" },
+  { legacy: "cave-removed-familiars.json", next: "removed-familiars.json", strategy: "manual" },
+  { legacy: "cave-preferences.json", next: "preferences.json", strategy: "preferences" },
+  { legacy: "cave-preferences.json.locks", next: "preferences.json.locks", strategy: "directory" },
+  { legacy: "cave-theme.json", next: "theme.json", strategy: "manual" },
+  { legacy: "cave-message-feedback.json", next: "message-feedback.json", strategy: "manual" },
+  { legacy: "cave-mobile-paired.json", next: "mobile-paired.json", strategy: "manual" },
+  { legacy: "cave-salem-pathfinder.json", next: "salem-pathfinder.json", strategy: "manual" },
+  { legacy: "cave-backdrop.jpg", next: "backdrop.jpg", strategy: "manual" },
+  { legacy: "cave-conversations", next: "conversations", strategy: "directory" },
 ];
 
-export type CaveHomeMigrationDirMerge = {
-  /** Legacy dir name under `covenHome()`. */
-  legacy: string;
-  /** Children moved out of the legacy dir into its destination. */
-  files: number;
-  /** Same-name children left behind (destination copy wins per file). */
-  collisions: number;
-};
-
-export type CaveHomeMigrationResult = {
-  moved: string[];
-  linked: string[];
-  skipped: string[];
-  merged: CaveHomeMigrationDirMerge[];
-  errors: Array<{ legacy: string; error: string }>;
-};
-
-async function pathState(target: string): Promise<"missing" | "symlink" | "file" | "dir"> {
-  try {
-    const st = await lstat(target);
-    return st.isSymbolicLink() ? "symlink" : st.isDirectory() ? "dir" : "file";
-  } catch {
-    return "missing";
-  }
-}
-
-// Compat bridge for external readers. Relative target so the link survives a
-// moved home dir. Best-effort: symlink creation can fail on Windows without
-// elevation — the migration itself already succeeded.
-async function bridgeLegacyPath(
-  entry: CaveHomeMigrationEntry,
-  legacyPath: string,
-  nextPath: string,
-  kind: "file" | "dir",
-  result: CaveHomeMigrationResult,
-): Promise<void> {
-  try {
-    const relativeTarget = path.relative(path.dirname(legacyPath), nextPath);
-    await symlink(relativeTarget, legacyPath, kind === "dir" ? "junction" : "file");
-    result.linked.push(entry.legacy);
-  } catch {
-    /* best-effort */
-  }
-}
+export type CaveHomeMigrationEntry = CaveHomeReconciliationEntry;
+export type CaveHomeMigrationDirMerge = CaveHomeReconciliationResult["merged"][number];
+export type CaveHomeMigrationResult = CaveHomeReconciliationResult;
 
 /**
- * Both sides of a directory entry exist — e.g. an old build recreated
- * `cave-conversations/` after migration (cave-lzx3). Children are independent
- * files keyed by name, so legacy-only ones move over losslessly; same-name
- * children keep the destination copy (the same destination-wins rule applied
- * per file) and hold the legacy dir open for review.
+ * Run lossless reconciliation. All filesystem mutation is serialized through
+ * a cross-process lock and committed to the durable migration journal.
  */
-async function mergeDirEntry(
-  entry: CaveHomeMigrationEntry,
-  legacyPath: string,
-  nextPath: string,
-  result: CaveHomeMigrationResult,
-): Promise<void> {
-  const merge: CaveHomeMigrationDirMerge = { legacy: entry.legacy, files: 0, collisions: 0 };
-  try {
-    for (const name of await readdir(legacyPath)) {
-      // Finder metadata must never hold the compat bridge hostage.
-      if (name === ".DS_Store") {
-        await rm(path.join(legacyPath, name), { force: true });
-        continue;
-      }
-      if ((await pathState(path.join(nextPath, name))) === "missing") {
-        try {
-          await rename(path.join(legacyPath, name), path.join(nextPath, name));
-          merge.files += 1;
-        } catch (error) {
-          result.errors.push({ legacy: `${entry.legacy}/${name}`, error: String(error) });
-        }
-      } else {
-        merge.collisions += 1;
-      }
-    }
-    result.merged.push(merge);
-    if ((await readdir(legacyPath)).length === 0) {
-      await rmdir(legacyPath);
-      result.moved.push(entry.legacy);
-      await bridgeLegacyPath(entry, legacyPath, nextPath, "dir", result);
-    } else {
-      result.skipped.push(entry.legacy);
-    }
-  } catch (error) {
-    result.errors.push({ legacy: entry.legacy, error: String(error) });
-  }
-}
-
-async function migrateEntry(
-  entry: CaveHomeMigrationEntry,
-  result: CaveHomeMigrationResult,
-): Promise<void> {
-  const legacyPath = path.join(covenHome(), entry.legacy);
-  const nextPath = path.join(caveHome(), entry.next);
-
-  const legacyState = await pathState(legacyPath);
-  if (legacyState === "missing" || legacyState === "symlink") {
-    result.skipped.push(entry.legacy);
-    return;
-  }
-  const nextState = await pathState(nextPath);
-
-  if (nextState !== "missing") {
-    if (legacyState === "dir" && nextState === "dir") {
-      await mergeDirEntry(entry, legacyPath, nextPath, result);
-      return;
-    }
-    // Destination wins — a newer build already wrote there. Leave the legacy
-    // file for the user to inspect rather than clobbering either side.
-    result.skipped.push(entry.legacy);
-    return;
-  }
-
-  try {
-    await rename(legacyPath, nextPath);
-    result.moved.push(entry.legacy);
-  } catch (error) {
-    result.errors.push({ legacy: entry.legacy, error: String(error) });
-    return;
-  }
-
-  await bridgeLegacyPath(entry, legacyPath, nextPath, legacyState, result);
-}
-
-/** Run the full migration once. Safe to call repeatedly (idempotent). */
-export async function migrateCaveHome(): Promise<CaveHomeMigrationResult> {
-  const result: CaveHomeMigrationResult = { moved: [], linked: [], skipped: [], merged: [], errors: [] };
-  try {
-    await mkdir(caveHome(), { recursive: true });
-  } catch (error) {
-    result.errors.push({ legacy: "(cave home)", error: String(error) });
-    return result;
-  }
-  for (const entry of CAVE_HOME_MIGRATIONS) {
-    await migrateEntry(entry, result);
-  }
-  if (result.moved.length > 0) {
-    console.log(
-      `[cave-home-migration] moved ${result.moved.length} legacy file(s) into ${caveHome()}: ${result.moved.join(", ")}`,
-    );
-  }
-  for (const merge of result.merged) {
-    if (merge.files > 0 || merge.collisions > 0) {
-      console.log(
-        `[cave-home-migration] merged ${merge.files} file(s) from ${merge.legacy} into ${caveHome()}` +
-          (merge.collisions > 0 ? ` (${merge.collisions} name collision(s) left for review)` : ""),
-      );
-    }
-  }
-  for (const failure of result.errors) {
-    console.warn(`[cave-home-migration] ${failure.legacy}: ${failure.error}`);
-  }
+export async function migrateCaveHome(options: ReconciliationOptions = {}): Promise<CaveHomeMigrationResult> {
+  const result = await reconcileCaveHome(CAVE_HOME_MIGRATIONS, options);
+  for (const error of result.errors) console.warn(`[cave-home-migration] ${error.legacy}: ${error.error}`);
   return result;
 }
 
-// One migration per process; survives Next dev hot-reloads via globalThis.
 declare global {
   // eslint-disable-next-line no-var
   var __caveHomeMigration: Promise<CaveHomeMigrationResult> | undefined;
 }
 
+/** One startup reconciliation per process; the durable lock/journal provide cross-process safety. */
 export function migrateCaveHomeOnce(): Promise<CaveHomeMigrationResult> {
-  globalThis.__caveHomeMigration ??= migrateCaveHome();
+  if (!globalThis.__caveHomeMigration) {
+    const run = migrateCaveHome();
+    globalThis.__caveHomeMigration = run;
+    void run.catch(() => {
+      if (globalThis.__caveHomeMigration === run) globalThis.__caveHomeMigration = undefined;
+    });
+  }
   return globalThis.__caveHomeMigration;
+}
+
+/**
+ * Reader/writer gate for Cave-owned stores. Unresolved divergent copies are
+ * safe because canonical storage remains authoritative, but an I/O or schema
+ * failure must stop a store from reading defaults and overwriting recoverable
+ * legacy data.
+ */
+export async function ensureCaveHomeReconciled(legacy?: string): Promise<void> {
+  const alreadyStarted = Boolean(globalThis.__caveHomeMigration);
+  const result = await migrateCaveHomeOnce();
+  let failures = legacy ? result.errors.filter((entry) => entry.legacy === legacy) : result.errors;
+  if (failures.length > 0 && alreadyStarted) {
+    const retry = await migrateCaveHome(legacy ? { legacy } : {});
+    failures = legacy ? retry.errors.filter((entry) => entry.legacy === legacy) : retry.errors;
+    if (failures.length === 0) {
+      if (legacy) {
+        result.errors = result.errors.filter((entry) => entry.legacy !== legacy);
+      } else {
+        globalThis.__caveHomeMigration = Promise.resolve(retry);
+      }
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(`Cave home reconciliation failed for ${failures.map((entry) => entry.legacy).join(", ")}`);
+  }
+  if (legacy) await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
+}
+
+/** Keep a store read or read-modify-write transaction outside migration replacements. */
+export async function withCaveHomeReconciledStore<T>(
+  legacy: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await ensureCaveHomeReconciled(legacy);
+  return withCaveHomeReconciliationLock(async () => {
+    // Another process may have reconciled the entry between the preflight and
+    // lock acquisition. Revalidate preserved stores while we own the lock.
+    await validateCaveHomeReconciliationStore(CAVE_HOME_MIGRATIONS, legacy);
+    return operation();
+  });
 }

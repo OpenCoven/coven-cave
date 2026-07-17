@@ -46,6 +46,7 @@ type CommandPathResult = { path: string | null; error?: "lookup-failed" };
 
 export type NpmLatestCheckError =
   | "npm_unavailable"
+  | "runtime_error"
   | "timeout"
   | "registry_error"
   | "malformed_version";
@@ -102,6 +103,19 @@ export type OpenCovenToolStatus = {
   minimumVersion: string;
   installCommand: string;
   checkedAt: string;
+};
+
+/** Local-only readiness facts used by the frequently-polled onboarding
+ * endpoint. Update-only fields intentionally stay null/false so this shape
+ * remains backward-compatible without implying that npm was consulted. */
+export type OpenCovenToolReadinessStatus = Omit<
+  OpenCovenToolStatus,
+  "latest" | "latestCheck" | "outdated" | "checkedAt"
+> & {
+  latest: null;
+  latestCheck: null;
+  outdated: false;
+  checkedAt: null;
 };
 
 function firstSemver(text: string): string | null {
@@ -300,7 +314,7 @@ async function execLatestVersion(
  * keeps the registry probe argv-only: neither a shell string nor request data
  * is ever involved.
  */
-export function npmViewLaunchCommandForPath(
+export function npmLaunchCommandForPath(
   npmPath: string,
   platform: NodeJS.Platform = process.platform,
   fileExists: (file: string) => boolean = existsSync,
@@ -308,8 +322,9 @@ export function npmViewLaunchCommandForPath(
   if (platform !== "win32" || !/\.(cmd|bat)$/i.test(npmPath)) {
     return { command: npmPath, fixedArgs: [] };
   }
-  const npmCli = path.join(
-    path.dirname(npmPath),
+  const pathApi = platform === "win32" ? path.win32 : path;
+  const npmCli = pathApi.join(
+    pathApi.dirname(npmPath),
     "node_modules",
     "npm",
     "bin",
@@ -317,6 +332,11 @@ export function npmViewLaunchCommandForPath(
   );
   return fileExists(npmCli) ? { command: process.execPath, fixedArgs: [npmCli] } : null;
 }
+
+// Backward-compatible name retained for the latest-version callers that
+// introduced this helper. Install and registry operations share the same safe
+// Windows npm launch path.
+export const npmViewLaunchCommandForPath = npmLaunchCommandForPath;
 
 async function npmPathFromEnvironment(
   env: NodeJS.ProcessEnv,
@@ -336,9 +356,19 @@ async function npmPathFromEnvironment(
 }
 
 function latestCheckError(err: unknown): NpmLatestCheckError {
-  const details = err as { code?: unknown; killed?: unknown; signal?: unknown } | undefined;
+  const details = err as {
+    code?: unknown;
+    killed?: unknown;
+    signal?: unknown;
+    stderr?: unknown;
+    stdout?: unknown;
+  } | undefined;
   const code = details?.code;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = [
+    err instanceof Error ? err.message : String(err),
+    typeof details?.stderr === "string" ? details.stderr : "",
+    typeof details?.stdout === "string" ? details.stdout : "",
+  ].filter(Boolean).join("\n");
   if (code === "ENOENT") return "npm_unavailable";
   if (
     code === "ETIMEDOUT" ||
@@ -346,6 +376,16 @@ function latestCheckError(err: unknown): NpmLatestCheckError {
     /timed?\s*out/i.test(message)
   ) {
     return "timeout";
+  }
+  if (
+    code === "ENOEXEC" ||
+    code === "ELIBACC" ||
+    code === "ELIBBAD" ||
+    /error while loading shared libraries|library not loaded|exec format error|cannot execute binary file|bad cpu type in executable|not a valid win32 application/i.test(
+      message,
+    )
+  ) {
+    return "runtime_error";
   }
   return "registry_error";
 }
@@ -384,7 +424,7 @@ export async function checkNpmLatestVersion(
     }
   }
   const launch = npmPath
-    ? npmViewLaunchCommandForPath(npmPath, platform, dependencies.fileExists)
+    ? npmLaunchCommandForPath(npmPath, platform, dependencies.fileExists)
     : null;
   if (!launch) {
     return { status: "failed", checkedAt, error: "npm_unavailable" };
@@ -461,6 +501,52 @@ export function composeOpenCovenToolStatus(
   };
 }
 
+export function composeOpenCovenToolReadinessStatus(
+  tool: OpenCovenToolSpec,
+  probe: OpenCovenToolProbe,
+): OpenCovenToolReadinessStatus {
+  const packageVerified =
+    probe.packageName === tool.packageName &&
+    Boolean(probe.packagePath) &&
+    Boolean(probe.executablePath) &&
+    probe.executableVerified;
+  const compatible =
+    packageVerified &&
+    !!probe.version &&
+    compareSemver(probe.version, tool.minimumVersion) >= 0;
+  const state = openCovenToolState({
+    installed: !!probe.path,
+    current: probe.version,
+    latest: null,
+    outdated: false,
+    compatible,
+    minimumVersion: tool.minimumVersion,
+  });
+
+  return {
+    id: tool.id,
+    label: tool.label,
+    packageName: tool.packageName,
+    binary: tool.binary,
+    installed: !!probe.path,
+    path: probe.path,
+    executablePath: probe.executablePath,
+    current: probe.version,
+    latest: null,
+    latestCheck: null,
+    outdated: false,
+    compatible,
+    state,
+    packageVerified,
+    executableVerified: probe.executableVerified,
+    packagePath: probe.packagePath,
+    discoveryError: probe.error ?? null,
+    minimumVersion: tool.minimumVersion,
+    installCommand: tool.installCommand,
+    checkedAt: null,
+  };
+}
+
 export async function verifyOpenCovenToolInstall(
   id: OpenCovenToolId,
 ): Promise<OpenCovenToolVerification<OpenCovenToolId>> {
@@ -493,4 +579,24 @@ async function toolStatus(
 export async function openCovenToolStatuses(): Promise<OpenCovenToolStatus[]> {
   const env = refreshCovenSpawnEnv();
   return Promise.all(OPEN_COVEN_TOOLS.map((tool) => toolStatus(tool, env)));
+}
+
+/** Discover installed/current compatibility without reading npm latest.
+ * Safe for readiness routes that poll frequently or must work offline. */
+export async function openCovenToolReadinessStatuses(
+  options: {
+    env?: NodeJS.ProcessEnv;
+    discover?: typeof discoverOpenCovenTool;
+  } = {},
+): Promise<OpenCovenToolReadinessStatus[]> {
+  const env = options.env ?? refreshCovenSpawnEnv();
+  const discover = options.discover ?? discoverOpenCovenTool;
+  return Promise.all(
+    OPEN_COVEN_TOOLS.map(async (tool) =>
+      composeOpenCovenToolReadinessStatus(
+        tool,
+        await discover(tool, { env }),
+      ),
+    ),
+  );
 }

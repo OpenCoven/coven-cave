@@ -18,6 +18,11 @@ test("normalizeOmnigentBaseUrl adds https when scheme missing", () => {
   assert.equal(normalizeOmnigentBaseUrl("omnigent.example.com"), "https://omnigent.example.com");
 });
 
+test("normalizeOmnigentBaseUrl handles adversarial slash runs in linear time", () => {
+  const repeatedSlashes = `bad host${"/".repeat(25_000)}!`;
+  assert.equal(normalizeOmnigentBaseUrl(repeatedSlashes), repeatedSlashes);
+});
+
 test("pickDefaultAgentId prefers preferred id then claude-native-ui", () => {
   const agents = [
     { id: "ag_a", name: "polly" },
@@ -63,6 +68,19 @@ test("normalizeOmnigentConfig keeps hostMap, hostWorkspaceMap, exposeHostsInComp
   assert.equal(cfg.hostWorkspaceMap.host_9, "/root/work");
   assert.equal(cfg.hostWorkspaceMap["Macbook-Pro-5.local"], "/Users/a/proj");
   assert.equal(cfg.exposeHostsInComposer, false);
+});
+
+test("normalizeOmnigentConfig removes trailing slashes without a backtracking regex", async () => {
+  const { normalizeOmnigentConfig } = await import("../cave-config.ts");
+
+  assert.equal(
+    normalizeOmnigentConfig({ baseUrl: "https://omni.example.com////" }).baseUrl,
+    "https://omni.example.com",
+  );
+  assert.equal(normalizeOmnigentConfig({ baseUrl: "bad host///" }).baseUrl, "bad host");
+
+  const repeatedSlashes = `bad host${"/".repeat(25_000)}!`;
+  assert.equal(normalizeOmnigentConfig({ baseUrl: repeatedSlashes }).baseUrl, repeatedSlashes);
 });
 
 test("resolveWorkspaceForHost prefers host_id then name then hostMap alias", async () => {

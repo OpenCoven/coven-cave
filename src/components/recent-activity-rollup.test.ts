@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./recent-activity-rollup.tsx", import.meta.url), "utf8");
+const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 // The collapse state persists across reloads and remounts via localStorage,
 // but defaults to open for SSR / first paint so the markup hydrates cleanly.
@@ -27,22 +29,45 @@ assert.match(
   "the header toggle writes through the persisting handler",
 );
 
-// This rollup polls the same heavy /api/sessions/list as the shell, so it must
-// pause while the user is typing — otherwise it re-introduces the mobile typing
-// lag the shell polls were gated to avoid.
+// The always-mounted Workspace/sidebar tree has one session-list owner. The
+// Workspace refreshes it every four seconds and passes that state through the
+// sidebar; RecentActivityRollup must never add a mount or interval request.
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace owns the four-second session refresh interval",
+);
+assert.match(
+  sidebar,
+  /<RecentActivityRollup[\s\S]{0,180}sessions=\{sessions\}[\s\S]{0,120}selectedFamiliarIds=\{selectedFamiliarIds\}/,
+  "the mounted sidebar passes Workspace-owned sessions into Recent Activity",
+);
+assert.match(source, /sessions: SessionRow\[\]/, "Recent Activity requires the shared sessions prop");
 assert.match(
   source,
-  /usePausablePoll\(\(\) => void load\(\), POLL_MS, \{ pauseWhileInputActive: true \}\)/,
-  "the sessions poll pauses during active input composition",
+  /familiarInScope\(selectedFamiliarIds, session\.familiarId\)/,
+  "Recent Activity filters the shared stream against single- and multi-familiar scope",
+);
+assert.match(
+  source,
+  /\[sessions, selectedFamiliarIds\]/,
+  "Recent Activity re-derives rows whenever the persistent familiar selection changes",
+);
+assert.doesNotMatch(source, /fetch\s*\(/, "Recent Activity performs no mount-time session request");
+assert.doesNotMatch(source, /usePausablePoll|setInterval|POLL_MS/, "Recent Activity owns no refresh interval");
+assert.equal(
+  [...workspace.matchAll(/fetch\(`\/api\/sessions\/list\$\{scope\}`/g)].length,
+  1,
+  "the mounted Workspace/sidebar path has one session-list request per refresh",
 );
 
-// The poll is guarded like every other polled surface: a monotonic reqId drops
-// a superseded overlapping load, and arrayContentEqual keeps the previous
-// reference when an idle tick rebuilds an identical list (no needless re-render
-// of this always-mounted sidebar rollup).
-assert.match(source, /const loadReqRef = useRef\(0\)/, "the rollup poll tracks a request id");
-assert.match(source, /const reqId = \+\+loadReqRef\.current;/, "each load bumps the request id");
-assert.match(source, /if \(reqId !== loadReqRef\.current\) return;/, "a superseded load drops its writes");
-assert.match(source, /setSessions\(\(prev\) => \(arrayContentEqual\(prev, next\) \? prev : next\)\)/, "an unchanged poll keeps the previous sessions reference");
+// Foreground five-minute schedule: Workspace makes one mount request plus 75
+// four-second ticks. The removed rollup made one mount request plus 20
+// fifteen-second ticks (97 before, 76 after).
+const fiveMinutesMs = 5 * 60_000;
+const workspaceRequests = 1 + fiveMinutesMs / 4_000;
+const removedRollupRequests = 1 + fiveMinutesMs / 15_000;
+assert.equal(workspaceRequests, 76, "one Workspace owner makes 76 requests in five foreground minutes");
+assert.equal(workspaceRequests + removedRollupRequests, 97, "the previous duplicate schedule made 97 requests");
 
 console.log("recent-activity-rollup.test.ts: ok");

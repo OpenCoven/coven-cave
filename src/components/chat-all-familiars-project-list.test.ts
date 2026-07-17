@@ -110,8 +110,18 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const githubTasksPromise = fetch\("\/api\/github\/tasks"/,
-  "Workspace polls GitHub task context because GitHub is visible by default",
+  /usePausablePoll\(\(\) => void loadGitHubTasks\(\), GITHUB_TASKS_POLL_MS/,
+  "Workspace refreshes GitHub task context on its dedicated slow cadence",
+);
+assert.doesNotMatch(
+  workspace,
+  /const loadSessions = useCallback[\s\S]*?fetch\("\/api\/github\/tasks"/,
+  "The four-second session poll must not fetch GitHub tasks",
+);
+assert.match(
+  workspace,
+  /startedDuringForcedRefresh[\s\S]*?forceEpoch !== loadGitHubTasksForceEpochRef\.current/,
+  "A scheduled read cannot supersede an explicit GitHub task refresh",
 );
 
 console.log("chat-all-familiars-project-list.test.ts: ok");

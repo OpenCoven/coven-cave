@@ -15,15 +15,16 @@ import {
   type CustomThemeData,
 } from "@/lib/preferences-schema";
 import { writeJsonAtomic } from "@/lib/server/atomic-write";
+import { withCaveHomeReconciledStore } from "./cave-home-migration.ts";
 
 export function preferencesPath(): string {
   const override = process.env.COVEN_PREFERENCES_PATH?.trim();
-  return override || path.join(caveHome(), "preferences.json");
+  return override || path.join(/* turbopackIgnore: true */ caveHome(), "preferences.json");
 }
 
 function legacyThemePath(): string {
   const override = process.env.COVEN_THEME_PATH?.trim();
-  return override || path.join(caveHome(), "theme.json");
+  return override || path.join(/* turbopackIgnore: true */ caveHome(), "theme.json");
 }
 
 type DiskState = "valid" | "missing" | "malformed";
@@ -31,7 +32,7 @@ type DiskRead = { preferences: CavePreferences; state: DiskState };
 
 async function readPreferencesFile(): Promise<DiskRead> {
   try {
-    const parsed = JSON.parse(await readFile(preferencesPath(), "utf8")) as unknown;
+    const parsed = JSON.parse(await readFile(/* turbopackIgnore: true */ preferencesPath(), "utf8")) as unknown;
     if (
       !parsed ||
       typeof parsed !== "object" ||
@@ -55,7 +56,7 @@ async function readPreferencesFile(): Promise<DiskRead> {
 
 async function readLegacyThemeSeed(): Promise<CavePreferencesPatch | null> {
   try {
-    const parsed = JSON.parse(await readFile(legacyThemePath(), "utf8")) as Record<string, unknown>;
+    const parsed = JSON.parse(await readFile(/* turbopackIgnore: true */ legacyThemePath(), "utf8")) as Record<string, unknown>;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const legacyPatch = legacyStorageToPreferencesPatch({
       "coven-theme": parsed.themeId,
@@ -84,13 +85,13 @@ async function readLegacyThemeSeed(): Promise<CavePreferencesPatch | null> {
 async function preserveMalformedFile(): Promise<void> {
   const source = preferencesPath();
   const suffix = new Date().toISOString().replace(/[^0-9]/g, "");
-  await copyFile(source, `${source}.corrupt-${suffix}`).catch(() => {});
+  await copyFile(/* turbopackIgnore: true */ source, `${source}.corrupt-${suffix}`).catch(() => {});
 }
 
 async function writePreferences(preferences: CavePreferences): Promise<void> {
   const target = preferencesPath();
-  await mkdir(path.dirname(target), { recursive: true });
-  await writeJsonAtomic(target, preferences);
+  await mkdir(/* turbopackIgnore: true */ path.dirname(target), { recursive: true });
+  await writeJsonAtomic(/* turbopackIgnore: true */ target, preferences);
 }
 
 async function loadPreferencesUnlocked(options: { seedLegacy: boolean }): Promise<DiskRead> {
@@ -132,7 +133,7 @@ const TRANSIENT_REMOVE_ERRORS = new Set(["EACCES", "EBUSY", "EPERM"]);
 async function removeIntent(pathname: string): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await rm(pathname, { force: true });
+      await rm(/* turbopackIgnore: true */ pathname, { force: true });
       return;
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code ?? "";
@@ -170,11 +171,13 @@ function intentPid(name: string): number | null {
 async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
   const target = preferencesPath();
   const intentsDir = `${target}.locks`;
-  await mkdir(intentsDir, { recursive: true });
+  // Lock files coordinate runtime sidecars in the user's data directory; they
+  // must not become inputs to standalone output-file tracing.
+  await mkdir(/* turbopackIgnore: true */ intentsDir, { recursive: true });
   const order = process.hrtime.bigint().toString().padStart(24, "0");
   const ownName = `${order}-${process.pid}-${randomBytes(8).toString("hex")}.lock`;
-  const ownPath = path.join(intentsDir, ownName);
-  const handle = await open(ownPath, "wx", 0o600);
+  const ownPath = path.join(/* turbopackIgnore: true */ intentsDir, ownName);
+  const handle = await open(/* turbopackIgnore: true */ ownPath, "wx", 0o600);
   try {
     await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
   } finally {
@@ -184,14 +187,14 @@ async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
 
   try {
     while (true) {
-      const names = (await readdir(intentsDir)).filter((name) => intentPid(name) !== null).sort();
+      const names = (await readdir(/* turbopackIgnore: true */ intentsDir)).filter((name) => intentPid(name) !== null).sort();
       for (const name of names) {
         if (name === ownName) continue;
         const pid = intentPid(name)!;
-        const candidate = path.join(intentsDir, name);
+        const candidate = path.join(/* turbopackIgnore: true */ intentsDir, name);
         let tooOld = false;
         try {
-          tooOld = Date.now() - (await stat(candidate)).mtimeMs > ORPHAN_INTENT_MAX_AGE_MS;
+          tooOld = Date.now() - (await stat(/* turbopackIgnore: true */ candidate)).mtimeMs > ORPHAN_INTENT_MAX_AGE_MS;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
           throw error;
@@ -203,7 +206,7 @@ async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
         }
       }
 
-      const remaining = (await readdir(intentsDir))
+      const remaining = (await readdir(/* turbopackIgnore: true */ intentsDir))
         .filter((name) => intentPid(name) !== null)
         .sort();
       if (remaining[0] === ownName) {
@@ -233,7 +236,10 @@ async function acquirePreferencesFileLock(): Promise<() => Promise<void>> {
 
 /** Load the canonical snapshot, seeding it once from cave-theme.json when possible. */
 export function loadPreferences(): Promise<CavePreferences> {
-  return withPreferencesLock(async () => (await loadPreferencesUnlocked({ seedLegacy: true })).preferences);
+  return withPreferencesLock(() => withCaveHomeReconciledStore(
+    "cave-preferences.json",
+    async () => (await loadPreferencesUnlocked({ seedLegacy: true })).preferences,
+  ));
 }
 
 export class PreferencesConflictError extends Error {
@@ -253,7 +259,7 @@ export class PreferencesConflictError extends Error {
 export function updatePreferences(
   mutator: (current: CavePreferences) => CavePreferencesPatch | null | Promise<CavePreferencesPatch | null>,
 ): Promise<CavePreferences> {
-  return withPreferencesLock(async () => {
+  return withPreferencesLock(() => withCaveHomeReconciledStore("cave-preferences.json", async () => {
     const release = await acquirePreferencesFileLock();
     try {
       const disk = await loadPreferencesUnlocked({ seedLegacy: true });
@@ -270,7 +276,7 @@ export function updatePreferences(
     } finally {
       await release();
     }
-  });
+  }));
 }
 
 export function patchPreferences(patch: CavePreferencesPatch): Promise<CavePreferences> {

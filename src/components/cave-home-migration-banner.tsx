@@ -1,197 +1,232 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useShellBanners } from "@/lib/shell-banners";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+
+type MigrationAction = "merge" | "keep-canonical" | "recover-legacy" | "defer";
+
+type MigrationDetail = {
+  legacy: string;
+  next: string;
+  strategy: "inbox" | "state" | "preferences" | "directory" | "manual";
+  legacyPath: string;
+  canonicalPath: string;
+  legacyHash?: string;
+  canonicalHash?: string;
+  legacyMtimeMs?: number;
+  canonicalMtimeMs?: number;
+  state: "pending" | "unresolved" | "managed";
+  summary: string;
+  differences: string[];
+  backupPath?: string;
+  actions: MigrationAction[];
+};
 
 type MigrationStatus = {
   pending: string[];
   conflicts: string[];
   migrated: boolean;
+  details: MigrationDetail[];
+  backupRoot: string;
+  journalPath: string;
 };
 
-type StatusPayload = { ok?: boolean; status?: MigrationStatus };
+type StatusPayload = { ok?: boolean; status?: MigrationStatus; error?: string };
 type RunPayload = StatusPayload & {
   result?: {
     moved?: string[];
-    merged?: Array<{ legacy: string; files?: number; collisions?: number }>;
+    resolved?: string[];
     errors?: Array<{ legacy: string; error: string }>;
   };
 };
 
 const MIGRATION_BANNER_ID = "cave-home-migration";
+const CONFLICT_DISMISS_KEY = (details: MigrationDetail[]) =>
+  `coven-cave:cave-home-migration:review-dismissed:${details
+    .map((detail) => [
+      detail.legacy,
+      detail.state,
+      detail.legacyHash ?? "missing",
+      detail.canonicalHash ?? "missing",
+    ].join(":"))
+    .sort()
+    .join("|")}`;
 
-/** Dismissal is keyed by the exact pending set, so NEW stragglers re-surface. */
-const MIGRATION_DISMISS_KEY = (pending: string[]) =>
-  `coven-cave:cave-home-migration:dismissed:${[...pending].sort().join("|")}`;
-
-function dismissedMigrationBanner(pending: string[]): boolean {
-  if (typeof window === "undefined") return false;
+function dismissed(details: MigrationDetail[]): boolean {
   try {
-    return window.localStorage.getItem(MIGRATION_DISMISS_KEY(pending)) === "1";
+    return window.localStorage.getItem(CONFLICT_DISMISS_KEY(details)) === "1";
   } catch {
     return false;
   }
 }
 
-function dismissMigrationBanner(pending: string[]): void {
-  if (typeof window === "undefined") return;
+function rememberDismissal(details: MigrationDetail[]): void {
   try {
-    window.localStorage.setItem(MIGRATION_DISMISS_KEY(pending), "1");
+    window.localStorage.setItem(CONFLICT_DISMISS_KEY(details), "1");
   } catch {
-    /* private mode */
+    // Private browsing can reject storage. Dismissal still lasts this mount.
   }
 }
 
-/** Conflict dismissal is namespaced apart from pending, keyed by the exact set. */
-const MIGRATION_CONFLICTS_DISMISS_KEY = (conflicts: string[]) =>
-  `coven-cave:cave-home-migration:conflicts-dismissed:${[...conflicts].sort().join("|")}`;
+function formatTime(value?: number): string {
+  if (!value) return "Missing";
+  return new Date(value).toLocaleString();
+}
 
-function dismissedConflictsBanner(conflicts: string[]): boolean {
-  if (typeof window === "undefined") return false;
+function actionLabel(action: MigrationAction): string {
+  if (action === "merge") return "Merge safely";
+  if (action === "keep-canonical") return "Keep current";
+  if (action === "recover-legacy") return "Recover legacy";
+  return "Defer";
+}
+
+async function openBackupFolder(path: string): Promise<boolean> {
+  if (!("__TAURI_INTERNALS__" in window)) return false;
   try {
-    return window.localStorage.getItem(MIGRATION_CONFLICTS_DISMISS_KEY(conflicts)) === "1";
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("shell_open_path", { path });
+    return true;
   } catch {
     return false;
   }
 }
 
-function dismissConflictsBanner(conflicts: string[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(MIGRATION_CONFLICTS_DISMISS_KEY(conflicts), "1");
-  } catch {
-    /* private mode */
-  }
-}
-
-function pendingBannerTitle(pending: string[]): string {
-  const count = pending.length;
-  return `${count} legacy Cave file${count === 1 ? "" : "s"} in ~/.coven still need${count === 1 ? "s" : ""} to move into ~/.coven/cave.`;
-}
-
-function conflictsBannerTitle(conflicts: string[]): string {
-  const count = conflicts.length;
-  return `${count} legacy Cave file${count === 1 ? "" : "s"} in ~/.coven conflict${count === 1 ? "s" : ""} with migrated copies — the ~/.coven/cave versions win. Review and remove the legacy cop${count === 1 ? "y" : "ies"}.`;
-}
-
-/**
- * Shell banner for "qualified participants" of the cave home migration:
- * machines where the boot-time migration (instrumentation.ts) errored or was
- * interrupted, leaving real legacy `cave-*` files at the top of `~/.coven`.
- *
- * Everyone else — fresh installs and machines the boot migration already
- * cleaned — never sees it. The CTA runs the same idempotent migration on
- * demand, reports the outcome in place, and clears once nothing is pending.
- *
- * Unfixable conflicts (legacy and migrated copies both real — cave-lzx3) get
- * a CTA-less review banner instead of staying invisible forever; dismissal is
- * keyed per conflict set so new conflicts re-surface.
- */
 export function CaveHomeMigrationBannerTrigger() {
   const { pushBanner, dismissBanner } = useShellBanners();
+  const [status, setStatus] = useState<MigrationStatus | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [working, setWorking] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const publish = useCallback((next: MigrationStatus) => {
+    setStatus(next);
+    const names = [...next.pending, ...next.conflicts];
+    if (names.length === 0) {
+      dismissBanner(MIGRATION_BANNER_ID);
+      setReviewOpen(false);
+      return;
+    }
+    if (dismissed(next.details)) return;
+    const conflicts = next.conflicts.length;
+    pushBanner({
+      id: MIGRATION_BANNER_ID,
+      severity: "warning",
+      title: conflicts > 0
+        ? `${conflicts} Cave data conflict${conflicts === 1 ? " needs" : "s need"} review. Both copies are preserved until you choose.`
+        : `${next.pending.length} legacy Cave file${next.pending.length === 1 ? " is" : "s are"} ready for safe migration.`,
+      cta: { label: "Review files", onClick: () => setReviewOpen(true) },
+      onDismiss: () => rememberDismissal(next.details),
+    });
+  }, [dismissBanner, pushBanner]);
+
+  const refresh = useCallback(async () => {
+    const response = await fetch("/api/cave-home-migration", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json() as StatusPayload;
+    if (payload.ok && payload.status) publish(payload.status);
+  }, [publish]);
+
+  // Ordinary Windows mirrors can be changed by an older tool after Cave has
+  // started. Re-check while the shell is visible so those writes are surfaced
+  // without requiring an app restart.
+  usePausablePoll(() => void refresh(), 30_000, { pauseWhileInputActive: true });
 
   useEffect(() => {
     let cancelled = false;
-
-    const showPendingBanner = (pending: string[]) => {
-      pushBanner({
-        id: MIGRATION_BANNER_ID,
-        severity: "warning",
-        title: pendingBannerTitle(pending),
-        cta: {
-          label: "Migrate now",
-          onClick: () => {
-            void runMigration();
-          },
-        },
-        onDismiss: () => dismissMigrationBanner(pending),
-      });
-    };
-
-    // No button — nothing safe to run. Destination wins by design (cave-lzx3);
-    // the user resolves conflicts by reviewing and deleting the legacy copies.
-    const showConflictsBanner = (conflicts: string[]) => {
-      pushBanner({
-        id: MIGRATION_BANNER_ID,
-        severity: "warning",
-        title: conflictsBannerTitle(conflicts),
-        onDismiss: () => dismissConflictsBanner(conflicts),
-      });
-    };
-
-    const runMigration = async () => {
-      try {
-        const res = await fetch("/api/cave-home-migration", { method: "POST" });
-        const json = (await res.json()) as RunPayload;
-        if (cancelled) return;
-        const remaining = json.status?.pending ?? [];
-        const errors = json.result?.errors ?? [];
-        if (remaining.length === 0 && errors.length === 0) {
-          const moved = json.result?.moved?.length ?? 0;
-          const mergedFiles = (json.result?.merged ?? []).reduce((n, m) => n + (m.files ?? 0), 0);
-          const conflictsAfter = json.status?.conflicts ?? [];
-          if (conflictsAfter.length > 0) {
-            // The run finished but same-name collisions remain — hand off to
-            // the review path instead of claiming a clean finish.
-            pushBanner({
-              id: MIGRATION_BANNER_ID,
-              severity: "warning",
-              title: `Cave files migrated — moved ${moved} file${moved === 1 ? "" : "s"}${mergedFiles > 0 ? ` and merged ${mergedFiles} more` : ""}; ${conflictsAfter.length} conflict${conflictsAfter.length === 1 ? "" : "s"} left for manual review in ~/.coven.`,
-              onDismiss: () => dismissConflictsBanner(conflictsAfter),
-            });
-            return;
-          }
-          pushBanner({
-            id: MIGRATION_BANNER_ID,
-            severity: "info",
-            title:
-              moved > 0 || mergedFiles > 0
-                ? `Cave files migrated — moved ${moved} file${moved === 1 ? "" : "s"}${mergedFiles > 0 ? ` and merged ${mergedFiles} more` : ""} into ~/.coven/cave.`
-                : "Cave files are already in ~/.coven/cave — nothing left to migrate.",
-          });
-          return;
-        }
-        pushBanner({
-          id: MIGRATION_BANNER_ID,
-          severity: "error",
-          title: `Cave file migration could not finish — ${remaining.length} file${remaining.length === 1 ? "" : "s"} still pending${errors.length > 0 ? ` (first error: ${errors[0].error})` : ""}.`,
-          cta: {
-            label: "Retry migration",
-            onClick: () => {
-              void runMigration();
-            },
-          },
-          onDismiss: () => dismissMigrationBanner(remaining),
-        });
-      } catch {
-        /* Route unreachable — leave the current banner in place for a retry. */
-      }
-    };
-
     void fetch("/api/cave-home-migration", { cache: "no-store" })
-      .then(async (res) => (res.ok ? ((await res.json()) as StatusPayload) : null))
-      .then((json) => {
-        if (cancelled || !json?.ok || !json.status) return;
-        const pending = json.status.pending ?? [];
-        const conflicts = json.status.conflicts ?? [];
-        if (pending.length > 0) {
-          // Fixable files take precedence — one banner at a time.
-          if (!dismissedMigrationBanner(pending)) showPendingBanner(pending);
-          return;
-        }
-        if (conflicts.length > 0 && !dismissedConflictsBanner(conflicts)) {
-          showConflictsBanner(conflicts);
-        }
+      .then(async (response) => response.ok ? await response.json() as StatusPayload : null)
+      .then((payload) => {
+        if (!cancelled && payload?.ok && payload.status) publish(payload.status);
       })
-      .catch(() => {
-        /* Status checks are best-effort. */
-      });
-
+      .catch(() => {});
     return () => {
       cancelled = true;
       dismissBanner(MIGRATION_BANNER_ID);
     };
-  }, [pushBanner, dismissBanner]);
+  }, [dismissBanner, publish]);
 
-  return null;
+  const runAction = async (detail: MigrationDetail, action: MigrationAction) => {
+    setWorking(`${detail.legacy}:${action}`);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/cave-home-migration", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ legacy: detail.legacy, action }),
+      });
+      const payload = await response.json() as RunPayload;
+      if (!response.ok || !payload.status) throw new Error(payload.error ?? "Migration request failed");
+      publish(payload.status);
+      const firstError = payload.result?.errors?.[0];
+      setNotice(firstError ? `${firstError.legacy}: ${firstError.error}` : `${detail.legacy}: ${actionLabel(action)} complete.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Migration request failed");
+      await refresh();
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  if (!reviewOpen || !status) return null;
+
+  return (
+    <div className="cave-migration-review-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) setReviewOpen(false);
+    }}>
+      <section className="cave-migration-review" role="dialog" aria-modal="true" aria-labelledby="cave-migration-title">
+        <header className="cave-migration-review__header">
+          <div>
+            <h2 id="cave-migration-title">Review Cave data migration</h2>
+            <p>Canonical storage is <code>~/.coven/cave</code>. Cave verifies a recovery bundle before changing either divergent copy.</p>
+          </div>
+          <button type="button" aria-label="Close migration review" onClick={() => setReviewOpen(false)}>×</button>
+        </header>
+
+        <div className="cave-migration-review__files">
+          {status.details.map((detail) => (
+            <article className="cave-migration-file" key={detail.legacy}>
+              <div className="cave-migration-file__heading">
+                <strong>{detail.legacy}</strong>
+                <span>{detail.strategy === "manual" ? "Manual decision" : `${detail.strategy} reconciliation`}</span>
+              </div>
+              <p>{detail.summary}</p>
+              <ul className="cave-migration-file__diff">
+                {detail.differences.map((difference) => <li key={difference}>{difference}</li>)}
+              </ul>
+              <dl>
+                <div><dt>Legacy</dt><dd>{formatTime(detail.legacyMtimeMs)}</dd></div>
+                <div><dt>Canonical</dt><dd>{formatTime(detail.canonicalMtimeMs)}</dd></div>
+              </dl>
+              {detail.backupPath ? <p className="cave-migration-file__backup">Recovery bundle: {detail.backupPath}</p> : null}
+              <div className="cave-migration-file__actions">
+                {detail.actions.map((action) => (
+                  <button
+                    type="button"
+                    key={action}
+                    disabled={working !== null}
+                    onClick={() => void runAction(detail, action)}
+                  >
+                    {working === `${detail.legacy}:${action}`
+                      ? "Working…"
+                      : action === "merge" && detail.state === "pending" ? "Migrate safely" : actionLabel(action)}
+                  </button>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <footer className="cave-migration-review__footer">
+          <span role="status">{notice}</span>
+          <div>
+            <button type="button" onClick={() => void openBackupFolder(status.backupRoot).then((ok) => {
+              if (!ok) setNotice(`Backups are stored at ${status.backupRoot}`);
+            })}>Open backup folder</button>
+            <button type="button" onClick={() => setReviewOpen(false)}>Close</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
 }
