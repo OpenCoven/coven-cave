@@ -22,10 +22,6 @@ export function ResearcherSurface({ context }: { context: RoleSurfaceContext }) 
   return (
     <div className="research-desk">
       <section className="research-desk__intake" aria-label="Start research">
-        <div className="research-desk__intake-copy">
-          <span>Research familiar</span>
-          <strong>From intent to evidence to durable knowledge.</strong>
-        </div>
         <ResearchMissionComposer
           familiarId={context.activeFamiliar.id}
           daemonRunning={context.runtimeState.daemonRunning}

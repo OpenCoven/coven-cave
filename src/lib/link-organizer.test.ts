@@ -142,4 +142,6 @@ test("the Research desk mounts the Links shelf over the same store", () => {
   assert.match(shelf, /extractLinks\(draft\)/, "the shelf accepts one or many pasted links");
   assert.match(shelf, /groupSavedLinks\(links\)/, "the shelf renders auto-organized groups");
   assert.match(shelf, /source: "desk"/, "desk saves are attributed");
+  assert.match(shelf, /<details className="research-links"/, "the shelf collapses to a quiet summary row");
+  assert.match(shelf, /research-links__summary/, "the summary row is the disclosure control");
 });

@@ -63,8 +63,8 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
     setBounds((current) => ({ ...current, [key]: value }));
   };
 
-  // A bound chip is a shortcut into the Review-bounds disclosure: open it,
-  // then focus the matching input once it is visible.
+  // The summary pill doubles as the bounds toggle: open the editor and focus
+  // its first input once visible; press again to collapse.
   const focusBound = (inputId: string) => {
     setBoundsOpen(true);
     requestAnimationFrame(() => document.getElementById(inputId)?.focus());
@@ -103,13 +103,13 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
   return (
     <form className="research-mission-composer" onSubmit={start}>
       <div className="research-mission-composer__prompt">
-        <label htmlFor="research-intent">What should we investigate?</label>
+        <label htmlFor="research-intent" className="sr-only">What should we investigate?</label>
         <textarea
           id="research-intent"
           value={intent}
           onChange={(event) => setIntent(event.target.value)}
-          placeholder="Compare approaches, map a field, draft a paper, or run bounded experiments…"
-          rows={3}
+          placeholder="What should we investigate?"
+          rows={2}
           aria-invalid={Boolean(error) || intentTooShort}
           aria-describedby={error
             ? "research-mission-error"
@@ -125,18 +125,28 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
       </div>
 
       <div className="research-mission-composer__controls">
-        <label className="research-mission-mode">
-          <span>Mode</span>
-          <select
-            value={mode}
-            onChange={(event) => setMode(event.target.value as "auto" | ResearchMissionMode)}
-          >
-            <option value="auto">Auto</option>
-            {RESEARCH_MISSION_MODES.map((value) => (
-              <option key={value} value={value}>{MODE_LABELS[value]}</option>
-            ))}
-          </select>
-        </label>
+        {/* The whole plan in one quiet pill: mode + bounds. Press to review/edit. */}
+        <button
+          type="button"
+          id="research-plan-review"
+          className="research-plan-summary"
+          title={mode === "auto" ? inferred.reason : "Selected manually"}
+          aria-expanded={boundsOpen}
+          aria-controls="research-bounds-editor"
+          onClick={() => (boundsOpen ? setBoundsOpen(false) : focusBound("research-bound-minutes"))}
+        >
+          {MODE_LABELS[effectiveMode]} · {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"} · {bounds.wallClockMinutes} min · {bounds.sourceTarget} sources
+        </button>
+        <select
+          value={mode}
+          aria-label="Mode"
+          onChange={(event) => setMode(event.target.value as "auto" | ResearchMissionMode)}
+        >
+          <option value="auto">Auto</option>
+          {RESEARCH_MISSION_MODES.map((value) => (
+            <option key={value} value={value}>{MODE_LABELS[value]}</option>
+          ))}
+        </select>
         <Button
           type="submit"
           variant="primary"
@@ -149,45 +159,8 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
         </Button>
       </div>
 
-      <div id="research-plan-review" className="research-plan-review">
-        <span className="research-plan-chip research-plan-chip--mode">{MODE_LABELS[effectiveMode]}</span>
-        <span className="research-plan-chip research-plan-chip--note">
-          {mode === "auto" ? inferred.reason : "Selected manually"}
-        </span>
-        <span className="research-plan-chip">{plan.deliverables.join(" + ")}</span>
-        <button
-          type="button"
-          className="research-plan-chip"
-          title="Edit in Review bounds"
-          onClick={() => focusBound("research-bound-iterations")}
-        >
-          {bounds.maxIterations} iteration{bounds.maxIterations === 1 ? "" : "s"}
-        </button>
-        <button
-          type="button"
-          className="research-plan-chip"
-          title="Edit in Review bounds"
-          onClick={() => focusBound("research-bound-minutes")}
-        >
-          {bounds.wallClockMinutes} min
-        </button>
-        <button
-          type="button"
-          className="research-plan-chip"
-          title="Edit in Review bounds"
-          onClick={() => focusBound("research-bound-sources")}
-        >
-          {bounds.sourceTarget} sources
-        </button>
-      </div>
-
-      <details
-        className="research-bounds-disclosure"
-        open={boundsOpen}
-        onToggle={(event) => setBoundsOpen(event.currentTarget.open)}
-      >
-        <summary>Review bounds</summary>
-        <div className="research-bounds-grid">
+      {boundsOpen ? (
+        <div id="research-bounds-editor" className="research-bounds-grid">
           <label>
             <span>Minutes</span>
             <input
@@ -239,7 +212,7 @@ export function ResearchMissionComposer({ familiarId, daemonRunning, onStart }: 
             />
           </label>
         </div>
-      </details>
+      ) : null}
 
       {!daemonRunning ? (
         <p className="research-runtime-note">
