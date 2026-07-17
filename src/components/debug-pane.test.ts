@@ -99,6 +99,29 @@ assert.match(
   "A filter with zero hits says so instead of rendering an empty void",
 );
 
+// ── Live-region announcements (chat-session-debugging S5) ────────────────────
+
+assert.match(
+  source,
+  /if \(copied\) announce\(/,
+  "Copy success must be announced — the check-icon swap is visual-only",
+);
+assert.match(
+  source,
+  /announce\(`Events failed to load: \$\{eventsError\}`, "assertive"\)/,
+  "Events load failures must reach screen readers assertively, not appear as a silent banner",
+);
+assert.match(
+  source,
+  /if \(tailCapped\) announce\(/,
+  "The tail-cap notice must be announced when it appears",
+);
+assert.match(
+  source,
+  /announce\("Following live events"\)/,
+  "Resuming follow announces; scroll-driven pauses stay silent by design (announcement spam)",
+);
+
 // ── Changes panel (CHAT-D8-01): working-tree review, now hosted by the code
 // rail (the inspector right panel that first carried it is retired) ──────────
 
