@@ -212,11 +212,20 @@ test("extractCovenDelegations: a casual @mention never dispatches", () => {
 
 test("extractCovenDelegations: ignores quoted, inline-code, and fenced marker examples", () => {
   const quoted = '> <coven:delegation target="charm">quoted</coven:delegation>';
+  const indentedQuote = '  > <coven:delegation target="charm">quoted</coven:delegation>';
   const inline = '`<coven:delegation target="charm">inline</coven:delegation>`';
+  const multiBacktickInline = '``<coven:delegation target="charm">inline</coven:delegation>``';
   const fenced = '```xml\n<coven:delegation target="charm">fenced</coven:delegation>\n```';
-  for (const text of [quoted, inline, fenced]) {
+  for (const text of [quoted, indentedQuote, inline, multiBacktickInline, fenced]) {
     assert.deepEqual(extractCovenDelegations(text), { visible: text, delegations: [] });
   }
+});
+
+test("extractCovenDelegations: preserves case-sensitive familiar ids", () => {
+  const text = '<coven:delegation target="Charm">review this</coven:delegation>';
+  assert.deepEqual(extractCovenDelegations(text).delegations, [
+    { targetFamiliarId: "Charm", task: "review this" },
+  ]);
 });
 
 test("extractCovenDelegations: dedupes targets and rejects empty or malformed trailers", () => {

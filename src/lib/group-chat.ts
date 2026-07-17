@@ -193,7 +193,11 @@ const COMPLETE_DELEGATION_RE =
 /** Ranges where marker-shaped text is documentation, not an instruction. */
 function delegationIgnoredRanges(text: string): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
-  for (const re of [/```[\s\S]*?(?:```|$)/g, /`[^`\n]*`/g, /^>.*$/gm]) {
+  for (const re of [
+    /```[\s\S]*?(?:```|$)/g,
+    /(`+)[^\n]*?\1/g,
+    /^[ \t]{0,3}>.*$/gm,
+  ]) {
     let match: RegExpExecArray | null;
     while ((match = re.exec(text))) ranges.push([match.index, match.index + match[0].length]);
   }
@@ -218,7 +222,10 @@ export function extractCovenDelegations(text: string): ExtractedCovenDelegations
   while ((match = COMPLETE_DELEGATION_RE.exec(text))) {
     if (isIgnored(match.index)) continue;
     remove.push([match.index, match.index + match[0].length]);
-    const targetFamiliarId = match[1].toLowerCase();
+    // Familiar ids are validated case-insensitively but remain case-sensitive
+    // identifiers on Linux filesystems and throughout the roster. Preserve the
+    // exact roster id emitted in the control instead of silently changing it.
+    const targetFamiliarId = match[1];
     const task = match[2].trim();
     if (!task || seenTargets.has(targetFamiliarId)) continue;
     seenTargets.add(targetFamiliarId);
