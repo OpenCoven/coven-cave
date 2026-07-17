@@ -329,3 +329,6 @@
   .chat-canvas-add__skeleton { animation: none; }
   .chat-canvas-card--new { animation: none; }
 }
+/* Listitem wrapper for the add tile inside the role="list" grid — contents
+   display keeps the tile itself on the grid track. */
+.chat-canvas-add__li { display: contents; }

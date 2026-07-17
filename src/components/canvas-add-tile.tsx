@@ -202,18 +202,23 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
   }, [state.mode, state.prompt, state.pastedTitle, announce, onSaved]);
 
   // ── Collapsed: the ghost tile ──────────────────────────────────────────────
+  // Both tile forms live inside the gallery's role="list" grid — wrap them in
+  // a listitem (display: contents keeps the grid track on the tile itself) so
+  // list semantics stay valid for AT alongside the sketch cards.
   if (!expanded) {
     return (
-      <button
-        ref={ghostRef}
-        type="button"
-        className={`chat-canvas-add chat-canvas-add--ghost focus-ring${hero ? " chat-canvas-add--hero" : ""}`}
-        aria-expanded={false}
-        onClick={() => dispatch({ type: "expand" })}
-      >
-        <Icon name="ph:plus-bold" aria-hidden />
-        New sketch
-      </button>
+      <div role="listitem" className="chat-canvas-add__li">
+        <button
+          ref={ghostRef}
+          type="button"
+          className={`chat-canvas-add chat-canvas-add--ghost focus-ring${hero ? " chat-canvas-add--hero" : ""}`}
+          aria-expanded={false}
+          onClick={() => dispatch({ type: "expand" })}
+        >
+          <Icon name="ph:plus-bold" aria-hidden />
+          New sketch
+        </button>
+      </div>
     );
   }
 
@@ -225,6 +230,7 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
     : null;
 
   return (
+    <div role="listitem" className="chat-canvas-add__li">
     <section
       className={`chat-canvas-add chat-canvas-add--expanded${hero ? " chat-canvas-add--hero" : ""}`}
       aria-label="New sketch"
@@ -260,10 +266,14 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
       {state.phase === "generating" ? (
         <>
           <div className="chat-canvas-add__skeleton" aria-hidden />
-          <div className="chat-canvas-add__status" role="status">
+          {/* The stable sentence is the live region; the fast-ticking char
+              count is visual-only so SRs don't re-announce every chunk. */}
+          <div className="chat-canvas-add__status">
             <Icon name="ph:sparkle" aria-hidden />
-            {familiars.find((f) => f.id === activeFamiliar)?.display_name ?? "Familiar"} is sketching…
-            {streamChars > 0 ? ` ${(streamChars / 1000).toFixed(1)}k chars` : ""}
+            <span role="status">
+              {familiars.find((f) => f.id === activeFamiliar)?.display_name ?? "Familiar"} is sketching…
+            </span>
+            <span aria-hidden>{streamChars > 0 ? ` ${(streamChars / 1000).toFixed(1)}k chars` : ""}</span>
           </div>
           <div className="chat-canvas-add__row">
             <span className="chat-canvas-add__spacer" />
@@ -415,5 +425,6 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
         </>
       )}
     </section>
+    </div>
   );
 }
