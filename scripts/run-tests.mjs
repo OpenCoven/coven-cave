@@ -952,6 +952,7 @@ export const SUITES = {
     "src/app/api/access-groups/route.test.ts",
     "src/app/api/project-permission-routes.test.ts",
     "src/app/api/project-local-human-read.test.ts",
+    "src/app/api/project-search-security.test.ts",
     "src/app/api/project-file/route.test.ts",
     "src/app/api/salem/pathfinder/feedback/route.test.ts",
     "src/app/api/feedback/message/route.test.ts",
