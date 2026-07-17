@@ -24,10 +24,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FamiliarSummoningCircle } from "@/components/familiar-summoning-circle";
 import {
+  ACTIVITY_DAYS,
   buildFamiliarCardStats,
   type FamiliarCardStats,
   type CovenMemoryEntry,
 } from "@/components/familiars-view-stats";
+import { compactCount } from "@/lib/profile-card";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { SUMMON_FAMILIAR_EVENT, consumeSummonPending } from "@/lib/summon-events";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
@@ -244,11 +246,8 @@ export function FamiliarsView({
       <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2">
-              <Icon name="ph:users-three" width={16} className="text-[var(--accent-presence)]" />
-              <h1 className="text-[14px] font-semibold text-[var(--text-primary)]">Familiars</h1>
-            </div>
-            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            <h1 className="familiars-view__wordmark">Familiars</h1>
+            <p className="familiars-view__tagline mt-1.5">
               Roster of every familiar — identity, status, recent activity, memory at a glance.
             </p>
           </div>
@@ -302,7 +301,7 @@ export function FamiliarsView({
                 }
               }}
               placeholder="Search familiars…"
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 pl-7 pr-7 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
             />
             {!query && (
               <kbd
@@ -457,8 +456,10 @@ function emptyStats(): FamiliarCardStats {
     memoryCount: 0,
     latestMemory: null,
     lastSessionAt: null,
+    sessionsTotal: 0,
     sessionsLast7d: 0,
     hasActiveSession: false,
+    activity: new Array<number>(ACTIVITY_DAYS).fill(0),
   };
 }
 
@@ -509,60 +510,93 @@ function FamiliarRosterCard({
   onSelect,
 }: AgentRosterCardProps) {
   const lastSessionLabel = stats.lastSessionAt
-    ? `Last session ${age(stats.lastSessionAt)}`
+    ? `last session ${age(stats.lastSessionAt)}`
     : "No sessions yet";
-  const sessionsLabel =
-    stats.sessionsLast7d > 0 ? ` · ${stats.sessionsLast7d} this week` : "";
+  const stripTotal = stats.activity.reduce((sum, n) => sum + n, 0);
   return (
-    // De-boxed card (cave-g2r6): the wrapper carries the wash + soft hairline
-    // so the open button and the analytics link can sit inside one visual card
-    // as sibling interactive elements (no nested controls).
+    // De-boxed card (cave-g2r6) restyled as a terminal stat tile (cave-uw7c):
+    // the wrapper carries the wash + soft hairline so the open button and the
+    // profile/analytics links can sit inside one visual card as sibling
+    // interactive elements (no nested controls). Typography and the stat band
+    // follow the profile share card (src/styles/profile-card.css) — monospace
+    // lowercase labels, hairline-divided tiles, glowing numerals.
     <div className="familiars-view__card group relative flex h-full flex-col">
       <button
         type="button"
         onClick={onSelect}
-        className="focus-ring flex flex-1 flex-col items-stretch gap-2 rounded-[inherit] p-3 pb-2 text-left"
+        className="focus-ring flex flex-1 flex-col items-stretch rounded-[inherit] text-left"
         aria-label={`Open ${familiar.display_name}`}
       >
-        <div className="flex items-center gap-2">
-          <FamiliarAvatar familiar={familiar} size="sm" />
+        <span className="flex items-center gap-2.5 px-3 pt-3">
+          <span className="familiars-view__avatar-tile" aria-hidden="true">
+            <FamiliarAvatar familiar={familiar} size="lg" />
+          </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            <span className="block truncate font-mono text-[13px] font-semibold tracking-wide text-[var(--text-primary)]">
               {familiar.display_name}
             </span>
-            <span className="block truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+            <span className="familiars-view__microlabel mt-1 block truncate">
               {familiar.role || familiar.harness || familiar.id}
             </span>
           </span>
-        </div>
+          <span className="familiars-view__microlabel inline-flex shrink-0 items-center gap-1.5 self-start">
+            <span
+              className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)] familiars-view__status-dot--live" : "bg-[var(--text-muted)]"}`}
+              aria-hidden="true"
+            />
+            {daemonRunning ? "online" : "offline"}
+          </span>
+        </span>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
-          <span
-            className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"}`}
-            aria-hidden="true"
-          />
-          <span>{daemonRunning ? "online" : "offline"}</span>
-          {stats.hasActiveSession ? (
-            <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[9px] text-[var(--accent-presence)]">
-              active session
-            </span>
-          ) : null}
-          {responseNeeded ? (
-            <span className="rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[9px] text-[var(--color-warning)]">
-              response needed
-            </span>
-          ) : null}
-        </div>
+        {stats.hasActiveSession || responseNeeded ? (
+          <span className="flex flex-wrap items-center gap-1.5 px-3 pt-2">
+            {stats.hasActiveSession ? (
+              <span className="familiars-view__chip text-[var(--accent-presence)]">
+                active session
+              </span>
+            ) : null}
+            {responseNeeded ? (
+              <span className="familiars-view__chip familiars-view__chip--warning">
+                response needed
+              </span>
+            ) : null}
+          </span>
+        ) : null}
 
-        <p className="mt-auto text-[11px] text-[var(--text-secondary)]">
-          {lastSessionLabel}{sessionsLabel}
-        </p>
+        <span className="familiars-view__statband mt-3">
+          <span className="familiars-view__stat">
+            <span className="familiars-view__stat-label">sessions</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.sessionsTotal)}</span>
+          </span>
+          <span className="familiars-view__stat">
+            <span className="familiars-view__stat-label">this week</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.sessionsLast7d)}</span>
+          </span>
+          <span className="familiars-view__stat">
+            <span className="familiars-view__stat-label">memories</span>
+            <span className="familiars-view__stat-value">{compactCount(stats.memoryCount)}</span>
+          </span>
+        </span>
+
+        <span
+          className="familiars-view__strip"
+          aria-hidden="true"
+          title={`${stripTotal} session${stripTotal === 1 ? "" : "s"} in the last ${ACTIVITY_DAYS} days`}
+        >
+          {stats.activity.map((count, index) => (
+            <i key={index} data-level={activityLevel(count, stats.activity)} />
+          ))}
+        </span>
+
+        <span className="familiars-view__microlabel mt-auto block truncate px-3 pb-2.5 pt-2">
+          {lastSessionLabel}
+        </span>
       </button>
 
-      {/* Card footer — memory snapshot as a quiet one-liner + the analytics
-          link folded inside the card (it used to float orphaned below the
-          border). Hairline divider, no second box. */}
-      <div className="familiars-view__card-footer flex items-center justify-between gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-2 text-[11px]">
+      {/* Card footer — memory snapshot as a quiet one-liner + the profile and
+          analytics links folded inside the card (they used to float orphaned
+          below the border). Hairline divider, no second box. */}
+      <div className="familiars-view__card-footer flex items-center justify-between gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-2 font-mono text-[10px]">
         <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]" title={stats.latestMemory?.title}>
           {memoryStatus === "loading" ? (
             // Shimmer instead of a "Loading memory…" string — one loading
@@ -585,20 +619,30 @@ function FamiliarRosterCard({
         <Link
           href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/profile`}
           aria-label={`Open profile for ${familiar.display_name}`}
-          className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+          className="focus-ring shrink-0 rounded-[var(--radius-sm)] lowercase text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
         >
           Profile →
         </Link>
         <Link
           href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
           aria-label={`Open analytics for ${familiar.display_name}`}
-          className="focus-ring shrink-0 rounded-[var(--radius-sm)] text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
+          className="focus-ring shrink-0 rounded-[var(--radius-sm)] lowercase text-[var(--text-muted)] transition-colors hover:text-[var(--accent-presence)]"
         >
           Analytics →
         </Link>
       </div>
     </div>
   );
+}
+
+/**
+ * Bucket a day's count against the strip max — same 1..4 ramp as the profile
+ * card heatmap (src/lib/profile-card.ts levelFor) so both surfaces agree.
+ */
+function activityLevel(count: number, activity: number[]): 0 | 1 | 2 | 3 | 4 {
+  const max = Math.max(0, ...activity);
+  if (count <= 0 || max <= 0) return 0;
+  return Math.min(4, Math.max(1, Math.ceil((count / max) * 4))) as 1 | 2 | 3 | 4;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -689,7 +733,7 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview, onBack
                   onSelect(f.id);
                   onPreview(f);
                 }}
-                className={`focus-ring familiars-view__rail-avatar inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                className={`focus-ring familiars-view__rail-avatar inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border ${
                   active
                     ? "border-[var(--accent-presence)] bg-[var(--accent-presence)]/15 text-[var(--accent-presence)]"
                     : "border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
@@ -846,10 +890,10 @@ function FamiliarDetailPanel({
             <FamiliarAvatar familiar={familiar} size="xl" />
           </button>
           <div className="min-w-0">
-            <h2 className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
+            <h2 className="familiars-view__nameplate truncate">
               {familiar.display_name}
             </h2>
-            <p className="truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+            <p className="familiars-view__microlabel mt-1 truncate">
               {familiar.role || familiar.harness || familiar.id}
             </p>
           </div>
@@ -1029,7 +1073,7 @@ function FamiliarAvatarPreviewOverlay({ familiar, onClose }: FamiliarAvatarPrevi
           <div className="truncate text-[14px] font-semibold text-[var(--text-primary)]">
             {familiar.display_name}
           </div>
-          <div className="mt-0.5 truncate text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+          <div className="familiars-view__microlabel mt-1 truncate">
             {familiar.role || familiar.harness || familiar.id}
           </div>
         </div>

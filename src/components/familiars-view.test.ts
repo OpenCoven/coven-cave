@@ -14,8 +14,8 @@ assert.match(
 
 assert.match(
   source,
-  /<FamiliarAvatar familiar=\{familiar\} size="sm" \/>/,
-  "FamiliarsView detail header/card should render FamiliarAvatar instead of raw daemon icons",
+  /<FamiliarAvatar familiar=\{familiar\} size="lg" \/>/,
+  "FamiliarsView roster card should render FamiliarAvatar instead of raw daemon icons",
 );
 
 assert.match(

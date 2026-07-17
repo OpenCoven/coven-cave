@@ -22,7 +22,7 @@ import {
 } from "@/lib/coven-analytics";
 import { deriveConfidenceScore, type ConfidenceScore } from "@/lib/familiar-confidence";
 import { deriveGrowthReport } from "@/lib/familiar-growth-signals";
-import { buildFamiliarCardStats, type FamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
+import { ACTIVITY_DAYS, buildFamiliarCardStats, type FamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { useFamiliarContracts } from "@/lib/use-familiar-contracts";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
@@ -61,7 +61,7 @@ type CockpitData = {
 
 const EMPTY: CockpitData = { cards: [], familiars: [], github: [], inbox: [], sessions: [], memory: [], space: [] };
 
-const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
+const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsTotal: 0, sessionsLast7d: 0, hasActiveSession: false, activity: new Array<number>(ACTIVITY_DAYS).fill(0) };
 
 // A KPI tile's visual props plus the data plumbing the root owns: which trend
 // metric feeds its sparkline and which fetch source gates its loading state.
