@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { isLocalOrigin } from "@/lib/server/local-origin";
+
 import {
   grantProjectToFamiliar,
   listAccessGroups,
@@ -31,6 +33,14 @@ async function readPayload(req: Request): Promise<Record<string, unknown> | Resp
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON body" }, { status: 400 });
   }
+}
+
+function requireLocalHumanGrantMutation(req: Request): Response | null {
+  if (isLocalOrigin(req)) return null;
+  return NextResponse.json(
+    { ok: false, error: "grant changes must be confirmed from the local desktop" },
+    { status: 403 },
+  );
 }
 
 function grantInput(payload: Record<string, unknown>) {
@@ -70,6 +80,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const blocked = requireLocalHumanGrantMutation(req);
+  if (blocked) return blocked;
   const payload = await readPayload(req);
   if (payload instanceof Response) return payload;
   const rejected = rejectRelayedApproval(payload);
@@ -93,6 +105,8 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const blocked = requireLocalHumanGrantMutation(req);
+  if (blocked) return blocked;
   const payload = await readPayload(req);
   if (payload instanceof Response) return payload;
   const rejected = rejectRelayedApproval(payload);

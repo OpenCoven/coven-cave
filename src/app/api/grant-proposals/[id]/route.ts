@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { isLocalOrigin } from "@/lib/server/local-origin";
+
 import {
   ProjectAccessDeniedError,
   resolveGrantProposal,
@@ -26,6 +28,12 @@ export async function PATCH(
   req: Request,
   { params: rawParams }: { params: Promise<{ id: string }> },
 ) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json(
+      { ok: false, error: "proposal decisions must be confirmed from the local desktop" },
+      { status: 403 },
+    );
+  }
   const params = await rawParams;
   let payload: Record<string, unknown>;
   try {
