@@ -4845,10 +4845,11 @@ button:active > .edge-rail-chip {
   flex: 0 0 auto;
   /* Match the height of the adjacent top-bar controls (the familiar switcher
      and search box sit at 28px) so the sidepanel toggles line up with the rest
-     of the bar rather than towering over it. */
+     of the bar rather than towering over it. Boxed like every other header
+     control: hairline square, transparent at rest (cave-e3ui follow-up). */
   width: 28px;
   height: 28px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
@@ -5363,13 +5364,18 @@ button:active > .edge-rail-chip {
 
 .menu-bar__new,
 .menu-bar__task {
+  position: relative;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 4px 7px;
-  /* Quiet monochrome chips — no fill or border until hover, dimmed like the
-     rest of the seamless title bar. */
-  border: 1px solid transparent;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  /* Same square family as the shell toggles and the mobile top-bar action row:
+     hairline-bordered 28px squares, transparent at rest (cave-e3ui follow-up).
+     Count badges float over the corner so the boxes stay uniform. */
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
@@ -5379,6 +5385,13 @@ button:active > .edge-rail-chip {
   transition: background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
+}
+
+/* Live enrich progress is visible text (information, not chrome) — let that
+   one box widen around it while the rest of the row stays square. */
+.menu-bar__task:has(.menu-bar__task-label--live) {
+  width: auto;
+  padding: 0 8px;
 }
 
 /* Ultra-minimal: the bar shows icons only. Labels stay in the DOM for the
@@ -5414,11 +5427,17 @@ button:active > .edge-rail-chip {
 
 .menu-bar__task:hover {
   background: var(--bg-raised);
-  border-color: var(--border-hairline);
+  border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
+/* The count badge overlaps its button's corner (like the mobile top-bar's
+   tasks badge) so the 28px square never stretches around it. The bg-base ring
+   separates it from the icon underneath. */
 .menu-bar__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5433,6 +5452,8 @@ button:active > .edge-rail-chip {
   /* Solid accent so the paired foreground keeps its contrast. A 60%-alpha fill
      composited over the dark app background dropped the count to ~1:1 (WCAG). */
   background: var(--accent-presence);
+  box-shadow: 0 0 0 2px var(--bg-base);
+  pointer-events: none;
 }
 
 /* New-chat quick-compose dropdown (anchored to the "New chat" button). The
