@@ -44,6 +44,7 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { readCelebrationsEnabled } from "@/lib/celebrations-pref";
 import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { classifyDaemonStatusPoll } from "@/lib/daemon-status-classification";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
@@ -379,14 +380,16 @@ export function Workspace() {
   // Sticky offline signal for the banner. A crash-looping / codesigning-zombie
   // daemon flaps: it briefly answers health (running:true) then dies again. The
   // banner keys off this instead of the raw per-poll status so a single transient
-  // "running" doesn't flicker it away — it shows on the first failed poll and
-  // only clears after the daemon is *consistently* healthy (see the streak ref).
+  // "running" doesn't flicker it away — it shows on the first definitive local-
+  // offline poll and only clears after the daemon is *consistently* healthy.
   const [daemonOffline, setDaemonOffline] = useState(false);
   // The access-token gate rejected our credential (401 on the status poll).
   // Distinct from daemonOffline: the daemon may be fine — WE can't see it, and
   // the fix is re-auth (reload to the gate page), not "Start daemon" (cave-wkp5).
   const [authExpired, setAuthExpired] = useState(false);
+  const [daemonStatusUnavailable, setDaemonStatusUnavailable] = useState<string | null>(null);
   const daemonHealthyStreakRef = useRef(0);
+  const daemonStatusRequestRef = useRef(0);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const browserNavigationIdRef = useRef(Date.now() * 1024);
   const [browserNavigationQueue, setBrowserNavigationQueue] = useState<BrowserNavigationRequest[]>([]);
@@ -591,52 +594,63 @@ export function Workspace() {
   useMilestoneWatch();
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
-    let running = false;
-    let authRejected = false;
+    const requestId = ++daemonStatusRequestRef.current;
+    let result: ReturnType<typeof classifyDaemonStatusPoll>;
+    let credentialAccepted = false;
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
-      if (res.status === 401) {
-        // The access-token gate rejected US — the daemon may be perfectly
-        // healthy; we just can't see it. Attributing this to the daemon put
-        // users in front of a "Daemon offline" banner whose "Start daemon"
-        // CTA also 401s (cave-wkp5). Surface re-auth instead, and leave the
-        // daemon state untouched.
-        authRejected = true;
-      } else {
-        const json = (await res.json()) as { running?: boolean };
-        running = json.running === true;
-        setDaemonRunning(running);
-        // A real (non-401) answer proves the credential is accepted again.
-        setAuthExpired(false);
-      }
+      const payload = await res.json().catch(() => null);
+      result = classifyDaemonStatusPoll({
+        responseStatus: res.status,
+        responseOk: res.ok,
+        payload,
+      });
+      // A real non-401 response proves the Cave credential is accepted again.
+      credentialAccepted = res.status !== 401;
     } catch {
-      if (!authRejected) setDaemonRunning(false);
-    } finally {
-      if (authRejected) {
-        setAuthExpired(true);
-        setDaemonStatusResolved(true);
-      } else {
-        // Drive the sticky offline signal: any failed poll marks the daemon
-        // offline immediately, but a background poll takes two *consecutive*
-        // healthy polls to clear — otherwise a flapping zombie daemon keeps
-        // dismissing the banner.
-        if (running) {
-          daemonHealthyStreakRef.current += 1;
-          // A `trusted` refresh follows an explicit user-initiated start, so a
-          // healthy answer is enough to clear the banner immediately — without it
-          // the "Start daemon" banner lingered for a poll cycle (~5s) after the
-          // daemon was already up.
-          if (opts?.trusted) daemonHealthyStreakRef.current = 2;
-          if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
-        } else {
-          daemonHealthyStreakRef.current = 0;
-          setDaemonOffline(true);
-        }
-        // The first poll has now produced a real answer — only after this may the
-        // offline banner appear, so a fresh load doesn't flash it before we know.
-        setDaemonStatusResolved(true);
-      }
+      result = classifyDaemonStatusPoll({
+        responseStatus: 0,
+        responseOk: false,
+        payload: null,
+        error: "status request failed",
+      });
     }
+
+    // An explicit refresh after Start can overtake an older background poll.
+    // Only the newest request may publish state, or that stale offline result
+    // can put the banner back after the daemon is already healthy.
+    if (requestId !== daemonStatusRequestRef.current) return;
+    if (credentialAccepted) setAuthExpired(false);
+
+    setDaemonStatusResolved(true);
+    if (result.kind === "auth-expired") {
+      setAuthExpired(true);
+      setDaemonStatusUnavailable(null);
+      return;
+    }
+    if (result.kind === "unavailable") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonOffline(false);
+      setDaemonStatusUnavailable(result.reason);
+      return;
+    }
+
+    setDaemonStatusUnavailable(null);
+    if (result.kind === "offline") {
+      daemonHealthyStreakRef.current = 0;
+      setDaemonRunning(false);
+      setDaemonOffline(true);
+      return;
+    }
+
+    setDaemonRunning(true);
+    daemonHealthyStreakRef.current += 1;
+    // A `trusted` refresh follows an explicit user-initiated start, so a
+    // healthy answer is enough to clear the banner immediately — without it
+    // the "Start daemon" banner lingered for a poll cycle (~5s) after the
+    // daemon was already up.
+    if (opts?.trusted) daemonHealthyStreakRef.current = 2;
+    if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
   }, []);
 
   const startDaemon = useCallback(async () => {
@@ -789,8 +803,8 @@ export function Workspace() {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
-      // Only show the offline banner once the status has actually resolved to
-      // "not running" — never during the initial unknown window.
+      // Only show the offline banner once status has resolved to a definitive
+      // local-offline result — never during the initial unknown window.
       pushBanner({
         id: "daemon-offline",
         severity: "warning",
@@ -804,6 +818,27 @@ export function Workspace() {
       });
     }
   }, [daemonOffline, daemonStatusResolved, authExpired, pushBanner, dismissBanner, startDaemon]);
+
+  // A status-service failure, timeout, malformed response, or non-local target
+  // problem does not prove the local daemon is stopped. Keep that uncertainty
+  // accurate and retryable instead of offering the misleading Start daemon CTA.
+  useEffect(() => {
+    if (!daemonStatusUnavailable || authExpired || daemonOffline) {
+      dismissBanner("daemon-status-unavailable");
+      return;
+    }
+    pushBanner({
+      id: "daemon-status-unavailable",
+      severity: "warning",
+      title: `Daemon status unavailable — ${daemonStatusUnavailable}`,
+      cta: {
+        label: "Retry",
+        onClick: () => {
+          void refreshDaemonStatus();
+        },
+      },
+    });
+  }, [daemonStatusUnavailable, authExpired, daemonOffline, pushBanner, dismissBanner, refreshDaemonStatus]);
 
   // Re-auth banner: the access-token gate is rejecting every request, so all
   // surfaces are degrading at once. A reload lands on the gate page, which
