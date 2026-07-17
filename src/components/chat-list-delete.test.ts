@@ -327,8 +327,8 @@ assert.match(
 );
 assert.match(
   source,
-  /window\.dispatchEvent\(new CustomEvent\("cave:debug-open"\)\)/,
-  "Chat row Debug action should reuse the existing debug panel event bridge",
+  /requestDebugOpen\(\)/,
+  "Chat row Debug action should use the latched debug-open request (survives ChatView mounting after the dispatch)",
 );
 assert.doesNotMatch(
   source,

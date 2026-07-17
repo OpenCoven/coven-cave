@@ -435,6 +435,7 @@ export const SUITES = {
     "src/components/voice-call-overlay-state.test.ts",
     "src/components/voice-call-overlay.test.ts",
     "src/lib/session-debug.test.ts",
+    "src/lib/chat-debug-store.test.ts",
     "src/components/bottom-terminal-ws-bridge.test.ts",
     "src/components/bottom-terminal-startup-watchdog.test.ts",
     "src/components/familiars-memory-view-filter-paginate.test.ts",

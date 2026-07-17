@@ -81,7 +81,7 @@ import {
 } from "@/lib/slash-prompt";
 import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
-import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
+import { clearChatDebugState, consumePendingDebugOpen, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
@@ -2349,10 +2349,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, []);
 
   // Other surfaces (chat-list row actions, the thread rail's Debug launcher)
-  // still reach debug through the cave:debug-open window-event bridge.
+  // still reach debug through the cave:debug-open window-event bridge; the
+  // latch catches a request dispatched before this listener mounted
+  // (chat-list opens the session, then asks for debug one rAF later).
   useEffect(() => {
     const onDebugOpen = () => setDebugModalOpen(true);
     window.addEventListener("cave:debug-open", onDebugOpen);
+    if (consumePendingDebugOpen()) setDebugModalOpen(true);
     return () => window.removeEventListener("cave:debug-open", onDebugOpen);
   }, []);
 
@@ -5987,7 +5990,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         ariaLabel="Session debug info"
       >
         <div className="h-[60vh] min-h-0">
-          <DebugPane />
+          {/* This instance's own state — not the global debug store, which a
+              sibling split-pane ChatView may have published over. */}
+          <DebugPane sessionId={sessionId} session={session ?? null} familiar={familiar} turns={turns} />
         </div>
       </Modal>
     </section>
