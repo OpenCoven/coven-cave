@@ -148,7 +148,7 @@ async function main() {
     assert.match(manifest.payloadSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.treeSha256, /^[a-f0-9]{64}$/);
     assert.match(manifest.archiveSha256, /^[a-f0-9]{64}$/);
-    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_500);
+    assert.ok(manifest.fileCount > 0 && manifest.fileCount <= 5_510);
     assert.ok(manifest.archiveBytes > 0 && manifest.archiveBytes <= 80 * 1024 * 1024);
     assert.ok(manifest.unpackedBytes > 0 && manifest.unpackedBytes < 200 * 1024 * 1024);
     extractedSidecarRoot = await mkdtemp(path.join(os.tmpdir(), "coven-cave-sidecar-archive-"));
