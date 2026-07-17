@@ -301,6 +301,7 @@ export const SUITES = {
     "src/components/message-bubble-jump-to-line.test.ts",
     "src/components/message-bubble-file-links.test.ts",
     "src/components/chat-view-polish.test.ts",
+    "src/components/chat-composer-footer-band.test.ts",
     "src/components/composer-runtime-chip.test.ts",
     "src/components/composer-git-chip.test.ts",
     "src/components/chat-siderail-hide-archived.test.ts",

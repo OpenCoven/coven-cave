@@ -133,7 +133,7 @@ import { handlePlaceholderTab } from "@/lib/prompt-placeholders";
 import { recordPromptRecent } from "@/lib/prompt-prefs";
 import { SaveTemplateModal } from "@/components/save-template-modal";
 import { readComposerDraft, useDraftPersistence } from "@/lib/use-composer-draft";
-import { ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
+import { ProjectPicker, ProjectPickerPopover, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
@@ -5177,14 +5177,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Slim header: the linked-context strip only earns its own header row when
-  // there are actual task/GitHub chips to show. A bare "link a task" affordance
-  // rides inline with the session actions instead, so an unlinked session's
-  // header is one row (title + meta), not title + a mostly-empty second band.
-  const hasLinkedChips =
-    Boolean(linkedContext?.task) ||
-    (linkedContext?.tasks?.length ?? 0) > 0 ||
-    (linkedContext?.github?.length ?? 0) > 0;
+  // The linked-context strip (task/GitHub chips + link/create affordances)
+  // rides the composer footer band — beside the project, runtime, and git
+  // context — so the header stays one row (title + meta) and the chat's
+  // metadata reads where the message is written, not as chrome above it.
   const linkedContextRow = (
     <LinkedContextRow
       linkedContext={linkedContext}
@@ -5304,10 +5300,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             )}
             {overflowAddProject.addProjectModal}
-            {!hasLinkedChips ? linkedContextRow : null}
           </div>
         </MetaLine>
-        {hasLinkedChips ? linkedContextRow : null}
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       {/* Stage header keys on the SESSION's root — the same source the rail
@@ -5912,17 +5906,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       } satisfies ComposerOptionSection,
                     ]}
                   />
-                  <ComposerRuntimeChip
-                    runtime={modelHarness}
-                    modelValue={composerModelValue}
-                    modelOptions={composerModelOptions}
-                    onPickRuntime={handleSelectRuntime}
-                    onPickModel={handleSelectModel}
-                    disabled={busy}
-                  />
-                  {/* Git context — branch · dirty count · worktree · PR — for
-                      chats rooted in a git repo (hidden otherwise). */}
-                  <ComposerGitChip projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
                 </div>
                 <div className="cave-composer-submit-row">
                   <EnhanceControl
@@ -5955,6 +5938,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   )}
                 </div>
               </div>
+            </div>
+            {/* Footer band — the darker strip attached to the panel's underside
+                (home-composer parity): where the message runs (project ·
+                runtime/model · git) plus the work it's tied to (linked tasks).
+                Session metadata lives here, OUT of the input's control row, so
+                the box above stays a minimal write surface. */}
+            <div className="cave-composer-footer-band">
+              <div className="cave-composer-footer-band__context">
+                <ProjectPicker
+                  projects={projects}
+                  value={resolvedProjectId}
+                  onChange={setProjectIdDraft}
+                  allowNoProject
+                  familiarId={familiar.id ?? null}
+                  createProject={createProject}
+                  ariaLabel="Project for this chat"
+                  className="cave-chat-project-selector"
+                />
+                <ComposerRuntimeChip
+                  runtime={modelHarness}
+                  modelValue={composerModelValue}
+                  modelOptions={composerModelOptions}
+                  onPickRuntime={handleSelectRuntime}
+                  onPickModel={handleSelectModel}
+                  disabled={busy}
+                />
+                {/* Git context — branch · dirty count · worktree · PR — for
+                    chats rooted in a git repo (hidden otherwise). */}
+                <ComposerGitChip projectRoot={activeProjectRoot} onOpenUrl={onOpenUrl} />
+              </div>
+              {linkedContextRow}
             </div>
           </div>
         </div>

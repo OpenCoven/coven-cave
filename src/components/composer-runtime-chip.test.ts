@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /<ComposerOptionsMenu[\s\S]*?\/>\s*\n\s*<ComposerRuntimeChip/,
-  "the chip sits in the utility row after the Options menu — always visible, session or not",
+  /className="cave-composer-footer-band__context"[\s\S]{0,700}?<ComposerRuntimeChip/,
+  "the chip sits in the composer footer band's context cluster — always visible, session or not",
 );
 
 // ── Runtime switching is real: familiar-level config, optimistic + refetch ──

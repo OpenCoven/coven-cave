@@ -571,20 +571,20 @@ assert.match(
 assert.match(
   source,
   /<LinkedContextRow\b/,
-  "ChatView header should render LinkedContextRow for task/GitHub chips",
+  "ChatView should render LinkedContextRow for task/GitHub chips",
 );
-// Slim header: the linked-context strip only earns its own header row when
-// there are actual chips; the bare "link a task" affordance rides inline with
-// the session actions so an unlinked session's header stays one row.
+// Footer band (cave-8eo2): the linked-context strip rides the composer footer
+// band — beside the project, runtime, and git chips — not the header, so the
+// header stays one row and the metadata reads where the message is written.
 assert.match(
   source,
-  /const hasLinkedChips =[\s\S]*?Boolean\(linkedContext\?\.task\)/,
-  "ChatView derives hasLinkedChips from the linked context",
+  /className="cave-composer-footer-band">[\s\S]*?\{linkedContextRow\}/,
+  "The linked-context row rides the composer footer band",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /\{!hasLinkedChips \? linkedContextRow : null\}[\s\S]*?<\/MetaLine>[\s\S]*?\{hasLinkedChips \? linkedContextRow : null\}/,
-  "The linked-context row renders inline with session actions when chip-less, and as its own header row only with chips",
+  /hasLinkedChips/,
+  "The header no longer hosts the linked-context row (no chip-count gating)",
 );
 
 assert.doesNotMatch(

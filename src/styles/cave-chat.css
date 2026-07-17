@@ -2482,6 +2482,60 @@ details[open] > .cave-tool-summary::before {
   justify-content: flex-end;
 }
 
+/* ── Footer band ─────────────────────────────────────────────────────────────
+ * The darker strip attached to the panel's underside (home composer's
+ * hc-footer-band, same grammar): the chat's session metadata — project ·
+ * runtime/model · git context on the left, linked tasks/GitHub on the right —
+ * moved OUT of the input's control row so the write surface above stays
+ * minimal. Last child of .cave-composer-panel, so the panel's overflow clips
+ * it into the rounded bottom corners; it reads as the card, one tone deeper. */
+.cave-composer-footer-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+}
+
+.cave-composer-footer-band__context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* The linked-task cluster hugs the trailing edge; its own overflow-x keeps a
+   long chip run scrolling internally instead of widening the band. */
+.cave-composer-footer-band > .cave-chat-linked-context {
+  flex: 0 1 auto;
+}
+
+/* Project chip — same 30px pill family as the runtime chip beside it (the
+   home band's treatment, scoped to the chat selector class). */
+.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector {
+  height: 30px;
+  min-height: 30px;
+  max-width: 200px;
+  padding: 0 11px 0 var(--space-2);
+  font-size: var(--text-xs);
+  border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
+}
+
+.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 36%, transparent);
+}
+
+.cave-composer-footer-band .cave-project-picker__trigger.cave-chat-project-selector .cave-project-picker__trigger-label {
+  max-width: 132px;
+}
+
 .cave-composer-icon-button {
   border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--bg-surface) 52%, transparent);
@@ -3128,10 +3182,11 @@ details[open] > .cave-tool-summary::before {
 }
 
 /* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
- * find affordance show; the lone "link a task" chip reveals on header hover or
- * keyboard focus, keeping its layout slot (no reflow on reveal). Touch devices
- * — which have no hover — skip this and show everything. The kebab holds every
- * secondary action, so nothing becomes hover-only. */
+ * find affordance show — they reveal on header hover or keyboard focus,
+ * keeping their layout slots (no reflow on reveal). The composer footer
+ * band's lone "link a task" chip follows the same rhythm against the band.
+ * Touch devices — which have no hover — skip this and show everything. The
+ * kebab holds every secondary action, so nothing becomes hover-only. */
 @media (hover: hover) and (pointer: fine) {
   .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find),
   .cave-chat-linked-context .cave-chat-linked-chip--link-task {
@@ -3146,7 +3201,7 @@ details[open] > .cave-tool-summary::before {
   .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
   .cave-chat-session-actions:focus-within > .focus-ring,
   .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring,
-  .cave-chat-linear-header:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
+  .cave-composer-footer-band:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
   .cave-chat-linked-context:focus-within .cave-chat-linked-chip--link-task {
     opacity: 1;
     transform: none;
@@ -3968,8 +4023,10 @@ details[open] > .cave-tool-summary::before {
     overflow: hidden;
   }
 
-  /* Mobile keeps its own identity rail + context menu; the desktop meta
-     line and linked-context chips would double-report there. */
+  /* Mobile keeps its own identity rail + context menu; the desktop meta line
+     would double-report there, and the footer band's linked-context cluster
+     yields to the header's MobileHeaderTask chip (the band keeps project ·
+     runtime · git, which have no mobile twin). */
   .cave-chat-meta-line,
   .cave-chat-linked-context {
     display: none;
@@ -4212,6 +4269,13 @@ details[open] > .cave-tool-summary::before {
   }
 
   .cave-composer-utility-row {
+    flex-wrap: wrap;
+  }
+
+  /* Phone width: the band's context chips wrap instead of crushing each
+     other (home band's rhythm). */
+  .cave-composer-footer-band,
+  .cave-composer-footer-band__context {
     flex-wrap: wrap;
   }
 
