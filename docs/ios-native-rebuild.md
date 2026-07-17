@@ -12,13 +12,14 @@
 >
 > **Owned / in-flight files (treat as a coordinated surface):**
 > - `apps/ios/CovenCave/**` — the native SwiftUI app (views, models, networking, project.yml).
-> - `scripts/mobile-tailscale.sh` — the `app` (tokenless) launch mode, incl. `COVEN_CAVE_TAILNET_TRUST=1`.
+> - `scripts/mobile-tailscale.sh` — the `app` launch mode, incl. `COVEN_CAVE_TAILNET_TRUST=1`
+>   plus the per-launch sidecar token required for `/api/`.
 > - `src/proxy.ts` — the `tailnetTrusted` host-gate branch (security-sensitive).
 > - Tests pinning the above: `src/middleware.test.ts`, `src/proxy-behavior.test.ts`,
 >   `scripts/mobile-tailscale.test.mjs`, `scripts/mobile-tailscale-native.test.mjs`.
 >
 > **Why (concrete history, 2026-06-20):**
-> - #1319 (scaffold + tokenless script) → #1329 (tailnet-trust fix + 18px rounded bubbles).
+> - #1319 (scaffold) → #1329 (tailnet-trust fix + 18px rounded bubbles).
 > - #1354 independently re-did the 18px bubbles; #1343 (a duplicate of the #1319/#1329 work,
 >   branched off an older `main`) then **reverted both #1354's bubbles and #1329's
 >   `COVEN_CAVE_TAILNET_TRUST=1` flag** — the latter silently breaking `pnpm mobile:tailscale:app`
@@ -28,7 +29,7 @@
 > **Rules of engagement:**
 > 1. Branch off the **latest** `origin/main`, not a stale base — most reverts came from old bases.
 > 2. Before changing a file above, confirm no open PR already does it; prefer extending the open PR.
-> 3. If you change the tokenless flow, update **both** the script and its tests in the same PR, and
+> 3. If you change the Tailscale app flow, update **both** the script and its tests in the same PR, and
 >    re-read `src/proxy.ts`'s gate — the `tailnetTrusted` flag is load-bearing for tailnet access.
 > 4. `tailscale serve` forwards the `<host>.ts.net` Host (NOT `127.0.0.1`); do not "simplify" the
 >    host gate back to loopback-only.
@@ -78,22 +79,24 @@ chat streaming all live there. The iOS app is a **first-class client**, not a re
 Rejected: Tauri iOS (still a webview → violates "not a preview"). Rejected: React Native (keeps a
 JS bridge, no real win over the existing web app; the point is native UIKit/SwiftUI feel).
 
-### Trust model — Tailscale-only, no token
+### Trust model — Tailscale plus app token
 
-Replace the per-launch `COVEN_CAVE_ACCESS_TOKEN` / `?covenCaveToken=` gate with **tailnet
-membership = trust**. Concretely, on the desktop server:
+Tailnet membership limits who can reach the desktop server, but it is not a Coven Cave app
+credential. Keep a per-launch `COVEN_CAVE_AUTH_TOKEN` for `/api/` requests so tailnet users cannot
+drive local control APIs unless the iOS app was paired with the printed token. Concretely, on the
+desktop server:
 
 1. **Bind the mobile listener to the Tailscale interface** (the host's `100.x.x.x` address /
    MagicDNS name), not a public `0.0.0.0`. Loopback stays open for the desktop webview.
 2. **Accept requests whose peer source IP is in the Tailscale CGNAT range** (`100.64.0.0/10`) or
-   loopback; reject others. No token in URL, header, or query.
+   loopback; reject others. `/api/` requests still carry the per-launch sidecar token.
 3. This holds across **all transports** — HTTP, SSE, WebSocket — since the prior token gate was
    enforced per-transport (see `feedback_access_gate_entry_points`). Each transport must apply the
    same source-IP check.
 
-Rationale: Tailscale is already a private, authenticated, encrypted mesh; being on the tailnet is
-itself the auth boundary the user wants. This removes the token-in-URL chunk-mangling failure mode
-entirely and makes "open the app, it just connects" possible.
+Rationale: Tailscale is a private, authenticated, encrypted mesh, but tailnet reachability alone is
+too broad for endpoints that can spawn local agent work. The app token is the Coven Cave-specific
+credential for those control APIs.
 
 > Security note to confirm in implementation: trusting source IP requires the server to not be
 > reachable off-tailnet on that listener. We bind to the Tailscale IP specifically; we do **not**
@@ -103,7 +106,7 @@ entirely and makes "open the app, it just connects" possible.
 ## API contract (confirmed — Phase 0 recon)
 
 The native networking layer (`CaveClient` in Swift) targets these. Base URL is the
-host's Tailscale address; no auth header (tailnet is the trust boundary).
+host's Tailscale address; `/api/` calls include the per-launch sidecar token.
 
 - **List familiars:** `GET /api/familiars` → `{ ok, familiars: [...] }`. Each familiar:
   `id`, `display_name`, `role`, `description`, `color`, `status`, `harness`, `model`,
@@ -123,20 +126,19 @@ host's Tailscale address; no auth header (tailnet is the trust boundary).
 
 A buildable, runnable SwiftUI app (iOS 17+, XcodeGen project) covering the Phase 1 UI + client:
 `CaveClient` (REST + `AsyncThrowingStream` SSE parser), `CaveConnection` (host normalisation,
-`.ts.net`→HTTPS / IP→HTTP:3000, no token), `AppModel` + `ChatThread` (single + group fan-out,
+`.ts.net`→HTTPS / IP→HTTP:3000), `AppModel` + `ChatThread` (single + group fan-out,
 on-disk thread persistence), and the views: connection, chats home (roster of threads),
 new-chat/group picker, chat thread (iMessage bubbles + per-familiar attribution + streaming),
 settings. **Verified on the iPhone 16 Pro simulator** against a mock implementing the contract
-above: native render (no webview), familiars loaded tokenlessly, group thread with attributed
+above: native render (no webview), familiars loaded through the paired server, group thread with attributed
 replies.
 
 ### Remaining for Phase 1 (next, separate PRs)
-- **Server: drop the token gate for tailnet traffic.** Relax `proxy.ts` `mobileAccessGate` /
-  sidecar-token enforcement so requests arriving over the Tailscale interface need no token,
-  and update `middleware.test.ts` accordingly. Security-sensitive + touches shared code → its
-  own focused PR (Phase 1b), not bundled with this additive scaffold.
+- **Server: pair native app requests with the printed sidecar token.** Keep `proxy.ts`
+  sidecar-token enforcement for `/api/` while allowing Tailscale Serve's forwarded host through
+  the host gate.
 - **Live streaming send** wired against a real desktop (the SSE client is built; needs the
-  server change above to connect tokenlessly).
+  server pairing above).
 - History load on thread open (client method exists; wire into `ChatView.onAppear`).
 
 ## Phased rollout
@@ -148,7 +150,7 @@ replies.
   does not enter the web CI checks — tracked/built separately).
 
 ### Phase 1 — MVP: seamless single + multi-familiar chat
-The "fully-functional MVP" bar. Native SwiftUI, no token, Tailscale connect.
+The "fully-functional MVP" bar. Native SwiftUI, paired token, Tailscale connect.
 1. **Connection:** discover/enter the host's MagicDNS name or Tailscale IP; persist it; health-check.
    No token. Graceful "can't reach host / not on tailnet" state.
 2. **Familiars list:** fetch + render familiars with avatars (Telegram-style roster).
@@ -159,7 +161,7 @@ The "fully-functional MVP" bar. Native SwiftUI, no token, Tailscale connect.
    prompt to each and shows replies attributed per-familiar (Telegram group feel).
 6. **Polish:** dark theme parity, haptics, pull-to-refresh, keyboard handling, empty/error states.
 
-**Phase 1 done =** install on a real iPhone over Tailscale, no token, chat with one familiar and
+**Phase 1 done =** install on a real iPhone over Tailscale, pair with the printed token, chat with one familiar and
 with a group, streamed replies, survives backgrounding. Verified on simulator + (if available) device.
 
 ### Phase 2 — Depth

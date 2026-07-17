@@ -173,6 +173,16 @@ assert.match(
 assert.doesNotMatch(sidecarMonitorSource, /Boolean\(window\.__TAURI_INTERNALS__\)/, "mobile Tauri should not be treated as a sidecar host");
 assert.match(mobileScriptSource, /tailscale_cmd serve --bg "\$TAILSCALE_BACKEND"/, "mobile script should publish the exact loopback backend it started");
 assert.match(mobileScriptSource, /"authorization": `Bearer \$\{createMobileAccessToken\(accessToken\)\}`/, "mobile script should authenticate its local invite API request with a derived token");
+assert.match(
+  mobileScriptSource,
+  /CAVE_MOBILE_APP:-0[\s\S]*COVEN_CAVE_AUTH_TOKEN=.*SIDECAR_TOKEN_FILE/,
+  "native app Tailscale mode should start Next.js with a sidecar API token",
+);
+assert.doesNotMatch(
+  mobileScriptSource,
+  /Native iOS app is ready — no token required/,
+  "native app Tailscale mode must not advertise tokenless API access",
+);
 assert.match(nextConfigSource, /allowedDevOrigins:\s*\[[\s\S]*"\*\*\.ts\.net"/, "Next dev should allow Tailscale Serve origins for mobile browser access");
 assert.match(nextConfigSource, /devIndicators:\s*false/, "Next dev tools launcher should not intercept mobile bottom-tab taps");
 assert.match(mobileDocsSource, /signed (?:expiring )?invites?/, "mobile docs should describe the signed access token invite");
