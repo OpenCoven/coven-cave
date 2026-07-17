@@ -59,6 +59,11 @@ function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr:
   return git(cwd, ["diff", "--no-ext-diff", "--no-textconv", ...args]);
 }
 
+/** Run `git status` without repository-configured fsmonitor commands. */
+function gitStatus(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return git(cwd, ["-c", "core.fsmonitor=false", "status", ...args]);
+}
+
 /** Network git (push) and `gh` can take longer than the read-only 10s budget. */
 const NET_TIMEOUT_MS = 60_000;
 function gitLong(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
@@ -220,7 +225,7 @@ async function existsInHead(repoRoot: string, relPath: string): Promise<boolean>
 // ── GET: change list / single-file diff ───────────────────────────────────────
 
 async function listChanges(repoRoot: string): Promise<NextResponse> {
-  const { stdout } = await git(repoRoot, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+  const { stdout } = await gitStatus(repoRoot, ["--porcelain=v1", "-z", "--untracked-files=all"]);
   const files = parsePorcelainZ(stdout);
 
   // Best-effort ins/del counts vs HEAD (covers staged + unstaged). Repos
