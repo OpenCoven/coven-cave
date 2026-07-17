@@ -4125,6 +4125,86 @@ html[data-backdrop-on] .glass-overlay {
   --chart-5: #b4552d;
 }
 
+/* ---- OpenAI — Codex black; void-dark monochrome with paper-white keys ----
+   Modeled on the Codex/ChatGPT surfaces: #0d0d0d canvas over a true-black
+   panel rail, grayscale elevation ladder, and a white filled accent (black
+   ink on it) like the composer send key. Light mode inverts to white paper
+   with black keys. Heritage teal survives only as a chart series. */
+[data-theme="openai"] {
+  --background: #0d0d0d;
+  --foreground: #ececec;
+  --card: #171717;
+  --card-foreground: #ececec;
+  --popover: #212121;
+  --popover-foreground: #ececec;
+  --primary: #ececec;
+  --primary-foreground: #0d0d0d;
+  --secondary: #212121;
+  --secondary-foreground: #ececec;
+  --muted: #212121;
+  --muted-foreground: #b4b4b4;
+  --accent: #2f2f2f;
+  --accent-foreground: #ececec;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #2f2f2f;
+  --input: #424242;
+  --ring: #8f8f8f;
+  --accent-presence: #ececec;
+  --accent-presence-foreground: #0d0d0d;
+  --accent-presence-soft: color-mix(in oklch, #ececec 78%, transparent);
+  --accent-faint: color-mix(in oklch, #ececec 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #000000;
+  --bg-raised: var(--card);
+  --bg-elevated: #212121;
+  --bg-hover: #2f2f2f;
+  --border-strong: #6e6e6e;
+  --ring-focus: color-mix(in oklch, #ececec 55%, var(--foreground) 45%);
+  --chart-1: #ececec;
+  --chart-2: #10a37f;
+  --chart-3: #b4b4b4;
+  --chart-4: #8f8f8f;
+  --chart-5: #5d5d5d;
+}
+[data-theme="openai"][data-mode="light"] {
+  --background: #ffffff;
+  --foreground: #0d0d0d;
+  --card: #f9f9f9;
+  --card-foreground: #0d0d0d;
+  --popover: #ffffff;
+  --popover-foreground: #0d0d0d;
+  --primary: #0d0d0d;
+  --primary-foreground: #ffffff;
+  --secondary: #ececec;
+  --secondary-foreground: #0d0d0d;
+  --muted: #f0f0f0;
+  --muted-foreground: #5d5d5d;
+  --accent: #ececec;
+  --accent-foreground: #0d0d0d;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --border: #e3e3e3;
+  --input: #b4b4b4;
+  --ring: #5d5d5d;
+  --accent-presence: #0d0d0d;
+  --accent-presence-foreground: #ffffff;
+  --accent-presence-soft: color-mix(in oklch, #0d0d0d 78%, transparent);
+  --accent-faint: color-mix(in oklch, #0d0d0d 14%, transparent);
+  --bg-base: var(--background);
+  --bg-panel: #f9f9f9;
+  --bg-raised: var(--card);
+  --bg-elevated: #ececec;
+  --bg-hover: #e3e3e3;
+  --border-strong: #8f8f8f;
+  --ring-focus: color-mix(in oklch, #0d0d0d 55%, var(--foreground) 45%);
+  --chart-1: #0d0d0d;
+  --chart-2: #10a37f;
+  --chart-3: #5d5d5d;
+  --chart-4: #8f8f8f;
+  --chart-5: #b4b4b4;
+}
+
 /* ---- Pastel Dreams (tweakcn) - soft violet pastels with lifted white surfaces ---- */
 [data-theme="pastel-dreams"] {
   --font-sans: var(--font-open-sans), "Open Sans", ui-sans-serif, system-ui, sans-serif;

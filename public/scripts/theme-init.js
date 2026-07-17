@@ -194,7 +194,7 @@
 
   try {
     var rename = { "mood-c": "coven", "sky": "tide", "orchid": "dusk", "midnight": "slate" };
-    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","pastel-dreams","meatseeks","trucker","snow","contrast","beacon","solstice","custom"];
+    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","openai","pastel-dreams","meatseeks","trucker","snow","contrast","beacon","solstice","custom"];
     var theme = String(stored("coven-theme", themePrefs.id || "coven"));
     if (rename[theme]) theme = rename[theme];
     if (!isChoice(theme, valid)) theme = "coven";

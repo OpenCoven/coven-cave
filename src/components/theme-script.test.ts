@@ -94,8 +94,9 @@ for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
 }
 for (const id of [
   "coven", "tide", "grove", "ember", "bloom", "dusk", "mist", "hex",
-  "bane", "slate", "ghosty", "claymorphism", "claude", "pastel-dreams",
-  "meatseeks", "trucker", "snow", "contrast", "beacon", "solstice", "custom",
+  "bane", "slate", "ghosty", "claymorphism", "claude", "openai",
+  "pastel-dreams", "meatseeks", "trucker", "snow", "contrast", "beacon",
+  "solstice", "custom",
 ]) {
   assert.ok(bootScript.includes(`"${id}"`), `pre-paint theme allowlist contains ${id}`);
 }

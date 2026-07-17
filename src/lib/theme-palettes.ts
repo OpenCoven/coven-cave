@@ -1,5 +1,5 @@
 /**
- * 20-theme roster metadata + swatch lookup for the appearance settings UI.
+ * 21-theme roster metadata + swatch lookup for the appearance settings UI.
  * The actual palette CSS lives in `src/app/globals.css`; this module
  * mirrors the accent values and a representative background swatch
  * per (theme, mode) so the settings grid can preview each card.
@@ -25,6 +25,7 @@ export const THEME_IDS = [
   "ghosty",
   "claymorphism",
   "claude",
+  "openai",
   "pastel-dreams",
   "meatseeks",
   "trucker",
@@ -125,6 +126,12 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
     description: "Warm parchment, muted ink, and a burnt-clay primary.",
     hue: 17, accentDark: "#d97757", accentLight: "#c96442",
     bgDark: "#262624", bgLight: "#faf9f5",
+  },
+  openai: {
+    name: "OpenAI",
+    description: "Codex black. Void-dark monochrome; the cursor blinks back.",
+    hue: 0, accentDark: "#ececec", accentLight: "#0d0d0d",
+    bgDark: "#0d0d0d", bgLight: "#ffffff",
   },
   "pastel-dreams": {
     name: "Pastel Dreams",
