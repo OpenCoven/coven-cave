@@ -1,5 +1,7 @@
 "use client";
 
+import "@xterm/xterm/css/xterm.css";
+
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTauriPlatform } from "@/lib/tauri-platform";
 import { useIsCoarsePointer } from "@/lib/use-viewport";

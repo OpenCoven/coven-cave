@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/chat-list.css";
+
 import { useEffect, useMemo, useState, type CSSProperties, type DragEvent as ReactDragEvent, type ReactNode } from "react";
 import type { SessionRow } from "@/lib/types";
 import { type ChatProjectGroup } from "@/lib/chat-projects";

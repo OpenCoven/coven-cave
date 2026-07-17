@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-composer.css";
+
 // ComposerGitChip — the chat composer's git context strip: when the chat's
 // project root is a git repo, show the current branch, a dirty-file count, a
 // linked-worktree marker, and (when one exists) the branch's pull request —

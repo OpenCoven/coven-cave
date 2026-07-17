@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/dashboard.css";
+
 import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useMinuteTick } from "@/lib/use-minute-tick";

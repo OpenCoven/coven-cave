@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+
 // ── ChatEmptyState ────────────────────────────────────────────────────────────
 // The familiar's starting page, shown when a chat has no turns yet. Extracted
 // from chat-view.tsx when it became task-aware: besides the identity header,

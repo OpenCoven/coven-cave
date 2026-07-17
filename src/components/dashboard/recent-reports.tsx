@@ -1,3 +1,4 @@
+import "@/styles/dashboard.css";
 import { Icon } from "@/lib/icon";
 import { EmptyState, SectionHead } from "@/components/daily-report-ui";
 import { relativeDayLabel, type RecentReport } from "@/lib/daily-report";

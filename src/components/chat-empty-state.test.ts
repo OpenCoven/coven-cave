@@ -10,7 +10,9 @@ import { readFileSync } from "node:fs";
 
 const emptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const chatView = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const styles = ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"]
+  .map((sheet) => readFileSync(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"))
+  .join("\n");
 
 test("open-work rail resumes through the board chat route and the open-session event", () => {
   assert.match(

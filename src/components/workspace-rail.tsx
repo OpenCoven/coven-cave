@@ -1,4 +1,6 @@
 "use client";
+
+import "@/styles/cave-chat.css";
 import { useEffect, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { SessionChangesPanel } from "@/components/session-changes-panel";

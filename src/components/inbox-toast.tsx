@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/dash-act.css";
+
 import { useEffect, useMemo, useState } from "react";
 import type { InboxItem, InboxMedia, LinkRef } from "@/lib/cave-inbox";
 import { SnoozeMenu } from "@/components/snooze-menu";

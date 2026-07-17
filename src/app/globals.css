@@ -1,11 +1,10 @@
 @import "tailwindcss";
-@import "@xterm/xterm/css/xterm.css";
-@import "@xyflow/react/dist/style.css";
-@import "../styles/cave-chat.css";
+/* Shell-level sheets only — every surface pays for what's below. Surface
+   sheets (chat, composer, markdown reader, dashboard, editors, xterm) are
+   imported by their surface components instead, so routes like /settings and
+   error pages stop downloading conversation/terminal CSS (#3264). The
+   retired XYFlow global import is gone with the Flow surface. */
 @import "../styles/sidebar-minimal.css";
-@import "../styles/home-composer.css";
-@import "../styles/dashboard.css";
-@import "../styles/md-editor.css";
 
 /* ============================================================
    Coven aesthetic tokens (Mood C — foundation, issue #14)

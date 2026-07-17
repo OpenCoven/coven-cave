@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/chat-list.css";
+
 import { Fragment, useMemo, useState, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji, disambiguateSessionTitles } from "@/lib/cave-chat-titles";

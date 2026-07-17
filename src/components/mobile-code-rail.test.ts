@@ -9,10 +9,13 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const rail = await readFile(new URL("./workspace-rail.tsx", import.meta.url), "utf8");
-const css = await readFile(
-  new URL("../styles/cave-chat.css", import.meta.url),
-  "utf8",
-);
+const css = (
+  await Promise.all(
+    ["cave-md", "cave-composer", "chat-list", "calendar", "cave-chat"].map((sheet) =>
+      readFile(new URL(`../styles/${sheet}.css`, import.meta.url), "utf8"),
+    ),
+  )
+).join("\n");
 
 // ── Local state, default false ──────────────────────────────────────────────
 // The overlay must NOT auto-open from rail.open — an unbidden overlay on mobile

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/dashboard.css";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { buildDashboardModel, type DashboardModel } from "@/lib/dashboard-model";

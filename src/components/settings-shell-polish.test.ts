@@ -192,10 +192,18 @@ assert.doesNotMatch(
   "SettingsPage should not visibly repeat the overview title",
 );
 
+// #3264: dashboard.css moved out of globals.css — the Settings shell now
+// imports its owning stylesheet directly, which still guarantees the dev CSS
+// bundle includes it whenever the surface renders.
 assert.match(
+  source,
+  /import "@\/styles\/dashboard\.css";/,
+  "settings-shell imports the operational surface stylesheet that owns Settings shell styles",
+);
+assert.doesNotMatch(
   globals,
   /@import "\.\.\/styles\/dashboard\.css";/,
-  "globals.css should import the operational surface stylesheet that owns Settings shell styles",
+  "dashboard.css stays out of the root stylesheet (#3264)",
 );
 
 assert.match(

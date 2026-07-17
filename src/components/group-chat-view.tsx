@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 /**
  * GroupChatView — the "coven" group-chat surface.
  *

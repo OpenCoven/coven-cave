@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/dashboard.css";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/lib/icon";

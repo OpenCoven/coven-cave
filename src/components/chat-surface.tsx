@@ -1,5 +1,9 @@
 "use client";
 
+import "@/styles/cave-chat.css";
+import "@/styles/cave-md.css";
+import "@/styles/cave-composer.css";
+
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
