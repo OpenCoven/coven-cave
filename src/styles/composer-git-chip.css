@@ -7,15 +7,15 @@
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   max-width: 240px;
   height: 30px;
   padding: 0 11px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   line-height: 1;
   border: 1px solid var(--border-hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
   cursor: pointer;
@@ -32,7 +32,7 @@
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 /* The branch segment is a real button — it opens the switch-branch menu
@@ -43,12 +43,12 @@
   align-items: center;
   gap: 3px;
   margin: 0;
-  padding: 2px 4px;
+  padding: 2px var(--space-1);
   font: inherit;
   line-height: 1;
   cursor: pointer;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: inherit;
 }
@@ -62,7 +62,7 @@
 .cave-composer-git-chip__menu-note,
 .cave-composer-git-chip__menu-error {
   padding: 6px 10px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 .cave-composer-git-chip__menu-error {
@@ -76,14 +76,14 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px 6px;
+  padding: var(--space-1) var(--space-2) 6px;
 }
 .cave-composer-git-chip__worktree-input {
   flex: 1 1 auto;
   min-width: 0;
   height: 26px;
-  padding: 0 8px;
-  font-size: 11px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
   font-family: inherit;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-sm, 6px);
@@ -94,7 +94,7 @@
   flex: 0 0 auto;
   height: 26px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
@@ -142,12 +142,12 @@
   gap: 3px;
   margin: 0 -4px 0 0;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: inherit;
   line-height: 1;
   cursor: pointer;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-primary);
   font-weight: 600;

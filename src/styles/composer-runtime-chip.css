@@ -13,7 +13,7 @@
   max-width: 200px;
   height: 30px;
   padding: 0 11px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: inherit;
   line-height: 1;
   cursor: pointer;

@@ -37,7 +37,7 @@
   border-radius: 0 0 14px 14px;
   background: var(--bg-panel);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--text-xs);
   transition: border-radius 180ms ease;
 }
 

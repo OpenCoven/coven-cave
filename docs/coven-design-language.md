@@ -294,7 +294,10 @@ stays reachable in ≤2 interactions.
 ## 9. Shipping checklist for a new surface
 
 1. Tokens only — no hardcoded colors, radii, or font sizes; verify in dark
-   *and* light, plus one non-default theme.
+   *and* light, plus one non-default theme. On-scale px literals are
+   auto-fixable: `node scripts/codemods/tokenize-css.mjs` (enforced, with
+   drift ratchets for the judgment cases, by
+   `src/lib/design-token-drift.test.ts`).
 2. Reuse the primitives (`src/components/ui/`: Button, EmptyState, Skeleton,
    Popover, Modal, ViewHeader, SearchInput…) before writing new ones.
 3. Chrome within budget (§8): ≤3 always-visible actions + one `OverflowMenu`;

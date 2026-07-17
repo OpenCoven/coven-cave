@@ -128,7 +128,7 @@ test("chat-first landing: time greeting eyebrow, calm first paint, disclosed con
 
   // The greeting eyebrow + context toggle stay on semantic tokens.
   assert.match(styles, /\.cave-chat-empty-greeting-dot \{[\s\S]*?background: var\(--accent-presence\)/, "greeting dot uses the presence accent token");
-  assert.match(styles, /\.cave-chat-empty-context-toggle \{[\s\S]*?border-radius: 999px/, "context toggle reads as a pill control");
+  assert.match(styles, /\.cave-chat-empty-context-toggle \{[\s\S]*?border-radius: var\(--radius-pill\)/, "context toggle reads as a pill control");
 });
 
 test("starter pills resume unassigned + own board work, marked as tasks (cave-qvwu)", () => {
@@ -170,7 +170,7 @@ test("starter pills resume unassigned + own board work, marked as tasks (cave-qv
 test("task-aware styles use semantic tokens and respect reduced motion", () => {
   assert.match(
     styles,
-    /\.cave-chat-empty-task-status \{[\s\S]*?border-radius: 999px/,
+    /\.cave-chat-empty-task-status \{[\s\S]*?border-radius: var\(--radius-pill\)/,
     "status chip is a pill",
   );
   assert.match(

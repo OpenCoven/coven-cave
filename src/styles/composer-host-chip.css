@@ -13,7 +13,7 @@
   max-width: 260px;
   height: 30px;
   padding: 0 11px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-family: inherit;
   line-height: 1;
   cursor: pointer;
@@ -58,14 +58,14 @@
 .cave-host-choice {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
@@ -91,12 +91,12 @@
   flex-shrink: 0;
   min-width: 22px;
   height: 22px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   cursor: pointer;
 }
 .cave-host-remove:hover { background: var(--bg-raised); color: var(--color-danger); }

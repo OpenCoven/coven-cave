@@ -47,6 +47,14 @@ assert.match(
 // selector. If a rule sets `font-size: <Npx>` where N < 16, fail.
 const PROBLEMATIC = /font-size\s*:\s*(\d+(?:\.\d+)?)px/g;
 
+// The token codemod (scripts/codemods/tokenize-css.mjs) rewrites on-scale px
+// to var(--text-*), so sub-16px sizes can also arrive as tokens. Resolve the
+// fixed-px type-scale tokens back to their px so they can't slip past the
+// bare-px scan above. Values pinned by design-token-drift.test.ts against
+// globals.css.
+const SUB16_TOKENS = /font-size\s*:\s*var\((--text-(?:2xs|xs|sm|base|md))\)/g;
+const TOKEN_PX = { "--text-2xs": 10, "--text-xs": 11, "--text-sm": 12, "--text-base": 13, "--text-md": 14 };
+
 // iOS Safari focus-zoom only affects touch (coarse-pointer) devices, so a
 // <16px size scoped to `@media (pointer: fine)` is desktop-only and safe.
 // Strip those blocks (brace-balanced) before scanning so legitimate desktop
@@ -96,6 +104,12 @@ for (const [label, url] of files) {
       assert.ok(
         px >= 16,
         `[${label}] selector \`${selector}\` sets font-size: ${px}px — iOS Safari will auto-zoom on focus (must be >= 16px). Use \`text-base\` Tailwind, the global max(16px, 1em) rule, or font-size: 16px.`,
+      );
+    }
+    SUB16_TOKENS.lastIndex = 0;
+    while ((m = SUB16_TOKENS.exec(body)) !== null) {
+      assert.fail(
+        `[${label}] selector \`${selector}\` sets font-size: var(${m[1]}) (${TOKEN_PX[m[1]]}px) — iOS Safari will auto-zoom on focus (must be >= 16px). Use the global max(16px, 1em) rule or font-size: 16px.`,
       );
     }
   }
