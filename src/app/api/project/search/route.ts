@@ -23,7 +23,9 @@ export const dynamic = "force-dynamic";
  * Spawns ripgrep (`rg --json`) under the requested root and parses its event
  * stream via the pure parser in @/lib/project-search. ripgrep respects
  * .gitignore and skips hidden/binary files by default, so results track the
- * same "git-visible working tree" surface as the @-mention file index.
+ * same "git-visible working tree" surface as the @-mention file index. The
+ * optional glob is applied after ripgrep returns so it cannot widen the search
+ * to hidden or ignored files.
  *
  * Security posture mirrors /api/changes: every spawn goes through execFile with
  * an argument array (no shell, no interpolation), the query is passed after
@@ -122,7 +124,6 @@ function buildRgArgs(params: {
   query: string;
   regex: boolean;
   caseMode: "smart" | "sensitive" | "insensitive";
-  glob: string | null;
 }): string[] {
   const args = ["--json", "--max-count", String(RG_MAX_COUNT), "--max-columns", "2000", "--no-messages",
     // One line of context on each side of a match, emitted as `context` events
@@ -132,9 +133,11 @@ function buildRgArgs(params: {
   if (params.caseMode === "insensitive") args.push("--ignore-case");
   else if (params.caseMode === "sensitive") args.push("--case-sensitive");
   else args.push("--smart-case");
-  if (params.glob) args.push("--glob", params.glob);
-  // Match /api/project-file's .env-family redaction boundary even when a
-  // caller-supplied glob explicitly includes hidden environment files.
+  // Do not pass user globs to ripgrep: explicit include globs can widen the
+  // search to hidden or ignored files. Filter the already git-visible result
+  // set in-process instead.
+  // Match /api/project-file's .env-family redaction boundary: exclude env
+  // files even when they are tracked and therefore git-visible.
   args.push("--glob", "!.env*", "--glob", "!**/.env*");
   // Pattern then an explicit search path. The path is REQUIRED: with no path
   // argument and a non-TTY stdin (which execFile gives the child), ripgrep
@@ -142,6 +145,45 @@ function buildRgArgs(params: {
   // until the timeout. "." searches the cwd we set on the spawn.
   args.push("--", params.query, ".");
   return args;
+}
+
+function globToRegExp(glob: string): RegExp {
+  let source = "^";
+  for (let i = 0; i < glob.length; i += 1) {
+    const char = glob[i];
+    const next = glob[i + 1];
+    if (char === "*") {
+      if (next === "*") {
+        source += ".*";
+        i += 1;
+      } else {
+        source += "[^/]*";
+      }
+    } else if (char === "?") {
+      source += "[^/]";
+    } else {
+      source += char.replace(/[\^$+?.()|{}[\]]/g, "\\$&");
+    }
+  }
+  source += "$";
+  return new RegExp(source);
+}
+
+function globMatchesPath(glob: string, filePath: string): boolean {
+  const normalizedGlob = glob.replace(/\\/g, "/");
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const candidates = normalizedGlob.includes("/")
+    ? [normalizedPath]
+    : [normalizedPath, path.basename(normalizedPath)];
+  const re = globToRegExp(normalizedGlob);
+  return candidates.some((candidate) => re.test(candidate));
+}
+
+function filterSearchResult(result: SearchResult, glob: string | null): SearchResult {
+  if (!glob) return result;
+  const files = result.files.filter((file) => globMatchesPath(glob, file.path));
+  const totalMatches = files.reduce((count, file) => count + file.matches.length, 0);
+  return { ...result, files, totalMatches };
 }
 
 export async function GET(req: NextRequest) {
@@ -188,11 +230,11 @@ export async function GET(req: NextRequest) {
   const glob = sp.get("glob")?.trim() || null;
   const regex = sp.get("regex") === "1";
 
-  const args = buildRgArgs({ query, regex, caseMode, glob });
+  const args = buildRgArgs({ query, regex, caseMode });
 
   try {
     const { stdout } = await runRipgrep(resolved.root, args);
-    const result: SearchResult = parseRipgrepJson(stdout);
+    const result: SearchResult = filterSearchResult(parseRipgrepJson(stdout), glob);
     return NextResponse.json({ ok: true, repo: true, root: resolved.root, ...result });
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
