@@ -78,8 +78,8 @@ assert.match(
 // (cookies auto-send cross-origin → CSRF).
 assert.match(
   source,
-  /const headerCsrfTrusted =\s*Boolean\(sidecarToken\) && req\.headers\.get\(TOKEN_HEADER\) === sidecarToken/,
-  "origin/referer gate bypass must be keyed to the custom sidecar header token",
+  /const headerCsrfTrusted =\s*Boolean\(sidecarToken\) &&\s*req\.headers\.get\(TOKEN_HEADER\) === sidecarToken &&\s*isHeaderCsrfTrustedApiPath\(req\.nextUrl\.pathname\)/,
+  "origin/referer gate bypass must be keyed to the custom sidecar header token and mobile endpoint allowlist",
 );
 assert.match(
   source,
@@ -90,6 +90,16 @@ assert.doesNotMatch(
   source,
   /csrfTrusted\s*=\s*mobileAccessAuthenticated/,
   "cookie-backed mobile-access must NOT bypass the CSRF origin gate",
+);
+assert.match(
+  source,
+  /HEADER_CSRF_TRUSTED_API_PATHS = new Set\(\["\/api\/mobile-handoff", "\/api\/mobile-token\/refresh"\]\)/,
+  "header-token CSRF relaxation must be limited to explicitly mobile-capable APIs",
+);
+assert.doesNotMatch(
+  source,
+  /HEADER_CSRF_TRUSTED_API_PATHS[\s\S]*codex-automations|HEADER_CSRF_TRUSTED_API_PATHS[\s\S]*\/api\/inbox/,
+  "local-only APIs must not be included in the header-token CSRF allowlist",
 );
 
 // Ordering guard: dev-mode token-bypass (NextResponse.next() when no token is set)

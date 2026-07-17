@@ -141,6 +141,12 @@ function isLocalOnlyAutomationRun(pathname: string, method: string) {
   return method === "POST" && /^\/api\/codex-automations\/[^/]+\/run$/.test(pathname);
 }
 
+const HEADER_CSRF_TRUSTED_API_PATHS = new Set(["/api/mobile-handoff", "/api/mobile-token/refresh"]);
+
+function isHeaderCsrfTrustedApiPath(pathname: string) {
+  return HEADER_CSRF_TRUSTED_API_PATHS.has(pathname);
+}
+
 function isProductionWebhookGet(pathname: string, method: string) {
   return (
     method === "GET" &&
@@ -211,19 +217,20 @@ export async function proxy(req: NextRequest) {
 
   const sidecarToken = process.env.COVEN_CAVE_AUTH_TOKEN;
   // A request bearing the sidecar token in the CUSTOM HEADER (x-coven-cave-token)
-  // is provably first-party: a browser cannot set a custom header on a
-  // cross-origin request (it forces a CORS preflight the server never approves),
-  // so such a request cannot be CSRF regardless of its Origin. Tailscale Serve
-  // terminates TLS and proxies to loopback, forwarding `Host: 127.0.0.1`, so a
-  // legitimately-authenticated WKWebView request keeps its real
-  // https://<machine>.ts.net identity only in the Origin header — which otherwise
-  // fails the same-origin gate and 403s every mutating request as "forbidden
-  // origin" (fixed in #618; #716 reverted it and re-broke mobile-over-Serve).
+  // can be sent by native/mobile clients over Tailscale Serve, where the proxy
+  // forwards `Host: 127.0.0.1` but preserves the real ts.net source in Origin.
+  // Only explicitly mobile-capable API routes may use that header to relax the
+  // Origin/Referer gate. Local-only routes such as automation and inbox APIs
+  // rely on their route-level loopback Host checks, so they must still fail
+  // closed when a remote Serve origin reaches the loopback backend.
   // Scope is deliberately the header ONLY: NOT the access cookie (auto-sent
   // cross-origin → CSRF) and NOT the query/referer token paths. The token value
-  // is still validated below; this only relaxes the CSRF source gate.
+  // is still validated below; this only relaxes the CSRF source gate for the
+  // allowlisted mobile endpoints.
   const headerCsrfTrusted =
-    Boolean(sidecarToken) && req.headers.get(TOKEN_HEADER) === sidecarToken;
+    Boolean(sidecarToken) &&
+    req.headers.get(TOKEN_HEADER) === sidecarToken &&
+    isHeaderCsrfTrustedApiPath(req.nextUrl.pathname);
 
   if (!headerCsrfTrusted) {
     const origin = req.headers.get("origin");
