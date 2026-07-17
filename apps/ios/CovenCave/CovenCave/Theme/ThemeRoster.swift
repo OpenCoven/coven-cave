@@ -49,7 +49,7 @@ struct ThemeOption: Identifiable, Equatable {
 }
 
 enum ThemeRoster {
-    /// All 20 desktop presets, in the desktop's roster order.
+    /// All 21 desktop presets, in the desktop's roster order.
     static let all: [ThemeOption] = [
         .init("coven", "Coven", "Lavender-inked grimoire. The house default.",
               accentDark: "#9a8ecd", accentLight: "#6F62A8", bgDark: "#08060f", bgLight: "#f7f5fe"),
@@ -77,6 +77,8 @@ enum ThemeRoster {
               accentDark: "#818cf8", accentLight: "#5457e9", bgDark: "#1e1b18", bgLight: "#e7e5e4"),
         .init("claude", "Claude", "Warm parchment, muted ink, burnt-clay primary.",
               accentDark: "#d97757", accentLight: "#c96442", bgDark: "#262624", bgLight: "#faf9f5"),
+        .init("openai", "OpenAI", "Codex black. Void-dark monochrome.",
+              accentDark: "#ececec", accentLight: "#0d0d0d", bgDark: "#0d0d0d", bgLight: "#ffffff"),
         .init("pastel-dreams", "Pastel Dreams", "Soft violet pastels, lifted surfaces.",
               accentDark: "#c0aafd", accentLight: "#9377e6", bgDark: "#1c1917", bgLight: "#f7f3f9"),
         .init("meatseeks", "Meatseeks", "Supabase green over crisp utility surfaces.",
