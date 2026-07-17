@@ -301,10 +301,18 @@ assert.doesNotMatch(
   "Composer dock model pill should be removed — header meta line carries the model",
 );
 
+// The steady-state hint survives behind the recommended-next-path ghost fill
+// (cave-h62k): with a recommendation the placeholder mirrors it (`⇥ to fill`),
+// without one the classic `Message <familiar>…  ↵ to send` remains.
 assert.match(
   source,
-  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  /: `Message \$\{familiar\.display_name\}…  ↵ to send`/,
   "Composer placeholder should include ↵ to send hint in steady state",
+);
+assert.match(
+  source,
+  /busy\s*\? "Streaming… \(esc to cancel\)"/,
+  "Streaming keeps its own placeholder ahead of the recommendation branch",
 );
 
 assert.match(

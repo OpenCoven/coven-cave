@@ -497,6 +497,7 @@ export const SUITES = {
     "src/components/thread-signals-section.test.ts",
     "src/lib/thread-signal-dismissals.test.ts",
     "src/components/chat-view.test.ts",
+    "src/components/chat-composer-rec-autofill.test.ts",
     "src/components/familiars-view-stats.test.ts",
     "src/components/automations-detail-inputs.test.ts",
     "src/lib/cron-prompt.test.ts",
