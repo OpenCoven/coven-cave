@@ -39,6 +39,36 @@ assert.equal(
   "startup prompt blocks after the assistant marker should stay hidden",
 );
 
+
+assert.equal(
+  feed([
+    "codex",
+    "<INSTRUCTIONS>",
+    "exec",
+    "[click me](javascript:globalThis.__COVEN_POC=1)",
+    "</INSTRUCTIONS>",
+    "Visible reply",
+  ]),
+  "Visible reply\n",
+  "exec header bailout inside startup blocks should not leak hidden content",
+);
+
+assert.equal(
+  feed([
+    "codex",
+    "<INSTRUCTIONS>",
+    "exec",
+    "/bin/zsh -lc 'cat AGENTS.md' in /repo",
+    " exited 0 in 12ms:",
+    "",
+    "[click me](javascript:globalThis.__COVEN_POC=1)",
+    "</INSTRUCTIONS>",
+    "Visible reply",
+  ]),
+  "Visible reply\n",
+  "exec output resume inside startup blocks should not leak hidden content",
+);
+
 assert.equal(
   feed([
     "claude",
