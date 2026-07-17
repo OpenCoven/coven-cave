@@ -21,8 +21,7 @@ describe("Familiar growth view", () => {
     assert.match(globals, /\.growth-triage__chip--active/);
   });
 
-  it("renders a 14-day pulse per roster row and in the report", () => {
-    assert.match(view, /<PulseBars pulse=\{pulse\} size="sm"/);
+  it("renders the 14-day session pulse in the report", () => {
     assert.match(report, /<PulseBars/);
     assert.match(report, /buildSessionPulse/);
   });
@@ -33,9 +32,25 @@ describe("Familiar growth view", () => {
     assert.match(report, /vs prior 7d/);
   });
 
-  it("keeps the roster analytics link on a proper class (no ad-hoc utility strings)", () => {
-    assert.match(view, /growth-familiar__analytics/);
-    assert.doesNotMatch(view, /ml-\[54px\]/);
+  it("selects familiars via a dropdown so the roster scales to any count (cave-4d3n)", () => {
+    assert.match(view, /import \{ StandardSelect, type StandardSelectGroup \} from "@\/components\/ui\/select"/);
+    assert.match(view, /label="Select familiar"/, "the dropdown carries an accessible label");
+    assert.match(view, /className="growth-picker__select focus-ring"/);
+    assert.doesNotMatch(view, /growth-sidebar/, "the fixed sidebar roster list is gone");
+    assert.match(globals, /\.growth-picker\s*\{/, "the picker bar has its own styles");
+  });
+
+  it("groups dropdown options by health, attention-first, and hides empty groups", () => {
+    assert.match(view, /HEALTH_KEYS\.map\(\(key\) => \(\{/, "groups follow the stalled → active order");
+    assert.match(view, /HEALTH_GROUP_LABELS\[key\]/);
+    assert.match(view, /\$\{triage\[key\]\}/, "each group heading carries its familiar count");
+    assert.match(view, /filter\(\(group\) => group\.options\.length > 0\)/);
+    assert.match(view, /reportSummary\(familiarStats, retro\)/, "options keep the per-familiar summary as detail text");
+  });
+
+  it("shows the selected familiar's health dot in the dropdown trigger", () => {
+    assert.match(view, /growth-picker__value/);
+    assert.match(view, /growth-dot growth-dot--\$\{selected\.report\.healthLabel\}/);
   });
 
   it("announces quiet refreshes to assistive tech", () => {
@@ -56,10 +71,6 @@ describe("Familiar growth view", () => {
     assert.match(view, /setUpdatedAt\(new Date\(\)\.toISOString\(\)\)/, "stamped on load settle, not render");
     assert.match(view, /Updated <RelativeTime iso=\{updatedAt\} \/>/, "renders as a semantic relative time");
     assert.match(globals, /\.growth-hero__updated/, "the stamp has its own class");
-  });
-
-  it("marks the selected roster row for assistive tech", () => {
-    assert.match(view, /aria-pressed=\{selectedItem\}/);
   });
 
   it("responds to pane width via container queries", () => {
