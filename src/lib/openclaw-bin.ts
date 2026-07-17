@@ -89,8 +89,12 @@ export function openClawBin(): string {
   return cachedBin;
 }
 
-export function openClawNeedsShell(): boolean {
-  return process.platform === "win32";
+export function openClawNeedsShell(bin = openClawBin()): boolean {
+  return process.platform === "win32" && bin.toLowerCase().endsWith(".cmd");
+}
+
+export function openClawSupportsUntrustedArgs(bin = openClawBin()): boolean {
+  return !openClawNeedsShell(bin);
 }
 
 const WINDOWS_SHELL_META_RE = /[\s"&|<>()^%!]/;
@@ -122,8 +126,8 @@ function quoteWindowsShellArg(arg: string): string {
   return `"${escaped}"`;
 }
 
-export function openClawSpawnArgs(argv: string[]): string[] {
-  return openClawNeedsShell() ? argv.map(quoteWindowsShellArg) : argv;
+export function openClawSpawnArgs(argv: string[], bin = openClawBin()): string[] {
+  return openClawNeedsShell(bin) ? argv.map(quoteWindowsShellArg) : argv;
 }
 
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {

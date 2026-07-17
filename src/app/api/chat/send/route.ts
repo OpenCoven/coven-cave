@@ -60,7 +60,7 @@ import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
 import { chatProjectAccessId } from "@/lib/chat-project-access";
-import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv } from "@/lib/openclaw-bin";
+import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv, openClawSupportsUntrustedArgs } from "@/lib/openclaw-bin";
 import {
   familiarWorkspacesRoot,
   readFamiliarWorkspaces,
@@ -828,7 +828,29 @@ function openClawChatResponse(args: {
       const agentId = agentBinding.openclawAgentId;
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
       const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
-      const spawnArgv = openClawSpawnArgs(argv);
+      const openclawCommand = openClawBin();
+      if (!openClawSupportsUntrustedArgs(openclawCommand)) {
+        pushProgress(
+          "openclaw-start",
+          "OpenClaw bridge cannot start safely",
+          "error",
+          "The resolved OpenClaw Windows .cmd shim requires shell parsing, so Cave cannot pass chat prompts to it safely. Install or configure a native openclaw executable with OPENCLAW_BIN.",
+        );
+        push({
+          kind: "error",
+          code: "openclaw_unsafe_shell",
+          message:
+            "OpenClaw chat is unavailable because the resolved Windows .cmd shim requires unsafe shell parsing. Install or configure a native openclaw executable with OPENCLAW_BIN.",
+        });
+        push({
+          kind: "done",
+          durationMs: Date.now() - startedAt,
+          isError: true,
+        });
+        close();
+        return;
+      }
+      const spawnArgv = openClawSpawnArgs(argv, openclawCommand);
       let cwd: string;
       try {
         cwd = await resolveLocalRuntimeCwd(
@@ -865,11 +887,11 @@ function openClawChatResponse(args: {
         sessionKey: openClawSessionKey(conversationId),
       };
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
-      const child = spawn(openClawBin(), spawnArgv, {
+      const child = spawn(openclawCommand, spawnArgv, {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
         env: openClawSpawnEnv(),
-        shell: openClawNeedsShell(),
+        shell: openClawNeedsShell(openclawCommand),
       });
       pushProgress("openclaw-start", "OpenClaw bridge started", "done");
       pushProgress("openclaw-response", "Waiting for OpenClaw response", "running");
