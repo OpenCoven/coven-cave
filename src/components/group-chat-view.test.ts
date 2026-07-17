@@ -24,7 +24,7 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   // Injects the coven roster into each send so a familiar knows who else is present.
   assert.match(view, /renderCovenRoundtablePrompt\(\{/, "builds the per-familiar roundtable prompt");
   assert.match(view, /receivingFamiliarId: r\.familiarId/, "marks the receiving familiar in prompt context");
-  assert.match(view, /targeted: mentioned\.length > 0/, "tells the prompt whether the user targeted this reply");
+  assert.match(view, /targeted,/, "tells the prompt whether the user targeted this reply");
   assert.doesNotMatch(view, /renderCovenContext\(contextTurns, r\.familiarId/, "default group chat does not relay peer replies");
   assert.doesNotMatch(view, /const shouldRelay = mentioned\.length === 0 && replies\.length > 1/, "full-coven broadcasts no longer switch to sequential relay");
   // Strips the piggybacked next-paths block (visible) and surfaces the parsed
@@ -34,24 +34,39 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
     /const \{ visible: visibleText, suggestions \} = extractNextPaths\(r\.text\)/,
     "strips the next-paths block and parses suggestions from coven replies",
   );
-  // Parsed suggestions render as click-to-send chips that broadcast the line.
+  // Parsed suggestions render as click-to-send chips targeted to their author.
   assert.match(
     view,
     /className="cave-next-paths mt-1\.5" data-count=\{suggestions\.length\}/,
     "renders the next-paths chip row, stamping its count for the uniform-rows layout",
   );
-  assert.match(view, /onClick=\{\(\) => void broadcast\(s\)\}/, "clicking a chip broadcasts the suggestion");
+  assert.match(
+    view,
+    /sendSuggestion\(s, r\.familiarId, f\?\.display_name \?\? r\.familiarId\)/,
+    "clicking a chip targets the familiar who authored it",
+  );
+  assert.match(
+    view,
+    /broadcast\(`@\$\{displayName\} \$\{suggestion\}`, \[familiarId\]\)/,
+    "suggestion sends prefix the author's display name and route by their id",
+  );
+  assert.match(
+    view,
+    /const mentioned = explicitTargetFamiliarIds \? \[\] : parseMentions\(text, mentionable\)/,
+    "mentions inside a suggestion cannot expand its explicit target",
+  );
+  assert.match(view, /disabled=\{busy\}/, "chips are disabled while a send is active");
 });
 
 test("@mentions target a subset of the coven", () => {
   // Send routes to mentioned familiars only, falling back to the full roster.
-  assert.match(view, /const mentioned = parseMentions\(text, mentionable\)/, "parses @mentions on send");
+  assert.match(view, /explicitTargetFamiliarIds \? \[\] : parseMentions\(text, mentionable\)/, "parses @mentions on untargeted sends");
   assert.match(
     view,
-    /mentioned\.length > 0 \? group\.familiarIds\.filter/,
+    /mentioned\.length > 0\s*\? group\.familiarIds\.filter/,
     "targets only mentioned familiars, else broadcasts to all",
   );
-  assert.match(view, /targetFamiliarIds: mentioned\.length > 0/, "records the targeted ids on the user turn");
+  assert.match(view, /targetFamiliarIds: targeted/, "records the targeted ids on the user turn");
   assert.match(view, /replies: GroupReply\[\] = targetIds\.map/, "only the targets reply");
   // Composer autocomplete reuses the tested pure helpers.
   assert.match(view, /findActiveMention\(el\.value/, "detects the active mention token");

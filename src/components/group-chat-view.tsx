@@ -444,18 +444,24 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   );
 
   const broadcast = useCallback(
-    async (rawText: string) => {
+    async (rawText: string, explicitTargetFamiliarIds?: string[]) => {
       const group = activeGroupRef.current;
       const text = rawText.trim();
       if (!group || group.familiarIds.length === 0 || !text || busy || abortRef.current) return;
-      // Tagging a subset of familiars with `@mentions` targets the message at just
-      // those participants; with no mention it broadcasts to the whole coven.
+      // A suggestion chip carries its author's id explicitly. Its display text may
+      // contain @mentions, but those must not expand the authoritative target.
+      // Composer messages continue to target @mentions or the whole coven.
       const mentionable: MentionableFamiliar[] = group.familiarIds.map((id) => ({
         id,
         name: byId.get(id)?.display_name ?? "",
       }));
-      const mentioned = parseMentions(text, mentionable);
-      const targetIds = mentioned.length > 0 ? group.familiarIds.filter((id) => mentioned.includes(id)) : group.familiarIds;
+      const mentioned = explicitTargetFamiliarIds ? [] : parseMentions(text, mentionable);
+      const targetIds = explicitTargetFamiliarIds
+        ? group.familiarIds.filter((id) => explicitTargetFamiliarIds.includes(id))
+        : mentioned.length > 0
+          ? group.familiarIds.filter((id) => mentioned.includes(id))
+          : group.familiarIds;
+      const targeted = explicitTargetFamiliarIds !== undefined || mentioned.length > 0;
       // Roster reflects the FULL coven (not just @mention targets) — a familiar
       // should know who else is in the room even when addressed alone. Composed
       // per-familiar so each sees itself marked "(you)".
@@ -473,7 +479,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         id: newId(),
         role: "user",
         text,
-        targetFamiliarIds: mentioned.length > 0 ? targetIds : undefined,
+        targetFamiliarIds: targeted ? targetIds : undefined,
         createdAt: at,
       };
       const replies: GroupReply[] = targetIds.map((fid) => ({
@@ -504,7 +510,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
               participants: rosterParticipants,
               receivingFamiliarId: r.familiarId,
               userText: text,
-              targeted: mentioned.length > 0,
+              targeted,
             }),
             controller.signal,
           ),
@@ -533,8 +539,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   );
 
   // The composer and "click a next-path suggestion to send" chips both go
-  // through broadcast — a clicked suggestion is just a one-tap next prompt.
+  // through broadcast. A suggestion is a one-tap targeted follow-up to its author.
   const send = useCallback(() => broadcast(draft), [broadcast, draft]);
+  const sendSuggestion = useCallback(
+    (suggestion: string, familiarId: string, displayName: string) =>
+      broadcast(`@${displayName} ${suggestion}`, [familiarId]),
+    [broadcast],
+  );
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -997,7 +1008,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                           key={i}
                                           type="button"
                                           className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
-                                          onClick={() => void broadcast(s)}
+                                          onClick={() => void sendSuggestion(s, r.familiarId, f?.display_name ?? r.familiarId)}
                                           disabled={busy}
                                           aria-label={recommended ? `Recommended: ${s}` : undefined}
                                           title={recommended ? "Recommended next step" : undefined}
