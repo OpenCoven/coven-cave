@@ -33,13 +33,8 @@ import { SessionTraceOverlay, type TraceTarget } from "@/components/session-trac
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { pulseTotal, sessionDayKey, type PulseDay } from "@/lib/session-pulse";
 import {
-  RESPONSE_CONFIDENCE_EMPTY_STATE,
-  RESPONSE_CONFIDENCE_FACTOR_KEYS,
   aggregateThreadSignals,
   type ContextPressure,
-  type ResponseConfidenceEvent,
-  type ResponseConfidenceFactorKey,
-  type ResponseConfidenceRollup,
 } from "@/lib/thread-self-report";
 
 export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
@@ -381,56 +376,25 @@ const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
   );
 });
 
-const RESPONSE_CONFIDENCE_LABELS: Record<ResponseConfidenceFactorKey, string> = {
-  toolUse: "Tool use",
-  context: "Context",
-  skills: "Skills",
-  permissions: "Permissions",
-  memory: "Memory",
-  instructionFit: "Instruction fit",
-  evidence: "Evidence",
-};
-
-/** Trend line of per-response confidence scores, oldest → newest. */
-function buildResponseTrend(events: ResponseConfidenceEvent[]): SparkPoint[] {
-  return [...events]
-    .sort((a, b) => Date.parse(a.responseAt) - Date.parse(b.responseAt))
-    .map((event) => ({
-      label: new Date(event.responseAt).toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }),
-      value: event.overallConfidence,
-    }));
-}
-
-function trendColor(averageConfidence: number): string {
-  if (averageConfidence >= 70) return "var(--color-success)";
-  if (averageConfidence >= 50) return "var(--accent-presence)";
-  return "var(--color-danger)";
-}
-
 /**
- * Empty state for the self-report-driven panels (Response confidence, thread
- * analysis). When the familiar hasn't enabled response self-reporting, the
- * notice carries the fix — a one-click enable that persists `autoSelfReport`
- * to cave-config (the same key the Studio's Brain tab toggles) instead of
- * sending the user hunting through Settings.
+ * Empty state for the self-report-driven thread-analysis panel. When the
+ * familiar hasn't enabled self-reporting, the notice carries the fix — a
+ * one-click enable that persists `autoSelfReport` to cave-config (the same
+ * key the Studio's Brain tab toggles) instead of sending the user hunting
+ * through Settings.
  */
 function SelfReportEmptyState({
   familiar,
   onSelfReportEnabled,
-  headline = RESPONSE_CONFIDENCE_EMPTY_STATE,
-  enabledHeadline = "No response confidence events yet.",
+  headline,
+  enabledHeadline,
 }: {
   familiar: Familiar | null;
   onSelfReportEnabled?: () => void;
   /** Teach copy when self-reporting is still off. */
-  headline?: string;
+  headline: string;
   /** Headline once self-reporting is on but no data has landed yet. */
-  enabledHeadline?: string;
+  enabledHeadline: string;
 }) {
   const { announce } = useAnnouncer();
   const [enabling, setEnabling] = useState(false);
@@ -494,130 +458,6 @@ function SelfReportEmptyState({
     />
   );
 }
-
-/** Score tone shared by the trend line and the per-response chips. */
-function confidenceScoreTone(score: number): "good" | "mid" | "bad" {
-  if (score >= 70) return "good";
-  if (score >= 50) return "mid";
-  return "bad";
-}
-
-/** How many raw response events the drill-through list shows. */
-const RECENT_RESPONSE_EVENTS = 6;
-
-const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
-  rollup,
-  events,
-  familiar,
-  onSelfReportEnabled,
-  onTrace,
-}: {
-  rollup: ResponseConfidenceRollup;
-  events: ResponseConfidenceEvent[];
-  familiar: Familiar | null;
-  onSelfReportEnabled?: () => void;
-  /** Open the session trace overlay for the session behind an event. */
-  onTrace?: (target: TraceTarget) => void;
-}) {
-  if (rollup.eventCount === 0) {
-    return (
-      <SelfReportEmptyState familiar={familiar} onSelfReportEnabled={onSelfReportEnabled} />
-    );
-  }
-  const trend = buildResponseTrend(events);
-  // Newest first — each event links back to the thread that produced it, so a
-  // low score is one click from the conversation that explains it.
-  const recentEvents = [...events]
-    .sort((a, b) => Date.parse(b.responseAt) - Date.parse(a.responseAt))
-    .slice(0, RECENT_RESPONSE_EVENTS);
-
-  return (
-    <div className="fa-response-confidence">
-      {trend.length >= 2 ? (
-        <figure
-          className="fa-response-trend"
-          role="img"
-          aria-label={`Confidence trend across ${rollup.eventCount} responses, averaging ${rollup.averageConfidence} of 100`}
-        >
-          <Sparkline points={trend} color={trendColor(rollup.averageConfidence)} height={56} />
-          <figcaption aria-hidden>
-            Per-response confidence, oldest to newest · hover for scores
-          </figcaption>
-        </figure>
-      ) : null}
-      <div className="fa-thread-score-grid">
-        <ScoreTile label="Avg confidence" value={rollup.averageConfidence} unit="/100" hint="Average self-reported confidence across responses, out of 100." />
-        <ScoreTile label="Low-confidence responses" value={rollup.lowConfidenceCount} hint="Responses that scored below 60 / 100." />
-        <ScoreTile label="Events" value={rollup.eventCount} hint="Self-report events in this range." />
-        <ScoreTile label="Latest" value={rollup.newestEvent?.overallConfidence ?? 0} unit="/100" hint="The most recent response's confidence, out of 100." />
-      </div>
-      <div className="fa-response-factor-grid" aria-label="Response confidence factor averages, each out of 100">
-        {RESPONSE_CONFIDENCE_FACTOR_KEYS.map((key) => (
-          <div
-            key={key}
-            className="fa-response-factor"
-            title={`${RESPONSE_CONFIDENCE_LABELS[key]} — weighted average across responses, out of 100.`}
-          >
-            <span>{RESPONSE_CONFIDENCE_LABELS[key]}</span>
-            <b>{rollup.factorAverages[key]}<span className="fa-metric-unit">/100</span></b>
-            <div className="fa-factor-bar" aria-label={`${RESPONSE_CONFIDENCE_LABELS[key]} ${rollup.factorAverages[key]} of 100`}>
-              <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, rollup.factorAverages[key]))}%` }} />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="fa-response-tags" aria-label="Top response confidence diagnostic tags">
-        {rollup.topDiagnosticTags.length === 0 ? <span>No diagnostic tags yet.</span> : rollup.topDiagnosticTags.map((item) => (
-          <span key={item.tag}>
-            {item.tag} <b>{item.count}</b>
-          </span>
-        ))}
-      </div>
-      {recentEvents.length > 0 ? (
-        <div className="fa-response-events">
-          <h3>Recent responses</h3>
-          <ul aria-label="Recent response confidence events">
-            {recentEvents.map((event) => (
-              <li key={event.id} className="fa-response-event">
-                <b
-                  className={`fa-response-score fa-response-score--${confidenceScoreTone(event.overallConfidence)}`}
-                  title={`Self-reported confidence ${event.overallConfidence} of 100`}
-                >
-                  {event.overallConfidence}
-                </b>
-                <span className="fa-response-event__body">
-                  <a
-                    className="focus-ring"
-                    href={`/#chat-${encodeURIComponent(event.sessionId)}`}
-                    title="Open this thread in chat"
-                  >
-                    {event.threadTitle?.trim() || event.sessionId}
-                  </a>
-                  <small>
-                    <RelativeTime iso={event.responseAt} />
-                    {event.diagnosticTags.length > 0 ? <> · {event.diagnosticTags.slice(0, 2).join(", ")}</> : null}
-                  </small>
-                </span>
-                {onTrace ? (
-                  <button
-                    type="button"
-                    className="fa-trace-btn focus-ring"
-                    title="Trace the session behind this response"
-                    aria-label={`Trace session ${event.threadTitle?.trim() || event.sessionId}`}
-                    onClick={() => onTrace({ id: event.sessionId, title: event.threadTitle })}
-                  >
-                    <Icon name="ph:tree-structure" width={12} aria-hidden />
-                    Trace
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-});
 
 /** Status tone for a session row's presence dot. */
 function sessionStatusTone(status: string): "run" | "bad" | "done" {
@@ -733,20 +573,6 @@ const RecentSessionsSection = memo(function RecentSessionsSection({
     </div>
   );
 });
-
-function ScoreTile({ label, value, unit, hint }: { label: string; value: number; unit?: string; hint?: string }) {
-  return (
-    <div className="fa-thread-score" title={hint}>
-      <div>
-        <span>{label}</span>
-        <b>
-          {value}
-          {unit ? <span className="fa-metric-unit">{unit}</span> : null}
-        </b>
-      </div>
-    </div>
-  );
-}
 
 const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHealRequest[] }) {
   if (requests.length === 0) {
@@ -880,7 +706,6 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
   const contractPass = contract ? contract.properties.filter((p) => p.pass).length : 0;
   const contractTotal = contract ? contract.properties.length : 0;
   const threadCount = model.threadReports.length;
-  const responseEvents = model.responseConfidenceRollup.eventCount;
 
   return [
     {
@@ -917,14 +742,6 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       value: String(threadCount),
       sub: threadCount === 1 ? "report" : "reports",
       href: "#fa-thread-signals",
-    },
-    {
-      key: "responses",
-      icon: "ph:chart-bar-bold",
-      label: "Responses",
-      value: String(responseEvents),
-      sub: responseEvents === 1 ? "confidence event" : "confidence events",
-      href: "#fa-response-confidence",
     },
   ];
 }
@@ -1116,24 +933,6 @@ export function FamiliarAnalyticsContent({
       <FamiliarKpis model={model} healRequestCount={healRequests.length} />
 
       <div className="fa-grid">
-        <FaSection
-          id="fa-response-confidence"
-          title="Response confidence"
-          // An empty rollup renders a one-line empty state — spanning the full
-          // width would give the page's hero slot to a placeholder and push
-          // real signal below the fold, so the section only widens with data.
-          wide={model.responseConfidenceRollup.eventCount > 0}
-          count={`${model.responseConfidenceRollup.eventCount} ${model.responseConfidenceRollup.eventCount === 1 ? "event" : "events"}`}
-        >
-          <ResponseConfidenceSection
-            rollup={model.responseConfidenceRollup}
-            events={model.responseConfidenceEvents}
-            familiar={model.familiar}
-            onSelfReportEnabled={onRefresh}
-            onTrace={setTraceTarget}
-          />
-        </FaSection>
-
         {/* Recent sessions — the tracing spine. The hero pulse filters this
             list by day; every row opens its thread or its daemon trace. */}
         <FaSection
