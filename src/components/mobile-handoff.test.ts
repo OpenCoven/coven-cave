@@ -200,6 +200,43 @@ assert.doesNotMatch(mobileStub, /opencoven:\/\/connect/, "Mobile connection scre
 assert.doesNotMatch(mobileStub, /plugin:deep-link/, "Mobile connection screen should not consume native custom-scheme deep links");
 assert.match(mobileStub, /Paste invite link/, "Mobile connection screen should make paste the fallback path");
 assert.match(mobileStub, /id="clear-url"[\s\S]*hidden/, "Mobile connection screen should hide clear until a saved URL exists");
+
+// ── Guided prerequisite + unreachable journey (cave-jr4r.2 webview slice) ────
+assert.match(
+  mobileStub,
+  /Your Cave lives on your desktop — this phone is a remote for it\./,
+  "the connect screen explains the desktop model before asking for a URL",
+);
+assert.match(
+  mobileStub,
+  /Both devices need Tailscale[\s\S]*Install the free <strong>Tailscale<\/strong> app from the App Store[\s\S]*same Tailscale account[\s\S]*Turn Tailscale on/,
+  "the first-time explainer walks the three Tailscale steps in order",
+);
+assert.doesNotMatch(
+  mobileStub,
+  /apps\.apple\.com|itms|tailscale:\/\//,
+  "no store/scheme links — the stub webview has no back affordance, so navigation traps; native deep-linking is the Swift half of jr4r.2",
+);
+assert.match(
+  mobileStub,
+  /mode: "no-cors"[\s\S]*cache: "no-store"[\s\S]*signal: controller\.signal/,
+  "connect probes the desktop origin first (opaque reachability, timed out via AbortController)",
+);
+assert.match(
+  mobileStub,
+  /Tailscale is off on this phone\.<\/strong>[\s\S]*Your desktop is asleep\.<\/strong>[\s\S]*CovenCave isn’t open on the desktop\.<\/strong>/,
+  "unreachable diagnostics list the causes most-likely-first: phone Tailscale, asleep desktop, Cave quit",
+);
+assert.match(
+  mobileStub,
+  /id="connect-anyway"/,
+  "a probe false-negative must never trap anyone — Connect anyway skips the reachability gate",
+);
+assert.match(
+  mobileStub,
+  /guardedConnect\(input\.value\)\.catch\(showInputError\)/,
+  "async connect surfaces normalize() rejections into the visible error line",
+);
 assert.doesNotMatch(tauriConfig, /"deep-link"[\s\S]*"scheme": \["opencoven"\]/, "iOS app should not register a custom app connect URL scheme");
 assert.doesNotMatch(tauriLib, /tauri_plugin_deep_link::init/, "iOS shell should not install the deep-link plugin");
 
