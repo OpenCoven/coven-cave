@@ -2,9 +2,8 @@ import Foundation
 
 /// REST + streaming client for the Coven Cave desktop API.
 /// When the desktop is token-gated (COVEN_CAVE_ACCESS_TOKEN), every request —
-/// REST and SSE alike — carries the paired credential as a Bearer header; in
-/// tokenless tailnet-trust mode no header is sent and the tailnet boundary is
-/// the trust anchor, as before.
+/// REST and SSE alike — carries the paired credential as a Bearer header. This
+/// is required for the Tailscale app path because it exposes the full API.
 struct CaveClient {
     var connection: CaveConnection
 
@@ -111,8 +110,8 @@ struct CaveClient {
     }
 
     /// Rolling renewal: exchange the current credential for a fresh 30-day
-    /// token. Returns the new token, or nil when the desktop runs tokenless
-    /// (503) or the credential can't refresh — callers treat nil as "keep
+    /// token. Returns the new token, or nil when the desktop has no refresh
+    /// endpoint (503) or the credential can't refresh — callers treat nil as "keep
     /// using what we have".
     func refreshAccessToken() async -> String? {
         guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }

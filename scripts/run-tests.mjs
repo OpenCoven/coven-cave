@@ -618,6 +618,7 @@ export const SUITES = {
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
+    "src/lib/design-token-drift.test.ts",
     "src/lib/cave-backdrop.test.ts",
     "src/components/backdrop-scrim.test.ts",
     "src/lib/url-safety.test.ts",

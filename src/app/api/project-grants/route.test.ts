@@ -38,6 +38,11 @@ assert.match(grantsRoute, /export async function POST\(/, "project grants route 
 assert.match(grantsRoute, /export async function DELETE\(/, "project grants route should revoke human grants");
 assert.match(
   grantsRoute,
+  /requireLocalHumanGrantMutation\(req\)/,
+  "direct grant mutations should require a local human request",
+);
+assert.match(
+  grantsRoute,
   /rejectRelayedApproval\(payload\)/,
   "direct grant mutations should reject actor/relayed-human fields instead of trusting familiar claims",
 );
@@ -76,11 +81,21 @@ assert.match(proposalsRoute, /export async function GET\(/, "grant proposals rou
 assert.match(proposalsRoute, /export async function POST\(/, "grant proposals route should create proposals");
 assert.match(
   proposalsRoute,
+  /isLocalOrigin\(req\)/,
+  "proposal creation should require a local human request",
+);
+assert.match(
+  proposalsRoute,
   /createGrantProposal\(\{[\s\S]*proposedBy:[\s\S]*targetFamiliarId:[\s\S]*projectId:[\s\S]*claimedHumanApproval:/,
   "proposal route should pass Supreme proposal claims to the guarded core primitive",
 );
 
 assert.match(proposalItemRoute, /export async function PATCH\(/, "proposal item route should resolve proposals");
+assert.match(
+  proposalItemRoute,
+  /isLocalOrigin\(req\)/,
+  "proposal resolution should require a local human request",
+);
 assert.match(
   proposalItemRoute,
   /rejectRelayedApproval\(payload\)/,

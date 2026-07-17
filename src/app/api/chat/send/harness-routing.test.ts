@@ -368,7 +368,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /await resolveLocalRuntimeCwd\(body\.projectRoot \?\? resumeCwd\)/,
+  /await resolveLocalRuntimeCwd\(body\.projectRoot \?\? resumeCwd \?\? resolvedFamiliarWorkspace\)/,
   "Local Cave chat must fail closed on invalid project roots instead of downgrading to homedir",
 );
 

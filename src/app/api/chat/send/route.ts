@@ -829,9 +829,25 @@ function openClawChatResponse(args: {
       pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
       const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
       const spawnArgv = openClawSpawnArgs(argv);
-      const cwd = await resolveLocalRuntimeCwd(
-        args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
-      );
+      let cwd: string;
+      try {
+        cwd = await resolveLocalRuntimeCwd(
+          args.body.projectRoot ?? (await conversationCwd(args.body.sessionId)),
+        );
+      } catch (error) {
+        if (error instanceof RuntimeScopeError) {
+          pushProgress("openclaw-start", "OpenClaw bridge not started", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message });
+          push({
+            kind: "done",
+            durationMs: Date.now() - startedAt,
+            isError: true,
+          });
+          close();
+          return;
+        }
+        throw error;
+      }
       const responseMetadata: ChatResponseMetadata = {
         familiarId: args.body.familiarId,
         harness: "openclaw",
@@ -1193,9 +1209,15 @@ export async function POST(req: Request) {
     !sshRuntime && !body.projectRoot && existingConversation?.runtime?.startsWith("local:")
       ? existingConversation.runtime.slice("local:".length).trim() || undefined
       : undefined;
+  const projects = sshRuntime ? [] : await loadProjects();
+  const resolvedFamiliarWorkspace = !sshRuntime
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
   let cwd: string;
   try {
-    cwd = sshRuntime ? homedir() : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd);
+    cwd = sshRuntime
+      ? homedir()
+      : await resolveLocalRuntimeCwd(body.projectRoot ?? resumeCwd ?? resolvedFamiliarWorkspace);
   } catch (error) {
     if (error instanceof RuntimeScopeError) {
       return new Response(
@@ -1205,10 +1227,6 @@ export async function POST(req: Request) {
     }
     throw error;
   }
-  const projects = sshRuntime ? [] : await loadProjects();
-  const resolvedFamiliarWorkspace = !sshRuntime
-    ? await resolveFamiliarWorkspace(body.familiarId)
-    : undefined;
   const chatProjectId = sshRuntime
     ? null
     : chatProjectAccessId({

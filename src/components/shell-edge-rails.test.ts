@@ -269,7 +269,7 @@ assert.doesNotMatch(
   );
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: 12px;/,
+    /:root\[data-tauri-titlebar\]\[data-traffic-lights="hidden"\] \.shell-top \{[\s\S]*?padding-left: var\(--space-3\);/,
     "hiding the lights releases the 78px title-bar inset",
   );
   assert.match(
@@ -332,7 +332,7 @@ assert.doesNotMatch(
   // sits mid-window and must NOT.
   assert.match(
     css,
-    /:root\[data-tauri-titlebar\] \.shell-frame \.fa-topbar \{\s*padding-left: 24px;/,
+    /:root\[data-tauri-titlebar\] \.shell-frame \.fa-topbar \{\s*padding-left: var\(--space-6\);/,
     "the inspector-embedded analytics breadcrumb keeps its own padding",
   );
   // Titlebar glass stays honest: blur is paired with the reduced-transparency

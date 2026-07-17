@@ -22,7 +22,7 @@
   align-items: end;
   height: 100%;
   min-width: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 .pulse-bars--lg .pulse-bars__day {

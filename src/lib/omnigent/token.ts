@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { hasConfiguredSecretMetadata, resolveSecret } from "../vault.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +32,36 @@ export function normalizeOmnigentBaseUrl(url: string): string {
     return `${parsed.protocol}//${parsed.host}`;
   } catch {
     return trimmed;
+  }
+}
+
+/** The Cave Vault env key that opts a user into the Omnigent fleet. */
+export const OMNIGENT_TOKEN_ENV = "OMNIGENT_TOKEN";
+
+/**
+ * True when `OMNIGENT_TOKEN` is set up in this user's Cave Vault (process env,
+ * writable .env.local, local encrypted secret, or an op://‑style reference).
+ * Fleet UI visibility is gated on exactly this: a user without the env in
+ * their vault sees no Fleet surfaces, regardless of any
+ * `~/.omnigent/auth_tokens.json` credentials. Metadata-only — never resolves
+ * or caches the secret value.
+ */
+export function isOmnigentEnvConfigured(): boolean {
+  try {
+    return hasConfiguredSecretMetadata(OMNIGENT_TOKEN_ENV);
+  } catch {
+    return Boolean(process.env[OMNIGENT_TOKEN_ENV]?.trim());
+  }
+}
+
+/** Resolve the env token through the Cave Vault chain (process env →
+ *  .env.local → local encrypted store → op/dl reference). Falls back to bare
+ *  process.env if the vault module itself fails. */
+function resolveEnvToken(): string | null {
+  try {
+    return resolveSecret(OMNIGENT_TOKEN_ENV)?.trim() || null;
+  } catch {
+    return process.env[OMNIGENT_TOKEN_ENV]?.trim() || null;
   }
 }
 
@@ -92,20 +123,25 @@ async function mintDatabricksToken(workspaceHost: string): Promise<string | null
  *
  * Handles:
  * - Session JWT records (`token` + optional `expires_at`)
- * - `OMNIGENT_TOKEN` env fallback
+ * - `OMNIGENT_TOKEN` fallback, resolved through the Cave Vault chain
+ *   (process env → .env.local → encrypted store → op/dl reference)
  * - Databricks pointer records (`auth_type: "databricks"`, no token) by
  *   minting a fresh bearer via `databricks auth token --host <workspace>`
  * - No credential (local/single-user Omnigent) → mode `none`, still usable
  */
 export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuthResolution> {
-  const envToken = process.env.OMNIGENT_TOKEN?.trim() || null;
+  // Lazy + memoized: the vault chain may shell out to `op`/`dcli`, so only pay
+  // for it when the env tier is actually consulted (JWT hits return earlier).
+  let envTokenMemo: string | null | undefined;
+  const envToken = (): string | null =>
+    envTokenMemo !== undefined ? envTokenMemo : (envTokenMemo = resolveEnvToken());
   const key = normalizeOmnigentBaseUrl(baseUrl);
   if (!key) {
     return {
-      token: envToken,
-      mode: envToken ? "env" : "none",
+      token: envToken(),
+      mode: envToken() ? "env" : "none",
       extraHeaders: {},
-      authenticated: Boolean(envToken),
+      authenticated: Boolean(envToken()),
     };
   }
 
@@ -151,10 +187,10 @@ export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuth
         }
         // Pointer present but mint failed — still "authenticated" for UI, token null
         return {
-          token: envToken,
-          mode: envToken ? "env" : "databricks",
+          token: envToken(),
+          mode: envToken() ? "env" : "databricks",
           extraHeaders,
-          authenticated: Boolean(envToken) || Boolean(workspaceHost),
+          authenticated: Boolean(envToken()) || Boolean(workspaceHost),
         };
       }
 
@@ -178,8 +214,8 @@ export async function resolveOmnigentAuth(baseUrl: string): Promise<OmnigentAuth
     // missing file / parse error → env / none
   }
 
-  if (envToken) {
-    return { token: envToken, mode: "env", extraHeaders: {}, authenticated: true };
+  if (envToken()) {
+    return { token: envToken(), mode: "env", extraHeaders: {}, authenticated: true };
   }
   // Local / single-user Omnigent: no bearer required
   return { token: null, mode: "none", extraHeaders: {}, authenticated: false };

@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 type RuntimeScopeErrorCode =
+  | "project_root_required"
   | "project_root_outside_home"
   | "project_root_not_directory"
   | "project_root_unavailable";
@@ -60,7 +61,12 @@ export async function resolveLocalRuntimeCwd(
   const homePath = path.resolve(normalizePath(options.homeDir ?? homedir()));
   const homeRoot = await realpath(homePath);
   const trimmed = requested?.trim();
-  if (!trimmed) return homeRoot;
+  if (!trimmed) {
+    throw new RuntimeScopeError(
+      "project_root_required",
+      "projectRoot is required; refusing to start a homedir-scoped fallback session.",
+    );
+  }
 
   const candidate = path.resolve(normalizePath(trimmed));
   const relToHome = path.relative(homePath, candidate);

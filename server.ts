@@ -185,29 +185,22 @@ function isAllowedUpgradeSource(req: IncomingMessage, tokenAuthenticated = false
   // forwards to 127.0.0.1, so a legitimate tailnet client still arrives over
   // loopback. A non-loopback peer is a direct LAN/WAN connection — never trust.
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
   if (!isLoopbackHost(host)) {
     // A meaningful same-origin/host gate needs a Host header; fail closed on
     // malformed upgrade requests instead of letting them ride a relaxation.
     if (!host) return false;
-    // Two ways a non-loopback Host is legitimate — both arrive via `tailscale
-    // serve`, which forwards the request's `<host>.ts.net` Host, NOT 127.0.0.1:
-    //   1. A token-authenticated upgrade (paired iOS app / handoff browser
-    //      holding a signed access token): the credential proves the caller,
-    //      exactly like proxy.ts's isAllowedApiHost(mobileAccessAuthenticated)
-    //      relaxation on REST. Without this, a paired phone's terminal 403s at
-    //      the host gate while every REST call works (the "terminal tab never
-    //      connects" bug). The sameOrigin gate below still blocks cross-site
-    //      browser upgrades.
-    //   2. Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
-    //      `pnpm mobile:tailscale:app`): tailnet membership is the ingress
-    //      boundary. Only native clients that omit Origin may use this
-    //      relaxation; browser WebSockets always carry Origin and can make
-    //      Host and Origin match after DNS rebinding, so an Origin-bearing
-    //      upgrade must not ride the trust flag.
-    // By default (no flag, no credential) upgrades remain loopback-host only.
+    // The only way a non-loopback Host is legitimate is a token-authenticated
+    // upgrade (paired iOS app / handoff browser holding a signed access token)
+    // arriving via `tailscale serve`, which forwards the request's
+    // `<host>.ts.net` Host, NOT 127.0.0.1: the credential proves the caller,
+    // exactly like proxy.ts's isAllowedApiHost(mobileAccessAuthenticated)
+    // relaxation on REST. Without this, a paired phone's terminal 403s at the
+    // host gate while every REST call works (the "terminal tab never
+    // connects" bug). The sameOrigin gate below still blocks cross-site
+    // browser upgrades. Tailnet membership alone is NOT authorization:
+    // credential-less upgrades remain loopback-host only.
     if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
-    return tailnetTrusted && !req.headers.origin;
+    return false;
   }
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
@@ -641,32 +634,14 @@ server.on("upgrade", (req, socket, head) => {
 server.keepAliveTimeout = 75_000;
 server.headersTimeout = 80_000;
 
-function startListening(attempt: number = 0): void {
-  const currentPort = port + attempt;
-  const maxAttempts = 10;
+server.listen(port, hostname, () => {
+  console.log(`> Ready on http://${hostname}:${port}`);
+});
 
-  server.listen(currentPort, hostname, () => {
-    console.log(`> Ready on http://${hostname}:${currentPort}`);
-    // Export the final port so wrapper scripts (dev-app.sh, etc.) can discover it.
-    if (process.env.PORT !== String(currentPort)) {
-      process.env.PORT = String(currentPort);
-    }
-  });
-
-  server.once("error", (err: NodeJS.ErrnoException) => {
-    if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
-      console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
-      server.removeAllListeners("error");
-      // listen() attached its callback via once('listening') before the failed
-      // bind — clear it too, or every stale callback fires on the winning port.
-      server.removeAllListeners("listening");
-      startListening(attempt + 1);
-    } else {
-      console.error(err);
-      process.exit(1);
-    }
-  });
-}
+server.once("error", (err: NodeJS.ErrnoException) => {
+  console.error(err);
+  process.exit(1);
+});
 
 // ── Heap telemetry (cave-ksjt) ────────────────────────────────────────────────
 // Long-lived servers (the packaged sidecar and dev runs alike) have died with
@@ -763,4 +738,3 @@ function startHeapMonitor(): void {
 }
 
 startHeapMonitor();
-startListening();

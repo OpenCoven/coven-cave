@@ -82,6 +82,26 @@ assert.equal(
   true,
   "mobile token authentication should not depend on a loopback Host header",
 );
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net", false, true),
+  true,
+  "tokenless tailnet trust should allow Tailscale Serve hostnames",
+);
+assert.equal(
+  isAllowedApiHost("100.100.100.100:3000", false, true),
+  true,
+  "tokenless tailnet trust should allow Tailscale 100.64.0.0/10 IP fallback hosts",
+);
+assert.equal(
+  isAllowedApiHost("evil.example.com:3000", false, true),
+  false,
+  "tokenless tailnet trust must not bypass the loopback host gate for arbitrary hosts",
+);
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net.evil.com", false, true),
+  false,
+  "tokenless tailnet trust must not allow suffix-smuggled Tailscale hostnames",
+);
 
 // ─── isTailscaleServeHost ──────────────────────────────────────────────────
 assert.equal(isTailscaleServeHost("cave.tailnet.example.ts.net"), true);
@@ -205,13 +225,11 @@ assert.equal(
   "normal same-origin browser dev mode remains allowed",
 );
 
-// ─── expectedRequestOrigins / port-fallback CSRF (cave-5sg) ────────────────
-// server.ts constructs Next with the CONFIGURED port, then startListening()
-// falls back to the next free port when it's taken. req.nextUrl.origin stays
-// pinned to the configured port, so the real browser Origin (the fallback
-// port, carried by Host) must also be accepted or every /api request 403s.
+// ─── expectedRequestOrigins / host-derived CSRF (cave-5sg) ────────────────
+// req.nextUrl.origin can stay pinned to the configured port while the real
+// browser Origin is carried by Host, so both origins remain accepted.
 {
-  // Fell back 3457 -> 3458: nextUrl still says :3457, Host says :3458.
+  // Host reports :3458 while nextUrl still says :3457.
   const origins = expectedRequestOrigins("http://127.0.0.1:3457", "http:", "127.0.0.1:3458");
   assert.deepEqual(
     origins,
@@ -297,29 +315,30 @@ assert.equal(
   );
 }
 
-// ─── Native iOS app (tokenless, over Tailscale Serve) contract ─────────────
+// ─── Native iOS app (Tailscale Serve + mobile access token) contract ──────
 // The native SwiftUI client (pnpm mobile:tailscale:app) is NOT a browser: it
-// sends no Origin and no Referer, and Tailscale Serve forwards Host: 127.0.0.1
-// to the loopback server. With neither COVEN_CAVE_ACCESS_TOKEN nor
-// COVEN_CAVE_AUTH_TOKEN configured (and not bundled), proxy() falls through to
-// NextResponse.next() AFTER these source gates pass. These assertions pin the
-// gate-level behavior that flow depends on; the proxy() body ordering is pinned
-// by middleware.test.ts. A malicious same-machine BROWSER page is still blocked
-// because it always carries a cross-origin Origin (rejected just above).
+// sends no Origin and no Referer. Those absent source headers can pass the CSRF
+// helper, so the API Host gate must require the paired mobile access credential
+// before accepting a remote-looking Tailscale Serve Host.
 assert.equal(
-  isAllowedApiHost("127.0.0.1:3000", false),
+  isAllowedApiHost("cave.tailnet.example.ts.net", false),
+  false,
+  "native app: tailnet Host without mobile access auth is forbidden",
+);
+assert.equal(
+  isAllowedApiHost("cave.tailnet.example.ts.net", true),
   true,
-  "tokenless app: Tailscale Serve forwards loopback Host, which is allowed",
+  "native app: paired mobile access auth permits the Tailscale Serve Host",
 );
 assert.equal(
   isAllowedRequestSource(null, expected),
   true,
-  "tokenless app: native client sends no Origin → source gate passes",
+  "native app: absent Origin still passes the source helper",
 );
 assert.equal(
   isAllowedRequestSource(null, "http://127.0.0.1:3000"),
   true,
-  "tokenless app: absent Referer at the loopback Serve backend passes",
+  "native app: absent Referer still passes the source helper",
 );
 
 // ─── shouldRequireMobileAccessCredential ──────────────────────────────────

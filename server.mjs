@@ -111,11 +111,10 @@ function sameOrigin(value, expectedOrigin) {
 function isAllowedUpgradeSource(req, tokenAuthenticated = false) {
   const host = req.headers.host;
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-  const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
   if (!isLoopbackHost(host)) {
     if (!host) return false;
     if (tokenAuthenticated) return sameOrigin(req.headers.origin, `http://${host}`);
-    return tailnetTrusted && !req.headers.origin;
+    return false;
   }
   return sameOrigin(req.headers.origin, `http://${host}`);
 }
@@ -419,27 +418,13 @@ server.on("upgrade", (req, socket, head) => {
 });
 server.keepAliveTimeout = 75e3;
 server.headersTimeout = 8e4;
-function startListening(attempt = 0) {
-  const currentPort = port + attempt;
-  const maxAttempts = 10;
-  server.listen(currentPort, hostname, () => {
-    console.log(`> Ready on http://${hostname}:${currentPort}`);
-    if (process.env.PORT !== String(currentPort)) {
-      process.env.PORT = String(currentPort);
-    }
-  });
-  server.once("error", (err) => {
-    if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
-      console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
-      server.removeAllListeners("error");
-      server.removeAllListeners("listening");
-      startListening(attempt + 1);
-    } else {
-      console.error(err);
-      process.exit(1);
-    }
-  });
-}
+server.listen(port, hostname, () => {
+  console.log(`> Ready on http://${hostname}:${port}`);
+});
+server.once("error", (err) => {
+  console.error(err);
+  process.exit(1);
+});
 const HEAP_MONITOR_ENABLED = process.env.COVEN_CAVE_HEAP_MONITOR !== "0";
 const HEAP_MONITOR_INTERVAL_MS = (() => {
   const env = Number.parseInt(process.env.COVEN_CAVE_HEAP_MONITOR_INTERVAL_MS ?? "", 10);
@@ -498,4 +483,3 @@ function startHeapMonitor() {
   setInterval(tick, HEAP_MONITOR_INTERVAL_MS).unref();
 }
 startHeapMonitor();
-startListening();

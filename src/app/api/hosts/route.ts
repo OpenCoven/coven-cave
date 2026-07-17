@@ -6,6 +6,7 @@ import { chatHostOptions, sshHostRegistry, type ChatHostOption } from "@/lib/cha
 import { isSshRuntime, normalizeFamiliarRuntime } from "@/lib/familiar-runtime";
 import { OmnigentClient } from "@/lib/omnigent/client";
 import { omnigentHostOptionId } from "@/lib/omnigent/ids";
+import { isOmnigentEnvConfigured } from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +39,12 @@ async function omnigentHostOptions(
   config: Awaited<ReturnType<typeof loadConfig>>,
 ): Promise<ChatHostOption[]> {
   if (!config.omnigent.baseUrl || !config.omnigent.exposeHostsInComposer) return [];
+  // Fleet gate: omnigent:<host_id> options appear if and ONLY if the user has
+  // OMNIGENT_TOKEN set up in their Cave Vault, and the client resolved real
+  // credential material. Mirrors isFleetTokenPresent in @/lib/omnigent/fleet-gate.
+  if (!isOmnigentEnvConfigured()) return [];
   try {
     const client = await OmnigentClient.fromBaseUrl(config.omnigent.baseUrl);
-    // Fleet gate: no auth token (tokenless local mode) → no omnigent options
-    // in the chip. Mirrors isFleetTokenPresent in @/lib/omnigent/fleet-gate.
     if (!client.authenticated || client.authMode === "none") return [];
     const hosts = await client.listHosts();
     return hosts.map((h) => {

@@ -1,11 +1,24 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mkdtempSync } from "node:fs";
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pickDefaultAgentId, pickDefaultHostId } from "./client.ts";
-import { normalizeOmnigentBaseUrl, resolveOmnigentAuth } from "./token.ts";
+import { isOmnigentEnvConfigured, normalizeOmnigentBaseUrl, resolveOmnigentAuth } from "./token.ts";
+
+// Sandbox the Cave Vault: OMNIGENT_TOKEN resolves through it (process env →
+// .env.local → encrypted store → op/dl ref), so point every vault path at a
+// fresh tmp dir and clear any real token so developer/CI machine state can't
+// leak into auth-resolution assertions.
+const vaultSandbox = mkdtempSync(path.join(os.tmpdir(), "omnigent-vault-sandbox-"));
+process.env.COVEN_CAVE_HOME = path.join(vaultSandbox, "cave");
+process.env.COVEN_VAULT_FILE = path.join(vaultSandbox, "vault.yaml");
+process.env.COVEN_CAVE_ENV_FILE = path.join(vaultSandbox, ".env.local");
+process.env.COVEN_CAVE_LOCAL_VAULT_FILE = path.join(vaultSandbox, "local-vault.enc.json");
+process.env.COVEN_CAVE_LOCAL_VAULT_KEY_FILE = path.join(vaultSandbox, "local-vault.key");
+delete process.env.OMNIGENT_TOKEN;
 
 test("normalizeOmnigentBaseUrl strips path and trailing slash", () => {
   assert.equal(
@@ -197,5 +210,33 @@ test("resolveOmnigentAuth allows unauthenticated local mode", async () => {
     process.env.HOME = prevHome;
     if (prevTok === undefined) delete process.env.OMNIGENT_TOKEN;
     else process.env.OMNIGENT_TOKEN = prevTok;
+  }
+});
+
+test("resolveOmnigentAuth resolves OMNIGENT_TOKEN through the Cave Vault", async () => {
+  const prevHome = process.env.HOME;
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "omnigent-vault-"));
+  process.env.HOME = tmp; // no ~/.omnigent/auth_tokens.json
+  delete process.env.OMNIGENT_TOKEN;
+  try {
+    // Nothing in the sandboxed vault yet → env not configured, fleet stays hidden.
+    assert.equal(isOmnigentEnvConfigured(), false);
+
+    const { setLocalEncryptedSecret, deleteLocalEncryptedSecret } = await import(
+      "../local-encrypted-vault.ts"
+    );
+    setLocalEncryptedSecret("OMNIGENT_TOKEN", "vault-token");
+    try {
+      assert.equal(isOmnigentEnvConfigured(), true);
+      const auth = await resolveOmnigentAuth("https://omni.example.com");
+      assert.equal(auth.mode, "env");
+      assert.equal(auth.token, "vault-token");
+      assert.equal(auth.authenticated, true);
+    } finally {
+      deleteLocalEncryptedSecret("OMNIGENT_TOKEN");
+    }
+  } finally {
+    delete process.env.OMNIGENT_TOKEN; // resolveSecret caches into process.env
+    process.env.HOME = prevHome;
   }
 });

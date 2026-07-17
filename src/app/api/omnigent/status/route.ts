@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadConfig } from "@/lib/cave-config";
 import { OmnigentClient, OmnigentError } from "@/lib/omnigent/client";
+import { isOmnigentEnvConfigured } from "@/lib/omnigent/token";
 import { rejectNonLocalRequest } from "@/lib/server/api-security";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,9 @@ export async function GET(req: Request) {
 
   const config = await loadConfig();
   const baseUrl = config.omnigent.baseUrl;
+  // Per-user fleet opt-in: OMNIGENT_TOKEN set up in the Cave Vault. The
+  // client gate (isFleetTokenPresent) hides all Fleet UI without it.
+  const envInVault = isOmnigentEnvConfigured();
   if (!baseUrl) {
     return NextResponse.json({
       ok: true,
@@ -21,6 +25,7 @@ export async function GET(req: Request) {
       hasToken: false,
       authenticated: false,
       authMode: "none",
+      envInVault,
       online: false,
       error: "Set omnigent.baseUrl in Cave config (Settings → Omnigent fleet).",
     });
@@ -36,6 +41,7 @@ export async function GET(req: Request) {
       hasToken: client.hasToken,
       authenticated: client.authenticated || client.authMode === "none",
       authMode: client.authMode,
+      envInVault,
       online: true,
       health,
       defaults: config.omnigent,
@@ -57,6 +63,7 @@ export async function GET(req: Request) {
         hasToken: client.hasToken,
         authenticated: client.authenticated,
         authMode: client.authMode,
+        envInVault,
         online: false,
         error: message,
         defaults: config.omnigent,
@@ -69,6 +76,7 @@ export async function GET(req: Request) {
         hasToken: false,
         authenticated: false,
         authMode: "none",
+        envInVault,
         online: false,
         error: message,
         defaults: config.omnigent,

@@ -24,6 +24,16 @@ export const runtime = "nodejs";
 
 const PAT_KEY = "GITHUB_PAT";
 const LOGIN_KEY = "GITHUB_USERNAME";
+const GITHUB_USERNAME_PATTERN = /^[A-Za-z0-9-]{1,39}$/;
+
+function isValidGitHubUsername(username: string): boolean {
+  return (
+    GITHUB_USERNAME_PATTERN.test(username) &&
+    !username.startsWith("-") &&
+    !username.endsWith("-") &&
+    !username.includes("--")
+  );
+}
 
 /** Apply key updates to .env.local in place. `null` deletes a key. Comments,
  *  blank lines, key ordering, and unrelated values are preserved (the old
@@ -106,6 +116,9 @@ export async function POST(req: NextRequest) {
 
   if (!pat && !username) {
     return NextResponse.json({ ok: false, error: "pat or username is required" }, { status: 400 });
+  }
+  if (username && !isValidGitHubUsername(username)) {
+    return NextResponse.json({ ok: false, error: "username must be a valid GitHub username" }, { status: 400 });
   }
 
   let login: string | null = username || null;

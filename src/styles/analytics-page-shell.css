@@ -16,7 +16,7 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 10px 0 12px;
+  padding: 10px 0 var(--space-3);
   border-right: 1px solid var(--border-hairline);
   background: var(--bg-elevated);
   /* Sticks to the viewport so the rail is always in reach as analytics scrolls. */
@@ -37,7 +37,7 @@
   height: 40px;
   border-radius: 10px;
   color: var(--accent-presence);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
   flex-shrink: 0;
 }
 

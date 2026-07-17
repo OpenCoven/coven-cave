@@ -7,8 +7,8 @@
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 12px 10px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 10px;
   border-left: 1px solid var(--border-hairline);
   background: color-mix(in oklch, var(--bg-raised) 40%, transparent);
   overflow-y: auto;
@@ -28,7 +28,7 @@
 }
 .skill-preview__icon { color: var(--accent-presence); flex: 0 0 auto; }
 .skill-preview__name {
-  font-size: 13px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--text-primary);
   overflow-wrap: anywhere;
@@ -46,12 +46,12 @@
   color: color-mix(in oklch, var(--accent-presence) 80%, var(--text-secondary));
   background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
   border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 1px 7px;
 }
 .skill-preview__desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: 1.5;
   color: var(--text-secondary);
 }
@@ -59,10 +59,10 @@
 .skill-preview__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .skill-preview__tag {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
@@ -71,7 +71,7 @@
 }
 .skill-preview__path {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -79,16 +79,16 @@
 }
 .skill-preview__hint {
   margin-top: auto;
-  font-size: 10px;
+  font-size: var(--text-2xs);
   color: var(--text-muted);
 }
 .skill-preview__hint kbd {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
+  font-size: var(--text-2xs);
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
 }
 
 /* On narrow widths the side preview would crowd the list — hide it and let the

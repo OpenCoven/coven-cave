@@ -133,6 +133,9 @@ function buildRgArgs(params: {
   else if (params.caseMode === "sensitive") args.push("--case-sensitive");
   else args.push("--smart-case");
   if (params.glob) args.push("--glob", params.glob);
+  // Match /api/project-file's .env-family redaction boundary even when a
+  // caller-supplied glob explicitly includes hidden environment files.
+  args.push("--glob", "!.env*", "--glob", "!**/.env*");
   // Pattern then an explicit search path. The path is REQUIRED: with no path
   // argument and a non-TTY stdin (which execFile gives the child), ripgrep
   // blocks reading stdin instead of walking the directory — so it would hang

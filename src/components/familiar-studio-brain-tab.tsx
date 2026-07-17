@@ -45,7 +45,7 @@ function runtimeLabel(runtimeId: string | null | undefined, harnesses: HarnessRe
 
 export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
-  // Fleet defaults card stays hidden without an Omnigent auth token (cave-cfvv).
+  // Fleet defaults card stays hidden unless OMNIGENT_TOKEN is set up in the user's Vault (cave-cfvv).
   const fleetEnabled = useFleetTokenEnabled();
   const [draftHarness, setDraftHarness] = useState(familiar.harnessOverride ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");

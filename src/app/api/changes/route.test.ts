@@ -16,6 +16,18 @@ assert.doesNotMatch(
   "changes route should use gitDiff for every git diff invocation",
 );
 
+assert.match(
+  source,
+  /function gitStatus[\s\S]*\["-c", "core\.fsmonitor=false", "status", \.\.\.args\]/,
+  "git status calls must disable repository-configured fsmonitor commands",
+);
+
+assert.match(
+  source,
+  /gitStatus\(repoRoot, \["--porcelain=v1", "-z", "--untracked-files=all"\]\)/,
+  "change-list status polling must use the hardened gitStatus helper",
+);
+
 
 // The status GET carries the current branch (Projects hub Git section) — from
 // the existing currentBranch() helper, omitted on unborn repos.

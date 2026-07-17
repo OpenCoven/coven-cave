@@ -43,20 +43,20 @@ try {
   );
 
   assert.equal(
-    canAccessProject({ projectGrants: [] }, { familiarId: "nova" }, "cave", "supreme"),
+    canAccessProject({ projectGrants: [] }, { familiarId: "nova" }, "cave"),
     false,
     "familiars start without project access",
   );
   assert.equal(
-    canAccessProject({ projectGrants: [] }, { familiarId: "supreme" }, "cave", "supreme"),
-    true,
-    "Supreme has implicit access to every project",
+    canAccessProject({ projectGrants: [] }, { familiarId: "supreme" }, "cave"),
+    false,
+    "the Supreme familiar id is not an implicit bearer token for project access",
   );
 
   await grantProjectToFamiliar({ familiarId: "nova", projectId: "cave", source: "human" });
   const permissions = await loadProjectPermissions();
   assert.equal(
-    canAccessProject(permissions, { familiarId: "nova" }, "cave", "supreme"),
+    canAccessProject(permissions, { familiarId: "nova" }, "cave"),
     true,
     "a human-created grant allows the target project",
   );
@@ -67,8 +67,8 @@ try {
   );
   assert.deepEqual(
     (await filterProjectsForFamiliar(projects, "supreme")).map((project) => project.id),
-    ["cave", "docs"],
-    "Supreme sees all projects",
+    [],
+    "the Supreme familiar id only sees explicitly granted projects",
   );
 
   await assertProjectAccess({ familiarId: "nova" }, "cave", "chat");
@@ -133,6 +133,11 @@ try {
       .map((grant) => [grant.projectId, grant.source]),
     [["cave", "bootstrap"], ["docs", "bootstrap"]],
     "bootstrap records Supreme grants for all existing projects",
+  );
+  assert.deepEqual(
+    (await filterProjectsForFamiliar(projects, "supreme")).map((project) => project.id),
+    ["cave", "docs"],
+    "bootstrapped Supreme project access is backed by explicit grants",
   );
   assert.deepEqual(
     bootstrapped.projectGrants
@@ -239,7 +244,7 @@ try {
     "group-only access resolves with its sources",
   );
   assert.equal(
-    canAccessProject(await loadProjectPermissions(), { familiarId: "wren" }, "cave", "supreme", "write"),
+    canAccessProject(await loadProjectPermissions(), { familiarId: "wren" }, "cave", "write"),
     true,
     "canAccessProject honours group grants and required level",
   );
@@ -294,7 +299,7 @@ try {
   const windowMs = Date.parse(accepting.finalizesAt) - Date.parse(accepting.acceptedAt);
   assert.equal(windowMs, GRANT_ACCEPT_UNDO_WINDOW_MS, "window spans GRANT_ACCEPT_UNDO_WINDOW_MS");
   assert.equal(
-    canAccessProject(await loadProjectPermissions(), { familiarId: "ember" }, "docs", "supreme"),
+    canAccessProject(await loadProjectPermissions(), { familiarId: "ember" }, "docs"),
     false,
     "no grant materializes while the undo window is open",
   );
@@ -308,7 +313,7 @@ try {
   assert.equal(undone.status, "pending", "undo returns the proposal to the human's queue");
   assert.equal(undone.finalizesAt, undefined, "undo clears the window deadline");
   assert.equal(
-    canAccessProject(await loadProjectPermissions(), { familiarId: "ember" }, "docs", "supreme"),
+    canAccessProject(await loadProjectPermissions(), { familiarId: "ember" }, "docs"),
     false,
     "undone acceptance leaves no grant behind",
   );
@@ -330,7 +335,7 @@ try {
   const finalizedProposal = finalized.grantProposals.find((p) => p.id === undoable.id);
   assert.equal(finalizedProposal.status, "accepted", "an elapsed window finalizes on load");
   assert.equal(
-    canAccessProject(finalized, { familiarId: "ember" }, "docs", "supreme"),
+    canAccessProject(finalized, { familiarId: "ember" }, "docs"),
     true,
     "the grant materializes once the window elapses",
   );

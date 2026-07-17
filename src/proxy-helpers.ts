@@ -44,13 +44,29 @@ function portFromHost(host: string | null) {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
-export function isTailscaleServeHost(host: string | null) {
-  const hostname = hostnameFromHost(host);
-  return Boolean(hostname?.endsWith(".ts.net"));
+function isTailscaleIpHost(hostname: string) {
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    const parts = hostname.split(".").map((part) => Number(part));
+    return parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) &&
+      parts[0] === 100 &&
+      parts[1] >= 64 &&
+      parts[1] <= 127;
+  }
+  return hostname.toLowerCase().startsWith("fd7a:115c:a1e0:");
 }
 
-export function isAllowedApiHost(host: string | null, mobileAccessAuthenticated = false) {
-  return mobileAccessAuthenticated || isLoopbackHost(host);
+export function isTailscaleServeHost(host: string | null) {
+  const hostname = hostnameFromHost(host)?.toLowerCase();
+  return Boolean(hostname && (hostname.endsWith(".ts.net") || isTailscaleIpHost(hostname)));
+}
+
+export function isAllowedApiHost(
+  host: string | null,
+  mobileAccessAuthenticated = false,
+  tailnetTrusted = false,
+) {
+  if (mobileAccessAuthenticated) return true;
+  return isLoopbackHost(host) || (tailnetTrusted && isTailscaleServeHost(host));
 }
 
 export function sameOrigin(value: string | null, expectedOrigin: string) {

@@ -134,12 +134,12 @@ function nativeAppBackendUrl(req: Request) {
   const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
   if (configured) return configured;
 
-  // Tokenless native-app mode (`pnpm mobile:tailscale:app` sets
-  // COVEN_CAVE_TAILNET_TRUST=1): tailnet membership is the trust boundary, so
-  // the server publishes itself bare. In every token-gated mode — the packaged
-  // bundle above all — app-start publishes THIS server and mints signed
-  // invites instead (see ensureNativeAppServe), so there is no separate
-  // backend to point at.
+  // App mode is token-gated (`pnpm mobile:tailscale:app` mints the mobile
+  // access token), so app-start publishes THIS server and mints signed invites
+  // (see ensureNativeAppServe). The packaged bundle above all must not
+  // hard-depend on a dev checkout's server (cave-gzje); pointing at a
+  // different local server requires the explicit
+  // COVEN_CAVE_NATIVE_APP_BACKEND_URL override above.
   return backendUrl();
 }
 
@@ -164,7 +164,7 @@ async function verifyNativeAppBackend(req: Request, backend: string) {
     if (res.ok) return { ok: true as const };
     const authHint =
       res.status === 401 || res.status === 403
-        ? " The backend is still token-gated; start the tokenless native app server with `pnpm mobile:tailscale:app`."
+        ? " The backend is not paired; start the native app server with `pnpm mobile:tailscale:app` and scan its pairing URL."
         : "";
     return {
       ok: false as const,

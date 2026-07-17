@@ -97,6 +97,15 @@ export function readEnvLocalValue(key: string): string | undefined {
  * appended, a `null` value deletes its key, and every other line is preserved
  * byte-for-byte.
  */
+function assertEnvAssignmentSafe(key: string, value: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+    throw new Error(`invalid env key: ${key}`);
+  }
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`env value for ${key} must not contain newlines`);
+  }
+}
+
 export function upsertEnvContent(existing: string, updates: Record<string, string | null>): string {
   const lines = existing === "" ? [] : existing.split("\n");
   // Drop a single trailing empty line (from a trailing newline) so appended
@@ -122,12 +131,14 @@ export function upsertEnvContent(existing: string, updates: Record<string, strin
     const val = remaining.get(key)!;
     remaining.delete(key);
     if (val === null) continue; // delete: drop this line
+    assertEnvAssignmentSafe(key, val);
     out.push(`${key}=${val}`);
   }
 
   // Append keys that weren't already present (skip deletes for absent keys).
   for (const [key, val] of remaining) {
     if (val === null) continue;
+    assertEnvAssignmentSafe(key, val);
     out.push(`${key}=${val}`);
   }
 

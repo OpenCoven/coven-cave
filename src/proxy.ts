@@ -10,7 +10,6 @@ import {
   timingSafeEqualString,
   isLoopbackHost,
   isAllowedApiHost,
-  isTailscaleServeHost,
   sameOrigin,
   isAllowedRequestSource,
   isAllowedRequestSourceAny,
@@ -188,19 +187,16 @@ export async function proxy(req: NextRequest) {
   const mobileAccessAuthenticated = mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
     : false;
-  // Tokenless native-app mode (COVEN_CAVE_TAILNET_TRUST=1, set only by
-  // `pnpm mobile:tailscale:app`): the server is reachable only over loopback and
-  // via `tailscale serve`, which forwards the request's `<host>.ts.net` Host —
-  // NOT 127.0.0.1 — so the loopback host gate would otherwise 403 every tailnet
-  // request. Trusting the host here is safe because tailnet membership is the
-  // ingress boundary in this mode; the CSRF Origin/Referer gate below still
-  // blocks cross-site browser requests. The packaged app does NOT set this flag.
+  // Tailscale app mode (`pnpm mobile:tailscale:app`) now always provisions the
+  // mobile access credential, so a remote-looking (Tailscale Serve) Host is
+  // accepted only when that credential verifies. COVEN_CAVE_TAILNET_TRUST no
+  // longer relaxes this gate — tailnet membership alone is not authorization —
+  // but the flag still marks tailnet ingress below so local-only automation
+  // runs stay off that path.
   const tailnetTrusted = process.env.COVEN_CAVE_TAILNET_TRUST === "1";
-  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)) {
+  if (!isAllowedApiHost(requestHost, mobileAccessAuthenticated)) {
     return jsonError(403, "forbidden host");
   }
-  const mobileAccessMarker =
-    mobileAccessAuthenticated || (tailnetTrusted && isTailscaleServeHost(requestHost));
 
   // Running a Codex automation launches the local `codex` binary with the
   // user's repository/filesystem authority. Keep that execution surface off
@@ -239,8 +235,8 @@ export async function proxy(req: NextRequest) {
       return jsonError(403, "forbidden referer");
     }
     // Production GET webhooks are intentionally state-changing: a matching
-    // request starts an agent-backed flow. In tokenless Tailscale mode there is
-    // no sidecar secret to prove the caller is first-party, and browsers can
+    // request starts an agent-backed flow. When no sidecar secret is configured
+    // there is nothing to prove the caller is first-party, and browsers can
     // issue cross-site GET navigations/subresources with both Origin and
     // Referer omitted (for example via Referrer-Policy: no-referrer). The same
     // applies to a request authenticated only by the mobile-access cookie
@@ -248,7 +244,7 @@ export async function proxy(req: NextRequest) {
     // same-origin source header for that narrow state-changing GET surface so
     // absent headers cannot bypass the CSRF gate.
     if (
-      ((tailnetTrusted && !sidecarToken) || mobileAccessAuthenticated) &&
+      (!sidecarToken || mobileAccessAuthenticated) &&
       isProductionWebhookGet(req.nextUrl.pathname, req.method) &&
       !origin &&
       !referer
@@ -269,7 +265,7 @@ export async function proxy(req: NextRequest) {
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"
       ? jsonError(500, "missing sidecar auth token")
-      : nextWithMobileAccessMarker(req, mobileAccessMarker);
+      : nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
   }
 
   if (!sidecarAuthenticated && !mobileAccessAuthenticated) {
@@ -283,7 +279,7 @@ export async function proxy(req: NextRequest) {
     return jsonError(401, "unauthorized");
   }
 
-  return nextWithMobileAccessMarker(req, mobileAccessMarker);
+  return nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
 }
 
 export const config = {

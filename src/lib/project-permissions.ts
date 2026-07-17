@@ -343,12 +343,10 @@ export function canAccessProject(
     Partial<Pick<ProjectPermissionsFile, "accessGroups">>,
   ctx: ProjectAccessContext,
   projectId: string,
-  supremeFamiliarId: string,
   required: ProjectAccessLevel = "read",
 ): boolean {
   const familiarId = ctx.familiarId?.trim();
   if (!familiarId) return false;
-  if (familiarId === supremeFamiliarId) return true;
   const effective = effectiveProjectAccess(
     { projectGrants: file.projectGrants, accessGroups: file.accessGroups ?? [] },
     familiarId,
@@ -362,13 +360,7 @@ export async function listAccessibleProjects(
   projects: CaveProject[],
   familiarId: string,
 ): Promise<{ project: CaveProject; access: ProjectAccessLevel }[]> {
-  const [permissions, config] = await Promise.all([
-    loadProjectPermissions(),
-    loadHumanPermissionConfig(),
-  ]);
-  if (familiarId === config.supremeFamiliarId) {
-    return projects.map((project) => ({ project, access: "write" as const }));
-  }
+  const permissions = await loadProjectPermissions();
   const accessible: { project: CaveProject; access: ProjectAccessLevel }[] = [];
   for (const project of projects) {
     const { level } = effectiveProjectAccess(permissions, familiarId, project.id);
@@ -399,20 +391,16 @@ export async function assertProjectAccess(
   surface: ProjectPermissionSurface,
 ): Promise<void> {
   const familiarId = ctx.familiarId?.trim();
-  const [permissions, config] = await Promise.all([
-    loadProjectPermissions(),
-    loadHumanPermissionConfig(),
-  ]);
+  const permissions = await loadProjectPermissions();
   const required = requiredAccessLevel(surface);
-  const isSupreme = !!familiarId && familiarId === config.supremeFamiliarId;
-  const effective = familiarId && !isSupreme
+  const effective = familiarId
     ? effectiveProjectAccess(permissions, familiarId, projectId)
     : null;
-  const allowed = isSupreme || accessLevelSatisfies(effective?.level, required);
+  const allowed = accessLevelSatisfies(effective?.level, required);
 
   let reason: PermissionAuditReason;
   if (allowed) {
-    reason = isSupreme ? "supreme" : effective?.direct ? "grant" : "group";
+    reason = effective?.direct ? "grant" : "group";
   } else {
     reason = effective?.level ? "insufficient-access" : "missing-grant";
   }
