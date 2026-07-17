@@ -58,22 +58,64 @@ assert.ok(
 );
 
 // buildDebugBundle: shape + familiar narrowed to {id, harness, model}
+const env = { appVersion: "0.1.2-test", exportedAt: "2026-07-17T12:00:00Z" };
 const bundle = buildDebugBundle({
   session: { id: "s1", status: "completed" },
   familiar: { id: "f1", display_name: "Nova", role: "dev", harness: "claude", model: "opus" },
   turns: [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }],
   events: [ev(1)],
+  environment: env,
 });
 assert.equal(bundle.session.id, "s1");
 assert.deepEqual(bundle.familiar, { id: "f1", harness: "claude", model: "opus" });
 assert.equal(bundle.turns.length, 1);
 assert.equal(bundle.events.length, 1);
-assert.equal(buildDebugBundle({ session: null, familiar: null, turns: [], events: [] }).familiar, null);
+assert.deepEqual(bundle.environment, env, "bundle carries the repro environment block verbatim");
+assert.equal(
+  buildDebugBundle({ session: null, familiar: null, turns: [], events: [], environment: env }).familiar,
+  null,
+);
 const turnsRef = [{ id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" }];
 assert.equal(
-  buildDebugBundle({ session: null, familiar: null, turns: turnsRef, events: [] }).turns,
+  buildDebugBundle({ session: null, familiar: null, turns: turnsRef, events: [], environment: env }).turns,
   turnsRef,
-  "turns are passed by reference, not cloned",
+  "attachment-free turns are passed by reference, not cloned",
+);
+
+// exportDebugTurn: preview-only attachment fields are stripped from exports
+import { exportDebugTurn } from "./session-debug.ts";
+
+const plainTurn = { id: "t1", role: "user", text: "hi", createdAt: "2026-06-10T00:00:00Z" };
+assert.equal(exportDebugTurn(plainTurn), plainTurn, "no attachments → same reference (no clone)");
+
+const attachedTurn = {
+  ...plainTurn,
+  attachments: [
+    { name: "shot.png", mimeType: "image/png", size: 12, dataUrl: "data:image/png;base64,AAAA" },
+  ],
+};
+const exported = exportDebugTurn(attachedTurn);
+assert.deepEqual(
+  exported.attachments,
+  [{ name: "shot.png", size: 12 }],
+  "preview-only fields (dataUrl, mimeType) are stripped; metadata survives",
+);
+assert.deepEqual(
+  attachedTurn.attachments[0].dataUrl,
+  "data:image/png;base64,AAAA",
+  "the live turn is not mutated by exporting",
+);
+const strippedBundle = buildDebugBundle({
+  session: null,
+  familiar: null,
+  turns: [attachedTurn],
+  events: [],
+  environment: env,
+});
+assert.equal(
+  strippedBundle.turns[0].attachments[0].dataUrl,
+  undefined,
+  "bundle turns go through exportDebugTurn — no base64 previews in Copy all / Download",
 );
 
 // debugFileName

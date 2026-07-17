@@ -1,6 +1,7 @@
 import type { SessionRow } from "./types.ts";
 import { stripAnsi } from "./ansi.ts";
 import { usageSummary, type TurnUsage } from "./usage-format.ts";
+import { stripPreviewOnlyAttachmentFields, type ChatAttachment } from "./chat-attachments.ts";
 
 /** Raw daemon event as returned by GET /api/sessions/[id]/events.
  *  Mirrors the shape in src/app/api/sessions/[id]/events/route.ts. */
@@ -49,6 +50,7 @@ export type DebugTurn = {
   /** Structural subset of ChatResponseMetadata — enough to tell the model
    *  that actually served the turn from the familiar's configured one. */
   responseMetadata?: { model?: string; confirmedModel?: string };
+  attachments?: ChatAttachment[];
 };
 
 /** The model that actually served a turn, when the harness reported one —
@@ -77,6 +79,8 @@ export type DebugBundle = {
   familiar: { id: string; harness?: string; model?: string } | null;
   turns: DebugTurn[];
   events: CovenEvent[];
+  /** Repro context for bug-report bundles: which build exported this, when. */
+  environment: { appVersion: string; exportedAt: string };
 };
 
 /** Append a poll page onto the accumulated tail: dedupe by seq, keep ascending
@@ -124,23 +128,37 @@ export function formatEventPayload(payloadJson: string): string {
   }
 }
 
+/** Export/display form of a turn: attachment previews carry base64 data-URLs,
+ *  so they're stripped the same way sends do — a pasted screenshot must not
+ *  blow up a clipboard copy or the expanded JSON block. Reference-stable when
+ *  there is nothing to strip. */
+export function exportDebugTurn(turn: DebugTurn): DebugTurn {
+  return turn.attachments?.length
+    ? { ...turn, attachments: stripPreviewOnlyAttachmentFields(turn.attachments) }
+    : turn;
+}
+
 /** Typed constructor for the export bundle. Callers pass a full Familiar;
  *  the explicit field-pick strips everything but {id, harness, model} from
- *  the export. Arrays are passed by reference (snapshot at call time), not
- *  cloned. */
+ *  the export. Turns are preview-stripped via {@link exportDebugTurn}
+ *  (reference-stable when no turn has attachments); events are passed by
+ *  reference (snapshot at call time). */
 export function buildDebugBundle(args: {
   session: SessionRow | null;
   familiar: { id: string; harness?: string; model?: string } | null;
   turns: DebugTurn[];
   events: CovenEvent[];
+  environment: { appVersion: string; exportedAt: string };
 }): DebugBundle {
+  const anyAttachments = args.turns.some((turn) => turn.attachments?.length);
   return {
     session: args.session,
     familiar: args.familiar
       ? { id: args.familiar.id, harness: args.familiar.harness, model: args.familiar.model }
       : null,
-    turns: args.turns,
+    turns: anyAttachments ? args.turns.map(exportDebugTurn) : args.turns,
     events: args.events,
+    environment: args.environment,
   };
 }
 

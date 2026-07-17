@@ -48,6 +48,34 @@ assert.match(
   "Session model row prefers the daemon-recorded session model over the familiar's configured default",
 );
 
+// ── Export hygiene (chat-session-debugging S3) ───────────────────────────────
+
+assert.match(
+  source,
+  /environment: \{ appVersion: APP_VERSION, exportedAt: new Date\(\)\.toISOString\(\) \}/,
+  "Debug bundles must stamp the exporting build + timestamp for bug reports",
+);
+assert.match(
+  source,
+  /JSON\.stringify\(exportDebugTurn\(turn\), null, 2\)/,
+  "Copy turn and the expanded JSON must strip base64 attachment previews (multi-MB clipboard writes)",
+);
+assert.doesNotMatch(
+  source,
+  /getText=\{\(\) => JSON\.stringify\(turn, null, 2\)\}/,
+  "no raw-turn copy path may remain — every turn export goes through exportDebugTurn",
+);
+assert.match(
+  source,
+  /label="Copy event"/,
+  "Event rows should offer a copy affordance like turn rows do",
+);
+assert.match(
+  source,
+  /tailCapped[\s\S]*?Long event tail[\s\S]*?Load more/,
+  "Hitting the page-cap must surface a truncation notice with a Load more continuation, not truncate silently",
+);
+
 // ── Changes panel (CHAT-D8-01): working-tree review, now hosted by the code
 // rail (the inspector right panel that first carried it is retired) ──────────
 

@@ -6,15 +6,13 @@ import { useCopy } from "@/lib/use-copy";
 import { formatClock, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
 import { formatRuntime } from "@/lib/chat-response-metadata";
 import { usageBreakdown } from "@/lib/usage-format";
-import {
-  stripPreviewOnlyAttachmentFields,
-  type ChatAttachment,
-} from "@/lib/chat-attachments";
+import { APP_VERSION } from "@/lib/app-version";
 import { type ChatDebugSnapshot } from "@/lib/chat-debug-store";
 import {
   appendEvents,
   buildDebugBundle,
   debugFileName,
+  exportDebugTurn,
   formatEventPayload,
   nextAfterSeq,
   shouldPollEvents,
@@ -152,9 +150,11 @@ function TurnRow({ index, turn }: { index: number; turn: DebugTurn }) {
             <span className="min-w-0 truncate font-mono text-[10px] text-[var(--text-muted)]">
               {usageBreakdown(turn.usage, turn.costUsd) ?? ""}
             </span>
-            <CopyButton getText={() => JSON.stringify(turn, null, 2)} label="Copy turn" />
+            {/* Preview-stripped: a pasted screenshot's base64 must not land in
+                the clipboard or the JSON block below. */}
+            <CopyButton getText={() => JSON.stringify(exportDebugTurn(turn), null, 2)} label="Copy turn" />
           </div>
-          <JsonBlock text={JSON.stringify(turn, null, 2)} />
+          <JsonBlock text={JSON.stringify(exportDebugTurn(turn), null, 2)} />
         </div>
       ) : null}
     </div>
@@ -179,6 +179,9 @@ function EventRow({ event }: { event: CovenEvent }) {
       </button>
       {open ? (
         <div className="border-t border-[var(--border-hairline)] p-2">
+          <div className="mb-1 flex justify-end">
+            <CopyButton getText={() => JSON.stringify(event, null, 2)} label="Copy event" />
+          </div>
           <JsonBlock text={formatEventPayload(event.payload_json)} />
         </div>
       ) : null}
@@ -202,6 +205,9 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const fetchInFlightRef = useRef(false);
+  // True when a drain stopped at the page cap with a full final page — more
+  // events likely remain server-side and the list is silently incomplete.
+  const [tailCapped, setTailCapped] = useState(false);
 
   // Pages until the tail is drained (a full page means more may remain), so
   // finished sessions with >200 events aren't silently truncated. Capped as a
@@ -211,6 +217,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
     if (!sessionId || fetchInFlightRef.current) return;
     fetchInFlightRef.current = true;
     try {
+      let lastPageFull = false;
       for (let page = 0; page < 50; page++) {
         const res = await fetch(
           `/api/sessions/${encodeURIComponent(sessionId)}/events?afterSeq=${cursorRef.current}&limit=200`,
@@ -221,8 +228,10 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
         const incoming = json.events ?? [];
         setEvents((prev) => appendEvents(prev, incoming));
         cursorRef.current = Math.max(cursorRef.current, nextAfterSeq(incoming));
-        if (incoming.length < 200) break;
+        lastPageFull = incoming.length >= 200;
+        if (!lastPageFull) break;
       }
+      setTailCapped(lastPageFull);
       setEventsError(null);
     } catch (err) {
       setEventsError(err instanceof Error ? err.message : String(err));
@@ -276,15 +285,19 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   }, []);
 
   const bundleJson = useCallback(() => {
-    // Attachment previews carry base64 data-URLs; drop them from exports the
-    // same way sends do, so Copy all / Download stay reasonably sized.
-    const exportTurns = turns.map((turn) => {
-      const attachments = (turn as { attachments?: ChatAttachment[] }).attachments;
-      return attachments?.length
-        ? { ...turn, attachments: stripPreviewOnlyAttachmentFields(attachments) }
-        : turn;
-    });
-    return JSON.stringify(buildDebugBundle({ session, familiar, turns: exportTurns, events }), null, 2);
+    // buildDebugBundle strips attachment previews and stamps the environment
+    // block (which build exported this, when) for bug-report bundles.
+    return JSON.stringify(
+      buildDebugBundle({
+        session,
+        familiar,
+        turns,
+        events,
+        environment: { appVersion: APP_VERSION, exportedAt: new Date().toISOString() },
+      }),
+      null,
+      2,
+    );
   }, [session, familiar, turns, events]);
 
   const downloadBundle = useCallback(() => {
@@ -383,6 +396,18 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
               ))}
             </div>
           )}
+          {tailCapped ? (
+            <div className="mt-1 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-muted)]">
+              <span>Long event tail — showing the first {events.length} events.</span>
+              <button
+                type="button"
+                className="focus-ring shrink-0 underline"
+                onClick={() => void fetchEvents()}
+              >
+                Load more
+              </button>
+            </div>
+          ) : null}
         </Section>
       </div>
 
