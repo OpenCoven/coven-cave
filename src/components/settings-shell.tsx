@@ -739,7 +739,7 @@ function OmnigentSettingsGroup() {
     <SettingsGroup label="Omnigent fleet">
       <SettingControlRow
         label="Server URL"
-        hint="HTTPS URL of your Omnigent server (e.g. Tailscale). Token is read from ~/.omnigent/auth_tokens.json — never stored in Cave config."
+        hint="HTTPS URL of your Omnigent server (e.g. Tailscale). Fleet UI unlocks per user: add OMNIGENT_TOKEN to your Vault. Tokens are never stored in Cave config."
       >
         <input
           value={baseUrl}
@@ -779,7 +779,7 @@ function OmnigentSettingsGroup() {
       </SettingControlRow>
       <SettingControlRow
         label="Show fleet in Host chip"
-        hint="When on — and an Omnigent auth token is present — Chat and Home Host pickers list Omnigent hosts (omnigent:…) so a send can start a fleet session. Without a token, no Fleet buttons appear anywhere."
+        hint="When on — and OMNIGENT_TOKEN is set up in your Vault — Chat and Home Host pickers list Omnigent hosts (omnigent:…) so a send can start a fleet session. Without the Vault env, no Fleet buttons appear anywhere."
       >
         <label className="flex items-center gap-2 text-[12px]">
           <input
