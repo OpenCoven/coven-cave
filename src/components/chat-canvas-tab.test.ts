@@ -80,8 +80,12 @@ assert.notEqual(formatArtifactWhen("2026-07-12T00:00:00Z"), "", "real timestamps
 // composer. Save is explicit; nothing hits /api/canvas mid-stream.
 const addTile = readFileSync(new URL("./canvas-add-tile.tsx", import.meta.url), "utf8");
 
-assert.match(view, /<CanvasAddTile familiarId=\{familiarId\} onSaved=\{handleSaved\} \/>/, "the add tile leads the populated grid");
-assert.match(view, /<CanvasAddTile hero familiarId=\{familiarId\} onSaved=\{handleSaved\} \/>/, "the empty state is the hero add tile");
+assert.match(
+  view,
+  /<CanvasAddTile hero=\{artifacts\.length === 0\} familiarId=\{familiarId\} onSaved=\{handleSaved\} \/>/,
+  "ONE stable tile mount leads the grid — hero-styled when empty, so crossing zero never remounts the composer",
+);
+assert.doesNotMatch(view, /<CanvasAddTile hero familiarId/, "no second, remount-prone hero mount remains");
 assert.doesNotMatch(view, /No saved sketches yet/, "the old leave-for-chat empty state is gone");
 assert.match(view, /chat-canvas-card--new/, "a kept sketch settles in with a one-shot highlight");
 

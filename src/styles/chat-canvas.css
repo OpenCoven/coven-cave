@@ -153,6 +153,7 @@
 }
 /* Hero form: the whole empty surface funnels into the same tile. */
 .chat-canvas-add--hero {
+  grid-column: 1 / -1;
   max-width: 560px;
   width: 100%;
   margin: 10vh auto 0;

@@ -110,26 +110,14 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
     );
   }
 
-  if (artifacts.length === 0) {
-    if (state === "loading") {
-      return (
-        <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
-          <EmptyState
-            icon="ph:hourglass"
-            headline="Loading saved sketches..."
-            subtitle="Fetching saved sketches from the canvas store..."
-          />
-        </div>
-      );
-    }
-    // Empty gallery: the add tile IS the empty state — first-run add no
-    // longer exits to chat. The chat path stays as a caption.
+  if (artifacts.length === 0 && state === "loading") {
     return (
-      <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-        <CanvasAddTile hero familiarId={familiarId} onSaved={handleSaved} />
-        <p className="chat-canvas-add__hint">
-          Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
-        </p>
+      <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
+        <EmptyState
+          icon="ph:hourglass"
+          headline="Loading saved sketches..."
+          subtitle="Fetching saved sketches from the canvas store..."
+        />
       </div>
     );
   }
@@ -137,7 +125,11 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   return (
     <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       <div className="chat-canvas-grid" role="list" aria-label="Saved sketches" aria-busy={state === "loading"}>
-        <CanvasAddTile familiarId={familiarId} onSaved={handleSaved} />
+        {/* One stable tree position across empty<->populated so crossing zero
+            never remounts the composer (which would wipe typed input and
+            abort an in-flight generation). Empty gallery = hero-styled tile:
+            the add tile IS the empty state. */}
+        <CanvasAddTile hero={artifacts.length === 0} familiarId={familiarId} onSaved={handleSaved} />
         {artifacts.map((artifact) => {
           const srcDoc =
             artifact.kind === "react" ? buildReactSrcDoc(artifact.code) : buildPreviewSrcDoc(artifact.code);
@@ -189,6 +181,11 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
           );
         })}
       </div>
+      {artifacts.length === 0 ? (
+        <p className="chat-canvas-add__hint">
+          Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
+        </p>
+      ) : null}
       {/* Reopen a saved sketch in the full inline viewer (preview/code tabs,
           refine, fullscreen). Refine edits live in the modal only; "Save to
           Canvas" from the viewer stores the refined result as a new sketch. */}
