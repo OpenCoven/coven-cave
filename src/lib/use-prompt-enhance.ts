@@ -25,10 +25,26 @@ import {
 //
 // Model path: streamFamiliarText (the sanctioned client LLM bridge) as an
 // ephemeral run — no sessionId, origin "enhance" (hidden from chat lists),
-// low effort + fast speed. Falls back to the local rule engine when there is
-// no familiar, the stream errors, or the first token takes too long.
+// read-only permissions, low effort + fast speed. Falls back to the local rule
+// engine when there is no familiar, the stream errors, or the first token takes
+// too long.
 
 export const ENHANCE_FIRST_TOKEN_TIMEOUT_MS = 8000;
+
+function newEnhanceRunId() {
+  return globalThis.crypto?.randomUUID?.() ?? `enhance-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function stopEnhanceRun(runId: string | null) {
+  if (!runId) return;
+  void fetch("/api/chat/stop", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ runId }),
+  }).catch(() => {
+    // Best-effort stop: the stream abort/fallback path should still proceed.
+  });
+}
 
 export type PromptEnhanceState =
   | { phase: "idle" }
@@ -68,12 +84,15 @@ export function usePromptEnhance({
   stateRef.current = state;
   const generationRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const runIdRef = useRef<string | null>(null);
   // Set before the hook itself writes the draft (apply/revert), so the
   // draft-watch below can tell hook writes from user typing.
   const selfEditRef = useRef(false);
 
   const cancel = useCallback(() => {
     generationRef.current += 1;
+    stopEnhanceRun(runIdRef.current);
+    runIdRef.current = null;
     abortRef.current?.abort();
     abortRef.current = null;
     setState({ phase: "idle" });
@@ -102,6 +121,7 @@ export function usePromptEnhance({
     (gen: number, baseDraft: string, enhanced: string, offline: boolean) => {
       if (gen !== generationRef.current) return; // stale completion — inert
       abortRef.current = null;
+      runIdRef.current = null;
       const text = enhanced.trim();
       if (!text) {
         setState({ phase: "error", message: "Enhance returned nothing usable." });
@@ -138,6 +158,8 @@ export function usePromptEnhance({
       if (!baseDraft.trim() || disabled) return;
       generationRef.current += 1;
       const gen = generationRef.current;
+      stopEnhanceRun(runIdRef.current);
+      runIdRef.current = null;
       abortRef.current?.abort();
 
       if (!familiarId) {
@@ -155,15 +177,22 @@ export function usePromptEnhance({
       // rewrite should feel instant-ish; a cold harness shouldn't stall it.
       const timer = setTimeout(() => {
         if (!sawToken && gen === generationRef.current) {
+          stopEnhanceRun(runIdRef.current);
+          runIdRef.current = null;
           controller.abort();
           fallback(gen, baseDraft);
         }
       }, ENHANCE_FIRST_TOKEN_TIMEOUT_MS);
 
+      const runId = newEnhanceRunId();
+      runIdRef.current = runId;
+
       void streamFamiliarText({
         familiarId,
         prompt: buildEnhanceInstruction({ draft: baseDraft, mode, intent, context }),
         origin: "enhance",
+        runId,
+        permissionMode: "read",
         reasoningEffort: "low",
         responseSpeed: "fast",
         signal: controller.signal,
@@ -179,6 +208,7 @@ export function usePromptEnhance({
         .then(({ text, error }) => {
           clearTimeout(timer);
           if (gen !== generationRef.current) return;
+          runIdRef.current = null;
           if (error || !text.trim()) {
             fallback(gen, baseDraft);
             return;
@@ -216,8 +246,12 @@ export function usePromptEnhance({
     announce("Prompt restored.", "polite");
   }, [announce, setDraft]);
 
-  // Abort any in-flight stream on unmount.
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // Stop and abort any in-flight stream on unmount.
+  useEffect(() => () => {
+    stopEnhanceRun(runIdRef.current);
+    runIdRef.current = null;
+    abortRef.current?.abort();
+  }, []);
 
   return { state, enhance, apply, dismiss, revert, cancel, reset };
 }
