@@ -250,6 +250,19 @@ assert.equal(
     ["https://cave.tailnet.example.ts.net"],
     "https scheme is preserved and deduped",
   );
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3000", "http:", "evil.example:8080"),
+    ["http://127.0.0.1:3000"],
+    "non-loopback Host headers must not become accepted CSRF origins in tokenless tailnet mode",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny(
+      "http://evil.example:8080",
+      expectedRequestOrigins("http://127.0.0.1:3000", "http:", "evil.example:8080"),
+    ),
+    false,
+    "an Origin matching an arbitrary non-loopback Host is rejected",
+  );
   // Missing protocol defaults to http (loopback is never TLS on the socket).
   assert.deepEqual(
     expectedRequestOrigins("http://127.0.0.1:3457", null, "127.0.0.1:3458"),

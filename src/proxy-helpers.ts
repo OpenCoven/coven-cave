@@ -89,14 +89,13 @@ export function isAllowedRequestSource(value: string | null, expectedOrigin: str
  * (the port it actually connected to, carried by the Host header) never equals
  * `nextUrl.origin` and every /api request 403s "forbidden origin" (cave-5sg).
  *
- * The request's own Host header carries the real authority. The host gate in
- * proxy() has already constrained it to loopback (or an authenticated /
- * tailnet-trusted remote), so a Host-derived origin is a safe second accepted
- * value: a cross-site browser attacker's Origin still won't match the Host
- * (the browser sets both and cannot forge either), and DNS-rebinding is caught
- * by the loopback host gate. `nextUrl.origin` is kept first so the
- * Tailscale-Serve / forwarded-host path (where Next trusts x-forwarded-host)
- * is entirely unchanged.
+ * The request's own Host header carries the real authority for local fallback,
+ * but only loopback Hosts may extend the accepted-origin set. Tokenless
+ * tailnet-trust mode deliberately relaxes the Host gate for Tailscale Serve
+ * forwarding, so adding arbitrary non-loopback Hosts here would let a
+ * browser-supplied Origin that matches that Host satisfy the CSRF check.
+ * `nextUrl.origin` is kept first so the Tailscale-Serve / forwarded-host path
+ * (where Next trusts x-forwarded-host) is entirely unchanged.
  */
 export function expectedRequestOrigins(
   nextUrlOrigin: string,
@@ -104,7 +103,7 @@ export function expectedRequestOrigins(
   host: string | null,
 ): string[] {
   const origins = [nextUrlOrigin];
-  if (host) {
+  if (isLoopbackHost(host)) {
     const scheme = protocol && protocol.length > 0 ? protocol : "http:";
     const derived = `${scheme}//${host}`;
     if (derived !== nextUrlOrigin) origins.push(derived);
