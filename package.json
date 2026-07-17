@@ -27,6 +27,7 @@
     "build": "next build && pnpm build:server",
     "postbuild": "node scripts/bundle-budget.mjs && node scripts/standalone-budget.mjs",
     "test:bundle": "node scripts/bundle-budget.mjs",
+    "bench:conversation-list": "node --experimental-strip-types scripts/conversation-list-benchmark.mjs",
     "analyze:bundle": "next experimental-analyze --output",
     "typecheck": "tsc --noEmit",
     "check:tests-wired": "node scripts/check-tests-wired.mjs",

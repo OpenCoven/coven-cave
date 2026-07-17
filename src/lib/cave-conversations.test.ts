@@ -193,6 +193,120 @@ assert.equal(failedSummary?.exitCode, 1, "failed conversation summaries expose e
 assert.equal(await deleteConversation("summary-ok"), true);
 assert.equal(await deleteConversation("summary-failed"), true);
 
+// Issue #3266: metadata scans read each large transcript once, then use the
+// stat-keyed summary cache until that specific file changes.
+{
+  const {
+    clearConversationListMetadataCache,
+    CONV_DIR,
+    getConversationListMetrics,
+  } = await import("./cave-conversations.ts");
+  const { mkdir, writeFile, utimes } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+  const fixtureIds = Array.from({ length: 12 }, (_, index) => `metadata-perf-${index}`);
+  const largeText = "x".repeat(128 * 1024);
+
+  for (const [index, sessionId] of fixtureIds.entries()) {
+    await writeFile(
+      path.join(CONV_DIR, `${sessionId}.json`),
+      JSON.stringify({
+        sessionId,
+        familiarId: "charm",
+        harness: "codex",
+        title: `Cached ${index}`,
+        branch: "main",
+        createdAt: "2026-06-12T00:00:00.000Z",
+        updatedAt: `2026-06-12T00:00:${String(index).padStart(2, "0")}.000Z`,
+        turns: [
+          {
+            id: `${sessionId}-assistant`,
+            role: "assistant",
+            text: largeText,
+            createdAt: "2026-06-12T00:00:00.000Z",
+          },
+        ],
+      }),
+      "utf8",
+    );
+  }
+
+  clearConversationListMetadataCache();
+  const coldRows = await listConversations();
+  const cold = getConversationListMetrics();
+  assert.equal(coldRows.length, fixtureIds.length);
+  assert.equal(cold.cacheMisses, fixtureIds.length);
+  assert.ok(cold.bytesRead >= fixtureIds.length * largeText.length);
+  assert.ok(cold.peakReadConcurrency <= 8, "cache misses stay under the read concurrency cap");
+
+  const warmRows = await listConversations();
+  const warm = getConversationListMetrics();
+  assert.deepEqual(warmRows, coldRows, "warm metadata rows remain identical");
+  assert.equal(warm.cacheHits, fixtureIds.length);
+  assert.equal(warm.cacheMisses, 0);
+  assert.equal(warm.cacheHitRate, 1);
+  assert.equal(warm.bytesRead, 0, "unchanged scans do not reread transcript bodies");
+
+  const externallyChanged = fixtureIds[0];
+  const externalFile = path.join(CONV_DIR, `${externallyChanged}.json`);
+  await writeFile(
+    externalFile,
+    JSON.stringify({
+      sessionId: externallyChanged,
+      familiarId: "charm",
+      harness: "codex",
+      title: "Changed outside Cave",
+      branch: "agent/external-change",
+      createdAt: "2026-06-12T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+      activeLeafId: "external-assistant",
+      turns: [
+        {
+          id: "external-assistant",
+          role: "assistant",
+          text: "failed externally",
+          isError: true,
+          createdAt: "2026-06-13T00:00:00.000Z",
+        },
+      ],
+    }),
+    "utf8",
+  );
+  const future = new Date(Date.now() + 60_000);
+  await utimes(externalFile, future, future);
+  const changedRows = await listConversations();
+  const changed = changedRows.find((row) => row.sessionId === externallyChanged);
+  const changedMetrics = getConversationListMetrics();
+  assert.equal(changed?.title, "Changed outside Cave");
+  assert.equal(changed?.branch, "agent/external-change");
+  assert.equal(changed?.status, "failed");
+  assert.equal(changedMetrics.cacheMisses, 1, "only the externally changed file is reread");
+  assert.equal(changedMetrics.cacheHits, fixtureIds.length - 1);
+
+  const saved = await loadConversation(fixtureIds[1]);
+  assert.ok(saved);
+  saved.title = "Changed through saveConversation";
+  saved.branch = "agent/saved-change";
+  await saveConversation(saved);
+  const savedRows = await listConversations();
+  assert.equal(
+    savedRows.find((row) => row.sessionId === fixtureIds[1])?.title,
+    "Changed through saveConversation",
+  );
+  assert.equal(getConversationListMetrics().cacheMisses, 1, "save invalidates one summary");
+
+  for (const sessionId of fixtureIds) assert.equal(await deleteConversation(sessionId), true);
+  assert.deepEqual(await listConversations(), []);
+  assert.equal(getConversationListMetrics().cacheEntries, 0, "deleted entries are pruned");
+
+  await writeFile(path.join(CONV_DIR, "metadata-corrupt.json"), "{ not json", "utf8");
+  const corruptRows = await listConversations();
+  assert.equal(corruptRows[0]?.sessionId, "metadata-corrupt");
+  assert.equal(corruptRows[0]?.familiarId, "");
+  await listConversations();
+  assert.equal(getConversationListMetrics().bytesRead, 0, "corrupt fallback rows are cached too");
+  assert.equal(await deleteConversation("metadata-corrupt"), true);
+}
+
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
 // directly into CONV_DIR (still pointing at the temp HOME from above).
