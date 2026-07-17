@@ -44,6 +44,29 @@ assert.equal(shouldPollEvents({ status: "running", visible: false }), false);
 assert.equal(shouldPollEvents({ status: "completed", visible: true }), false);
 assert.equal(shouldPollEvents({ status: null, visible: true }), false);
 
+// filterEvents: case-insensitive over kind + raw payload; reference-stable when blank
+import { filterEvents } from "./session-debug.ts";
+{
+  const tail = [
+    { ...ev(1, "tool_use"), payload_json: '{"name":"grep"}' },
+    { ...ev(2, "output"), payload_json: '{"data":"Error: ENOENT /tmp/x"}' },
+    { ...ev(3, "lifecycle"), payload_json: "{}" },
+  ];
+  assert.equal(filterEvents(tail, ""), tail, "blank query returns the same array (memo bail)");
+  assert.equal(filterEvents(tail, "   "), tail, "whitespace-only query is blank");
+  assert.deepEqual(
+    filterEvents(tail, "TOOL").map((e) => e.seq),
+    [1],
+    "kind matches are case-insensitive",
+  );
+  assert.deepEqual(
+    filterEvents(tail, "enoent").map((e) => e.seq),
+    [2],
+    "payload text matches without parsing the JSON",
+  );
+  assert.deepEqual(filterEvents(tail, "nope").map((e) => e.seq), [], "no match → empty");
+}
+
 // formatEventPayload: pretty-prints JSON, passes through non-JSON untouched
 assert.equal(formatEventPayload('{"a":1}'), '{\n  "a": 1\n}');
 assert.equal(formatEventPayload("not json"), "not json");

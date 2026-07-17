@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
 import { formatClock, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
@@ -13,6 +13,7 @@ import {
   buildDebugBundle,
   debugFileName,
   exportDebugTurn,
+  filterEvents,
   formatEventPayload,
   nextAfterSeq,
   shouldPollEvents,
@@ -198,6 +199,8 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const cwd = formatRuntime(session?.runtime);
   const [events, setEvents] = useState<CovenEvent[]>([]);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [eventQuery, setEventQuery] = useState("");
+  const visibleEvents = useMemo(() => filterEvents(events, eventQuery), [events, eventQuery]);
   // Tail-follow only makes sense while events are streaming in; opening a
   // finished session shouldn't jump past the Session section.
   const [follow, setFollow] = useState(status === "running");
@@ -387,11 +390,32 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
               </button>
             </div>
           ) : null}
+          {events.length > 0 ? (
+            <div className="mb-1.5 flex items-center gap-2">
+              <input
+                type="search"
+                value={eventQuery}
+                onChange={(e) => setEventQuery(e.target.value)}
+                placeholder="Filter events (kind or payload)"
+                aria-label="Filter events by kind or payload text"
+                className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 py-1 text-[10px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              />
+              {eventQuery.trim() ? (
+                <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
+                  {visibleEvents.length}/{events.length}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           {events.length === 0 && !eventsError ? (
             <div className="py-2 text-[10px] text-[var(--text-muted)]">No events yet.</div>
+          ) : visibleEvents.length === 0 ? (
+            <div className="py-2 text-[10px] text-[var(--text-muted)]">
+              No events match “{eventQuery.trim()}”.
+            </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {events.map((event) => (
+              {visibleEvents.map((event) => (
                 <EventRow key={event.seq} event={event} />
               ))}
             </div>

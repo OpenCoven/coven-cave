@@ -76,6 +76,29 @@ assert.match(
   "Hitting the page-cap must surface a truncation notice with a Load more continuation, not truncate silently",
 );
 
+// ── Events filter (chat-session-debugging S4) ────────────────────────────────
+
+assert.match(
+  source,
+  /filterEvents\(events, eventQuery\)/,
+  "The events list renders through the pure filter so behavior stays unit-tested",
+);
+assert.match(
+  source,
+  /aria-label="Filter events by kind or payload text"/,
+  "The filter input must be labelled for screen readers",
+);
+assert.match(
+  source,
+  /\{visibleEvents\.length\}\/\{events\.length\}/,
+  "An active filter shows an honest filtered/total count",
+);
+assert.match(
+  source,
+  /No events match/,
+  "A filter with zero hits says so instead of rendering an empty void",
+);
+
 // ── Changes panel (CHAT-D8-01): working-tree review, now hosted by the code
 // rail (the inspector right panel that first carried it is retired) ──────────
 
