@@ -60,9 +60,13 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
   // Abort any in-flight generation on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  // Lazy familiar roster for the switcher — first expand only.
+  // Lazy familiar roster for the switcher — one attempt per mount (a failed
+  // or empty roster must not re-fetch on every expand; the switcher then
+  // simply shows the active familiar).
+  const rosterFetchedRef = useRef(false);
   useEffect(() => {
-    if (!expanded || familiars.length > 0) return;
+    if (!expanded || rosterFetchedRef.current) return;
+    rosterFetchedRef.current = true;
     const ctrl = new AbortController();
     void fetch("/api/familiars", { signal: ctrl.signal })
       .then((res) => (res.ok ? res.json() : null))
@@ -343,7 +347,7 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
             value={state.pastedCode}
             onChange={(e) => dispatch({ type: "set-pasted-code", code: e.target.value })}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && state.pastedCode.trim()) {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && state.pastedCode.trim() && !saving) {
                 e.preventDefault();
                 void save(state.pastedCode, pastedKind);
               }
