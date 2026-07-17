@@ -800,17 +800,23 @@ final class AppModel {
         case none
     }
 
-    /// Probe every candidate base URL concurrently, then adjudicate strictly
-    /// in candidate order so the semantics match a sequential walk: the first
-    /// `.ok` in order wins, and a 401/403 earlier in the order is TERMINAL —
-    /// it's a live Cave token gate talking, and the fix is pairing. Adopting
-    /// a later candidate past it could silently connect to a different
-    /// instance on a sibling port (e.g. a dev server on :3000) — the user
-    /// thinks they're talking to the desktop they paired with, but they
-    /// aren't. Concurrency only changes the wall clock: one probe's timeout
-    /// (~6s) instead of the sum across candidates (30s+ on a cold launch).
+    /// Probe candidate base URLs and adjudicate strictly in candidate order: the
+    /// first `.ok` in order wins, and a 401/403 earlier in the order is
+    /// TERMINAL — it's a live Cave token gate talking, and the fix is pairing.
+    /// Adopting a later candidate past it could silently connect to a different
+    /// instance on a sibling port (e.g. a dev server on :3000) — the user thinks
+    /// they're talking to the desktop they paired with, but they aren't.
+    ///
+    /// When a paired credential exists, probe sequentially so we never spray a
+    /// Bearer token at speculative sibling ports after an earlier candidate has
+    /// already succeeded or rejected it. Unpaired probes carry no secret, so they
+    /// may still run concurrently for the cold-launch wall-clock win.
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
         guard !candidates.isEmpty else { return .none }
+        if CaveConnection.accessToken != nil {
+            return await discoverBaseURLSequentially(candidates)
+        }
+
         let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
             for (index, base) in candidates.enumerated() {
                 group.addTask { (index, await Self.probe(base)) }
@@ -819,6 +825,21 @@ final class AppModel {
             for await (index, result) in group { collected[index] = result }
             return collected
         }
+        return adjudicateDiscoveryResults(results, candidates: candidates)
+    }
+
+    private static func discoverBaseURLSequentially(_ candidates: [URL]) async -> DiscoveryOutcome {
+        for base in candidates {
+            switch await Self.probe(base) {
+            case .ok: return .found(base)
+            case .unauthorized: return .unauthorized
+            case .failed: continue
+            }
+        }
+        return .none
+    }
+
+    private static func adjudicateDiscoveryResults(_ results: [ProbeResult?], candidates: [URL]) -> DiscoveryOutcome {
         for (index, result) in results.enumerated() {
             switch result {
             case .ok: return .found(candidates[index])
