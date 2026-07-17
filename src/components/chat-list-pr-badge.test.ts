@@ -48,6 +48,16 @@ assert.match(
   /onOpenUrl=\{onOpenUrl\}\n\s+onOpen=/s,
   "the chat router hands its in-app URL opener to the chat list",
 );
+assert.match(
+  workspace,
+  /const openUrlInApp = useCallback\(\(url: string\) => \{\s*\n\s*if \(openGitHubTarget\(url\)\) \{/,
+  "workspace tries the native GitHubView target before falling back to the browser pane",
+);
+assert.match(
+  workspace,
+  /<ChatSurface[\s\S]*?onOpenUrl=\{openUrlInApp\}/,
+  "workspace passes the GitHub-aware app URL opener to chat-list badges",
+);
 
 // ── Badge styling: GitHub's state colors ─────────────────────────────────────
 for (const state of ["merged", "closed", "draft"]) {

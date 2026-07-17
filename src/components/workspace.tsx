@@ -1669,6 +1669,14 @@ export function Workspace() {
     return true;
   }, []);
 
+  const openUrlInApp = useCallback((url: string) => {
+    if (openGitHubTarget(url)) {
+      shellRef.current?.dismissNavMobile();
+      return;
+    }
+    openUrlInAppBrowser(url);
+  }, [openGitHubTarget, openUrlInAppBrowser]);
+
   const openReminderLink = useCallback((link: LinkRef) => {
     if (link.kind === "url") {
       if (!link.ref) return;
@@ -2433,7 +2441,7 @@ export function Workspace() {
         invalidateConversation(session.id);
         await loadSessions();
       }}
-      onOpenUrl={openUrlInAppBrowser}
+      onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
       onOpenSettings={() => {
         shellRef.current?.dismissNavMobile();
@@ -2506,7 +2514,7 @@ export function Workspace() {
         onOpenOnboarding={openOnboarding}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        onOpenUrl={openUrlInAppBrowser}
+        onOpenUrl={openUrlInApp}
       />
     ) : mode === "board" || mode === "familiar-work-queue" ? (
       // Tasks and the Work Queue are one surface (cave-oa1z, the Schedules

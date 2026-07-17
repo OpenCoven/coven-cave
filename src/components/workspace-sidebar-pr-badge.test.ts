@@ -2,8 +2,8 @@
 // Source pins for the workspace-sidebar PR-status badge — the sidebar twin of
 // the chat list's badge (#2983): thread rows swap the status dot (and the
 // title-heuristic PR/branch glyph) for a clickable GitHub PR-state icon when
-// the session carries real PR context; clicking opens the PR in the in-app
-// browser (new-tab fallback) without opening the chat.
+// the session carries real PR context; clicking routes PR URLs through the
+// native GitHubView deep-linker (browser/new-tab fallback) without opening the chat.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -60,11 +60,16 @@ assert.match(
   "the badge has an accessible name naming the PR and its state",
 );
 
-// ── Wiring: workspace hands the sidebar its in-app URL opener ────────────────
+// ── Wiring: workspace hands the sidebar its app URL opener ──────────────────
 assert.match(
   workspace,
-  /<WorkspaceSidebar[\s\S]*?onOpenUrl=\{openUrlInAppBrowser\}/,
-  "workspace passes the in-app browser opener to the chat sidebar",
+  /const openUrlInApp = useCallback\(\(url: string\) => \{\s*\n\s*if \(openGitHubTarget\(url\)\) \{/,
+  "workspace wraps URL opens with the GitHub target interceptor first",
+);
+assert.match(
+  workspace,
+  /<WorkspaceSidebar[\s\S]*?onOpenUrl=\{openUrlInApp\}/,
+  "workspace passes the GitHub-aware app URL opener to the chat sidebar",
 );
 
 // ── Styling: GitHub's state colors + gutter alignment ────────────────────────
