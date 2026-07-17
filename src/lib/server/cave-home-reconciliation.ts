@@ -276,6 +276,38 @@ async function readLockOwner(lock: string): Promise<LockOwner> {
   };
 }
 
+async function removeOrphanTakeover(takeover: string): Promise<boolean> {
+  const [claim, info] = await Promise.all([
+    readFile(takeover, "utf8")
+      .then((value) => JSON.parse(value) as { pid?: unknown })
+      .catch(() => null),
+    stat(takeover).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }),
+  ]);
+  if (!info) return true;
+
+  const pid = typeof claim?.pid === "number" && Number.isSafeInteger(claim.pid)
+    ? claim.pid
+    : null;
+  if (pid) {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return false;
+    }
+  } else if (Date.now() - info.mtimeMs <= LOCK_STALE_MS) {
+    // Older releases did not record the claimant PID. Give a live legacy
+    // takeover the same stale window as an unreadable lock owner.
+    return false;
+  }
+
+  await rm(takeover, { force: true });
+  return true;
+}
+
 async function renameLockCandidate(candidate: string, lock: string): Promise<void> {
   try {
     await rename(candidate, lock);
@@ -396,7 +428,16 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           const takeover = path.join(lock, ".takeover");
           const takeoverToken = randomBytes(16).toString("hex");
           try {
-            await writeFile(takeover, JSON.stringify({ takeoverToken, ownerToken: owner.token }), { flag: "wx" });
+            await writeFile(
+              takeover,
+              JSON.stringify({
+                pid: process.pid,
+                takeoverToken,
+                ownerToken: owner.token,
+                startedAt: nowIso(),
+              }),
+              { flag: "wx" },
+            );
             const currentOwner = await readLockOwner(lock);
             if (currentOwner.token !== owner.token) {
               await rm(takeover, { force: true });
@@ -407,7 +448,9 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
               continue;
             }
           } catch (takeoverError) {
-            if (!["EEXIST", "ENOENT"].includes((takeoverError as NodeJS.ErrnoException).code ?? "")) throw takeoverError;
+            const code = (takeoverError as NodeJS.ErrnoException).code ?? "";
+            if (code === "EEXIST" && await removeOrphanTakeover(takeover)) continue;
+            if (!["EEXIST", "ENOENT"].includes(code)) throw takeoverError;
           }
         }
       } catch (lockError) {

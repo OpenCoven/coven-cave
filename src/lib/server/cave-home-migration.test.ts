@@ -863,6 +863,28 @@ try {
     assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
   }
 
+  // A contender can crash after publishing its takeover claim but before it
+  // renames the stale lock. Legacy claims did not record a PID, so reclaim an
+  // aged marker instead of retrying EEXIST forever and blocking every store.
+  {
+    const { coven, cave } = await home("orphan-takeover-claim");
+    await mkdir(cave, { recursive: true });
+    const lock = path.join(cave, ".migration.lock");
+    await mkdir(lock);
+    const takeover = path.join(lock, ".takeover");
+    await writeFile(takeover, JSON.stringify({ takeoverToken: "abandoned", ownerToken: null }));
+    const stale = new Date(Date.now() - 10 * 60_000);
+    await utimes(lock, stale, stale);
+    await utimes(takeover, stale, stale);
+    await writeFile(path.join(coven, "cave-config.json"), '{"safe":true}');
+
+    const startedAt = Date.now();
+    const result = await migrateCaveHome({ createSymlink: denySymlink });
+    assert.deepEqual(result.errors, []);
+    assert.ok(Date.now() - startedAt < 2_000, "an orphan takeover claim is reclaimed without hanging");
+    assert.deepEqual(await json(path.join(cave, "config.json")), { safe: true });
+  }
+
   // A failed Windows unlock rename can leave a lock owned by this still-live
   // process on disk. Process liveness alone cannot distinguish that orphan
   // from an active critical section, so the process-wide active-token set is
