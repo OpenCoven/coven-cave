@@ -280,6 +280,15 @@ assert.match(
   /onBlur=\{\(\) => void save\(\{ voiceName: draftVoiceName\.trim\(\) \|\| null \}\)\}\s*\n\s*onKeyDown=\{\(e\) => \{[\s\S]{0,200}?if \(e\.key === "Enter"\) e\.currentTarget\.blur\(\);/,
   "Enter commits a typed voice id instead of leaving it unsaved",
 );
+const imeSafeVoiceEnterHandlers =
+  source.match(
+    /onKeyDown=\{\(e\) => \{\s*if \(e\.nativeEvent\.isComposing\) return;[\s\S]{0,200}?if \(e\.key === "Enter"\) e\.currentTarget\.blur\(\);/g,
+  ) ?? [];
+assert.equal(
+  imeSafeVoiceEnterHandlers.length,
+  2,
+  "both free-text voice inputs ignore Enter while an IME composition is active",
+);
 
 // 5. Successful saves catch the roster up immediately — every surface gating
 //    on familiar.voiceProvider (the chat kebab's Call item) sees the new
