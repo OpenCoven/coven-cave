@@ -6586,10 +6586,12 @@ a.mobile-handoff__link:hover {
     color-mix(in oklch, var(--bg-raised) 70%, transparent);
 }
 
-/* Hairline-divided tri-stat band. */
+/* Hairline-divided stat band — count-agnostic columns (currently four:
+   sessions · this week · memories · streak). */
 .familiars-view__statband {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
   border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
 }
@@ -6598,7 +6600,7 @@ a.mobile-handoff__link:hover {
   flex-direction: column;
   gap: var(--space-1);
   min-width: 0;
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2);
 }
 .familiars-view__stat + .familiars-view__stat {
   border-left: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);

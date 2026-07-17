@@ -61,7 +61,7 @@ type CockpitData = {
 
 const EMPTY: CockpitData = { cards: [], familiars: [], github: [], inbox: [], sessions: [], memory: [], space: [] };
 
-const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsTotal: 0, sessionsLast7d: 0, hasActiveSession: false, activity: new Array<number>(ACTIVITY_DAYS).fill(0) };
+const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsTotal: 0, sessionsLast7d: 0, hasActiveSession: false, streakDays: 0, activity: new Array<number>(ACTIVITY_DAYS).fill(0) };
 
 // A KPI tile's visual props plus the data plumbing the root owns: which trend
 // metric feeds its sparkline and which fetch source gates its loading state.

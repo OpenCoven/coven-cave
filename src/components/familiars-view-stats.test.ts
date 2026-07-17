@@ -37,6 +37,7 @@ assert.equal(f1?.lastSessionAt, sessions[0].created_at, "f1 last session uses th
 assert.equal(f1?.sessionsLast7d, 2, "f1 has 2 sessions in the last 7d (s1 and s2; s3 is excluded at 8d)");
 assert.equal(f1?.hasActiveSession, false, "f1 has no session start in the active window");
 assert.equal(f1?.sessionsTotal, 4, "f1 counts every non-archived session (s6 archived is excluded)");
+assert.equal(f1?.streakDays, 2, "f1 ritual streak spans today (s1) and yesterday (s2); the day-8 gap breaks the chain");
 assert.equal(f1?.activity.length, ACTIVITY_DAYS, "activity strip covers ACTIVITY_DAYS UTC days");
 assert.equal(f1?.activity[ACTIVITY_DAYS - 1], 1, "today's cell counts s1 (started 10 minutes ago)");
 assert.equal(f1?.activity[ACTIVITY_DAYS - 2], 1, "yesterday's cell counts s2");
@@ -54,6 +55,7 @@ assert.equal(f2?.memoryCount, 1);
 assert.equal(f2?.latestMemory?.title, "Only f2 memory");
 assert.equal(f2?.sessionsLast7d, 1);
 assert.equal(f2?.hasActiveSession, false, "f2 last session was 3 days ago, not active");
+assert.equal(f2?.streakDays, 0, "a 3-day-old session holds no streak — and the card shows a dash, not a zero");
 
 // f3 — nothing
 const f3 = stats.get("f3");
@@ -64,6 +66,7 @@ assert.equal(f3?.sessionsLast7d, 0);
 assert.equal(f3?.hasActiveSession, false);
 assert.equal(f3?.sessionsTotal, 0);
 assert.ok(f3?.activity.every((n) => n === 0), "zero-session familiar has an all-zero activity strip");
+assert.equal(f3?.streakDays, 0, "zero-session familiar has no streak");
 
 // 7d window edge: session at exactly 7d should be EXCLUDED (strict less-than)
 const edge7d = buildFamiliarCardStats({
