@@ -38,7 +38,16 @@ assert.doesNotThrow(
 const src = readFileSync(new URL("./use-refresh-on-focus.ts", import.meta.url), "utf8");
 assert.match(src, /window\.addEventListener\("focus", run\)/, "wires window focus");
 assert.match(src, /document\.addEventListener\("visibilitychange", onVisible\)/, "wires visibilitychange");
-assert.match(src, /getCurrentWindow\(\)\.onFocusChanged/, "wires the Tauri native focus event (the desktop fix)");
+assert.match(
+  src,
+  /getCurrentWindow\(\)\.listen\("tauri:\/\/focus"/,
+  "wires the Tauri native focus event (the desktop fix)",
+);
+assert.doesNotMatch(
+  src,
+  /\.onFocusChanged\(/,
+  "must not call onFocusChanged: its composite sync unlisten discards the inner async _unlisten rejections, which surface as an uncatchable 'listeners[eventId].handlerId' TypeError after an HMR/webview registry reset",
+);
 assert.match(src, /if \(isTauri\(\)\)/, "the Tauri path is guarded behind isTauri()");
 assert.match(src, /removeEventListener\("focus", run\)[\s\S]*?removeEventListener\("visibilitychange"/, "cleans up the web listeners");
 assert.match(src, /if \(disposed\) safeUnlisten\(un\);/, "late-resolving listen is torn down via the guard");
