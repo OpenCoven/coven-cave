@@ -35,7 +35,7 @@ import { Icon } from "@/lib/icon";
 import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
-import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useFocusTrap, FOCUSABLE } from "@/lib/use-focus-trap";
 import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { parseFileRef, type FileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
@@ -961,15 +961,49 @@ function openTableLightbox(scroll: HTMLElement) {
 
   const prevOverflow = document.body.style.overflow;
   document.body.style.overflow = "hidden";
+  // CHAT-D11-02: this dialog is imperative DOM (no React mount), so it can't
+  // use useFocusTrap — mirror its contract by hand: remember the trigger,
+  // trap Tab inside the overlay, and restore focus on dismiss. `.focus()` on
+  // a since-removed trigger is a harmless no-op.
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const dismiss = () => {
     document.body.style.overflow = prevOverflow;
     document.removeEventListener("keydown", onKey);
     overlay.remove();
+    returnFocus?.focus();
   };
   const onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.stopPropagation();
       dismiss();
+      return;
+    }
+    if (event.key === "Tab") {
+      // The cloned table can carry focusable links, so cycle everything in
+      // the overlay, not just the Close button. Same recapture rule as
+      // useFocusTrap: focus that escaped the dialog gets pulled back in.
+      const focusables = Array.from(overlay.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => !el.hasAttribute("disabled"),
+      );
+      if (focusables.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (!activeEl || !overlay.contains(activeEl)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && activeEl === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeEl === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   };
   overlay.addEventListener("click", (event) => {
