@@ -11739,6 +11739,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-thread-review-item {
   display: flex;
   align-items: flex-start;
+  /* .ui-btn centers its content; review items read as a left-aligned list. */
+  justify-content: flex-start;
   gap: var(--space-2);
   width: 100%;
   min-width: 0;
@@ -11764,16 +11766,27 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   outline: 2px solid var(--accent-presence);
   outline-offset: 1px;
 }
-.fa-thread-review-discuss {
+/* Trailing "discuss" icon slot — pinned to the right edge so the title/detail
+   stay left, revealed on hover/focus (always on coarse pointers). */
+.fa-thread-review-item > .ui-btn-icon-slot:last-child,
+.fa-thread-review-item > .ui-btn-icon-slot:last-child svg {
+  color: var(--accent-presence);
+}
+.fa-thread-review-item > .ui-btn-icon-slot:last-child {
   margin-left: auto;
   align-self: center;
-  color: var(--accent-presence) !important;
   opacity: 0;
   transition: opacity 120ms ease;
 }
-.fa-thread-review-item:hover .fa-thread-review-discuss,
-.fa-thread-review-item:focus-visible .fa-thread-review-discuss {
+.fa-thread-review-item:hover > .ui-btn-icon-slot:last-child,
+.fa-thread-review-item:focus-visible > .ui-btn-icon-slot:last-child {
   opacity: 1;
+}
+@media (pointer: coarse) {
+  .fa-thread-review-item > .ui-btn-icon-slot:last-child { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fa-thread-review-item > .ui-btn-icon-slot:last-child { transition: none; }
 }
 .fa-thread-review-list li.is-critical .fa-thread-review-item {
   border-color: color-mix(in oklch, var(--color-danger) 45%, var(--border-hairline));

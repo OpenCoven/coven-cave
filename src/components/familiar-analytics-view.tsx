@@ -331,6 +331,7 @@ const ThreadAnalysisSection = memo(function ThreadAnalysisSection({
     <FaSection
       id="fa-confidence"
       title="Confidence from thread analysis"
+      wide
       count={
         confidence.hasData
           ? `${confidence.reportCount} ${confidence.reportCount === 1 ? "report" : "reports"}`
@@ -948,18 +949,18 @@ export function FamiliarAnalyticsContent({
           />
         </FaSection>
 
+        {/* Contract compliance pairs with recent sessions on the first row —
+            the full-width thread-analysis panel below would otherwise leave an
+            empty cell beside the sessions list. The #fa-contract KPI
+            drill-through keeps working wherever the section lives. */}
+        <ContractCompliance report={model.contractReport} />
+
         <ThreadAnalysisSection
           confidence={model.confidence}
           trends={model.signalTrends}
           familiar={model.familiar}
           onSelfReportEnabled={onRefresh}
         />
-
-        {/* Contract compliance pairs with the thread-analysis panel — both read
-            on identity health — and sits above the fold instead of dangling
-            under the operational panels. The #fa-contract KPI drill-through
-            keeps working wherever the section lives. */}
-        <ContractCompliance report={model.contractReport} />
 
         <FaSection
           id="fa-heal"
@@ -987,6 +988,7 @@ export function FamiliarAnalyticsContent({
         <FaSection
           id="fa-model-performance"
           title="Model performance"
+          wide
           count={`${model.modelFeedback.total} ${model.modelFeedback.total === 1 ? "vote" : "votes"}`}
         >
           <ModelFeedbackSection rollup={model.modelFeedback} />
