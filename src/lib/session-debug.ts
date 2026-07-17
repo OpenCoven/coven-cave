@@ -103,6 +103,17 @@ export function shouldPollEvents(args: { status: string | null; visible: boolean
   return args.status === "running" && args.visible;
 }
 
+/** Case-insensitive substring filter over the event tail: matches kind or the
+ *  raw payload JSON (so ids, paths, and error text inside payloads hit without
+ *  a parse). Reference-stable on a blank query so React memos can bail. */
+export function filterEvents(events: CovenEvent[], query: string): CovenEvent[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return events;
+  return events.filter(
+    (e) => e.kind.toLowerCase().includes(q) || e.payload_json.toLowerCase().includes(q),
+  );
+}
+
 export function formatEventPayload(payloadJson: string): string {
   try {
     const parsed = JSON.parse(payloadJson);
