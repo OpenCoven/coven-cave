@@ -31,8 +31,8 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   // lines (suggestions) so control markup never leaks and chips can render.
   assert.match(
     view,
-    /const \{ visible: visibleText, suggestions \} = extractNextPaths\(r\.text\)/,
-    "strips the next-paths block and parses suggestions from coven replies",
+    /const \{ visible: withoutNextPaths, suggestions \} = extractNextPaths\(r\.text\)[\s\S]*extractCovenDelegations\(withoutNextPaths\)/,
+    "strips next-path and delegation controls from coven replies",
   );
   // Parsed suggestions render as click-to-send chips targeted to their author.
   assert.match(
@@ -78,6 +78,26 @@ test("@mentions target a subset of the coven", () => {
   assert.match(view, /applyMention\(draft, mention\.start, mention\.query/, "inserts the chosen familiar");
 });
 
+test("completed familiar delegation trailers route bounded, attributable follow-up work", () => {
+  assert.match(view, /extractCovenDelegations\(withoutNextPaths\)/, "parses only the tested structured trailer after removing next-path controls");
+  assert.match(view, /source\.status !== "done"/, "never routes a partial or failed familiar reply");
+  assert.match(view, /!group\.familiarIds\.includes\(targetId\)/, "rejects out-of-coven targets");
+  assert.match(view, /!visibleTargets\.has\(targetId\)/, "requires the visible reply to name the routed target");
+  assert.match(view, /!parseMentions\(delegation\.task, mentionable\)\.includes\(targetId\)/, "requires the structured task to name the same target");
+  assert.match(view, /targetId === source\.familiarId/, "rejects self-delegation");
+  assert.match(view, /lineage\.has\(targetId\)/, "rejects delegation cycles");
+  assert.match(view, /delivered\.has\(dedupeKey\)/, "deduplicates source-to-target deliveries");
+  assert.match(view, /MAX_COVEN_DELEGATION_DEPTH/, "bounds delegation depth");
+  assert.match(view, /MAX_COVEN_DELEGATIONS_PER_TURN/, "bounds total delegated sends per human turn");
+  assert.match(view, /controller\.signal\.aborted/, "Stop prevents queued delegated sends from starting");
+  assert.match(view, /delegatedByFamiliarId: source\.familiarId/, "records who delegated the task");
+  assert.match(view, /delegationSourceReplyId: source\.id/, "records the stable source reply for persistence and idempotency");
+  assert.match(view, /targetFamiliarIds: \[targetId\]/, "routes only to the explicitly delegated target");
+  assert.match(view, /sessions\[targetId\] \?\? null/, "reuses the target familiar's latest pinned session");
+  assert.match(view, /const retryText = delegator \? `Delegated by @\$\{delegator\}:\\n\$\{userTurn\.text\}` : userTurn\.text/, "preserves delegation attribution when a failed target is retried");
+  assert.match(view, /delegator \? "HANDOFF" : "OP"/, "renders familiar-issued work as an attributed handoff");
+});
+
 test("Group chat transcript uses avatar author rows with recency", () => {
   assert.match(
     view,
@@ -89,11 +109,10 @@ test("Group chat transcript uses avatar author rows with recency", () => {
     /const dtPrefs = useDateTimePrefs\(\)/,
     "group chat reads date/time preferences for message recency",
   );
-  assert.match(
-    view,
-    /className="cave-group-chat-turn cave-group-chat-turn--user"[\s\S]*cave-group-chat-avatar cave-group-chat-avatar--human[\s\S]*cave-group-chat-name[\s\S]*operatorDisplayName[\s\S]*cave-group-chat-badge cave-group-chat-badge--op[\s\S]*formatChatRecency\(user\.createdAt, dtPrefs\)/,
-    "group user turns render a Discord-like avatar/profile-name/OP/recency header",
-  );
+  assert.match(view, /<UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human"/, "human turns retain the user avatar");
+  assert.match(view, /delegator\?\.display_name \?\? operatorDisplayName/, "human turns retain the operator display name while handoffs show the familiar");
+  assert.match(view, /delegator \? "HANDOFF" : "OP"/, "human and familiar-authored turns have distinct badges");
+  assert.match(view, /formatChatRecency\(user\.createdAt, dtPrefs\)/, "group prompt turns retain recency");
   assert.match(
     view,
     /className="cave-group-chat-turn cave-group-chat-turn--assistant"[\s\S]*<FamiliarAvatar familiar=\{f\} size="xl"[\s\S]*cave-group-chat-name[\s\S]*f\?\.display_name[\s\S]*formatChatRecency\(r\.createdAt, dtPrefs\)/,
