@@ -30,12 +30,14 @@ const KIND_FILTERS: { kind: ItemKind; label: string }[] = [
   { kind: "reminder", label: "Reminders" },
   { kind: "agent", label: "Familiars" },
   { kind: "daily-summary", label: "Reports" },
+  { kind: "milestone", label: "Milestones" },
 ];
 
 const MUTABLE_KIND_LABELS: Record<MutableKind, string> = {
   reminder: "Reminders",
   agent: "Familiar activity",
   "daily-summary": "Daily reports",
+  milestone: "Milestones",
 };
 
 // Live per-row timestamp: ticks each minute so a popover left open doesn't

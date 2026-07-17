@@ -45,6 +45,7 @@ const KIND_ACCENT: Record<NonNullable<Toast["kind"]>, string> = {
   agent: "var(--accent-presence)",
   "response-needed": "var(--color-warning)",
   reminder: "var(--color-warning)",
+  milestone: "var(--color-success)",
 };
 
 export function InboxToastStack({ toasts, onDismiss, onExpire, onSnooze, onOpen }: Props) {
@@ -180,6 +181,7 @@ function toastIconForItem(item: InboxItem): IconName {
   if (item.kind === "daily-summary") return "ph:newspaper";
   if (item.kind === "response-needed") return "ph:chat-circle-dots-fill";
   if (item.kind === "agent") return "ph:magic-wand-fill";
+  if (item.kind === "milestone") return "ph:trophy-fill";
   return "ph:alarm-fill";
 }
 

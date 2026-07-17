@@ -102,6 +102,7 @@ export const ICON_NAMES = [
   "ph:dots-three-bold",
   "ph:sliders-bold",
   "ph:sparkle",
+  "ph:trophy-fill",
   "ph:tray",
   "ph:translate",
   "ph:thumbs-up",

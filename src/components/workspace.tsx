@@ -40,6 +40,7 @@ import {
   setLastSurface,
 } from "@/lib/familiar-memory";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import { useMilestoneWatch } from "@/lib/use-milestone-watch";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
@@ -581,6 +582,10 @@ export function Workspace() {
   usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
     enabled: mobileModeEnabled && !mobileModeAutoRetryBlocked,
   });
+
+  // Milestone crossings → renown ledger → inbox toasts. Self-contained
+  // (fetches its own unscoped roster/session data once per check).
+  useMilestoneWatch();
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
     let running = false;

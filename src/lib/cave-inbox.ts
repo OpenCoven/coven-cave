@@ -8,7 +8,7 @@ import { withCaveHomeReconciledStore } from "./server/cave-home-migration.ts";
 
 const INBOX_PATH = path.join(caveHome(), "inbox.json");
 
-export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary";
+export type ItemKind = "reminder" | "agent" | "response-needed" | "daily-summary" | "milestone";
 export type ItemStatus = "pending" | "fired" | "snoozed" | "dismissed" | "done";
 
 // Re-exported so existing consumers that say
@@ -170,7 +170,10 @@ export async function createItem(input: NewItemInput): Promise<InboxItem> {
     const file = await loadInboxUnlocked();
     const now = new Date().toISOString();
     const status: ItemStatus =
-      (input.kind === "agent" || input.kind === "daily-summary") && !input.fireAt ? "fired" : "pending";
+      (input.kind === "agent" || input.kind === "daily-summary" || input.kind === "milestone") &&
+      !input.fireAt
+        ? "fired"
+        : "pending";
     const item: InboxItem = {
       id: crypto.randomUUID(),
       kind: input.kind,

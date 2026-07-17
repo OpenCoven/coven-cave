@@ -1575,6 +1575,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   agent: "Familiar",
   "response-needed": "Response needed",
   "daily-summary": "Daily summary",
+  milestone: "Milestone",
 };
 
 function ItemDetailPanel({
