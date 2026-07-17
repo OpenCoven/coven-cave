@@ -10,6 +10,7 @@ import {
   setGroupSession,
   setGroupParticipants,
   parseMentions,
+  extractCovenDelegations,
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   renderCovenRoster,
@@ -195,6 +196,71 @@ test("parseMentions: punctuation after a name still matches", () => {
   assert.deepEqual(parseMentions("@Nova, thoughts?", ROSTER), ["nova"]);
 });
 
+test("extractCovenDelegations: strips a valid trailer and returns its routed task", () => {
+  const text =
+    '@Charm Review the design.\n\n<coven:delegation target="charm">@Charm Review the design.</coven:delegation>';
+  assert.deepEqual(extractCovenDelegations(text), {
+    visible: "@Charm Review the design.",
+    delegations: [{ targetFamiliarId: "charm", task: "@Charm Review the design." }],
+  });
+});
+
+test("extractCovenDelegations: a casual @mention never dispatches", () => {
+  assert.deepEqual(extractCovenDelegations("@Charm would know more about this."), {
+    visible: "@Charm would know more about this.",
+    delegations: [],
+  });
+});
+
+test("extractCovenDelegations: ignores quoted, inline-code, and fenced marker examples", () => {
+  const quoted = '> <coven:delegation target="charm">quoted</coven:delegation>';
+  const indentedQuote = '  > <coven:delegation target="charm">quoted</coven:delegation>';
+  const inline = '`<coven:delegation target="charm">inline</coven:delegation>`';
+  const multiBacktickInline = '``<coven:delegation target="charm">inline</coven:delegation>``';
+  const fenced = '```xml\n<coven:delegation target="charm">fenced</coven:delegation>\n```';
+  const tildeFenced = '~~~xml\n<coven:delegation target="charm">fenced</coven:delegation>\n~~~';
+  const indentedCode = '    <coven:delegation target="charm">indented</coven:delegation>';
+  const tabIndentedCode = '\t<coven:delegation target="charm">indented</coven:delegation>';
+  for (const text of [
+    quoted,
+    indentedQuote,
+    inline,
+    multiBacktickInline,
+    fenced,
+    tildeFenced,
+    indentedCode,
+    tabIndentedCode,
+  ]) {
+    assert.deepEqual(extractCovenDelegations(text), { visible: text, delegations: [] });
+  }
+});
+
+test("extractCovenDelegations: preserves case-sensitive familiar ids", () => {
+  const text = '<coven:delegation target="Charm">review this</coven:delegation>';
+  assert.deepEqual(extractCovenDelegations(text).delegations, [
+    { targetFamiliarId: "Charm", task: "review this" },
+  ]);
+});
+
+test("extractCovenDelegations: dedupes targets and rejects empty or malformed trailers", () => {
+  const text = [
+    '<coven:delegation target="charm">first</coven:delegation>',
+    '<coven:delegation target="charm">second</coven:delegation>',
+    '<coven:delegation target="sage"></coven:delegation>',
+    '<coven:delegation target="../bad">bad</coven:delegation>',
+  ].join("\n");
+  assert.deepEqual(extractCovenDelegations(text).delegations, [
+    { targetFamiliarId: "charm", task: "first" },
+  ]);
+});
+
+test("extractCovenDelegations: hides an incomplete trailing control while streaming", () => {
+  assert.deepEqual(
+    extractCovenDelegations('@Charm take this.\n<coven:delegation target="charm">partial'),
+    { visible: "@Charm take this.", delegations: [] },
+  );
+});
+
 test("resolveGroupMessageTargets: no mention broadcasts in roster order", () => {
   assert.deepEqual(
     resolveGroupMessageTargets("What does everyone think?", ["nova", "sage"], ROSTER),
@@ -276,6 +342,7 @@ test("renderCovenRoster: names every participant with roles", () => {
   const out = renderCovenRoster(COVEN, "nova");
   assert.match(out, /- Nova — Lead orchestrator/);
   assert.match(out, /- Charm — Comms familiar/);
+  assert.match(out, /Charm — Comms familiar \[familiar-id: charm\]/);
   assert.match(out, /- You \(human\)/);
 });
 
@@ -317,6 +384,9 @@ test("renderCovenRoundtablePrompt: frames broadcast replies as independent first
   assert.match(out, /Other familiars receive the same human request in parallel/);
   assert.match(out, /Answer from your own identity, role, and judgment/);
   assert.match(out, /Do not summarize, predict, imitate, or speak for other familiars/);
+  assert.match(out, /Do not merely suggest that the human ask another familiar/);
+  assert.match(out, /address that familiar directly using their exact @display name/);
+  assert.match(out, /<coven:delegation target="familiar-id">/);
   assert.match(out, /What should we do\?$/);
   assert.doesNotMatch(out, /<coven_transcript>/);
 });

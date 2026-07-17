@@ -41,6 +41,8 @@ import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
+  MAX_COVEN_DELEGATION_DEPTH,
+  MAX_COVEN_DELEGATIONS_PER_TURN,
   applyGroupEvent,
   parseSseBuffer,
   defaultGroupName,
@@ -49,6 +51,8 @@ import {
   removeGroup,
   setGroupSession,
   setGroupParticipants,
+  parseMentions,
+  extractCovenDelegations,
   resolveGroupMessageTargets,
   mentionSuggestionAuthor,
   renderCovenRoundtablePrompt,
@@ -527,6 +531,85 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           ),
         ),
       );
+      // A familiar can perform an explicit human-requested handoff by emitting
+      // a validated delegation trailer. Plain assistant @mentions remain prose.
+      // Process the small delegation tree sequentially so Stop prevents queued
+      // work from starting and each target keeps its resumable familiar session.
+      const delivered = new Set(
+        transcriptRef.current
+          .filter((turn): turn is GroupUserTurn => turn.role === "user" && Boolean(turn.delegationSourceReplyId))
+          .map((turn) => `${turn.delegationSourceReplyId}:${turn.targetFamiliarIds?.[0] ?? ""}`),
+      );
+      let delegationCount = 0;
+      const runDelegations = async (
+        sourceReplies: GroupReply[],
+        depth: number,
+        lineage: Set<string>,
+      ): Promise<void> => {
+        if (depth >= MAX_COVEN_DELEGATION_DEPTH || controller.signal.aborted) return;
+        for (const source of sourceReplies) {
+          if (controller.signal.aborted || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
+          if (source.status !== "done") continue;
+          const withoutNextPaths = extractNextPaths(source.text).visible;
+          const { visible, delegations } = extractCovenDelegations(withoutNextPaths);
+          const visibleTargets = new Set(parseMentions(visible, mentionable));
+          for (const delegation of delegations) {
+            if (controller.signal.aborted || delegationCount >= MAX_COVEN_DELEGATIONS_PER_TURN) return;
+            const targetId = delegation.targetFamiliarId;
+            const dedupeKey = `${source.id}:${targetId}`;
+            if (
+              targetId === source.familiarId ||
+              !group.familiarIds.includes(targetId) ||
+              !visibleTargets.has(targetId) ||
+              !parseMentions(delegation.task, mentionable).includes(targetId) ||
+              lineage.has(targetId) ||
+              delivered.has(dedupeKey)
+            ) continue;
+            const target = byId.get(targetId);
+            if (!target) continue;
+            const at = nowIso();
+            const delegatedTurn: GroupUserTurn = {
+              id: newId(),
+              role: "user",
+              text: delegation.task,
+              targetFamiliarIds: [targetId],
+              delegatedByFamiliarId: source.familiarId,
+              delegationSourceReplyId: source.id,
+              delegationDepth: depth + 1,
+              createdAt: at,
+            };
+            const delegatedReply: GroupReply = {
+              id: newId(),
+              role: "assistant",
+              familiarId: targetId,
+              replyTo: delegatedTurn.id,
+              sessionId: groupsRef.current.find((item) => item.id === group.id)?.sessions[targetId] ?? null,
+              text: "",
+              status: "queued",
+              createdAt: at,
+            };
+            delivered.add(dedupeKey);
+            delegationCount += 1;
+            setTranscript((prev) => [...prev, delegatedTurn, delegatedReply]);
+            const delegatedBy = byId.get(source.familiarId)?.display_name ?? source.familiarId;
+            const child = await streamOne(
+              group,
+              delegatedReply,
+              renderCovenRoundtablePrompt({
+                participants: rosterParticipants,
+                receivingFamiliarId: targetId,
+                userText: `Delegated by @${delegatedBy}:\n${delegation.task}`,
+                targeted: true,
+              }),
+              controller.signal,
+            );
+            await runDelegations([child], depth + 1, new Set([...lineage, targetId]));
+          }
+        }
+      };
+      for (const source of settled) {
+        await runDelegations([source], 0, new Set([source.familiarId]));
+      }
       // Only clear the shared abort/busy wiring if this broadcast still owns it.
       // A coven switch (or a newer broadcast) may have replaced abortRef while
       // this one was aborting; clearing unconditionally would kill the newer
@@ -590,6 +673,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         error: undefined,
         activity: undefined,
       };
+      const delegator = userTurn.delegatedByFamiliarId
+        ? byId.get(userTurn.delegatedByFamiliarId)?.display_name ?? userTurn.delegatedByFamiliarId
+        : null;
+      const retryText = delegator ? `Delegated by @${delegator}:\n${userTurn.text}` : userTurn.text;
       updateReply(reply.id, () => fresh);
       setBusy(true);
       const controller = new AbortController();
@@ -600,7 +687,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         renderCovenRoundtablePrompt({
           participants: rosterParticipants,
           receivingFamiliarId: fresh.familiarId,
-          userText: userTurn.text,
+          userText: retryText,
           targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
         }),
         controller.signal,
@@ -916,6 +1003,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     const targets = user.targetFamiliarIds
                       ?.map((id) => byId.get(id))
                       .filter((f): f is ResolvedFamiliar => Boolean(f));
+                    const delegator = user.delegatedByFamiliarId
+                      ? byId.get(user.delegatedByFamiliarId)
+                      : undefined;
                     return (
                     <div key={user.id} className="flex flex-col gap-2">
                       {targets && targets.length > 0 && (
@@ -927,16 +1017,24 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         </div>
                       )}
                       <div className="cave-group-chat-turn cave-group-chat-turn--user">
-                        <UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human" />
+                        {delegator ? (
+                          <div className="cave-group-chat-avatar">
+                            <FamiliarAvatar familiar={delegator} size="xl" className="cave-group-chat-avatar__image" title={delegator.display_name} />
+                          </div>
+                        ) : (
+                          <UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human" />
+                        )}
                         <div className="cave-group-chat-message">
                           <div className="cave-group-chat-meta">
-                            <span className="cave-group-chat-name">{operatorDisplayName}</span>
-                            <span className="cave-group-chat-badge cave-group-chat-badge--op">OP</span>
+                            <span className="cave-group-chat-name">{delegator?.display_name ?? operatorDisplayName}</span>
+                            <span className={`cave-group-chat-badge${delegator ? "" : " cave-group-chat-badge--op"}`}>
+                              {delegator ? "HANDOFF" : "OP"}
+                            </span>
                             <time className="cave-group-chat-recency" dateTime={user.createdAt}>
                               {formatChatRecency(user.createdAt, dtPrefs)}
                             </time>
                           </div>
-                          <MessageBubble role="user" content={user.text} timestamp={user.createdAt} showTimestamp={false} onOpenUrl={onOpenUrl} />
+                          <MessageBubble role={delegator ? "assistant" : "user"} content={user.text} timestamp={user.createdAt} showTimestamp={false} onOpenUrl={onOpenUrl} />
                         </div>
                       </div>
                       <div className="flex flex-col gap-3 pl-1">
@@ -947,7 +1045,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                           // reply, mirroring the single-chat surface; otherwise
                           // the raw control markup leaks into the coven bubble.
                           // The parsed lines render as click-to-send chips below.
-                          const { visible: visibleText, suggestions } = extractNextPaths(r.text);
+                          const { visible: withoutNextPaths, suggestions } = extractNextPaths(r.text);
+                          const { visible: visibleText } = extractCovenDelegations(withoutNextPaths);
                           return (
                             <div key={r.id} className="cave-group-chat-turn cave-group-chat-turn--assistant">
                               <div className="cave-group-chat-avatar">

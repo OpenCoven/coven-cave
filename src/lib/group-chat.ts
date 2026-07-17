@@ -20,6 +20,11 @@ const TRANSCRIPTS_KEY_PREFIX = "cave:group-chat:transcript:";
  *  nothing the model sees — it only bounds localStorage growth (and the cost
  *  of re-serializing the transcript on save). */
 export const TRANSCRIPT_CAP = 200;
+/** A human-originated Coven turn may trigger a small, bounded delegation tree.
+ *  Two hops supports A → B → C while preventing an open-ended agent loop. */
+export const MAX_COVEN_DELEGATION_DEPTH = 2;
+/** Independent cap for wide fan-out within one human turn. */
+export const MAX_COVEN_DELEGATIONS_PER_TURN = 4;
 
 /** A saved group of familiars chatted with together. */
 export type CovenGroup = {
@@ -43,6 +48,12 @@ export type GroupUserTurn = {
    * means it was broadcast to the whole coven.
    */
   targetFamiliarIds?: string[];
+  /** Present when this prompt was emitted by another familiar rather than the
+   *  human composer. These fields make the handoff attributable and idempotent
+   *  across transcript persistence and React re-renders. */
+  delegatedByFamiliarId?: string;
+  delegationSourceReplyId?: string;
+  delegationDepth?: number;
   createdAt: string;
 };
 
@@ -164,6 +175,75 @@ export function defaultGroupName(names: string[]): string {
 
 /** A coven member as seen by the mention parser/autocomplete. */
 export type MentionableFamiliar = { id: string; name: string };
+
+export type CovenDelegation = {
+  targetFamiliarId: string;
+  task: string;
+};
+
+export type ExtractedCovenDelegations = {
+  visible: string;
+  delegations: CovenDelegation[];
+};
+
+const DELEGATION_OPEN = "<coven:delegation";
+const COMPLETE_DELEGATION_RE =
+  /<coven:delegation\s+target="([a-z0-9][a-z0-9_-]*)">([\s\S]*?)<\/coven:delegation>/gi;
+
+/** Ranges where marker-shaped text is documentation, not an instruction. */
+function delegationIgnoredRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  for (const re of [
+    /```[\s\S]*?(?:```|$)/g,
+    /~~~[\s\S]*?(?:~~~|$)/g,
+    /(`+)[^\n]*?\1/g,
+    /^[ \t]{0,3}>.*$/gm,
+    /^(?: {4,}|\t).*$/gm,
+  ]) {
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text))) ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+/**
+ * Extract explicit familiar-issued delegation controls while returning the
+ * human-readable reply without their hidden trailer. A plain `@Name` is never
+ * enough to dispatch work: only a complete, non-quoted control marker routes.
+ * The incomplete trailing marker is hidden during streaming so control markup
+ * does not flicker into the reply bubble.
+ */
+export function extractCovenDelegations(text: string): ExtractedCovenDelegations {
+  const ignored = delegationIgnoredRanges(text);
+  const isIgnored = (index: number) => ignored.some(([start, end]) => index >= start && index < end);
+  const delegations: CovenDelegation[] = [];
+  const remove: Array<[number, number]> = [];
+  const seenTargets = new Set<string>();
+  let match: RegExpExecArray | null;
+  COMPLETE_DELEGATION_RE.lastIndex = 0;
+  while ((match = COMPLETE_DELEGATION_RE.exec(text))) {
+    if (isIgnored(match.index)) continue;
+    remove.push([match.index, match.index + match[0].length]);
+    // Familiar ids are validated case-insensitively but remain case-sensitive
+    // identifiers on Linux filesystems and throughout the roster. Preserve the
+    // exact roster id emitted in the control instead of silently changing it.
+    const targetFamiliarId = match[1];
+    const task = match[2].trim();
+    if (!task || seenTargets.has(targetFamiliarId)) continue;
+    seenTargets.add(targetFamiliarId);
+    delegations.push({ targetFamiliarId, task });
+  }
+
+  let visible = text;
+  for (const [start, end] of remove.sort((a, b) => b[0] - a[0])) {
+    visible = visible.slice(0, start) + visible.slice(end);
+  }
+  const partial = visible.lastIndexOf(DELEGATION_OPEN);
+  if (partial >= 0 && !delegationIgnoredRanges(visible).some(([start, end]) => partial >= start && partial < end)) {
+    visible = visible.slice(0, partial);
+  }
+  return { visible: visible.trimEnd(), delegations };
+}
 
 /** True for a char that may not abut the end of a matched `@name` (a word char,
  *  so `@Alpha` does not greedily match a participant named `Al`). */
@@ -378,7 +458,7 @@ export function renderCovenRoster(
     if (p.kind === "human") return `- ${p.name} (human)`;
     const role = p.role.trim() ? ` — ${p.role.trim()}` : "";
     const you = p.id === receivingFamiliarId ? " (you)" : "";
-    return `- ${p.name}${role}${you}`;
+    return `- ${p.name}${role}${you} [familiar-id: ${p.id}]`;
   });
   return [
     "<coven_roster>",
@@ -415,7 +495,10 @@ export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): st
       : "This is an independent first-pass group reply. Other familiars receive the same human request in parallel.",
     "Answer from your own identity, role, and judgment.",
     "Do not summarize, predict, imitate, or speak for other familiars.",
-    "If useful, state what you would hand off to another familiar, but keep your answer yours.",
+    "Do not merely suggest that the human ask another familiar to do something.",
+    "When the human explicitly asks you to give, assign, delegate, or hand off a task to another familiar in this coven, address that familiar directly using their exact @display name and state the concrete task.",
+    'After the visible @mention task, append exactly one hidden routing trailer using the roster id: <coven:delegation target="familiar-id">the same concrete task</coven:delegation>.',
+    "Only emit that trailer for an explicit delegation request addressed to you; ordinary references to another familiar are not delegations.",
     "</coven_roundtable>",
   ].join("\n");
   return [roster, mode, args.userText.trim()].filter(Boolean).join("\n\n");
