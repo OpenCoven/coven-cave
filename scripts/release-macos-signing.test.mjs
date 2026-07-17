@@ -111,15 +111,13 @@ test("Linux AppImage strips bundled GLib so host GLib is used at runtime", () =>
   );
 });
 
-test("manual release retries can build from a source ref while attaching to the tag", () => {
-  assert.match(releaseWorkflow, /source_ref:/);
+test("manual release retries build from the release tag before publishing", () => {
+  assert.doesNotMatch(releaseWorkflow, /source_ref:/);
+  assert.doesNotMatch(releaseWorkflow, /github\.event\.inputs\.source_ref/);
   assert.match(
     releaseWorkflow,
-    /description: "Git ref to build from for manual release-infra retries\. Defaults to tag\."/,
-  );
-  assert.match(
-    releaseWorkflow,
-    /ref: \$\{\{ github\.event\.inputs\.source_ref \|\| github\.event\.inputs\.tag \|\| github\.ref \}\}/,
+    /ref: \$\{\{ github\.event\.inputs\.tag \|\| github\.ref \}\}/,
+    "release checkouts must use the same tag/ref whose release receives assets",
   );
   assert.match(
     releaseWorkflow,
