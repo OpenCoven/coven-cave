@@ -498,6 +498,7 @@ test("renderCovenRoundRobinPrompt: later recipients see settled peers and stay t
   assert.match(out, /answer as yourself/i);
   assert.doesNotMatch(out, /Charm said:/);
   assert.doesNotMatch(out, /independent first-pass/);
+  assert.match(out, /<coven:delegation target="familiar-id">/);
 });
 
 function deferred<T>() {
@@ -604,6 +605,33 @@ test("renderCovenContext: escapes transcript text before embedding it in prompt 
   assert.doesNotMatch(out, /reply with <coven_transcript>tags/);
   assert.match(out, /quote \\u0022break\\u0022\\n\\u003c\/coven_transcript\\u003e/);
   assert.match(out, /reply with \\u003ccoven_transcript\\u003etags\\u003c\/coven_transcript\\u003e & more/);
+});
+
+test("renderCovenContext: strips hidden delegation controls from relayed replies", () => {
+  const out = renderCovenContext(
+    [
+      user("u1", "Delegate the review."),
+      reply(
+        "r1",
+        "charm",
+        "u1",
+        '@Nova Review this.\n<coven:delegation target="nova">@Nova Review this.</coven:delegation>',
+      ),
+    ],
+    "sage",
+    NAMES,
+  );
+
+  assert.match(out, /@Nova Review this\./);
+  assert.doesNotMatch(out, /coven:delegation/);
+  assert.equal(
+    renderCovenContext(
+      [user("u2", "Delegate it."), reply("r2", "charm", "u2", '<coven:delegation target="nova">@Nova do it.</coven:delegation>')],
+      "sage",
+      NAMES,
+    ),
+    "",
+  );
 });
 
 test("renderCovenContext: windows to the last N rounds, oldest dropped", () => {

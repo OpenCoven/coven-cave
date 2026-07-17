@@ -527,6 +527,13 @@ export type CovenRoundtablePromptArgs = {
   targeted: boolean;
 };
 
+const COVEN_DELEGATION_PROMPT_LINES = [
+  "Do not merely suggest that the human ask another familiar to do something.",
+  "When the human explicitly asks you to give, assign, delegate, or hand off a task to another familiar in this coven, address that familiar directly using their exact @display name and state the concrete task.",
+  'After the visible @mention task, append exactly one hidden routing trailer using the roster id: <coven:delegation target="familiar-id">the same concrete task</coven:delegation>.',
+  "Only emit that trailer for an explicit delegation request addressed to you; ordinary references to another familiar are not delegations.",
+] as const;
+
 /**
  * Build the default group-chat prompt for one familiar.
  *
@@ -546,10 +553,7 @@ export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): st
       : "This is an independent first-pass group reply. Other familiars receive the same human request in parallel.",
     "Answer from your own identity, role, and judgment.",
     "Do not summarize, predict, imitate, or speak for other familiars.",
-    "Do not merely suggest that the human ask another familiar to do something.",
-    "When the human explicitly asks you to give, assign, delegate, or hand off a task to another familiar in this coven, address that familiar directly using their exact @display name and state the concrete task.",
-    'After the visible @mention task, append exactly one hidden routing trailer using the roster id: <coven:delegation target="familiar-id">the same concrete task</coven:delegation>.',
-    "Only emit that trailer for an explicit delegation request addressed to you; ordinary references to another familiar are not delegations.",
+    ...COVEN_DELEGATION_PROMPT_LINES,
     "</coven_roundtable>",
   ].join("\n");
   return [roster, mode, args.userText.trim()].filter(Boolean).join("\n\n");
@@ -572,6 +576,7 @@ export function renderCovenRoundRobinPrompt(args: CovenRoundRobinPromptArgs): st
     "Read the other participants' completed replies provided below, then answer as yourself.",
     "Use your own identity, role, and judgment. You may agree, disagree, extend, or redirect the discussion.",
     "Do not imitate another familiar or present their words as your own.",
+    ...COVEN_DELEGATION_PROMPT_LINES,
     "</coven_round_robin>",
   ].join("\n");
   return [roster, mode, context, args.userText.trim()].filter(Boolean).join("\n\n");
@@ -639,8 +644,9 @@ function escapeCovenPromptText(text: string): string {
  * Third-person, named, with an explicit stay-yourself guard (Coven canon).
  * Excludes the receiving familiar's own turns (already in its resumed session),
  * keeps only settled non-empty replies, and windows to the last N rounds. The
- * caller passes already-cleaned reply text (next-paths block stripped) so this
- * stays dependency-free. Returns "" when there is nothing to relay.
+ * The caller strips next-path controls; this helper strips delegation controls
+ * itself so hidden routing markup can never enter another familiar's prompt.
+ * Returns "" when there is nothing to relay.
  */
 export function renderCovenContext(
   transcript: GroupTurn[],
@@ -669,12 +675,14 @@ export function renderCovenContext(
   const kept = rounds
     .map((r) => ({
       user: r.user,
-      replies: r.replies.filter(
-        (rep) =>
-          rep.status === "done" &&
-          rep.text.trim() !== "" &&
-          rep.familiarId !== receivingFamiliarId,
-      ),
+      replies: r.replies
+        .map((rep) => ({ ...rep, text: extractCovenDelegations(rep.text).visible.trim() }))
+        .filter(
+          (rep) =>
+            rep.status === "done" &&
+            rep.text !== "" &&
+            rep.familiarId !== receivingFamiliarId,
+        ),
     }))
     .filter((r) => r.replies.length > 0);
 
@@ -688,7 +696,7 @@ export function renderCovenContext(
     const lines: string[] = [`(human) asked: "${escapeCovenPromptText(r.user.text.trim())}"`];
     for (const rep of r.replies) {
       lines.push(`${escapeCovenPromptText(nameOf(rep.familiarId))} said:`);
-      lines.push(escapeCovenPromptText(rep.text.trim()));
+      lines.push(escapeCovenPromptText(rep.text));
     }
     return lines.join("\n");
   });
