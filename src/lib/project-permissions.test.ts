@@ -7,11 +7,13 @@ import path from "node:path";
 const tmp = await mkdtemp(path.join(tmpdir(), "project-permissions-test-"));
 process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(tmp, "permissions.json");
 process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE = path.join(tmp, "permission-config.json");
+process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(tmp, "projects.json");
 process.env.CAVE_SUPREME_FAMILIAR_ID = "supreme";
 
 try {
   const {
     assertProjectAccess,
+    assertProjectRootAccess,
     bootstrapSupremeProjectGrants,
     canAccessProject,
     createAccessGroup,
@@ -34,6 +36,11 @@ try {
     { id: "cave", name: "Cave", root: "/tmp/cave", createdAt: "now", updatedAt: "now" },
     { id: "docs", name: "Docs", root: "/tmp/docs", createdAt: "now", updatedAt: "now" },
   ];
+  await writeFile(
+    process.env.CAVE_PROJECTS_PATH_OVERRIDE,
+    JSON.stringify({ version: 1, projects }),
+    "utf8",
+  );
 
   assert.equal(
     canAccessProject({ projectGrants: [] }, { familiarId: "nova" }, "cave", "supreme"),
@@ -70,9 +77,18 @@ try {
     (err) => err instanceof ProjectAccessDeniedError && err.status === 403,
     "missing grants fail closed with a 403 error",
   );
+  await assert.rejects(
+    () => assertProjectRootAccess({ familiarId: "nova" }, "/tmp/cave/subdir", "chat"),
+    (err) => err instanceof ProjectAccessDeniedError && err.status === 403,
+    "unregistered roots, including subdirectories of registered projects, fail closed",
+  );
+  await assertProjectRootAccess({ familiarId: "nova" }, "/tmp/cave/subdir", "chat", {
+    allowUnregisteredRoot: true,
+  });
   const audited = await loadProjectPermissions();
-  assert.equal(audited.permissionAudit.at(-2)?.decision, "allow", "allowed decisions are audited");
-  assert.equal(audited.permissionAudit.at(-1)?.decision, "deny", "denied decisions are audited");
+  assert.equal(audited.permissionAudit.at(-3)?.decision, "allow", "allowed decisions are audited");
+  assert.equal(audited.permissionAudit.at(-2)?.decision, "deny", "denied decisions are audited");
+  assert.equal(audited.permissionAudit.at(-1)?.projectId, "unregistered:/tmp/cave/subdir", "unregistered root denials are audited");
 
   const proposal = await createGrantProposal({
     proposedBy: "supreme",
@@ -328,6 +344,7 @@ try {
 } finally {
   delete process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE;
   delete process.env.CAVE_PERMISSION_CONFIG_PATH_OVERRIDE;
+  delete process.env.CAVE_PROJECTS_PATH_OVERRIDE;
   delete process.env.CAVE_SUPREME_FAMILIAR_ID;
   await rm(tmp, { recursive: true, force: true });
 }

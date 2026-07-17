@@ -433,15 +433,13 @@ export async function assertProjectRootAccess(
   ctx: ProjectAccessContext,
   projectRoot: string | null | undefined,
   surface: ProjectPermissionSurface,
+  options: { allowUnregisteredRoot?: boolean } = {},
 ): Promise<CaveProject | null> {
   if (!projectRoot?.trim()) return null;
   const project = projectForRoot(projectRoot, await loadProjects());
   if (!project) {
-    // The root does not correspond to any registered project, so there is no
-    // grant surface to enforce (e.g. an offline travel replay whose queued
-    // local runtime cwd was never registered). There is nothing to authorize
-    // — and nothing an attacker could bypass — so allow it through rather than
-    // hard-failing legitimate replays for unregistered local roots.
+    if (options.allowUnregisteredRoot) return null;
+    await assertProjectAccess(ctx, `unregistered:${projectRoot}`, surface);
     return null;
   }
   await assertProjectAccess(ctx, project.id, surface);
