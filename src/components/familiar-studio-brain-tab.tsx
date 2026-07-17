@@ -84,6 +84,27 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   // flight, so a stop click (or voice switch) can't be overtaken by late audio.
   const previewGenRef = useRef(0);
 
+  // Unsaved *text* drafts, diffed against the last-known saved values. The
+  // free-text voice fields commit on blur — but a tab/familiar switch or a
+  // Studio close can unmount the input before any blur fires, silently
+  // dropping a typed voice id (cave-32er). Recomputed every render so the
+  // id-reset cleanup below can flush what's still pending.
+  const dirtyTextRef = useRef<{ familiarId: string; patch: Record<string, unknown> }>({
+    familiarId: familiar.id,
+    patch: {},
+  });
+  {
+    const patch: Record<string, unknown> = {};
+    const pendingVoiceModel = draftVoiceModel.trim();
+    if (pendingVoiceModel !== (familiar.voiceModel ?? "")) patch.voiceModel = pendingVoiceModel || null;
+    const pendingVoiceName = draftVoiceName.trim();
+    if (pendingVoiceName !== (familiar.voiceName ?? "")) patch.voiceName = pendingVoiceName || null;
+    dirtyTextRef.current = { familiarId: familiar.id, patch };
+  }
+
+  // Full draft reset ONLY when the familiar itself changes; the cleanup
+  // flushes any still-dirty voice text first (it also runs on unmount, so
+  // closing the Studio mid-edit persists the typed id instead of eating it).
   useEffect(() => {
     setDraftHarness(familiar.harnessOverride ?? "");
     setDraftModel(familiar.model ?? "");
@@ -97,19 +118,63 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setDraftVoiceName(familiar.voiceName ?? "");
     setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
     setToast(null);
-  }, [
-    familiar.id,
-    familiar.harnessOverride,
-    familiar.model,
-    familiar.note,
-    familiar.omnigent?.agentId,
-    familiar.omnigent?.hostId,
-    familiar.omnigent?.workspace,
-    familiar.voiceProvider,
-    familiar.voiceModel,
-    familiar.voiceName,
-    familiar.autoSelfReport,
-  ]);
+    return () => {
+      const pending = dirtyTextRef.current;
+      // On a familiar SWITCH the ref has already re-rendered for the next
+      // familiar (render precedes cleanup) — flushing would cross-write A's
+      // drafts onto B. Only flush when the pending patch belongs to the
+      // familiar this effect ran for (true on unmount, the blur-less case).
+      if (pending.familiarId !== familiar.id) return;
+      if (Object.keys(pending.patch).length === 0) return;
+      // Direct fetch (not save()) — this runs during unmount/switch, so no
+      // setState; a duplicate of an already-blurred commit is idempotent.
+      void fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ familiars: { [pending.familiarId]: pending.patch } }),
+      })
+        .then(() => window.dispatchEvent(new Event("cave:familiars-refresh")))
+        .catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [familiar.id]);
+
+  // Per-field draft sync (the identity tab's convention): each draft follows
+  // ITS OWN backing value only. The old single effect keyed on every field,
+  // so the 4s roster poll landing one field's save (say, voiceProvider)
+  // clobbered another field's in-progress draft — exactly how a typed voice
+  // id vanished before its blur-save could fire (cave-32er).
+  useEffect(() => {
+    setDraftHarness(familiar.harnessOverride ?? "");
+  }, [familiar.harnessOverride]);
+  useEffect(() => {
+    setDraftModel(familiar.model ?? "");
+    setModelCustomMode(false);
+  }, [familiar.model]);
+  useEffect(() => {
+    setDraftNote(familiar.note ?? "");
+  }, [familiar.note]);
+  useEffect(() => {
+    setDraftOmnigentAgentId(familiar.omnigent?.agentId ?? "");
+  }, [familiar.omnigent?.agentId]);
+  useEffect(() => {
+    setDraftOmnigentHostId(familiar.omnigent?.hostId ?? "");
+  }, [familiar.omnigent?.hostId]);
+  useEffect(() => {
+    setDraftOmnigentWorkspace(familiar.omnigent?.workspace ?? "");
+  }, [familiar.omnigent?.workspace]);
+  useEffect(() => {
+    setDraftVoiceProvider(familiar.voiceProvider ?? "");
+  }, [familiar.voiceProvider]);
+  useEffect(() => {
+    setDraftVoiceModel(familiar.voiceModel ?? "");
+  }, [familiar.voiceModel]);
+  useEffect(() => {
+    setDraftVoiceName(familiar.voiceName ?? "");
+  }, [familiar.voiceName]);
+  useEffect(() => {
+    setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
+  }, [familiar.autoSelfReport]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,6 +274,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         if ("autoSelfReport" in patch) setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
       } else {
         reportDaemonSyncSuccess();
+        // Voice/harness edits gate visible affordances elsewhere (the chat
+        // kebab's Call item reads familiar.voiceProvider) — catch the roster
+        // up now instead of waiting for the next 4s poll, like every other
+        // /api/config writer (chat runtime chip, home model state).
+        window.dispatchEvent(new Event("cave:familiars-refresh"));
       }
     } catch (err) {
       setToast(`Couldn't save: ${(err as Error).message}`);
@@ -693,6 +763,11 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                       value={draftVoiceModel}
                       onChange={(e) => setDraftVoiceModel(e.target.value)}
                       onBlur={() => void save({ voiceModel: draftVoiceModel.trim() || null })}
+                      onKeyDown={(e) => {
+                        // Enter commits (via the blur handler) — typing an id
+                        // and pressing Enter must never leave it unsaved.
+                        if (e.key === "Enter") e.currentTarget.blur();
+                      }}
                       placeholder={
                         draftVoiceProvider === "local"
                           ? "llama3.2"
@@ -778,6 +853,10 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         value={draftVoiceName}
                         onChange={(e) => setDraftVoiceName(e.target.value)}
                         onBlur={() => void save({ voiceName: draftVoiceName.trim() || null })}
+                        onKeyDown={(e) => {
+                          // Enter commits the typed voice id (blur → save).
+                          if (e.key === "Enter") e.currentTarget.blur();
+                        }}
                         placeholder={
                           draftVoiceProvider === "elevenlabs"
                             ? "ElevenLabs voice id (default: Rachel)"
