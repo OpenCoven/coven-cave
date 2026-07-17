@@ -1076,6 +1076,7 @@ const ALIAS_LOADER = new Set([
   "scripts/cave-home-migration-windows.test.ts",
   "src/lib/omnigent/ward-preflight.test.ts",
   "src/lib/cave-inbox-bulk.test.ts",
+  "src/app/api/chat/stream/route.test.ts",
   "src/app/api/prompts/route.test.ts",
   "src/app/api/marketplace/pack-prompts-route.test.ts",
   "src/lib/cave-backdrop.test.ts",

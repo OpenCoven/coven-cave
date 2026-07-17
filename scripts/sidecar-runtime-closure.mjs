@@ -60,7 +60,11 @@ export const SIDECAR_RUNTIME_BUDGETS = Object.freeze({
   // packaged chunks that cut `/` first-load JS by 48.9%. CI measured 5,486 on
   // macOS, 5,490 on Linux, and 5,492 on Windows — retain eight files of
   // cross-platform headroom without relaxing the expanded-byte ceiling.
-  fileCount: 5_500,
+  // 2026-07-17 (chat stream resume): GET /api/chat/stream (cave-h40l, one
+  // route chunk) landed on a main already at the Windows brim — CI measured
+  // 5,501 on Windows. Raised to 5,510: nine files of headroom, byte ceiling
+  // untouched.
+  fileCount: 5_510,
   unpackedBytes: 200 * 1024 * 1024 - 1,
 });
 
