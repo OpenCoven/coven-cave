@@ -20,6 +20,7 @@ import {
   isTrustedOnboardingHarness,
 } from "@/lib/harness-adapters";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { isManifestShadowedByBuiltin } from "@/lib/server/adapter-conflict-heal";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -90,7 +91,13 @@ export async function POST(req: Request) {
   const adapterManifest = adapterManifestScaffoldForHarness(harness);
   if (adapterManifest) {
     const manifestPath = path.join(adaptersDir, adapterManifest.filename);
-    if (!(await pathExists(manifestPath))) {
+    // A quarantined manifest means the installed CLI ships this id as a
+    // built-in harness and fatally rejects the external copy — never
+    // resurrect it (cave-1c05).
+    if (
+      !(await isManifestShadowedByBuiltin(manifestPath)) &&
+      !(await pathExists(manifestPath))
+    ) {
       await writeFile(manifestPath, adapterManifest.contents, "utf8");
       wrote.push(`adapters/${adapterManifest.filename}`);
     }
