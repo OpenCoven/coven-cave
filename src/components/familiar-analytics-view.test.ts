@@ -265,55 +265,6 @@ function mockFetchFor(score: "low" | "trusted") {
       },
     ],
     [
-      "/api/familiars/cody/response-confidence?limit=100",
-      {
-        ok: true,
-        total: 2,
-        events: [
-          {
-            id: "confidence-2",
-            familiarId: "cody",
-            sessionId: "session-2",
-            responseId: "response-2",
-            responseAt: "2026-06-25T12:04:00.000Z",
-            reportedAt: "2026-06-25T12:04:02.000Z",
-            overallConfidence: 90,
-            factors: {
-              toolUse: { score: 100, weight: 1, reason: "Tools clean.", signals: [] },
-              context: { score: 80, weight: 1, reason: "Context enough.", signals: [] },
-              skills: { score: 75, weight: 1, reason: "Skill used.", signals: [] },
-              permissions: { score: 100, weight: 1, reason: "No block.", signals: [] },
-              memory: { score: 60, weight: 1, reason: "Memory partial.", signals: [] },
-              instructionFit: { score: 85, weight: 1, reason: "On task.", signals: [] },
-              evidence: { score: 80, weight: 1, reason: "Tests present.", signals: [] },
-            },
-            diagnosticTags: ["needs-source"],
-            rubricVersion: "2026-06-28.v1",
-          },
-          {
-            id: "confidence-1",
-            familiarId: "cody",
-            sessionId: "session-1",
-            responseId: "response-1",
-            responseAt: "2026-06-25T12:00:00.000Z",
-            reportedAt: "2026-06-25T12:00:02.000Z",
-            overallConfidence: 50,
-            factors: {
-              toolUse: { score: 20, weight: 2, reason: "Tool failed.", signals: ["tool-failed"] },
-              context: { score: 40, weight: 1, reason: "Context tight.", signals: ["context-tight"] },
-              skills: { score: 70, weight: 1, reason: "Skill ok.", signals: [] },
-              permissions: { score: 80, weight: 1, reason: "No block.", signals: [] },
-              memory: { score: 60, weight: 1, reason: "Memory partial.", signals: [] },
-              instructionFit: { score: 90, weight: 1, reason: "Fit.", signals: [] },
-              evidence: { score: 30, weight: 1, reason: "Thin evidence.", signals: ["needs-source"] },
-            },
-            diagnosticTags: ["tool-failed", "needs-source"],
-            rubricVersion: "2026-06-28.v1",
-          },
-        ],
-      },
-    ],
-    [
       "/api/feedback/message?familiarId=cody",
       {
         ok: true,
@@ -357,9 +308,6 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.confidence.hasData, false);
     assert.equal(model.confidence.score, 0);
     assert.equal(model.confidence.reportCount, 0);
-    assert.equal(model.responseConfidenceRollup.eventCount, 2);
-    assert.equal(model.responseConfidenceRollup.averageConfidence, 70);
-    assert.equal(model.responseConfidenceRollup.lowConfidenceCount, 1);
     assert.match(source, /export function FamiliarAnalyticsContent/);
   });
 
@@ -429,7 +377,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.threadReports.length, 1);
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);
-    assert.match(source, /ResponseConfidenceSection/);
+    assert.doesNotMatch(source, /ResponseConfidenceSection/, "response confidence analytics retired (cave-7ku5)");
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
     assert.doesNotMatch(source, /EvalLoopPanel/);
     assert.doesNotMatch(source, /fa-eval/);
@@ -454,7 +402,6 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /<AnalyticsInsightBanner model=\{model\} healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
     assert.match(source, /deriveAnalyticsInsight\(model, healRequestCount\)/, "banner derives the insight from the model");
     assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
-    assert.match(source, /responseConfidenceRollup\.eventCount/, "KPI row includes response confidence event count");
   });
 
   it("derives a 14-day session pulse and renders it in the hero", async () => {
@@ -488,15 +435,12 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /href: "#fa-contract"/);
     assert.match(source, /href: "#fa-heal"/);
     assert.match(source, /href: "#fa-thread-signals"/);
-    assert.match(source, /href: "#fa-response-confidence"/);
     assert.match(source, /href: "\/dashboard\/familiars\/growth"/, "activity KPI links to the growth page");
     assert.match(source, /href=\{kpi\.href\}/, "tiles render as anchors");
     assert.match(source, /<section id=\{id\}/, "sections carry the ids the tiles target");
   });
 
-  it("charts the response-confidence trend and announces refreshes", () => {
-    assert.match(source, /function buildResponseTrend/, "trend is derived from the raw events");
-    assert.match(source, /<Sparkline points=\{trend\}/, "trend renders as a sparkline");
+  it("announces refreshes to assistive tech", () => {
     assert.match(source, /useAnnouncer/, "view announces state changes");
     assert.match(source, /announce\("Analytics refreshed\."\)/, "manual refresh is announced");
   });
@@ -526,13 +470,6 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /refreshing \? " is-refreshing" : ""/, "refresh button carries a refreshing state class");
     assert.match(globals, /\.fa-topbar\s*\{[^}]*position:\s*sticky/, "breadcrumb topbar is sticky");
     assert.match(globals, /fa-refresh-spin/, "refresh spins while a quiet reload is in flight");
-
-    // Empty response-confidence never takes the wide hero slot.
-    assert.match(
-      source,
-      /wide=\{model\.responseConfidenceRollup\.eventCount > 0\}/,
-      "the response-confidence section only widens when it has data",
-    );
 
     // Drill-throughs glide and flash their landing section.
     assert.match(globals, /\.fa-page\s*\{[^}]*scroll-behavior:\s*smooth/, "in-page drills scroll smoothly");
@@ -593,17 +530,6 @@ describe("session tracking + tracing (recent sessions, pulse drill, trace overla
     const pulseBars = readFileSync(new URL("./ui/pulse-bars.tsx", import.meta.url), "utf8");
     assert.match(pulseBars, /aria-pressed=\{selected\}/, "selected day is exposed to AT");
     assert.match(pulseBars, /onSelectDay\?: \(day: PulseDay\) => void/, "interactivity is opt-in — existing decorative uses are untouched");
-  });
-
-  it("links each response-confidence event back to the session that produced it", () => {
-    assert.match(
-      source,
-      /href=\{`\/#chat-\$\{encodeURIComponent\(event\.sessionId\)\}`\}/,
-      "events deep-link into their thread",
-    );
-    assert.match(source, /RECENT_RESPONSE_EVENTS/, "the raw-event list is capped, not unbounded");
-    assert.match(source, /fa-response-score--\$\{confidenceScoreTone\(event\.overallConfidence\)\}/, "score chips tint by the trend thresholds");
-    assert.match(source, /onTrace\(\{ id: event\.sessionId, title: event\.threadTitle \}\)/, "events can open the session trace");
   });
 
   it("keeps the page live with a pausable poll that never spams AT", () => {
@@ -682,12 +608,5 @@ describe("confidence from thread analysis + metric labeling", () => {
     assert.match(globals, /\.fa-metric-unit\s*\{/, "the metric-unit style exists");
     assert.match(globals, /\.fa-factor-bar\s*\{[\s\S]*?min-width:\s*44px/, "the metric bar keeps a min-width floor in narrow cells");
     assert.match(globals, /\.fa-thread-analysis\s*\{/, "the thread-analysis panel has its own layout block");
-  });
-
-  it("labels the response-confidence tiles + factor grid clearly", () => {
-    // 'Low confidence' was a COUNT mislabeled as a score → now unambiguous.
-    assert.match(source, /label="Low-confidence responses"/, "the low-confidence COUNT is labeled as responses, not a score");
-    assert.match(source, /label="Avg confidence" value=\{rollup\.averageConfidence\} unit="\/100"/, "avg confidence shows its /100 unit");
-    assert.match(source, /factorAverages\[key\]\}<span className="fa-metric-unit">\/100<\/span>/, "response factor averages show /100");
   });
 });

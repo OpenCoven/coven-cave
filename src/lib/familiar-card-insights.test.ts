@@ -33,8 +33,6 @@ function baseModel(overrides = {}) {
     },
     healRequests: [],
     threadReports: [],
-    responseConfidenceEvents: [],
-    responseConfidenceRollup: { total: 0, average: null, low: 0 },
     modelFeedback: { up: 0, down: 0, total: 0, models: [], runtimes: [] },
     sessionPulse: [],
     recentSessions: [],

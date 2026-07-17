@@ -110,7 +110,7 @@ describe("threadConfidenceLabel", () => {
 });
 
 describe("empty-state copy", () => {
-  it("teaches enabling self-reporting, matching the response-confidence pattern", () => {
+  it("teaches enabling self-reporting", () => {
     assert.match(THREAD_CONFIDENCE_EMPTY_STATE, /Enable response self-reporting/);
   });
 });

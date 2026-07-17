@@ -12,9 +12,6 @@ import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-re
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
 import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
 import {
-  aggregateResponseConfidenceEvents,
-  type ResponseConfidenceEvent,
-  type ResponseConfidenceRollup,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import {
@@ -51,10 +48,6 @@ type MetricSnapshotsResponse =
   | { ok: true; snapshots: ThreadMetricSnapshot[]; total: number }
   | { ok: false; snapshots?: ThreadMetricSnapshot[]; total?: number; error?: string };
 
-type ResponseConfidenceResponse =
-  | { ok: true; events: ResponseConfidenceEvent[]; total: number }
-  | { ok: false; events?: ResponseConfidenceEvent[]; total?: number; error?: string };
-
 type MessageFeedbackResponse =
   | { ok: true; rollup: MessageFeedbackRollup }
   | { ok: false; rollup?: MessageFeedbackRollup; error?: string };
@@ -69,7 +62,6 @@ export type FamiliarAnalyticsData = {
   threadReports: ThreadSelfReport[];
   /** Compact per-thread metric snapshots, oldest → newest (signal trends). */
   metricSnapshots: ThreadMetricSnapshot[];
-  responseConfidenceEvents: ResponseConfidenceEvent[];
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
   errors: string[];
@@ -86,8 +78,6 @@ export type FamiliarAnalyticsModel = {
   signalTrends: SignalTrends;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
-  responseConfidenceEvents: ResponseConfidenceEvent[];
-  responseConfidenceRollup: ResponseConfidenceRollup;
   /** Thumbs-vote aggregates by model/runtime (message-feedback-rollup). */
   modelFeedback: MessageFeedbackRollup;
   /** Per-day session counts for the trailing 14 days (oldest first). */
@@ -167,7 +157,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     retroJson,
     selfReportsJson,
     metricSnapshotsJson,
-    responseConfidenceJson,
     feedbackJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
@@ -177,7 +166,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
     fetchResource<MetricSnapshotsResponse>(`/api/familiars/${encodedId}/self-reports/snapshots`, { ok: false, snapshots: [], total: 0 }),
-    fetchResource<ResponseConfidenceResponse>(`/api/familiars/${encodedId}/response-confidence?limit=100`, { ok: false, events: [], total: 0 }),
     fetchResource<MessageFeedbackResponse>(`/api/feedback/message?familiarId=${encodedId}`, { ok: false }),
   ]);
 
@@ -188,7 +176,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(memoryJson, "memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
     responseError(metricSnapshotsJson, "metric snapshots unavailable"),
-    responseError(responseConfidenceJson, "response confidence unavailable"),
     responseError(feedbackJson, "message feedback unavailable"),
   ].filter((error): error is string => Boolean(error));
 
@@ -201,7 +188,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
     metricSnapshots: metricSnapshotsJson.ok ? metricSnapshotsJson.snapshots : [],
-    responseConfidenceEvents: responseConfidenceJson.ok ? responseConfidenceJson.events : [],
     modelFeedback: feedbackJson.ok ? feedbackJson.rollup : EMPTY_FEEDBACK_ROLLUP,
     errors,
   };
@@ -247,8 +233,6 @@ export function buildFamiliarAnalyticsModel(
     signalTrends,
     healRequests,
     threadReports: data.threadReports,
-    responseConfidenceEvents: data.responseConfidenceEvents,
-    responseConfidenceRollup: aggregateResponseConfidenceEvents(data.responseConfidenceEvents),
     modelFeedback: data.modelFeedback,
     sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
     recentSessions: [...familiarSessions]

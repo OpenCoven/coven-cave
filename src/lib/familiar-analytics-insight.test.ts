@@ -25,8 +25,6 @@ function model(over: Partial<FamiliarAnalyticsModel> = {}): FamiliarAnalyticsMod
     confidence: confidence(50, "Developing"),
     healRequests: [],
     threadReports: [],
-    responseConfidenceEvents: [],
-    responseConfidenceRollup: {} as FamiliarAnalyticsModel["responseConfidenceRollup"],
     errors: [],
     ...over,
   } as FamiliarAnalyticsModel;
