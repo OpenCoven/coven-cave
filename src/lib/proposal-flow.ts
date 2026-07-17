@@ -77,6 +77,7 @@ const REFUSAL_MESSAGES: Record<string, string> = {
   "daemon-endpoint-missing": "The daemon does not accept decisions yet — nothing was applied.",
   "daemon-timeout": "The daemon timed out — nothing was applied; the proposal stays pending.",
   "proposal-corrupt": "The staged file is corrupt — the daemon was never asked.",
+  "proposal-refused": "The daemon re-validated and refused the decision — nothing was applied.",
   "not-found": "No staged proposal by that id — it may already be decided.",
   "invalid-id": "That proposal id is not valid.",
 };
