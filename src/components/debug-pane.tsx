@@ -8,6 +8,7 @@ import { formatRuntime } from "@/lib/chat-response-metadata";
 import { usageBreakdown } from "@/lib/usage-format";
 import { APP_VERSION } from "@/lib/app-version";
 import { type ChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { useAnnouncer } from "@/components/ui/live-region";
 import {
   appendEvents,
   buildDebugBundle,
@@ -42,6 +43,11 @@ function statusColor(status: string | undefined): string {
 
 function CopyButton({ getText, label }: { getText: () => string; label?: string }) {
   const { copied, copy } = useCopy();
+  const { announce } = useAnnouncer();
+  // The check-icon swap is visual-only; mirror it for screen readers.
+  useEffect(() => {
+    if (copied) announce(label ? `${label} — copied to clipboard` : "Copied to clipboard");
+  }, [copied, announce, label]);
   return (
     <button
       type="button"
@@ -201,6 +207,7 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [eventQuery, setEventQuery] = useState("");
   const visibleEvents = useMemo(() => filterEvents(events, eventQuery), [events, eventQuery]);
+  const { announce } = useAnnouncer();
   // Tail-follow only makes sense while events are streaming in; opening a
   // finished session shouldn't jump past the Session section.
   const [follow, setFollow] = useState(status === "running");
@@ -211,6 +218,15 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
   // True when a drain stopped at the page cap with a full final page — more
   // events likely remain server-side and the list is silently incomplete.
   const [tailCapped, setTailCapped] = useState(false);
+
+  // The error banner and tail-cap notice appear silently for sighted users to
+  // scan; mirror them into the live region so SR users hear state changes.
+  useEffect(() => {
+    if (eventsError) announce(`Events failed to load: ${eventsError}`, "assertive");
+  }, [eventsError, announce]);
+  useEffect(() => {
+    if (tailCapped) announce("Long event tail — more events available to load");
+  }, [tailCapped, announce]);
 
   // Pages until the tail is drained (a full page means more may remain), so
   // finished sessions with >200 events aren't silently truncated. Capped as a
@@ -283,9 +299,10 @@ function DebugPaneInner({ snapshot }: { snapshot: ChatDebugSnapshot }) {
 
   const resumeFollow = useCallback(() => {
     setFollow(true);
+    announce("Following live events");
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, []);
+  }, [announce]);
 
   const bundleJson = useCallback(() => {
     // buildDebugBundle strips attachment previews and stamps the environment
