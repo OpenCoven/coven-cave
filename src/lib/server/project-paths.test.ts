@@ -33,14 +33,15 @@ try {
   delete process.env.COVEN_WORKSPACE_ROOT;
   delete process.env.WORKSPACE_ROOT;
   delete process.env.NEXT_PUBLIC_WORKSPACE_ROOT;
-  delete process.env.OPENCLAW_WORKSPACE_ROOT;
-
   const canonical = path.join(process.env.COVEN_HOME, "workspaces", "familiars", "sage");
   const savedProjectRoot = path.join(tmp, "Documents", "GitHub", "OpenCoven", "coven-docs");
+  const openclawWorkspaceRoot = path.join(tmp, ".openclaw", "workspace");
+  process.env.OPENCLAW_WORKSPACE_ROOT = openclawWorkspaceRoot;
   await mkdir(canonical, { recursive: true });
   const sensitiveFileRoot = path.join(tmp, "sensitive-config");
   await mkdir(path.join(savedProjectRoot, "docs"), { recursive: true });
   await writeFile(sensitiveFileRoot, "SECRET\n");
+  await mkdir(path.join(openclawWorkspaceRoot, "agent-other", "private"), { recursive: true });
   await writeFile(
     process.env.CAVE_PROJECTS_PATH_OVERRIDE,
     JSON.stringify({
@@ -139,6 +140,12 @@ try {
     validateCaveProjectRoot(sensitiveFileRoot),
     { ok: false, error: "root must be a directory" },
     "project roots must be existing directories",
+  );
+
+  assert.equal(
+    resolveAllowedProjectPath(path.join(openclawWorkspaceRoot, "agent-other", "private", "secrets.json")),
+    null,
+    "OpenClaw workspace roots are not globally allowed for generic project file/tree APIs",
   );
 } finally {
   restoreEnv();

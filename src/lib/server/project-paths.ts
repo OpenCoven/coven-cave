@@ -87,9 +87,6 @@ function builtInProjectRoots(): string[] {
     process.env.WORKSPACE_ROOT,
     process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
     covenWorkspaceRoot(),
-    // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
-    process.env.OPENCLAW_WORKSPACE_ROOT,
-    path.join(/* turbopackIgnore: true */ homedir(), ".openclaw", "workspace"),
     process.cwd(),
     // Research mission workspaces host bounded research sessions and live
     // under cave state rather than a registered project root.
