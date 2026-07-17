@@ -313,6 +313,7 @@ export function WorkspaceSidebar({
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [view, setView] = useState<ChatSidebarView>("recent");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
@@ -415,9 +416,12 @@ export function WorkspaceSidebar({
 
   async function handleDeleteSession(session: SessionRow) {
     setDeletingSessionId(session.id);
+    setDeleteError(null);
     try {
       await onDeleteSession(session);
       setConfirmingSessionId(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "delete failed");
     } finally {
       setDeletingSessionId(null);
     }
@@ -572,6 +576,15 @@ export function WorkspaceSidebar({
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="cnav__error-text">{registerError}</span>
             <button type="button" onClick={() => setRegisterError(null)} aria-label="Dismiss" className="shrink-0">
+              <Icon name="ph:x-bold" width={9} aria-hidden />
+            </button>
+          </div>
+        ) : null}
+        {deleteError ? (
+          <div role="alert" className="cnav__error">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{deleteError}</span>
+            <button type="button" onClick={() => setDeleteError(null)} aria-label="Dismiss" className="shrink-0">
               <Icon name="ph:x-bold" width={9} aria-hidden />
             </button>
           </div>

@@ -23,6 +23,7 @@ export const SUITES = {
   app: [
     "src/lib/array-content-equal.test.ts",
     "src/lib/session-list-equal.test.ts",
+    "src/lib/session-list-deletes.test.ts",
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
     "src/lib/chat-split.test.ts",
@@ -155,6 +156,7 @@ export const SUITES = {
     "src/components/chat-split-host.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
     "src/components/workspace-sidebar-wiring.test.ts",
+    "src/components/workspace-session-delete.test.ts",
     "src/components/workspace-sidebar-pinned.test.ts",
     "src/components/workspace-sidebar-pr-badge.test.ts",
     "src/components/workspace-rail.test.ts",

@@ -6,6 +6,7 @@ import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { stampFirstOpenOnce } from "@/lib/first-run-stamps";
 import { groupInboxFeed, unreadInboxCount } from "@/lib/inbox-feed";
 import { parseGitHubItemUrl, type GitHubItemTarget } from "@/lib/github-item-url";
+import { filterDeletedSessions } from "@/lib/session-list-deletes";
 import { sameSessionList } from "@/lib/session-list-equal";
 import { invalidateConversation } from "@/lib/conversation-cache";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -310,6 +311,7 @@ export function Workspace() {
   const loadGitHubTasksForceEpochRef = useRef(0);
   const loadGitHubTasksForceInFlightRef = useRef(0);
   const baseSessionsRef = useRef<SessionRow[]>([]);
+  const locallyDeletedSessionIdsRef = useRef<Set<string>>(new Set());
   const githubTasksRef = useRef<unknown>(null);
   const [daemonRunning, setDaemonRunning] = useState<boolean>(false);
   const { pushBanner, dismissBanner } = useShellBanners();
@@ -909,7 +911,8 @@ export function Workspace() {
         const baseSessions = baseSessionsRef.current.length > 0
           ? baseSessionsRef.current
           : currentSessions;
-        const enriched = attachGitHubTaskContext(baseSessions, json);
+        const visibleBaseSessions = filterDeletedSessions(baseSessions, locallyDeletedSessionIdsRef.current);
+        const enriched = attachGitHubTaskContext(visibleBaseSessions, json);
         return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
       });
     } catch {
@@ -952,7 +955,7 @@ export function Workspace() {
         }
 
         setSessionsError(false);
-        const baseSessions = (json.sessions ?? []) as SessionRow[];
+        const baseSessions = filterDeletedSessions((json.sessions ?? []) as SessionRow[], locallyDeletedSessionIdsRef.current);
         baseSessionsRef.current = baseSessions;
         const visibleSessions = githubTasksRef.current
           ? attachGitHubTaskContext(baseSessions, githubTasksRef.current)
@@ -2442,9 +2445,20 @@ export function Workspace() {
         shellRef.current?.dismissNavMobile();
       }}
       onDeleteSession={async (session) => {
-        await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        const res = await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => ({ ok: false, error: "delete failed" }));
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error ?? "delete failed");
+        }
+
+        locallyDeletedSessionIdsRef.current.add(session.id);
+        baseSessionsRef.current = filterDeletedSessions(baseSessionsRef.current, locallyDeletedSessionIdsRef.current);
+        setSessions((currentSessions) => {
+          const nextSessions = filterDeletedSessions(currentSessions, locallyDeletedSessionIdsRef.current);
+          return sameSessionList(currentSessions, nextSessions) ? currentSessions : nextSessions;
+        });
         invalidateConversation(session.id);
-        await loadSessions();
+        void loadSessions();
       }}
       onOpenUrl={openUrlInApp}
       scheduledCount={scheduleNeedsCount}
