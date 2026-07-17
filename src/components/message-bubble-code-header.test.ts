@@ -147,7 +147,9 @@ function ruleBlock(selector) {
 }
 
 // Every dark-chrome block that previously leaked theme ink must now use the
-// fixed properties — and none may still reference var(--text-*).
+// fixed properties — and none may still reference the theme ink tokens
+// (var(--text-primary/secondary/muted)). The --text-* SIZE tokens (--text-sm
+// and friends) are mode-independent px and are fine on fixed chrome.
 const darkChromeSelectors = [
   ".cave-code-wrap",
   ".cave-code-header",
@@ -166,8 +168,8 @@ const darkChromeSelectors = [
 for (const selector of darkChromeSelectors) {
   assert.doesNotMatch(
     ruleBlock(selector),
-    /var\(--text-/,
-    `${selector} is fixed dark chrome — it must not take theme ink (var(--text-*) flips dark in light mode)`,
+    /var\(--text-(?:primary|secondary|muted)\b/,
+    `${selector} is fixed dark chrome — it must not take theme ink (var(--text-primary/secondary/muted) flips dark in light mode)`,
   );
 }
 

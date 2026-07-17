@@ -312,7 +312,7 @@ assert.match(
 // Both pills must share one base rule so adjacent pills read as siblings.
 assert.match(
   globals,
-  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*999px;[\s\S]*?\}/,
+  /\.ui-origin-chip,\s*\.ui-initiator-chip\s*\{[\s\S]*?border-radius:\s*var\(--radius-pill\);[\s\S]*?\}/,
   "Origin and initiator pills must share a single base chrome rule",
 );
 // The three row action buttons (pin/archive/delete) must be uniform squares.

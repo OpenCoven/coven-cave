@@ -497,7 +497,7 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-chat-linear-header\s*\{[\s\S]*padding:\s*4px 10px 5px;/,
+  /\.cave-chat-linear-header\s*\{[\s\S]*padding:\s*var\(--space-1\) 10px 5px;/,
   "Open chat header should be compressed for a streamlined session UI",
 );
 

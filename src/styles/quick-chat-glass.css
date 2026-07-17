@@ -68,7 +68,7 @@ html[data-glass] .tray-quick-chat__header {
   gap: 2px;
   padding: 2px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   min-width: 0;
 }
 
@@ -88,7 +88,7 @@ html[data-glass] .quick-tab--active {
   gap: var(--space-1);
   min-width: 0;
   padding: 2px var(--space-1) 2px 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--text-secondary);
 }
 
@@ -101,7 +101,7 @@ html[data-glass] .quick-tab--active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 /* Inactive tabs shrink to just the avatar so several chats fit in 390px. */
@@ -121,7 +121,7 @@ html[data-glass] .quick-tab--active {
 .quick-tab__pulse {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-presence);
   box-shadow: 0 0 6px color-mix(in oklch, var(--accent-presence) 60%, transparent);
   animation: quick-tab-pulse 1.4s ease-in-out infinite;

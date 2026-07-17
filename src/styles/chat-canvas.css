@@ -3,7 +3,7 @@
    show a non-interactive sandboxed thumbnail; opening a card mounts the full
    ChatArtifactViewer (chat-artifact.css) inside a Modal. */
 .chat-canvas-view {
-  padding: 16px;
+  padding: var(--space-4);
 }
 .chat-canvas-grid {
   display: grid;
@@ -49,8 +49,8 @@
 .chat-canvas-card__meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) 10px;
   min-width: 0;
 }
 .chat-canvas-card__title {

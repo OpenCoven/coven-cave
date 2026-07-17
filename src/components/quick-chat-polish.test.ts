@@ -18,7 +18,7 @@ assert.match(
 // ── Meta chips ───────────────────────────────────────────────────────────────
 assert.match(
   globals,
-  /\.quick-chat-meta-chip \{[\s\S]{0,400}?border-radius: 999px;[\s\S]{0,200}?background: var\(--bg-subtle\);/,
+  /\.quick-chat-meta-chip \{[\s\S]{0,400}?border-radius: var\(--radius-pill\);[\s\S]{0,200}?background: var\(--bg-subtle\);/,
   "Meta chips are quiet token pills",
 );
 assert.doesNotMatch(

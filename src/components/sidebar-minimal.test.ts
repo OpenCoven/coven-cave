@@ -41,13 +41,13 @@ assert.doesNotMatch(
 
 assert.match(
   styles,
-  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*13px/,
+  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*var\(--text-base\)/,
   "Sidebar nav rows should keep compact side-panel text sizing",
 );
 
 assert.match(
   styles,
-  /\.sidebar-nav-scroll\s*\{[^}]*gap:\s*4px/,
+  /\.sidebar-nav-scroll\s*\{[^}]*gap:\s*var\(--space-1\)/,
   "Sidebar nav options should stay visually close together on desktop",
 );
 

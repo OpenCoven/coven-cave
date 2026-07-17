@@ -10,7 +10,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 // it into an accent dot so Board/Schedules/GitHub still signal at a glance.
 assert.match(
   sidebarCss,
-  /\.shell-nav--rail \.sidebar-badge \{[\s\S]*?position: absolute[\s\S]*?border-radius: 999px/,
+  /\.shell-nav--rail \.sidebar-badge \{[\s\S]*?position: absolute[\s\S]*?border-radius: var\(--radius-pill\)/,
   "collapsed rail shows the nav badge as a dot, not display:none",
 );
 assert.match(
