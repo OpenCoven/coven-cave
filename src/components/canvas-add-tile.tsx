@@ -51,6 +51,9 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
   const ghostRef = useRef<HTMLButtonElement | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  const refineInputRef = useRef<HTMLInputElement | null>(null);
+  const retryRef = useRef<HTMLButtonElement | null>(null);
   // What Retry re-runs: the last generation request, verbatim.
   const lastRunRef = useRef<{ prompt: string } | null>(null);
 
@@ -73,17 +76,48 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
       .then((data: { familiars?: Familiar[] } | null) => {
         if (data?.familiars) setFamiliars(data.familiars);
       })
-      .catch(() => { /* switcher just shows the active familiar */ });
+      .catch(() => {
+        // An abort (quick expand -> collapse) must not consume the single
+        // attempt — the next expand should try again. Real failures keep the
+        // latch; the switcher then just shows the active familiar.
+        if (ctrl.signal.aborted) rosterFetchedRef.current = false;
+      })
     return () => ctrl.abort();
   }, [expanded, familiars.length]);
 
-  // Focus follows the phase: expand -> input; collapse -> back to the ghost.
+  // Focus follows phase TRANSITIONS: expand -> input; a real collapse -> back
+  // to the ghost; generating/result/error -> their primary control (the
+  // previous element unmounts, and focus must not fall to document.body).
+  // Keyed off the previous phase so the initial mount never steals focus.
+  const prevPhaseRef = useRef(state.phase);
   useEffect(() => {
-    if (state.phase === "composing") {
-      (state.mode === "describe" ? promptRef.current : editorRef.current)?.focus();
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = state.phase;
+    if (prev === state.phase) return; // mount, or a non-phase re-render
+    switch (state.phase) {
+      case "composing":
+        (state.mode === "describe" ? promptRef.current : editorRef.current)?.focus();
+        break;
+      case "collapsed":
+        ghostRef.current?.focus();
+        break;
+      case "generating":
+        cancelRef.current?.focus();
+        break;
+      case "result":
+        refineInputRef.current?.focus();
+        break;
+      case "error":
+        retryRef.current?.focus();
+        break;
     }
-    if (state.phase === "collapsed") ghostRef.current?.focus();
   }, [state.phase, state.mode]);
+
+  // Switching modes while composing swaps the input element — follow it.
+  useEffect(() => {
+    if (state.phase !== "composing") return;
+    (state.mode === "describe" ? promptRef.current : editorRef.current)?.focus();
+  }, [state.mode, state.phase]);
 
   const collapse = useCallback(() => {
     abortRef.current?.abort();
@@ -122,17 +156,19 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
 
   const refine = useCallback(() => {
     const ask = refineText.trim();
-    if (state.phase !== "result" || !state.result || !ask) return;
+    // Guard BEFORE dispatching: entering "generating" with no familiar to run
+    // would wedge the spinner with no terminal event (mirrors conjure).
+    if (state.phase !== "result" || !state.result || !ask || !activeFamiliar) return;
     dispatch({ type: "refine" });
     setRefineText("");
     void runGeneration(buildRefinePrompt(state.result.code, ask, state.result.kind));
-  }, [state.phase, state.result, refineText, runGeneration]);
+  }, [state.phase, state.result, refineText, activeFamiliar, runGeneration]);
 
   const retry = useCallback(() => {
-    if (state.phase !== "error" || !lastRunRef.current) return;
+    if (state.phase !== "error" || !lastRunRef.current || !activeFamiliar) return;
     dispatch({ type: "retry" });
     void runGeneration(lastRunRef.current.prompt);
-  }, [state.phase, runGeneration]);
+  }, [state.phase, activeFamiliar, runGeneration]);
 
   const save = useCallback(async (code: string, kind: "html" | "react") => {
     const artifact = buildAddArtifact({
@@ -231,7 +267,7 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
           </div>
           <div className="chat-canvas-add__row">
             <span className="chat-canvas-add__spacer" />
-            <button type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={collapse}>
+            <button ref={cancelRef} type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={collapse}>
               Cancel
             </button>
           </div>
@@ -244,7 +280,7 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
             <button type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={() => dispatch({ type: "discard-result" })}>
               Back
             </button>
-            <button type="button" className="chat-canvas-add__go focus-ring" onClick={retry}>
+            <button type="button" className="chat-canvas-add__go focus-ring" ref={retryRef} onClick={retry}>
               Retry
             </button>
           </div>
@@ -260,25 +296,26 @@ export function CanvasAddTile({ familiarId, hero = false, onSaved }: {
             />
           </div>
           <input
+            ref={refineInputRef}
             className="chat-canvas-add__refine-input focus-ring"
             aria-label="Refine the sketch"
             placeholder="Refine it — e.g. make the header sticky…"
             value={refineText}
             onChange={(e) => setRefineText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && refineText.trim()) { e.preventDefault(); refine(); }
+              if (e.key === "Enter" && refineText.trim() && !saving) { e.preventDefault(); refine(); }
             }}
           />
           {saveError ? <div className="chat-canvas-add__error" role="alert">{saveError}</div> : null}
           <div className="chat-canvas-add__row">
-            <button type="button" className="chat-canvas-add__ghost-btn focus-ring" onClick={() => dispatch({ type: "discard-result" })}>
+            <button type="button" className="chat-canvas-add__ghost-btn focus-ring" disabled={saving} onClick={() => dispatch({ type: "discard-result" })}>
               Discard
             </button>
             <span className="chat-canvas-add__spacer" />
             <button
               type="button"
               className="chat-canvas-add__ghost-btn focus-ring"
-              disabled={!refineText.trim()}
+              disabled={!refineText.trim() || saving}
               onClick={refine}
             >
               Refine
