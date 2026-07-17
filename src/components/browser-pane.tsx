@@ -631,7 +631,10 @@ export function BrowserPane({ label = "default", activeFamiliarId = null, active
     document.addEventListener("keydown", onInteraction, true);
     document.addEventListener("focusin", onInteraction, true);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    scheduleImmediateReconcile();
+    // The pane's cave-mode-fade animation can begin before this effect's
+    // animationstart listener is attached. Sample the initial mount window
+    // explicitly so the native surface follows that 120ms transform too.
+    startMotionWindow();
 
     return () => {
       cancelAnimationFrame(raf);
