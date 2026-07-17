@@ -1,7 +1,10 @@
 import { createHmac } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import next from "next";
 import { WebSocket, WebSocketServer } from "ws";
 const require2 = createRequire(import.meta.url);
@@ -437,4 +440,62 @@ function startListening(attempt = 0) {
     }
   });
 }
+const HEAP_MONITOR_ENABLED = process.env.COVEN_CAVE_HEAP_MONITOR !== "0";
+const HEAP_MONITOR_INTERVAL_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_HEAP_MONITOR_INTERVAL_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 3e5;
+})();
+const HEAP_WARN_RATIO = 0.85;
+const HEAP_SNAPSHOT_RATIO = 0.95;
+const HEAP_SNAPSHOT_KEEP = 2;
+let heapSnapshotSeq = 0;
+function heapDiagnosticsDir() {
+  const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
+  const caveHome = process.env.COVEN_CAVE_HOME || join(covenHome, "cave");
+  return join(caveHome, "diagnostics");
+}
+const mb = (bytes) => `${Math.round(bytes / (1024 * 1024))}MB`;
+function pruneHeapSnapshots(dir) {
+  const snapshots = readdirSync(dir).filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot")).sort();
+  while (snapshots.length > HEAP_SNAPSHOT_KEEP) {
+    const oldest = snapshots.shift();
+    try {
+      unlinkSync(join(dir, oldest));
+    } catch {
+    }
+  }
+}
+function startHeapMonitor() {
+  if (!HEAP_MONITOR_ENABLED) return;
+  let snapshotWritten = false;
+  const tick = () => {
+    const heap = getHeapStatistics();
+    const ratio = heap.used_heap_size / heap.heap_size_limit;
+    if (ratio < HEAP_WARN_RATIO) {
+      snapshotWritten = false;
+      return;
+    }
+    const usage = process.memoryUsage();
+    console.warn(
+      `[heap-monitor] heapUsed=${mb(heap.used_heap_size)} heapLimit=${mb(heap.heap_size_limit)} (${Math.round(ratio * 100)}%) rss=${mb(usage.rss)} external=${mb(usage.external)} ptySessions=${sessions.size} uptimeMin=${Math.round(process.uptime() / 60)}`
+    );
+    if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
+    try {
+      const dir = heapDiagnosticsDir();
+      mkdirSync(dir, { recursive: true });
+      const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+      const seq = String(heapSnapshotSeq += 1).padStart(3, "0");
+      const file = join(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);
+      writeHeapSnapshot(file);
+      snapshotWritten = true;
+      pruneHeapSnapshots(dir);
+      console.warn(`[heap-monitor] wrote heap snapshot ${file}`);
+    } catch (err) {
+      snapshotWritten = true;
+      console.warn(`[heap-monitor] failed to write heap snapshot`, err);
+    }
+  };
+  setInterval(tick, HEAP_MONITOR_INTERVAL_MS).unref();
+}
+startHeapMonitor();
 startListening();

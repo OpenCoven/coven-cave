@@ -392,4 +392,39 @@ assert.match(src, /server\.headersTimeout = 80_000/, "headersTimeout exceeds kee
   );
 }
 
+// ── Heap telemetry (cave-ksjt) ────────────────────────────────────────────────
+// Long-lived servers died with "Ineffective mark-compacts near heap limit"
+// after hours, leaving no evidence. The monitor logs a structured warning at a
+// high watermark and captures one heap snapshot per episode near the limit.
+assert.match(src, /const HEAP_WARN_RATIO = 0\.85/, "heap monitor warns at 85% of the V8 heap limit");
+assert.match(src, /const HEAP_SNAPSHOT_RATIO = 0\.95/, "heap monitor snapshots at 95% of the V8 heap limit");
+assert.match(
+  src,
+  /process\.env\.COVEN_CAVE_HEAP_MONITOR !== "0"/,
+  "heap monitor has an env kill-switch (COVEN_CAVE_HEAP_MONITOR=0)",
+);
+assert.match(
+  src,
+  /setInterval\(tick, HEAP_MONITOR_INTERVAL_MS\)\.unref\(\)/,
+  "heap monitor timer is unref'd so it never keeps the process alive",
+);
+assert.match(src, /writeHeapSnapshot\(file\)/, "approaching the limit captures a V8 heap snapshot");
+assert.match(
+  src,
+  /if \(ratio < HEAP_SNAPSHOT_RATIO \|\| snapshotWritten\) return/,
+  "at most one snapshot per high-heap episode",
+);
+assert.match(
+  src,
+  /if \(ratio < HEAP_WARN_RATIO\) \{\s*\n\s*snapshotWritten = false;/,
+  "the snapshot latch re-arms after heap usage recovers",
+);
+assert.match(src, /while \(snapshots\.length > HEAP_SNAPSHOT_KEEP\)/, "old snapshots are pruned (bounded diagnostics dir)");
+assert.match(
+  src,
+  /ptySessions=\$\{sessions\.size\}/,
+  "the warning line carries server-owned state context (PTY session count)",
+);
+assert.match(src, /startHeapMonitor\(\);/, "the heap monitor starts with the server");
+
 console.log("server-pty-ws.test.ts OK");

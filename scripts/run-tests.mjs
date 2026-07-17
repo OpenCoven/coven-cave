@@ -910,6 +910,7 @@ export const SUITES = {
     "src/app/api/voice/elevenlabs/catalog/route.test.ts",
     "src/app/api/voice/transcript/route.test.ts",
     "src/server-pty-ws.test.ts",
+    "src/server-heap-monitor.test.ts",
     "src/lib/pty-ws-bridge.test.ts",
     "scripts/release-macos-signing.test.mjs",
     "scripts/generate-latest-json.test.mjs",

@@ -1,7 +1,10 @@
 import { createHmac } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 
 import next from "next";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
@@ -665,4 +668,99 @@ function startListening(attempt: number = 0): void {
   });
 }
 
+// ── Heap telemetry (cave-ksjt) ────────────────────────────────────────────────
+// Long-lived servers (the packaged sidecar and dev runs alike) have died with
+// "Ineffective mark-compacts near heap limit" after hours of uptime, leaving
+// no evidence of WHAT filled the heap. This monitor makes the next episode
+// diagnosable: it logs a structured warning once heap usage crosses a high
+// watermark, and writes ONE heap snapshot per episode as the process
+// approaches the limit — before the OOM kill destroys the evidence.
+//
+// Mirrors src/lib/coven-paths.ts covenHome()/caveHome() for the snapshot
+// destination (server.ts is transpiled standalone and cannot import src/).
+
+const HEAP_MONITOR_ENABLED = process.env.COVEN_CAVE_HEAP_MONITOR !== "0";
+const HEAP_MONITOR_INTERVAL_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_HEAP_MONITOR_INTERVAL_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 300_000; // 5 minutes
+})();
+/** Log a structured warning at ≥85% of the V8 heap limit. */
+const HEAP_WARN_RATIO = 0.85;
+/** Write the per-episode heap snapshot at ≥95% — about to OOM, capture now. */
+const HEAP_SNAPSHOT_RATIO = 0.95;
+/** Snapshots kept in the diagnostics dir (oldest pruned first). */
+const HEAP_SNAPSHOT_KEEP = 2;
+/** Disambiguates snapshots written within the same millisecond. */
+let heapSnapshotSeq = 0;
+
+function heapDiagnosticsDir(): string {
+  const covenHome = process.env.COVEN_HOME || join(homedir(), ".coven");
+  const caveHome = process.env.COVEN_CAVE_HOME || join(covenHome, "cave");
+  return join(caveHome, "diagnostics");
+}
+
+const mb = (bytes: number): string => `${Math.round(bytes / (1024 * 1024))}MB`;
+
+/** Prune oldest heap snapshots so the diagnostics dir never grows unbounded. */
+function pruneHeapSnapshots(dir: string): void {
+  const snapshots = readdirSync(dir)
+    .filter((name) => name.startsWith("cave-heap-") && name.endsWith(".heapsnapshot"))
+    .sort(); // names embed an ISO-like timestamp, so lexical order = age order
+  while (snapshots.length > HEAP_SNAPSHOT_KEEP) {
+    const oldest = snapshots.shift()!;
+    try {
+      unlinkSync(join(dir, oldest));
+    } catch {
+      // Already gone — fine.
+    }
+  }
+}
+
+function startHeapMonitor(): void {
+  if (!HEAP_MONITOR_ENABLED) return;
+  // Latches once per high-heap episode; re-arms after usage recovers below
+  // the warn watermark so a later, separate episode captures its own snapshot.
+  let snapshotWritten = false;
+
+  const tick = (): void => {
+    const heap = getHeapStatistics();
+    const ratio = heap.used_heap_size / heap.heap_size_limit;
+    if (ratio < HEAP_WARN_RATIO) {
+      snapshotWritten = false;
+      return;
+    }
+
+    const usage = process.memoryUsage();
+    console.warn(
+      `[heap-monitor] heapUsed=${mb(heap.used_heap_size)} heapLimit=${mb(heap.heap_size_limit)} ` +
+        `(${Math.round(ratio * 100)}%) rss=${mb(usage.rss)} external=${mb(usage.external)} ` +
+        `ptySessions=${sessions.size} uptimeMin=${Math.round(process.uptime() / 60)}`,
+    );
+
+    if (ratio < HEAP_SNAPSHOT_RATIO || snapshotWritten) return;
+    // writeHeapSnapshot is synchronous and stop-the-world (seconds at GB
+    // scale) — acceptable exactly once, when the alternative is dying with
+    // no evidence minutes later.
+    try {
+      const dir = heapDiagnosticsDir();
+      mkdirSync(dir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const seq = String((heapSnapshotSeq += 1)).padStart(3, "0");
+      const file = join(dir, `cave-heap-${stamp}-pid${process.pid}-${seq}.heapsnapshot`);
+      writeHeapSnapshot(file);
+      snapshotWritten = true;
+      pruneHeapSnapshots(dir);
+      console.warn(`[heap-monitor] wrote heap snapshot ${file}`);
+    } catch (err) {
+      // Diagnostics must never take the server down with it.
+      snapshotWritten = true; // don't retry a failing write every tick
+      console.warn(`[heap-monitor] failed to write heap snapshot`, err);
+    }
+  };
+
+  // unref: telemetry must never keep the process alive on shutdown.
+  setInterval(tick, HEAP_MONITOR_INTERVAL_MS).unref();
+}
+
+startHeapMonitor();
 startListening();
