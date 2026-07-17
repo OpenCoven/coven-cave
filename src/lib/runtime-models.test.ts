@@ -82,6 +82,18 @@ assert.equal(
   "Auto must stay first so Copilot's own default model selection remains the default",
 );
 assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.6-sol"),
+  "copilot catalog should seed GPT-5.6 Sol",
+);
+assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.6-terra"),
+  "copilot catalog should seed GPT-5.6 Terra",
+);
+assert.ok(
+  catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.6-luna"),
+  "copilot catalog should seed GPT-5.6 Luna",
+);
+assert.ok(
   catalogForRuntime("copilot").models.some((m) => m.id === "github/gpt-5.5"),
   "copilot catalog should seed GPT-5.5",
 );
