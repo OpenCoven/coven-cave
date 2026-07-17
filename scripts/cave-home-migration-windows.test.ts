@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -77,6 +77,34 @@ try {
   assert.deepEqual(orphanResult.errors, []);
   assert.ok(Date.now() - orphanStartedAt < 2_000, "same-process takeover orphan is reclaimed immediately");
   assert.deepEqual(JSON.parse(await readFile(path.join(orphanCave, "config.json"), "utf8")), { windows: true });
+
+  // A crashed claimant's PID may be reused by another Windows process. Bound
+  // apparently live claims by age so that reuse cannot recreate the hang.
+  const reusedPidHome = path.join(root, "reused-pid-takeover", ".coven");
+  process.env.COVEN_HOME = reusedPidHome;
+  const reusedPidCave = path.join(reusedPidHome, "cave");
+  const reusedPidLock = path.join(reusedPidCave, ".migration.lock");
+  await mkdir(reusedPidLock, { recursive: true });
+  await writeFile(path.join(reusedPidLock, "owner.json"), JSON.stringify({
+    pid: process.pid,
+    token: "released-owner",
+    releasedAt: new Date().toISOString(),
+  }));
+  const reusedPidTakeover = path.join(reusedPidLock, ".takeover");
+  await writeFile(reusedPidTakeover, JSON.stringify({
+    pid: process.ppid,
+    takeoverToken: "crashed-claim-with-reused-pid",
+    ownerToken: "released-owner",
+  }));
+  const stale = new Date(Date.now() - 10 * 60_000);
+  await utimes(reusedPidTakeover, stale, stale);
+  await writeFile(path.join(reusedPidHome, "cave-config.json"), '{"windows":true}', "utf8");
+
+  const reusedPidStartedAt = Date.now();
+  const reusedPidResult = await migrateCaveHome();
+  assert.deepEqual(reusedPidResult.errors, []);
+  assert.ok(Date.now() - reusedPidStartedAt < 2_000, "aged claim is reclaimed despite PID reuse");
+  assert.deepEqual(JSON.parse(await readFile(path.join(reusedPidCave, "config.json"), "utf8")), { windows: true });
   console.log("cave-home-migration-windows.test.ts: ok");
 } finally {
   await rm(root, { recursive: true, force: true });

@@ -6,6 +6,7 @@ import {
   link,
   lstat,
   mkdir,
+  open,
   readFile,
   readlink,
   readdir,
@@ -115,6 +116,10 @@ export type ReconciliationOptions = {
   lockProbe?: (event: "stale-observed" | "acquired" | "released") => void | Promise<void>;
   /** Test-only unlock rename override. */
   lockReleaseRename?: typeof rename;
+  /** Test-only hook after an exclusive takeover claim is published. */
+  takeoverPublishProbe?: (takeoverToken: string) => void | Promise<void>;
+  /** Test-only hook before a reclaimable takeover claim is advanced. */
+  takeoverRemovalProbe?: (takeover: string, takeoverToken: string | null) => void | Promise<void>;
   /** Test-only hook before a legacy path is replaced by its compatibility bridge. */
   compatibilityProbe?: (legacyPath: string) => void | Promise<void>;
   /** Test-only hook after managed-mirror canonical validation. */
@@ -283,44 +288,132 @@ async function readLockOwner(lock: string): Promise<LockOwner> {
   };
 }
 
-async function removeOrphanTakeover(takeover: string): Promise<boolean> {
-  const [claim, info] = await Promise.all([
-    readFile(takeover, "utf8")
-      .then((value) => JSON.parse(value) as { pid?: unknown; takeoverToken?: unknown })
-      .catch(() => null),
-    stat(takeover).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    }),
-  ]);
-  if (!info) return true;
+type TakeoverClaim = {
+  pid?: unknown;
+  takeoverToken?: unknown;
+  ownerToken?: unknown;
+  startedAt?: unknown;
+  abandonedAt?: unknown;
+};
 
-  const pid = typeof claim?.pid === "number" && Number.isSafeInteger(claim.pid)
-    ? claim.pid
+type TakeoverSnapshot = {
+  claim: TakeoverClaim | null;
+  identity: string;
+  mtimeMs: number;
+};
+
+async function readTakeoverClaim(takeover: string): Promise<TakeoverSnapshot | null> {
+  let handle;
+  try {
+    handle = await open(takeover, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    const [raw, info] = await Promise.all([handle.readFile("utf8"), handle.stat()]);
+    let claim: TakeoverClaim | null = null;
+    try {
+      claim = JSON.parse(raw) as TakeoverClaim;
+    } catch {
+      // Legacy or partially published claims are handled by their age.
+    }
+    const token = typeof claim?.takeoverToken === "string" ? claim.takeoverToken : null;
+    return {
+      claim,
+      identity: token ?? `legacy-${createHash("sha256").update(raw).digest("hex")}`,
+      mtimeMs: info.mtimeMs,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
+function takeoverClaimIsReclaimable(snapshot: TakeoverSnapshot): boolean {
+  if (typeof snapshot.claim?.abandonedAt === "string") return true;
+  const pid = typeof snapshot.claim?.pid === "number" && Number.isSafeInteger(snapshot.claim.pid)
+    ? snapshot.claim.pid
     : null;
-  const takeoverToken = typeof claim?.takeoverToken === "string"
-    ? claim.takeoverToken
+  const takeoverToken = typeof snapshot.claim?.takeoverToken === "string"
+    ? snapshot.claim.takeoverToken
     : null;
+  const ageMs = Date.now() - snapshot.mtimeMs;
   const sameProcessOrphan = pid === process.pid &&
     (!takeoverToken || !activeTakeoverTokens().has(takeoverToken));
-  if (sameProcessOrphan) {
-    // The claimant is still alive, but this token is not part of an active
-    // takeover in this process. Reclaim it without applying the age window.
-  } else if (pid) {
+  if (sameProcessOrphan) return true;
+  if (pid) {
     try {
       process.kill(pid, 0);
-      return false;
+      return ageMs > LOCK_STALE_MS;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EPERM") return false;
+      return (error as NodeJS.ErrnoException).code !== "EPERM" || ageMs > LOCK_STALE_MS;
     }
-  } else if (Date.now() - info.mtimeMs <= LOCK_STALE_MS) {
-    // Older releases did not record the claimant PID. Give a live legacy
-    // takeover the same stale window as an unreadable lock owner.
-    return false;
   }
+  return ageMs > LOCK_STALE_MS;
+}
 
-  await rm(takeover, { force: true });
-  return true;
+async function publishTakeoverClaim(
+  lock: string,
+  ownerToken: string | null,
+  takeoverToken: string,
+): Promise<boolean> {
+  const candidate = path.join(lock, `.takeover-candidate-${takeoverToken}`);
+  const claimPath = path.join(lock, ".takeover");
+  await writeFile(candidate, JSON.stringify({
+    pid: process.pid,
+    takeoverToken,
+    ownerToken,
+    startedAt: nowIso(),
+  }), { flag: "wx" });
+  try {
+    const currentOwner = await readLockOwner(lock);
+    if (currentOwner.token !== ownerToken) return false;
+    await link(candidate, claimPath);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  } finally {
+    await rm(candidate, { force: true });
+  }
+}
+
+function takeoverFencePath(
+  lock: string,
+  snapshot: TakeoverSnapshot,
+  owner: LockOwner,
+  lockBirthtimeMs: number,
+): string {
+  const generation = JSON.stringify({
+    claim: snapshot.identity,
+    ownerPid: owner.pid,
+    ownerToken: owner.token,
+    ownerStartedAt: owner.startedAt,
+    lockBirthtimeMs,
+  });
+  const digest = createHash("sha256").update(generation).digest("hex").slice(0, 32);
+  return `${lock}.reclaimed-${digest}`;
+}
+
+async function renameLockToFence(lock: string, fence: string): Promise<boolean> {
+  try {
+    await rename(lock, fence);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "";
+    if (["EEXIST", "ENOTEMPTY", "ENOENT"].includes(code)) return false;
+    if (["EACCES", "EPERM"].includes(code)) {
+      const fenceExists = await stat(fence).then(
+        () => true,
+        (statError) => {
+          if ((statError as NodeJS.ErrnoException).code === "ENOENT") return false;
+          throw statError;
+        },
+      );
+      if (fenceExists) return false;
+    }
+    throw error;
+  }
 }
 
 async function renameLockCandidate(candidate: string, lock: string): Promise<void> {
@@ -442,38 +535,53 @@ async function acquireLock(options: ReconciliationOptions): Promise<() => Promis
           await options.lockProbe?.("stale-observed");
           const takeover = path.join(lock, ".takeover");
           const takeoverToken = randomBytes(16).toString("hex");
+          // Register before writeFile can publish the claim. Another
+          // same-process contender must never mistake this token for an
+          // abandoned marker during the await boundary.
+          activeTakeoverTokens().add(takeoverToken);
           try {
-            await writeFile(
-              takeover,
-              JSON.stringify({
-                pid: process.pid,
-                takeoverToken,
-                ownerToken: owner.token,
-                startedAt: nowIso(),
-              }),
-              { flag: "wx" },
-            );
-            activeTakeoverTokens().add(takeoverToken);
-            try {
-              const currentOwner = await readLockOwner(lock);
-              if (currentOwner.token !== owner.token) {
-                await rm(takeover, { force: true });
-              } else {
-                const reclaimed = `${lock}.reclaimed-${takeoverToken}`;
-                await rename(lock, reclaimed);
-                await rm(reclaimed, { recursive: true, force: true });
-                continue;
-              }
-            } finally {
-              activeTakeoverTokens().delete(takeoverToken);
-              // A failed Windows rename must not leave a same-process claim
-              // that every later store mistakes for an active contender.
-              await rm(takeover, { force: true }).catch(() => {});
+            const ownerBeforePublish = await readLockOwner(lock);
+            if (ownerBeforePublish.token !== owner.token) continue;
+            const published = await publishTakeoverClaim(lock, owner.token, takeoverToken);
+            const inspected = await readTakeoverClaim(takeover);
+            if (!inspected) continue;
+            if (published) {
+              await options.takeoverPublishProbe?.(takeoverToken);
+            } else {
+              const inspectedToken = typeof inspected.claim?.takeoverToken === "string"
+                ? inspected.claim.takeoverToken
+                : null;
+              if (!takeoverClaimIsReclaimable(inspected)) continue;
+              await options.takeoverRemovalProbe?.(takeover, inspectedToken);
             }
+
+            // Claims are immutable. Re-read both the claim identity and lock
+            // generation immediately before fencing the whole directory.
+            const generationBefore = await stat(lock);
+            const [currentClaim, currentOwner] = await Promise.all([
+              readTakeoverClaim(takeover),
+              readLockOwner(lock),
+            ]);
+            const generationAfter = await stat(lock);
+            if (
+              generationBefore.birthtimeMs !== generationAfter.birthtimeMs ||
+              currentClaim?.identity !== inspected.identity ||
+              currentOwner.token !== owner.token
+            ) continue;
+
+            // Every observer of this claim targets the same retained,
+            // non-empty fence. A delayed contender therefore cannot rename a
+            // newly acquired successor lock after another observer wins.
+            if (
+              await renameLockToFence(
+                lock,
+                takeoverFencePath(lock, inspected, currentOwner, generationAfter.birthtimeMs),
+              )
+            ) continue;
           } catch (takeoverError) {
-            const code = (takeoverError as NodeJS.ErrnoException).code ?? "";
-            if (code === "EEXIST" && await removeOrphanTakeover(takeover)) continue;
-            if (!["EEXIST", "ENOENT"].includes(code)) throw takeoverError;
+            if ((takeoverError as NodeJS.ErrnoException).code !== "ENOENT") throw takeoverError;
+          } finally {
+            activeTakeoverTokens().delete(takeoverToken);
           }
         }
       } catch (lockError) {
