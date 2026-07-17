@@ -78,6 +78,9 @@ const cancelledTurn = cancelledConv?.turns.find((turn) => turn.id === "turn-assi
 assert.equal(cancelledTurn?.cancelled, true, "cancelled flag must round-trip through the store");
 assert.equal(cancelledTurn?.isError, false, "a user cancel is not an error");
 assert.equal(cancelledTurn?.text, "Roses are red, violets", "partial streamed text must survive the save");
+const cancelledSummary = (await listConversations()).find((row) => row.sessionId === "cancelled-turn");
+assert.equal(cancelledSummary?.status, "completed", "cancelled conversations remain non-failures");
+assert.equal(cancelledSummary?.exitCode, 0, "cancelled conversations retain a successful exit code");
 assert.equal(await deleteConversation("cancelled-turn"), true);
 
 // CHAT-D12-02: per-turn token usage and cost round-trip through the store —
@@ -305,6 +308,18 @@ assert.equal(await deleteConversation("summary-failed"), true);
   await listConversations();
   assert.equal(getConversationListMetrics().bytesRead, 0, "corrupt fallback rows are cached too");
   assert.equal(await deleteConversation("metadata-corrupt"), true);
+
+  await writeFile(path.join(CONV_DIR, "metadata-invalid-shape.json"), "{}", "utf8");
+  const invalidShapeRows = await listConversations();
+  assert.equal(invalidShapeRows[0]?.sessionId, "metadata-invalid-shape");
+  assert.equal(invalidShapeRows[0]?.familiarId, "");
+  await listConversations();
+  assert.equal(
+    getConversationListMetrics().bytesRead,
+    0,
+    "valid JSON with an invalid conversation shape keeps the cached fallback row",
+  );
+  assert.equal(await deleteConversation("metadata-invalid-shape"), true);
 }
 
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────

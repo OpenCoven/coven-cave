@@ -287,9 +287,12 @@ async function readConversationSummary(
       bytesRead: fileSize,
     };
   } catch {
-    // Preserve the prior behavior for valid JSON with an invalid conversation
-    // shape: skip it rather than exposing a partial row.
-    return { summary: null, bytesRead: fileSize };
+    // loadConversation() treats any invalid conversation shape like a parse
+    // failure, so preserve listConversations()'s filename/mtime fallback row.
+    return {
+      summary: fallbackConversationSummary(fallbackSessionId, mtimeMs),
+      bytesRead: fileSize,
+    };
   }
 }
 
