@@ -472,6 +472,7 @@ export const SUITES = {
     "src/lib/thread-self-report.test.ts",
     "src/lib/threads-read.test.ts",
     "src/lib/threads-adapters.test.ts",
+    "src/lib/weave-map.test.ts",
     "src/lib/weave-rail.test.ts",
     "src/lib/strand-inspect.test.ts",
     "src/lib/proposal-flow.test.ts",
@@ -1171,6 +1172,7 @@ const ALIAS_LOADER = new Set([
   // familiars-view-stats now imports ritualStreak from "@/lib/familiar-renown".
   "src/components/familiars-view-stats.test.ts",
   "src/lib/session-pulse.test.ts",
+  "src/lib/weave-map.test.ts",
   "src/components/familiar-analytics-view.test.ts",
   "src/lib/thread-confidence.test.ts",
   "src/lib/signal-trends.test.ts",
