@@ -11,7 +11,7 @@ import {
   derivePastedTitle,
   detectPastedKind,
 } from "./canvas-add.ts";
-import { STARTER_ARTIFACT_HTML } from "./canvas-artifacts.ts";
+import { STARTER_ARTIFACT_HTML, MAX_ARTIFACT_CODE_CHARS } from "./canvas-artifacts.ts";
 
 const s0 = INITIAL_ADD_TILE_STATE;
 
@@ -29,6 +29,12 @@ const s0 = INITIAL_ADD_TILE_STATE;
   assert.equal(closed.prompt, "a pricing page", "collapse retains the prompt");
   assert.equal(closed.result, null, "collapse discards an unsaved result");
   assert.equal(closed.error, null, "collapse clears errors");
+
+  const closedWithCode = addTileReducer(
+    { ...open, pastedCode: "<p>keep me</p>" },
+    { type: "collapse" },
+  );
+  assert.equal(closedWithCode.pastedCode, "<p>keep me</p>", "collapse retains pasted code");
 }
 
 // ── mode switching ───────────────────────────────────────────────────────────
@@ -47,6 +53,19 @@ const s0 = INITIAL_ADD_TILE_STATE;
 
   const back = addTileReducer(blank, { type: "set-mode", mode: "describe" });
   assert.equal(back.pastedCode, STARTER_ARTIFACT_HTML, "mode switches retain editor contents");
+
+  const midGen = { ...open, phase: "generating" };
+  assert.equal(
+    addTileReducer(midGen, { type: "set-mode", mode: "paste" }).mode,
+    "describe",
+    "set-mode is a no-op outside composing",
+  );
+
+  const whitespace = addTileReducer(
+    { ...open, mode: "paste", pastedCode: "   \n  " },
+    { type: "set-mode", mode: "blank" },
+  );
+  assert.equal(whitespace.pastedCode, STARTER_ARTIFACT_HTML, "whitespace-only code still seeds the starter");
 }
 
 // ── generate lifecycle ───────────────────────────────────────────────────────
@@ -81,6 +100,19 @@ const s0 = INITIAL_ADD_TILE_STATE;
   const retried = addTileReducer(failed, { type: "retry" });
   assert.equal(retried.phase, "generating", "retry re-enters generating");
   assert.equal(retried.error, null);
+
+  assert.equal(addTileReducer(composed, { type: "retry" }).phase, "composing", "retry is a no-op outside error");
+
+  assert.equal(
+    addTileReducer({ ...composed, phase: "generating" }, { type: "generate" }).phase,
+    "generating",
+    "generate is a no-op outside composing",
+  );
+  assert.equal(
+    addTileReducer({ ...composed, mode: "paste" }, { type: "generate" }).phase,
+    "composing",
+    "generate is a no-op outside describe mode",
+  );
 }
 
 // ── refine keeps the prior result until replaced ─────────────────────────────
@@ -100,6 +132,9 @@ const s0 = INITIAL_ADD_TILE_STATE;
     message: "cancelled",
   });
   assert.deepEqual(refineFailed.result, result.result, "a failed refine keeps the prior sketch");
+
+  const noResult = addTileReducer(s0, { type: "expand" });
+  assert.equal(addTileReducer(noResult, { type: "refine" }).phase, "composing", "refine is a no-op without a result");
 }
 
 // ── discard and saved ────────────────────────────────────────────────────────
@@ -188,6 +223,31 @@ assert.equal(detectPastedKind("export default function App() { return <p/>; }"),
     kind: "html",
   });
   assert.equal(named.title, "Explicit name", "an explicit title wins");
+
+  const clamped = buildAddArtifact({
+    id: "art-4",
+    now: "2026-07-17T00:00:00.000Z",
+    mode: "paste",
+    prompt: "",
+    pastedTitle: "Big",
+    code: "x".repeat(MAX_ARTIFACT_CODE_CHARS + 500),
+    kind: "html",
+  });
+  assert.equal(clamped.code.length, MAX_ARTIFACT_CODE_CHARS, "code is clamped to the storage cap");
+  assert.equal(clamped.id, "art-4");
+  assert.equal(clamped.kind, "html");
+  assert.equal(clamped.createdAt, "2026-07-17T00:00:00.000Z", "createdAt is the injected now");
+
+  const describeNamed = buildAddArtifact({
+    id: "art-5",
+    now: "2026-07-17T00:00:00.000Z",
+    mode: "describe",
+    prompt: "a dashboard",
+    pastedTitle: "Named anyway",
+    code: "<p>x</p>",
+    kind: "html",
+  });
+  assert.equal(describeNamed.title, "Named anyway", "an explicit title wins in describe mode too");
 }
 
 console.log("canvas-add.test.ts: ok");
