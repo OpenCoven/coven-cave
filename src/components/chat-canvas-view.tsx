@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Modal } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
+import { CanvasAddTile } from "@/components/canvas-add-tile";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { formatArtifactWhen, sortArtifactsForGallery } from "@/lib/canvas-gallery";
@@ -30,6 +31,17 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const confirm = useConfirm();
+
+  // The id a just-kept sketch settles in with — drives a one-shot highlight.
+  const [justSavedId, setJustSavedId] = useState<string | null>(null);
+  const handleSaved = useCallback((next: CanvasArtifact[], savedId: string) => {
+    setArtifacts(sortArtifactsForGallery(next));
+    setState("ready");
+    setJustSavedId(savedId);
+    // One-shot: clear after the highlight animation finishes. A stale clear
+    // after unmount is harmless.
+    setTimeout(() => setJustSavedId((cur) => (cur === savedId ? null : cur)), 2000);
+  }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setState("loading");
@@ -99,23 +111,25 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   }
 
   if (artifacts.length === 0) {
-    const loading = state === "loading";
+    if (state === "loading") {
+      return (
+        <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
+          <EmptyState
+            icon="ph:hourglass"
+            headline="Loading saved sketches..."
+            subtitle="Fetching saved sketches from the canvas store..."
+          />
+        </div>
+      );
+    }
+    // Empty gallery: the add tile IS the empty state — first-run add no
+    // longer exits to chat. The chat path stays as a caption.
     return (
-      <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 items-center justify-center">
-        <EmptyState
-          icon={loading ? "ph:hourglass" : "ph:paint-brush"}
-          headline={loading ? "Loading saved sketches..." : "No saved sketches yet"}
-          subtitle={
-            loading ? (
-              "Fetching saved sketches from the canvas store..."
-            ) : (
-              <>
-                Ask for one in a chat — e.g. <code>/canvas a pricing page with three tiers</code> — then use “Save to Canvas” on
-                the result.
-              </>
-            )
-          }
-        />
+      <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+        <CanvasAddTile hero familiarId={familiarId} onSaved={handleSaved} />
+        <p className="chat-canvas-add__hint">
+          Sketches also arrive from chat — <code>/canvas a pricing page with three tiers</code>, then "Save to Canvas".
+        </p>
       </div>
     );
   }
@@ -123,11 +137,16 @@ export function ChatCanvasView({ familiarId }: { familiarId: string | null }) {
   return (
     <div className="chat-canvas-view flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       <div className="chat-canvas-grid" role="list" aria-label="Saved sketches" aria-busy={state === "loading"}>
+        <CanvasAddTile familiarId={familiarId} onSaved={handleSaved} />
         {artifacts.map((artifact) => {
           const srcDoc =
             artifact.kind === "react" ? buildReactSrcDoc(artifact.code) : buildPreviewSrcDoc(artifact.code);
           return (
-            <div key={artifact.id} role="listitem" className="chat-canvas-card">
+            <div
+              key={artifact.id}
+              role="listitem"
+              className={`chat-canvas-card${artifact.id === justSavedId ? " chat-canvas-card--new" : ""}`}
+            >
               <button
                 type="button"
                 className="chat-canvas-card__open focus-ring"
