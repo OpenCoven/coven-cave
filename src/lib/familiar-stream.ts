@@ -21,6 +21,8 @@ export async function streamFamiliarText(opts: {
   attachments?: ChatAttachment[];
   sessionId?: string;
   projectRoot?: string;
+  /** Per-send token so callers can stop this ephemeral run via /api/chat/stop. */
+  runId?: string;
   reasoningEffort?: string;
   responseSpeed?: string;
   /** Advisory permission mode forwarded to the chat bridge. Use "read" for
@@ -52,6 +54,7 @@ export async function streamFamiliarText(opts: {
         ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
         ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
         ...(opts.projectRoot ? { projectRoot: opts.projectRoot } : {}),
+        ...(opts.runId ? { runId: opts.runId } : {}),
         ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
         ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
         ...(opts.permissionMode ? { permissionMode: opts.permissionMode } : {}),

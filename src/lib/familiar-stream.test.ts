@@ -73,6 +73,8 @@ describe("streamFamiliarText", () => {
     await streamFamiliarText({
       familiarId: "nova",
       prompt: "p",
+      runId: "run-123",
+      permissionMode: "read",
       reasoningEffort: "low",
       responseSpeed: "careful",
       modelOverride: "gpt-test",
@@ -84,6 +86,8 @@ describe("streamFamiliarText", () => {
       {
         familiarId: "nova",
         prompt: "p",
+        runId: "run-123",
+        permissionMode: "read",
         reasoningEffort: "low",
         responseSpeed: "careful",
         modelOverride: "gpt-test",

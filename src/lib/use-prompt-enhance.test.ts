@@ -51,13 +51,15 @@ assert.match(
 // ── Model call: ephemeral, hidden, cheap, abortable ──────────────────────────
 assert.match(source, /origin: "enhance"/, "enhance runs carry the hidden 'enhance' session origin");
 assert.doesNotMatch(source, /sessionId:/, "enhance runs are ephemeral — no session resume");
+assert.match(source, /permissionMode: "read"/, "enhance runs force read-only harness permissions");
+assert.match(source, /runId,/, "enhance runs include a stop-targetable run id");
 assert.match(source, /reasoningEffort: "low"/, "enhance runs use low reasoning effort");
 assert.match(source, /responseSpeed: "fast"/, "enhance runs request fast responses");
 assert.match(source, /signal: controller\.signal/, "the stream is abortable (cancel + unmount)");
 assert.match(
   source,
-  /useEffect\(\(\) => \(\) => abortRef\.current\?\.abort\(\), \[\]\)/,
-  "unmount aborts an in-flight stream",
+  /useEffect\(\(\) => \(\) => \{[\s\S]*stopEnhanceRun\(runIdRef\.current\)[\s\S]*abortRef\.current\?\.abort\(\);[\s\S]*\}, \[\]\)/,
+  "unmount stops and aborts an in-flight stream",
 );
 assert.match(
   source,
@@ -83,8 +85,8 @@ assert.match(
 );
 assert.doesNotMatch(
   source,
-  /fetch\(/,
-  "the hook never fetches — streamFamiliarText is the only network path (the /api/prompt/enhance route stays dead)",
+  /fetch\(\"\/api\/prompt\/enhance/,
+  "the hook never calls the dead /api/prompt/enhance route",
 );
 
 // ── Announcements ────────────────────────────────────────────────────────────
